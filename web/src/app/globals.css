@@ -1,26 +1,76 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* SpotiBase design tokens (light-first) */
+  --sb-bg: #ececec;
+  --sb-surface: rgba(255, 255, 255, 0.7);
+  --sb-card: rgba(255, 255, 255, 0.92);
+  --sb-border: rgba(0, 0, 0, 0.08);
+  --sb-border-2: rgba(0, 0, 0, 0.12);
+  --sb-text: #0b0b0c;
+  --sb-muted: rgba(0, 0, 0, 0.55);
+
+  /* Accent (from reference) */
+  --sb-accent: #c7f33c; /* lime green */
+  --sb-accent-soft: #e1f2ae; /* pale lime */
+
+  /* Shadows */
+  --sb-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
+  --sb-shadow-soft: 0 6px 18px rgba(0, 0, 0, 0.06);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-background: var(--sb-bg);
+  --color-foreground: var(--sb-text);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    /* Optional dark mode (kept subtle) */
+    --sb-bg: #0b0b0c;
+    --sb-surface: rgba(20, 20, 22, 0.6);
+    --sb-card: rgba(20, 20, 22, 0.9);
+    --sb-border: rgba(255, 255, 255, 0.1);
+    --sb-border-2: rgba(255, 255, 255, 0.14);
+    --sb-text: rgba(255, 255, 255, 0.92);
+    --sb-muted: rgba(255, 255, 255, 0.6);
   }
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--sb-bg);
+  color: var(--sb-text);
+  font-family: var(--font-sans), ui-sans-serif, system-ui, -apple-system,
+    Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+}
+
+/* Design helpers (glassmorphism + soft cards) */
+.sb-glass {
+  background: var(--sb-surface);
+  border: 1px solid var(--sb-border);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: var(--sb-shadow-soft);
+}
+
+.sb-card {
+  background: var(--sb-card);
+  border: 1px solid var(--sb-border);
+  box-shadow: var(--sb-shadow-soft);
+}
+
+.sb-ring {
+  box-shadow: 0 0 0 1px var(--sb-border);
+}
+
+.sb-accent-glow {
+  background: radial-gradient(
+    60% 60% at 40% 30%,
+    rgba(199, 243, 60, 0.45),
+    rgba(199, 243, 60, 0.05) 60%,
+    rgba(199, 243, 60, 0) 100%
+  );
+  filter: blur(0px);
 }

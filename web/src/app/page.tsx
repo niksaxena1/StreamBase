@@ -44,8 +44,8 @@ export default async function Home() {
     <div className="space-y-8">
       <div className="flex items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">All Catalog</h1>
-          <p className="mt-1 text-sm text-zinc-500">
+          <h1 className="text-3xl font-semibold tracking-tight">All Catalog</h1>
+          <p className="mt-1 text-sm" style={{ color: "var(--sb-muted)" }}>
             Cumulative streams and daily growth derived from Releases + ext.
           </p>
         </div>
@@ -73,6 +73,7 @@ export default async function Home() {
         <StatCard
           title="Total streams"
           value={formatInt(latest?.total_streams_cumulative)}
+          accent
         />
         <StatCard
           title="Est. revenue (total)"
@@ -80,44 +81,45 @@ export default async function Home() {
         />
       </div>
 
-      <div className="rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
+      <div className="sb-card overflow-hidden rounded-[28px]">
+        <div className="flex items-center justify-between border-b px-5 py-4" style={{ borderColor: "var(--sb-border)" }}>
           <div className="text-sm font-medium">Last 30 days</div>
-          <div className="text-xs text-zinc-500">
+          <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
             Net daily streams depends on membership changes
           </div>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
-            <thead className="text-left text-xs text-zinc-500">
-              <tr className="border-b border-zinc-200 dark:border-zinc-800">
-                <th className="px-4 py-2">Date</th>
-                <th className="px-4 py-2">Tracks</th>
-                <th className="px-4 py-2">Total streams</th>
-                <th className="px-4 py-2">Daily (net)</th>
-                <th className="px-4 py-2">Daily (LFL)</th>
+            <thead className="text-left text-xs" style={{ color: "var(--sb-muted)" }}>
+              <tr className="border-b" style={{ borderColor: "var(--sb-border)" }}>
+                <th className="px-5 py-3 font-medium">Date</th>
+                <th className="px-5 py-3 font-medium">Tracks</th>
+                <th className="px-5 py-3 font-medium">Total streams</th>
+                <th className="px-5 py-3 font-medium">Daily (net)</th>
+                <th className="px-5 py-3 font-medium">Daily (LFL)</th>
               </tr>
             </thead>
             <tbody>
               {(history ?? []).map((r) => (
                 <tr
                   key={r.date}
-                  className="border-b border-zinc-100 last:border-0 dark:border-zinc-800"
+                  className="border-b last:border-0"
+                  style={{ borderColor: "var(--sb-border)" }}
                 >
-                  <td className="px-4 py-2 font-mono text-xs">
+                  <td className="px-5 py-3 font-mono text-xs">
                     {formatDateISO(r.date)}
                   </td>
-                  <td className="px-4 py-2">{formatInt(r.track_count)}</td>
-                  <td className="px-4 py-2">
+                  <td className="px-5 py-3">{formatInt(r.track_count)}</td>
+                  <td className="px-5 py-3">
                     {formatInt(r.total_streams_cumulative)}
                   </td>
-                  <td className="px-4 py-2">{formatInt(r.daily_streams_net)}</td>
-                  <td className="px-4 py-2">{formatInt(r.daily_streams_lfl)}</td>
+                  <td className="px-5 py-3">{formatInt(r.daily_streams_net)}</td>
+                  <td className="px-5 py-3">{formatInt(r.daily_streams_lfl)}</td>
                 </tr>
               ))}
               {!history?.length && (
                 <tr>
-                  <td className="px-4 py-6 text-sm text-zinc-500" colSpan={5}>
+                  <td className="px-5 py-8 text-sm" style={{ color: "var(--sb-muted)" }} colSpan={5}>
                     No stats yet. Run the GitHub Action to ingest data.
                   </td>
                 </tr>

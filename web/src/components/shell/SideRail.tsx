@@ -1,0 +1,153 @@
+"use client";
+
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import React from "react";
+
+type Item = {
+  href: string;
+  label: string;
+  icon: (active: boolean) => React.ReactElement;
+};
+
+const items: Item[] = [
+  { href: "/", label: "Dashboard", icon: (a) => <IconGrid active={a} /> },
+  {
+    href: "/playlists",
+    label: "Playlists",
+    icon: (a) => <IconList active={a} />,
+  },
+  { href: "/health", label: "Health", icon: (a) => <IconPulse active={a} /> },
+];
+
+export function SideRail() {
+  const pathname = usePathname();
+
+  return (
+    <aside className="hidden w-[76px] shrink-0 sm:block">
+      <div className="sb-glass sticky top-6 flex flex-col items-center gap-3 rounded-[28px] px-3 py-4">
+        {items.map((it) => {
+          const active =
+            it.href === "/" ? pathname === "/" : pathname.startsWith(it.href);
+          return (
+            <Link
+              key={it.href}
+              href={it.href}
+              title={it.label}
+              className={[
+                "grid h-11 w-11 place-items-center rounded-full transition",
+                active
+                  ? "bg-black text-white shadow-sm"
+                  : "bg-white/70 text-black/70 hover:bg-white",
+              ].join(" ")}
+            >
+              {it.icon(active)}
+            </Link>
+          );
+        })}
+
+        <div className="my-2 h-px w-full" style={{ background: "var(--sb-border)" }} />
+
+        <div
+          className="grid h-11 w-11 place-items-center rounded-full"
+          style={{
+            background: "color-mix(in srgb, var(--sb-accent) 55%, white)",
+            boxShadow: "var(--sb-shadow-soft)",
+          }}
+          title="Accent"
+        >
+          <span className="text-xs font-semibold text-black/80">SB</span>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function IconGrid(props: { active: boolean }) {
+  const stroke = props.active ? "white" : "rgba(0,0,0,.68)";
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+      <path
+        d="M4 5.5C4 4.67157 4.67157 4 5.5 4H10.5C11.3284 4 12 4.67157 12 5.5V10.5C12 11.3284 11.3284 12 10.5 12H5.5C4.67157 12 4 11.3284 4 10.5V5.5Z"
+        stroke={stroke}
+        strokeWidth="1.8"
+      />
+      <path
+        d="M12 13.5C12 12.6716 12.6716 12 13.5 12H18.5C19.3284 12 20 12.6716 20 13.5V18.5C20 19.3284 19.3284 20 18.5 20H13.5C12.6716 20 12 19.3284 12 18.5V13.5Z"
+        stroke={stroke}
+        strokeWidth="1.8"
+      />
+      <path
+        d="M12 5.5C12 4.67157 12.6716 4 13.5 4H18.5C19.3284 4 20 4.67157 20 5.5V10.5C20 11.3284 19.3284 12 18.5 12H13.5C12.6716 12 12 11.3284 12 10.5V5.5Z"
+        stroke={stroke}
+        strokeWidth="1.8"
+        opacity="0.7"
+      />
+      <path
+        d="M4 13.5C4 12.6716 4.67157 12 5.5 12H10.5C11.3284 12 12 12.6716 12 13.5V18.5C12 19.3284 11.3284 20 10.5 20H5.5C4.67157 20 4 19.3284 4 18.5V13.5Z"
+        stroke={stroke}
+        strokeWidth="1.8"
+        opacity="0.7"
+      />
+    </svg>
+  );
+}
+
+function IconList(props: { active: boolean }) {
+  const stroke = props.active ? "white" : "rgba(0,0,0,.68)";
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+      <path d="M7 7H20" stroke={stroke} strokeWidth="1.8" strokeLinecap="round" />
+      <path
+        d="M7 12H20"
+        stroke={stroke}
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        opacity="0.75"
+      />
+      <path
+        d="M7 17H20"
+        stroke={stroke}
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        opacity="0.55"
+      />
+      <path
+        d="M4 7H4.01"
+        stroke={stroke}
+        strokeWidth="3"
+        strokeLinecap="round"
+      />
+      <path
+        d="M4 12H4.01"
+        stroke={stroke}
+        strokeWidth="3"
+        strokeLinecap="round"
+        opacity="0.75"
+      />
+      <path
+        d="M4 17H4.01"
+        stroke={stroke}
+        strokeWidth="3"
+        strokeLinecap="round"
+        opacity="0.55"
+      />
+    </svg>
+  );
+}
+
+function IconPulse(props: { active: boolean }) {
+  const stroke = props.active ? "white" : "rgba(0,0,0,.68)";
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+      <path
+        d="M4 13.5H8L10 6L14 18L16 13.5H20"
+        stroke={stroke}
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
