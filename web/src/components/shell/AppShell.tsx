@@ -10,14 +10,18 @@ export function AppShell(props: { children: ReactNode }) {
     <div className="min-h-dvh">
       {/* subtle accent glow */}
       <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
-        <div 
-          className="sb-accent-glow absolute -left-24 -top-24 h-[520px] w-[520px] opacity-70" 
-          style={{ animationDelay: "0s" }}
-        />
-        <div 
-          className="sb-accent-glow absolute -right-40 top-24 h-[560px] w-[560px] opacity-50" 
-          style={{ animationDelay: "-5s", animationDuration: "25s" }}
-        />
+        <div className="absolute -left-24 -top-24">
+          <div 
+            className="sb-accent-glow h-[520px] w-[520px] opacity-70" 
+            style={{ animationDelay: "0s" }}
+          />
+        </div>
+        <div className="absolute -right-40 top-24">
+          <div 
+            className="sb-accent-glow h-[560px] w-[560px] opacity-50" 
+            style={{ animationDelay: "-5s", animationDuration: "25s" }}
+          />
+        </div>
       </div>
 
       <div className="mx-auto flex w-full max-w-[1320px] gap-6 px-4 py-6 pb-24 sm:pb-6">
