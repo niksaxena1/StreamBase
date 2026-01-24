@@ -28,12 +28,15 @@ jobs:
           SOT_STORAGE_STATE_B64: ${{ secrets.SOT_STORAGE_STATE_B64 }}
         run: |
           if [ -z "$SOT_STORAGE_STATE_B64" ]; then
-            echo "Missing secret: SOT_STORAGE_STATE_B64"
-            exit 1
+            echo "SOT_STORAGE_STATE_B64 not set (ok). Will rely on login fallback if configured."
+            exit 0
           fi
           echo "$SOT_STORAGE_STATE_B64" | base64 --decode > sot_state.json
 
       - name: Export dashboards
+        env:
+          SOT_EMAIL: ${{ secrets.SOT_EMAIL }}
+          SOT_PASSWORD: ${{ secrets.SOT_PASSWORD }}
         run: |
           python scripts/sot_export_dashboards.py --config config/playlists.csv --storage-state sot_state.json --headless --fail-on-empty
 

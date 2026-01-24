@@ -25,6 +25,7 @@ python scripts/sot_save_storage_state.py --out sot_state.json
 ### 2) Create the GitHub Actions secret
 
 Create a repo secret named `SOT_STORAGE_STATE_B64` containing base64 of `sot_state.json`.
+This is the preferred method. If the session expires too frequently, you can additionally set `SOT_EMAIL` and `SOT_PASSWORD` secrets to enable an auto-login fallback.
 
 **PowerShell (Windows):**
 

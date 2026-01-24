@@ -35,6 +35,112 @@ def utc_date_parts() -> Tuple[str, str, str]:
 def is_logged_out(page) -> bool:
     return "/login" in (page.url or "")
 
+def try_login(page, email: str, password: str) -> bool:
+    """
+    Best-effort login flow for SpotOnTrack.
+    This intentionally uses multiple fallback selectors since the login page may change.
+    """
+    if not email or not password:
+        return False
+
+    page.goto("https://www.spotontrack.com/login", wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
+    time.sleep(0.6)
+
+    # Email field
+    email_locators = [
+        page.get_by_label("Email", exact=False),
+        page.locator("input[type='email']"),
+        page.locator("input[name='email']"),
+        page.locator("input[placeholder*='mail' i]"),
+    ]
+    email_box = None
+    for loc in email_locators:
+        try:
+            if loc.count() > 0:
+                email_box = loc.first
+                break
+        except Exception:
+            pass
+    if email_box is None:
+        return False
+
+    # Password field
+    pwd_locators = [
+        page.get_by_label("Password", exact=False),
+        page.locator("input[type='password']"),
+        page.locator("input[name='password']"),
+    ]
+    pwd_box = None
+    for loc in pwd_locators:
+        try:
+            if loc.count() > 0:
+                pwd_box = loc.first
+                break
+        except Exception:
+            pass
+    if pwd_box is None:
+        return False
+
+    try:
+        email_box.fill(email)
+        pwd_box.fill(password)
+    except Exception:
+        return False
+
+    # Submit
+    submit_locators = [
+        page.get_by_role("button", name="Log in", exact=False),
+        page.get_by_role("button", name="Login", exact=False),
+        page.get_by_role("button", name="Sign in", exact=False),
+        page.locator("button[type='submit']"),
+        page.locator("input[type='submit']"),
+    ]
+    submit_btn = None
+    for loc in submit_locators:
+        try:
+            if loc.count() > 0:
+                submit_btn = loc.first
+                break
+        except Exception:
+            pass
+    if submit_btn is None:
+        return False
+
+    try:
+        submit_btn.click()
+    except Exception:
+        return False
+
+    # Wait for navigation and/or dashboard load.
+    try:
+        page.wait_for_load_state("networkidle", timeout=NAV_TIMEOUT_MS)
+    except Exception:
+        pass
+
+    # Some apps redirect to /dashboard or /dashboard/<id> when logged in.
+    if "/login" in (page.url or ""):
+        return False
+
+    return True
+
+
+def ensure_logged_in(page, email: str, password: str) -> bool:
+    """
+    If the current page is logged out, attempt to re-login (best effort).
+    """
+    if not is_logged_out(page):
+        return True
+
+    print("🔐 Detected logged-out session. Attempting login fallback...")
+    ok = try_login(page, email=email, password=password)
+    if not ok:
+        print("❌ Login fallback failed.")
+        return False
+
+    # Re-check by visiting dashboard root.
+    page.goto("https://www.spotontrack.com/dashboard", wait_until="networkidle", timeout=NAV_TIMEOUT_MS)
+    return not is_logged_out(page)
+
 
 def wait_for_export_button(page) -> bool:
     btn = page.get_by_role("button", name="Export CSV")
@@ -156,6 +262,8 @@ def main():
         default=os.environ.get("SOT_STORAGE_STATE", "sot_state.json"),
         help="Path to Playwright storage_state JSON (cookie/session)",
     )
+    ap.add_argument("--email", default=os.environ.get("SOT_EMAIL", ""), help="SpotOnTrack login email (optional)")
+    ap.add_argument("--password", default=os.environ.get("SOT_PASSWORD", ""), help="SpotOnTrack login password (optional)")
     ap.add_argument("--out-dir", default="exports")
     ap.add_argument("--headless", action="store_true")
     ap.add_argument("--fail-on-empty", action="store_true", help="Treat 0-row exports as failures")
@@ -177,16 +285,27 @@ def main():
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=args.headless)
-        context = browser.new_context(
-            storage_state=args.storage_state,
-            accept_downloads=True,
-            viewport={"width": 1400, "height": 900},
-        )
+        # Only load storage_state if the file exists; otherwise rely on login fallback.
+        storage_state_path = Path(args.storage_state) if args.storage_state else None
+        if storage_state_path and storage_state_path.exists():
+            context = browser.new_context(
+                storage_state=str(storage_state_path),
+                accept_downloads=True,
+                viewport={"width": 1400, "height": 900},
+            )
+        else:
+            context = browser.new_context(
+                accept_downloads=True,
+                viewport={"width": 1400, "height": 900},
+            )
         page = context.new_page()
 
         page.goto("https://www.spotontrack.com/dashboard", wait_until="networkidle", timeout=NAV_TIMEOUT_MS)
         if is_logged_out(page):
-            raise SystemExit("❌ Logged out in CI. Your storage_state is invalid/expired.")
+            if not ensure_logged_in(page, email=args.email, password=args.password):
+                raise SystemExit(
+                    "❌ Logged out in CI and login fallback failed. Provide a valid storage_state or set SOT_EMAIL/SOT_PASSWORD."
+                )
 
         for i, pl in enumerate(playlists, start=1):
             out_path = base_dir / f"{pl.key}.csv"
@@ -196,9 +315,13 @@ def main():
 
             ok, note = download_with_retries(page, pl, out_path)
             if not ok:
-                failures += 1
-                print(f"❌ Failed: {note}")
-                continue
+                if note == "logged_out":
+                    if ensure_logged_in(page, email=args.email, password=args.password):
+                        ok, note = download_with_retries(page, pl, out_path)
+                if not ok:
+                    failures += 1
+                    print(f"❌ Failed: {note}")
+                    continue
 
             rows = count_csv_rows(out_path)
             h = sha256_file(out_path)
