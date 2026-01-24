@@ -77,7 +77,12 @@ export default async function HealthPage() {
                   </td>
                   <td className="px-4 py-2">
                     {r.logs_url ? (
-                      <a className="underline" href={r.logs_url} target="_blank">
+                      <a
+                        className="underline"
+                        href={r.logs_url}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
                         open
                       </a>
                     ) : (
