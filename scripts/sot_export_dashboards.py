@@ -1,0 +1,221 @@
+import argparse
+import csv
+import hashlib
+import os
+import time
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import List, Tuple
+
+from playwright.sync_api import TimeoutError as PWTimeout
+from playwright.sync_api import sync_playwright
+
+NAV_TIMEOUT_MS = 45_000
+BTN_TIMEOUT_MS = 12_000
+DOWNLOAD_TIMEOUT_MS = 60_000
+
+MAX_EXPORT_RETRIES = 5
+RETRY_SLEEP_SECONDS = 2.0
+
+
+@dataclass(frozen=True)
+class Playlist:
+    key: str
+    name: str
+    url: str
+    is_catalog: bool
+
+
+def utc_date_parts() -> Tuple[str, str, str]:
+    d = datetime.now(timezone.utc).date()
+    return f"{d.year:04d}", f"{d.month:02d}", f"{d.day:02d}"
+
+
+def is_logged_out(page) -> bool:
+    return "/login" in (page.url or "")
+
+
+def wait_for_export_button(page) -> bool:
+    btn = page.get_by_role("button", name="Export CSV")
+    try:
+        btn.first.wait_for(state="visible", timeout=BTN_TIMEOUT_MS)
+        return True
+    except Exception:
+        fb = page.locator("button:has-text('Export CSV'), a:has-text('Export CSV')")
+        try:
+            fb.first.wait_for(state="visible", timeout=BTN_TIMEOUT_MS)
+            return True
+        except Exception:
+            return False
+
+
+def click_export_csv(page) -> bool:
+    btn = page.get_by_role("button", name="Export CSV")
+    if btn.count() > 0:
+        btn.first.click()
+        return True
+
+    fb = page.locator("button:has-text('Export CSV'), a:has-text('Export CSV')")
+    if fb.count() > 0:
+        fb.first.click()
+        return True
+
+    return False
+
+
+def sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def count_csv_rows(path: Path) -> int:
+    """Counts data rows (excluding the header)."""
+    with open(path, "r", encoding="utf-8-sig", newline="") as f:
+        r = csv.reader(f)
+        try:
+            next(r)
+        except StopIteration:
+            return 0
+        return sum(1 for _ in r)
+
+
+def load_playlists_csv(path: str) -> List[Playlist]:
+    out: List[Playlist] = []
+    with open(path, "r", encoding="utf-8-sig", newline="") as f:
+        reader = csv.DictReader(f)
+        required = {"playlist_key", "display_name", "dashboard_url", "is_catalog"}
+        if not required.issubset(set(reader.fieldnames or [])):
+            raise ValueError(f"{path} must contain columns: {', '.join(sorted(required))}")
+
+        for row in reader:
+            key = (row.get("playlist_key") or "").strip()
+            name = (row.get("display_name") or "").strip()
+            url = (row.get("dashboard_url") or "").strip()
+            is_catalog = (row.get("is_catalog") or "").strip().lower() in ("1", "true", "yes", "y")
+            if key and name and url:
+                out.append(Playlist(key=key, name=name, url=url, is_catalog=is_catalog))
+
+    return out
+
+
+def download_one(page, pl: Playlist, out_path: Path) -> Tuple[bool, str]:
+    page.goto(pl.url, wait_until="networkidle", timeout=NAV_TIMEOUT_MS)
+    time.sleep(1.2)
+
+    if is_logged_out(page):
+        return False, "logged_out"
+
+    if not wait_for_export_button(page):
+        return False, "export_button_not_visible"
+
+    try:
+        with page.expect_download(timeout=DOWNLOAD_TIMEOUT_MS) as dl_info:
+            if not click_export_csv(page):
+                return False, "export_button_click_failed"
+
+        download = dl_info.value
+        tmp_path = out_path.with_suffix(".tmp.csv")
+        download.save_as(str(tmp_path))
+        tmp_path.replace(out_path)
+        return True, "downloaded"
+    except PWTimeout:
+        return False, "download_timeout"
+    except Exception as e:
+        return False, f"error:{repr(e)}"
+
+
+def download_with_retries(page, pl: Playlist, out_path: Path) -> Tuple[bool, str]:
+    last = "unknown"
+    for attempt in range(1, MAX_EXPORT_RETRIES + 1):
+        ok, note = download_one(page, pl, out_path)
+        if ok:
+            return True, note
+
+        last = note
+        sleep_time = RETRY_SLEEP_SECONDS + (attempt * 1.2)
+        print(f"   ↪ retry {attempt}/{MAX_EXPORT_RETRIES} failed: {note} | sleeping {sleep_time:.1f}s...")
+        time.sleep(sleep_time)
+        try:
+            page.reload(wait_until="networkidle", timeout=NAV_TIMEOUT_MS)
+            time.sleep(1.0)
+        except Exception:
+            pass
+
+    return False, f"failed_after_retries:{last}"
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--config", default="config/playlists.csv")
+    ap.add_argument(
+        "--storage-state",
+        default=os.environ.get("SOT_STORAGE_STATE", "sot_state.json"),
+        help="Path to Playwright storage_state JSON (cookie/session)",
+    )
+    ap.add_argument("--out-dir", default="exports")
+    ap.add_argument("--headless", action="store_true")
+    ap.add_argument("--fail-on-empty", action="store_true", help="Treat 0-row exports as failures")
+    args = ap.parse_args()
+
+    playlists = load_playlists_csv(args.config)
+    if not playlists:
+        raise SystemExit("No playlists loaded.")
+
+    y, m, d = utc_date_parts()
+    base_dir = Path(args.out_dir) / y / m / d
+    base_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"✅ Playlists: {len(playlists)}")
+    print(f"📦 Output: {base_dir.resolve()}")
+    print(f"🕶️ Headless: {'ON' if args.headless else 'OFF'}")
+
+    failures = 0
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=args.headless)
+        context = browser.new_context(
+            storage_state=args.storage_state,
+            accept_downloads=True,
+            viewport={"width": 1400, "height": 900},
+        )
+        page = context.new_page()
+
+        page.goto("https://www.spotontrack.com/dashboard", wait_until="networkidle", timeout=NAV_TIMEOUT_MS)
+        if is_logged_out(page):
+            raise SystemExit("❌ Logged out in CI. Your storage_state is invalid/expired.")
+
+        for i, pl in enumerate(playlists, start=1):
+            out_path = base_dir / f"{pl.key}.csv"
+            print("=" * 60)
+            print(f"📌 {i}/{len(playlists)} | {pl.key} | {pl.name}")
+            print(f"🔗 {pl.url}")
+
+            ok, note = download_with_retries(page, pl, out_path)
+            if not ok:
+                failures += 1
+                print(f"❌ Failed: {note}")
+                continue
+
+            rows = count_csv_rows(out_path)
+            h = sha256_file(out_path)
+            print(f"✅ Saved: {out_path} | rows={rows} | sha256={h[:12]}...")
+
+            if args.fail_on_empty and rows == 0:
+                failures += 1
+                print("❌ Zero-row export (treating as failure).")
+
+            time.sleep(0.4)
+
+        context.close()
+        browser.close()
+
+    if failures:
+        raise SystemExit(f"❌ Export completed with {failures} failure(s).")
+
+
+if __name__ == "__main__":
+    main()

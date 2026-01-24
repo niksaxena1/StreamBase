@@ -1,0 +1,21 @@
+playlist_key,display_name,is_catalog,dashboard_url
+releases,Releases,true,https://www.spotontrack.com/dashboard/38
+ext,ext,true,https://www.spotontrack.com/dashboard/39
+gahara_records_releases,Gahara Records Releases,false,https://www.spotontrack.com/dashboard/40
+groove_bassment_releases,Groove Bassment Releases,false,https://www.spotontrack.com/dashboard/41
+p_total,P Total,false,https://www.spotontrack.com/dashboard/42
+tg_total,TG Total,false,https://www.spotontrack.com/dashboard/43
+final_haus_releases,Final Haus Releases,false,https://www.spotontrack.com/dashboard/80
+p_routenote,P RouteNote,false,https://www.spotontrack.com/dashboard/81
+p_release,P Release,false,https://www.spotontrack.com/dashboard/82
+tg_amuse,TG Amuse,false,https://www.spotontrack.com/dashboard/83
+tg_emubands,TG EmuBands,false,https://www.spotontrack.com/dashboard/84
+tg_imusician,TG iMusician,false,https://www.spotontrack.com/dashboard/85
+tg_toolost,TG Too Lost,false,https://www.spotontrack.com/dashboard/86
+tg_offstep,TG OFFstep,false,https://www.spotontrack.com/dashboard/87
+fh_offstep,FH OFFstep,false,https://www.spotontrack.com/dashboard/88
+gb_routenote,GB RouteNote,false,https://www.spotontrack.com/dashboard/89
+ghr_emubands,GHR EmuBands,false,https://www.spotontrack.com/dashboard/90
+tps_emubands,TPS EmuBands,false,https://www.spotontrack.com/dashboard/91
+sonomo,Sonomo,false,https://www.spotontrack.com/dashboard/92
+masafi_amuse,Masafi Amuse,false,https://www.spotontrack.com/dashboard/93

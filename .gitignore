@@ -35,3 +35,25 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# ------------------------------
+# SpotiBase (local artifacts)
+# ------------------------------
+# PRDs / docs exported locally
+SpotiBase_PRD_v1.docx
+SpotiBase_PRD_v1.pdf
+
+# Local reference folder (do not commit)
+local_files_for_reference/
+
+# Export outputs / logs
+exports/
+export_run_log.csv
+batch_run_log.csv
+run_log.csv
+
+# Playwright / browser profiles (contain cookies + large)
+sot_profile/
+sot_profile_headless/
+*.state.json
+sot_state.json
