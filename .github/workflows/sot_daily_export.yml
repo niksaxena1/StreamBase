@@ -38,7 +38,7 @@ jobs:
           SOT_EMAIL: ${{ secrets.SOT_EMAIL }}
           SOT_PASSWORD: ${{ secrets.SOT_PASSWORD }}
         run: |
-          python scripts/sot_export_dashboards.py --config config/playlists.csv --storage-state sot_state.json --headless --fail-on-empty
+          python scripts/sot_export_dashboards.py --config config/playlists.csv --storage-state sot_state.json --headless --fail-on-empty --auth-debug
 
       - name: Upload exports artifact
         uses: actions/upload-artifact@v4

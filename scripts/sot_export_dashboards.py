@@ -267,6 +267,11 @@ def main():
     ap.add_argument("--out-dir", default="exports")
     ap.add_argument("--headless", action="store_true")
     ap.add_argument("--fail-on-empty", action="store_true", help="Treat 0-row exports as failures")
+    ap.add_argument(
+        "--auth-debug",
+        action="store_true",
+        help="Print non-sensitive auth diagnostics (storage_state vs login fallback usage)",
+    )
     args = ap.parse_args()
 
     playlists = load_playlists_csv(args.config)
@@ -288,12 +293,16 @@ def main():
         # Only load storage_state if the file exists; otherwise rely on login fallback.
         storage_state_path = Path(args.storage_state) if args.storage_state else None
         if storage_state_path and storage_state_path.exists():
+            if args.auth_debug:
+                print(f"🔐 Auth mode: storage_state ({storage_state_path})")
             context = browser.new_context(
                 storage_state=str(storage_state_path),
                 accept_downloads=True,
                 viewport={"width": 1400, "height": 900},
             )
         else:
+            if args.auth_debug:
+                print("🔐 Auth mode: no storage_state present (login fallback may be used if logged out)")
             context = browser.new_context(
                 accept_downloads=True,
                 viewport={"width": 1400, "height": 900},
@@ -306,6 +315,8 @@ def main():
                 raise SystemExit(
                     "❌ Logged out in CI and login fallback failed. Provide a valid storage_state or set SOT_EMAIL/SOT_PASSWORD."
                 )
+            if args.auth_debug:
+                print("🔐 Auth mode: login fallback (initial)")
 
         for i, pl in enumerate(playlists, start=1):
             out_path = base_dir / f"{pl.key}.csv"
@@ -317,6 +328,8 @@ def main():
             if not ok:
                 if note == "logged_out":
                     if ensure_logged_in(page, email=args.email, password=args.password):
+                        if args.auth_debug:
+                            print("🔐 Auth mode: login fallback (mid-run)")
                         ok, note = download_with_retries(page, pl, out_path)
                 if not ok:
                     failures += 1
