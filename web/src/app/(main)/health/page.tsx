@@ -170,6 +170,7 @@ export default async function HealthPage({
           min={firstDate}
           max={today}
           label="Run date"
+          path="/health"
         />
       </div>
 

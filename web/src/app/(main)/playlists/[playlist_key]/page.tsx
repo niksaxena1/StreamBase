@@ -196,6 +196,7 @@ export default async function PlaylistDetailPage({
             min={firstDate}
             max={today}
             label="View date"
+            path={`/playlists/${playlist_key}`}
           />
         </div>
 

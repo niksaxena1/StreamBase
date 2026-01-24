@@ -1,29 +1,31 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { Calendar } from "lucide-react";
+import { Suspense } from "react";
 
-export function DatePicker({
+function DatePickerInner({
   value,
   min,
   max,
   label,
+  path,
 }: {
   value: string;
   min?: string;
   max?: string;
   label?: string;
+  path: string;
 }) {
   const router = useRouter();
-  const searchParams = useSearchParams();
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const newDate = e.target.value;
     if (!newDate) return;
 
-    const params = new URLSearchParams(searchParams.toString());
+    const params = new URLSearchParams(window.location.search);
     params.set("date", newDate);
-    router.push(`?${params.toString()}`);
+    router.push(`${path}?${params.toString()}`);
   }
 
   return (
@@ -45,5 +47,25 @@ export function DatePicker({
         />
       </div>
     </div>
+  );
+}
+
+export function DatePicker({
+  value,
+  min,
+  max,
+  label,
+  path,
+}: {
+  value: string;
+  min?: string;
+  max?: string;
+  label?: string;
+  path: string;
+}) {
+  return (
+    <Suspense fallback={<div className="h-10 w-32 animate-pulse rounded-2xl bg-white/30" />}>
+      <DatePickerInner value={value} min={min} max={max} label={label} path={path} />
+    </Suspense>
   );
 }
