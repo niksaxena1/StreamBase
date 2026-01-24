@@ -46,3 +46,16 @@ jobs:
           name: sot-exports-${{ github.run_id }}
           path: exports/
           if-no-files-found: error
+
+      - name: Upload exports to Supabase Storage (optional)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_STORAGE_BUCKET: ${{ secrets.SUPABASE_STORAGE_BUCKET }}
+          SUPABASE_STORAGE_PREFIX: ${{ secrets.SUPABASE_STORAGE_PREFIX }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "Supabase secrets not set (ok). Skipping Storage upload."
+            exit 0
+          fi
+          python scripts/supabase_upload_exports.py --exports-dir exports

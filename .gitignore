@@ -60,3 +60,6 @@ sot_state.json
 
 # Python
 __pycache__/
+
+# Local workflow artifact downloads
+.artifacts/
