@@ -22,7 +22,7 @@
 @theme inline {
   --color-background: var(--sb-bg);
   --color-foreground: var(--sb-text);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-inter);
   --font-mono: var(--font-geist-mono);
 }
 
