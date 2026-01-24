@@ -24,6 +24,12 @@ export default async function PlaylistDetailPage({
 }) {
   const { playlist_key } = await params;
   const sb = await supabaseServer();
+  const { data: isAdmin } = await sb.rpc("is_admin");
+
+  const missingEnv: string[] = [];
+  if (!process.env.SPOTIFY_CLIENT_ID) missingEnv.push("SPOTIFY_CLIENT_ID");
+  if (!process.env.SPOTIFY_CLIENT_SECRET) missingEnv.push("SPOTIFY_CLIENT_SECRET");
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) missingEnv.push("SUPABASE_SERVICE_ROLE_KEY");
 
   const { data: playlist, error: playlistErr } = await sb
     .from("playlists")
@@ -106,6 +112,20 @@ export default async function PlaylistDetailPage({
           <ListMusic className="h-6 w-6 opacity-70" />
         </div>
       </div>
+
+      {isAdmin && missingEnv.length ? (
+        <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950 dark:border-amber-900/30 dark:bg-amber-900/10 dark:text-amber-200">
+          Spotify playlist thumbnail is disabled: missing{" "}
+          <span className="font-mono">{missingEnv.join(", ")}</span> in Vercel env vars.
+        </div>
+      ) : null}
+
+      {isAdmin && !missingEnv.length && !playlistRow?.spotify_playlist_id ? (
+        <div className="rounded-2xl border border-blue-300 bg-blue-50 p-4 text-sm text-blue-950 dark:border-blue-900/30 dark:bg-blue-900/10 dark:text-blue-200">
+          To enable the Spotify playlist thumbnail, set a Spotify playlist URL/URI/ID in{" "}
+          <Link className="underline" href="/settings/playlists">Playlist Settings</Link>.
+        </div>
+      ) : null}
 
       {(playlistErr || statsErr) && (
         <div className="rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-950 dark:border-red-900/30 dark:bg-red-900/10 dark:text-red-200">

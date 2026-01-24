@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Geist_Mono, Inter, Space_Grotesk } from "next/font/google";
 import "./globals.css";
-import { AppShell } from "@/components/shell/AppShell";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -34,7 +33,7 @@ export default function RootLayout({
         className={`${inter.variable} ${geistMono.variable} ${spaceGrotesk.variable} antialiased`}
       >
         <div className="sb-noise" />
-        <AppShell>{children}</AppShell>
+        {children}
       </body>
     </html>
   );

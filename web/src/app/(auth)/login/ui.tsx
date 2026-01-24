@@ -35,18 +35,17 @@ export default function LoginForm() {
   return (
     <form className="space-y-4" onSubmit={onSubmit}>
       {error ? (
-        <div className="rounded-2xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-950">
+        <div className="rounded-2xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-950 dark:border-red-900/30 dark:bg-red-900/10 dark:text-red-200">
           {error}
         </div>
       ) : null}
 
-      <div>
+      <div className="space-y-1.5">
         <label className="text-xs font-medium" style={{ color: "var(--sb-muted)" }}>
           Email
         </label>
         <input
-          className="mt-1 w-full rounded-2xl border bg-white/70 px-4 py-3 text-sm outline-none focus:ring-2"
-          style={{ borderColor: "var(--sb-border)" }}
+          className="w-full rounded-2xl border border-black/10 bg-white/70 px-4 py-3 text-sm outline-none transition focus:border-black/20 focus:ring-2 focus:ring-black/5 dark:border-white/10 dark:bg-white/5 dark:text-white dark:focus:border-white/20 dark:focus:ring-white/5"
           type="email"
           autoComplete="email"
           value={email}
@@ -55,13 +54,12 @@ export default function LoginForm() {
         />
       </div>
 
-      <div>
+      <div className="space-y-1.5">
         <label className="text-xs font-medium" style={{ color: "var(--sb-muted)" }}>
           Password
         </label>
         <input
-          className="mt-1 w-full rounded-2xl border bg-white/70 px-4 py-3 text-sm outline-none focus:ring-2"
-          style={{ borderColor: "var(--sb-border)" }}
+          className="w-full rounded-2xl border border-black/10 bg-white/70 px-4 py-3 text-sm outline-none transition focus:border-black/20 focus:ring-2 focus:ring-black/5 dark:border-white/10 dark:bg-white/5 dark:text-white dark:focus:border-white/20 dark:focus:ring-white/5"
           type="password"
           autoComplete="current-password"
           value={password}
@@ -73,11 +71,10 @@ export default function LoginForm() {
       <button
         type="submit"
         disabled={loading}
-        className="w-full rounded-2xl bg-black px-4 py-3 text-sm font-medium text-white transition disabled:opacity-60"
+        className="w-full rounded-2xl bg-black px-4 py-3 text-sm font-bold text-white transition hover:bg-black/80 hover:shadow-lg disabled:opacity-60 dark:bg-white dark:text-black dark:hover:bg-white/90"
       >
         {loading ? "Logging in…" : "Log in"}
       </button>
     </form>
   );
 }
-
