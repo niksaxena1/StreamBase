@@ -2,15 +2,12 @@
 
 import { createBrowserClient } from "@supabase/ssr";
 
-function requireEnv(name: string): string {
-  const v = process.env[name];
-  if (!v) throw new Error(`Missing env var: ${name}`);
-  return v;
-}
-
 export function supabaseBrowser() {
-  const url = requireEnv("NEXT_PUBLIC_SUPABASE_URL");
-  const anonKey = requireEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+  // IMPORTANT: For client bundles, Next only inlines NEXT_PUBLIC_* when accessed statically.
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url) throw new Error("Missing env var: NEXT_PUBLIC_SUPABASE_URL");
+  if (!anonKey) throw new Error("Missing env var: NEXT_PUBLIC_SUPABASE_ANON_KEY");
   return createBrowserClient(url, anonKey);
 }
 
