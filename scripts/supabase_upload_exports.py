@@ -48,18 +48,22 @@ def upload_file(
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--exports-dir", default="exports", help="Local exports directory (default: exports)")
-    ap.add_argument("--bucket", default=os.environ.get("SUPABASE_STORAGE_BUCKET", "spotibase-exports"))
+    ap.add_argument(
+        "--bucket",
+        default=os.environ.get("SUPABASE_STORAGE_BUCKET") or "spotibase-exports",
+        help="Supabase Storage bucket id/name (default: spotibase-exports)",
+    )
     ap.add_argument(
         "--prefix",
-        default=os.environ.get("SUPABASE_STORAGE_PREFIX", "exports"),
+        default=os.environ.get("SUPABASE_STORAGE_PREFIX") or "exports",
         help="Object key prefix inside the bucket (default: exports)",
     )
     args = ap.parse_args()
 
     supabase_url = os.environ.get("SUPABASE_URL", "").strip()
     service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
-    bucket = (args.bucket or "").strip()
-    prefix = (args.prefix or "").strip()
+    bucket = (args.bucket or "spotibase-exports").strip()
+    prefix = (args.prefix or "exports").strip()
 
     if not supabase_url or not service_key or not bucket:
         raise SystemExit(
