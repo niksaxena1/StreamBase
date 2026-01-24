@@ -24,11 +24,12 @@ const STREAM_PAYOUT_USD = 0.002;
 export default async function Home({
   searchParams,
 }: {
-  searchParams?: Promise<{ scope?: string; range?: string; daily?: string }>;
+  searchParams?: Promise<{ scope?: string; range?: string; daily?: string; focus?: string }>;
 }) {
   const sp = (await searchParams) ?? {};
   const scope = (sp.scope ?? "all_catalog").toLowerCase();
   const daily = (sp.daily ?? "net").toLowerCase();
+  const focus = (sp.focus ?? "daily").toLowerCase();
   const rangeDays = Math.max(7, Math.min(365, Number(sp.range ?? "30") || 30));
 
   const playlistKey =
@@ -62,14 +63,30 @@ export default async function Home({
         ? "ext"
         : "All Catalog";
 
-  // Prepare chart data
-  const chartData = ((history as PlaylistDailyStatsRow[] | null) ?? []).map((r) => ({
-    date: r.date,
-    value: Number(getDailyStreams(r, daily) ?? 0),
-  }));
+  const historyRows = ((history as PlaylistDailyStatsRow[] | null) ?? []) as PlaylistDailyStatsRow[];
+  const roll7 = rollingSums(historyRows, daily, 7);
+  const roll30 = rollingSums(historyRows, daily, 30);
 
-  const roll7 = rollingSums((history as PlaylistDailyStatsRow[] | null) ?? [], daily, 7);
-  const roll30 = rollingSums((history as PlaylistDailyStatsRow[] | null) ?? [], daily, 30);
+  type FocusKey = "daily" | "total" | "tracks" | "revenue" | "streams_7d" | "streams_30d";
+  const focusKey: FocusKey = (
+    focus === "total" ||
+    focus === "tracks" ||
+    focus === "revenue" ||
+    focus === "streams_7d" ||
+    focus === "streams_30d"
+      ? focus
+      : "daily"
+  ) as FocusKey;
+
+  const chartSpec = getChartSpec({
+    focus: focusKey,
+    dailyMode: daily,
+    latest: latest as PlaylistDailyStatsRow | null,
+    historyDesc: historyRows,
+    roll7,
+    roll30,
+    rangeDays,
+  });
 
   return (
     <div className="space-y-8">
@@ -124,16 +141,21 @@ export default async function Home({
           <div className="relative z-10">
             <div className="flex items-center gap-2 text-sm font-medium uppercase tracking-wider opacity-60">
               <Activity className="h-4 w-4" />
-              Daily Streams ({daily === "lfl" ? "LFL" : "Net"})
+              {chartSpec.title}
             </div>
             <div className="mt-2 font-display text-5xl font-semibold tracking-tight">
-              {formatInt(getDailyStreams(latest as PlaylistDailyStatsRow | null, daily))}
+              {chartSpec.bigValue}
             </div>
             <div className="mt-1 text-sm opacity-60">{rangeDays} day view</div>
           </div>
           
           <div className="mt-8 h-full min-h-[200px] w-full">
-             <DailyStreamsChart data={chartData} valueLabel="Streams" />
+             <DailyStreamsChart
+               data={chartSpec.data}
+               valueLabel={chartSpec.valueLabel}
+               valueFormat={chartSpec.valueFormat}
+               yTickFormat={chartSpec.yTickFormat}
+             />
           </div>
 
           {/* Decorative background glow for main card */}
@@ -144,49 +166,59 @@ export default async function Home({
         </SpotlightCard>
 
         {/* Stat Cards */}
-        <StatCard
-          title="Total Streams"
-          value={formatInt(latest?.total_streams_cumulative)}
-          subtitle="Lifetime cumulative"
-          accent
-          trend="up"
-        />
+        <Link className="block" href={hrefWith(sp, { focus: "total" })}>
+          <StatCard
+            title="Total Streams"
+            value={formatInt(latest?.total_streams_cumulative)}
+            subtitle="Lifetime cumulative • click to expand"
+            accent={focusKey === "total"}
+            trend="up"
+          />
+        </Link>
         
-        <StatCard
-          title="Active Tracks"
-          value={formatInt(latest?.track_count)}
-          subtitle="Currently tracked"
-        />
+        <Link className="block" href={hrefWith(sp, { focus: "tracks" })}>
+          <StatCard
+            title="Active Tracks"
+            value={formatInt(latest?.track_count)}
+            subtitle="Currently tracked • click to expand"
+            accent={focusKey === "tracks"}
+          />
+        </Link>
 
-        <StatCard
-          title="Est. Revenue"
-          value={formatUsd(getRevenueDaily(latest as PlaylistDailyStatsRow | null, daily))}
-          subtitle={`Daily (${daily === "lfl" ? "LFL" : "Net"})`}
-        />
+        <Link className="block" href={hrefWith(sp, { focus: "revenue" })}>
+          <StatCard
+            title="Est. Revenue"
+            value={formatUsd(getRevenueDaily(latest as PlaylistDailyStatsRow | null, daily))}
+            subtitle={`Daily (${daily === "lfl" ? "LFL" : "Net"}) • click to expand`}
+            accent={focusKey === "revenue"}
+          />
+        </Link>
 
-        <StatCard
-          title={`Last 7d Streams (${daily === "lfl" ? "LFL" : "Net"})`}
-          value={
-            roll7.hasData ? formatInt(roll7.streamsSum) : "—"
-          }
-          subtitle={
-            roll7.hasData
-              ? `${formatUsd(roll7.revenueSum)} est. revenue`
-              : "Need at least 2 days of history"
-          }
-        />
+        <Link className="block" href={hrefWith(sp, { focus: "streams_7d" })}>
+          <StatCard
+            title={`Last 7d Streams (${daily === "lfl" ? "LFL" : "Net"})`}
+            value={roll7.hasData ? formatInt(roll7.streamsSum) : "—"}
+            subtitle={
+              roll7.hasData
+                ? `${formatUsd(roll7.revenueSum)} est. revenue • click to expand`
+                : "Need at least 2 days of history"
+            }
+            accent={focusKey === "streams_7d"}
+          />
+        </Link>
 
-        <StatCard
-          title={`Last 30d Streams (${daily === "lfl" ? "LFL" : "Net"})`}
-          value={
-            roll30.hasData ? formatInt(roll30.streamsSum) : "—"
-          }
-          subtitle={
-            roll30.hasData
-              ? `${formatUsd(roll30.revenueSum)} est. revenue`
-              : "Need at least 2 days of history"
-          }
-        />
+        <Link className="block" href={hrefWith(sp, { focus: "streams_30d" })}>
+          <StatCard
+            title={`Last 30d Streams (${daily === "lfl" ? "LFL" : "Net"})`}
+            value={roll30.hasData ? formatInt(roll30.streamsSum) : "—"}
+            subtitle={
+              roll30.hasData
+                ? `${formatUsd(roll30.revenueSum)} est. revenue • click to expand`
+                : "Need at least 2 days of history"
+            }
+            accent={focusKey === "streams_30d"}
+          />
+        </Link>
 
         <div className="sb-card flex flex-col justify-center rounded-[28px] p-6">
            <div className="text-sm font-medium opacity-60">Last Updated</div>
@@ -272,17 +304,133 @@ function rollingSums(
 }
 
 function hrefWith(
-  existing: { scope?: string; range?: string; daily?: string },
-  patch: { scope?: string; range?: string; daily?: string },
+  existing: { scope?: string; range?: string; daily?: string; focus?: string },
+  patch: { scope?: string; range?: string; daily?: string; focus?: string },
 ) {
   const u = new URL("https://example.com/");
   const scope = (patch.scope ?? existing.scope ?? "all_catalog").toString();
   const range = (patch.range ?? existing.range ?? "30").toString();
   const daily = (patch.daily ?? existing.daily ?? "net").toString();
+  const focus = (patch.focus ?? existing.focus ?? "daily").toString();
   u.searchParams.set("scope", scope);
   u.searchParams.set("range", range);
   u.searchParams.set("daily", daily);
+  u.searchParams.set("focus", focus);
   return `${u.pathname}?${u.searchParams.toString()}`;
+}
+
+function getChartSpec(args: {
+  focus: "daily" | "total" | "tracks" | "revenue" | "streams_7d" | "streams_30d";
+  dailyMode: string;
+  latest: PlaylistDailyStatsRow | null;
+  historyDesc: PlaylistDailyStatsRow[];
+  roll7: { hasData: boolean; streamsSum: number; revenueSum: number; countedDays: number };
+  roll30: { hasData: boolean; streamsSum: number; revenueSum: number; countedDays: number };
+  rangeDays: number;
+}): {
+  title: string;
+  bigValue: React.ReactNode;
+  valueLabel: string;
+  valueFormat: "int" | "usd";
+  yTickFormat: "k" | "int" | "usd_compact";
+  data: Array<{ date: string; value: number }>;
+} {
+  const { focus, dailyMode, latest, historyDesc, roll7, roll30 } = args;
+
+  if (focus === "total") {
+    return {
+      title: "Total Streams (Cumulative)",
+      bigValue: formatInt(latest?.total_streams_cumulative),
+      valueLabel: "Total streams",
+      valueFormat: "int",
+      yTickFormat: "k",
+      data: historyDesc.map((r) => ({ date: r.date, value: Number(r.total_streams_cumulative ?? 0) })),
+    };
+  }
+
+  if (focus === "tracks") {
+    return {
+      title: "Active Tracks",
+      bigValue: formatInt(latest?.track_count),
+      valueLabel: "Tracks",
+      valueFormat: "int",
+      yTickFormat: "int",
+      data: historyDesc.map((r) => ({ date: r.date, value: Number(r.track_count ?? 0) })),
+    };
+  }
+
+  if (focus === "revenue") {
+    return {
+      title: `Est. Revenue (Daily ${dailyMode === "lfl" ? "LFL" : "Net"})`,
+      bigValue: formatUsd(getRevenueDaily(latest, dailyMode)),
+      valueLabel: "Revenue",
+      valueFormat: "usd",
+      yTickFormat: "usd_compact",
+      data: historyDesc.map((r) => ({
+        date: r.date,
+        value: Number(getRevenueDaily(r, dailyMode) ?? 0),
+      })),
+    };
+  }
+
+  if (focus === "streams_7d") {
+    const series = rollingSeries(historyDesc, dailyMode, 7);
+    return {
+      title: `Rolling 7d Streams (${dailyMode === "lfl" ? "LFL" : "Net"})`,
+      bigValue: roll7.hasData ? formatInt(roll7.streamsSum) : "—",
+      valueLabel: "7d streams",
+      valueFormat: "int",
+      yTickFormat: "k",
+      data: series,
+    };
+  }
+
+  if (focus === "streams_30d") {
+    const series = rollingSeries(historyDesc, dailyMode, 30);
+    return {
+      title: `Rolling 30d Streams (${dailyMode === "lfl" ? "LFL" : "Net"})`,
+      bigValue: roll30.hasData ? formatInt(roll30.streamsSum) : "—",
+      valueLabel: "30d streams",
+      valueFormat: "int",
+      yTickFormat: "k",
+      data: series,
+    };
+  }
+
+  // default: daily
+  return {
+    title: `Daily Streams (${dailyMode === "lfl" ? "LFL" : "Net"})`,
+    bigValue: formatInt(getDailyStreams(latest, dailyMode)),
+    valueLabel: "Streams",
+    valueFormat: "int",
+    yTickFormat: "k",
+    data: historyDesc.map((r) => ({
+      date: r.date,
+      value: Number(getDailyStreams(r, dailyMode) ?? 0),
+    })),
+  };
+}
+
+function rollingSeries(
+  rowsDesc: PlaylistDailyStatsRow[],
+  mode: string,
+  days: number,
+): Array<{ date: string; value: number }> {
+  const out: Array<{ date: string; value: number }> = [];
+  for (let i = 0; i < rowsDesc.length; i += 1) {
+    let sum = 0;
+    let counted = 0;
+    for (let j = 0; j < days; j += 1) {
+      const r = rowsDesc[i + j];
+      if (!r) break;
+      const ds = getDailyStreams(r, mode);
+      if (ds === null || !Number.isFinite(ds)) continue;
+      sum += Number(ds);
+      counted += 1;
+    }
+    out.push({ date: rowsDesc[i].date, value: counted >= 2 ? sum : 0 });
+  }
+  return out;
 }
 
 function ToggleLink(props: { href: string; active: boolean; children: React.ReactNode }) {

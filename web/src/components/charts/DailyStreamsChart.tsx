@@ -9,22 +9,56 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { formatInt } from "@/lib/format";
+import { useId } from "react";
+import { formatInt, formatUsd } from "@/lib/format";
 
 type DataPoint = {
   date: string;
   value: number;
 };
 
+type ValueFormat = "int" | "usd";
+type YTickFormat = "k" | "int" | "usd_compact";
+
+function formatUsdCompact(n: number): string {
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      notation: "compact",
+      maximumFractionDigits: 1,
+    }).format(n);
+  } catch {
+    return formatUsd(n);
+  }
+}
+
 export function DailyStreamsChart({
   data,
   valueLabel = "Streams",
+  valueFormat = "int",
+  yTickFormat = "k",
+  color = "#c7f33c",
 }: {
   data: DataPoint[];
   valueLabel?: string;
+  valueFormat?: ValueFormat;
+  yTickFormat?: YTickFormat;
+  color?: string;
 }) {
+  const gid = useId();
   // Reverse data if it's in descending order (newest first) -> charts usually need ascending
   const chartData = [...data].reverse();
+
+  const fmtValue = (n: number) =>
+    valueFormat === "usd" ? formatUsd(n) : formatInt(n);
+
+  const fmtYTick = (n: number) => {
+    if (yTickFormat === "int") return formatInt(n);
+    if (yTickFormat === "usd_compact") return formatUsdCompact(n);
+    // default: "k"
+    return `${(n / 1000).toFixed(0)}k`;
+  };
 
   return (
     <div className="h-[300px] w-full">
@@ -34,9 +68,9 @@ export function DailyStreamsChart({
           margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
         >
           <defs>
-            <linearGradient id="colorStreams" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#c7f33c" stopOpacity={0.3} />
-              <stop offset="95%" stopColor="#c7f33c" stopOpacity={0} />
+            <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor={color} stopOpacity={0.3} />
+              <stop offset="95%" stopColor={color} stopOpacity={0} />
             </linearGradient>
           </defs>
           <CartesianGrid
@@ -61,7 +95,7 @@ export function DailyStreamsChart({
             fontSize={12}
             tickLine={false}
             axisLine={false}
-            tickFormatter={(value) => `${(value / 1000).toFixed(0)}k`}
+            tickFormatter={(value) => fmtYTick(Number(value ?? 0))}
           />
           <Tooltip
             contentStyle={{
@@ -72,10 +106,10 @@ export function DailyStreamsChart({
               color: "var(--sb-text)",
             }}
             itemStyle={{ color: "var(--sb-text)" }}
-            formatter={(value) => [formatInt(Number(value ?? 0)), valueLabel]}
+            formatter={(value) => [fmtValue(Number(value ?? 0)), valueLabel]}
             labelFormatter={(label) => new Date(label).toLocaleDateString()}
             cursor={{
-              stroke: "#c7f33c",
+              stroke: color,
               strokeWidth: 2,
               strokeDasharray: "5 5",
               opacity: 0.8
@@ -84,11 +118,11 @@ export function DailyStreamsChart({
           <Area
             type="monotone"
             dataKey="value"
-            stroke="#c7f33c"
+            stroke={color}
             strokeWidth={3}
             fillOpacity={1}
-            fill="url(#colorStreams)"
-            activeDot={{ r: 6, fill: "#c7f33c", stroke: "var(--sb-bg)", strokeWidth: 2 }}
+            fill={`url(#${gid})`}
+            activeDot={{ r: 6, fill: color, stroke: "var(--sb-bg)", strokeWidth: 2 }}
           />
         </AreaChart>
       </ResponsiveContainer>
