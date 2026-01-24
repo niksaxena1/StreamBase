@@ -1,0 +1,621 @@
+import argparse
+import csv
+import os
+import random
+import shutil
+import sys
+import time
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+from typing import Iterable, List, Optional, Sequence, Set, Tuple
+
+from playwright.sync_api import TimeoutError as PWTimeout
+from playwright.sync_api import sync_playwright
+
+SOT_BASE = "https://www.spotontrack.com"
+SOT_PLAYLIST_URL = SOT_BASE + "/playlists/spotify/{sot_playlist_id}"
+
+NAV_TIMEOUT_MS = 45_000
+BTN_TIMEOUT_MS = 12_000
+
+RETRIES = 5
+
+NAV_PAUSE_MIN = 0.02
+NAV_PAUSE_MAX = 0.06
+CLICK_PAUSE_MIN = 0.01
+CLICK_PAUSE_MAX = 0.04
+
+
+@dataclass(frozen=True)
+class SyncTask:
+    playlist_key: str
+    display_name: str
+    dashboard_url: str
+    dashboard_name: str
+    sot_playlist_id: str
+
+
+def fast_pause(a: float, b: float) -> None:
+    time.sleep(random.uniform(a, b))
+
+
+def utc_ts() -> str:
+    return datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def format_hhmmss(seconds: float) -> str:
+    seconds = max(0, int(seconds))
+    h = seconds // 3600
+    m = (seconds % 3600) // 60
+    s = seconds % 60
+    return f"{h:02d}:{m:02d}:{s:02d}"
+
+
+def is_logged_out(page) -> bool:
+    return "/login" in (page.url or "")
+
+
+def try_login(page, email: str, password: str) -> bool:
+    if not email or not password:
+        return False
+
+    page.goto(SOT_BASE + "/login", wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
+    time.sleep(0.6)
+
+    # Email
+    email_locators = [
+        page.get_by_label("Email", exact=False),
+        page.locator("input[type='email']"),
+        page.locator("input[name='email']"),
+        page.locator("input[placeholder*='mail' i]"),
+    ]
+    email_box = None
+    for loc in email_locators:
+        try:
+            if loc.count() > 0:
+                email_box = loc.first
+                break
+        except Exception:
+            pass
+    if email_box is None:
+        return False
+
+    # Password
+    pwd_locators = [
+        page.get_by_label("Password", exact=False),
+        page.locator("input[type='password']"),
+        page.locator("input[name='password']"),
+    ]
+    pwd_box = None
+    for loc in pwd_locators:
+        try:
+            if loc.count() > 0:
+                pwd_box = loc.first
+                break
+        except Exception:
+            pass
+    if pwd_box is None:
+        return False
+
+    try:
+        email_box.fill(email)
+        pwd_box.fill(password)
+    except Exception:
+        return False
+
+    submit_locators = [
+        page.get_by_role("button", name="Log in", exact=False),
+        page.get_by_role("button", name="Login", exact=False),
+        page.get_by_role("button", name="Sign in", exact=False),
+        page.locator("button[type='submit']"),
+        page.locator("input[type='submit']"),
+    ]
+    submit_btn = None
+    for loc in submit_locators:
+        try:
+            if loc.count() > 0:
+                submit_btn = loc.first
+                break
+        except Exception:
+            pass
+    if submit_btn is None:
+        return False
+
+    try:
+        submit_btn.click()
+    except Exception:
+        return False
+
+    try:
+        page.wait_for_load_state("networkidle", timeout=NAV_TIMEOUT_MS)
+    except Exception:
+        pass
+
+    return not is_logged_out(page)
+
+
+def ensure_logged_in(page, email: str, password: str) -> bool:
+    if not is_logged_out(page):
+        return True
+    print("🔐 Detected logged-out session. Attempting login fallback...")
+    if not try_login(page, email=email, password=password):
+        print("❌ Login fallback failed.")
+        return False
+    page.goto(SOT_BASE + "/dashboard", wait_until="networkidle", timeout=NAV_TIMEOUT_MS)
+    return not is_logged_out(page)
+
+
+def extract_unique_hrefs(page, selectors: Sequence[str]) -> List[str]:
+    seen: Set[str] = set()
+    unique: List[str] = []
+    for sel in selectors:
+        try:
+            hrefs = page.eval_on_selector_all(sel, "els => els.map(e => e.href).filter(Boolean)")
+            for h in hrefs:
+                if h not in seen:
+                    seen.add(h)
+                    unique.append(h)
+        except Exception:
+            pass
+    return unique
+
+
+def try_click_refresh_now(page) -> bool:
+    try:
+        btn = page.get_by_role("button", name="Refresh now")
+        if btn.count() > 0:
+            btn.first.click(timeout=1200)
+            fast_pause(0.4, 0.8)
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def scan_dashboard_tracks(page, dashboard_url: str) -> Set[str]:
+    page.goto(dashboard_url, wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
+    fast_pause(0.35, 0.75)
+
+    selectors = ["a[href*='/tracks/']", "a[href^='/tracks/']"]
+
+    last_count = 0
+    stable_rounds = 0
+    for _ in range(320):
+        count = page.locator("a[href*='/tracks/']").count()
+        if count > last_count:
+            last_count = count
+            stable_rounds = 0
+        else:
+            stable_rounds += 1
+            if stable_rounds >= 6:
+                break
+        page.mouse.wheel(0, 4200)
+        fast_pause(0.05, 0.12)
+
+    return set(extract_unique_hrefs(page, selectors))
+
+
+def scan_playlist_tracks(page, playlist_url: str) -> List[str]:
+    page.goto(playlist_url, wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
+    fast_pause(0.5, 1.1)
+
+    selectors = ["a[href*='/tracks/']", "a[href^='/tracks/']"]
+
+    urls = extract_unique_hrefs(page, selectors)
+    if urls:
+        return urls
+
+    scroll_script = """
+    () => {
+      const els = Array.from(document.querySelectorAll('*'));
+      const scrollables = els.filter(el => {
+        const s = getComputedStyle(el);
+        const canScroll = (s.overflowY === 'auto' || s.overflowY === 'scroll');
+        return canScroll && el.scrollHeight > el.clientHeight + 50;
+      });
+      if (!scrollables.length) return false;
+      scrollables.sort((a,b) => (b.clientHeight*b.clientWidth) - (a.clientHeight*a.clientWidth));
+      const el = scrollables[0];
+      el.scrollTop = el.scrollTop + Math.floor(el.clientHeight * 0.95);
+      return true;
+    }
+    """
+
+    last_len = 0
+    stable = 0
+    for _ in range(360):
+        page.evaluate(scroll_script)
+        fast_pause(0.06, 0.14)
+        urls = extract_unique_hrefs(page, selectors)
+        if len(urls) > last_len:
+            last_len = len(urls)
+            stable = 0
+        else:
+            stable += 1
+            if stable >= 7:
+                break
+    return urls
+
+
+def scan_with_retry(scan_fn, page, url: str, max_attempts: int = RETRIES, refresh: bool = False):
+    for attempt in range(1, max_attempts + 1):
+        out = scan_fn(page, url)
+        if out and len(out) > 0:
+            return out
+
+        if refresh:
+            try_click_refresh_now(page)
+
+        try:
+            page.reload(wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
+        except Exception:
+            pass
+
+        fast_pause(0.6 + attempt * 0.2, 1.0 + attempt * 0.3)
+
+    return out
+
+
+def enable_turbo_blocking(context) -> None:
+    def route_handler(route, request):
+        rtype = request.resource_type
+        url = request.url.lower()
+
+        if rtype in ["image", "font", "media"]:
+            return route.abort()
+
+        if any(
+            x in url
+            for x in [
+                "google-analytics",
+                "gtag",
+                "doubleclick",
+                "facebook.com/tr",
+                "hotjar",
+                "clarity.ms",
+                "segment.io",
+            ]
+        ):
+            return route.abort()
+
+        return route.continue_()
+
+    context.route("**/*", route_handler)
+
+
+def click_dashboard_toggle(page, dashboard_name: str) -> str:
+    add_dropdown = page.get_by_role("button", name="Add to Dashboard")
+    if add_dropdown.count() == 0:
+        return "no_add_button"
+
+    add_dropdown.click(timeout=BTN_TIMEOUT_MS)
+    fast_pause(CLICK_PAUSE_MIN, CLICK_PAUSE_MAX)
+
+    option = page.get_by_role("button", name=dashboard_name, exact=True)
+    if option.count() == 0:
+        return "dashboard_option_missing"
+
+    option.click(timeout=BTN_TIMEOUT_MS)
+    fast_pause(CLICK_PAUSE_MIN, CLICK_PAUSE_MAX)
+
+    return "toggled"
+
+
+def print_progress_line(
+    label: str,
+    done: int,
+    total: int,
+    ok: int,
+    errors: int,
+    start_time: float,
+    force_newline: bool = False,
+) -> None:
+    cols = shutil.get_terminal_size((120, 20)).columns
+    percent = (done / total * 100.0) if total > 0 else 0.0
+    elapsed = time.time() - start_time
+
+    rate = done / elapsed if elapsed > 0 else 0
+    remaining = total - done
+    eta = remaining / rate if rate > 0 else 0
+
+    bar_len = 14
+    filled = int(bar_len * (percent / 100.0))
+    bar = "#" * filled + "-" * (bar_len - filled)
+
+    line = (
+        f"{label} [{bar}] {done}/{total} ({percent:4.1f}%) "
+        f"OK:{ok} Err:{errors} Elap:{format_hhmmss(elapsed)} ETA:{format_hhmmss(eta)}"
+    )
+    if len(line) > cols - 1:
+        line = line[: cols - 1]
+
+    sys.stdout.write("\r" + line.ljust(cols - 1))
+    sys.stdout.flush()
+    if force_newline:
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+
+
+def log_row(log_path: Path, task: SyncTask, i: int, track_url: str, status: str, note: str = "") -> None:
+    exists = log_path.exists()
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(log_path, "a", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        if not exists:
+            w.writerow(
+                [
+                    "timestamp_utc",
+                    "playlist_key",
+                    "dashboard_name",
+                    "index",
+                    "track_url",
+                    "status",
+                    "note",
+                ]
+            )
+        w.writerow([utc_ts(), task.playlist_key, task.dashboard_name, i, track_url, status, note])
+
+
+def load_sync_tasks(path: str) -> List[SyncTask]:
+    out: List[SyncTask] = []
+    with open(path, "r", encoding="utf-8-sig", newline="") as f:
+        r = csv.DictReader(f)
+        required = {"playlist_key", "display_name", "dashboard_url", "is_catalog"}
+        if not required.issubset(set(r.fieldnames or [])):
+            raise ValueError(f"{path} must contain columns: {', '.join(sorted(required))}")
+
+        for row in r:
+            playlist_key = (row.get("playlist_key") or "").strip()
+            display_name = (row.get("display_name") or "").strip()
+            dashboard_url = (row.get("dashboard_url") or "").strip()
+            sot_playlist_id = (row.get("sot_playlist_id") or "").strip()
+            dashboard_name = (row.get("sot_dashboard_name") or "").strip() or display_name
+
+            if not playlist_key or not display_name or not dashboard_url:
+                continue
+
+            if not sot_playlist_id:
+                # We'll skip these later with a warning, but keep visibility in logs.
+                continue
+
+            out.append(
+                SyncTask(
+                    playlist_key=playlist_key,
+                    display_name=display_name,
+                    dashboard_url=dashboard_url,
+                    dashboard_name=dashboard_name,
+                    sot_playlist_id=sot_playlist_id,
+                )
+            )
+
+    return out
+
+
+def run_sync(
+    *,
+    config_path: str,
+    storage_state_path: str,
+    headless: bool,
+    no_sync: bool,
+    dry_run: bool,
+    limit: Optional[int],
+    fail_on_errors: bool,
+) -> int:
+    email = (os.environ.get("SOT_EMAIL") or "").strip()
+    password = (os.environ.get("SOT_PASSWORD") or "").strip()
+
+    tasks = load_sync_tasks(config_path)
+    if limit is not None:
+        tasks = tasks[: max(0, int(limit))]
+
+    if not tasks:
+        print("❌ No sync tasks loaded (missing `sot_playlist_id` in config or empty config).")
+        return 2
+
+    print(f"✅ Loaded {len(tasks)} sync task(s) from {config_path}")
+    print(f"🪞 Mirror mode: {'OFF (add-only)' if no_sync else 'ON'}")
+    print(f"🟡 Dry-run:     {'ON (no clicking)' if dry_run else 'OFF'}")
+
+    log_path = Path(".artifacts") / "dashboard_sync_log.csv"
+
+    total_added = 0
+    total_removed = 0
+    total_errors = 0
+    total_skipped = 0
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=headless)
+
+        context_options = {"viewport": {"width": 1400, "height": 900}}
+        if storage_state_path and Path(storage_state_path).exists():
+            context_options["storage_state"] = storage_state_path
+
+        context = browser.new_context(**context_options)
+        enable_turbo_blocking(context)
+        page = context.new_page()
+
+        # Warm-up / login check.
+        page.goto(SOT_BASE + "/dashboard", wait_until="networkidle", timeout=NAV_TIMEOUT_MS)
+        if is_logged_out(page):
+            if not ensure_logged_in(page, email=email, password=password):
+                print("❌ Not logged in and no valid fallback credentials.")
+                context.close()
+                browser.close()
+                return 3
+
+        for n, task in enumerate(tasks, start=1):
+            playlist_url = SOT_PLAYLIST_URL.format(sot_playlist_id=task.sot_playlist_id)
+            task_label = f"{n}/{len(tasks)}|{task.display_name}"
+
+            print("\n" + "=" * 72)
+            print(f"▶ TASK: {task_label}")
+            print(f"Playlist URL:  {playlist_url}")
+            print(f"Dashboard URL: {task.dashboard_url}")
+
+            # Scan sets with safety retries
+            dashboard_set = scan_with_retry(scan_dashboard_tracks, page, task.dashboard_url, refresh=False)
+            playlist_tracks = scan_with_retry(scan_playlist_tracks, page, playlist_url, refresh=True)
+            playlist_set = set(playlist_tracks or [])
+
+            print(f"✅ Dashboard tracks found: {len(dashboard_set)}")
+            print(f"✅ Playlist tracks found:  {len(playlist_set)}")
+
+            # SAFETY: never mirror to/from empty
+            if len(playlist_set) == 0:
+                print("🛑 Safety: playlist scan returned 0 after retries. Skipping.")
+                log_row(log_path, task, -1, playlist_url, "skip", "playlist scan returned 0 after retries")
+                total_skipped += 1
+                continue
+
+            if len(dashboard_set) == 0:
+                print("🛑 Safety: dashboard scan returned 0 after retries. Skipping.")
+                log_row(log_path, task, -1, task.dashboard_url, "skip", "dashboard scan returned 0 after retries")
+                total_skipped += 1
+                continue
+
+            to_add = list(playlist_set - dashboard_set)
+            to_remove = list(dashboard_set - playlist_set) if not no_sync else []
+
+            print("—" * 72)
+            print(f"🧹 Extra in dashboard (remove): {len(to_remove)}")
+            print(f"➕ Missing from dashboard (add): {len(to_add)}")
+
+            if dry_run:
+                print("🟡 DRY RUN: skipping clicking for this task.")
+                continue
+
+            if len(to_add) == 0 and len(to_remove) == 0:
+                print("✅ Already mirrored. Nothing to do.")
+                continue
+
+            # Remove first
+            removed_ok = 0
+            removed_err = 0
+            if not no_sync and to_remove:
+                print("🧹 Removing extras…")
+                start = time.time()
+                last_update = 0.0
+                total = len(to_remove)
+
+                for i, track_url in enumerate(to_remove, start=1):
+                    try:
+                        page.goto(track_url, wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
+                        if is_logged_out(page) and not ensure_logged_in(page, email=email, password=password):
+                            raise RuntimeError("logged_out")
+                        page.get_by_role("button", name="Add to Dashboard").wait_for(timeout=BTN_TIMEOUT_MS)
+                        fast_pause(NAV_PAUSE_MIN, NAV_PAUSE_MAX)
+                        result = click_dashboard_toggle(page, task.dashboard_name)
+                        if result == "toggled":
+                            removed_ok += 1
+                            log_row(log_path, task, i, track_url, "removed", f"Removed from -> {task.dashboard_name}")
+                        else:
+                            removed_err += 1
+                            log_row(log_path, task, i, track_url, "remove_error", result)
+                    except PWTimeout as e:
+                        removed_err += 1
+                        log_row(log_path, task, i, track_url, "remove_timeout", str(e))
+                    except Exception as e:
+                        removed_err += 1
+                        log_row(log_path, task, i, track_url, "remove_error", repr(e))
+
+                    if time.time() - last_update >= 1.0 or i == total:
+                        print_progress_line(
+                            label=f"REMOVE {task_label}",
+                            done=i,
+                            total=total,
+                            ok=removed_ok,
+                            errors=removed_err,
+                            start_time=start,
+                            force_newline=(i == total),
+                        )
+                        last_update = time.time()
+
+            # Add
+            added_ok = 0
+            added_err = 0
+            if to_add:
+                print("⚡ Adding missing…")
+                start = time.time()
+                last_update = 0.0
+                total = len(to_add)
+
+                for i, track_url in enumerate(to_add, start=1):
+                    try:
+                        page.goto(track_url, wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
+                        if is_logged_out(page) and not ensure_logged_in(page, email=email, password=password):
+                            raise RuntimeError("logged_out")
+                        page.get_by_role("button", name="Add to Dashboard").wait_for(timeout=BTN_TIMEOUT_MS)
+                        fast_pause(NAV_PAUSE_MIN, NAV_PAUSE_MAX)
+                        result = click_dashboard_toggle(page, task.dashboard_name)
+                        if result == "toggled":
+                            added_ok += 1
+                            log_row(log_path, task, i, track_url, "added", f"Added -> {task.dashboard_name}")
+                        else:
+                            added_err += 1
+                            log_row(log_path, task, i, track_url, "add_error", result)
+                    except PWTimeout as e:
+                        added_err += 1
+                        log_row(log_path, task, i, track_url, "add_timeout", str(e))
+                    except Exception as e:
+                        added_err += 1
+                        log_row(log_path, task, i, track_url, "add_error", repr(e))
+
+                    if time.time() - last_update >= 1.0 or i == total:
+                        print_progress_line(
+                            label=f"ADD {task_label}",
+                            done=i,
+                            total=total,
+                            ok=added_ok,
+                            errors=added_err,
+                            start_time=start,
+                            force_newline=(i == total),
+                        )
+                        last_update = time.time()
+
+            total_removed += removed_ok
+            total_added += added_ok
+            total_errors += (removed_err + added_err)
+
+            print(f"✅ Task done: removed {removed_ok} (err {removed_err}) | added {added_ok} (err {added_err})")
+
+        context.close()
+        browser.close()
+
+    print("\n" + "=" * 72)
+    print("✅ DASHBOARD SYNC COMPLETE")
+    print(f"🧹 Total removed: {total_removed}")
+    print(f"➕ Total added:   {total_added}")
+    print(f"⚠️ Total errors:  {total_errors}")
+    print(f"⏭️ Total skipped: {total_skipped}")
+    print(f"📄 Log file:      {log_path}")
+
+    if fail_on_errors and total_errors > 0:
+        return 10
+    return 0
+
+
+if __name__ == "__main__":
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--config", default="config/playlists.csv", help="CSV config path")
+    ap.add_argument("--storage-state", default="sot_state.json", help="Playwright storage state JSON path")
+    ap.add_argument("--headless", action="store_true", help="Run headless")
+    ap.add_argument("--no-sync", action="store_true", help="Disable mirroring (add-only mode)")
+    ap.add_argument("--dry-run", action="store_true", help="Preview changes only (no clicking)")
+    ap.add_argument("--limit", type=int, default=None, help="Run only first N tasks (for testing)")
+    ap.add_argument("--fail-on-errors", action="store_true", help="Exit non-zero if any add/remove errors occur")
+    args = ap.parse_args()
+
+    raise SystemExit(
+        run_sync(
+            config_path=args.config,
+            storage_state_path=args.storage_state,
+            headless=args.headless,
+            no_sync=args.no_sync,
+            dry_run=args.dry_run,
+            limit=args.limit,
+            fail_on_errors=args.fail_on_errors,
+        )
+    )
+
