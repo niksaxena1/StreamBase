@@ -40,9 +40,10 @@ export default async function PlaylistDetailPage({
   const { data: isAdmin } = await sb.rpc("is_admin");
 
   const missingEnv: string[] = [];
-  if (!process.env.SPOTIFY_CLIENT_ID) missingEnv.push("SPOTIFY_CLIENT_ID");
-  if (!process.env.SPOTIFY_CLIENT_SECRET) missingEnv.push("SPOTIFY_CLIENT_SECRET");
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) missingEnv.push("SUPABASE_SERVICE_ROLE_KEY");
+  // Check if env vars are actually set and non-empty (trim whitespace)
+  if (!process.env.SPOTIFY_CLIENT_ID?.trim()) missingEnv.push("SPOTIFY_CLIENT_ID");
+  if (!process.env.SPOTIFY_CLIENT_SECRET?.trim()) missingEnv.push("SPOTIFY_CLIENT_SECRET");
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()) missingEnv.push("SUPABASE_SERVICE_ROLE_KEY");
 
   const { data: playlist, error: playlistErr } = await sb
     .from("playlists")
