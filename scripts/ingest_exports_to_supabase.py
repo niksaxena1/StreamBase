@@ -124,6 +124,26 @@ class Postgrest:
             raise RuntimeError(f"Select {table} failed: {r.status_code} {r.text[:500]}")
         return r.json()
 
+    def select_all(self, table: str, select: str, filters: str, page_size: int = 1000) -> List[dict]:
+        """
+        Supabase PostgREST commonly enforces a max row limit (often 1000). Paginate with limit/offset.
+        """
+        out: List[dict] = []
+        offset = 0
+        while True:
+            url = f"{self.base}/{table}?select={select}&{filters}&limit={page_size}&offset={offset}"
+            r = requests.get(url, headers=self.h, timeout=180)
+            if r.status_code != 200:
+                raise RuntimeError(f"Select {table} failed: {r.status_code} {r.text[:500]}")
+            batch = r.json()
+            if not batch:
+                break
+            out.extend(batch)
+            if len(batch) < page_size:
+                break
+            offset += page_size
+        return out
+
 
 def calc_rev(streams: Optional[int]) -> Optional[float]:
     if streams is None:
@@ -330,13 +350,18 @@ def main():
         for pl_key, todays_isrcs in playlist_to_isrcs.items():
             if not todays_isrcs:
                 continue
-            active_rows = pg.select("playlist_memberships", "id,isrc", f"playlist_key=eq.{pl_key}&valid_to=is.null")
+            active_rows = pg.select_all("playlist_memberships", "id,isrc", f"playlist_key=eq.{pl_key}&valid_to=is.null")
             active_set = {r["isrc"] for r in active_rows}
             active_id = {r["isrc"]: r["id"] for r in active_rows}
             to_add = sorted(todays_isrcs - active_set)
             to_remove = sorted(active_set - todays_isrcs)
             if to_add:
-                pg.insert("playlist_memberships", [{"playlist_key": pl_key, "isrc": isrc, "valid_from": run_date.isoformat()} for isrc in to_add])
+                # Upsert for idempotency (re-runs) and to avoid partial paging edge cases.
+                pg.upsert(
+                    "playlist_memberships",
+                    [{"playlist_key": pl_key, "isrc": isrc, "valid_from": run_date.isoformat()} for isrc in to_add],
+                    on_conflict="playlist_key,isrc,valid_from",
+                )
             for isrc in to_remove:
                 rid = active_id.get(isrc)
                 if rid:
@@ -379,7 +404,7 @@ def main():
             # LFL (not for derived all_catalog in v1)
             daily_lfl = None
             if pl_key != "all_catalog":
-                yesterday_members = pg.select(
+                yesterday_members = pg.select_all(
                     "playlist_memberships",
                     "isrc",
                     f"playlist_key=eq.{pl_key}&valid_from=lte.{prev_date.isoformat()}&or=(valid_to.is.null,valid_to.gte.{prev_date.isoformat()})",
