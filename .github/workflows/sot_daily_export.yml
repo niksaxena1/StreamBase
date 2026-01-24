@@ -59,3 +59,16 @@ jobs:
             exit 0
           fi
           python scripts/supabase_upload_exports.py --exports-dir exports
+
+      - name: Ingest exports into Supabase Postgres (optional)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_STORAGE_BUCKET: ${{ secrets.SUPABASE_STORAGE_BUCKET }}
+          SUPABASE_STORAGE_PREFIX: ${{ secrets.SUPABASE_STORAGE_PREFIX }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "Supabase secrets not set (ok). Skipping DB ingestion."
+            exit 0
+          fi
+          python scripts/ingest_exports_to_supabase.py --config config/playlists.csv --exports-dir exports
