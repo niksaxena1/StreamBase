@@ -3,6 +3,7 @@ import { Activity } from "lucide-react";
 
 import { StatCard } from "@/components/StatCard";
 import { DailyStreamsChart } from "@/components/charts/DailyStreamsChart";
+import { ChartZoomButton } from "@/components/charts/ChartZoomButton";
 import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
 import { SpotlightCard } from "@/components/ui/SpotlightCard";
 import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
@@ -139,9 +140,21 @@ export default async function Home({
         {/* Main Chart Card - Spans 2 cols, 2 rows (Big Feature) */}
         <SpotlightCard className="col-span-1 flex flex-col justify-between p-6 lg:col-span-2 lg:row-span-2">
           <div className="relative z-10">
-            <div className="flex items-center gap-2 text-sm font-medium uppercase tracking-wider opacity-60">
-              <Activity className="h-4 w-4" />
-              {chartSpec.title}
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-center gap-2 text-sm font-medium uppercase tracking-wider opacity-60">
+                <Activity className="h-4 w-4" />
+                {chartSpec.title}
+              </div>
+              <ChartZoomButton
+                title={chartSpec.title}
+                subtitle={`${rangeDays} day view • ${title}`}
+                chart={{
+                  data: chartSpec.data,
+                  valueLabel: chartSpec.valueLabel,
+                  valueFormat: chartSpec.valueFormat,
+                  yTickFormat: chartSpec.yTickFormat,
+                }}
+              />
             </div>
             <div className="mt-2 font-display text-5xl font-semibold tracking-tight">
               {chartSpec.bigValue}

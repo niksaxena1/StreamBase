@@ -39,12 +39,14 @@ export function DailyStreamsChart({
   valueFormat = "int",
   yTickFormat = "k",
   color = "#c7f33c",
+  heightPx = 300,
 }: {
   data: DataPoint[];
   valueLabel?: string;
   valueFormat?: ValueFormat;
   yTickFormat?: YTickFormat;
   color?: string;
+  heightPx?: number;
 }) {
   const gid = useId();
   // Reverse data if it's in descending order (newest first) -> charts usually need ascending
@@ -61,7 +63,7 @@ export function DailyStreamsChart({
   };
 
   return (
-    <div className="h-[300px] w-full">
+    <div className="w-full" style={{ height: heightPx }}>
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart
           data={chartData}
