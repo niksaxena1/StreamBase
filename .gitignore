@@ -57,3 +57,6 @@ sot_profile/
 sot_profile_headless/
 *.state.json
 sot_state.json
+
+# Python
+__pycache__/
