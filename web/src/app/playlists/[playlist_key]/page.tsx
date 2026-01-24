@@ -1,9 +1,21 @@
 import Link from "next/link";
+import { ListMusic } from "lucide-react";
 
 import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
 import { supabaseServer } from "@/lib/supabase/server";
+import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
+import { supabaseService } from "@/lib/supabase/service";
+import { getPlaylist } from "@/lib/spotify";
 
 export const dynamic = "force-dynamic";
+
+type PlaylistRow = {
+  playlist_key: string;
+  display_name: string;
+  is_catalog: boolean;
+  spotify_playlist_id: string | null;
+  spotify_playlist_image_url: string | null;
+};
 
 export default async function PlaylistDetailPage({
   params,
@@ -15,9 +27,33 @@ export default async function PlaylistDetailPage({
 
   const { data: playlist, error: playlistErr } = await sb
     .from("playlists")
-    .select("playlist_key,display_name,is_catalog")
+    .select(
+      "playlist_key,display_name,is_catalog,spotify_playlist_id,spotify_playlist_image_url",
+    )
     .eq("playlist_key", playlist_key)
     .maybeSingle();
+
+  // Best-effort: if spotify_playlist_id is set, keep thumbnail cached.
+  const playlistRow = (playlist ?? null) as PlaylistRow | null;
+  let spotifyImg: string | null = playlistRow?.spotify_playlist_image_url ?? null;
+  try {
+    const id = playlistRow?.spotify_playlist_id ?? null;
+    if (id && !spotifyImg) {
+      const meta = await getPlaylist(id);
+      const svc = supabaseService();
+      await svc
+        .from("playlists")
+        .update({
+          spotify_playlist_name: meta.name,
+          spotify_playlist_image_url: meta.imageUrl,
+          spotify_last_fetched_at: new Date().toISOString(),
+        })
+        .eq("playlist_key", playlist_key);
+      spotifyImg = meta.imageUrl;
+    }
+  } catch {
+    // ignore
+  }
 
   const { data: stats, error: statsErr } = await sb
     .from("playlist_daily_stats")
@@ -32,82 +68,91 @@ export default async function PlaylistDetailPage({
     <div className="space-y-6">
       <div className="flex items-end justify-between gap-4">
         <div>
-          <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
-            <Link className="underline" href="/playlists">
+          <div className="flex items-center gap-2 text-xs" style={{ color: "var(--sb-muted)" }}>
+            <Link className="hover:underline" href="/playlists">
               Playlists
-            </Link>{" "}
-            / <span className="font-mono">{playlist_key}</span>
+            </Link>
+            <span>/</span>
+            <span className="font-mono opacity-70">{playlist_key}</span>
           </div>
-          <h1 className="mt-1 text-3xl font-semibold tracking-tight">
-            {playlist?.display_name ?? playlist_key}
-          </h1>
-          <p className="mt-1 text-sm" style={{ color: "var(--sb-muted)" }}>
-            Catalog playlist: <b>{playlist?.is_catalog ? "Yes" : "No"}</b>
-          </p>
+          <div className="mt-2 flex items-center gap-4">
+            {spotifyImg ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={spotifyImg}
+                alt="Playlist cover"
+                className="h-14 w-14 rounded-2xl object-cover sb-ring"
+              />
+            ) : (
+              <div className="h-14 w-14 rounded-2xl sb-ring bg-white/60" />
+            )}
+            <h1 className="font-display text-3xl font-bold tracking-tight">
+              {playlistRow?.display_name ?? playlist_key}
+            </h1>
+          </div>
+          <div className="mt-2 flex items-center gap-3">
+            {playlistRow?.is_catalog ? (
+              <span className="inline-flex items-center rounded-full bg-lime-400/20 px-2.5 py-0.5 text-xs font-medium text-lime-800 dark:text-lime-300">
+                Catalog
+              </span>
+            ) : (
+              <span className="inline-flex items-center rounded-full bg-black/5 px-2.5 py-0.5 text-xs font-medium text-black/60 dark:bg-white/10 dark:text-white/60">
+                Standard
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="rounded-full bg-white/50 p-3 backdrop-blur-md dark:bg-white/5">
+          <ListMusic className="h-6 w-6 opacity-70" />
         </div>
       </div>
 
       {(playlistErr || statsErr) && (
-        <div className="rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-950">
+        <div className="rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-950 dark:border-red-900/30 dark:bg-red-900/10 dark:text-red-200">
           Query error:{" "}
           {playlistErr?.message ?? statsErr?.message ?? "unknown error"}
         </div>
       )}
 
-      <div className="sb-card overflow-hidden rounded-[28px]">
-        <div className="flex items-center justify-between border-b px-5 py-4" style={{ borderColor: "var(--sb-border)" }}>
-          <div className="text-sm font-medium">Last 30 days</div>
-          <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
+      <div className="space-y-4">
+        <div className="flex items-center justify-between px-1">
+          <h2 className="text-lg font-semibold">History (30d)</h2>
+          <span className="text-xs opacity-50">
             Missing streams = tracks not present in catalog snapshot today
-          </div>
+          </span>
         </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead className="text-left text-xs" style={{ color: "var(--sb-muted)" }}>
-              <tr className="border-b" style={{ borderColor: "var(--sb-border)" }}>
-                <th className="px-5 py-3 font-medium">Date</th>
-                <th className="px-5 py-3 font-medium">Tracks</th>
-                <th className="px-5 py-3 font-medium">Total streams</th>
-                <th className="px-5 py-3 font-medium">Daily (net)</th>
-                <th className="px-5 py-3 font-medium">Daily (LFL)</th>
-                <th className="px-5 py-3 font-medium">Est. rev (total)</th>
-                <th className="px-5 py-3 font-medium">Missing</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(stats ?? []).map((r) => (
-                <tr
-                  key={r.date}
-                  className="border-b last:border-0"
-                  style={{ borderColor: "var(--sb-border)" }}
-                >
-                  <td className="px-5 py-3 font-mono text-xs">
-                    {formatDateISO(r.date)}
-                  </td>
-                  <td className="px-5 py-3">{formatInt(r.track_count)}</td>
-                  <td className="px-5 py-3">
-                    {formatInt(r.total_streams_cumulative)}
-                  </td>
-                  <td className="px-5 py-3">{formatInt(r.daily_streams_net)}</td>
-                  <td className="px-5 py-3">{formatInt(r.daily_streams_lfl)}</td>
-                  <td className="px-5 py-3">{formatUsd(r.est_revenue_total)}</td>
-                  <td className="px-5 py-3">
+        
+        <GlassTable headers={["Date", "Tracks", "Total Streams", "Daily (Net)", "Daily (LFL)", "Est. Rev", "Missing"]}>
+          {(stats ?? []).map((r) => (
+            <TableRow key={r.date}>
+              <TableCell mono>{formatDateISO(r.date)}</TableCell>
+              <TableCell>{formatInt(r.track_count)}</TableCell>
+              <TableCell>{formatInt(r.total_streams_cumulative)}</TableCell>
+              <TableCell className="text-lime-700 dark:text-lime-400 font-medium">
+                +{formatInt(r.daily_streams_net)}
+              </TableCell>
+              <TableCell>{formatInt(r.daily_streams_lfl)}</TableCell>
+              <TableCell>{formatUsd(r.est_revenue_total)}</TableCell>
+              <TableCell>
+                {r.missing_streams_track_count ? (
+                  <span className="text-red-600 dark:text-red-400 font-medium">
                     {formatInt(r.missing_streams_track_count)}
-                  </td>
-                </tr>
-              ))}
-              {!stats?.length && (
-                <tr>
-                  <td className="px-5 py-8 text-sm" style={{ color: "var(--sb-muted)" }} colSpan={7}>
-                    No stats yet for this playlist.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+                  </span>
+                ) : (
+                  <span className="opacity-30">-</span>
+                )}
+              </TableCell>
+            </TableRow>
+          ))}
+          {!stats?.length && (
+            <TableRow>
+              <TableCell className="text-center opacity-50 py-8" colSpan={7}>
+                No stats yet for this playlist.
+              </TableCell>
+            </TableRow>
+          )}
+        </GlassTable>
       </div>
     </div>
   );
 }
-

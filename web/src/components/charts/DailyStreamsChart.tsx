@@ -77,7 +77,7 @@ export function DailyStreamsChart({
             cursor={{
               stroke: "#c7f33c",
               strokeWidth: 2,
-              strokeDasharray: "none", // Solid line
+              strokeDasharray: "5 5",
               opacity: 0.8
             }}
           />

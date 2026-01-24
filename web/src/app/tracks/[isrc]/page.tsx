@@ -3,8 +3,27 @@ import Link from "next/link";
 import { Sparkline } from "@/components/charts/Sparkline";
 import { formatInt } from "@/lib/format";
 import { supabaseServer } from "@/lib/supabase/server";
+import { supabaseService } from "@/lib/supabase/service";
+import { findTrackByIsrc } from "@/lib/spotify";
 
 export const dynamic = "force-dynamic";
+
+type TrackRow = {
+  isrc: string;
+  name: string | null;
+  release_date: string | null;
+  first_seen: string | null;
+  last_seen: string | null;
+  spotify_album_image_url: string | null;
+  spotify_artist_names: string[] | null;
+  spotify_track_id: string | null;
+};
+
+type SpotifyMeta = {
+  spotify_album_image_url: string | null;
+  spotify_artist_names: string[] | null;
+  spotify_track_id: string | null;
+};
 
 export default async function TrackDetailPage({
   params,
@@ -16,9 +35,54 @@ export default async function TrackDetailPage({
 
   const { data: track, error: trackErr } = await sb
     .from("tracks")
-    .select("isrc,name,release_date,first_seen,last_seen")
+    .select(
+      "isrc,name,release_date,first_seen,last_seen,spotify_album_image_url,spotify_artist_names,spotify_track_id",
+    )
     .eq("isrc", isrc)
     .maybeSingle();
+
+  // Best-effort Spotify enrichment (server-side) if missing/stale.
+  // This is safe because it writes using the Supabase service role key server-side only.
+  const trackRow = (track ?? null) as TrackRow | null;
+  let spotify: SpotifyMeta | null =
+    trackRow
+      ? {
+          spotify_album_image_url: trackRow.spotify_album_image_url ?? null,
+          spotify_artist_names: trackRow.spotify_artist_names ?? null,
+          spotify_track_id: trackRow.spotify_track_id ?? null,
+        }
+      : null;
+
+  try {
+    const missing = !spotify?.spotify_album_image_url || !(spotify.spotify_artist_names?.length);
+
+    if (trackRow?.isrc && missing) {
+      const hit = await findTrackByIsrc(trackRow.isrc);
+      if (hit) {
+        const svc = supabaseService();
+        await svc
+          .from("tracks")
+          .update({
+            spotify_track_id: hit.trackId,
+            spotify_album_id: hit.albumId,
+            spotify_album_name: hit.albumName,
+            spotify_album_image_url: hit.albumImageUrl,
+            spotify_artist_ids: hit.artistIds,
+            spotify_artist_names: hit.artistNames,
+            spotify_last_fetched_at: new Date().toISOString(),
+          })
+          .eq("isrc", trackRow.isrc);
+
+        spotify = {
+          spotify_album_image_url: hit.albumImageUrl,
+          spotify_artist_names: hit.artistNames,
+          spotify_track_id: hit.trackId,
+        };
+      }
+    }
+  } catch {
+    // ignore enrichment errors (page still renders)
+  }
 
   const { data: series, error: seriesErr } = await sb
     .from("track_daily_streams")
@@ -64,17 +128,43 @@ export default async function TrackDetailPage({
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight">
-            {track?.name ?? isrc}
-          </h1>
-          <div className="mt-1 text-sm" style={{ color: "var(--sb-muted)" }}>
-            ISRC: <span className="font-mono">{isrc}</span>
-            {track?.release_date ? (
-              <>
-                {" "}
-                • Release: <span className="font-mono">{track.release_date}</span>
-              </>
-            ) : null}
+          <div className="flex items-start gap-4">
+            {spotify?.spotify_album_image_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={spotify.spotify_album_image_url}
+                alt="Album cover"
+                className="h-16 w-16 rounded-2xl object-cover sb-ring"
+              />
+            ) : (
+              <div className="h-16 w-16 rounded-2xl sb-ring bg-white/60" />
+            )}
+            <div>
+              <h1 className="text-3xl font-semibold tracking-tight">
+                {track?.name ?? isrc}
+              </h1>
+              <div className="mt-1 text-sm" style={{ color: "var(--sb-muted)" }}>
+                ISRC: <span className="font-mono">{isrc}</span>
+                {spotify?.spotify_artist_names?.length ? (
+                  <>
+                    {" "}
+                    • Artists:{" "}
+                    {spotify.spotify_artist_names.map((a, idx) => (
+                      <span key={`${a}-${idx}`}>
+                        <span className="font-medium text-black/80">{a}</span>
+                        {idx < spotify.spotify_artist_names!.length - 1 ? ", " : ""}
+                      </span>
+                    ))}
+                  </>
+                ) : null}
+                {track?.release_date ? (
+                  <>
+                    {" "}
+                    • Release: <span className="font-mono">{track.release_date}</span>
+                  </>
+                ) : null}
+              </div>
+            </div>
           </div>
         </div>
 

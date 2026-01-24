@@ -12,13 +12,15 @@ export function GlassTable({ headers, children, className }: GlassTableProps) {
       <div className="max-h-[500px] overflow-auto">
         <table className="min-w-full text-sm">
           <thead
-            className="sticky top-0 z-10 text-left text-xs uppercase tracking-wider backdrop-blur-md"
+            className="sticky top-0 z-10 text-left text-xs uppercase tracking-wider backdrop-blur-xl"
             style={{ 
               color: "var(--sb-muted)",
-              background: "rgba(255,255,255,0.02)" // extremely subtle overlay
+              // Use a stronger frosted glass effect matching the main surface
+              background: "var(--sb-surface)",
+              boxShadow: "0 1px 0 0 var(--sb-border)"
             }}
           >
-            <tr className="border-b" style={{ borderColor: "var(--sb-border)" }}>
+            <tr>
               {headers.map((h, i) => (
                 <th key={i} className="px-6 py-4 font-medium">
                   {h}
