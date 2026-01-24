@@ -20,11 +20,6 @@ type PlaylistRow = {
 export default async function PlaylistsPage() {
   const sb = await supabaseServer();
   const { data: isAdmin } = await sb.rpc("is_admin");
-  const missingEnv: string[] = [];
-  // Check if env vars are actually set and non-empty (trim whitespace)
-  if (!process.env.SPOTIFY_CLIENT_ID?.trim()) missingEnv.push("SPOTIFY_CLIENT_ID");
-  if (!process.env.SPOTIFY_CLIENT_SECRET?.trim()) missingEnv.push("SPOTIFY_CLIENT_SECRET");
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()) missingEnv.push("SUPABASE_SERVICE_ROLE_KEY");
 
   const { data, error } = await sb
     .from("playlists")
@@ -95,12 +90,6 @@ export default async function PlaylistsPage() {
         </div>
       )}
 
-      {isAdmin && missingEnv.length ? (
-        <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950 dark:border-amber-900/30 dark:bg-amber-900/10 dark:text-amber-200">
-          Spotify playlist thumbnails are disabled: missing{" "}
-          <span className="font-mono">{missingEnv.join(", ")}</span> in Vercel env vars.
-        </div>
-      ) : null}
 
       <GlassTable headers={["", "Key", "Name", "Type"]}>
         {playlists.map((p) => (

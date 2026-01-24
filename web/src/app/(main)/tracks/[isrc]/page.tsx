@@ -36,11 +36,6 @@ export default async function TrackDetailPage({
   const sb = await supabaseServer();
   const { data: isAdmin } = await sb.rpc("is_admin");
 
-  const missingEnv: string[] = [];
-  // Check if env vars are actually set and non-empty (trim whitespace)
-  if (!process.env.SPOTIFY_CLIENT_ID?.trim()) missingEnv.push("SPOTIFY_CLIENT_ID");
-  if (!process.env.SPOTIFY_CLIENT_SECRET?.trim()) missingEnv.push("SPOTIFY_CLIENT_SECRET");
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()) missingEnv.push("SUPABASE_SERVICE_ROLE_KEY");
 
   const { data: track, error: trackErr } = await sb
     .from("tracks")
@@ -137,12 +132,6 @@ export default async function TrackDetailPage({
         / <span className="font-mono">{isrc}</span>
       </div>
 
-      {isAdmin && missingEnv.length ? (
-        <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950 dark:border-amber-900/30 dark:bg-amber-900/10 dark:text-amber-200">
-          Spotify enrichment is disabled: missing{" "}
-          <span className="font-mono">{missingEnv.join(", ")}</span> in Vercel env vars.
-        </div>
-      ) : null}
 
       {isAdmin && !missingEnv.length && trackRow?.isrc && !spotify?.spotify_artist_names?.length && !spotify?.spotify_album_image_url ? (
         <div className="rounded-2xl border border-blue-300 bg-blue-50 p-4 text-sm text-blue-950 dark:border-blue-900/30 dark:bg-blue-900/10 dark:text-blue-200">
