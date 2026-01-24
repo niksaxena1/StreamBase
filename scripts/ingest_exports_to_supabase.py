@@ -117,6 +117,14 @@ class Postgrest:
         if r.status_code not in (200, 204):
             raise RuntimeError(f"Patch {table} failed: {r.status_code} {r.text[:500]}")
 
+    def delete(self, table: str, filters: str):
+        url = f"{self.base}/{table}?{filters}"
+        headers = dict(self.h)
+        headers["Prefer"] = "return=minimal"
+        r = requests.delete(url, headers=headers, timeout=180)
+        if r.status_code not in (200, 204):
+            raise RuntimeError(f"Delete {table} failed: {r.status_code} {r.text[:500]}")
+
     def select(self, table: str, select: str, filters: str) -> List[dict]:
         url = f"{self.base}/{table}?select={select}&{filters}"
         r = requests.get(url, headers=self.h, timeout=180)
@@ -218,6 +226,8 @@ def main():
                 },
                 f"id=eq.{run_id}",
             )
+            # Clear stale warnings from previous attempts for the same run_id (re-run idempotency).
+            pg.delete("ingestion_warnings", f"run_id=eq.{run_id}")
         else:
             created = pg.insert(
                 "ingestion_runs",
