@@ -133,7 +133,7 @@ export default async function TrackDetailPage({
       </div>
 
 
-      {isAdmin && !missingEnv.length && trackRow?.isrc && !spotify?.spotify_artist_names?.length && !spotify?.spotify_album_image_url ? (
+      {isAdmin && trackRow?.isrc && !spotify?.spotify_artist_names?.length && !spotify?.spotify_album_image_url ? (
         <div className="rounded-2xl border border-blue-300 bg-blue-50 p-4 text-sm text-blue-950 dark:border-blue-900/30 dark:bg-blue-900/10 dark:text-blue-200">
           Spotify enrichment is configured, but this ISRC hasn’t cached yet (or Spotify search returned no match). Refreshing this page should attempt a lookup.
         </div>
