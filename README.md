@@ -58,4 +58,22 @@ The workflow uploads the `exports/` folder as an artifact.
 ## Tech Stack
 
 - Exporter: Python + Playwright
-- App (planned): Next.js + Supabase
+- App: Next.js (App Router) + Supabase
+
+## Web app (UI)
+
+The Next.js app lives in `web/`.
+
+### Local run
+
+1) Create `web/.env.local` from `web/env.example` and fill:
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY` (server-side only; do **not** prefix with `NEXT_PUBLIC_`)
+
+2) Run:
+
+```powershell
+cd web
+npm install
+npm run dev
+```
