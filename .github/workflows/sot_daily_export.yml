@@ -48,6 +48,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload exports to Supabase Storage (optional)
+        continue-on-error: true
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

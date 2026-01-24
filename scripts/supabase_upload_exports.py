@@ -1,5 +1,6 @@
 import argparse
 import os
+import time
 from pathlib import Path
 from typing import Iterable, Tuple
 
@@ -36,13 +37,33 @@ def upload_file(
         "Content-Type": "text/csv",
     }
 
-    with open(file_path, "rb") as f:
-        resp = requests.put(url, headers=headers, data=f, timeout=120)
+    transient = {429, 500, 502, 503, 504}
+    max_attempts = 5
+    last_err = "unknown"
 
-    if resp.status_code in (200, 201):
-        return True, str(resp.status_code)
+    for attempt in range(1, max_attempts + 1):
+        try:
+            with open(file_path, "rb") as f:
+                resp = requests.put(url, headers=headers, data=f, timeout=120)
 
-    return False, f"{resp.status_code}: {resp.text[:300]}"
+            if resp.status_code in (200, 201):
+                return True, str(resp.status_code)
+
+            # transient retry
+            if resp.status_code in transient:
+                last_err = f"{resp.status_code}: {resp.text[:200]}"
+                sleep_s = 1.5 * attempt
+                time.sleep(sleep_s)
+                continue
+
+            return False, f"{resp.status_code}: {resp.text[:300]}"
+        except requests.RequestException as e:
+            last_err = f"request_error:{repr(e)}"
+            sleep_s = 1.5 * attempt
+            time.sleep(sleep_s)
+            continue
+
+    return False, f"transient_failure_after_retries:{last_err}"
 
 
 def main():
