@@ -8,12 +8,15 @@ interface GlassTableProps {
 
 export function GlassTable({ headers, children, className }: GlassTableProps) {
   return (
-    <div className={["sb-card overflow-hidden rounded-[28px]", className].filter(Boolean).join(" ")}>
-      <div className="overflow-x-auto">
+    <div className={["sb-card relative overflow-hidden rounded-[28px]", className].filter(Boolean).join(" ")}>
+      <div className="max-h-[500px] overflow-auto">
         <table className="min-w-full text-sm">
           <thead
-            className="text-left text-xs uppercase tracking-wider"
-            style={{ color: "var(--sb-muted)" }}
+            className="sticky top-0 z-10 text-left text-xs uppercase tracking-wider backdrop-blur-md"
+            style={{ 
+              color: "var(--sb-muted)",
+              background: "rgba(255,255,255,0.02)" // extremely subtle overlay
+            }}
           >
             <tr className="border-b" style={{ borderColor: "var(--sb-border)" }}>
               {headers.map((h, i) => (

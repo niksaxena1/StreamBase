@@ -66,11 +66,19 @@ html[data-theme="dark"] {
   --sb-accent: #d4ff4d;
 }
 
+/* Enable View Transitions (Opt-in) */
+@view-transition {
+  navigation: auto;
+}
+
 body {
   background: var(--sb-bg);
   color: var(--sb-text);
   font-family: var(--font-sans), ui-sans-serif, system-ui, -apple-system,
     Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+    
+  /* Tabular figures for better data alignment */
+  font-variant-numeric: tabular-nums;
 }
 
 /* Design helpers (glassmorphism + soft cards) */

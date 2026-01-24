@@ -4,6 +4,7 @@ import { Activity } from "lucide-react";
 import { StatCard } from "@/components/StatCard";
 import { DailyStreamsChart } from "@/components/charts/DailyStreamsChart";
 import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
+import { SpotlightCard } from "@/components/ui/SpotlightCard";
 import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
 import { supabaseServer } from "@/lib/supabase/server";
 
@@ -17,6 +18,8 @@ type PlaylistDailyStatsRow = {
   est_revenue_daily_net?: number | null;
   est_revenue_daily_lfl?: number | null;
 };
+
+const STREAM_PAYOUT_USD = 0.002;
 
 export default async function Home({
   searchParams,
@@ -65,6 +68,9 @@ export default async function Home({
     value: Number(getDailyStreams(r, daily) ?? 0),
   }));
 
+  const roll7 = rollingSums((history as PlaylistDailyStatsRow[] | null) ?? [], daily, 7);
+  const roll30 = rollingSums((history as PlaylistDailyStatsRow[] | null) ?? [], daily, 30);
+
   return (
     <div className="space-y-8">
       {/* Header Section */}
@@ -111,10 +117,10 @@ export default async function Home({
       )}
 
       {/* Bento Grid */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-4 lg:grid-rows-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-4 lg:grid-rows-3">
         
         {/* Main Chart Card - Spans 2 cols, 2 rows (Big Feature) */}
-        <div className="sb-card relative col-span-1 flex flex-col justify-between overflow-hidden rounded-[32px] p-6 lg:col-span-2 lg:row-span-2">
+        <SpotlightCard className="col-span-1 flex flex-col justify-between p-6 lg:col-span-2 lg:row-span-2">
           <div className="relative z-10">
             <div className="flex items-center gap-2 text-sm font-medium uppercase tracking-wider opacity-60">
               <Activity className="h-4 w-4" />
@@ -135,7 +141,7 @@ export default async function Home({
             className="pointer-events-none absolute -right-20 -top-20 h-64 w-64 rounded-full opacity-20 blur-3xl"
             style={{ background: "var(--sb-accent)" }}
           />
-        </div>
+        </SpotlightCard>
 
         {/* Stat Cards */}
         <StatCard
@@ -156,6 +162,30 @@ export default async function Home({
           title="Est. Revenue"
           value={formatUsd(getRevenueDaily(latest as PlaylistDailyStatsRow | null, daily))}
           subtitle={`Daily (${daily === "lfl" ? "LFL" : "Net"})`}
+        />
+
+        <StatCard
+          title={`Last 7d Streams (${daily === "lfl" ? "LFL" : "Net"})`}
+          value={
+            roll7.hasData ? formatInt(roll7.streamsSum) : "—"
+          }
+          subtitle={
+            roll7.hasData
+              ? `${formatUsd(roll7.revenueSum)} est. revenue`
+              : "Need at least 2 days of history"
+          }
+        />
+
+        <StatCard
+          title={`Last 30d Streams (${daily === "lfl" ? "LFL" : "Net"})`}
+          value={
+            roll30.hasData ? formatInt(roll30.streamsSum) : "—"
+          }
+          subtitle={
+            roll30.hasData
+              ? `${formatUsd(roll30.revenueSum)} est. revenue`
+              : "Need at least 2 days of history"
+          }
         />
 
         <div className="sb-card flex flex-col justify-center rounded-[28px] p-6">
@@ -213,6 +243,32 @@ function getRevenueDaily(
   return mode === "lfl"
     ? row.est_revenue_daily_lfl ?? null
     : row.est_revenue_daily_net ?? null;
+}
+
+function rollingSums(
+  rowsDesc: PlaylistDailyStatsRow[],
+  mode: string,
+  days: number,
+): { hasData: boolean; streamsSum: number; revenueSum: number; countedDays: number } {
+  const slice = rowsDesc.slice(0, days);
+  let streamsSum = 0;
+  let revenueSum = 0;
+  let countedDays = 0;
+
+  for (const r of slice) {
+    const ds = getDailyStreams(r, mode);
+    if (ds === null || !Number.isFinite(ds)) continue;
+    streamsSum += Number(ds);
+    countedDays += 1;
+
+    const rev =
+      getRevenueDaily(r, mode) ??
+      (Number.isFinite(ds) ? Number(ds) * STREAM_PAYOUT_USD : null);
+    if (rev !== null && Number.isFinite(rev)) revenueSum += Number(rev);
+  }
+
+  // Require at least 2 daily points to avoid showing sums on day 1.
+  return { hasData: countedDays >= 2, streamsSum, revenueSum, countedDays };
 }
 
 function hrefWith(

@@ -74,6 +74,12 @@ export function DailyStreamsChart({
             itemStyle={{ color: "var(--sb-text)" }}
             formatter={(value) => [formatInt(Number(value ?? 0)), valueLabel]}
             labelFormatter={(label) => new Date(label).toLocaleDateString()}
+            cursor={{
+              stroke: "#c7f33c",
+              strokeWidth: 2,
+              strokeDasharray: "none", // Solid line
+              opacity: 0.8
+            }}
           />
           <Area
             type="monotone"
@@ -82,6 +88,7 @@ export function DailyStreamsChart({
             strokeWidth={3}
             fillOpacity={1}
             fill="url(#colorStreams)"
+            activeDot={{ r: 6, fill: "#c7f33c", stroke: "var(--sb-bg)", strokeWidth: 2 }}
           />
         </AreaChart>
       </ResponsiveContainer>
