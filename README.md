@@ -68,7 +68,7 @@ The Next.js app lives in `web/`.
 
 1) Create `web/.env.local` from `web/env.example` and fill:
 - `NEXT_PUBLIC_SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY` (server-side only; do **not** prefix with `NEXT_PUBLIC_`)
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 
 2) Run:
 

@@ -3,7 +3,12 @@ name: SOT Daily Export
 on:
   schedule:
     - cron: "0 12 * * *" # 12:00 UTC daily
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      run_date:
+        description: "Override run date (YYYY-MM-DD). Default: UTC today"
+        required: false
+        type: string
 
 jobs:
   export:
@@ -72,4 +77,6 @@ jobs:
             echo "Supabase secrets not set (ok). Skipping DB ingestion."
             exit 0
           fi
-          python scripts/ingest_exports_to_supabase.py --config config/playlists.csv --exports-dir exports
+          RUN_DATE="${{ github.event.inputs.run_date }}"
+          if [ -z "$RUN_DATE" ]; then RUN_DATE=$(date -u +'%Y-%m-%d'); fi
+          python scripts/ingest_exports_to_supabase.py --config config/playlists.csv --exports-dir exports --run-date "$RUN_DATE"

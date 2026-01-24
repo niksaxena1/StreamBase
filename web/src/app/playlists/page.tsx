@@ -1,11 +1,11 @@
 import Link from "next/link";
 
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseServer } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
 export default async function PlaylistsPage() {
-  const sb = supabaseAdmin();
+  const sb = await supabaseServer();
 
   const { data, error } = await sb
     .from("playlists")

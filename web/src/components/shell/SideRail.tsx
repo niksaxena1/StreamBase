@@ -4,14 +4,15 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import React from "react";
 
-type Item = {
+export type Item = {
   href: string;
   label: string;
   icon: (active: boolean) => React.ReactElement;
 };
 
-const items: Item[] = [
+export const navItems: Item[] = [
   { href: "/", label: "Dashboard", icon: (a) => <IconGrid active={a} /> },
+  { href: "/tracks", label: "Tracks", icon: (a) => <IconMusic active={a} /> },
   {
     href: "/playlists",
     label: "Playlists",
@@ -26,7 +27,7 @@ export function SideRail() {
   return (
     <aside className="hidden w-[76px] shrink-0 sm:block">
       <div className="sb-glass sticky top-6 flex flex-col items-center gap-3 rounded-[28px] px-3 py-4">
-        {items.map((it) => {
+        {navItems.map((it) => {
           const active =
             it.href === "/" ? pathname === "/" : pathname.startsWith(it.href);
           return (
@@ -63,29 +64,29 @@ export function SideRail() {
   );
 }
 
-function IconGrid(props: { active: boolean }) {
-  const stroke = props.active ? "white" : "rgba(0,0,0,.68)";
+export function IconGrid(props: { active: boolean }) {
+  const iconClass = props.active ? "text-white" : "text-black/70";
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className={iconClass}>
       <path
         d="M4 5.5C4 4.67157 4.67157 4 5.5 4H10.5C11.3284 4 12 4.67157 12 5.5V10.5C12 11.3284 11.3284 12 10.5 12H5.5C4.67157 12 4 11.3284 4 10.5V5.5Z"
-        stroke={stroke}
+        stroke="currentColor"
         strokeWidth="1.8"
       />
       <path
         d="M12 13.5C12 12.6716 12.6716 12 13.5 12H18.5C19.3284 12 20 12.6716 20 13.5V18.5C20 19.3284 19.3284 20 18.5 20H13.5C12.6716 20 12 19.3284 12 18.5V13.5Z"
-        stroke={stroke}
+        stroke="currentColor"
         strokeWidth="1.8"
       />
       <path
         d="M12 5.5C12 4.67157 12.6716 4 13.5 4H18.5C19.3284 4 20 4.67157 20 5.5V10.5C20 11.3284 19.3284 12 18.5 12H13.5C12.6716 12 12 11.3284 12 10.5V5.5Z"
-        stroke={stroke}
+        stroke="currentColor"
         strokeWidth="1.8"
         opacity="0.7"
       />
       <path
         d="M4 13.5C4 12.6716 4.67157 12 5.5 12H10.5C11.3284 12 12 12.6716 12 13.5V18.5C12 19.3284 11.3284 20 10.5 20H5.5C4.67157 20 4 19.3284 4 18.5V13.5Z"
-        stroke={stroke}
+        stroke="currentColor"
         strokeWidth="1.8"
         opacity="0.7"
       />
@@ -93,41 +94,41 @@ function IconGrid(props: { active: boolean }) {
   );
 }
 
-function IconList(props: { active: boolean }) {
-  const stroke = props.active ? "white" : "rgba(0,0,0,.68)";
+export function IconList(props: { active: boolean }) {
+  const iconClass = props.active ? "text-white" : "text-black/70";
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-      <path d="M7 7H20" stroke={stroke} strokeWidth="1.8" strokeLinecap="round" />
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className={iconClass}>
+      <path d="M7 7H20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
       <path
         d="M7 12H20"
-        stroke={stroke}
+        stroke="currentColor"
         strokeWidth="1.8"
         strokeLinecap="round"
         opacity="0.75"
       />
       <path
         d="M7 17H20"
-        stroke={stroke}
+        stroke="currentColor"
         strokeWidth="1.8"
         strokeLinecap="round"
         opacity="0.55"
       />
       <path
         d="M4 7H4.01"
-        stroke={stroke}
+        stroke="currentColor"
         strokeWidth="3"
         strokeLinecap="round"
       />
       <path
         d="M4 12H4.01"
-        stroke={stroke}
+        stroke="currentColor"
         strokeWidth="3"
         strokeLinecap="round"
         opacity="0.75"
       />
       <path
         d="M4 17H4.01"
-        stroke={stroke}
+        stroke="currentColor"
         strokeWidth="3"
         strokeLinecap="round"
         opacity="0.55"
@@ -136,13 +137,13 @@ function IconList(props: { active: boolean }) {
   );
 }
 
-function IconPulse(props: { active: boolean }) {
-  const stroke = props.active ? "white" : "rgba(0,0,0,.68)";
+export function IconPulse(props: { active: boolean }) {
+  const iconClass = props.active ? "text-white" : "text-black/70";
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className={iconClass}>
       <path
         d="M4 13.5H8L10 6L14 18L16 13.5H20"
-        stroke={stroke}
+        stroke="currentColor"
         strokeWidth="1.8"
         strokeLinejoin="round"
         strokeLinecap="round"
@@ -151,3 +152,17 @@ function IconPulse(props: { active: boolean }) {
   );
 }
 
+export function IconMusic(props: { active: boolean }) {
+  const iconClass = props.active ? "text-white" : "text-black/70";
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className={iconClass}>
+      <path
+        d="M14 5V15.2C14 16.7464 12.6569 18 11 18C9.34315 18 8 16.7464 8 15.2C8 13.6536 9.34315 12.4 11 12.4C11.7403 12.4 12.4176 12.6506 12.94 13.065V6.2L20 5V12.8"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}

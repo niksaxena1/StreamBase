@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseServer } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +11,7 @@ export default async function PlaylistDetailPage({
   params: Promise<{ playlist_key: string }>;
 }) {
   const { playlist_key } = await params;
-  const sb = supabaseAdmin();
+  const sb = await supabaseServer();
 
   const { data: playlist, error: playlistErr } = await sb
     .from("playlists")

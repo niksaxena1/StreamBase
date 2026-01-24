@@ -2,24 +2,10 @@ import Link from "next/link";
 
 import { StatCard } from "@/components/StatCard";
 import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseServer } from "@/lib/supabase/server";
 
 export default async function Home() {
-  let sb;
-  try {
-    sb = supabaseAdmin();
-  } catch {
-    return (
-      <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
-        <div className="font-semibold">Missing environment variables</div>
-        <div className="mt-1">
-          Set <code className="font-mono">NEXT_PUBLIC_SUPABASE_URL</code> and{" "}
-          <code className="font-mono">SUPABASE_SERVICE_ROLE_KEY</code> for the
-          Next.js app. See <code className="font-mono">web/env.example</code>.
-        </div>
-      </div>
-    );
-  }
+  const sb = await supabaseServer();
 
   const { data: latest, error: latestErr } = await sb
     .from("playlist_daily_stats")
