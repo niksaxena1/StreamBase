@@ -16,12 +16,14 @@ type TrackRow = {
   last_seen: string | null;
   spotify_album_image_url: string | null;
   spotify_artist_names: string[] | null;
+  spotify_artist_ids: string[] | null;
   spotify_track_id: string | null;
 };
 
 type SpotifyMeta = {
   spotify_album_image_url: string | null;
   spotify_artist_names: string[] | null;
+  spotify_artist_ids: string[] | null;
   spotify_track_id: string | null;
 };
 
@@ -42,7 +44,7 @@ export default async function TrackDetailPage({
   const { data: track, error: trackErr } = await sb
     .from("tracks")
     .select(
-      "isrc,name,release_date,first_seen,last_seen,spotify_album_image_url,spotify_artist_names,spotify_track_id",
+      "isrc,name,release_date,first_seen,last_seen,spotify_album_image_url,spotify_artist_names,spotify_artist_ids,spotify_track_id",
     )
     .eq("isrc", isrc)
     .maybeSingle();
@@ -55,6 +57,7 @@ export default async function TrackDetailPage({
       ? {
           spotify_album_image_url: trackRow.spotify_album_image_url ?? null,
           spotify_artist_names: trackRow.spotify_artist_names ?? null,
+          spotify_artist_ids: trackRow.spotify_artist_ids ?? null,
           spotify_track_id: trackRow.spotify_track_id ?? null,
         }
       : null;
@@ -82,6 +85,7 @@ export default async function TrackDetailPage({
         spotify = {
           spotify_album_image_url: hit.albumImageUrl,
           spotify_artist_names: hit.artistNames,
+          spotify_artist_ids: hit.artistIds,
           spotify_track_id: hit.trackId,
         };
       }
@@ -168,12 +172,24 @@ export default async function TrackDetailPage({
                   <>
                     {" "}
                     • Artists:{" "}
-                    {spotify.spotify_artist_names.map((a, idx) => (
-                      <span key={`${a}-${idx}`}>
-                        <span className="font-medium text-black/80">{a}</span>
-                        {idx < spotify.spotify_artist_names!.length - 1 ? ", " : ""}
-                      </span>
-                    ))}
+                    {spotify.spotify_artist_names.map((a, idx) => {
+                      const artistId = spotify?.spotify_artist_ids?.[idx];
+                      return (
+                        <span key={`${a}-${idx}`}>
+                          {artistId ? (
+                            <Link
+                              href={`/artists/${artistId}`}
+                              className="font-medium text-black/80 transition-colors hover:text-lime-600 dark:hover:text-lime-400 underline"
+                            >
+                              {a}
+                            </Link>
+                          ) : (
+                            <span className="font-medium text-black/80">{a}</span>
+                          )}
+                          {idx < spotify.spotify_artist_names!.length - 1 ? ", " : ""}
+                        </span>
+                      );
+                    })}
                   </>
                 ) : null}
                 {track?.release_date ? (

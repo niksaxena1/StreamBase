@@ -4,6 +4,7 @@ import { ListMusic } from "lucide-react";
 import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
 import { supabaseServer } from "@/lib/supabase/server";
 import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
+import { DatePicker } from "@/components/ui/DatePicker";
 import { supabaseService } from "@/lib/supabase/service";
 import { getPlaylist } from "@/lib/spotify";
 
@@ -17,12 +18,24 @@ type PlaylistRow = {
   spotify_playlist_image_url: string | null;
 };
 
+type TrackOnDate = {
+  isrc: string;
+  name: string | null;
+  spotify_album_image_url: string | null;
+  spotify_artist_names: string[] | null;
+  valid_from: string;
+  valid_to: string | null;
+};
+
 export default async function PlaylistDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ playlist_key: string }>;
+  searchParams?: Promise<{ date?: string }>;
 }) {
   const { playlist_key } = await params;
+  const sp = (await searchParams) ?? {};
   const sb = await supabaseServer();
   const { data: isAdmin } = await sb.rpc("is_admin");
 
@@ -69,6 +82,46 @@ export default async function PlaylistDetailPage({
     .eq("playlist_key", playlist_key)
     .order("date", { ascending: false })
     .limit(30);
+
+  // Determine selected date (from query param or latest stats date)
+  const latestDate = stats?.[0]?.date ?? null;
+  const selectedDate = sp.date ?? latestDate ?? new Date().toISOString().split("T")[0];
+
+  // Query tracks active on selected date
+  const { data: memberships, error: tracksErr } = await sb
+    .from("playlist_memberships")
+    .select("isrc,valid_from,valid_to")
+    .eq("playlist_key", playlist_key)
+    .lte("valid_from", selectedDate)
+    .or(`valid_to.is.null,valid_to.gte.${selectedDate}`)
+    .order("isrc", { ascending: true })
+    .limit(1000);
+
+  const isrcs = (memberships ?? []).map((m) => m.isrc);
+  const { data: trackData } = isrcs.length
+    ? await sb
+        .from("tracks")
+        .select("isrc,name,spotify_album_image_url,spotify_artist_names")
+        .in("isrc", isrcs)
+    : { data: [] };
+
+  const trackMap = new Map((trackData ?? []).map((t) => [t.isrc, t]));
+
+  const tracks: TrackOnDate[] = (memberships ?? []).map((m) => {
+    const t = trackMap.get(m.isrc);
+    return {
+      isrc: m.isrc,
+      name: t?.name ?? null,
+      spotify_album_image_url: t?.spotify_album_image_url ?? null,
+      spotify_artist_names: t?.spotify_artist_names ?? null,
+      valid_from: m.valid_from,
+      valid_to: m.valid_to,
+    };
+  });
+
+  // Get date range for picker (first stats date to today)
+  const firstDate = stats?.[stats.length - 1]?.date ?? selectedDate;
+  const today = new Date().toISOString().split("T")[0];
 
   return (
     <div className="space-y-6">
@@ -127,12 +180,73 @@ export default async function PlaylistDetailPage({
         </div>
       ) : null}
 
-      {(playlistErr || statsErr) && (
+      {(playlistErr || statsErr || tracksErr) && (
         <div className="rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-950 dark:border-red-900/30 dark:bg-red-900/10 dark:text-red-200">
           Query error:{" "}
-          {playlistErr?.message ?? statsErr?.message ?? "unknown error"}
+          {playlistErr?.message ?? statsErr?.message ?? tracksErr?.message ?? "unknown error"}
         </div>
       )}
+
+      {/* Tracks on Date Section */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between px-1">
+          <h2 className="text-lg font-semibold">Tracks on Date</h2>
+          <DatePicker
+            value={selectedDate}
+            min={firstDate}
+            max={today}
+            label="View date"
+          />
+        </div>
+
+        <GlassTable headers={["", "Track", "ISRC", "Added", "Removed"]}>
+          {tracks.map((t) => (
+            <TableRow key={t.isrc}>
+              <TableCell>
+                {t.spotify_album_image_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={t.spotify_album_image_url}
+                    alt="Album cover"
+                    className="h-10 w-10 rounded-xl object-cover sb-ring"
+                  />
+                ) : (
+                  <div className="h-10 w-10 rounded-xl sb-ring bg-white/60" />
+                )}
+              </TableCell>
+              <TableCell>
+                <Link
+                  href={`/tracks/${t.isrc}`}
+                  className="font-medium transition-colors hover:text-lime-600 dark:hover:text-lime-400"
+                >
+                  {t.name ?? t.isrc}
+                </Link>
+                {t.spotify_artist_names?.length ? (
+                  <div className="text-xs opacity-60 mt-0.5">
+                    {t.spotify_artist_names.join(", ")}
+                  </div>
+                ) : null}
+              </TableCell>
+              <TableCell mono className="text-xs">
+                {t.isrc}
+              </TableCell>
+              <TableCell mono className="text-xs">
+                {formatDateISO(t.valid_from)}
+              </TableCell>
+              <TableCell mono className="text-xs">
+                {t.valid_to ? formatDateISO(t.valid_to) : "—"}
+              </TableCell>
+            </TableRow>
+          ))}
+          {!tracks.length && (
+            <TableRow>
+              <TableCell className="text-center opacity-50 py-8" colSpan={5}>
+                No tracks found for this date.
+              </TableCell>
+            </TableRow>
+          )}
+        </GlassTable>
+      </div>
 
       <div className="space-y-4">
         <div className="flex items-center justify-between px-1">
