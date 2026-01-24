@@ -6,12 +6,19 @@
 .pnp.js
 .yarn/install-state.gz
 
+# dependencies (nested apps)
+node_modules/
+
 # testing
 /coverage
 
 # next.js
 /.next/
 /out/
+
+# next.js (nested apps)
+.next/
+out/
 
 # production
 /build
