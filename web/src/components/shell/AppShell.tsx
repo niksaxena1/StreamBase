@@ -36,7 +36,7 @@ export function AppShell(props: { children: ReactNode }) {
                   <LogoMark />
                 </div>
                 <div>
-                  <div className="font-display text-sm font-semibold tracking-tight">
+                  <div className="font-serif text-lg font-semibold tracking-tight">
                     SpotiBase
                   </div>
                   <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
