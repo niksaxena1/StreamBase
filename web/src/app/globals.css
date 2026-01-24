@@ -43,6 +43,29 @@
   }
 }
 
+/* Explicit theme overrides via data-theme on <html> */
+html[data-theme="light"] {
+  --sb-bg: #ececec;
+  --sb-surface: rgba(255, 255, 255, 0.7);
+  --sb-card: rgba(255, 255, 255, 0.92);
+  --sb-border: rgba(0, 0, 0, 0.08);
+  --sb-border-2: rgba(0, 0, 0, 0.12);
+  --sb-text: #0b0b0c;
+  --sb-muted: rgba(0, 0, 0, 0.55);
+  --sb-accent: #c7f33c;
+}
+
+html[data-theme="dark"] {
+  --sb-bg: #050508;
+  --sb-surface: rgba(20, 20, 25, 0.6);
+  --sb-card: rgba(20, 20, 25, 0.85);
+  --sb-border: rgba(255, 255, 255, 0.08);
+  --sb-border-2: rgba(255, 255, 255, 0.12);
+  --sb-text: #ededed;
+  --sb-muted: rgba(255, 255, 255, 0.5);
+  --sb-accent: #d4ff4d;
+}
+
 body {
   background: var(--sb-bg);
   color: var(--sb-text);

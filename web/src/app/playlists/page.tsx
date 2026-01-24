@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { ListMusic } from "lucide-react";
 
 import { supabaseServer } from "@/lib/supabase/server";
+import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
 
 export const dynamic = "force-dynamic";
 
@@ -15,55 +17,59 @@ export default async function PlaylistsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-semibold tracking-tight">Playlists</h1>
-        <p className="mt-1 text-sm" style={{ color: "var(--sb-muted)" }}>
-          Tracked playlists from <code className="font-mono">config/playlists.csv</code>
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="font-display text-3xl font-bold tracking-tight">Playlists</h1>
+          <p className="mt-2 text-sm" style={{ color: "var(--sb-muted)" }}>
+            Tracked playlists from configuration.
+          </p>
+        </div>
+        <div className="rounded-full bg-white/50 p-3 backdrop-blur-md dark:bg-white/5">
+          <ListMusic className="h-6 w-6 opacity-70" />
+        </div>
       </div>
 
       {error && (
-        <div className="rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-950">
+        <div className="rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-950 dark:border-red-900/30 dark:bg-red-900/10 dark:text-red-200">
           Query error: {error.message}
         </div>
       )}
 
-      <div className="sb-card overflow-hidden rounded-[28px]">
-        <table className="min-w-full text-sm">
-          <thead className="text-left text-xs" style={{ color: "var(--sb-muted)" }}>
-            <tr className="border-b" style={{ borderColor: "var(--sb-border)" }}>
-              <th className="px-5 py-3 font-medium">Key</th>
-              <th className="px-5 py-3 font-medium">Name</th>
-              <th className="px-5 py-3 font-medium">Catalog?</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(data ?? []).map((p) => (
-              <tr
-                key={p.playlist_key}
-                className="border-b last:border-0"
-                style={{ borderColor: "var(--sb-border)" }}
+      <GlassTable headers={["Key", "Name", "Type"]}>
+        {(data ?? []).map((p) => (
+          <TableRow key={p.playlist_key}>
+            <TableCell mono>
+              <Link 
+                className="transition-colors hover:text-lime-600 dark:hover:text-lime-400 font-medium" 
+                href={`/playlists/${p.playlist_key}`}
               >
-                <td className="px-5 py-3 font-mono text-xs">
-                  <Link className="underline" href={`/playlists/${p.playlist_key}`}>
-                    {p.playlist_key}
-                  </Link>
-                </td>
-                <td className="px-5 py-3">{p.display_name}</td>
-                <td className="px-5 py-3">{p.is_catalog ? "Yes" : "No"}</td>
-              </tr>
-            ))}
-            {!data?.length && (
-              <tr>
-                <td className="px-5 py-8 text-sm" style={{ color: "var(--sb-muted)" }} colSpan={3}>
-                  No playlists found. Ensure ingestion has run at least once.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+                {p.playlist_key}
+              </Link>
+            </TableCell>
+            <TableCell>
+              <span className="font-medium">{p.display_name}</span>
+            </TableCell>
+            <TableCell>
+              {p.is_catalog ? (
+                <span className="inline-flex items-center rounded-full bg-lime-400/20 px-2.5 py-0.5 text-xs font-medium text-lime-800 dark:text-lime-300">
+                  Catalog
+                </span>
+              ) : (
+                <span className="inline-flex items-center rounded-full bg-black/5 px-2.5 py-0.5 text-xs font-medium text-black/60 dark:bg-white/10 dark:text-white/60">
+                  Standard
+                </span>
+              )}
+            </TableCell>
+          </TableRow>
+        ))}
+        {!data?.length && (
+          <TableRow>
+            <TableCell className="text-center opacity-50 py-8" colSpan={3}>
+              No playlists found.
+            </TableCell>
+          </TableRow>
+        )}
+      </GlassTable>
     </div>
   );
 }
-

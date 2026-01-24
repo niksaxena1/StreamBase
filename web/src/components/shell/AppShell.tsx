@@ -3,6 +3,7 @@ import { ReactNode } from "react";
 import { PillNav } from "@/components/shell/PillNav";
 import { SideRail } from "@/components/shell/SideRail";
 import { LogoutButton } from "@/components/shell/LogoutButton";
+import { ThemeToggle } from "@/components/shell/ThemeToggle";
 
 export function AppShell(props: { children: ReactNode }) {
   return (
@@ -43,6 +44,7 @@ export function AppShell(props: { children: ReactNode }) {
               <PillNav />
 
               <div className="flex items-center gap-2">
+                <ThemeToggle />
                 <LogoutButton />
               </div>
             </div>
