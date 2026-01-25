@@ -1,5 +1,7 @@
 import { ReactNode } from "react";
+import Link from "next/link";
 
+import { LogoMark } from "@/components/LogoMark";
 import { SideRail } from "@/components/shell/SideRail";
 import { MobileNav } from "@/components/shell/MobileNav";
 import { Breadcrumbs } from "@/components/shell/Breadcrumbs";
@@ -33,10 +35,10 @@ export function AppShell(props: { children: ReactNode }) {
           <header className="sb-glass px-3 py-2">
             <div className="flex items-center justify-between gap-4">
               <div className="flex items-center gap-3">
-                <div className="sb-ring grid h-9 w-9 place-items-center rounded-xl bg-black text-white dark:bg-white dark:text-black">
+                <Link href="/" className="transition-opacity hover:opacity-80">
                   <LogoMark />
-                </div>
-                <div>
+                </Link>
+                <div className="flex items-center gap-2">
                   <div className="font-display text-sm font-semibold tracking-tight">
                     SpotiBase
                   </div>
@@ -68,44 +70,3 @@ export function AppShell(props: { children: ReactNode }) {
   );
 }
 
-function LogoMark() {
-  return (
-    <svg
-      width="18"
-      height="18"
-      viewBox="0 0 24 24"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden="true"
-    >
-      <path
-        d="M7 7.5C7 6.11929 8.11929 5 9.5 5H14.5C15.8807 5 17 6.11929 17 7.5V16.5C17 17.8807 15.8807 19 14.5 19H9.5C8.11929 19 7 17.8807 7 16.5V7.5Z"
-        fill="currentColor"
-        opacity="0.92"
-      />
-      <path
-        d="M10 8.5H14"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        className="text-black dark:text-white"
-      />
-      <path
-        d="M10 12H14"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        opacity="0.75"
-        className="text-black dark:text-white"
-      />
-      <path
-        d="M10 15.5H13"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        opacity="0.55"
-        className="text-black dark:text-white"
-      />
-    </svg>
-  );
-}

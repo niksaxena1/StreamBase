@@ -19,7 +19,7 @@ export function ArtistLinks(props: {
             {artistId ? (
               <Link
                 href={`/dashboard/artists?artist_id=${encodeURIComponent(artistId)}`}
-                className="font-medium transition-colors hover:text-lime-600 dark:hover:text-lime-400 underline"
+                className="font-medium transition-colors hover:text-lime-600 dark:hover:text-lime-400"
               >
                 {name}
               </Link>
