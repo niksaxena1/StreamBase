@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { User } from "lucide-react";
+import { User, ExternalLink } from "lucide-react";
 
 import { supabaseServer } from "@/lib/supabase/server";
 import { formatInt, formatDateISO } from "@/lib/format";
@@ -379,14 +379,26 @@ export default async function ArtistDashboardPage({
           <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
             Dashboard / Artists
           </div>
-          <h1 className="font-display text-2xl font-semibold tracking-tight">
+          <div className="flex items-center gap-2">
+            <h1 className="font-display text-2xl font-semibold tracking-tight">
+              <Link
+                href={`/artists/${artistId}`}
+                className="transition-colors hover:text-lime-600 dark:hover:text-lime-400"
+              >
+                {artistName}
+              </Link>
+            </h1>
             <Link
-              href={`/artists/${artistId}`}
-              className="transition-colors hover:text-lime-600 dark:hover:text-lime-400"
+              href={`https://open.spotify.com/artist/${artistId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center rounded-full p-1.5 transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+              title="Open on Spotify"
+              style={{ color: "var(--sb-muted)" }}
             >
-              {artistName}
+              <ExternalLink className="h-4 w-4" />
             </Link>
-          </h1>
+          </div>
           <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
             {latestDate ? (
               <>
