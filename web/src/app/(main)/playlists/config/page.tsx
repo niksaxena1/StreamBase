@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ListMusic } from "lucide-react";
+import { ArrowLeft, Settings } from "lucide-react";
 
 import { supabaseServer } from "@/lib/supabase/server";
 import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
@@ -63,26 +63,35 @@ export default async function PlaylistsConfigPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="font-display text-xl font-semibold tracking-tight sm:text-2xl">
-            Playlists
-          </h1>
-          <p className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
-            Tracked playlists from configuration.
-          </p>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/playlists"
+            className="sb-ring grid h-8 w-8 place-items-center rounded-full bg-white/70 text-xs font-medium transition hover:bg-white dark:bg-white/10 dark:hover:bg-white/15"
+            aria-label="Back to playlists dashboard"
+            title="Back to playlists dashboard"
+          >
+            <ArrowLeft className="h-4 w-4" style={{ color: "var(--sb-text)" }} />
+          </Link>
+          <div>
+            <h1 className="font-display text-xl font-semibold tracking-tight sm:text-2xl">
+              Playlists
+            </h1>
+            <p className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
+              Tracked playlists from configuration.
+            </p>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           {isAdmin ? (
             <Link
-              href="/settings/playlists"
-              className="sb-ring rounded-full bg-white/60 px-3 py-1.5 text-xs font-medium transition hover:bg-white/80"
+              href="/playlists/config/settings"
+              className="sb-ring grid h-8 w-8 place-items-center rounded-full bg-white/70 text-xs font-medium transition hover:bg-white dark:bg-white/10 dark:hover:bg-white/15"
+              aria-label="Playlist settings"
+              title="Playlist settings"
             >
-              Settings
+              <Settings className="h-4 w-4" style={{ color: "var(--sb-text)" }} />
             </Link>
           ) : null}
-          <div className="rounded-full bg-white/50 p-2 backdrop-blur-md dark:bg-white/5">
-            <ListMusic className="h-5 w-5 opacity-70" />
-          </div>
         </div>
       </div>
 
@@ -124,7 +133,7 @@ export default async function PlaylistsConfigPage() {
                   Catalog
                 </span>
               ) : (
-                <span className="inline-flex items-center rounded-full bg-black/5 px-2.5 py-0.5 text-xs font-medium text-black/60 dark:bg-white/10 dark:text-white/60">
+                <span className="inline-flex items-center rounded-full bg-black/10 px-2.5 py-0.5 text-xs font-medium text-black/80 dark:bg-white/10 dark:text-white/60">
                   Standard
                 </span>
               )}

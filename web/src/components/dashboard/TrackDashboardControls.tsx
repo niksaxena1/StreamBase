@@ -4,11 +4,9 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect } from "react";
 
-type PlaylistOption = {
-  playlist_key: string;
-  display_name: string;
-  is_catalog: boolean;
-};
+import { Combobox } from "@/components/ui/Combobox";
+
+type TrackOption = { isrc: string; name: string };
 
 const RANGE_CHOICES = [30, 90, 365] as const;
 
@@ -21,31 +19,33 @@ function hrefWith(existing: URLSearchParams, patch: Record<string, string | null
   return `?${u.toString()}`;
 }
 
-export function PlaylistDashboardControls(props: {
-  playlists: PlaylistOption[];
-  playlistKey: string;
+export function TrackDashboardControls(props: {
+  tracks: TrackOption[];
+  isrc: string | null;
   rangeDays: number;
 }) {
   const router = useRouter();
   const sp = useSearchParams();
 
   useEffect(() => {
-    try {
-      localStorage.setItem("sb:last_playlist_key", props.playlistKey);
-    } catch {
-      // ignore
+    if (props.isrc) {
+      try {
+        localStorage.setItem("sb:last_track_isrc", props.isrc);
+      } catch {
+        // ignore
+      }
     }
-  }, [props.playlistKey]);
+  }, [props.isrc]);
 
-  function onSelectPlaylist(nextKey: string) {
-    if (!nextKey || nextKey === props.playlistKey) return;
+  function onSelectTrack(nextIsrc: string) {
+    if (!nextIsrc || nextIsrc === props.isrc) return;
     try {
-      localStorage.setItem("sb:last_playlist_key", nextKey);
+      localStorage.setItem("sb:last_track_isrc", nextIsrc);
     } catch {
       // ignore
     }
     const next = new URLSearchParams(sp.toString());
-    next.set("playlist_key", nextKey);
+    next.set("isrc", nextIsrc);
     router.push(`?${next.toString()}`);
   }
 
@@ -53,21 +53,15 @@ export function PlaylistDashboardControls(props: {
     <div className="sb-card p-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <div className="text-xs font-medium" style={{ color: "var(--sb-text)" }}>Playlist</div>
+          <div className="text-xs font-medium" style={{ color: "var(--sb-text)" }}>Track</div>
           <div className="sb-ring rounded-xl bg-white/70 px-2.5 py-1.5 dark:bg-white/10">
-            <select
-              value={props.playlistKey}
-              onChange={(e) => onSelectPlaylist(e.target.value)}
-              className="bg-transparent text-xs outline-none"
-              style={{ color: "var(--sb-text)" }}
-              aria-label="Select playlist"
-            >
-              {props.playlists.map((p) => (
-                <option key={p.playlist_key} value={p.playlist_key}>
-                  {p.display_name}
-                </option>
-              ))}
-            </select>
+            <Combobox
+              ariaLabel="Select track"
+              value={props.isrc ?? null}
+              options={props.tracks.map((t) => ({ value: t.isrc, label: t.name }))}
+              placeholder="Type a track…"
+              onChange={onSelectTrack}
+            />
           </div>
         </div>
 
@@ -98,4 +92,3 @@ export function PlaylistDashboardControls(props: {
     </div>
   );
 }
-

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { Music } from "lucide-react";
 
 import { GlassTable, TableCell, TableRow } from "@/components/ui/GlassTable";
 import { supabaseServer } from "@/lib/supabase/server";
@@ -74,13 +75,7 @@ export default async function PlaylistSettingsPage() {
     <div className="space-y-4">
       <div className="flex items-end justify-between gap-4">
         <div>
-          <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
-            <Link className="hover:underline" href="/playlists">
-              Playlists
-            </Link>{" "}
-            / <span className="font-mono opacity-70">Settings</span>
-          </div>
-          <h1 className="mt-2 font-display text-xl font-semibold tracking-tight sm:text-2xl">
+          <h1 className="font-display text-xl font-semibold tracking-tight sm:text-2xl">
             Playlist Settings
           </h1>
           <p className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
@@ -96,51 +91,67 @@ export default async function PlaylistSettingsPage() {
       )}
 
       <GlassTable headers={["", "Playlist", "Spotify playlist (URL/URI/ID)", ""]}>
-        {(data ?? []).map((p) => (
-          <TableRow key={p.playlist_key}>
-            <TableCell>
-              {p.spotify_playlist_image_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={p.spotify_playlist_image_url}
-                  alt="Playlist cover"
-                  className="h-8 w-8 rounded-lg object-cover sb-ring"
-                />
-              ) : (
-                <div className="h-8 w-8 rounded-lg sb-ring bg-white/60" />
-              )}
-            </TableCell>
-            <TableCell>
-              <div className="font-medium">{p.display_name}</div>
-              <div className="font-mono text-xs opacity-60">{p.playlist_key}</div>
-            </TableCell>
-            <TableCell>
-              <form action={updatePlaylist} className="flex items-center gap-2">
-                <input type="hidden" name="playlist_key" value={p.playlist_key} />
-                <input
-                  name="spotify_playlist_id"
-                  defaultValue={p.spotify_playlist_id ?? ""}
-                  placeholder="https://open.spotify.com/playlist/…"
-                  className="sb-ring w-full rounded-xl bg-white/70 px-3 py-2 text-sm outline-none placeholder:text-black/40"
-                />
-                <button
-                  type="submit"
-                  className="sb-ring rounded-xl bg-black px-3 py-2 text-sm font-medium text-white"
+        {(data ?? []).map((p) => {
+          const isAllCatalog = p.playlist_key === "all_catalog";
+          return (
+            <TableRow key={p.playlist_key}>
+              <TableCell>
+                {isAllCatalog ? (
+                  <div
+                    className="sb-ring flex h-8 w-8 items-center justify-center rounded-lg"
+                    style={{ background: "var(--sb-accent)" }}
+                  >
+                    <Music className="h-4 w-4 text-black" />
+                  </div>
+                ) : p.spotify_playlist_image_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={p.spotify_playlist_image_url}
+                    alt="Playlist cover"
+                    className="h-8 w-8 rounded-lg object-cover sb-ring"
+                  />
+                ) : (
+                  <div className="h-8 w-8 rounded-lg sb-ring bg-white/60" />
+                )}
+              </TableCell>
+              <TableCell>
+                <div className="font-medium">{p.display_name}</div>
+                <div className="font-mono text-xs opacity-60">{p.playlist_key}</div>
+              </TableCell>
+              <TableCell>
+                {isAllCatalog ? (
+                  <span className="text-xs" style={{ color: "var(--sb-muted)" }}>
+                    Not a Spotify playlist
+                  </span>
+                ) : (
+                  <form action={updatePlaylist} className="flex items-center gap-2">
+                    <input type="hidden" name="playlist_key" value={p.playlist_key} />
+                    <input
+                      name="spotify_playlist_id"
+                      defaultValue={p.spotify_playlist_id ?? ""}
+                      placeholder="https://open.spotify.com/playlist/…"
+                      className="sb-ring w-full rounded-xl bg-white/70 px-3 py-2 text-sm outline-none placeholder:text-black/40"
+                    />
+                    <button
+                      type="submit"
+                      className="sb-ring rounded-xl bg-black px-3 py-2 text-sm font-medium text-white"
+                    >
+                      Save
+                    </button>
+                  </form>
+                )}
+              </TableCell>
+              <TableCell>
+                <Link
+                  href={`/playlists/${p.playlist_key}`}
+                  className="text-xs underline"
                 >
-                  Save
-                </button>
-              </form>
-            </TableCell>
-            <TableCell>
-              <Link
-                href={`/playlists/${p.playlist_key}`}
-                className="text-xs underline"
-              >
-                View
-              </Link>
-            </TableCell>
-          </TableRow>
-        ))}
+                  View
+                </Link>
+              </TableCell>
+            </TableRow>
+          );
+        })}
         {!data?.length && (
           <TableRow>
             <TableCell className="text-center opacity-50 py-8" colSpan={4}>
@@ -152,4 +163,3 @@ export default async function PlaylistSettingsPage() {
     </div>
   );
 }
-

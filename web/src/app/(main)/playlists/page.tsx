@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Activity } from "lucide-react";
+import { Activity, List } from "lucide-react";
 import { redirect } from "next/navigation";
 
 import { supabaseServer } from "@/lib/supabase/server";
@@ -304,6 +304,14 @@ export default async function PlaylistsPage({
             )}
           </div>
         </div>
+        <Link
+          href="/playlists/config"
+          className="sb-ring grid h-8 w-8 place-items-center rounded-full bg-white/70 text-xs font-medium transition hover:bg-white dark:bg-white/10 dark:hover:bg-white/15"
+          aria-label="Playlist config"
+          title="Playlist config"
+        >
+          <List className="h-4 w-4" style={{ color: "var(--sb-text)" }} />
+        </Link>
       </div>
 
       <PlaylistDashboardControls

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, List } from "lucide-react";
 
 import { supabaseServer } from "@/lib/supabase/server";
 import { formatInt, formatDateISO } from "@/lib/format";
@@ -433,6 +433,14 @@ export default async function ArtistsPage({
             )}
           </div>
         </div>
+        <Link
+          href="/artists/config"
+          className="sb-ring grid h-8 w-8 place-items-center rounded-full bg-white/70 text-xs font-medium transition hover:bg-white dark:bg-white/10 dark:hover:bg-white/15"
+          aria-label="Artist config"
+          title="Artist config"
+        >
+          <List className="h-4 w-4" style={{ color: "var(--sb-text)" }} />
+        </Link>
       </div>
 
       <ArtistDashboardControls

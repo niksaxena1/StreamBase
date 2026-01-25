@@ -1,10 +1,8 @@
 import Link from "next/link";
-import { Activity } from "lucide-react";
 
 import { formatDateISO } from "@/lib/format";
 import { supabaseServer } from "@/lib/supabase/server";
 import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
-import { DatePicker } from "@/components/ui/DatePicker";
 import { WarningRow } from "@/components/health/WarningRow";
 
 export const dynamic = "force-dynamic";
@@ -67,12 +65,6 @@ export default async function HealthPage({
         .order("playlist_key", { ascending: true })
     : { data: [], error: null };
 
-  // Get all playlists for filter dropdown
-  const { data: allPlaylists } = await sb
-    .from("playlists")
-    .select("playlist_key,display_name")
-    .order("display_name", { ascending: true });
-
   // Build warnings query with filters
   let warningsQuery = sb
     .from("ingestion_warnings")
@@ -127,27 +119,33 @@ export default async function HealthPage({
       const nonCatalogIsrcs = Array.from(playlistIsrcs).filter((isrc) => !catalogIsrcs.has(isrc));
 
       if (nonCatalogIsrcs.length > 0) {
-        // Fetch track names
+        // Fetch track names, artist names, and album images
         const { data: tracks } = await sb
           .from("tracks")
-          .select("isrc,name")
+          .select("isrc,name,spotify_artist_names,spotify_album_image_url")
           .in("isrc", nonCatalogIsrcs);
 
-        nonCatalogTracksMap.set(warning.playlist_key ?? "", (tracks ?? []).map((t) => ({ isrc: t.isrc, name: t.name })));
+        nonCatalogTracksMap.set(warning.playlist_key ?? "", (tracks ?? []).map((t) => ({ 
+          isrc: t.isrc, 
+          name: t.name,
+          artist_names: t.spotify_artist_names,
+          album_image_url: t.spotify_album_image_url,
+        })));
       }
     }
   }
 
   // Build filter URLs
   function hrefWith(patch: { severity?: string; playlist?: string; date?: string }) {
-    const u = new URL("https://example.com/");
+    const params = new URLSearchParams();
     const severity = patch.severity ?? severityFilter;
     const playlist = patch.playlist ?? playlistFilter;
     const date = patch.date ?? dateFilter;
-    if (severity !== "all") u.searchParams.set("severity", severity);
-    if (playlist !== "all") u.searchParams.set("playlist", playlist);
-    if (date) u.searchParams.set("date", date);
-    return `${u.pathname}?${u.searchParams.toString()}`;
+    if (severity !== "all") params.set("severity", severity);
+    if (playlist !== "all") params.set("playlist", playlist);
+    if (date) params.set("date", date);
+    const query = params.toString();
+    return query ? `/health?${query}` : "/health";
   }
 
   // Get date range for picker
@@ -156,18 +154,13 @@ export default async function HealthPage({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="font-display text-xl font-semibold tracking-tight sm:text-2xl">
-            System Health
-          </h1>
-          <p className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
-            Recent ingestion runs and anomaly warnings.
-          </p>
-        </div>
-        <div className="rounded-full bg-white/50 p-2 backdrop-blur-md dark:bg-white/5">
-          <Activity className="h-5 w-5 opacity-70" />
-        </div>
+      <div>
+        <h1 className="font-display text-xl font-semibold tracking-tight sm:text-2xl">
+          System Health
+        </h1>
+        <p className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
+          Recent ingestion runs and anomaly warnings.
+        </p>
       </div>
 
       {(runsErr || warnErr || exportsErr) && (
@@ -196,34 +189,42 @@ export default async function HealthPage({
             Info
           </FilterToggle>
         </div>
+      </div>
 
-        <div className="sb-ring flex items-center gap-0.5 rounded-full bg-white/70 p-0.5 text-xs">
-          <FilterToggle active={playlistFilter === "all"} href={hrefWith({ playlist: "all" })}>
-            All Playlists
-          </FilterToggle>
-          {(allPlaylists ?? []).slice(0, 5).map((p) => (
-            <FilterToggle
-              key={p.playlist_key}
-              active={playlistFilter === p.playlist_key}
-              href={hrefWith({ playlist: p.playlist_key })}
-            >
-              {p.display_name}
-            </FilterToggle>
-          ))}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between px-1">
+          <h2 className="text-sm font-semibold">
+            Warnings{" "}
+            {selectedDate ? (
+              <span className="text-xs font-normal opacity-60">({selectedDate})</span>
+            ) : null}
+          </h2>
+          <Link className="text-xs underline opacity-60" href="/playlists">
+            View playlists
+          </Link>
         </div>
-
-        <DatePicker
-          value={selectedDate ?? today}
-          min={firstDate}
-          max={today}
-          label="Run date"
-          path="/health"
-        />
+        <GlassTable headers={["Severity", "Code", "Playlist", "Message"]}>
+          {(warnings ?? []).map((w, i) => (
+            <WarningRow
+              key={`${w.code}-${w.playlist_key ?? "global"}-${i}`}
+              warning={w}
+              nonCatalogTracks={w.code === "non_catalog_tracks_present" && w.playlist_key
+                ? nonCatalogTracksMap.get(w.playlist_key)
+                : undefined}
+            />
+          ))}
+          {!warnings?.length && (
+            <TableRow>
+              <TableCell className="text-center opacity-50 py-8" colSpan={4}>
+                No warnings found for the selected filters.
+              </TableCell>
+            </TableRow>
+          )}
+        </GlassTable>
       </div>
 
       <div className="space-y-2">
         <div className="flex items-center gap-2 px-1">
-          <Activity className="h-3.5 w-3.5 opacity-50" />
           <h2 className="text-sm font-semibold">Ingestion Runs (30d)</h2>
         </div>
         <GlassTable headers={["Run Date", "Status", "Logs"]}>
@@ -308,38 +309,6 @@ export default async function HealthPage({
             <TableRow>
               <TableCell className="text-center opacity-50 py-8" colSpan={4}>
                 No raw exports found for this run.
-              </TableCell>
-            </TableRow>
-          )}
-        </GlassTable>
-      </div>
-
-      <div className="space-y-2">
-        <div className="flex items-center justify-between px-1">
-          <h2 className="text-sm font-semibold">
-            Warnings{" "}
-            {selectedDate ? (
-              <span className="text-xs font-normal opacity-60">({selectedDate})</span>
-            ) : null}
-          </h2>
-          <Link className="text-xs underline opacity-60" href="/playlists">
-            View playlists
-          </Link>
-        </div>
-        <GlassTable headers={["Severity", "Code", "Playlist", "Message"]}>
-          {(warnings ?? []).map((w, i) => (
-            <WarningRow
-              key={`${w.code}-${w.playlist_key ?? "global"}-${i}`}
-              warning={w}
-              nonCatalogTracks={w.code === "non_catalog_tracks_present" && w.playlist_key
-                ? nonCatalogTracksMap.get(w.playlist_key)
-                : undefined}
-            />
-          ))}
-          {!warnings?.length && (
-            <TableRow>
-              <TableCell className="text-center opacity-50 py-8" colSpan={4}>
-                No warnings found for the selected filters.
               </TableCell>
             </TableRow>
           )}

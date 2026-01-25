@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ChevronDown, ChevronRight } from "lucide-react";
+import { ArtistLinks } from "@/components/ui/ArtistLinks";
 
 type WarningRowProps = {
   warning: {
@@ -11,7 +12,12 @@ type WarningRowProps = {
     playlist_key: string | null;
     message: string;
   };
-  nonCatalogTracks?: Array<{ isrc: string; name: string | null }>;
+  nonCatalogTracks?: Array<{ 
+    isrc: string; 
+    name: string | null;
+    artist_names?: string[] | null;
+    album_image_url?: string | null;
+  }>;
 };
 
 export function WarningRow({ warning, nonCatalogTracks }: WarningRowProps) {
@@ -91,18 +97,43 @@ export function WarningRow({ warning, nonCatalogTracks }: WarningRowProps) {
               <div className="text-xs font-medium opacity-70 mb-2">
                 Non-catalog tracks ({nonCatalogTracks.length}):
               </div>
-              <div className="space-y-1">
+              <div className="space-y-2">
                 {nonCatalogTracks.map((track) => (
-                  <div key={track.isrc} className="flex items-center gap-2 text-xs">
-                    <Link
-                      href={`/tracks/${track.isrc}`}
-                      className="font-mono text-lime-600 dark:text-lime-400 underline hover:opacity-80"
-                    >
-                      {track.isrc}
-                    </Link>
-                    {track.name && (
-                      <span className="opacity-60">— {track.name}</span>
+                  <div key={track.isrc} className="flex items-center gap-3 text-xs">
+                    {track.album_image_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={track.album_image_url}
+                        alt="Album cover"
+                        className="h-10 w-10 rounded object-cover sb-ring flex-shrink-0"
+                      />
+                    ) : (
+                      <div className="h-10 w-10 rounded sb-ring bg-white/60 flex-shrink-0" />
                     )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Link
+                          href={`/tracks/${track.isrc}`}
+                          className="font-medium hover:underline"
+                          style={{ color: "var(--sb-text)" }}
+                        >
+                          {track.name || track.isrc}
+                        </Link>
+                        {track.artist_names && track.artist_names.length > 0 && (
+                          <span className="opacity-60">
+                            by <ArtistLinks artistNames={track.artist_names} />
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-0.5">
+                        <Link
+                          href={`/tracks/${track.isrc}`}
+                          className="font-mono text-[10px] text-lime-600 dark:text-lime-400 underline hover:opacity-80"
+                        >
+                          {track.isrc}
+                        </Link>
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>

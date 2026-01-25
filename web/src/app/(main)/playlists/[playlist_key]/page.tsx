@@ -169,7 +169,7 @@ export default async function PlaylistDetailPage({
       {isAdmin && !playlistRow?.spotify_playlist_id ? (
         <div className="rounded-2xl border border-blue-300 bg-blue-50 p-4 text-sm text-blue-950 dark:border-blue-900/30 dark:bg-blue-900/10 dark:text-blue-200">
           To enable the Spotify playlist thumbnail, set a Spotify playlist URL/URI/ID in{" "}
-          <Link className="underline" href="/settings/playlists">Playlist Settings</Link>.
+          <Link className="underline" href="/playlists/config/settings">Playlist Settings</Link>.
         </div>
       ) : null}
 
