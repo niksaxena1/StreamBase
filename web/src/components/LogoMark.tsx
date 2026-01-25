@@ -45,18 +45,28 @@ export function LogoMark({ size = 18 }: { size?: number }) {
   const logoSrc = mounted && isDark ? "/logo-dark.png" : "/logo-light.png";
 
   // Use regular img tag for now to avoid Next.js Image optimization issues
+  // Explicitly prevent any color filters or adjustments
   return (
     <img
+      key={logoSrc} // Force re-render when source changes
       src={logoSrc}
       alt="SpotiBase"
       width={size}
       height={size}
       className="object-contain"
-      style={{ display: "block" }}
+      style={{ 
+        display: "block",
+        filter: "none", // Explicitly prevent any CSS filters
+        imageRendering: "auto", // Use default image rendering
+      }}
       onError={(e) => {
         // Fallback if image fails to load
         console.error(`Failed to load logo: ${logoSrc}`);
         e.currentTarget.style.display = "none";
+      }}
+      onLoad={() => {
+        // Log successful load for debugging
+        console.log(`Logo loaded successfully: ${logoSrc}`);
       }}
     />
   );
