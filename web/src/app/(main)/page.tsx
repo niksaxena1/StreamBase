@@ -141,7 +141,7 @@ export default async function Home({
             Playlist Dash
           </Link>
           <Link 
-            href="/dashboard/artists" 
+            href="/artists" 
             className="group flex items-center gap-2 rounded-full border border-black/10 bg-white/50 px-3 py-1.5 text-xs font-medium backdrop-blur-md transition hover:bg-white dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10"
           >
             <User className="h-3.5 w-3.5 text-lime-500" />

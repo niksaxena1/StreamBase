@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect } from "react";
+import { List } from "lucide-react";
 
 import { Combobox } from "@/components/ui/Combobox";
 
@@ -176,11 +177,12 @@ export function ArtistDashboardControls(props: {
             ))}
           </div>
           <Link
-            href="/tracks"
-            className="sb-ring rounded-full bg-white/70 px-3 py-1.5 text-xs font-medium transition hover:bg-white dark:bg-white/10 dark:hover:bg-white/15"
-            style={{ color: "var(--sb-text)" }}
+            href="/artists/config"
+            className="sb-ring grid h-8 w-8 place-items-center rounded-full bg-white/70 text-xs font-medium transition hover:bg-white dark:bg-white/10 dark:hover:bg-white/15"
+            aria-label="Artist config"
+            title="Artist config"
           >
-            Track list
+            <List className="h-4 w-4" style={{ color: "var(--sb-text)" }} />
           </Link>
         </div>
       </div>

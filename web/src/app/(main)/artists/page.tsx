@@ -51,12 +51,17 @@ async function fetchAllTracksMeta(
 
   while (from < maxRows) {
     const to = from + pageSize - 1;
-    const { data } = await sb
+    const { data, error } = await sb
       .from("tracks")
       .select("isrc,name,spotify_artist_ids,spotify_artist_names")
       .not("spotify_artist_ids", "is", null)
       .order("last_seen", { ascending: false })
       .range(from, to);
+
+    if (error) {
+      console.error("Error fetching tracks metadata:", error);
+      break;
+    }
 
     const rows = (data ?? []) as TrackRow[];
     if (!rows.length) break;
@@ -179,41 +184,59 @@ function artistNameFor(rows: TrackRow[], artistId: string) {
   return null;
 }
 
-export default async function ArtistDashboardPage({
+export default async function ArtistsPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ artist_id?: string; isrc?: string; range?: string }>;
+  searchParams?: Promise<{ artist_id?: string; isrc?: string; range?: string; view?: string }>;
 }) {
-  const sp = (await searchParams) ?? {};
-  const rangeDays = clampRangeDays(sp.range);
+  try {
+    const sp = (await searchParams) ?? {};
+    
+    // Backwards-compat: old query-driven list view
+    if ((sp.view ?? "").trim().toLowerCase() === "list") {
+      redirect("/artists/config");
+    }
 
-  const sb = await supabaseServer();
+    const rangeDays = clampRangeDays(sp.range);
+    const sb = await supabaseServer();
 
-  // We don’t have an artists table; derive from track metadata.
-  const trackMetaRows = await fetchAllTracksMeta(sb, 5000);
-  const artists = deriveArtists(trackMetaRows);
-  const firstArtistId = artists[0]?.id ?? null;
+    // We don't have an artists table; derive from track metadata.
+    const trackMetaRows = await fetchAllTracksMeta(sb, 5000);
+    const artists = deriveArtists(trackMetaRows);
+    const firstArtistId = artists[0]?.id ?? null;
 
-  const artistId = (sp.artist_id ?? "").trim();
-  if (!artistId) {
-    return (
-      <RememberParamRedirect
-        param="artist_id"
-        storageKey="sb:last_artist_id"
-        defaultValue={firstArtistId}
-        loadingTitle="Opening your last artist…"
-        loadingSubtitle="If this is your first time, we’ll pick the first artist we find."
-      />
-    );
-  }
+    const artistId = (sp.artist_id ?? "").trim();
+    if (!artistId) {
+      return (
+        <RememberParamRedirect
+          param="artist_id"
+          storageKey="sb:last_artist_id"
+          defaultValue={firstArtistId}
+          loadingTitle="Opening your last artist…"
+          loadingSubtitle="If this is your first time, we'll pick the first artist we find."
+        />
+      );
+    }
 
   // Track list for this artist
-  const { data: tracks } = await sb
+  const { data: tracks, error: tracksError } = await sb
     .from("tracks")
     .select("isrc,name,spotify_artist_ids,spotify_artist_names")
     .contains("spotify_artist_ids", [artistId])
     .order("last_seen", { ascending: false })
     .limit(800);
+
+  if (tracksError) {
+    console.error("Error fetching artist tracks:", tracksError);
+    // Return error state instead of crashing
+    return (
+      <div className="space-y-4">
+        <div className="rounded-2xl border border-red-300 bg-red-50 p-4 text-sm text-red-950">
+          Error loading artist data: {tracksError.message}
+        </div>
+      </div>
+    );
+  }
 
   const artistTracks = (tracks ?? []) as TrackRow[];
   const isrcs = artistTracks.map((t) => t.isrc);
@@ -223,7 +246,7 @@ export default async function ArtistDashboardPage({
     artistNameFor(artistTracks, artistId) ??
     artistId;
 
-  // Canonical latest date (use all_catalog playlist stats as “ingestion day”)
+  // Canonical latest date (use all_catalog playlist stats as "ingestion day")
   const { data: latestRun } = await sb
     .from("playlist_daily_stats")
     .select("date")
@@ -236,13 +259,13 @@ export default async function ArtistDashboardPage({
   const startDate = latestDate ? addDays(latestDate, -rangeDays) : null;
 
   let isrc = (sp.isrc ?? "").trim() || null;
-  
+
   // Auto-select first track alphabetically if no track is selected and tracks are available
   if (!isrc && artistTracks.length > 0) {
     const sortedTracks = [...artistTracks]
       .map((t) => ({ isrc: t.isrc, name: t.name ?? t.isrc }))
       .sort((a, b) => a.name.localeCompare(b.name));
-    
+
     if (sortedTracks.length > 0) {
       const firstTrackIsrc = sortedTracks[0].isrc;
       // Redirect to include the first track in the URL
@@ -250,7 +273,7 @@ export default async function ArtistDashboardPage({
       params.set("artist_id", artistId);
       params.set("isrc", firstTrackIsrc);
       if (sp.range) params.set("range", String(rangeDays));
-      redirect(`/dashboard/artists?${params.toString()}`);
+      redirect(`/artists?${params.toString()}`);
     }
   }
 
@@ -313,7 +336,7 @@ export default async function ArtistDashboardPage({
     for (const [isrcKey, perDate] of byIsrcByDate.entries()) {
       const latestV = perDate.get(latestDate);
       if (latestV !== undefined) latestByIsrc.set(isrcKey, latestV);
-      // Use previous calendar day; if missing, it’s ok (daily becomes null)
+      // Use previous calendar day; if missing, it's ok (daily becomes null)
       const prevDay = addDays(latestDate, -1);
       const prevV = perDate.get(prevDay);
       if (prevV !== undefined) prevByIsrc.set(isrcKey, prevV);
@@ -593,5 +616,16 @@ export default async function ArtistDashboardPage({
       </div>
     </div>
   );
+  } catch (error) {
+    console.error("Error in ArtistsPage:", error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return (
+      <div className="space-y-4">
+        <div className="rounded-2xl border border-red-300 bg-red-50 p-4 text-sm text-red-950">
+          <h2 className="font-semibold">Error loading artist page</h2>
+          <p className="mt-1">{errorMessage}</p>
+        </div>
+      </div>
+    );
+  }
 }
-

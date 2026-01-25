@@ -18,7 +18,7 @@ export function ArtistLinks(props: {
           <span key={`${name}-${idx}`}>
             {artistId ? (
               <Link
-                href={`/dashboard/artists?artist_id=${encodeURIComponent(artistId)}`}
+                href={`/artists?artist_id=${encodeURIComponent(artistId)}`}
                 className="font-medium transition-colors hover:text-lime-600 dark:hover:text-lime-400"
               >
                 {name}

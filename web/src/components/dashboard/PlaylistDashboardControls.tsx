@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect } from "react";
+import { List } from "lucide-react";
 
 type PlaylistOption = {
   playlist_key: string;
@@ -94,11 +95,12 @@ export function PlaylistDashboardControls(props: {
             ))}
           </div>
           <Link
-            href="/playlists"
-            className="sb-ring rounded-full bg-white/70 px-3 py-1.5 text-xs font-medium transition hover:bg-white dark:bg-white/10 dark:hover:bg-white/15"
-            style={{ color: "var(--sb-text)" }}
+            href="/playlists/config"
+            className="sb-ring grid h-8 w-8 place-items-center rounded-full bg-white/70 text-xs font-medium transition hover:bg-white dark:bg-white/10 dark:hover:bg-white/15"
+            aria-label="Playlist config"
+            title="Playlist config"
           >
-            Manage
+            <List className="h-4 w-4" style={{ color: "var(--sb-text)" }} />
           </Link>
         </div>
       </div>
