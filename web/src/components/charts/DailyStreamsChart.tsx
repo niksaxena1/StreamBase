@@ -4,6 +4,8 @@ import {
   Area,
   AreaChart,
   CartesianGrid,
+  ComposedChart,
+  Line,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -15,6 +17,7 @@ import { formatInt, formatUsd } from "@/lib/format";
 type DataPoint = {
   date: string;
   value: number;
+  ma7?: number | null;
 };
 
 type ValueFormat = "int" | "usd";
@@ -39,18 +42,23 @@ export function DailyStreamsChart({
   valueFormat = "int",
   yTickFormat = "k",
   color = "#c7f33c",
+  maColor = "rgba(0,0,0,0.5)",
   heightPx = 220,
+  showMA7 = false,
 }: {
   data: DataPoint[];
   valueLabel?: string;
   valueFormat?: ValueFormat;
   yTickFormat?: YTickFormat;
   color?: string;
+  maColor?: string;
   heightPx?: number;
+  showMA7?: boolean;
 }) {
   const gid = useId();
   // Reverse data if it's in descending order (newest first) -> charts usually need ascending
   const chartData = [...data].reverse();
+  const hasMA7 = showMA7 && chartData.some((d) => d.ma7 !== null && d.ma7 !== undefined);
 
   const fmtValue = (n: number) =>
     valueFormat === "usd" ? formatUsd(n) : formatInt(n);
@@ -62,10 +70,12 @@ export function DailyStreamsChart({
     return `${(n / 1000).toFixed(0)}k`;
   };
 
+  const ChartComponent = hasMA7 ? ComposedChart : AreaChart;
+
   return (
     <div className="w-full">
       <ResponsiveContainer width="100%" height={heightPx} minWidth={0}>
-        <AreaChart
+        <ChartComponent
           data={chartData}
           margin={{ top: 6, right: 6, left: 0, bottom: 0 }}
         >
@@ -108,7 +118,10 @@ export function DailyStreamsChart({
               color: "var(--sb-text)",
             }}
             itemStyle={{ color: "var(--sb-text)" }}
-            formatter={(value) => [fmtValue(Number(value ?? 0)), valueLabel]}
+            formatter={(value, name) => {
+              const label = name === "ma7" ? "MA (7d)" : valueLabel;
+              return [fmtValue(Number(value ?? 0)), label];
+            }}
             labelFormatter={(label) => new Date(label).toLocaleDateString()}
             cursor={{
               stroke: color,
@@ -126,7 +139,18 @@ export function DailyStreamsChart({
             fill={`url(#${gid})`}
             activeDot={{ r: 4, fill: color, stroke: "var(--sb-bg)", strokeWidth: 1.5 }}
           />
-        </AreaChart>
+          {hasMA7 && (
+            <Line
+              type="monotone"
+              dataKey="ma7"
+              stroke={maColor}
+              strokeWidth={2}
+              strokeDasharray="5 5"
+              dot={false}
+              isAnimationActive={false}
+            />
+          )}
+        </ChartComponent>
       </ResponsiveContainer>
     </div>
   );

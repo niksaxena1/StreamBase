@@ -59,9 +59,17 @@ export default async function Home({
         : "All Catalog";
 
   // Prepare chart data for all three chart types
-  const dailyStreamsChartData = ((history as PlaylistDailyStatsRow[] | null) ?? []).map((r) => ({
+  const dailyStreamsRaw = ((history as PlaylistDailyStatsRow[] | null) ?? []).map((r) => ({
     date: r.date,
-    value: Number(getDailyStreams(r) ?? 0),
+    daily: Number(getDailyStreams(r) ?? 0),
+  }));
+  
+  // Calculate 7-day moving average for daily streams
+  const dailyStreamsWithMA = computeRollingAvg7(dailyStreamsRaw);
+  const dailyStreamsChartData = dailyStreamsWithMA.map((r) => ({
+    date: r.date,
+    value: r.daily,
+    ma7: r.ma7,
   }));
 
   const totalStreamsChartData = ((history as PlaylistDailyStatsRow[] | null) ?? []).map((r) => ({
@@ -82,9 +90,20 @@ export default async function Home({
       {/* Header Section */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="font-display text-xl font-semibold tracking-tight sm:text-2xl">
-            {title}
-          </h1>
+          <div className="flex items-center gap-2">
+            <h1 className="font-display text-xl font-semibold tracking-tight sm:text-2xl">
+              {title}
+            </h1>
+            {latest?.track_count !== null && latest?.track_count !== undefined && (
+              <span className="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium tracking-wide" style={{ 
+                borderColor: "var(--sb-border)",
+                backgroundColor: "var(--sb-surface)",
+                color: "var(--sb-muted)"
+              }}>
+                {formatInt(latest.track_count)} tracks
+              </span>
+            )}
+          </div>
           <p className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
             Overview of your catalog performance across all playlists.
           </p>
@@ -145,10 +164,8 @@ export default async function Home({
       <InteractiveChartSection
         dailyStreamsData={dailyStreamsChartData}
         totalStreamsData={totalStreamsChartData}
-        activeTracksData={activeTracksChartData}
         dailyStreamsValue={getDailyStreams(latest as PlaylistDailyStatsRow | null) ?? 0}
         totalStreamsValue={latest?.total_streams_cumulative ?? 0}
-        activeTracksValue={latest?.track_count ?? 0}
         rangeDays={rangeDays}
         latestDate={latest?.date ?? null}
       />
@@ -204,6 +221,22 @@ function getDailyStreams(
 ): number | null {
   if (!row) return null;
   return row.daily_streams_net;
+}
+
+function computeRollingAvg7(desc: Array<{ date: string; daily: number }>) {
+  // Input: newest-first. Output: newest-first with ma7.
+  const asc = [...desc].reverse();
+  const outAsc: Array<{ date: string; daily: number; ma7: number | null }> = [];
+
+  for (let i = 0; i < asc.length; i++) {
+    const start = Math.max(0, i - 6);
+    const window = asc.slice(start, i + 1).map((p) => Number(p.daily ?? 0));
+    const has7 = window.length >= 7;
+    const avg = window.reduce((a, b) => a + b, 0) / window.length;
+    outAsc.push({ date: asc[i].date, daily: asc[i].daily, ma7: has7 ? avg : null });
+  }
+
+  return outAsc.reverse();
 }
 
 function getRevenueDaily(

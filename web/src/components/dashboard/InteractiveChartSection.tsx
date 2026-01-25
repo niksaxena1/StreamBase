@@ -16,23 +16,19 @@ type ChartData = {
 type InteractiveChartSectionProps = {
   dailyStreamsData: ChartData[];
   totalStreamsData: ChartData[];
-  activeTracksData: ChartData[];
   dailyStreamsValue: number;
   totalStreamsValue: number;
-  activeTracksValue: number;
   rangeDays: number;
   latestDate: string | null;
 };
 
-type ChartType = "daily" | "total" | "tracks";
+type ChartType = "daily" | "total";
 
 export function InteractiveChartSection({
   dailyStreamsData,
   totalStreamsData,
-  activeTracksData,
   dailyStreamsValue,
   totalStreamsValue,
-  activeTracksValue,
   rangeDays,
   latestDate,
 }: InteractiveChartSectionProps) {
@@ -49,11 +45,6 @@ export function InteractiveChartSection({
       data: totalStreamsData,
       valueLabel: "Total Streams",
     },
-    tracks: {
-      title: "Active Tracks",
-      data: activeTracksData,
-      valueLabel: "Tracks",
-    },
   };
 
   const currentChart = chartConfigs[selectedChart];
@@ -61,7 +52,7 @@ export function InteractiveChartSection({
   return (
     <>
       {/* KPI Row */}
-      <div className="grid grid-cols-2 gap-2 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
         <button
           onClick={() => setSelectedChart("daily")}
           className="w-full text-left transition-opacity hover:opacity-80 focus:outline-none"
@@ -89,19 +80,6 @@ export function InteractiveChartSection({
             trendData={totalStreamsData.map((d) => d.value).slice(0, 30).reverse()}
           />
         </button>
-        <button
-          onClick={() => setSelectedChart("tracks")}
-          className="w-full text-left transition-opacity hover:opacity-80 focus:outline-none"
-          type="button"
-        >
-          <StatCard
-            title="Active Tracks"
-            value={<AnimatedCounter value={activeTracksValue} />}
-            subtitle="Tracked"
-            accent={selectedChart === "tracks"}
-            trendData={activeTracksData.map((d) => d.value).slice(0, 30).reverse()}
-          />
-        </button>
       </div>
 
       {/* Chart */}
@@ -127,6 +105,7 @@ export function InteractiveChartSection({
             data={currentChart.data}
             valueLabel={currentChart.valueLabel}
             heightPx={220}
+            showMA7={selectedChart === "daily"}
           />
         </div>
 
