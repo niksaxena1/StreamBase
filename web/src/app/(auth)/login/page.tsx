@@ -13,14 +13,14 @@ export default function LoginPage() {
 
       <div className="relative w-full max-w-sm">
         {/* Logo / Brand */}
-        <div className="mb-6 text-center">
-          <div className="mx-auto mb-4 flex justify-center">
-            <LogoMark size={64} />
+        <div className="mb-8 text-center">
+          <div className="mx-auto mb-5 flex justify-center">
+            <LogoMark size={96} />
           </div>
-          <h1 className="font-display text-2xl font-semibold tracking-tight">
+          <h1 className="font-display text-3xl font-semibold tracking-tight">
             SpotiBase
           </h1>
-          <p className="mt-1 text-sm text-black/60 dark:text-white/60">
+          <p className="mt-2 text-sm text-black/60 dark:text-white/60">
             Sign in to your analytics dashboard
           </p>
         </div>
