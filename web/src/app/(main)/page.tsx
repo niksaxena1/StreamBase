@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Activity } from "lucide-react";
+import { Activity, ListMusic, User } from "lucide-react";
 
 import { StatCard } from "@/components/StatCard";
 import { DailyStreamsChart } from "@/components/charts/DailyStreamsChart";
@@ -124,6 +124,20 @@ export default async function Home({
             </ToggleLink>
           </div>
 
+          <Link 
+            href="/dashboard/playlists" 
+            className="group flex items-center gap-2 rounded-full border border-black/10 bg-white/50 px-3 py-1.5 text-xs font-medium backdrop-blur-md transition hover:bg-white dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10"
+          >
+            <ListMusic className="h-3.5 w-3.5 text-lime-500" />
+            Playlist Dash
+          </Link>
+          <Link 
+            href="/dashboard/artists" 
+            className="group flex items-center gap-2 rounded-full border border-black/10 bg-white/50 px-3 py-1.5 text-xs font-medium backdrop-blur-md transition hover:bg-white dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10"
+          >
+            <User className="h-3.5 w-3.5 text-lime-500" />
+            Artist Dash
+          </Link>
           <Link 
             href="/health" 
             className="group flex items-center gap-2 rounded-full border border-black/10 bg-white/50 px-3 py-1.5 text-xs font-medium backdrop-blur-md transition hover:bg-white dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10"

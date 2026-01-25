@@ -57,7 +57,7 @@ export function Modal({
           <div className="flex items-start justify-between gap-3 border-b px-4 py-3" style={{ borderColor: "var(--sb-border)" }}>
             <div>
               {title ? (
-                <div className="font-display text-base font-semibold tracking-tight">
+                <div className="font-display text-base font-semibold tracking-tight" style={{ color: "var(--sb-text)" }}>
                   {title}
                 </div>
               ) : null}
@@ -70,6 +70,7 @@ export function Modal({
             <button
               type="button"
               className="sb-ring rounded-full bg-white/60 px-2.5 py-1.5 text-xs font-medium hover:bg-white/80 dark:bg-white/10 dark:hover:bg-white/15"
+              style={{ color: "var(--sb-text)" }}
               onClick={onClose}
             >
               Close

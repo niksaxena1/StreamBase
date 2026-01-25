@@ -7,6 +7,7 @@ import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
 import { DatePicker } from "@/components/ui/DatePicker";
 import { supabaseService } from "@/lib/supabase/service";
 import { getPlaylist } from "@/lib/spotify";
+import { ArtistLinks } from "@/components/ui/ArtistLinks";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,7 @@ type TrackOnDate = {
   name: string | null;
   spotify_album_image_url: string | null;
   spotify_artist_names: string[] | null;
+  spotify_artist_ids: string[] | null;
   valid_from: string;
   valid_to: string | null;
 };
@@ -97,7 +99,7 @@ export default async function PlaylistDetailPage({
   const { data: trackData } = isrcs.length
     ? await sb
         .from("tracks")
-        .select("isrc,name,spotify_album_image_url,spotify_artist_names")
+        .select("isrc,name,spotify_album_image_url,spotify_artist_names,spotify_artist_ids")
         .in("isrc", isrcs)
     : { data: [] };
 
@@ -110,6 +112,7 @@ export default async function PlaylistDetailPage({
       name: t?.name ?? null,
       spotify_album_image_url: t?.spotify_album_image_url ?? null,
       spotify_artist_names: t?.spotify_artist_names ?? null,
+      spotify_artist_ids: t?.spotify_artist_ids ?? null,
       valid_from: m.valid_from,
       valid_to: m.valid_to,
     };
@@ -214,7 +217,10 @@ export default async function PlaylistDetailPage({
                 </Link>
                 {t.spotify_artist_names?.length ? (
                   <div className="text-xs opacity-60 mt-0.5">
-                    {t.spotify_artist_names.join(", ")}
+                    <ArtistLinks
+                      artistNames={t.spotify_artist_names}
+                      artistIds={t.spotify_artist_ids ?? undefined}
+                    />
                   </div>
                 ) : null}
               </TableCell>

@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { supabaseServer } from "@/lib/supabase/server";
+import { ArtistLinks } from "@/components/ui/ArtistLinks";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,7 @@ export default async function TracksPage({
 
   let query = sb
     .from("tracks")
-    .select("isrc,name,release_date,last_seen", { count: "exact" })
+    .select("isrc,name,release_date,last_seen,spotify_album_image_url,spotify_artist_names,spotify_artist_ids", { count: "exact" })
     .order("last_seen", { ascending: false })
     .order("isrc", { ascending: true })
     .range(from, to);
@@ -90,8 +91,9 @@ export default async function TracksPage({
           <table className="min-w-full text-xs">
             <thead className="text-left text-[11px]" style={{ color: "var(--sb-muted)" }}>
               <tr className="border-b" style={{ borderColor: "var(--sb-border)" }}>
+                <th className="px-3 py-2 font-medium"></th>
+                <th className="px-3 py-2 font-medium">Track</th>
                 <th className="px-3 py-2 font-medium">ISRC</th>
-                <th className="px-3 py-2 font-medium">Name</th>
                 <th className="px-3 py-2 font-medium">Release</th>
                 <th className="px-3 py-2 font-medium">Last seen</th>
               </tr>
@@ -103,12 +105,39 @@ export default async function TracksPage({
                   className="border-b last:border-0"
                   style={{ borderColor: "var(--sb-border)" }}
                 >
+                  <td className="px-3 py-2">
+                    {t.spotify_album_image_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={t.spotify_album_image_url}
+                        alt="Album cover"
+                        className="h-8 w-8 rounded-lg object-cover sb-ring"
+                      />
+                    ) : (
+                      <div className="h-8 w-8 rounded-lg sb-ring bg-white/60" />
+                    )}
+                  </td>
+                  <td className="px-3 py-2">
+                    <Link
+                      href={`/tracks/${t.isrc}`}
+                      className="font-medium transition-colors hover:text-lime-600 dark:hover:text-lime-400"
+                    >
+                      {t.name ?? t.isrc}
+                    </Link>
+                    {t.spotify_artist_names?.length ? (
+                      <div className="mt-0.5 text-xs opacity-60">
+                        <ArtistLinks
+                          artistNames={t.spotify_artist_names}
+                          artistIds={t.spotify_artist_ids ?? undefined}
+                        />
+                      </div>
+                    ) : null}
+                  </td>
                   <td className="px-3 py-2 font-mono text-[11px]">
                     <Link className="underline" href={`/tracks/${t.isrc}`}>
                       {t.isrc}
                     </Link>
                   </td>
-                  <td className="px-3 py-2">{t.name ?? "—"}</td>
                   <td className="px-3 py-2 font-mono text-[11px]">
                     {t.release_date ?? "—"}
                   </td>
@@ -122,7 +151,7 @@ export default async function TracksPage({
                   <td
                     className="px-3 py-6 text-sm"
                     style={{ color: "var(--sb-muted)" }}
-                    colSpan={4}
+                    colSpan={5}
                   >
                     No tracks found.
                   </td>

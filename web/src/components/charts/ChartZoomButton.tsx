@@ -24,6 +24,7 @@ export function ChartZoomButton(props: {
       <button
         type="button"
         className="sb-ring inline-flex items-center gap-2 rounded-full bg-white/60 px-3 py-2 text-xs font-medium transition hover:bg-white/80 dark:bg-white/10 dark:hover:bg-white/15"
+        style={{ color: "var(--sb-text)" }}
         onClick={() => setOpen(true)}
         aria-label="Expand chart"
       >

@@ -11,6 +11,7 @@ import { AnimatedCounter } from "@/components/ui/AnimatedCounter";
 import { StatCard } from "@/components/StatCard";
 import { PlaylistDashboardControls } from "@/components/dashboard/PlaylistDashboardControls";
 import { RememberParamRedirect } from "@/components/dashboard/RememberParamRedirect";
+import { ArtistLinks } from "@/components/ui/ArtistLinks";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +33,7 @@ type TrackRow = {
   name: string | null;
   spotify_album_image_url: string | null;
   spotify_artist_names: string[] | null;
+  spotify_artist_ids: string[] | null;
 };
 
 type MembershipRow = {
@@ -202,7 +204,7 @@ export default async function PlaylistDashboardPage({
       const [metaRes, todayRes, prevRes] = await Promise.all([
         sb
           .from("tracks")
-          .select("isrc,name,spotify_album_image_url,spotify_artist_names")
+          .select("isrc,name,spotify_album_image_url,spotify_artist_names,spotify_artist_ids")
           .in("isrc", isrcChunk),
         latestDate
           ? sb
@@ -242,6 +244,7 @@ export default async function PlaylistDashboardPage({
         name: meta?.name ?? null,
         img: meta?.spotify_album_image_url ?? null,
         artists: meta?.spotify_artist_names ?? null,
+        artistIds: meta?.spotify_artist_ids ?? null,
         valid_from: m.valid_from,
         daily,
         total: today,
@@ -261,7 +264,7 @@ export default async function PlaylistDashboardPage({
     chunk(removedIsrcs, 200).map(async (isrcChunk) => {
       const { data } = await sb
         .from("tracks")
-        .select("isrc,name,spotify_album_image_url,spotify_artist_names")
+        .select("isrc,name,spotify_album_image_url,spotify_artist_names,spotify_artist_ids")
         .in("isrc", isrcChunk);
       for (const t of (data ?? []) as TrackRow[]) removedMetaByIsrc.set(t.isrc, t);
     }),
@@ -425,7 +428,10 @@ export default async function PlaylistDashboardPage({
                   </Link>
                   {t.artists?.length ? (
                     <div className="mt-0.5 text-xs opacity-60">
-                      {t.artists.join(", ")}
+                      <ArtistLinks
+                        artistNames={t.artists}
+                        artistIds={t.artistIds ?? undefined}
+                      />
                     </div>
                   ) : null}
                 </TableCell>
@@ -468,7 +474,10 @@ export default async function PlaylistDashboardPage({
                     </Link>
                     {meta?.spotify_artist_names?.length ? (
                       <div className="mt-0.5 text-xs opacity-60">
-                        {meta.spotify_artist_names.join(", ")}
+                        <ArtistLinks
+                          artistNames={meta.spotify_artist_names}
+                          artistIds={meta.spotify_artist_ids ?? undefined}
+                        />
                       </div>
                     ) : null}
                   </TableCell>

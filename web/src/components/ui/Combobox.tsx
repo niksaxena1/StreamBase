@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { Check } from "lucide-react";
 
 export type ComboboxOption = {
   value: string;
@@ -44,10 +45,8 @@ export function Combobox(props: {
     const effectiveQuery =
       open && query.trim() === selectedLabel.trim() ? "" : query;
     const q = effectiveQuery.trim().toLowerCase();
-    if (!q) return props.options.slice(0, 80);
-    return props.options
-      .filter((o) => o.label.toLowerCase().includes(q))
-      .slice(0, 80);
+    if (!q) return props.options; // Show all options when no search query
+    return props.options.filter((o) => o.label.toLowerCase().includes(q));
   }, [open, props.options, query, selectedLabel]);
 
   function commitIfExact() {
@@ -69,6 +68,7 @@ export function Combobox(props: {
         aria-controls={listId}
         aria-autocomplete="list"
         className="w-full bg-transparent text-sm outline-none"
+        style={{ color: "var(--sb-text)" }}
         onFocus={() => {
           setOpen(true);
           // If a value is selected, start "search mode" on focus.
@@ -100,8 +100,11 @@ export function Combobox(props: {
           role="listbox"
           id={listId}
           aria-label={`${props.ariaLabel} options`}
-          className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 max-h-[340px] overflow-auto rounded-2xl border bg-white/90 p-1 shadow-lg backdrop-blur-md dark:bg-neutral-900/80"
-          style={{ borderColor: "var(--sb-border)" }}
+          className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 max-h-[340px] overflow-auto rounded-2xl border p-1 shadow-lg backdrop-blur-md"
+          style={{ 
+            borderColor: "var(--sb-border)",
+            background: "var(--sb-card)",
+          }}
         >
           {filtered.map((o) => {
             const active = o.value === props.value;
@@ -114,9 +117,10 @@ export function Combobox(props: {
                 className={[
                   "flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition",
                   active
-                    ? "bg-black text-white"
+                    ? "bg-black text-white dark:bg-white dark:text-black"
                     : "hover:bg-black/[0.04] dark:hover:bg-white/[0.06]",
                 ].join(" ")}
+                style={!active ? { color: "var(--sb-text)" } : undefined}
                 onMouseDown={(e) => {
                   // Keep the input focused so clicks reliably register
                   e.preventDefault();
@@ -128,7 +132,9 @@ export function Combobox(props: {
                 }}
               >
                 <span className="truncate">{o.label}</span>
-                {active ? <span className="ml-3 text-xs opacity-70">Selected</span> : null}
+                {active ? (
+                  <Check className="ml-3 h-4 w-4 flex-shrink-0" strokeWidth={2.5} />
+                ) : null}
               </button>
             );
           })}

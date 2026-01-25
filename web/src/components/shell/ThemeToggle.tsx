@@ -41,6 +41,7 @@ export function ThemeToggle() {
       }}
       aria-label="Toggle light and dark theme"
       className="sb-ring inline-flex h-8 w-8 items-center justify-center rounded-full bg-transparent text-xs font-medium transition hover:bg-black/5 dark:hover:bg-white/10"
+      style={{ color: "var(--sb-text)" }}
     >
       <span className="text-xs leading-none" suppressHydrationWarning>
         {isDark ? "☾" : "☼"}

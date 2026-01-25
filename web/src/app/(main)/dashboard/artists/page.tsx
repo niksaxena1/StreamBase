@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { User } from "lucide-react";
 
 import { supabaseServer } from "@/lib/supabase/server";
@@ -234,7 +235,24 @@ export default async function ArtistDashboardPage({
   const latestDate = (latestRun as PlaylistDailyStatsRow | null)?.date ?? null;
   const startDate = latestDate ? addDays(latestDate, -rangeDays) : null;
 
-  const isrc = (sp.isrc ?? "").trim() || null;
+  let isrc = (sp.isrc ?? "").trim() || null;
+  
+  // Auto-select first track alphabetically if no track is selected and tracks are available
+  if (!isrc && artistTracks.length > 0) {
+    const sortedTracks = [...artistTracks]
+      .map((t) => ({ isrc: t.isrc, name: t.name ?? t.isrc }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    
+    if (sortedTracks.length > 0) {
+      const firstTrackIsrc = sortedTracks[0].isrc;
+      // Redirect to include the first track in the URL
+      const params = new URLSearchParams();
+      params.set("artist_id", artistId);
+      params.set("isrc", firstTrackIsrc);
+      if (sp.range) params.set("range", String(rangeDays));
+      redirect(`/dashboard/artists?${params.toString()}`);
+    }
+  }
 
   // Pull per-track cumulative series for the whole artist (best-effort; chunk to keep URL sizes sane)
   const dailyRows: TrackDailyRow[] = [];

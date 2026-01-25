@@ -53,12 +53,13 @@ export function PlaylistDashboardControls(props: {
     <div className="sb-card p-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <div className="text-xs font-medium">Playlist</div>
+          <div className="text-xs font-medium" style={{ color: "var(--sb-text)" }}>Playlist</div>
           <div className="sb-ring rounded-xl bg-white/70 px-2.5 py-1.5 dark:bg-white/10">
             <select
               value={props.playlistKey}
               onChange={(e) => onSelectPlaylist(e.target.value)}
               className="bg-transparent text-xs outline-none"
+              style={{ color: "var(--sb-text)" }}
               aria-label="Select playlist"
             >
               {props.playlists.map((p) => (
@@ -79,9 +80,14 @@ export function PlaylistDashboardControls(props: {
                 className={[
                   "rounded-full px-2.5 py-1.5 text-[11px] font-medium transition",
                   props.rangeDays === d
-                    ? "bg-black text-white shadow-sm"
-                    : "text-black/70 hover:bg-white/70 dark:text-white/70 dark:hover:bg-white/10",
+                    ? "bg-black text-white shadow-sm dark:bg-white dark:text-black"
+                    : "hover:bg-white/70 dark:hover:bg-white/10",
                 ].join(" ")}
+                style={
+                  props.rangeDays === d
+                    ? undefined
+                    : { color: "var(--sb-muted)" }
+                }
               >
                 {d}d
               </Link>
@@ -90,6 +96,7 @@ export function PlaylistDashboardControls(props: {
           <Link
             href="/playlists"
             className="sb-ring rounded-full bg-white/70 px-3 py-1.5 text-xs font-medium transition hover:bg-white dark:bg-white/10 dark:hover:bg-white/15"
+            style={{ color: "var(--sb-text)" }}
           >
             Manage
           </Link>

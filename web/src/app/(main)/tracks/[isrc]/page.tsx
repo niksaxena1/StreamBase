@@ -5,6 +5,7 @@ import { formatInt } from "@/lib/format";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { findTrackByIsrc } from "@/lib/spotify";
+import { ArtistLinks } from "@/components/ui/ArtistLinks";
 
 export const dynamic = "force-dynamic";
 
@@ -203,24 +204,10 @@ export default async function TrackDetailPage({
                   <>
                     {" "}
                     • Artists:{" "}
-                    {spotify.spotify_artist_names.map((a, idx) => {
-                      const artistId = spotify?.spotify_artist_ids?.[idx];
-                      return (
-                        <span key={`${a}-${idx}`}>
-                          {artistId ? (
-                            <Link
-                              href={`/artists/${artistId}`}
-                              className="font-medium text-black/80 transition-colors hover:text-lime-600 dark:hover:text-lime-400 underline"
-                            >
-                              {a}
-                            </Link>
-                          ) : (
-                            <span className="font-medium text-black/80">{a}</span>
-                          )}
-                          {idx < spotify.spotify_artist_names!.length - 1 ? ", " : ""}
-                        </span>
-                      );
-                    })}
+                    <ArtistLinks
+                      artistNames={spotify.spotify_artist_names}
+                      artistIds={spotify.spotify_artist_ids ?? undefined}
+                    />
                   </>
                 ) : null}
                 {track?.release_date ? (

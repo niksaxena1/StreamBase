@@ -45,6 +45,31 @@ export function ArtistDashboardControls(props: {
     }
   }, [props.artistId, props.isrc]);
 
+  // Auto-select first track alphabetically when artist is selected but no track is chosen
+  useEffect(() => {
+    // Only auto-select if:
+    // 1. No track is currently selected
+    // 2. There are tracks available for this artist
+    // 3. There's no remembered track for this artist
+    if (!props.isrc && props.tracks.length > 0) {
+      let rememberedIsrc: string | null = null;
+      try {
+        rememberedIsrc = localStorage.getItem(`sb:last_isrc_by_artist:${props.artistId}`);
+      } catch {
+        // ignore
+      }
+
+      // If no remembered track, auto-select the first one alphabetically
+      // (tracks are already sorted alphabetically from the server)
+      if (!rememberedIsrc && props.tracks.length > 0) {
+        const firstTrackIsrc = props.tracks[0].isrc;
+        const next = new URLSearchParams(sp.toString());
+        next.set("isrc", firstTrackIsrc);
+        router.replace(`?${next.toString()}`);
+      }
+    }
+  }, [props.artistId, props.isrc, props.tracks, sp, router]);
+
   function onSelectArtist(nextId: string) {
     if (!nextId || nextId === props.artistId) return;
 
@@ -63,8 +88,15 @@ export function ArtistDashboardControls(props: {
 
     const next = new URLSearchParams(sp.toString());
     next.set("artist_id", nextId);
-    if (rememberedIsrc) next.set("isrc", rememberedIsrc);
-    else next.delete("isrc");
+    
+    // If there's a remembered track, use it; otherwise let the server auto-select the first track
+    if (rememberedIsrc) {
+      next.set("isrc", rememberedIsrc);
+    } else {
+      // Don't set isrc - the server will auto-select the first track alphabetically
+      next.delete("isrc");
+    }
+    
     router.push(`?${next.toString()}`);
   }
 
@@ -92,7 +124,7 @@ export function ArtistDashboardControls(props: {
       <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <div className="flex items-center gap-2">
-            <div className="text-xs font-medium">Artist</div>
+            <div className="text-xs font-medium" style={{ color: "var(--sb-text)" }}>Artist</div>
             <div className="sb-ring rounded-xl bg-white/70 px-2.5 py-1.5 dark:bg-white/10">
               <Combobox
                 ariaLabel="Select artist"
@@ -105,7 +137,7 @@ export function ArtistDashboardControls(props: {
           </div>
 
           <div className="flex items-center gap-2">
-            <div className="text-xs font-medium">Track</div>
+            <div className="text-xs font-medium" style={{ color: "var(--sb-text)" }}>Track</div>
             <div className="sb-ring rounded-xl bg-white/70 px-2.5 py-1.5 dark:bg-white/10">
               <Combobox
                 ariaLabel="Select track"
@@ -130,9 +162,14 @@ export function ArtistDashboardControls(props: {
                 className={[
                   "rounded-full px-2.5 py-1.5 text-[11px] font-medium transition",
                   props.rangeDays === d
-                    ? "bg-black text-white shadow-sm"
-                    : "text-black/70 hover:bg-white/70 dark:text-white/70 dark:hover:bg-white/10",
+                    ? "bg-black text-white shadow-sm dark:bg-white dark:text-black"
+                    : "hover:bg-white/70 dark:hover:bg-white/10",
                 ].join(" ")}
+                style={
+                  props.rangeDays === d
+                    ? undefined
+                    : { color: "var(--sb-muted)" }
+                }
               >
                 {d}d
               </Link>
@@ -141,6 +178,7 @@ export function ArtistDashboardControls(props: {
           <Link
             href="/tracks"
             className="sb-ring rounded-full bg-white/70 px-3 py-1.5 text-xs font-medium transition hover:bg-white dark:bg-white/10 dark:hover:bg-white/15"
+            style={{ color: "var(--sb-text)" }}
           >
             Track list
           </Link>
