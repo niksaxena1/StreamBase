@@ -341,6 +341,7 @@ export default async function PlaylistsPage({
               valueFormat="int"
               yTickFormat="k"
               heightPx={220}
+              isCumulative={true}
             />
           </div>
         </SpotlightCard>

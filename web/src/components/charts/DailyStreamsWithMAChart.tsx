@@ -63,8 +63,24 @@ export function DailyStreamsWithMAChart({
   const fmtYTick = (n: number) => {
     if (yTickFormat === "int") return formatInt(n);
     if (yTickFormat === "usd_compact") return formatUsdCompact(n);
-    // default: "k"
-    return `${(n / 1000).toFixed(0)}k`;
+    // default: "k" - format with K/M/B suffixes and commas
+    const abs = Math.abs(n);
+    if (abs >= 1000000000) {
+      // Billions
+      const billions = n / 1000000000;
+      return `${billions % 1 === 0 ? billions.toFixed(0) : billions.toFixed(1)}B`;
+    } else if (abs >= 1000000) {
+      // Millions
+      const millions = n / 1000000;
+      return `${millions % 1 === 0 ? millions.toFixed(0) : millions.toFixed(1)}M`;
+    } else if (abs >= 1000) {
+      // Thousands
+      const thousands = n / 1000;
+      return `${thousands % 1 === 0 ? thousands.toFixed(0) : thousands.toFixed(1)}k`;
+    } else {
+      // Less than 1000 - show with commas
+      return formatInt(n);
+    }
   };
 
   return (

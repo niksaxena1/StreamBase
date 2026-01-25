@@ -106,6 +106,7 @@ export function InteractiveChartSection({
             valueLabel={currentChart.valueLabel}
             heightPx={220}
             showMA7={selectedChart === "daily"}
+            isCumulative={selectedChart === "total"}
           />
         </div>
 

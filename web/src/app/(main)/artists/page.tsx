@@ -471,6 +471,7 @@ export default async function ArtistsPage({
               valueFormat="int"
               yTickFormat="k"
               heightPx={220}
+              isCumulative={true}
             />
           </div>
         </SpotlightCard>
@@ -601,6 +602,7 @@ export default async function ArtistsPage({
                   valueFormat="int"
                   yTickFormat="k"
                   heightPx={220}
+                  isCumulative={true}
                 />
               </div>
             </SpotlightCard>

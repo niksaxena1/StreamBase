@@ -45,6 +45,7 @@ export function DailyStreamsChart({
   maColor = "rgba(0,0,0,0.5)",
   heightPx = 220,
   showMA7 = false,
+  isCumulative = false,
 }: {
   data: DataPoint[];
   valueLabel?: string;
@@ -54,11 +55,24 @@ export function DailyStreamsChart({
   maColor?: string;
   heightPx?: number;
   showMA7?: boolean;
+  isCumulative?: boolean;
 }) {
   const gid = useId();
   // Reverse data if it's in descending order (newest first) -> charts usually need ascending
   const chartData = [...data].reverse();
   const hasMA7 = showMA7 && chartData.some((d) => d.ma7 !== null && d.ma7 !== undefined);
+
+  // Calculate Y-axis domain for cumulative charts (use exact min/max for better readability)
+  const yAxisDomain = isCumulative && chartData.length > 0
+    ? (() => {
+        const values = chartData.map((d) => d.value).filter((v) => v != null && !isNaN(v));
+        if (values.length === 0) return undefined;
+        const min = Math.min(...values);
+        const max = Math.max(...values);
+        // Use exact min and max values - no padding, so the line fills the chart
+        return [min, max];
+      })()
+    : undefined;
 
   const fmtValue = (n: number) =>
     valueFormat === "usd" ? formatUsd(n) : formatInt(n);
@@ -66,8 +80,24 @@ export function DailyStreamsChart({
   const fmtYTick = (n: number) => {
     if (yTickFormat === "int") return formatInt(n);
     if (yTickFormat === "usd_compact") return formatUsdCompact(n);
-    // default: "k"
-    return `${(n / 1000).toFixed(0)}k`;
+    // default: "k" - format with K/M/B suffixes and commas
+    const abs = Math.abs(n);
+    if (abs >= 1000000000) {
+      // Billions
+      const billions = n / 1000000000;
+      return `${billions % 1 === 0 ? billions.toFixed(0) : billions.toFixed(1)}B`;
+    } else if (abs >= 1000000) {
+      // Millions
+      const millions = n / 1000000;
+      return `${millions % 1 === 0 ? millions.toFixed(0) : millions.toFixed(1)}M`;
+    } else if (abs >= 1000) {
+      // Thousands
+      const thousands = n / 1000;
+      return `${thousands % 1 === 0 ? thousands.toFixed(0) : thousands.toFixed(1)}k`;
+    } else {
+      // Less than 1000 - show with commas
+      return formatInt(n);
+    }
   };
 
   const ChartComponent = hasMA7 ? ComposedChart : AreaChart;
@@ -108,6 +138,7 @@ export function DailyStreamsChart({
             tickLine={false}
             axisLine={false}
             tickFormatter={(value) => fmtYTick(Number(value ?? 0))}
+            domain={yAxisDomain}
           />
           <Tooltip
             contentStyle={{

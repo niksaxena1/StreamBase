@@ -46,8 +46,8 @@ export function SideRail() {
               className={[
                 "grid h-9 w-9 place-items-center rounded-full transition",
                 active
-                  ? "bg-black text-white shadow-sm"
-                  : "bg-white/70 text-black/70 hover:bg-white",
+                  ? "bg-black text-white shadow-sm dark:bg-white dark:text-black"
+                  : "bg-white/70 text-black/70 hover:bg-white dark:bg-white/10 dark:text-white/70 dark:hover:bg-white/20",
               ].join(" ")}
             >
               {it.icon(active)}
@@ -74,7 +74,7 @@ export function SideRail() {
 }
 
 export function IconGrid(props: { active: boolean }) {
-  const iconClass = props.active ? "text-white" : "text-black/70";
+  const iconClass = props.active ? "text-white" : "text-current";
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className={iconClass}>
       <path
@@ -104,7 +104,7 @@ export function IconGrid(props: { active: boolean }) {
 }
 
 export function IconUser(props: { active: boolean }) {
-  const iconClass = props.active ? "text-white" : "text-black/70";
+  const iconClass = props.active ? "text-white" : "text-current";
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className={iconClass}>
       <path
@@ -123,7 +123,7 @@ export function IconUser(props: { active: boolean }) {
 }
 
 export function IconList(props: { active: boolean }) {
-  const iconClass = props.active ? "text-white" : "text-black/70";
+  const iconClass = props.active ? "text-white" : "text-current";
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className={iconClass}>
       <path d="M7 7H20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
@@ -166,7 +166,7 @@ export function IconList(props: { active: boolean }) {
 }
 
 export function IconPulse(props: { active: boolean }) {
-  const iconClass = props.active ? "text-white" : "text-black/70";
+  const iconClass = props.active ? "text-white" : "text-current";
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className={iconClass}>
       <path
@@ -181,7 +181,7 @@ export function IconPulse(props: { active: boolean }) {
 }
 
 export function IconHome(props: { active: boolean }) {
-  const iconClass = props.active ? "text-white" : "text-black/70";
+  const iconClass = props.active ? "text-white" : "text-current";
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className={iconClass}>
       <path
@@ -196,7 +196,7 @@ export function IconHome(props: { active: boolean }) {
 }
 
 export function IconMusic(props: { active: boolean }) {
-  const iconClass = props.active ? "text-white" : "text-black/70";
+  const iconClass = props.active ? "text-white" : "text-current";
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className={iconClass}>
       <path
@@ -214,7 +214,7 @@ export function IconMusic(props: { active: boolean }) {
 
 export function IconGear() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="text-black/80">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="text-current">
       <path
         d="M12 15C13.6569 15 15 13.6569 15 12C15 10.3431 13.6569 9 12 9C10.3431 9 9 10.3431 9 12C9 13.6569 10.3431 15 12 15Z"
         stroke="currentColor"

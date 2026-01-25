@@ -273,6 +273,7 @@ export default async function TracksPage({
                 valueFormat="int"
                 yTickFormat="k"
                 heightPx={220}
+                isCumulative={true}
               />
             </div>
           </SpotlightCard>

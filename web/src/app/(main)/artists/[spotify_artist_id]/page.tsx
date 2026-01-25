@@ -132,7 +132,7 @@ export default async function ArtistPage({
         <div className="sb-card p-3">
           <div className="text-xs font-medium">Streams over time (all tracks combined)</div>
           <div className="mt-2">
-            <DailyStreamsChart data={chartData} valueLabel="Total Streams" heightPx={220} />
+            <DailyStreamsChart data={chartData} valueLabel="Total Streams" heightPx={220} isCumulative={true} />
           </div>
         </div>
       )}
