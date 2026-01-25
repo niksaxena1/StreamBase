@@ -2,7 +2,10 @@ name: SOT Daily Export
 
 on:
   schedule:
+    # Primary run + a 1h-later fallback to reduce missed schedules.
+    # Idempotency is enforced via a Supabase pre-check (see steps below).
     - cron: "0 12 * * *" # 12:00 UTC daily
+    - cron: "0 13 * * *" # 13:00 UTC daily (fallback)
   workflow_dispatch:
     inputs:
       run_date:
@@ -18,17 +21,56 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Compute run date (UTC)
+        id: run_date
+        shell: bash
+        run: |
+          RUN_DATE="${{ github.event.inputs.run_date }}"
+          if [ -z "$RUN_DATE" ]; then RUN_DATE=$(date -u +'%Y-%m-%d'); fi
+          echo "run_date=$RUN_DATE" >> "$GITHUB_OUTPUT"
+
+      - name: "Pre-check: skip if already ingested"
+        id: precheck
+        shell: bash
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          # Default: run the workflow.
+          SHOULD_RUN="true"
+          RUN_DATE="${{ steps.run_date.outputs.run_date }}"
+
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "Supabase secrets not set; cannot pre-check. Proceeding."
+          else
+            # Query PostgREST for a successful ingestion run on this date.
+            # If it exists, exit early to keep daily schedules effectively-once.
+            URL="$SUPABASE_URL/rest/v1/ingestion_runs?select=status&run_date=eq.$RUN_DATE&status=eq.success&limit=1"
+            HIT=$(curl -sS -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" "$URL" || true)
+            if echo "$HIT" | grep -q "\"status\":\"success\""; then
+              echo "✅ Already ingested for $RUN_DATE. Skipping."
+              SHOULD_RUN="false"
+            else
+              echo "No successful ingestion found for $RUN_DATE. Proceeding."
+            fi
+          fi
+
+          echo "should_run=$SHOULD_RUN" >> "$GITHUB_OUTPUT"
+
       - uses: actions/setup-python@v5
+        if: steps.precheck.outputs.should_run == 'true'
         with:
           python-version: "3.12"
 
       - name: Install dependencies
+        if: steps.precheck.outputs.should_run == 'true'
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           python -m playwright install --with-deps chromium
 
       - name: Write storage state from secret
+        if: steps.precheck.outputs.should_run == 'true'
         env:
           SOT_STORAGE_STATE_B64: ${{ secrets.SOT_STORAGE_STATE_B64 }}
         run: |
@@ -39,6 +81,7 @@ jobs:
           echo "$SOT_STORAGE_STATE_B64" | base64 --decode > sot_state.json
 
       - name: Export dashboards
+        if: steps.precheck.outputs.should_run == 'true'
         env:
           SOT_EMAIL: ${{ secrets.SOT_EMAIL }}
           SOT_PASSWORD: ${{ secrets.SOT_PASSWORD }}
@@ -46,6 +89,7 @@ jobs:
           python scripts/sot_export_dashboards.py --config config/playlists.csv --storage-state sot_state.json --headless --fail-on-empty --auth-debug
 
       - name: Upload exports artifact
+        if: steps.precheck.outputs.should_run == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: sot-exports-${{ github.run_id }}
@@ -53,6 +97,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload exports to Supabase Storage (optional)
+        if: steps.precheck.outputs.should_run == 'true'
         continue-on-error: true
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -67,6 +112,7 @@ jobs:
           python scripts/supabase_upload_exports.py --exports-dir exports
 
       - name: Ingest exports into Supabase Postgres (optional)
+        if: steps.precheck.outputs.should_run == 'true'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -77,6 +123,5 @@ jobs:
             echo "Supabase secrets not set (ok). Skipping DB ingestion."
             exit 0
           fi
-          RUN_DATE="${{ github.event.inputs.run_date }}"
-          if [ -z "$RUN_DATE" ]; then RUN_DATE=$(date -u +'%Y-%m-%d'); fi
+          RUN_DATE="${{ steps.run_date.outputs.run_date }}"
           python scripts/ingest_exports_to_supabase.py --config config/playlists.csv --exports-dir exports --run-date "$RUN_DATE"
