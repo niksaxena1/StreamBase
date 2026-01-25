@@ -2,10 +2,9 @@ import Link from "next/link";
 import { Activity, ListMusic, User } from "lucide-react";
 
 import { StatCard } from "@/components/StatCard";
-import { DailyStreamsChart } from "@/components/charts/DailyStreamsChart";
 import { GlassTable, TableRow, TableCell, EmptyState } from "@/components/ui/GlassTable";
-import { SpotlightCard } from "@/components/ui/SpotlightCard";
 import { AnimatedCounter } from "@/components/ui/AnimatedCounter";
+import { InteractiveChartSection } from "@/components/dashboard/InteractiveChartSection";
 import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
 import { supabaseServer } from "@/lib/supabase/server";
 
@@ -60,10 +59,20 @@ export default async function Home({
         ? "ext"
         : "All Catalog";
 
-  // Prepare chart data
-  const chartData = ((history as PlaylistDailyStatsRow[] | null) ?? []).map((r) => ({
+  // Prepare chart data for all three chart types
+  const dailyStreamsChartData = ((history as PlaylistDailyStatsRow[] | null) ?? []).map((r) => ({
     date: r.date,
     value: Number(getDailyStreams(r) ?? 0),
+  }));
+
+  const totalStreamsChartData = ((history as PlaylistDailyStatsRow[] | null) ?? []).map((r) => ({
+    date: r.date,
+    value: Number(r.total_streams_cumulative ?? 0),
+  }));
+
+  const activeTracksChartData = ((history as PlaylistDailyStatsRow[] | null) ?? []).map((r) => ({
+    date: r.date,
+    value: Number(r.track_count ?? 0),
   }));
 
   const roll7 = rollingSums((history as PlaylistDailyStatsRow[] | null) ?? [], 7);
@@ -155,38 +164,20 @@ export default async function Home({
         </div>
       )}
 
-      {/* KPI Row */}
+      {/* Interactive KPI Row and Chart */}
+      <InteractiveChartSection
+        dailyStreamsData={dailyStreamsChartData}
+        totalStreamsData={totalStreamsChartData}
+        activeTracksData={activeTracksChartData}
+        dailyStreamsValue={getDailyStreams(latest as PlaylistDailyStatsRow | null) ?? 0}
+        totalStreamsValue={latest?.total_streams_cumulative ?? 0}
+        activeTracksValue={latest?.track_count ?? 0}
+        rangeDays={rangeDays}
+        latestDate={latest?.date ?? null}
+      />
+
+      {/* Additional Stat Cards */}
       <div className="grid grid-cols-2 gap-2 lg:grid-cols-6">
-        <StatCard
-          title="Daily Streams"
-          value={
-            <AnimatedCounter
-              value={getDailyStreams(latest as PlaylistDailyStatsRow | null) ?? 0}
-            />
-          }
-          subtitle={`${rangeDays}d view`}
-          accent
-          trend="up"
-          trendData={chartData.map((d) => d.value).slice(0, 30).reverse()}
-        />
-        <StatCard
-          title="Total Streams"
-          value={<AnimatedCounter value={latest?.total_streams_cumulative ?? 0} />}
-          subtitle="Lifetime"
-          trendData={((history as PlaylistDailyStatsRow[] | null) ?? [])
-            .map((r) => Number(r.total_streams_cumulative ?? 0))
-            .slice(0, 30)
-            .reverse()}
-        />
-        <StatCard
-          title="Active Tracks"
-          value={<AnimatedCounter value={latest?.track_count ?? 0} />}
-          subtitle="Tracked"
-          trendData={((history as PlaylistDailyStatsRow[] | null) ?? [])
-            .map((r) => Number(r.track_count ?? 0))
-            .slice(0, 30)
-            .reverse()}
-        />
         <StatCard
           title="Revenue (Daily)"
           value={formatUsd(getRevenueDaily(latest as PlaylistDailyStatsRow | null))}
@@ -207,31 +198,6 @@ export default async function Home({
           subtitle={roll30.hasData ? formatUsd(roll30.revenueSum) : "Need 2+ days"}
         />
       </div>
-
-      {/* Chart */}
-      <SpotlightCard className="relative p-3">
-        <div className="flex flex-wrap items-end justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <Activity className="h-3.5 w-3.5 opacity-60" />
-            <div className="text-xs font-medium uppercase tracking-wide opacity-70">
-              Daily Streams
-            </div>
-          </div>
-          <div className="text-[11px] opacity-60">
-            Last updated <span className="font-mono">{formatDateISO(latest?.date)}</span>
-          </div>
-        </div>
-
-        <div className="mt-2">
-          <DailyStreamsChart data={chartData} valueLabel="Streams" heightPx={220} />
-        </div>
-
-        {/* Decorative background glow (subtle) */}
-        <div
-          className="pointer-events-none absolute -right-14 -top-14 h-40 w-40 rounded-full opacity-15 blur-3xl"
-          style={{ background: "var(--sb-accent)" }}
-        />
-      </SpotlightCard>
 
       {/* Recent History Table */}
       <div className="space-y-2">
