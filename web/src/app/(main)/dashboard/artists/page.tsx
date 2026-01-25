@@ -421,7 +421,7 @@ export default async function ArtistDashboardPage({
       />
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
-        <SpotlightCard className="lg:col-span-8 p-3">
+        <SpotlightCard className="lg:col-span-6 p-3">
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
@@ -444,7 +444,7 @@ export default async function ArtistDashboardPage({
           </div>
         </SpotlightCard>
 
-        <SpotlightCard className="lg:col-span-4 p-3">
+        <SpotlightCard className="lg:col-span-6 p-3">
           <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
             Artist daily streams (MA7)
           </div>
