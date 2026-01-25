@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import { ChevronRight, Home } from "lucide-react";
 
 type BreadcrumbItem = {
@@ -11,6 +12,41 @@ type BreadcrumbItem = {
 
 export function Breadcrumbs() {
   const pathname = usePathname();
+  const [customLabel, setCustomLabel] = useState<string | null>(null);
+
+  // Fetch custom labels for dynamic routes
+  useEffect(() => {
+    const segments = pathname.split("/").filter(Boolean);
+    
+    // Handle artist pages: /artists/[spotify_artist_id]
+    if (segments[0] === "artists" && segments[1] && segments[1].length > 10) {
+      fetch(`/api/breadcrumb/artist?artist_id=${encodeURIComponent(segments[1])}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.artistName) setCustomLabel(data.artistName);
+        })
+        .catch(() => {
+          // Fallback if API fails
+          setCustomLabel(null);
+        });
+      return;
+    }
+
+    // Handle track pages: /tracks/[isrc]
+    if (segments[0] === "tracks" && segments[1] && segments[1].length > 10) {
+      fetch(`/api/breadcrumb/track?isrc=${encodeURIComponent(segments[1])}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.trackLabel) setCustomLabel(data.trackLabel);
+        })
+        .catch(() => {
+          setCustomLabel(null);
+        });
+      return;
+    }
+
+    setCustomLabel(null);
+  }, [pathname]);
 
   // Build breadcrumbs from pathname
   const segments = pathname.split("/").filter(Boolean);
@@ -21,13 +57,54 @@ export function Breadcrumbs() {
 
   // Build path segments with better label formatting
   let currentPath = "";
-  for (const segment of segments) {
+  for (let i = 0; i < segments.length; i++) {
+    const segment = segments[i];
     currentPath += `/${segment}`;
+    
+    // Special handling for dashboard routes
+    if (segment === "dashboard") {
+      breadcrumbs.push({ label: "Dashboard", href: currentPath });
+      continue;
+    }
+
+    // Special handling for artists route - show Dashboard > Artists > [Artist Name]
+    if (segment === "artists") {
+      breadcrumbs.push({ label: "Dashboard", href: "/" });
+      breadcrumbs.push({ label: "Artists", href: currentPath });
+      // Next segment is the artist ID - use custom label if available
+      if (i + 1 < segments.length && segments[i + 1]) {
+        const artistId = segments[i + 1];
+        currentPath += `/${artistId}`;
+        breadcrumbs.push({ 
+          label: customLabel || "Artist Detail", 
+          href: currentPath 
+        });
+        i++; // Skip the artist ID segment
+      }
+      continue;
+    }
+
+    // Special handling for tracks route - show Dashboard > Tracks > [Track Label]
+    if (segment === "tracks") {
+      breadcrumbs.push({ label: "Dashboard", href: "/" });
+      breadcrumbs.push({ label: "Tracks", href: currentPath });
+      // Next segment is the ISRC - use custom label if available
+      if (i + 1 < segments.length && segments[i + 1]) {
+        const isrc = segments[i + 1];
+        currentPath += `/${isrc}`;
+        breadcrumbs.push({ 
+          label: customLabel || "Track Detail", 
+          href: currentPath 
+        });
+        i++; // Skip the ISRC segment
+      }
+      continue;
+    }
     
     // Skip dynamic route segments (UUIDs, ISRCs, etc.) - they're too long
     if (segment.length > 20 || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(segment)) {
       // For dynamic routes, use a shorter label
-      const parentLabel = segments[segments.indexOf(segment) - 1];
+      const parentLabel = segments[i - 1];
       const label = parentLabel 
         ? `${parentLabel.charAt(0).toUpperCase() + parentLabel.slice(1)} Detail`
         : "Detail";
