@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 
 export function LogoMark({ size = 18 }: { size?: number }) {
   const [mounted, setMounted] = useState(false);
@@ -44,10 +45,8 @@ export function LogoMark({ size = 18 }: { size?: number }) {
   // Use light logo as default during SSR to avoid hydration mismatch
   const logoSrc = mounted && isDark ? "/logo-dark.png" : "/logo-light.png";
 
-  // Use regular img tag for now to avoid Next.js Image optimization issues
-  // Explicitly prevent any color filters or adjustments
   return (
-    <img
+    <Image
       key={logoSrc} // Force re-render when source changes
       src={logoSrc}
       alt="SpotiBase"
@@ -56,18 +55,11 @@ export function LogoMark({ size = 18 }: { size?: number }) {
       className="object-contain"
       style={{ 
         display: "block",
-        filter: "none", // Explicitly prevent any CSS filters
-        imageRendering: "auto", // Use default image rendering
+        filter: "none",
+        imageRendering: "auto",
       }}
-      onError={(e) => {
-        // Fallback if image fails to load
-        console.error(`Failed to load logo: ${logoSrc}`);
-        e.currentTarget.style.display = "none";
-      }}
-      onLoad={() => {
-        // Log successful load for debugging
-        console.log(`Logo loaded successfully: ${logoSrc}`);
-      }}
+      priority
+      unoptimized
     />
   );
 }

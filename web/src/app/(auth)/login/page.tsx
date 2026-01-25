@@ -13,11 +13,11 @@ export default function LoginPage() {
 
       <div className="relative w-full max-w-sm">
         {/* Logo / Brand */}
-        <div className="mb-4 text-center">
-          <div className="mx-auto mb-3 flex justify-center">
-            <LogoMark size={48} />
+        <div className="mb-6 text-center">
+          <div className="mx-auto mb-4 flex justify-center">
+            <LogoMark size={64} />
           </div>
-          <h1 className="font-display text-2xl font-semibold tracking-tight uppercase">
+          <h1 className="font-display text-2xl font-semibold tracking-tight">
             SpotiBase
           </h1>
           <p className="mt-1 text-sm text-black/60 dark:text-white/60">
