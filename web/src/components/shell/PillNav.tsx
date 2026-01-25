@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const items = [
-  { href: "/dashboard/playlists", label: "Playlist Dash" },
+  { href: "/playlists", label: "Playlist Dash" },
   { href: "/dashboard/artists", label: "Artist Dash" },
   { href: "/tracks", label: "Tracks" },
   { href: "/playlists", label: "Playlists" },

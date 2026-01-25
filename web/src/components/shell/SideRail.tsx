@@ -12,7 +12,7 @@ export type Item = {
 
 export const navItems: Item[] = [
   {
-    href: "/dashboard/playlists",
+    href: "/playlists",
     label: "Playlist Dash",
     icon: (a) => <IconList active={a} />,
   },
