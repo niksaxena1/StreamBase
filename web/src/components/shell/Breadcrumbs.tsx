@@ -69,7 +69,11 @@ export function Breadcrumbs() {
 
     // Special handling for artists route - show Dashboard > Artists > [Artist Name]
     if (segment === "artists") {
-      breadcrumbs.push({ label: "Dashboard", href: "/" });
+      // Only add Dashboard if we're not already in a dashboard route
+      const prevSegment = i > 0 ? segments[i - 1] : null;
+      if (prevSegment !== "dashboard") {
+        breadcrumbs.push({ label: "Dashboard", href: "/" });
+      }
       breadcrumbs.push({ label: "Artists", href: currentPath });
       // Next segment is the artist ID - use custom label if available
       if (i + 1 < segments.length && segments[i + 1]) {
@@ -86,7 +90,11 @@ export function Breadcrumbs() {
 
     // Special handling for tracks route - show Dashboard > Tracks > [Track Label]
     if (segment === "tracks") {
-      breadcrumbs.push({ label: "Dashboard", href: "/" });
+      // Only add Dashboard if we're not already in a dashboard route
+      const prevSegment = i > 0 ? segments[i - 1] : null;
+      if (prevSegment !== "dashboard") {
+        breadcrumbs.push({ label: "Dashboard", href: "/" });
+      }
       breadcrumbs.push({ label: "Tracks", href: currentPath });
       // Next segment is the ISRC - use custom label if available
       if (i + 1 < segments.length && segments[i + 1]) {
