@@ -290,9 +290,6 @@ export default async function PlaylistDashboardPage({
             )}
           </div>
         </div>
-        <div className="rounded-full bg-white/50 p-2 backdrop-blur-md dark:bg-white/5">
-          <ListMusic className="h-5 w-5 opacity-70" />
-        </div>
       </div>
 
       <PlaylistDashboardControls

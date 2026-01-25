@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { User, ExternalLink } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 
 import { supabaseServer } from "@/lib/supabase/server";
 import { formatInt, formatDateISO } from "@/lib/format";
@@ -409,9 +409,6 @@ export default async function ArtistDashboardPage({
               "No ingestion date found yet."
             )}
           </div>
-        </div>
-        <div className="rounded-full bg-white/50 p-2 backdrop-blur-md dark:bg-white/5">
-          <User className="h-5 w-5 opacity-70" />
         </div>
       </div>
 
