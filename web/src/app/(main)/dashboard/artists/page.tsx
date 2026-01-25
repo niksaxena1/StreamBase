@@ -380,7 +380,12 @@ export default async function ArtistDashboardPage({
             Dashboard / Artists
           </div>
           <h1 className="font-display text-2xl font-semibold tracking-tight">
-            {artistName}
+            <Link
+              href={`/artists/${artistId}`}
+              className="transition-colors hover:text-lime-600 dark:hover:text-lime-400"
+            >
+              {artistName}
+            </Link>
           </h1>
           <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
             {latestDate ? (
