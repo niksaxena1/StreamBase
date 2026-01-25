@@ -43,7 +43,28 @@ export function LogoMark({ size = 18 }: { size?: number }) {
   }, []);
 
   // Use light logo as default during SSR to avoid hydration mismatch
+  // Always show light logo initially, then switch to dark if needed
   const logoSrc = mounted && isDark ? "/logo-dark.png" : "/logo-light.png";
+
+  // If not mounted yet, show light logo to avoid hydration issues
+  if (!mounted) {
+    return (
+      <Image
+        src="/logo-light.png"
+        alt="SpotiBase"
+        width={size}
+        height={size}
+        className="object-contain"
+        style={{ 
+          display: "block",
+          filter: "none",
+          imageRendering: "auto",
+        }}
+        priority
+        unoptimized
+      />
+    );
+  }
 
   return (
     <Image
