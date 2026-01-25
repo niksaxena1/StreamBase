@@ -411,31 +411,6 @@ def main():
             prev_count = int(prev_stats[0]["track_count"]) if prev_stats and prev_stats[0].get("track_count") is not None else None
             daily_net = (total - prev_total) if prev_total is not None else None
 
-            # LFL (not for derived all_catalog in v1)
-            daily_lfl = None
-            if pl_key != "all_catalog":
-                yesterday_members = pg.select_all(
-                    "playlist_memberships",
-                    "isrc",
-                    f"playlist_key=eq.{pl_key}&valid_from=lte.{prev_date.isoformat()}&or=(valid_to.is.null,valid_to.gte.{prev_date.isoformat()})",
-                )
-                continuing = todays_isrcs & {r["isrc"] for r in yesterday_members}
-                if continuing:
-                    cont_list = sorted(continuing)
-                    deltas = 0
-                    have_any = False
-                    for i in range(0, len(cont_list), 200):
-                        chunk = cont_list[i : i + 200]
-                        in_list = ",".join(chunk)
-                        y_rows = pg.select("track_daily_streams", "isrc,streams_cumulative", f"date=eq.{prev_date.isoformat()}&isrc=in.({in_list})")
-                        y_map = {r["isrc"]: int(r["streams_cumulative"]) for r in y_rows}
-                        for isrc in chunk:
-                            if isrc in catalog_streams_today and isrc in y_map:
-                                deltas += int(catalog_streams_today[isrc]) - int(y_map[isrc])
-                                have_any = True
-                    if have_any:
-                        daily_lfl = deltas
-
             stats_rows.append(
                 {
                     "date": run_date.isoformat(),
@@ -443,10 +418,8 @@ def main():
                     "track_count": len(todays_isrcs),
                     "total_streams_cumulative": total,
                     "daily_streams_net": daily_net,
-                    "daily_streams_lfl": daily_lfl,
                     "est_revenue_total": calc_rev(total),
                     "est_revenue_daily_net": calc_rev(daily_net) if daily_net is not None else None,
-                    "est_revenue_daily_lfl": calc_rev(daily_lfl) if daily_lfl is not None else None,
                     "missing_streams_track_count": missing,
                     "source_run_id": run_id,
                 }

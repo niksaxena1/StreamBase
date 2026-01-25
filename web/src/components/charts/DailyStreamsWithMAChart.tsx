@@ -2,19 +2,22 @@
 
 import {
   Area,
-  AreaChart,
   CartesianGrid,
+  ComposedChart,
+  Line,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
 import { useId } from "react";
+
 import { formatInt, formatUsd } from "@/lib/format";
 
 type DataPoint = {
   date: string;
-  value: number;
+  daily: number;
+  ma7?: number | null;
 };
 
 type ValueFormat = "int" | "usd";
@@ -33,23 +36,25 @@ function formatUsdCompact(n: number): string {
   }
 }
 
-export function DailyStreamsChart({
+export function DailyStreamsWithMAChart({
   data,
   valueLabel = "Streams",
   valueFormat = "int",
   yTickFormat = "k",
-  color = "#c7f33c",
+  dailyColor = "#c7f33c",
+  maColor = "rgba(255,255,255,0.75)",
   heightPx = 220,
 }: {
   data: DataPoint[];
   valueLabel?: string;
   valueFormat?: ValueFormat;
   yTickFormat?: YTickFormat;
-  color?: string;
+  dailyColor?: string;
+  maColor?: string;
   heightPx?: number;
 }) {
   const gid = useId();
-  // Reverse data if it's in descending order (newest first) -> charts usually need ascending
+  // Keep parity with DailyStreamsChart: accept newest-first and render oldest->newest
   const chartData = [...data].reverse();
 
   const fmtValue = (n: number) =>
@@ -65,14 +70,14 @@ export function DailyStreamsChart({
   return (
     <div className="w-full">
       <ResponsiveContainer width="100%" height={heightPx} minWidth={0}>
-        <AreaChart
+        <ComposedChart
           data={chartData}
           margin={{ top: 6, right: 6, left: 0, bottom: 0 }}
         >
           <defs>
             <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor={color} stopOpacity={0.3} />
-              <stop offset="95%" stopColor={color} stopOpacity={0} />
+              <stop offset="5%" stopColor={dailyColor} stopOpacity={0.28} />
+              <stop offset="95%" stopColor={dailyColor} stopOpacity={0} />
             </linearGradient>
           </defs>
           <CartesianGrid
@@ -108,26 +113,38 @@ export function DailyStreamsChart({
               color: "var(--sb-text)",
             }}
             itemStyle={{ color: "var(--sb-text)" }}
-            formatter={(value) => [fmtValue(Number(value ?? 0)), valueLabel]}
+            formatter={(value, name) => {
+              const label = name === "ma7" ? "MA (7d)" : valueLabel;
+              return [fmtValue(Number(value ?? 0)), label];
+            }}
             labelFormatter={(label) => new Date(label).toLocaleDateString()}
             cursor={{
-              stroke: color,
+              stroke: dailyColor,
               strokeWidth: 1.5,
               strokeDasharray: "5 5",
-              opacity: 0.8
+              opacity: 0.8,
             }}
           />
           <Area
             type="monotone"
-            dataKey="value"
-            stroke={color}
+            dataKey="daily"
+            stroke={dailyColor}
             strokeWidth={2}
             fillOpacity={1}
             fill={`url(#${gid})`}
-            activeDot={{ r: 4, fill: color, stroke: "var(--sb-bg)", strokeWidth: 1.5 }}
+            activeDot={{ r: 4, fill: dailyColor, stroke: "var(--sb-bg)", strokeWidth: 1.5 }}
           />
-        </AreaChart>
+          <Line
+            type="monotone"
+            dataKey="ma7"
+            stroke={maColor}
+            strokeWidth={2}
+            dot={false}
+            isAnimationActive={false}
+          />
+        </ComposedChart>
       </ResponsiveContainer>
     </div>
   );
 }
+

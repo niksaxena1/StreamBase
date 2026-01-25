@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 
 export default function LoginPage() {
   return (
-    <div className="relative flex min-h-dvh flex-col items-center justify-center overflow-hidden p-6">
+    <div className="relative flex min-h-dvh flex-col items-center justify-center overflow-hidden p-3">
       {/* Background Ambience */}
       <div className="pointer-events-none absolute inset-0">
         <div className="sb-accent-glow absolute left-1/2 top-1/2 h-[600px] w-[600px] -translate-x-1/2 -translate-y-1/2 opacity-40" />
@@ -12,22 +12,24 @@ export default function LoginPage() {
 
       <div className="relative w-full max-w-sm">
         {/* Logo / Brand */}
-        <div className="mb-8 text-center">
-          <div className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-3xl bg-black text-white shadow-xl dark:bg-white dark:text-black">
+        <div className="mb-4 text-center">
+          <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-2xl bg-black text-white shadow-lg dark:bg-white dark:text-black">
             <LogoMark />
           </div>
-          <h1 className="font-display text-3xl font-bold tracking-tight">SpotiBase</h1>
-          <p className="mt-2 text-sm" style={{ color: "var(--sb-muted)" }}>
+          <h1 className="font-display text-2xl font-semibold tracking-tight uppercase">
+            SpotiBase
+          </h1>
+          <p className="mt-1 text-sm text-black/60 dark:text-white/60">
             Sign in to your analytics dashboard
           </p>
         </div>
 
         {/* Card */}
-        <div className="sb-glass rounded-[32px] p-8 shadow-2xl backdrop-blur-2xl">
+        <div className="sb-glass p-4 shadow-2xl backdrop-blur-2xl">
           <LoginForm />
         </div>
         
-        <div className="mt-8 text-center text-xs opacity-40">
+        <div className="mt-4 text-center text-[11px] opacity-40">
           &copy; {new Date().getFullYear()} SpotiBase. Internal use only.
         </div>
       </div>
@@ -38,8 +40,8 @@ export default function LoginPage() {
 function LogoMark() {
   return (
     <svg
-      width="32"
-      height="32"
+      width="28"
+      height="28"
       viewBox="0 0 24 24"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"

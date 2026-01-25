@@ -25,38 +25,12 @@ function applyTheme(t: Theme) {
 }
 
 export function ThemeToggle() {
-  // Start with a safe default for SSR, then sync with actual theme after mount
-  const [theme, setTheme] = useState<Theme>("light");
-  const [mounted, setMounted] = useState(false);
-
+  const [theme, setTheme] = useState<Theme>(() => readTheme());
   useEffect(() => {
-    // After mount, read the actual theme and apply it
-    const actualTheme = readTheme();
-    setTheme(actualTheme);
-    applyTheme(actualTheme);
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    if (mounted) {
-      applyTheme(theme);
-    }
-  }, [theme, mounted]);
+    applyTheme(theme);
+  }, [theme]);
 
   const isDark = theme === "dark";
-
-  // During SSR and before mount, render a neutral placeholder to avoid hydration mismatch
-  if (!mounted) {
-    return (
-      <button
-        type="button"
-        aria-label="Toggle light and dark theme"
-        className="sb-ring inline-flex h-8 w-8 items-center justify-center rounded-full bg-transparent text-xs font-medium transition hover:bg-black/5 dark:hover:bg-white/10"
-      >
-        <span className="text-sm">☼</span>
-      </button>
-    );
-  }
 
   return (
     <button
@@ -68,7 +42,9 @@ export function ThemeToggle() {
       aria-label="Toggle light and dark theme"
       className="sb-ring inline-flex h-8 w-8 items-center justify-center rounded-full bg-transparent text-xs font-medium transition hover:bg-black/5 dark:hover:bg-white/10"
     >
-      <span className="text-sm">{isDark ? "☾" : "☼"}</span>
+      <span className="text-xs leading-none" suppressHydrationWarning>
+        {isDark ? "☾" : "☼"}
+      </span>
     </button>
   );
 }

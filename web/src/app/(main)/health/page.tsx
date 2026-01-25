@@ -5,6 +5,7 @@ import { formatDateISO } from "@/lib/format";
 import { supabaseServer } from "@/lib/supabase/server";
 import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
 import { DatePicker } from "@/components/ui/DatePicker";
+import { WarningRow } from "@/components/health/WarningRow";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +22,7 @@ function FilterToggle({
     <Link
       href={href}
       className={[
-        "rounded-full px-3 py-2 text-xs font-medium transition",
+        "rounded-full px-2.5 py-1.5 text-[11px] font-medium transition",
         active
           ? "bg-black text-white shadow-sm"
           : "bg-white/70 text-black/70 hover:bg-white",
@@ -93,6 +94,50 @@ export default async function HealthPage({
 
   const { data: warnings, error: warnErr } = await warningsQuery.limit(200);
 
+  // Fetch non-catalog tracks for warnings of type "non_catalog_tracks_present"
+  const nonCatalogWarnings = (warnings ?? []).filter(
+    (w) => w.code === "non_catalog_tracks_present" && w.playlist_key && selectedDate
+  );
+
+  const nonCatalogTracksMap = new Map<string, Array<{ isrc: string; name: string | null }>>();
+
+  if (nonCatalogWarnings.length > 0 && selectedDate) {
+    for (const warning of nonCatalogWarnings) {
+      if (!warning.playlist_key) continue;
+
+      // Get all tracks in the playlist on the selected date
+      const { data: memberships } = await sb
+        .from("playlist_memberships")
+        .select("isrc")
+        .eq("playlist_key", warning.playlist_key)
+        .lte("valid_from", selectedDate)
+        .or(`valid_to.is.null,valid_to.gte.${selectedDate}`);
+
+      const playlistIsrcs = new Set((memberships ?? []).map((m) => m.isrc));
+
+      // Get all tracks that have catalog stream snapshots on the selected date
+      const { data: catalogStreams } = await sb
+        .from("track_daily_streams")
+        .select("isrc")
+        .eq("date", selectedDate);
+
+      const catalogIsrcs = new Set((catalogStreams ?? []).map((s) => s.isrc));
+
+      // Find tracks in playlist but not in catalog
+      const nonCatalogIsrcs = Array.from(playlistIsrcs).filter((isrc) => !catalogIsrcs.has(isrc));
+
+      if (nonCatalogIsrcs.length > 0) {
+        // Fetch track names
+        const { data: tracks } = await sb
+          .from("tracks")
+          .select("isrc,name")
+          .in("isrc", nonCatalogIsrcs);
+
+        nonCatalogTracksMap.set(warning.playlist_key ?? "", (tracks ?? []).map((t) => ({ isrc: t.isrc, name: t.name })));
+      }
+    }
+  }
+
   // Build filter URLs
   function hrefWith(patch: { severity?: string; playlist?: string; date?: string }) {
     const u = new URL("https://example.com/");
@@ -110,16 +155,18 @@ export default async function HealthPage({
   const today = new Date().toISOString().split("T")[0];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="font-display text-3xl font-bold tracking-tight">System Health</h1>
-          <p className="mt-2 text-sm" style={{ color: "var(--sb-muted)" }}>
+          <h1 className="font-display text-xl font-semibold tracking-tight sm:text-2xl">
+            System Health
+          </h1>
+          <p className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
             Recent ingestion runs and anomaly warnings.
           </p>
         </div>
-        <div className="rounded-full bg-white/50 p-3 backdrop-blur-md dark:bg-white/5">
-          <Activity className="h-6 w-6 opacity-70" />
+        <div className="rounded-full bg-white/50 p-2 backdrop-blur-md dark:bg-white/5">
+          <Activity className="h-5 w-5 opacity-70" />
         </div>
       </div>
 
@@ -134,8 +181,8 @@ export default async function HealthPage({
       )}
 
       {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="sb-ring flex items-center gap-1 rounded-full bg-white/70 p-1 text-sm">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="sb-ring flex items-center gap-0.5 rounded-full bg-white/70 p-0.5 text-xs">
           <FilterToggle active={severityFilter === "all"} href={hrefWith({ severity: "all" })}>
             All
           </FilterToggle>
@@ -150,7 +197,7 @@ export default async function HealthPage({
           </FilterToggle>
         </div>
 
-        <div className="sb-ring flex items-center gap-1 rounded-full bg-white/70 p-1 text-sm">
+        <div className="sb-ring flex items-center gap-0.5 rounded-full bg-white/70 p-0.5 text-xs">
           <FilterToggle active={playlistFilter === "all"} href={hrefWith({ playlist: "all" })}>
             All Playlists
           </FilterToggle>
@@ -174,10 +221,10 @@ export default async function HealthPage({
         />
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-2">
         <div className="flex items-center gap-2 px-1">
-          <Activity className="h-4 w-4 opacity-50" />
-          <h2 className="text-lg font-semibold">Ingestion Runs (30d)</h2>
+          <Activity className="h-3.5 w-3.5 opacity-50" />
+          <h2 className="text-sm font-semibold">Ingestion Runs (30d)</h2>
         </div>
         <GlassTable headers={["Run Date", "Status", "Logs"]}>
           {(runs ?? []).map((r) => (
@@ -223,10 +270,13 @@ export default async function HealthPage({
         </GlassTable>
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-2">
         <div className="flex items-center justify-between px-1">
-          <h2 className="text-lg font-semibold">
-            Raw Exports {selectedDate ? <span className="text-sm font-normal opacity-60">({selectedDate})</span> : null}
+          <h2 className="text-sm font-semibold">
+            Raw Exports{" "}
+            {selectedDate ? (
+              <span className="text-xs font-normal opacity-60">({selectedDate})</span>
+            ) : null}
           </h2>
           <span className="text-xs opacity-50">Signed links (60s)</span>
         </div>
@@ -264,10 +314,13 @@ export default async function HealthPage({
         </GlassTable>
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-2">
         <div className="flex items-center justify-between px-1">
-          <h2 className="text-lg font-semibold">
-            Warnings {selectedDate ? <span className="text-sm font-normal opacity-60">({selectedDate})</span> : null}
+          <h2 className="text-sm font-semibold">
+            Warnings{" "}
+            {selectedDate ? (
+              <span className="text-xs font-normal opacity-60">({selectedDate})</span>
+            ) : null}
           </h2>
           <Link className="text-xs underline opacity-60" href="/playlists">
             View playlists
@@ -275,45 +328,13 @@ export default async function HealthPage({
         </div>
         <GlassTable headers={["Severity", "Code", "Playlist", "Message"]}>
           {(warnings ?? []).map((w, i) => (
-            <TableRow key={`${w.code}-${w.playlist_key ?? "global"}-${i}`}>
-              <TableCell>
-                <span
-                  className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium"
-                  style={{
-                    background:
-                      w.severity === "critical"
-                        ? "rgba(239, 68, 68, 0.2)"
-                        : w.severity === "warn"
-                          ? "rgba(245, 158, 11, 0.2)"
-                          : "rgba(59, 130, 246, 0.2)",
-                    color:
-                      w.severity === "critical"
-                        ? "#991b1b"
-                        : w.severity === "warn"
-                          ? "#92400e"
-                          : "#1e40af",
-                  }}
-                >
-                  {w.severity}
-                </span>
-              </TableCell>
-              <TableCell mono className="text-xs">
-                {w.code}
-              </TableCell>
-              <TableCell>
-                {w.playlist_key ? (
-                  <Link
-                    href={`/playlists/${w.playlist_key}`}
-                    className="font-mono text-xs underline transition-colors hover:text-lime-600 dark:hover:text-lime-400"
-                  >
-                    {w.playlist_key}
-                  </Link>
-                ) : (
-                  <span className="font-mono text-xs opacity-30">—</span>
-                )}
-              </TableCell>
-              <TableCell>{w.message}</TableCell>
-            </TableRow>
+            <WarningRow
+              key={`${w.code}-${w.playlist_key ?? "global"}-${i}`}
+              warning={w}
+              nonCatalogTracks={w.code === "non_catalog_tracks_present" && w.playlist_key
+                ? nonCatalogTracksMap.get(w.playlist_key)
+                : undefined}
+            />
           ))}
           {!warnings?.length && (
             <TableRow>

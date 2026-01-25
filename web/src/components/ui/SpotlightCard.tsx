@@ -21,11 +21,11 @@ export function SpotlightCard({
 
   return (
     <div
-      className={["sb-card group relative overflow-hidden rounded-[28px] border border-transparent bg-neutral-100 dark:bg-neutral-900", className].join(" ")}
+      className={["sb-card group relative overflow-hidden border border-transparent bg-neutral-100 dark:bg-neutral-900", className].join(" ")}
       onMouseMove={handleMouseMove}
     >
       <motion.div
-        className="pointer-events-none absolute -inset-px rounded-[28px] opacity-0 transition duration-300 group-hover:opacity-100"
+        className="pointer-events-none absolute -inset-px rounded-[var(--sb-radius)] opacity-0 transition duration-300 group-hover:opacity-100"
         style={{
           background: useMotionTemplate`
             radial-gradient(

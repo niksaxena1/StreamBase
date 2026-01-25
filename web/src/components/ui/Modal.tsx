@@ -41,7 +41,7 @@ export function Modal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-label={typeof title === "string" ? title : "Modal"}
@@ -50,14 +50,14 @@ export function Modal({
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
 
       <div
-        className="relative w-full max-w-5xl overflow-hidden rounded-[28px] sb-glass shadow-2xl"
+        className="relative w-full max-w-5xl overflow-hidden sb-glass shadow-2xl"
         onMouseDown={(e) => e.stopPropagation()}
       >
         {(title || subtitle) && (
-          <div className="flex items-start justify-between gap-4 border-b px-6 py-5" style={{ borderColor: "var(--sb-border)" }}>
+          <div className="flex items-start justify-between gap-3 border-b px-4 py-3" style={{ borderColor: "var(--sb-border)" }}>
             <div>
               {title ? (
-                <div className="font-display text-lg font-semibold tracking-tight">
+                <div className="font-display text-base font-semibold tracking-tight">
                   {title}
                 </div>
               ) : null}
@@ -69,7 +69,7 @@ export function Modal({
             </div>
             <button
               type="button"
-              className="sb-ring rounded-full bg-white/60 px-3 py-2 text-xs font-medium hover:bg-white/80 dark:bg-white/10 dark:hover:bg-white/15"
+              className="sb-ring rounded-full bg-white/60 px-2.5 py-1.5 text-xs font-medium hover:bg-white/80 dark:bg-white/10 dark:hover:bg-white/15"
               onClick={onClose}
             >
               Close
@@ -77,7 +77,7 @@ export function Modal({
           </div>
         )}
 
-        <div className="px-6 py-6">{children}</div>
+        <div className="px-4 py-4">{children}</div>
       </div>
     </div>,
     document.body,

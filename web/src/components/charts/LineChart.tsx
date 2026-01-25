@@ -8,7 +8,7 @@ export function LineChart(props: {
 }) {
   const w = props.width ?? 760;
   const h = props.height ?? 220;
-  const pad = 18;
+  const pad = 14;
 
   const vals = props.points
     .map((p) => (p.y === null ? null : Number(p.y)))
@@ -17,7 +17,7 @@ export function LineChart(props: {
   if (vals.length < 2) {
     return (
       <div
-        className="sb-ring grid place-items-center rounded-[28px] bg-white/60 px-4 py-10 text-sm"
+        className="sb-ring grid place-items-center rounded-[var(--sb-radius)] bg-white/60 px-3 py-6 text-xs"
         style={{ color: "var(--sb-muted)" }}
       >
         Not enough data for a chart yet.
@@ -58,7 +58,7 @@ export function LineChart(props: {
   const lastLabel = pts[pts.length - 1]?.xLabel ?? "";
 
   return (
-    <div className="sb-ring rounded-[28px] bg-white/60 p-4">
+    <div className="sb-ring rounded-[var(--sb-radius)] bg-white/60 p-3">
       <svg
         width="100%"
         viewBox={`0 0 ${w} ${h}`}
@@ -82,7 +82,7 @@ export function LineChart(props: {
         </defs>
 
         {/* background hatch */}
-        <rect x="0" y="0" width={w} height={h} rx="22" fill="url(#sbHatch)" opacity="0.6" />
+        <rect x="0" y="0" width={w} height={h} rx="12" fill="url(#sbHatch)" opacity="0.6" />
 
         {/* area */}
         <polygon points={area} fill="url(#sbArea)" />
@@ -92,7 +92,7 @@ export function LineChart(props: {
           points={polyline}
           fill="none"
           stroke="rgba(0,0,0,0.78)"
-          strokeWidth="2.5"
+          strokeWidth="2"
           strokeLinejoin="round"
           strokeLinecap="round"
         />
@@ -103,7 +103,7 @@ export function LineChart(props: {
             <circle
               cx={pts[pts.length - 1].x}
               cy={pts[pts.length - 1].y}
-              r="5"
+              r="4"
               fill="var(--sb-accent)"
               stroke="rgba(0,0,0,0.65)"
               strokeWidth="1"

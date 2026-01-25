@@ -68,7 +68,7 @@ export default async function ArtistPage({
   const artistName = trackRows[0]?.spotify_artist_names?.[0] ?? "Unknown Artist";
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
         <Link className="underline" href="/tracks">
           Tracks
@@ -78,13 +78,13 @@ export default async function ArtistPage({
 
       <div className="flex items-end justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight">{artistName}</h1>
-          <div className="mt-1 text-sm" style={{ color: "var(--sb-muted)" }}>
+          <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">{artistName}</h1>
+          <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
             Spotify Artist ID: <span className="font-mono">{spotify_artist_id}</span>
           </div>
         </div>
-        <div className="rounded-full bg-white/50 p-3 backdrop-blur-md dark:bg-white/5">
-          <User className="h-6 w-6 opacity-70" />
+        <div className="rounded-full bg-white/50 p-2 backdrop-blur-md dark:bg-white/5">
+          <User className="h-5 w-5 opacity-70" />
         </div>
       </div>
 
@@ -95,32 +95,32 @@ export default async function ArtistPage({
       )}
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div className="sb-card rounded-[28px] px-5 py-4">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <div className="sb-card p-3">
           <div className="text-xs font-medium" style={{ color: "var(--sb-muted)" }}>
             Total Streams
           </div>
-          <div className="mt-1 text-2xl font-semibold">{formatInt(latestTotal)}</div>
+          <div className="mt-1 text-xl font-semibold">{formatInt(latestTotal)}</div>
           <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
             Across all tracks
           </div>
         </div>
 
-        <div className="sb-card rounded-[28px] px-5 py-4">
+        <div className="sb-card p-3">
           <div className="text-xs font-medium" style={{ color: "var(--sb-muted)" }}>
             Daily Growth
           </div>
-          <div className="mt-1 text-2xl font-semibold">{formatInt(dailyGrowth)}</div>
+          <div className="mt-1 text-xl font-semibold">{formatInt(dailyGrowth)}</div>
           <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
             Latest change
           </div>
         </div>
 
-        <div className="sb-card rounded-[28px] px-5 py-4">
+        <div className="sb-card p-3">
           <div className="text-xs font-medium" style={{ color: "var(--sb-muted)" }}>
             Track Count
           </div>
-          <div className="mt-1 text-2xl font-semibold">{formatInt(trackRows.length)}</div>
+          <div className="mt-1 text-xl font-semibold">{formatInt(trackRows.length)}</div>
           <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
             In catalog
           </div>
@@ -129,17 +129,17 @@ export default async function ArtistPage({
 
       {/* Chart */}
       {chartData.length > 1 && (
-        <div className="sb-card rounded-[28px] p-5">
-          <div className="text-sm font-medium">Streams over time (all tracks combined)</div>
-          <div className="mt-4">
-            <DailyStreamsChart data={chartData} valueLabel="Total Streams" />
+        <div className="sb-card p-3">
+          <div className="text-xs font-medium">Streams over time (all tracks combined)</div>
+          <div className="mt-2">
+            <DailyStreamsChart data={chartData} valueLabel="Total Streams" heightPx={220} />
           </div>
         </div>
       )}
 
       {/* Tracks List */}
-      <div className="space-y-4">
-        <h2 className="text-lg font-semibold">Tracks ({trackRows.length})</h2>
+      <div className="space-y-2">
+        <h2 className="text-sm font-semibold">Tracks ({trackRows.length})</h2>
         <GlassTable headers={["", "Track", "ISRC"]}>
           {trackRows.map((t) => (
             <TableRow key={t.isrc}>
@@ -149,10 +149,10 @@ export default async function ArtistPage({
                   <img
                     src={t.spotify_album_image_url}
                     alt="Album cover"
-                    className="h-10 w-10 rounded-xl object-cover sb-ring"
+                    className="h-8 w-8 rounded-lg object-cover sb-ring"
                   />
                 ) : (
-                  <div className="h-10 w-10 rounded-xl sb-ring bg-white/60" />
+                  <div className="h-8 w-8 rounded-lg sb-ring bg-white/60" />
                 )}
               </TableCell>
               <TableCell>
@@ -163,7 +163,7 @@ export default async function ArtistPage({
                   {t.name ?? t.isrc}
                 </Link>
               </TableCell>
-              <TableCell mono className="text-xs">
+              <TableCell mono className="text-[11px]">
                 {t.isrc}
               </TableCell>
             </TableRow>

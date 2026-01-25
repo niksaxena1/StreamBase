@@ -12,7 +12,7 @@ export function Sparkline(props: {
   if (vals.length < 2) {
     return (
       <div
-        className="sb-ring grid place-items-center rounded-[24px] bg-white/60 px-4 py-6 text-xs"
+        className="sb-ring grid place-items-center rounded-[var(--sb-radius)] bg-white/60 px-3 py-4 text-xs"
         style={{ color: "var(--sb-muted)" }}
       >
         Not enough data
@@ -55,7 +55,7 @@ export function Sparkline(props: {
         y="0"
         width={w}
         height={h}
-        rx="18"
+        rx="12"
         fill="transparent"
       />
 
@@ -71,7 +71,7 @@ export function Sparkline(props: {
         points={points}
         fill="none"
         stroke="rgba(0,0,0,0.75)"
-        strokeWidth="2"
+        strokeWidth="1.75"
         strokeLinejoin="round"
         strokeLinecap="round"
       />

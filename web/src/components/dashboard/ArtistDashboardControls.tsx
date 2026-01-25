@@ -1,0 +1,152 @@
+"use client";
+
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect } from "react";
+
+import { Combobox } from "@/components/ui/Combobox";
+
+type ArtistOption = { id: string; name: string };
+type TrackOption = { isrc: string; name: string };
+
+const RANGE_CHOICES = [30, 90, 365] as const;
+
+function hrefWith(existing: URLSearchParams, patch: Record<string, string | null | undefined>) {
+  const u = new URLSearchParams(existing.toString());
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === null || v === undefined || v === "") u.delete(k);
+    else u.set(k, v);
+  }
+  return `?${u.toString()}`;
+}
+
+export function ArtistDashboardControls(props: {
+  artists: ArtistOption[];
+  artistId: string;
+  tracks: TrackOption[];
+  isrc: string | null;
+  rangeDays: number;
+}) {
+  const router = useRouter();
+  const sp = useSearchParams();
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("sb:last_artist_id", props.artistId);
+    } catch {
+      // ignore
+    }
+    if (props.isrc) {
+      try {
+        localStorage.setItem(`sb:last_isrc_by_artist:${props.artistId}`, props.isrc);
+      } catch {
+        // ignore
+      }
+    }
+  }, [props.artistId, props.isrc]);
+
+  function onSelectArtist(nextId: string) {
+    if (!nextId || nextId === props.artistId) return;
+
+    try {
+      localStorage.setItem("sb:last_artist_id", nextId);
+    } catch {
+      // ignore
+    }
+
+    let rememberedIsrc: string | null = null;
+    try {
+      rememberedIsrc = localStorage.getItem(`sb:last_isrc_by_artist:${nextId}`);
+    } catch {
+      // ignore
+    }
+
+    const next = new URLSearchParams(sp.toString());
+    next.set("artist_id", nextId);
+    if (rememberedIsrc) next.set("isrc", rememberedIsrc);
+    else next.delete("isrc");
+    router.push(`?${next.toString()}`);
+  }
+
+  function onSelectTrack(nextIsrc: string) {
+    // allow clearing selection via "(none)"
+    if (nextIsrc === "") {
+      const next = new URLSearchParams(sp.toString());
+      next.delete("isrc");
+      router.push(`?${next.toString()}`);
+      return;
+    }
+    if (!nextIsrc || nextIsrc === props.isrc) return;
+    try {
+      localStorage.setItem(`sb:last_isrc_by_artist:${props.artistId}`, nextIsrc);
+    } catch {
+      // ignore
+    }
+    const next = new URLSearchParams(sp.toString());
+    next.set("isrc", nextIsrc);
+    router.push(`?${next.toString()}`);
+  }
+
+  return (
+    <div className="sb-card p-3">
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="flex items-center gap-2">
+            <div className="text-xs font-medium">Artist</div>
+            <div className="sb-ring rounded-xl bg-white/70 px-2.5 py-1.5 dark:bg-white/10">
+              <Combobox
+                ariaLabel="Select artist"
+                value={props.artistId}
+                options={props.artists.map((a) => ({ value: a.id, label: a.name }))}
+                placeholder="Type an artist…"
+                onChange={onSelectArtist}
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="text-xs font-medium">Track</div>
+            <div className="sb-ring rounded-xl bg-white/70 px-2.5 py-1.5 dark:bg-white/10">
+              <Combobox
+                ariaLabel="Select track"
+                value={props.isrc ?? null}
+                options={[
+                  { value: "", label: "(none)" },
+                  ...props.tracks.map((t) => ({ value: t.isrc, label: t.name })),
+                ]}
+                placeholder="Type a track…"
+                onChange={(v) => onSelectTrack(v)}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="sb-ring flex items-center gap-0.5 rounded-full bg-white/70 p-0.5 dark:bg-white/10">
+            {RANGE_CHOICES.map((d) => (
+              <Link
+                key={d}
+                href={hrefWith(sp, { range: String(d) })}
+                className={[
+                  "rounded-full px-2.5 py-1.5 text-[11px] font-medium transition",
+                  props.rangeDays === d
+                    ? "bg-black text-white shadow-sm"
+                    : "text-black/70 hover:bg-white/70 dark:text-white/70 dark:hover:bg-white/10",
+                ].join(" ")}
+              >
+                {d}d
+              </Link>
+            ))}
+          </div>
+          <Link
+            href="/tracks"
+            className="sb-ring rounded-full bg-white/70 px-3 py-1.5 text-xs font-medium transition hover:bg-white dark:bg-white/10 dark:hover:bg-white/15"
+          >
+            Track list
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
+

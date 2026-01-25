@@ -61,11 +61,13 @@ export default async function PlaylistsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="font-display text-3xl font-bold tracking-tight">Playlists</h1>
-          <p className="mt-2 text-sm" style={{ color: "var(--sb-muted)" }}>
+          <h1 className="font-display text-xl font-semibold tracking-tight sm:text-2xl">
+            Playlists
+          </h1>
+          <p className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
             Tracked playlists from configuration.
           </p>
         </div>
@@ -73,13 +75,13 @@ export default async function PlaylistsPage() {
           {isAdmin ? (
             <Link
               href="/settings/playlists"
-              className="sb-ring rounded-full bg-white/60 px-4 py-2 text-sm font-medium transition hover:bg-white/80"
+              className="sb-ring rounded-full bg-white/60 px-3 py-1.5 text-xs font-medium transition hover:bg-white/80"
             >
               Settings
             </Link>
           ) : null}
-          <div className="rounded-full bg-white/50 p-3 backdrop-blur-md dark:bg-white/5">
-            <ListMusic className="h-6 w-6 opacity-70" />
+          <div className="rounded-full bg-white/50 p-2 backdrop-blur-md dark:bg-white/5">
+            <ListMusic className="h-5 w-5 opacity-70" />
           </div>
         </div>
       </div>
@@ -100,10 +102,10 @@ export default async function PlaylistsPage() {
                 <img
                   src={p.spotify_playlist_image_url}
                   alt="Playlist cover"
-                  className="h-9 w-9 rounded-xl object-cover sb-ring"
+                  className="h-8 w-8 rounded-lg object-cover sb-ring"
                 />
               ) : (
-                <div className="h-9 w-9 rounded-xl sb-ring bg-white/60" />
+                <div className="h-8 w-8 rounded-lg sb-ring bg-white/60" />
               )}
             </TableCell>
             <TableCell mono>

@@ -71,7 +71,7 @@ export default async function PlaylistSettingsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex items-end justify-between gap-4">
         <div>
           <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
@@ -80,10 +80,10 @@ export default async function PlaylistSettingsPage() {
             </Link>{" "}
             / <span className="font-mono opacity-70">Settings</span>
           </div>
-          <h1 className="mt-2 font-display text-3xl font-bold tracking-tight">
+          <h1 className="mt-2 font-display text-xl font-semibold tracking-tight sm:text-2xl">
             Playlist Settings
           </h1>
-          <p className="mt-2 text-sm" style={{ color: "var(--sb-muted)" }}>
+          <p className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
             Paste a Spotify playlist URL/URI/ID to enable playlist thumbnails in SpotiBase.
           </p>
         </div>
@@ -104,10 +104,10 @@ export default async function PlaylistSettingsPage() {
                 <img
                   src={p.spotify_playlist_image_url}
                   alt="Playlist cover"
-                  className="h-9 w-9 rounded-xl object-cover sb-ring"
+                  className="h-8 w-8 rounded-lg object-cover sb-ring"
                 />
               ) : (
-                <div className="h-9 w-9 rounded-xl sb-ring bg-white/60" />
+                <div className="h-8 w-8 rounded-lg sb-ring bg-white/60" />
               )}
             </TableCell>
             <TableCell>
@@ -121,11 +121,11 @@ export default async function PlaylistSettingsPage() {
                   name="spotify_playlist_id"
                   defaultValue={p.spotify_playlist_id ?? ""}
                   placeholder="https://open.spotify.com/playlist/…"
-                  className="sb-ring w-full rounded-2xl bg-white/70 px-3 py-2 text-sm outline-none placeholder:text-black/40"
+                  className="sb-ring w-full rounded-xl bg-white/70 px-3 py-2 text-sm outline-none placeholder:text-black/40"
                 />
                 <button
                   type="submit"
-                  className="sb-ring rounded-2xl bg-black px-4 py-2 text-sm font-medium text-white"
+                  className="sb-ring rounded-xl bg-black px-3 py-2 text-sm font-medium text-white"
                 >
                   Save
                 </button>
@@ -134,7 +134,7 @@ export default async function PlaylistSettingsPage() {
             <TableCell>
               <Link
                 href={`/playlists/${p.playlist_key}`}
-                className="text-sm underline"
+                className="text-xs underline"
               >
                 View
               </Link>

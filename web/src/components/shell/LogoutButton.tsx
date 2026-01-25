@@ -13,7 +13,7 @@ export function LogoutButton() {
     <button
       type="button"
       onClick={onClick}
-      className="sb-ring inline-flex h-10 items-center justify-center gap-2 rounded-full bg-white/70 px-4 text-sm text-black/70 transition hover:bg-white"
+      className="sb-ring inline-flex h-8 items-center justify-center gap-2 rounded-full bg-white/70 px-3 text-xs text-black/70 transition hover:bg-white"
       title="Log out"
     >
       <span className="text-xs font-medium">Logout</span>

@@ -37,28 +37,28 @@ export default async function TracksPage({
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex items-end justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Tracks</h1>
+          <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">Tracks</h1>
           <p className="mt-1 text-sm" style={{ color: "var(--sb-muted)" }}>
             Search your catalog by ISRC or title.
           </p>
         </div>
       </div>
 
-      <form className="sb-card rounded-[28px] p-4" action="/tracks" method="get">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+      <form className="sb-card p-3" action="/tracks" method="get">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <input
             name="q"
             defaultValue={q}
             placeholder="Search ISRC or name…"
-            className="w-full rounded-2xl border bg-white/70 px-4 py-3 text-sm outline-none focus:ring-2"
+            className="w-full rounded-xl border bg-white/70 px-3 py-2 text-sm outline-none focus:ring-2"
             style={{ borderColor: "var(--sb-border)" }}
           />
           <button
             type="submit"
-            className="rounded-2xl bg-black px-5 py-3 text-sm font-medium text-white"
+            className="rounded-xl bg-black px-4 py-2 text-sm font-medium text-white"
           >
             Search
           </button>
@@ -71,26 +71,29 @@ export default async function TracksPage({
         </div>
       )}
 
-      <div className="sb-card overflow-hidden rounded-[28px]">
-        <div className="flex items-center justify-between border-b px-5 py-4" style={{ borderColor: "var(--sb-border)" }}>
-          <div className="text-sm font-medium">
+      <div className="sb-card overflow-hidden">
+        <div
+          className="flex items-center justify-between border-b px-3 py-2"
+          style={{ borderColor: "var(--sb-border)" }}
+        >
+          <div className="text-xs font-medium">
             Results{" "}
             <span style={{ color: "var(--sb-muted)" }}>
               ({total.toLocaleString("en-US")})
             </span>
           </div>
-          <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
+          <div className="text-[11px]" style={{ color: "var(--sb-muted)" }}>
             Page {page} / {totalPages}
           </div>
         </div>
         <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead className="text-left text-xs" style={{ color: "var(--sb-muted)" }}>
+          <table className="min-w-full text-xs">
+            <thead className="text-left text-[11px]" style={{ color: "var(--sb-muted)" }}>
               <tr className="border-b" style={{ borderColor: "var(--sb-border)" }}>
-                <th className="px-5 py-3 font-medium">ISRC</th>
-                <th className="px-5 py-3 font-medium">Name</th>
-                <th className="px-5 py-3 font-medium">Release</th>
-                <th className="px-5 py-3 font-medium">Last seen</th>
+                <th className="px-3 py-2 font-medium">ISRC</th>
+                <th className="px-3 py-2 font-medium">Name</th>
+                <th className="px-3 py-2 font-medium">Release</th>
+                <th className="px-3 py-2 font-medium">Last seen</th>
               </tr>
             </thead>
             <tbody>
@@ -100,23 +103,27 @@ export default async function TracksPage({
                   className="border-b last:border-0"
                   style={{ borderColor: "var(--sb-border)" }}
                 >
-                  <td className="px-5 py-3 font-mono text-xs">
+                  <td className="px-3 py-2 font-mono text-[11px]">
                     <Link className="underline" href={`/tracks/${t.isrc}`}>
                       {t.isrc}
                     </Link>
                   </td>
-                  <td className="px-5 py-3">{t.name ?? "—"}</td>
-                  <td className="px-5 py-3 font-mono text-xs">
+                  <td className="px-3 py-2">{t.name ?? "—"}</td>
+                  <td className="px-3 py-2 font-mono text-[11px]">
                     {t.release_date ?? "—"}
                   </td>
-                  <td className="px-5 py-3 font-mono text-xs">
+                  <td className="px-3 py-2 font-mono text-[11px]">
                     {t.last_seen ?? "—"}
                   </td>
                 </tr>
               ))}
               {!data?.length && (
                 <tr>
-                  <td className="px-5 py-8 text-sm" style={{ color: "var(--sb-muted)" }} colSpan={4}>
+                  <td
+                    className="px-3 py-6 text-sm"
+                    style={{ color: "var(--sb-muted)" }}
+                    colSpan={4}
+                  >
                     No tracks found.
                   </td>
                 </tr>
@@ -125,8 +132,11 @@ export default async function TracksPage({
           </table>
         </div>
 
-        <div className="flex items-center justify-between gap-4 border-t px-5 py-4" style={{ borderColor: "var(--sb-border)" }}>
-          <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
+        <div
+          className="flex items-center justify-between gap-4 border-t px-3 py-2"
+          style={{ borderColor: "var(--sb-border)" }}
+        >
+          <div className="text-[11px]" style={{ color: "var(--sb-muted)" }}>
             Showing {from + 1}–{Math.min(to + 1, total)} of {total.toLocaleString("en-US")}
           </div>
           <div className="flex items-center gap-2">
@@ -154,7 +164,7 @@ function PageLink(props: { href: string; disabled?: boolean; children: React.Rea
   if (props.disabled) {
     return (
       <span
-        className="sb-ring inline-flex items-center justify-center rounded-full bg-white/60 px-4 py-2 text-xs font-medium opacity-50"
+        className="sb-ring inline-flex items-center justify-center rounded-full bg-white/60 px-3 py-1.5 text-xs font-medium opacity-50"
       >
         {props.children}
       </span>
@@ -163,7 +173,7 @@ function PageLink(props: { href: string; disabled?: boolean; children: React.Rea
   return (
     <Link
       href={props.href}
-      className="sb-ring inline-flex items-center justify-center rounded-full bg-white/70 px-4 py-2 text-xs font-medium hover:bg-white"
+      className="sb-ring inline-flex items-center justify-center rounded-full bg-white/70 px-3 py-1.5 text-xs font-medium hover:bg-white"
     >
       {props.children}
     </Link>

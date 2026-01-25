@@ -73,7 +73,7 @@ export default async function PlaylistDetailPage({
   const { data: stats, error: statsErr } = await sb
     .from("playlist_daily_stats")
     .select(
-      "date,track_count,total_streams_cumulative,daily_streams_net,daily_streams_lfl,est_revenue_total,est_revenue_daily_net,est_revenue_daily_lfl,missing_streams_track_count",
+      "date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net,missing_streams_track_count",
     )
     .eq("playlist_key", playlist_key)
     .order("date", { ascending: false })
@@ -120,7 +120,7 @@ export default async function PlaylistDetailPage({
   const today = new Date().toISOString().split("T")[0];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex items-end justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 text-xs" style={{ color: "var(--sb-muted)" }}>
@@ -130,18 +130,18 @@ export default async function PlaylistDetailPage({
             <span>/</span>
             <span className="font-mono opacity-70">{playlist_key}</span>
           </div>
-          <div className="mt-2 flex items-center gap-4">
+          <div className="mt-2 flex items-center gap-3">
             {spotifyImg ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={spotifyImg}
                 alt="Playlist cover"
-                className="h-14 w-14 rounded-2xl object-cover sb-ring"
+                className="h-12 w-12 rounded-xl object-cover sb-ring"
               />
             ) : (
-              <div className="h-14 w-14 rounded-2xl sb-ring bg-white/60" />
+              <div className="h-12 w-12 rounded-xl sb-ring bg-white/60" />
             )}
-            <h1 className="font-display text-3xl font-bold tracking-tight">
+            <h1 className="font-display text-xl font-semibold tracking-tight sm:text-2xl">
               {playlistRow?.display_name ?? playlist_key}
             </h1>
           </div>
@@ -157,8 +157,8 @@ export default async function PlaylistDetailPage({
             )}
           </div>
         </div>
-        <div className="rounded-full bg-white/50 p-3 backdrop-blur-md dark:bg-white/5">
-          <ListMusic className="h-6 w-6 opacity-70" />
+        <div className="rounded-full bg-white/50 p-2 backdrop-blur-md dark:bg-white/5">
+          <ListMusic className="h-5 w-5 opacity-70" />
         </div>
       </div>
 
@@ -178,9 +178,9 @@ export default async function PlaylistDetailPage({
       )}
 
       {/* Tracks on Date Section */}
-      <div className="space-y-4">
+      <div className="space-y-2">
         <div className="flex items-center justify-between px-1">
-          <h2 className="text-lg font-semibold">Tracks on Date</h2>
+          <h2 className="text-sm font-semibold">Tracks on Date</h2>
           <DatePicker
             value={selectedDate}
             min={firstDate}
@@ -199,10 +199,10 @@ export default async function PlaylistDetailPage({
                   <img
                     src={t.spotify_album_image_url}
                     alt="Album cover"
-                    className="h-10 w-10 rounded-xl object-cover sb-ring"
+                    className="h-8 w-8 rounded-lg object-cover sb-ring"
                   />
                 ) : (
-                  <div className="h-10 w-10 rounded-xl sb-ring bg-white/60" />
+                  <div className="h-8 w-8 rounded-lg sb-ring bg-white/60" />
                 )}
               </TableCell>
               <TableCell>
@@ -218,13 +218,13 @@ export default async function PlaylistDetailPage({
                   </div>
                 ) : null}
               </TableCell>
-              <TableCell mono className="text-xs">
+              <TableCell mono className="text-[11px]">
                 {t.isrc}
               </TableCell>
-              <TableCell mono className="text-xs">
+              <TableCell mono className="text-[11px]">
                 {formatDateISO(t.valid_from)}
               </TableCell>
-              <TableCell mono className="text-xs">
+              <TableCell mono className="text-[11px]">
                 {t.valid_to ? formatDateISO(t.valid_to) : "—"}
               </TableCell>
             </TableRow>
@@ -239,15 +239,15 @@ export default async function PlaylistDetailPage({
         </GlassTable>
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-2">
         <div className="flex items-center justify-between px-1">
-          <h2 className="text-lg font-semibold">History (30d)</h2>
+          <h2 className="text-sm font-semibold">History (30d)</h2>
           <span className="text-xs opacity-50">
             Missing streams = tracks not present in catalog snapshot today
           </span>
         </div>
         
-        <GlassTable headers={["Date", "Tracks", "Total Streams", "Daily (Net)", "Daily (LFL)", "Est. Rev", "Missing"]}>
+        <GlassTable headers={["Date", "Tracks", "Total Streams", "Daily", "Est. Rev", "Missing"]}>
           {(stats ?? []).map((r) => (
             <TableRow key={r.date}>
               <TableCell mono>{formatDateISO(r.date)}</TableCell>
@@ -256,7 +256,6 @@ export default async function PlaylistDetailPage({
               <TableCell className="text-lime-700 dark:text-lime-400 font-medium">
                 +{formatInt(r.daily_streams_net)}
               </TableCell>
-              <TableCell>{formatInt(r.daily_streams_lfl)}</TableCell>
               <TableCell>{formatUsd(r.est_revenue_total)}</TableCell>
               <TableCell>
                 {r.missing_streams_track_count ? (
@@ -271,7 +270,7 @@ export default async function PlaylistDetailPage({
           ))}
           {!stats?.length && (
             <TableRow>
-              <TableCell className="text-center opacity-50 py-8" colSpan={7}>
+              <TableCell className="text-center opacity-50 py-8" colSpan={6}>
                 No stats yet for this playlist.
               </TableCell>
             </TableRow>

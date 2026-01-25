@@ -14,9 +14,15 @@
   --sb-accent: #c7f33c; /* lime green */
   --sb-accent-soft: #e1f2ae; /* pale lime */
 
-  /* Shadows */
-  --sb-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
-  --sb-shadow-soft: 0 6px 18px rgba(0, 0, 0, 0.06);
+  /* Density tokens (compact dashboard baseline) */
+  --sb-radius: 12px;
+  --sb-radius-lg: 16px;
+  --sb-blur: 10px;
+
+  /* Shadows (compact) */
+  --sb-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+  --sb-shadow-soft: 0 4px 12px rgba(0, 0, 0, 0.06);
+  --sb-shadow-compact: 0 2px 10px rgba(0, 0, 0, 0.06);
 }
 
 @theme inline {
@@ -71,6 +77,11 @@ html[data-theme="dark"] {
   navigation: auto;
 }
 
+html {
+  /* Global density dial (smaller dashboard UI without browser zoom hacks) */
+  font-size: 14px;
+}
+
 body {
   background: var(--sb-bg);
   color: var(--sb-text);
@@ -79,21 +90,43 @@ body {
     
   /* Tabular figures for better data alignment */
   font-variant-numeric: tabular-nums;
+  line-height: 1.35;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--sb-border-2);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--sb-muted);
 }
 
 /* Design helpers (glassmorphism + soft cards) */
 .sb-glass {
   background: var(--sb-surface);
   border: 1px solid var(--sb-border);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  box-shadow: var(--sb-shadow-soft);
+  backdrop-filter: blur(var(--sb-blur));
+  -webkit-backdrop-filter: blur(var(--sb-blur));
+  box-shadow: var(--sb-shadow-compact);
+  border-radius: var(--sb-radius-lg);
 }
 
 .sb-card {
   background: var(--sb-card);
   border: 1px solid var(--sb-border);
-  box-shadow: var(--sb-shadow-soft);
+  box-shadow: var(--sb-shadow-compact);
+  border-radius: var(--sb-radius);
 }
 
 .sb-ring {
@@ -141,4 +174,13 @@ body {
 /* Utilities */
 .font-display {
   font-family: var(--font-display);
+}
+
+/* Safe area padding for mobile devices (iOS notch support) */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0);
 }

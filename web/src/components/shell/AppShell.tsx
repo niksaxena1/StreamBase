@@ -1,7 +1,8 @@
 import { ReactNode } from "react";
 
-import { PillNav } from "@/components/shell/PillNav";
 import { SideRail } from "@/components/shell/SideRail";
+import { MobileNav } from "@/components/shell/MobileNav";
+import { Breadcrumbs } from "@/components/shell/Breadcrumbs";
 import { LogoutButton } from "@/components/shell/LogoutButton";
 import { ThemeToggle } from "@/components/shell/ThemeToggle";
 
@@ -12,40 +13,36 @@ export function AppShell(props: { children: ReactNode }) {
       <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
         <div className="absolute -left-24 -top-24">
           <div 
-            className="sb-accent-glow h-[520px] w-[520px] opacity-70" 
+            className="sb-accent-glow h-[420px] w-[420px] opacity-45" 
             style={{ animationDelay: "0s" }}
           />
         </div>
         <div className="absolute -right-40 top-24">
           <div 
-            className="sb-accent-glow h-[560px] w-[560px] opacity-50" 
+            className="sb-accent-glow h-[460px] w-[460px] opacity-35" 
             style={{ animationDelay: "-5s", animationDuration: "25s" }}
           />
         </div>
       </div>
 
-      <div className="mx-auto flex w-full max-w-[1320px] gap-6 px-4 py-6 pb-24 sm:pb-6">
+      <div className="mx-auto flex w-full max-w-[1600px] gap-3 px-3 py-3 pb-24 sm:pb-3">
         <SideRail />
 
-        <div className="flex min-w-0 flex-1 flex-col gap-6">
-          {/* Top bar with pill navigation (glass) */}
-          <header className="sb-glass rounded-[28px] px-4 py-3">
+        <div className="flex min-w-0 flex-1 flex-col gap-3">
+          {/* Top bar with breadcrumbs (glass) */}
+          <header className="sb-glass px-3 py-2">
             <div className="flex items-center justify-between gap-4">
               <div className="flex items-center gap-3">
-                <div className="sb-ring grid h-10 w-10 place-items-center rounded-2xl bg-black text-white dark:bg-white dark:text-black">
+                <div className="sb-ring grid h-9 w-9 place-items-center rounded-xl bg-black text-white dark:bg-white dark:text-black">
                   <LogoMark />
                 </div>
                 <div>
-                  <div className="font-serif text-lg font-semibold tracking-tight">
+                  <div className="font-display text-sm font-semibold tracking-tight">
                     SpotiBase
                   </div>
-                  <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
-                    SpotOnTrack → Supabase
-                  </div>
+                  <Breadcrumbs />
                 </div>
               </div>
-
-              <PillNav />
 
               <div className="flex items-center gap-2">
                 <ThemeToggle />
@@ -55,7 +52,7 @@ export function AppShell(props: { children: ReactNode }) {
           </header>
 
           {/* Main surface */}
-          <main className="sb-glass rounded-[32px] p-6 sm:p-8">
+          <main className="sb-glass p-4 sm:p-5">
             {props.children}
           </main>
 
@@ -64,6 +61,9 @@ export function AppShell(props: { children: ReactNode }) {
           </footer>
         </div>
       </div>
+
+      {/* Mobile Navigation */}
+      <MobileNav />
     </div>
   );
 }

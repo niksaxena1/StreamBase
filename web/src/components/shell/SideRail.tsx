@@ -11,7 +11,16 @@ export type Item = {
 };
 
 export const navItems: Item[] = [
-  { href: "/", label: "Dashboard", icon: (a) => <IconGrid active={a} /> },
+  {
+    href: "/dashboard/playlists",
+    label: "Playlist Dash",
+    icon: (a) => <IconList active={a} />,
+  },
+  {
+    href: "/dashboard/artists",
+    label: "Artist Dash",
+    icon: (a) => <IconUser active={a} />,
+  },
   { href: "/tracks", label: "Tracks", icon: (a) => <IconMusic active={a} /> },
   {
     href: "/playlists",
@@ -25,18 +34,17 @@ export function SideRail() {
   const pathname = usePathname();
 
   return (
-    <aside className="hidden w-[76px] shrink-0 sm:block">
-      <div className="sb-glass sticky top-6 flex flex-col items-center gap-3 rounded-[28px] px-3 py-4">
+    <aside className="hidden w-[60px] shrink-0 sm:block">
+      <div className="sb-glass sticky top-3 flex flex-col items-center gap-2 px-2 py-2">
         {navItems.map((it) => {
-          const active =
-            it.href === "/" ? pathname === "/" : pathname.startsWith(it.href);
+          const active = pathname === it.href || pathname.startsWith(`${it.href}/`);
           return (
             <Link
               key={it.href}
               href={it.href}
               title={it.label}
               className={[
-                "grid h-11 w-11 place-items-center rounded-full transition",
+                "grid h-9 w-9 place-items-center rounded-full transition",
                 active
                   ? "bg-black text-white shadow-sm"
                   : "bg-white/70 text-black/70 hover:bg-white",
@@ -50,10 +58,10 @@ export function SideRail() {
         <div className="my-2 h-px w-full" style={{ background: "var(--sb-border)" }} />
 
         <div
-          className="grid h-11 w-11 place-items-center rounded-full"
+          className="grid h-9 w-9 place-items-center rounded-full"
           style={{
             background: "color-mix(in srgb, var(--sb-accent) 55%, white)",
-            boxShadow: "var(--sb-shadow-soft)",
+            boxShadow: "var(--sb-shadow-compact)",
           }}
           title="Accent"
         >
@@ -89,6 +97,25 @@ export function IconGrid(props: { active: boolean }) {
         stroke="currentColor"
         strokeWidth="1.8"
         opacity="0.7"
+      />
+    </svg>
+  );
+}
+
+export function IconUser(props: { active: boolean }) {
+  const iconClass = props.active ? "text-white" : "text-black/70";
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className={iconClass}>
+      <path
+        d="M20 21C20 17.6863 16.4183 15 12 15C7.58172 15 4 17.6863 4 21"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+      <path
+        d="M12 12C14.2091 12 16 10.2091 16 8C16 5.79086 14.2091 4 12 4C9.79086 4 8 5.79086 8 8C8 10.2091 9.79086 12 12 12Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
       />
     </svg>
   );
