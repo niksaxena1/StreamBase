@@ -119,16 +119,17 @@ export default async function HealthPage({
       const nonCatalogIsrcs = Array.from(playlistIsrcs).filter((isrc) => !catalogIsrcs.has(isrc));
 
       if (nonCatalogIsrcs.length > 0) {
-        // Fetch track names, artist names, and album images
+        // Fetch track names, artist names, artist IDs, and album images
         const { data: tracks } = await sb
           .from("tracks")
-          .select("isrc,name,spotify_artist_names,spotify_album_image_url")
+          .select("isrc,name,spotify_artist_names,spotify_artist_ids,spotify_album_image_url")
           .in("isrc", nonCatalogIsrcs);
 
         nonCatalogTracksMap.set(warning.playlist_key ?? "", (tracks ?? []).map((t) => ({ 
           isrc: t.isrc, 
           name: t.name,
           artist_names: t.spotify_artist_names,
+          artist_ids: t.spotify_artist_ids,
           album_image_url: t.spotify_album_image_url,
         })));
       }

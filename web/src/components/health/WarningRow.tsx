@@ -16,6 +16,7 @@ type WarningRowProps = {
     isrc: string; 
     name: string | null;
     artist_names?: string[] | null;
+    artist_ids?: string[] | null;
     album_image_url?: string | null;
   }>;
 };
@@ -121,7 +122,7 @@ export function WarningRow({ warning, nonCatalogTracks }: WarningRowProps) {
                         </Link>
                         {track.artist_names && track.artist_names.length > 0 && (
                           <span className="opacity-60">
-                            by <ArtistLinks artistNames={track.artist_names} />
+                            by <ArtistLinks artistNames={track.artist_names} artistIds={track.artist_ids ?? undefined} />
                           </span>
                         )}
                       </div>
