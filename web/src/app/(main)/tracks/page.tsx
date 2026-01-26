@@ -296,6 +296,13 @@ export default async function TracksPage({
       </div>
     );
   } catch (error) {
+    // Re-throw redirect errors - they should not be caught
+    if (error && typeof error === "object" && "digest" in error) {
+      const digest = String((error as { digest?: string }).digest);
+      if (digest.startsWith("NEXT_REDIRECT")) {
+        throw error;
+      }
+    }
     console.error("Error in TracksPage:", error);
     const errorMessage = error instanceof Error ? error.message : String(error);
     return (
