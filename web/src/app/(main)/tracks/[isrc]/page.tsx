@@ -251,7 +251,9 @@ export default async function TrackDetailPage({
             </div>
           </div>
           <div className="mt-2 overflow-x-auto">
-            <Sparkline values={sparkValues} width={520} height={120} />
+            <div className="h-[120px] w-full">
+              <Sparkline data={sparkValues} />
+            </div>
           </div>
         </div>
 
