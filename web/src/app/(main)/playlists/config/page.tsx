@@ -42,15 +42,20 @@ export default async function PlaylistsConfigPage() {
       )
       .order("is_catalog", { ascending: false })
       .order("display_name", { ascending: true });
-    data = result.data;
+    data = result.data as any;
     error = result.error;
   }
 
-  const playlists = (data ?? []).map((p: any) => ({
-    ...p,
+  const playlists = (data ?? []).map((p: any): PlaylistRow => ({
+    playlist_key: p.playlist_key,
+    display_name: p.display_name,
+    is_catalog: p.is_catalog ?? false,
     playlist_type: p.playlist_type ?? null,
     display_order: p.display_order ?? null,
-  })) as PlaylistRow[];
+    spotify_playlist_id: p.spotify_playlist_id ?? null,
+    spotify_playlist_image_url: p.spotify_playlist_image_url ?? null,
+    spotify_last_fetched_at: p.spotify_last_fetched_at ?? null,
+  }));
 
   // Fetch latest stats for all playlists
   const playlistKeys = playlists.map((p) => p.playlist_key);

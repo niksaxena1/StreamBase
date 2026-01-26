@@ -444,12 +444,19 @@ export default async function CatalogPage({
       3600,
     );
     if (trackData) {
+      const track = trackData as {
+        name: string | null;
+        spotify_album_image_url: string | null;
+        spotify_track_id: string | null;
+        spotify_artist_names: string[] | null;
+        spotify_artist_ids: string[] | null;
+      };
       selectedTrack = {
-        name: trackData.name ?? null,
-        albumImageUrl: trackData.spotify_album_image_url ?? null,
-        spotifyTrackId: trackData.spotify_track_id ?? null,
-        artistNames: trackData.spotify_artist_names ?? null,
-        artistIds: trackData.spotify_artist_ids ?? null,
+        name: track.name ?? null,
+        albumImageUrl: track.spotify_album_image_url ?? null,
+        spotifyTrackId: track.spotify_track_id ?? null,
+        artistNames: track.spotify_artist_names ?? null,
+        artistIds: track.spotify_artist_ids ?? null,
       };
     }
   }
@@ -492,25 +499,30 @@ export default async function CatalogPage({
             <User className="h-8 w-8 opacity-40" />
           </div>
         )}
-        <div className="flex items-center gap-2">
-          <h1 className="font-display text-2xl font-semibold tracking-tight">
+        <div>
+          <div className="flex items-center gap-2">
+            <h1 className="font-display text-2xl font-semibold tracking-tight">
+              <Link
+                href={`/artists/${artistId}`}
+                className="transition-colors hover:text-lime-600 dark:hover:text-lime-400"
+              >
+                {artistName}
+              </Link>
+            </h1>
             <Link
-              href={`/artists/${artistId}`}
-              className="transition-colors hover:text-lime-600 dark:hover:text-lime-400"
+              href={`https://open.spotify.com/artist/${artistId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center rounded-full p-1.5 transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+              title="Open on Spotify"
+              style={{ color: "var(--sb-muted)" }}
             >
-              {artistName}
+              <ExternalLink className="h-4 w-4" />
             </Link>
-          </h1>
-          <Link
-            href={`https://open.spotify.com/artist/${artistId}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center justify-center rounded-full p-1.5 transition-colors hover:bg-black/5 dark:hover:bg-white/10"
-            title="Open on Spotify"
-            style={{ color: "var(--sb-muted)" }}
-          >
-            <ExternalLink className="h-4 w-4" />
-          </Link>
+          </div>
+          <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
+            {formatInt(artistTracks.length)} {artistTracks.length === 1 ? "track" : "tracks"}
+          </div>
         </div>
       </div>
 
