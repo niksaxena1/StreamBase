@@ -119,7 +119,7 @@ export function TracksList({ tracks, searchQuery }: TracksListProps) {
                     </div>
                   ) : null}
                 </td>
-                <td className="px-3 py-2 font-mono text-[11px]">
+                <td className="px-3 py-2 font-mono text-[11px] opacity-40" style={{ color: "var(--sb-muted)" }}>
                   <Link className="underline" href={`/tracks/${track.isrc}`}>
                     {track.isrc}
                   </Link>

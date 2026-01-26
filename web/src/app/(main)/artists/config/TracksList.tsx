@@ -83,7 +83,7 @@ export function TracksList({ tracks, searchQuery }: TracksListProps) {
               </div>
             ) : null}
           </TableCell>
-          <TableCell mono className="text-xs">
+          <TableCell mono className="text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>
             {track.isrc}
           </TableCell>
           <TableCell>

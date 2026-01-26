@@ -477,7 +477,7 @@ export default async function PlaylistsPage({
                     </div>
                   ) : null}
                 </TableCell>
-                <TableCell mono className="text-xs">
+                <TableCell mono className="text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>
                   {t.isrc}
                 </TableCell>
                 <TableCell className="font-medium text-lime-700 dark:text-lime-400">

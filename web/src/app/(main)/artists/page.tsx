@@ -533,7 +533,7 @@ export default async function ArtistsPage({
                     {t.name ?? t.isrc}
                   </Link>
                 </TableCell>
-                <TableCell mono className="text-xs">
+                <TableCell mono className="text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>
                   {t.isrc}
                 </TableCell>
                 <TableCell>{t.total === null ? "—" : formatInt(t.total)}</TableCell>
@@ -563,7 +563,7 @@ export default async function ArtistsPage({
                     {t.name ?? t.isrc}
                   </Link>
                 </TableCell>
-                <TableCell mono className="text-xs">
+                <TableCell mono className="text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>
                   {t.isrc}
                 </TableCell>
                 <TableCell className="font-medium text-lime-700 dark:text-lime-400">

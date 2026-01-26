@@ -7,10 +7,11 @@ import { TracksList } from "./TracksList";
 type Track = {
   isrc: string;
   name: string | null;
+  release_date: string | null;
+  last_seen: string | null;
   albumImageUrl: string | null;
   artistNames: string[] | null;
   artistIds: string[] | null;
-  externalUrl: string | null;
 };
 
 type TracksConfigClientProps = {

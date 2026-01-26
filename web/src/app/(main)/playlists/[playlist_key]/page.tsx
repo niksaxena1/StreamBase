@@ -229,7 +229,7 @@ export default async function PlaylistDetailPage({
                   </div>
                 ) : null}
               </TableCell>
-              <TableCell mono className="text-[11px]">
+              <TableCell mono className="text-[11px] opacity-40" style={{ color: "var(--sb-muted)" }}>
                 {t.isrc}
               </TableCell>
               <TableCell mono className="text-[11px]">
