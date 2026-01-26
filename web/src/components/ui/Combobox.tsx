@@ -16,6 +16,7 @@ export function Combobox(props: {
   ariaLabel: string;
   onChange: (nextValue: string) => void;
   className?: string;
+  imageShape?: "circle" | "square";
 }) {
   const listId = useId();
   const selectedLabel =
@@ -137,10 +138,10 @@ export function Combobox(props: {
                     <img
                       src={o.imageUrl}
                       alt={o.label}
-                      className="h-5 w-5 rounded-full object-cover flex-shrink-0"
+                      className={`h-5 w-5 ${props.imageShape === "square" ? "rounded-lg" : "rounded-full"} object-cover flex-shrink-0`}
                     />
                   ) : (
-                    <div className="h-5 w-5 rounded-full bg-white/60 dark:bg-white/10 flex items-center justify-center flex-shrink-0">
+                    <div className={`h-5 w-5 ${props.imageShape === "square" ? "rounded-lg" : "rounded-full"} bg-white/60 dark:bg-white/10 flex items-center justify-center flex-shrink-0`}>
                       <User className="h-3 w-3 opacity-40" />
                     </div>
                   )}

@@ -148,6 +148,7 @@ export function ArtistDashboardControls(props: {
                 ]}
                 placeholder="Type a track…"
                 onChange={(v) => onSelectTrack(v)}
+                imageShape="square"
               />
             </div>
           </div>
