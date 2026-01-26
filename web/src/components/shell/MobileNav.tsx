@@ -18,7 +18,7 @@ export function MobileNav() {
               href={item.href}
               className={`flex flex-col items-center justify-center gap-1.5 rounded-lg p-3 transition-colors min-w-[60px] ${
                 active
-                  ? "text-black dark:text-white"
+                  ? "bg-[var(--sb-accent)] text-black"
                   : "text-black/70 dark:text-white/70 hover:bg-black/5 dark:hover:bg-white/5"
               }`}
             >
