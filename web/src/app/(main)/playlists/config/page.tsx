@@ -12,6 +12,7 @@ type PlaylistRow = {
   playlist_key: string;
   display_name: string;
   is_catalog: boolean;
+  playlist_type: string | null;
   spotify_playlist_id: string | null;
   spotify_playlist_image_url: string | null;
   spotify_last_fetched_at: string | null;
@@ -24,7 +25,7 @@ export default async function PlaylistsConfigPage() {
   const { data, error } = await sb
     .from("playlists")
     .select(
-      "playlist_key,display_name,is_catalog,spotify_playlist_id,spotify_playlist_image_url,spotify_last_fetched_at",
+      "playlist_key,display_name,is_catalog,playlist_type,spotify_playlist_id,spotify_playlist_image_url,spotify_last_fetched_at",
     )
     .order("is_catalog", { ascending: false })
     .order("display_name", { ascending: true });
@@ -128,15 +129,36 @@ export default async function PlaylistsConfigPage() {
               <span className="font-medium">{p.display_name}</span>
             </TableCell>
             <TableCell>
-              {p.is_catalog ? (
-                <span className="inline-flex items-center rounded-full bg-lime-400/20 px-2.5 py-0.5 text-xs font-medium text-lime-800 dark:text-lime-300">
-                  Catalog
-                </span>
-              ) : (
-                <span className="inline-flex items-center rounded-full bg-black/10 px-2.5 py-0.5 text-xs font-medium text-black/80 dark:bg-white/10 dark:text-white/60">
-                  Standard
-                </span>
-              )}
+              {(() => {
+                const type = p.playlist_type || (p.is_catalog ? "Catalog" : "Standard");
+                const typeColors: Record<string, { bg: string; text: string }> = {
+                  Catalog: {
+                    bg: "bg-lime-400/20",
+                    text: "text-lime-800 dark:text-lime-300",
+                  },
+                  Label: {
+                    bg: "bg-blue-400/20",
+                    text: "text-blue-800 dark:text-blue-300",
+                  },
+                  Entity: {
+                    bg: "bg-purple-400/20",
+                    text: "text-purple-800 dark:text-purple-300",
+                  },
+                  Distro: {
+                    bg: "bg-orange-400/20",
+                    text: "text-orange-800 dark:text-orange-300",
+                  },
+                };
+                const colors = typeColors[type] || {
+                  bg: "bg-black/10",
+                  text: "text-black/80 dark:text-white/60",
+                };
+                return (
+                  <span className={`inline-flex items-center rounded-full ${colors.bg} px-2.5 py-0.5 text-xs font-medium ${colors.text}`}>
+                    {type}
+                  </span>
+                );
+              })()}
             </TableCell>
           </TableRow>
         ))}

@@ -313,9 +313,6 @@ export default async function PlaylistsPage({
     <div className="space-y-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
-            Dashboard / Playlists
-          </div>
           <h1 className="font-display text-2xl font-semibold tracking-tight">
             {title}
           </h1>

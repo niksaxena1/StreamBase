@@ -7,7 +7,7 @@ import { useEffect } from "react";
 import { Combobox } from "@/components/ui/Combobox";
 
 type ArtistOption = { id: string; name: string; imageUrl?: string | null };
-type TrackOption = { isrc: string; name: string };
+type TrackOption = { isrc: string; name: string; albumImageUrl?: string | null };
 
 const RANGE_CHOICES = [30, 90, 365] as const;
 
@@ -125,7 +125,7 @@ export function ArtistDashboardControls(props: {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <div className="flex items-center gap-2">
             <div className="text-xs font-medium">Artist</div>
-            <div className="sb-ring rounded-xl bg-black/10 px-2.5 py-1.5 dark:bg-white/10">
+            <div className="sb-ring rounded-xl bg-black/10 px-2.5 py-1.5 dark:bg-white/10 min-w-[280px] w-full max-w-[400px]">
               <Combobox
                 ariaLabel="Select artist"
                 value={props.artistId}
@@ -138,13 +138,13 @@ export function ArtistDashboardControls(props: {
 
           <div className="flex items-center gap-2">
             <div className="text-xs font-medium">Track</div>
-            <div className="sb-ring rounded-xl bg-black/10 px-2.5 py-1.5 dark:bg-white/10">
+            <div className="sb-ring rounded-xl bg-black/10 px-2.5 py-1.5 dark:bg-white/10 min-w-[280px] w-full max-w-[400px]">
               <Combobox
                 ariaLabel="Select track"
                 value={props.isrc ?? null}
                 options={[
                   { value: "", label: "(none)" },
-                  ...props.tracks.map((t) => ({ value: t.isrc, label: t.name })),
+                  ...props.tracks.map((t) => ({ value: t.isrc, label: t.name, imageUrl: t.albumImageUrl })),
                 ]}
                 placeholder="Type a track…"
                 onChange={(v) => onSelectTrack(v)}

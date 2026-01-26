@@ -22,6 +22,7 @@ class Playlist:
     playlist_key: str
     display_name: str
     is_catalog: bool
+    playlist_type: Optional[str]
     dashboard_url: str
 
 
@@ -63,8 +64,9 @@ def load_playlists_csv(path: str) -> List[Playlist]:
             name = (row.get("display_name") or "").strip()
             url = (row.get("dashboard_url") or "").strip()
             is_catalog = (row.get("is_catalog") or "").strip().lower() in ("1", "true", "yes", "y")
+            playlist_type = (row.get("playlist_type") or "").strip() or None
             if key and name:
-                out.append(Playlist(playlist_key=key, display_name=name, is_catalog=is_catalog, dashboard_url=url))
+                out.append(Playlist(playlist_key=key, display_name=name, is_catalog=is_catalog, playlist_type=playlist_type, dashboard_url=url))
     return out
 
 
@@ -179,7 +181,7 @@ def main():
 
     playlists = load_playlists_csv(args.config)
     if not any(p.playlist_key == "all_catalog" for p in playlists):
-        playlists.append(Playlist(playlist_key="all_catalog", display_name="All Catalog", is_catalog=True, dashboard_url=""))
+        playlists.append(Playlist(playlist_key="all_catalog", display_name="All Catalog", is_catalog=True, playlist_type="Catalog", dashboard_url=""))
 
     exports_root = Path(args.exports_dir)
     y, m, d = ymd(run_date)
@@ -199,6 +201,7 @@ def main():
                     "playlist_key": p.playlist_key,
                     "display_name": p.display_name,
                     "is_catalog": p.is_catalog,
+                    "playlist_type": p.playlist_type,
                     "dashboard_url": p.dashboard_url or None,
                 }
                 for p in playlists

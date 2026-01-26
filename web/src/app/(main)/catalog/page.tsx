@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ExternalLink, List } from "lucide-react";
+import { ExternalLink, User } from "lucide-react";
 
 import { supabaseServer } from "@/lib/supabase/server";
 import { cachedQuery } from "@/lib/supabase/cache";
@@ -14,6 +14,7 @@ import { StatCard } from "@/components/StatCard";
 import { AnimatedCounter } from "@/components/ui/AnimatedCounter";
 import { DailyStreamsChart } from "@/components/charts/DailyStreamsChart";
 import { DailyStreamsWithMAChart } from "@/components/charts/DailyStreamsWithMAChart";
+import { ArtistLinks } from "@/components/ui/ArtistLinks";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,7 @@ type TrackRow = {
   name: string | null;
   spotify_artist_ids: string[] | null;
   spotify_artist_names: string[] | null;
+  spotify_album_image_url: string | null;
 };
 
 type TrackDailyRow = {
@@ -55,7 +57,7 @@ async function fetchAllTracksMeta(
     const to = from + pageSize - 1;
     const { data, error } = await sb
       .from("tracks")
-      .select("isrc,name,spotify_artist_ids,spotify_artist_names")
+      .select("isrc,name,spotify_artist_ids,spotify_artist_names,spotify_album_image_url")
       .not("spotify_artist_ids", "is", null)
       .order("last_seen", { ascending: false })
       .range(from, to);
@@ -225,11 +227,11 @@ export default async function CatalogPage({
     async () =>
       await sb
         .from("tracks")
-        .select("isrc,name,spotify_artist_ids,spotify_artist_names")
+        .select("isrc,name,spotify_artist_ids,spotify_artist_names,spotify_album_image_url")
         .contains("spotify_artist_ids", [artistId])
         .order("last_seen", { ascending: false })
         .limit(800),
-    `artist-tracks-${artistId}`,
+    `artist-tracks-v2-${artistId}`,
     3600,
   );
 
@@ -404,7 +406,11 @@ export default async function CatalogPage({
   const track30d = sumLastNDays(trackDailyDesc, 30);
 
   const trackOptions = artistTracks
-    .map((t) => ({ isrc: t.isrc, name: t.name ?? t.isrc }))
+    .map((t) => ({ 
+      isrc: t.isrc, 
+      name: t.name ?? t.isrc,
+      albumImageUrl: t.spotify_album_image_url ?? null,
+    }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
   // Fetch artist images from Spotify API
@@ -419,13 +425,19 @@ export default async function CatalogPage({
   });
 
   // Fetch selected track details if isrc is available
-  let selectedTrack: { name: string | null; albumImageUrl: string | null } | null = null;
+  let selectedTrack: { 
+    name: string | null; 
+    albumImageUrl: string | null; 
+    spotifyTrackId: string | null;
+    artistNames: string[] | null;
+    artistIds: string[] | null;
+  } | null = null;
   if (isrc) {
     const { data: trackData } = await cachedQuery(
       async () =>
         await sb
           .from("tracks")
-          .select("name,spotify_album_image_url")
+          .select("name,spotify_album_image_url,spotify_track_id,spotify_artist_names,spotify_artist_ids")
           .eq("isrc", isrc)
           .maybeSingle(),
       `track-selected-${isrc}`,
@@ -435,6 +447,9 @@ export default async function CatalogPage({
       selectedTrack = {
         name: trackData.name ?? null,
         albumImageUrl: trackData.spotify_album_image_url ?? null,
+        spotifyTrackId: trackData.spotify_track_id ?? null,
+        artistNames: trackData.spotify_artist_names ?? null,
+        artistIds: trackData.spotify_artist_ids ?? null,
       };
     }
   }
@@ -454,14 +469,6 @@ export default async function CatalogPage({
             )}
           </div>
         </div>
-        <Link
-          href="/catalog/config"
-          className="sb-ring grid h-8 w-8 place-items-center rounded-full bg-white/70 text-xs font-medium transition hover:bg-white dark:bg-white/10 dark:hover:bg-white/15"
-          aria-label="Catalog config"
-          title="Catalog config"
-        >
-          <List className="h-4 w-4" style={{ color: "var(--sb-text)" }} />
-        </Link>
       </div>
 
       <ArtistDashboardControls
@@ -472,25 +479,39 @@ export default async function CatalogPage({
         rangeDays={rangeDays}
       />
 
-      <div className="flex items-center gap-2">
-        <h1 className="font-display text-2xl font-semibold tracking-tight">
+      <div className="flex items-center gap-4">
+        {artistsWithImages.find((a) => a.id === artistId)?.imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={artistsWithImages.find((a) => a.id === artistId)!.imageUrl!}
+            alt={artistName}
+            className="h-16 w-16 rounded-full object-cover sb-ring"
+          />
+        ) : (
+          <div className="h-16 w-16 rounded-full sb-ring bg-white/60 flex items-center justify-center">
+            <User className="h-8 w-8 opacity-40" />
+          </div>
+        )}
+        <div className="flex items-center gap-2">
+          <h1 className="font-display text-2xl font-semibold tracking-tight">
+            <Link
+              href={`/artists/${artistId}`}
+              className="transition-colors hover:text-lime-600 dark:hover:text-lime-400"
+            >
+              {artistName}
+            </Link>
+          </h1>
           <Link
-            href={`/artists/${artistId}`}
-            className="transition-colors hover:text-lime-600 dark:hover:text-lime-400"
+            href={`https://open.spotify.com/artist/${artistId}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center justify-center rounded-full p-1.5 transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+            title="Open on Spotify"
+            style={{ color: "var(--sb-muted)" }}
           >
-            {artistName}
+            <ExternalLink className="h-4 w-4" />
           </Link>
-        </h1>
-        <Link
-          href={`https://open.spotify.com/artist/${artistId}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center justify-center rounded-full p-1.5 transition-colors hover:bg-black/5 dark:hover:bg-white/10"
-          title="Open on Spotify"
-          style={{ color: "var(--sb-muted)" }}
-        >
-          <ExternalLink className="h-4 w-4" />
-        </Link>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
@@ -609,7 +630,7 @@ export default async function CatalogPage({
         </div>
       </div>
 
-      <div className="space-y-3">
+      <div className="space-y-3 border-t pt-3" style={{ borderColor: "var(--sb-border)" }}>
         {isrc && selectedTrack ? (
           <div className="flex items-center gap-3">
             {selectedTrack.albumImageUrl ? (
@@ -617,22 +638,45 @@ export default async function CatalogPage({
               <img
                 src={selectedTrack.albumImageUrl}
                 alt="Album cover"
-                className="h-12 w-12 rounded-lg object-cover sb-ring"
+                className="h-16 w-16 rounded-lg object-cover sb-ring"
               />
             ) : (
-              <div className="h-12 w-12 rounded-lg sb-ring bg-white/60" />
+              <div className="h-16 w-16 rounded-lg sb-ring bg-white/60" />
             )}
             <div>
-              <h2 className="text-sm font-semibold">
-                <Link
-                  href={`/tracks/${isrc}`}
-                  className="transition-colors hover:text-lime-600 dark:hover:text-lime-400"
-                >
-                  {selectedTrack.name ?? isrc}
-                </Link>
-              </h2>
-              <div className="mt-0.5 text-xs" style={{ color: "var(--sb-muted)" }}>
-                ISRC: <span className="font-mono">{isrc}</span>
+              <div className="flex items-center gap-2">
+                <h1 className="font-display text-2xl font-semibold tracking-tight">
+                  <Link
+                    href={`/tracks/${isrc}`}
+                    className="transition-colors hover:text-lime-600 dark:hover:text-lime-400"
+                  >
+                    {selectedTrack.name ?? isrc}
+                  </Link>
+                </h1>
+                {selectedTrack.spotifyTrackId && (
+                  <Link
+                    href={`https://open.spotify.com/track/${selectedTrack.spotifyTrackId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center justify-center rounded-full p-1.5 transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+                    title="Open on Spotify"
+                    style={{ color: "var(--sb-muted)" }}
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                  </Link>
+                )}
+              </div>
+              <div className="mt-0.5 flex items-center gap-2 text-xs" style={{ color: "var(--sb-muted)" }}>
+                {selectedTrack.artistNames?.length ? (
+                  <>
+                    <ArtistLinks
+                      artistNames={selectedTrack.artistNames}
+                      artistIds={selectedTrack.artistIds ?? undefined}
+                    />
+                    <span>•</span>
+                  </>
+                ) : null}
+                <span>ISRC: <span className="font-mono">{isrc}</span></span>
               </div>
             </div>
           </div>

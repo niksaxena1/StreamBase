@@ -2,18 +2,17 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
-import { ExternalLink, Music } from "lucide-react";
 
-import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
 
 type Track = {
   isrc: string;
   name: string | null;
+  release_date: string | null;
+  last_seen: string | null;
   albumImageUrl: string | null;
   artistNames: string[] | null;
   artistIds: string[] | null;
-  externalUrl: string | null;
 };
 
 type TracksListProps = {
@@ -62,67 +61,91 @@ export function TracksList({ tracks, searchQuery }: TracksListProps) {
   }, [tracks, searchQuery]);
 
   return (
-    <GlassTable headers={["", "Track", "Artists", "ISRC", ""]}>
-      {filteredTracks.map((track) => (
-        <TableRow key={track.isrc}>
-          <TableCell>
-            {track.albumImageUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={track.albumImageUrl}
-                alt="Album cover"
-                className="h-10 w-10 rounded-lg object-cover sb-ring"
-              />
-            ) : (
-              <div className="h-10 w-10 rounded-lg sb-ring bg-white/60 flex items-center justify-center">
-                <Music className="h-5 w-5 opacity-40" />
-              </div>
-            )}
-          </TableCell>
-          <TableCell>
-            <Link
-              className="transition-colors hover:text-lime-600 dark:hover:text-lime-400 font-medium"
-              href={`/tracks/${track.isrc}`}
-            >
-              {track.name ?? track.isrc}
-            </Link>
-          </TableCell>
-          <TableCell>
-            {track.artistNames?.length ? (
-              <ArtistLinks
-                artistNames={track.artistNames}
-                artistIds={track.artistIds ?? undefined}
-              />
-            ) : (
-              <span className="text-xs opacity-50">—</span>
-            )}
-          </TableCell>
-          <TableCell mono className="text-xs">
-            {track.isrc}
-          </TableCell>
-          <TableCell>
-            {track.externalUrl ? (
-              <Link
-                href={track.externalUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center justify-center rounded-full p-1.5 transition-colors hover:bg-black/5 dark:hover:bg-white/10"
-                title="Open on Spotify"
-                style={{ color: "var(--sb-muted)" }}
+    <div className="sb-card overflow-hidden">
+      <div
+        className="flex items-center justify-between border-b px-3 py-2"
+        style={{ borderColor: "var(--sb-border)" }}
+      >
+        <div className="text-xs font-medium">
+          Results{" "}
+          <span style={{ color: "var(--sb-muted)" }}>
+            ({filteredTracks.length.toLocaleString("en-US")})
+          </span>
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-xs">
+          <thead className="text-left text-[11px]" style={{ color: "var(--sb-muted)" }}>
+            <tr className="border-b" style={{ borderColor: "var(--sb-border)" }}>
+              <th className="px-3 py-2 font-medium"></th>
+              <th className="px-3 py-2 font-medium">Track</th>
+              <th className="px-3 py-2 font-medium">ISRC</th>
+              <th className="px-3 py-2 font-medium">Release</th>
+              <th className="px-3 py-2 font-medium">Last seen</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredTracks.map((track) => (
+              <tr
+                key={track.isrc}
+                className="border-b last:border-0"
+                style={{ borderColor: "var(--sb-border)" }}
               >
-                <ExternalLink className="h-4 w-4" />
-              </Link>
-            ) : null}
-          </TableCell>
-        </TableRow>
-      ))}
-      {!filteredTracks.length && (
-        <TableRow>
-          <TableCell className="py-8 text-center opacity-50" colSpan={5}>
-            {searchQuery.trim() ? "No tracks found matching your search." : "No tracks found."}
-          </TableCell>
-        </TableRow>
-      )}
-    </GlassTable>
+                <td className="px-3 py-2">
+                  {track.albumImageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={track.albumImageUrl}
+                      alt="Album cover"
+                      className="h-8 w-8 rounded-lg object-cover sb-ring"
+                    />
+                  ) : (
+                    <div className="h-8 w-8 rounded-lg sb-ring bg-white/60" />
+                  )}
+                </td>
+                <td className="px-3 py-2">
+                  <Link
+                    href={`/tracks/${track.isrc}`}
+                    className="font-medium transition-colors hover:text-lime-600 dark:hover:text-lime-400"
+                  >
+                    {track.name ?? track.isrc}
+                  </Link>
+                  {track.artistNames?.length ? (
+                    <div className="mt-0.5 text-xs opacity-60">
+                      <ArtistLinks
+                        artistNames={track.artistNames}
+                        artistIds={track.artistIds ?? undefined}
+                      />
+                    </div>
+                  ) : null}
+                </td>
+                <td className="px-3 py-2 font-mono text-[11px]">
+                  <Link className="underline" href={`/tracks/${track.isrc}`}>
+                    {track.isrc}
+                  </Link>
+                </td>
+                <td className="px-3 py-2 font-mono text-[11px]">
+                  {track.release_date ?? "—"}
+                </td>
+                <td className="px-3 py-2 font-mono text-[11px]">
+                  {track.last_seen ?? "—"}
+                </td>
+              </tr>
+            ))}
+            {!filteredTracks.length && (
+              <tr>
+                <td
+                  className="px-3 py-6 text-sm"
+                  style={{ color: "var(--sb-muted)" }}
+                  colSpan={5}
+                >
+                  {searchQuery.trim() ? "No tracks found matching your search." : "No tracks found."}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }

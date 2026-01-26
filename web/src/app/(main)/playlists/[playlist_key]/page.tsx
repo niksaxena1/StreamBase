@@ -145,7 +145,12 @@ export default async function PlaylistDetailPage({
               <div className="h-12 w-12 rounded-xl sb-ring bg-white/60" />
             )}
             <h1 className="font-display text-xl font-semibold tracking-tight sm:text-2xl">
-              {playlistRow?.display_name ?? playlist_key}
+              <Link
+                href={`/playlists/${playlist_key}`}
+                className="transition-colors hover:text-lime-600 dark:hover:text-lime-400"
+              >
+                {playlistRow?.display_name ?? playlist_key}
+              </Link>
             </h1>
           </div>
           <div className="mt-2 flex items-center gap-3">

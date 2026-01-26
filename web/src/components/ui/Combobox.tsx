@@ -101,10 +101,9 @@ export function Combobox(props: {
           role="listbox"
           id={listId}
           aria-label={`${props.ariaLabel} options`}
-          className="absolute left-0 right-0 top-[calc(100%+8px)] z-[100] max-h-[340px] overflow-auto rounded-2xl border p-1 shadow-lg backdrop-blur-md"
+          className="absolute left-0 right-0 top-[calc(100%+8px)] z-[100] max-h-[340px] overflow-auto rounded-2xl border p-1 shadow-lg backdrop-blur-md bg-white/98 dark:bg-[rgba(20,20,25,0.98)]"
           style={{ 
             borderColor: "var(--sb-border)",
-            background: "var(--sb-card)",
           }}
         >
           {filtered.map((o) => {

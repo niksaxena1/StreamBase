@@ -83,13 +83,16 @@ export function DailyStreamsWithMAChart({
     };
   }, []);
   
-  // Use theme-aware maColor if using default
+  // Use theme-aware maColor if using default - make it very visible for debugging
   const effectiveMaColor = maColor === "rgba(255,255,255,0.75)"
-    ? (isDark ? "rgba(255,255,255,0.75)" : "rgba(0,0,0,0.5)")
+    ? (isDark ? "#ffffff" : "#000000")
     : maColor;
   
   // Keep parity with DailyStreamsChart: accept newest-first and render oldest->newest
   const chartData = [...data].reverse();
+  
+  // Debug: Check if we have any ma7 values
+  const hasMa7Data = chartData.some((d) => d.ma7 != null && !isNaN(Number(d.ma7)));
 
   const fmtValue = (n: number) =>
     valueFormat === "usd" ? formatUsd(n) : formatInt(n);
@@ -184,14 +187,19 @@ export function DailyStreamsWithMAChart({
             fill={`url(#${gid})`}
             activeDot={{ r: 4, fill: dailyColor, stroke: "var(--sb-bg)", strokeWidth: 1.5 }}
           />
-          <Line
-            type="monotone"
-            dataKey="ma7"
-            stroke={effectiveMaColor}
-            strokeWidth={2}
-            dot={false}
-            isAnimationActive={false}
-          />
+          {hasMa7Data && (
+            <Line
+              type="monotone"
+              dataKey="ma7"
+              stroke={effectiveMaColor}
+              strokeWidth={3}
+              dot={false}
+              isAnimationActive={false}
+              strokeDasharray="6 4"
+              connectNulls={false}
+              name="ma7"
+            />
+          )}
         </ComposedChart>
       </ResponsiveContainer>
     </div>
