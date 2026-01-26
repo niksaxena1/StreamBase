@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Make Tailwind's `dark:` variant follow our theme toggle (html[data-theme="dark"]) */
+@custom-variant dark (&:where(html[data-theme="dark"], html[data-theme="dark"] *));
+
 :root {
   /* SpotiBase design tokens (light-first) */
   --sb-bg: #ececec;
