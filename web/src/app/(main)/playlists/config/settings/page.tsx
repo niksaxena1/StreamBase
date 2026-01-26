@@ -44,10 +44,30 @@ export default async function PlaylistSettingsPage() {
   const { data, error } = await sb
     .from("playlists")
     .select(
-      "playlist_key,display_name,spotify_playlist_id,spotify_playlist_image_url,display_order",
+      "playlist_key,display_name,spotify_playlist_id,spotify_playlist_image_url,display_order,collector",
     )
     .order("display_order", { ascending: true, nullsFirst: false })
     .order("display_name", { ascending: true });
+
+  async function updateCollector(formData: FormData) {
+    "use server";
+
+    await requireAdmin();
+    const playlistKey = String(formData.get("playlist_key") ?? "");
+    const raw = String(formData.get("collector") ?? "").trim().toUpperCase();
+
+    const allowed = new Set(["A", "K", "N", "PL", "TG", "NL"]);
+    const collector = raw ? (allowed.has(raw) ? raw : null) : null;
+    if (raw && !collector) throw new Error(`Invalid collector: ${raw}`);
+
+    const svc = supabaseService();
+    const { error: upErr } = await svc
+      .from("playlists")
+      .update({ collector })
+      .eq("playlist_key", playlistKey);
+
+    if (upErr) throw new Error(upErr.message);
+  }
 
   async function updatePlaylist(formData: FormData) {
     "use server";
@@ -110,7 +130,12 @@ export default async function PlaylistSettingsPage() {
         </div>
       )}
 
-      <PlaylistSettingsTable playlists={data ?? []} updatePlaylist={updatePlaylist} reorderPlaylists={reorderPlaylists} />
+      <PlaylistSettingsTable
+        playlists={data ?? []}
+        updatePlaylist={updatePlaylist}
+        updateCollector={updateCollector}
+        reorderPlaylists={reorderPlaylists}
+      />
     </div>
   );
 }

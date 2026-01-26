@@ -1,112 +1,117 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import { useId } from "react";
 
-export function Sparkline(props: {
-  values: number[];
-  width?: number;
-  height?: number;
+export function Sparkline({
+  data,
+  trend = "neutral",
+  className,
+}: {
+  data?: number[];
+  trend?: "up" | "down" | "neutral";
+  className?: string;
 }) {
-  const [isDark, setIsDark] = useState(false);
+  const gid = useId();
 
-  useEffect(() => {
-    const checkTheme = () => {
-      if (typeof window === "undefined") return;
-      const html = document.documentElement;
-      const theme =
-        html.dataset.theme ||
-        (window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-      setIsDark(theme === "dark");
-    };
+  // If we have real data, use it
+  if (data && data.length >= 2) {
+    const max = Math.max(...data);
+    const min = Math.min(...data);
+    const range = max - min || 1;
+    const width = 80;
+    const height = 30;
+    const padding = 2;
 
-    checkTheme();
-    const observer = new MutationObserver(checkTheme);
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["data-theme"],
+    // Create SVG path from data
+    const points = data.map((val, i) => {
+      const x = padding + (i / (data.length - 1)) * (width - padding * 2);
+      const y = padding + (1 - (val - min) / range) * (height - padding * 2);
+      return `${x},${y}`;
     });
-    const mediaQuery = window.matchMedia?.("(prefers-color-scheme: dark)");
-    if (mediaQuery) {
-      mediaQuery.addEventListener("change", checkTheme);
-    }
-    return () => {
-      observer.disconnect();
-      if (mediaQuery) {
-        mediaQuery.removeEventListener("change", checkTheme);
-      }
-    };
-  }, []);
 
-  const w = props.width ?? 320;
-  const h = props.height ?? 72;
-  const vals = props.values.filter((v) => Number.isFinite(v));
+    const pathD = `M ${points.join(" L ")}`;
+    const areaPath = `${pathD} L ${width - padding},${height - padding} L ${padding},${height - padding} Z`;
 
-  if (vals.length < 2) {
+    // Determine color based on trend direction
+    const first = data[0];
+    const last = data[data.length - 1];
+    const isUp = last > first;
+    const color = isUp ? "#c7f33c" : trend === "down" ? "#ff4d4d" : "currentColor";
+
     return (
-      <div
-        className="sb-ring grid place-items-center rounded-[var(--sb-radius)] bg-white/60 px-3 py-4 text-xs"
-        style={{ color: "var(--sb-muted)" }}
+      <svg
+        width="100%"
+        height="100%"
+        viewBox={`0 0 ${width} ${height}`}
+        preserveAspectRatio="none"
+        className={["overflow-visible", className].filter(Boolean).join(" ")}
       >
-        Not enough data
-      </div>
+        {isUp && (
+          <path
+            d={areaPath}
+            fill={`url(#${gid}-up)`}
+            stroke="none"
+            opacity="0.2"
+          />
+        )}
+        <path
+          d={pathD}
+          fill="none"
+          stroke={color}
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          vectorEffect="non-scaling-stroke"
+        />
+        <defs>
+          <linearGradient id={`${gid}-up`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#c7f33c" />
+            <stop offset="100%" stopColor="#c7f33c" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+      </svg>
     );
   }
 
-  const min = Math.min(...vals);
-  const max = Math.max(...vals);
-  const range = Math.max(1, max - min);
+  // Fallback to static mock data paths
+  const paths = {
+    up: "M0 25 C10 25 10 20 20 20 C30 20 30 15 40 15 C50 15 50 5 60 5 C70 5 70 0 80 0",
+    down: "M0 5 C10 5 10 10 20 10 C30 10 30 15 40 15 C50 15 50 20 60 20 C70 20 70 25 80 25",
+    neutral: "M0 15 C20 15 20 10 40 15 C60 20 60 10 80 15",
+  } as const;
 
-  const step = w / (vals.length - 1);
-  const points = vals
-    .map((v, i) => {
-      const x = i * step;
-      const y = h - ((v - min) / range) * h;
-      return `${x.toFixed(2)},${y.toFixed(2)}`;
-    })
-    .join(" ");
+  const color = trend === "up" ? "#c7f33c" : trend === "down" ? "#ff4d4d" : "currentColor";
 
   return (
     <svg
-      width={w}
-      height={h}
-      viewBox={`0 0 ${w} ${h}`}
-      className="block"
-      role="img"
-      aria-label="Sparkline"
+      width="100%"
+      height="100%"
+      viewBox="0 0 80 30"
+      preserveAspectRatio="none"
+      className={["overflow-visible", className].filter(Boolean).join(" ")}
     >
+      <path
+        d={paths[trend]}
+        fill="none"
+        stroke={color}
+        strokeWidth="2"
+        strokeLinecap="round"
+        vectorEffect="non-scaling-stroke"
+      />
+      {trend === "up" && (
+        <path
+          d={`${paths[trend]} L 80 30 L 0 30 Z`}
+          fill={`url(#${gid}-up)`}
+          stroke="none"
+          opacity="0.2"
+        />
+      )}
       <defs>
-        <linearGradient id="sbSparkFill" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="rgba(199,243,60,0.40)" />
-          <stop offset="100%" stopColor="rgba(199,243,60,0.00)" />
+        <linearGradient id={`${gid}-up`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#c7f33c" />
+          <stop offset="100%" stopColor="#c7f33c" stopOpacity="0" />
         </linearGradient>
       </defs>
-
-      {/* hatch background */}
-      <rect
-        x="0"
-        y="0"
-        width={w}
-        height={h}
-        rx="12"
-        fill="transparent"
-      />
-
-      {/* area */}
-      <polygon
-        points={`${points} ${w},${h} 0,${h}`}
-        fill="url(#sbSparkFill)"
-        opacity="0.8"
-      />
-
-      {/* line */}
-      <polyline
-        points={points}
-        fill="none"
-        stroke={isDark ? "rgba(255,255,255,0.75)" : "rgba(0,0,0,0.75)"}
-        strokeWidth="1.75"
-        strokeLinejoin="round"
-        strokeLinecap="round"
-      />
     </svg>
   );
 }

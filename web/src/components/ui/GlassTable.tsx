@@ -2,7 +2,7 @@ import { ReactNode, ComponentProps } from "react";
 import { Music } from "lucide-react";
 
 interface GlassTableProps {
-  headers: string[];
+  headers: (string | ReactNode)[];
   children: ReactNode;
   className?: string;
   emptyMessage?: string;

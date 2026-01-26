@@ -4,6 +4,7 @@ import { formatDateISO } from "@/lib/format";
 import { supabaseServer } from "@/lib/supabase/server";
 import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
 import { WarningRow } from "@/components/health/WarningRow";
+import { ArtistLinks } from "@/components/ui/ArtistLinks";
 
 export const dynamic = "force-dynamic";
 
@@ -136,6 +137,62 @@ export default async function HealthPage({
     }
   }
 
+  // Fetch ALL tracks missing from catalog across all playlists for the selected date
+  let allMissingTracks: Array<{
+    isrc: string;
+    name: string | null;
+    artist_names: string[] | null;
+    artist_ids: string[] | null;
+    album_image_url: string | null;
+    playlists: string[];
+  }> = [];
+
+  if (selectedDate) {
+    // Get all tracks in all playlists on the selected date
+    const { data: allMemberships } = await sb
+      .from("playlist_memberships")
+      .select("isrc,playlist_key")
+      .lte("valid_from", selectedDate)
+      .or(`valid_to.is.null,valid_to.gte.${selectedDate}`);
+
+    // Get all tracks that have catalog stream snapshots on the selected date
+    const { data: catalogStreamsAll } = await sb
+      .from("track_daily_streams")
+      .select("isrc")
+      .eq("date", selectedDate);
+
+    const catalogIsrcsAll = new Set((catalogStreamsAll ?? []).map((s) => s.isrc));
+
+    // Group by ISRC and collect playlist keys
+    const isrcToPlaylists = new Map<string, Set<string>>();
+    for (const m of allMemberships ?? []) {
+      if (!catalogIsrcsAll.has(m.isrc)) {
+        if (!isrcToPlaylists.has(m.isrc)) {
+          isrcToPlaylists.set(m.isrc, new Set());
+        }
+        isrcToPlaylists.get(m.isrc)!.add(m.playlist_key);
+      }
+    }
+
+    const missingIsrcs = Array.from(isrcToPlaylists.keys());
+    if (missingIsrcs.length > 0) {
+      // Fetch track metadata
+      const { data: tracks } = await sb
+        .from("tracks")
+        .select("isrc,name,spotify_artist_names,spotify_artist_ids,spotify_album_image_url")
+        .in("isrc", missingIsrcs);
+
+      allMissingTracks = (tracks ?? []).map((t) => ({
+        isrc: t.isrc,
+        name: t.name,
+        artist_names: t.spotify_artist_names,
+        artist_ids: t.spotify_artist_ids,
+        album_image_url: t.album_image_url,
+        playlists: Array.from(isrcToPlaylists.get(t.isrc) ?? []).sort(),
+      }));
+    }
+  }
+
   // Build filter URLs
   function hrefWith(patch: { severity?: string; playlist?: string; date?: string }) {
     const params = new URLSearchParams();
@@ -223,6 +280,90 @@ export default async function HealthPage({
           )}
         </GlassTable>
       </div>
+
+      {selectedDate && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between px-1">
+            <div>
+              <h2 className="text-sm font-semibold">
+                All Missing Catalog Tracks{" "}
+                <span className="text-xs font-normal opacity-60">({selectedDate})</span>
+              </h2>
+              <p className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
+                Tracks in playlists that don't have stream data in the catalog snapshot for this day
+              </p>
+            </div>
+            {allMissingTracks.length > 0 && (
+              <span className="text-xs opacity-60">{allMissingTracks.length} tracks</span>
+            )}
+          </div>
+          <GlassTable headers={["Track", "Artists", "Playlists"]}>
+            {allMissingTracks.length > 0 ? (
+              allMissingTracks.map((track) => (
+                <TableRow key={track.isrc}>
+                  <TableCell>
+                    <div className="flex items-center gap-3">
+                      {track.album_image_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={track.album_image_url}
+                          alt="Album cover"
+                          className="h-10 w-10 rounded object-cover sb-ring flex-shrink-0"
+                        />
+                      ) : (
+                        <div className="h-10 w-10 rounded sb-ring bg-white/60 flex-shrink-0" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <Link
+                          href={`/tracks/${track.isrc}`}
+                          className="font-medium hover:underline"
+                          style={{ color: "var(--sb-text)" }}
+                        >
+                          {track.name || track.isrc}
+                        </Link>
+                        <div className="mt-0.5">
+                          <Link
+                            href={`/tracks/${track.isrc}`}
+                            className="font-mono text-[10px] text-lime-600 dark:text-lime-400 underline hover:opacity-80"
+                          >
+                            {track.isrc}
+                          </Link>
+                        </div>
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    {track.artist_names && track.artist_names.length > 0 ? (
+                      <ArtistLinks artistNames={track.artist_names} artistIds={track.artist_ids ?? undefined} />
+                    ) : (
+                      <span className="opacity-30">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap gap-1">
+                      {track.playlists.map((pl) => (
+                        <Link
+                          key={pl}
+                          href={`/playlists/${pl}`}
+                          className="font-mono text-[10px] underline hover:text-lime-600 dark:hover:text-lime-400"
+                        >
+                          {pl}
+                        </Link>
+                      ))}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell className="text-center opacity-50 py-8" colSpan={3}>
+                  No missing catalog tracks found for {selectedDate}.
+                </TableCell>
+              </TableRow>
+            )}
+          </GlassTable>
+        </div>
+      )}
 
       <div className="space-y-2">
         <div className="flex items-center gap-2 px-1">

@@ -8,17 +8,30 @@ function easeOutCubic(t: number) {
   return 1 - Math.pow(1 - t, 3);
 }
 
-function fmt(n: number, format: Format) {
+function fmt(
+  n: number,
+  format: Format,
+  usdMaximumFractionDigits: number,
+  usdMinimumFractionDigits: number,
+) {
   if (format === "raw") return String(n);
   if (format === "usd") {
     try {
       return new Intl.NumberFormat("en-US", {
         style: "currency",
         currency: "USD",
-        maximumFractionDigits: 0,
+        maximumFractionDigits: usdMaximumFractionDigits,
+        minimumFractionDigits: usdMinimumFractionDigits,
       }).format(n);
     } catch {
-      return `$${Math.round(n).toLocaleString("en-US")}`;
+      const rounded =
+        usdMaximumFractionDigits <= 0
+          ? Math.round(n)
+          : Number(n.toFixed(usdMaximumFractionDigits));
+      return `$${rounded.toLocaleString("en-US", {
+        minimumFractionDigits: usdMinimumFractionDigits,
+        maximumFractionDigits: usdMaximumFractionDigits,
+      })}`;
     }
   }
   // int
@@ -42,19 +55,28 @@ export function AnimatedCounter({
   value,
   durationMs = 650,
   format = "int",
+  usdMaximumFractionDigits,
+  usdMinimumFractionDigits,
 }: {
   value: number;
   durationMs?: number;
   format?: Format;
+  usdMaximumFractionDigits?: number;
+  usdMinimumFractionDigits?: number;
 }) {
   const safeValue = Number.isFinite(value) ? value : 0;
+  const maxUsdDigits = usdMaximumFractionDigits ?? 0;
+  const minUsdDigits = usdMinimumFractionDigits ?? (maxUsdDigits > 0 ? maxUsdDigits : 0);
 
   // SSR-safe: render the final value on the server to avoid hydration mismatch.
   const [display, setDisplay] = useState<number>(safeValue);
   const mountedRef = useRef(false);
   const rafRef = useRef<number | null>(null);
 
-  const formatted = useMemo(() => fmt(display, format), [display, format]);
+  const formatted = useMemo(
+    () => fmt(display, format, maxUsdDigits, minUsdDigits),
+    [display, format, maxUsdDigits, minUsdDigits],
+  );
 
   useEffect(() => {
     mountedRef.current = true;
