@@ -154,59 +154,29 @@ body {
   background: radial-gradient(
     60% 60% at 50% 50%,
     rgba(199, 243, 60, 0.45),
-    rgba(199, 243, 60, 0.05) 60%,
+    rgba(199, 243, 60, 0.25) 25%,
+    rgba(199, 243, 60, 0.10) 50%,
+    rgba(199, 243, 60, 0.03) 75%,
     rgba(199, 243, 60, 0) 100%
   );
-  filter: blur(40px);
+  filter: blur(50px);
   animation: blob-bounce 20s infinite ease-in-out alternate;
+  will-change: transform; /* Optimize animation performance */
+  transform: translateZ(0); /* Force GPU acceleration */
 }
 
-/* Dark mode: use brighter accent color for better visibility */
+/* Dark mode: use brighter accent color with smoother gradient to prevent banding */
 html[data-theme="dark"] .sb-accent-glow {
   background: radial-gradient(
     60% 60% at 50% 50%,
-    rgba(212, 255, 77, 0.55), /* Brighter accent #d4ff4d with higher opacity */
-    rgba(212, 255, 77, 0.08) 60%,
+    rgba(212, 255, 77, 0.50),        /* Reduced peak opacity for smoother transition */
+    rgba(212, 255, 77, 0.35) 20%,    /* Intermediate stop */
+    rgba(212, 255, 77, 0.20) 40%,    /* Intermediate stop */
+    rgba(212, 255, 77, 0.10) 60%,    /* Intermediate stop */
+    rgba(212, 255, 77, 0.04) 80%,    /* Intermediate stop */
     rgba(212, 255, 77, 0) 100%
   );
-}
-
-/* Vignette Effect */
-.sb-vignette {
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 29; /* Just below noise */
-  background: radial-gradient(
-    circle at center,
-    transparent 0%,
-    rgba(0, 0, 0, 0.2) 100%
-  );
-}
-
-/* Make vignette stronger in dark mode */
-html[data-theme="dark"] .sb-vignette {
-  background: radial-gradient(
-    circle at center,
-    transparent 10%,
-    rgba(0, 0, 0, 0.4) 120%
-  );
-}
-
-/* Noise Texture */
-.sb-noise {
-  position: fixed;
-  inset: 0; /* clearer than top/left/width/height */
-  pointer-events: none;
-  z-index: 30; /* Lower than modals (usually 50) but above content */
-  opacity: 0.02; /* Default for light mode (very subtle) */
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
-  mix-blend-mode: overlay; /* Helps it blend better with colors */
-}
-
-/* Dark mode specific override - stronger noise for that "film grain" look */
-html[data-theme="dark"] .sb-noise {
-  opacity: 0.04;
+  filter: blur(60px); /* Increased blur to further soften edges and reduce banding */
 }
 
 /* Utilities */

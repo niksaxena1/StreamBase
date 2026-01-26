@@ -38,9 +38,6 @@ export default function RootLayout({
         className={`${inter.variable} ${geistMono.variable} ${spaceGrotesk.variable} antialiased`}
       >
         {children}
-        {/* Dark mode enhancements: noise texture and vignette */}
-        <div className="sb-vignette" />
-        <div className="sb-noise" />
       </body>
     </html>
   );

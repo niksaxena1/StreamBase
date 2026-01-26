@@ -22,6 +22,11 @@ export const navItems: Item[] = [
     icon: (a) => <IconList active={a} />,
   },
   {
+    href: "/collectors",
+    label: "Collectors",
+    icon: (a) => <IconUser active={a} />,
+  },
+  {
     href: "/catalog",
     label: "Catalog",
     icon: (a) => <IconVinyl active={a} />,
@@ -59,7 +64,7 @@ export function SideRail() {
 
         <Link
           href="/settings"
-          className="grid h-9 w-9 place-items-center rounded-full transition hover:bg-white/70 dark:hover:bg-white/10"
+          className="grid h-9 w-9 place-items-center rounded-full transition hover:bg-white/70 dark:hover:bg-white/10 text-black"
           style={{
             background: "color-mix(in srgb, var(--sb-accent) 55%, white)",
             boxShadow: "var(--sb-shadow-compact)",

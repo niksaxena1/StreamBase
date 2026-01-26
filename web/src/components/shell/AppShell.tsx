@@ -12,7 +12,7 @@ export function AppShell(props: { children: ReactNode }) {
   return (
     <div className="min-h-dvh">
       {/* subtle accent glow */}
-      <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+      <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
         <div className="absolute -left-24 -top-24">
           <div 
             className="sb-accent-glow h-[420px] w-[420px] opacity-45" 
