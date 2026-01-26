@@ -25,8 +25,8 @@ export function PillNav() {
             className={[
               "rounded-full px-2.5 py-1.5 transition",
               active
-                ? "bg-black text-white shadow-sm"
-                : "text-black/70 hover:bg-white/70",
+                ? "bg-black text-white shadow-sm dark:bg-white dark:text-black"
+                : "text-black/70 hover:bg-white/70 dark:text-white/70 dark:hover:bg-white/20",
             ].join(" ")}
           >
             {it.label}

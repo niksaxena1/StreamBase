@@ -82,12 +82,12 @@ export default async function TracksConfigPage({
             name="q"
             defaultValue={q}
             placeholder="Search ISRC or name…"
-            className="w-full rounded-xl border bg-white/70 px-3 py-2 text-sm outline-none focus:ring-2"
+            className="w-full rounded-xl border bg-white/70 px-3 py-2 text-sm outline-none placeholder:text-black/40 transition focus:border-black/20 focus:ring-2 focus:ring-black/5 dark:bg-white/5 dark:text-white dark:placeholder:text-white/40 dark:border-white/10 dark:focus:border-white/20 dark:focus:ring-white/5"
             style={{ borderColor: "var(--sb-border)" }}
           />
           <button
             type="submit"
-            className="rounded-xl bg-black px-4 py-2 text-sm font-medium text-white"
+            className="rounded-xl bg-black px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-black"
           >
             Search
           </button>
@@ -95,7 +95,7 @@ export default async function TracksConfigPage({
       </form>
 
       {error && (
-        <div className="rounded-2xl border border-red-300 bg-red-50 p-4 text-sm text-red-950">
+        <div className="rounded-2xl border border-red-300 bg-red-50 p-4 text-sm text-red-950 dark:border-red-900/30 dark:bg-red-900/10 dark:text-red-200">
           Query error: {error.message}
         </div>
       )}

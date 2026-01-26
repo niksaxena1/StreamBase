@@ -35,7 +35,7 @@ function DatePickerInner({
           {label}:
         </label>
       ) : null}
-      <div className="sb-ring flex items-center gap-2 rounded-2xl bg-white/70 px-3 py-2">
+      <div className="sb-ring flex items-center gap-2 rounded-2xl bg-white/70 px-3 py-2 dark:bg-white/5">
         <Calendar className="h-4 w-4 opacity-60" />
         <input
           type="date"
@@ -44,6 +44,7 @@ function DatePickerInner({
           max={max}
           onChange={handleChange}
           className="bg-transparent text-sm outline-none"
+          style={{ color: "var(--sb-text)" }}
         />
       </div>
     </div>
@@ -64,7 +65,7 @@ export function DatePicker({
   path: string;
 }) {
   return (
-    <Suspense fallback={<div className="h-10 w-32 animate-pulse rounded-2xl bg-white/30" />}>
+    <Suspense fallback={<div className="h-10 w-32 animate-pulse rounded-2xl bg-white/30 dark:bg-white/10" />}>
       <DatePickerInner value={value} min={min} max={max} label={label} path={path} />
     </Suspense>
   );

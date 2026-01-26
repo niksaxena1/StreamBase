@@ -231,7 +231,7 @@ export default async function ArtistsPage({
     // Return error state instead of crashing
     return (
       <div className="space-y-4">
-        <div className="rounded-2xl border border-red-300 bg-red-50 p-4 text-sm text-red-950">
+        <div className="rounded-2xl border border-red-300 bg-red-50 p-4 text-sm text-red-950 dark:border-red-900/30 dark:bg-red-900/10 dark:text-red-200">
           Error loading artist data: {tracksError.message}
         </div>
       </div>
@@ -638,7 +638,7 @@ export default async function ArtistsPage({
     const errorMessage = error instanceof Error ? error.message : String(error);
     return (
       <div className="space-y-4">
-        <div className="rounded-2xl border border-red-300 bg-red-50 p-4 text-sm text-red-950">
+        <div className="rounded-2xl border border-red-300 bg-red-50 p-4 text-sm text-red-950 dark:border-red-900/30 dark:bg-red-900/10 dark:text-red-200">
           <h2 className="font-semibold">Error loading artist page</h2>
           <p className="mt-1">{errorMessage}</p>
         </div>

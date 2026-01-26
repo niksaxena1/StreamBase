@@ -11,7 +11,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { useId } from "react";
+import { useId, useEffect, useState } from "react";
 import { formatInt, formatUsd } from "@/lib/format";
 
 type DataPoint = {
@@ -58,6 +58,40 @@ export function DailyStreamsChart({
   isCumulative?: boolean;
 }) {
   const gid = useId();
+  const [isDark, setIsDark] = useState(false);
+  
+  useEffect(() => {
+    const checkTheme = () => {
+      if (typeof window === "undefined") return;
+      const html = document.documentElement;
+      const theme = html.dataset.theme || 
+                    (window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      setIsDark(theme === "dark");
+    };
+    
+    checkTheme();
+    const observer = new MutationObserver(checkTheme);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
+    const mediaQuery = window.matchMedia?.("(prefers-color-scheme: dark)");
+    if (mediaQuery) {
+      mediaQuery.addEventListener("change", checkTheme);
+    }
+    return () => {
+      observer.disconnect();
+      if (mediaQuery) {
+        mediaQuery.removeEventListener("change", checkTheme);
+      }
+    };
+  }, []);
+  
+  // Use theme-aware maColor if not explicitly provided
+  const effectiveMaColor = maColor === "rgba(0,0,0,0.5)" 
+    ? (isDark ? "rgba(255,255,255,0.5)" : "rgba(0,0,0,0.5)")
+    : maColor;
+  
   // Reverse data if it's in descending order (newest first) -> charts usually need ascending
   const chartData = [...data].reverse();
   const hasMA7 = showMA7 && chartData.some((d) => d.ma7 !== null && d.ma7 !== undefined);
@@ -174,7 +208,7 @@ export function DailyStreamsChart({
             <Line
               type="monotone"
               dataKey="ma7"
-              stroke={maColor}
+              stroke={effectiveMaColor}
               strokeWidth={2}
               strokeDasharray="5 5"
               dot={false}

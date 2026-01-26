@@ -67,7 +67,7 @@ export function Combobox(props: {
         aria-expanded={open}
         aria-controls={listId}
         aria-autocomplete="list"
-        className="w-full bg-transparent text-sm outline-none"
+        className="w-full bg-transparent text-sm outline-none placeholder:text-black/40 dark:placeholder:text-white/40"
         style={{ color: "var(--sb-text)" }}
         onFocus={() => {
           setOpen(true);

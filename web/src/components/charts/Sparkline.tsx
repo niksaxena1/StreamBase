@@ -1,4 +1,6 @@
-import React from "react";
+"use client";
+
+import React, { useEffect, useState } from "react";
 
 export function Sparkline(props: {
   values: number[];
@@ -32,6 +34,35 @@ export function Sparkline(props: {
       return `${x.toFixed(2)},${y.toFixed(2)}`;
     })
     .join(" ");
+  
+  const [isDark, setIsDark] = useState(false);
+  
+  useEffect(() => {
+    const checkTheme = () => {
+      if (typeof window === "undefined") return;
+      const html = document.documentElement;
+      const theme = html.dataset.theme || 
+                    (window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      setIsDark(theme === "dark");
+    };
+    
+    checkTheme();
+    const observer = new MutationObserver(checkTheme);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
+    const mediaQuery = window.matchMedia?.("(prefers-color-scheme: dark)");
+    if (mediaQuery) {
+      mediaQuery.addEventListener("change", checkTheme);
+    }
+    return () => {
+      observer.disconnect();
+      if (mediaQuery) {
+        mediaQuery.removeEventListener("change", checkTheme);
+      }
+    };
+  }, []);
 
   return (
     <svg
@@ -70,7 +101,7 @@ export function Sparkline(props: {
       <polyline
         points={points}
         fill="none"
-        stroke="rgba(0,0,0,0.75)"
+        stroke={isDark ? "rgba(255,255,255,0.75)" : "rgba(0,0,0,0.75)"}
         strokeWidth="1.75"
         strokeLinejoin="round"
         strokeLinecap="round"

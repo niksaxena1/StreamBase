@@ -1,4 +1,6 @@
-import React from "react";
+"use client";
+
+import React, { useEffect, useState } from "react";
 
 export function LineChart(props: {
   points: { xLabel: string; y: number | null }[];
@@ -56,6 +58,35 @@ export function LineChart(props: {
 
   const firstLabel = pts[0]?.xLabel ?? "";
   const lastLabel = pts[pts.length - 1]?.xLabel ?? "";
+  
+  const [isDark, setIsDark] = useState(false);
+  
+  useEffect(() => {
+    const checkTheme = () => {
+      if (typeof window === "undefined") return;
+      const html = document.documentElement;
+      const theme = html.dataset.theme || 
+                    (window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      setIsDark(theme === "dark");
+    };
+    
+    checkTheme();
+    const observer = new MutationObserver(checkTheme);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
+    const mediaQuery = window.matchMedia?.("(prefers-color-scheme: dark)");
+    if (mediaQuery) {
+      mediaQuery.addEventListener("change", checkTheme);
+    }
+    return () => {
+      observer.disconnect();
+      if (mediaQuery) {
+        mediaQuery.removeEventListener("change", checkTheme);
+      }
+    };
+  }, []);
 
   return (
     <div className="sb-ring rounded-[var(--sb-radius)] bg-white/60 p-3">
@@ -73,7 +104,7 @@ export function LineChart(props: {
             patternUnits="userSpaceOnUse"
             patternTransform="rotate(35)"
           >
-            <line x1="0" y1="0" x2="0" y2="8" stroke="rgba(0,0,0,0.08)" strokeWidth="2" />
+            <line x1="0" y1="0" x2="0" y2="8" stroke={isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"} strokeWidth="2" />
           </pattern>
           <linearGradient id="sbArea" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="rgba(199,243,60,0.30)" />
@@ -91,7 +122,7 @@ export function LineChart(props: {
         <polyline
           points={polyline}
           fill="none"
-          stroke="rgba(0,0,0,0.78)"
+          stroke={isDark ? "rgba(255,255,255,0.78)" : "rgba(0,0,0,0.78)"}
           strokeWidth="2"
           strokeLinejoin="round"
           strokeLinecap="round"
@@ -105,7 +136,7 @@ export function LineChart(props: {
               cy={pts[pts.length - 1].y}
               r="4"
               fill="var(--sb-accent)"
-              stroke="rgba(0,0,0,0.65)"
+              stroke={isDark ? "rgba(255,255,255,0.65)" : "rgba(0,0,0,0.65)"}
               strokeWidth="1"
             />
           </>

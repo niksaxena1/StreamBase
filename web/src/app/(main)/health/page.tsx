@@ -22,8 +22,8 @@ function FilterToggle({
       className={[
         "rounded-full px-2.5 py-1.5 text-[11px] font-medium transition",
         active
-          ? "bg-black text-white shadow-sm"
-          : "bg-white/70 text-black/70 hover:bg-white",
+          ? "bg-black text-white shadow-sm dark:bg-white dark:text-black"
+          : "bg-white/70 text-black/70 hover:bg-white dark:bg-white/10 dark:text-white/70 dark:hover:bg-white/20",
       ].join(" ")}
     >
       {children}
@@ -234,12 +234,14 @@ export default async function HealthPage({
               <TableCell mono>{formatDateISO(r.run_date)}</TableCell>
               <TableCell>
                 <span
-                  className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium"
+                  className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                    r.status === "success" ? "" : "bg-black/6 dark:bg-white/6"
+                  }`}
                   style={{
                     background:
                       r.status === "success"
                         ? "rgba(199, 243, 60, 0.2)"
-                        : "rgba(0,0,0,0.06)",
+                        : undefined,
                     color: r.status === "success" ? "#4d6600" : "inherit",
                   }}
                 >

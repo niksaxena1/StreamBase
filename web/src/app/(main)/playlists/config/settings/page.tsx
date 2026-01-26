@@ -101,7 +101,7 @@ export default async function PlaylistSettingsPage() {
                     className="sb-ring flex h-8 w-8 items-center justify-center rounded-lg"
                     style={{ background: "var(--sb-accent)" }}
                   >
-                    <Music className="h-4 w-4 text-black" />
+                    <Music className="h-4 w-4" style={{ color: "var(--sb-text)" }} />
                   </div>
                 ) : p.spotify_playlist_image_url ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -130,11 +130,11 @@ export default async function PlaylistSettingsPage() {
                       name="spotify_playlist_id"
                       defaultValue={p.spotify_playlist_id ?? ""}
                       placeholder="https://open.spotify.com/playlist/…"
-                      className="sb-ring w-full rounded-xl bg-white/70 px-3 py-2 text-sm outline-none placeholder:text-black/40"
+                      className="sb-ring w-full rounded-xl bg-white/70 px-3 py-2 text-sm outline-none placeholder:text-black/40 dark:bg-white/5 dark:placeholder:text-white/40"
                     />
                     <button
                       type="submit"
-                      className="sb-ring rounded-xl bg-black px-3 py-2 text-sm font-medium text-white"
+                      className="sb-ring rounded-xl bg-black px-3 py-2 text-sm font-medium text-white dark:bg-white dark:text-black"
                     >
                       Save
                     </button>

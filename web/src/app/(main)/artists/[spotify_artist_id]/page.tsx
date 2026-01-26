@@ -89,7 +89,7 @@ export default async function ArtistPage({
       </div>
 
       {(tracksErr || streamsErr) && (
-        <div className="rounded-2xl border border-red-300 bg-red-50 p-4 text-sm text-red-950">
+        <div className="rounded-2xl border border-red-300 bg-red-50 p-4 text-sm text-red-950 dark:border-red-900/30 dark:bg-red-900/10 dark:text-red-200">
           Query error: {tracksErr?.message ?? streamsErr?.message ?? "unknown"}
         </div>
       )}
