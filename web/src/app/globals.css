@@ -161,6 +161,16 @@ body {
   animation: blob-bounce 20s infinite ease-in-out alternate;
 }
 
+/* Dark mode: use brighter accent color for better visibility */
+html[data-theme="dark"] .sb-accent-glow {
+  background: radial-gradient(
+    60% 60% at 50% 50%,
+    rgba(212, 255, 77, 0.55), /* Brighter accent #d4ff4d with higher opacity */
+    rgba(212, 255, 77, 0.08) 60%,
+    rgba(212, 255, 77, 0) 100%
+  );
+}
+
 /* Vignette Effect */
 .sb-vignette {
   position: fixed;
