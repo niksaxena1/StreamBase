@@ -6,7 +6,7 @@ import { useEffect } from "react";
 
 import { Combobox } from "@/components/ui/Combobox";
 
-type ArtistOption = { id: string; name: string };
+type ArtistOption = { id: string; name: string; imageUrl?: string | null };
 type TrackOption = { isrc: string; name: string };
 
 const RANGE_CHOICES = [30, 90, 365] as const;
@@ -120,16 +120,16 @@ export function ArtistDashboardControls(props: {
   }
 
   return (
-    <div className="sb-card p-3">
+    <div className="relative z-10 rounded-xl border border-lime-500/20 bg-lime-500/10 p-3 shadow-sm backdrop-blur-sm dark:bg-lime-400/10 dark:border-lime-400/20">
       <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <div className="flex items-center gap-2">
-            <div className="text-xs font-medium" style={{ color: "var(--sb-text)" }}>Artist</div>
-            <div className="sb-ring rounded-xl bg-white/70 px-2.5 py-1.5 dark:bg-white/10">
+            <div className="text-xs font-medium">Artist</div>
+            <div className="sb-ring rounded-xl bg-black/10 px-2.5 py-1.5 dark:bg-white/10">
               <Combobox
                 ariaLabel="Select artist"
                 value={props.artistId}
-                options={props.artists.map((a) => ({ value: a.id, label: a.name }))}
+                options={props.artists.map((a) => ({ value: a.id, label: a.name, imageUrl: a.imageUrl }))}
                 placeholder="Type an artist…"
                 onChange={onSelectArtist}
               />
@@ -137,8 +137,8 @@ export function ArtistDashboardControls(props: {
           </div>
 
           <div className="flex items-center gap-2">
-            <div className="text-xs font-medium" style={{ color: "var(--sb-text)" }}>Track</div>
-            <div className="sb-ring rounded-xl bg-white/70 px-2.5 py-1.5 dark:bg-white/10">
+            <div className="text-xs font-medium">Track</div>
+            <div className="sb-ring rounded-xl bg-black/10 px-2.5 py-1.5 dark:bg-white/10">
               <Combobox
                 ariaLabel="Select track"
                 value={props.isrc ?? null}
@@ -154,7 +154,7 @@ export function ArtistDashboardControls(props: {
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="sb-ring flex items-center gap-0.5 rounded-full bg-white/70 p-0.5 dark:bg-white/10">
+          <div className="sb-ring flex items-center gap-0.5 rounded-full bg-black/10 p-0.5 dark:bg-white/10">
             {RANGE_CHOICES.map((d) => (
               <Link
                 key={d}
@@ -163,12 +163,12 @@ export function ArtistDashboardControls(props: {
                   "rounded-full px-2.5 py-1.5 text-[11px] font-medium transition",
                   props.rangeDays === d
                     ? "bg-black text-white shadow-sm dark:bg-white dark:text-black"
-                    : "hover:bg-white/70 dark:hover:bg-white/10",
+                    : "hover:bg-black/10 dark:hover:bg-white/10",
                 ].join(" ")}
                 style={
                   props.rangeDays === d
                     ? undefined
-                    : { color: "var(--sb-muted)" }
+                    : { opacity: 0.7 }
                 }
               >
                 {d}d

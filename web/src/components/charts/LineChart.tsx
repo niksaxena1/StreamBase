@@ -8,6 +8,36 @@ export function LineChart(props: {
   height?: number;
   ariaLabel?: string;
 }) {
+  const [isDark, setIsDark] = useState(false);
+
+  useEffect(() => {
+    const checkTheme = () => {
+      if (typeof window === "undefined") return;
+      const html = document.documentElement;
+      const theme =
+        html.dataset.theme ||
+        (window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      setIsDark(theme === "dark");
+    };
+
+    checkTheme();
+    const observer = new MutationObserver(checkTheme);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
+    const mediaQuery = window.matchMedia?.("(prefers-color-scheme: dark)");
+    if (mediaQuery) {
+      mediaQuery.addEventListener("change", checkTheme);
+    }
+    return () => {
+      observer.disconnect();
+      if (mediaQuery) {
+        mediaQuery.removeEventListener("change", checkTheme);
+      }
+    };
+  }, []);
+
   const w = props.width ?? 760;
   const h = props.height ?? 220;
   const pad = 14;
@@ -58,35 +88,6 @@ export function LineChart(props: {
 
   const firstLabel = pts[0]?.xLabel ?? "";
   const lastLabel = pts[pts.length - 1]?.xLabel ?? "";
-  
-  const [isDark, setIsDark] = useState(false);
-  
-  useEffect(() => {
-    const checkTheme = () => {
-      if (typeof window === "undefined") return;
-      const html = document.documentElement;
-      const theme = html.dataset.theme || 
-                    (window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-      setIsDark(theme === "dark");
-    };
-    
-    checkTheme();
-    const observer = new MutationObserver(checkTheme);
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["data-theme"],
-    });
-    const mediaQuery = window.matchMedia?.("(prefers-color-scheme: dark)");
-    if (mediaQuery) {
-      mediaQuery.addEventListener("change", checkTheme);
-    }
-    return () => {
-      observer.disconnect();
-      if (mediaQuery) {
-        mediaQuery.removeEventListener("change", checkTheme);
-      }
-    };
-  }, []);
 
   return (
     <div className="sb-ring rounded-[var(--sb-radius)] bg-white/60 p-3">

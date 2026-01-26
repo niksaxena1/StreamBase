@@ -3,9 +3,10 @@ import Link from "next/link";
 import { StatCard } from "@/components/StatCard";
 import { GlassTable, TableRow, TableCell, EmptyState } from "@/components/ui/GlassTable";
 import { AnimatedCounter } from "@/components/ui/AnimatedCounter";
-import { InteractiveChartSection } from "@/components/dashboard/InteractiveChartSection";
+import { LazyInteractiveChartSection } from "@/components/dashboard/LazyInteractiveChartSection";
 import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
 import { supabaseServer } from "@/lib/supabase/server";
+import { cachedQuery } from "@/lib/supabase/cache";
 
 type PlaylistDailyStatsRow = {
   date: string;
@@ -17,6 +18,9 @@ type PlaylistDailyStatsRow = {
 };
 
 const STREAM_PAYOUT_USD = 0.002;
+
+// Revalidate every hour since data updates daily
+export const revalidate = 3600;
 
 export default async function Home({
   searchParams,
@@ -32,24 +36,23 @@ export default async function Home({
 
   const sb = await supabaseServer();
 
-  const { data: latest, error: latestErr } = await sb
-    .from("playlist_daily_stats")
-    .select(
-      "date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net",
-    )
-    .eq("playlist_key", playlistKey)
-    .order("date", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  // Single query: fetch history and derive latest from first row (cached for 1 hour)
+  const { data: history, error: historyErr } = await cachedQuery(
+    async () =>
+      await sb
+        .from("playlist_daily_stats")
+        .select(
+          "date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net",
+        )
+        .eq("playlist_key", playlistKey)
+        .order("date", { ascending: false })
+        .limit(rangeDays),
+    `home-playlist-stats-${playlistKey}-${rangeDays}`,
+    3600, // 1 hour
+  );
 
-  const { data: history, error: historyErr } = await sb
-    .from("playlist_daily_stats")
-    .select(
-      "date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_daily_net",
-    )
-    .eq("playlist_key", playlistKey)
-    .order("date", { ascending: false })
-    .limit(rangeDays);
+  // Derive latest from first row of history (newest date)
+  const latest = history && history.length > 0 ? history[0] : null;
 
   const title =
     playlistKey === "releases"
@@ -153,15 +156,14 @@ export default async function Home({
         </div>
       </div>
 
-      {(latestErr || historyErr) && (
+      {historyErr && (
         <div className="rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-950 dark:border-red-900/30 dark:bg-red-900/10 dark:text-red-200">
-          Query error:{" "}
-          {latestErr?.message ?? historyErr?.message ?? "unknown error"}
+          Query error: {historyErr.message ?? "unknown error"}
         </div>
       )}
 
       {/* Interactive KPI Row and Chart */}
-      <InteractiveChartSection
+      <LazyInteractiveChartSection
         dailyStreamsData={dailyStreamsChartData}
         totalStreamsData={totalStreamsChartData}
         dailyStreamsValue={getDailyStreams(latest as PlaylistDailyStatsRow | null) ?? 0}

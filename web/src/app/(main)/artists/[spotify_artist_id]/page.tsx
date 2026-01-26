@@ -5,6 +5,7 @@ import { formatInt } from "@/lib/format";
 import { supabaseServer } from "@/lib/supabase/server";
 import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
 import { DailyStreamsChart } from "@/components/charts/DailyStreamsChart";
+import { getArtists } from "@/lib/spotify";
 
 export const dynamic = "force-dynamic";
 
@@ -67,6 +68,11 @@ export default async function ArtistPage({
   // Get artist name from first track (simplified - could enhance with Spotify API lookup)
   const artistName = trackRows[0]?.spotify_artist_names?.[0] ?? "Unknown Artist";
 
+  // Fetch artist image from Spotify API
+  const artistDataMap = await getArtists([spotify_artist_id]);
+  const artistData = artistDataMap.get(spotify_artist_id);
+  const artistImageUrl = artistData?.imageUrl ?? null;
+
   return (
     <div className="space-y-4">
       <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
@@ -77,14 +83,25 @@ export default async function ArtistPage({
       </div>
 
       <div className="flex items-end justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">{artistName}</h1>
-          <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
-            Spotify Artist ID: <span className="font-mono">{spotify_artist_id}</span>
+        <div className="flex items-center gap-4">
+          {artistImageUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={artistImageUrl}
+              alt={artistName}
+              className="h-16 w-16 rounded-full object-cover sb-ring"
+            />
+          ) : (
+            <div className="h-16 w-16 rounded-full sb-ring bg-white/60 flex items-center justify-center">
+              <User className="h-8 w-8 opacity-40" />
+            </div>
+          )}
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">{artistName}</h1>
+            <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
+              Spotify Artist ID: <span className="font-mono">{spotify_artist_id}</span>
+            </div>
           </div>
-        </div>
-        <div className="rounded-full bg-white/50 p-2 backdrop-blur-md dark:bg-white/5">
-          <User className="h-5 w-5 opacity-70" />
         </div>
       </div>
 

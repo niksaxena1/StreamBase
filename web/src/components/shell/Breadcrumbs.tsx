@@ -12,7 +12,10 @@ type BreadcrumbItem = {
 
 export function Breadcrumbs() {
   const pathname = usePathname();
-  const [customLabel, setCustomLabel] = useState<string | null>(null);
+  const [customLabelsByPath, setCustomLabelsByPath] = useState<Record<string, string>>(
+    {},
+  );
+  const customLabel = customLabelsByPath[pathname] ?? null;
 
   // Fetch custom labels for dynamic routes
   useEffect(() => {
@@ -23,12 +26,17 @@ export function Breadcrumbs() {
       fetch(`/api/breadcrumb/artist?artist_id=${encodeURIComponent(segments[1])}`)
         .then((res) => res.json())
         .then((data) => {
-          if (data.artistName) setCustomLabel(data.artistName);
+          const label = (data?.artistName as string | undefined) ?? "";
+          if (!label) return;
+          setCustomLabelsByPath((prev) => ({ ...prev, [pathname]: label }));
         })
-        .catch(() => {
-          // Fallback if API fails
-          setCustomLabel(null);
-        });
+        .catch(() => {});
+      return;
+    }
+
+    // Handle catalog route
+    if (segments[0] === "catalog") {
+      // No custom label needed for catalog page itself
       return;
     }
 
@@ -37,15 +45,13 @@ export function Breadcrumbs() {
       fetch(`/api/breadcrumb/track?isrc=${encodeURIComponent(segments[1])}`)
         .then((res) => res.json())
         .then((data) => {
-          if (data.trackLabel) setCustomLabel(data.trackLabel);
+          const label = (data?.trackLabel as string | undefined) ?? "";
+          if (!label) return;
+          setCustomLabelsByPath((prev) => ({ ...prev, [pathname]: label }));
         })
-        .catch(() => {
-          setCustomLabel(null);
-        });
+        .catch(() => {});
       return;
     }
-
-    setCustomLabel(null);
   }, [pathname]);
 
   // Build breadcrumbs from pathname
@@ -64,6 +70,18 @@ export function Breadcrumbs() {
     // Special handling for dashboard routes
     if (segment === "dashboard") {
       breadcrumbs.push({ label: "Dashboard", href: currentPath });
+      continue;
+    }
+
+    // Special handling for catalog route - show Home > Catalog > [Config]
+    if (segment === "catalog") {
+      breadcrumbs.push({ label: "Catalog", href: currentPath });
+      // Next segment is "config" - add it
+      if (i + 1 < segments.length && segments[i + 1] === "config") {
+        currentPath += "/config";
+        breadcrumbs.push({ label: "Config", href: currentPath });
+        i++; // Skip the config segment
+      }
       continue;
     }
 

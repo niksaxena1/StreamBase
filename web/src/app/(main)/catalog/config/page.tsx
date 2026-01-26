@@ -103,7 +103,7 @@ async function fetchAllTracksForTable(
   return out;
 }
 
-export default async function ArtistsConfigPage() {
+export default async function CatalogConfigPage() {
   const sb = await supabaseServer();
 
   const trackMetaRows = await fetchAllTracksMeta(sb, 5000);

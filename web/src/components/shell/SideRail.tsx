@@ -22,9 +22,9 @@ export const navItems: Item[] = [
     icon: (a) => <IconList active={a} />,
   },
   {
-    href: "/artists",
-    label: "Artist Dash",
-    icon: (a) => <IconUser active={a} />,
+    href: "/catalog",
+    label: "Catalog",
+    icon: (a) => <IconVinyl active={a} />,
   },
   { href: "/tracks", label: "Tracks", icon: (a) => <IconMusic active={a} /> },
   { href: "/health", label: "Health", icon: (a) => <IconPulse active={a} /> },
@@ -208,6 +208,17 @@ export function IconMusic(props: { active: boolean }) {
       />
       <circle cx="6" cy="18" r="3" stroke="currentColor" strokeWidth="1.8" />
       <circle cx="18" cy="16" r="3" stroke="currentColor" strokeWidth="1.8" />
+    </svg>
+  );
+}
+
+export function IconVinyl(props: { active: boolean }) {
+  const iconClass = "text-current";
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className={iconClass}>
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="12" cy="12" r="1" fill="currentColor" />
     </svg>
   );
 }

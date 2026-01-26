@@ -135,3 +135,49 @@ export async function getPlaylist(playlistId: string): Promise<SpotifyPlaylistLo
   };
 }
 
+export type SpotifyArtistLookup = {
+  artistId: string;
+  name: string;
+  imageUrl: string | null;
+  externalUrl: string | null;
+};
+
+export async function getArtists(artistIds: string[]): Promise<Map<string, SpotifyArtistLookup>> {
+  const result = new Map<string, SpotifyArtistLookup>();
+  
+  // Spotify API allows up to 50 IDs per request
+  const batchSize = 50;
+  for (let i = 0; i < artistIds.length; i += batchSize) {
+    const batch = artistIds.slice(i, i + batchSize);
+    const idsParam = batch.map(id => encodeURIComponent(id)).join(",");
+    
+    type ArtistsResp = {
+      artists: Array<{
+        id: string;
+        name: string;
+        images: Array<{ url: string; height: number; width: number }>;
+        external_urls?: { spotify?: string };
+      }>;
+    };
+    
+    try {
+      const resp = await spotifyFetch<ArtistsResp>(`/artists?ids=${idsParam}`);
+      for (const artist of resp.artists) {
+        if (artist.id) {
+          result.set(artist.id, {
+            artistId: artist.id,
+            name: artist.name,
+            imageUrl: artist.images?.[0]?.url ?? null,
+            externalUrl: artist.external_urls?.spotify ?? null,
+          });
+        }
+      }
+    } catch (error) {
+      console.error(`Error fetching artists batch:`, error);
+      // Continue with other batches even if one fails
+    }
+  }
+  
+  return result;
+}
+

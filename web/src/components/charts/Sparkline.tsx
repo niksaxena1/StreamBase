@@ -7,6 +7,36 @@ export function Sparkline(props: {
   width?: number;
   height?: number;
 }) {
+  const [isDark, setIsDark] = useState(false);
+
+  useEffect(() => {
+    const checkTheme = () => {
+      if (typeof window === "undefined") return;
+      const html = document.documentElement;
+      const theme =
+        html.dataset.theme ||
+        (window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      setIsDark(theme === "dark");
+    };
+
+    checkTheme();
+    const observer = new MutationObserver(checkTheme);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
+    const mediaQuery = window.matchMedia?.("(prefers-color-scheme: dark)");
+    if (mediaQuery) {
+      mediaQuery.addEventListener("change", checkTheme);
+    }
+    return () => {
+      observer.disconnect();
+      if (mediaQuery) {
+        mediaQuery.removeEventListener("change", checkTheme);
+      }
+    };
+  }, []);
+
   const w = props.width ?? 320;
   const h = props.height ?? 72;
   const vals = props.values.filter((v) => Number.isFinite(v));
@@ -34,35 +64,6 @@ export function Sparkline(props: {
       return `${x.toFixed(2)},${y.toFixed(2)}`;
     })
     .join(" ");
-  
-  const [isDark, setIsDark] = useState(false);
-  
-  useEffect(() => {
-    const checkTheme = () => {
-      if (typeof window === "undefined") return;
-      const html = document.documentElement;
-      const theme = html.dataset.theme || 
-                    (window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-      setIsDark(theme === "dark");
-    };
-    
-    checkTheme();
-    const observer = new MutationObserver(checkTheme);
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["data-theme"],
-    });
-    const mediaQuery = window.matchMedia?.("(prefers-color-scheme: dark)");
-    if (mediaQuery) {
-      mediaQuery.addEventListener("change", checkTheme);
-    }
-    return () => {
-      observer.disconnect();
-      if (mediaQuery) {
-        mediaQuery.removeEventListener("change", checkTheme);
-      }
-    };
-  }, []);
 
   return (
     <svg

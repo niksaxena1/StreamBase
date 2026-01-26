@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { Check } from "lucide-react";
+import { Check, User } from "lucide-react";
 
 export type ComboboxOption = {
   value: string;
   label: string;
+  imageUrl?: string | null;
 };
 
 export function Combobox(props: {
@@ -100,7 +101,7 @@ export function Combobox(props: {
           role="listbox"
           id={listId}
           aria-label={`${props.ariaLabel} options`}
-          className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 max-h-[340px] overflow-auto rounded-2xl border p-1 shadow-lg backdrop-blur-md"
+          className="absolute left-0 right-0 top-[calc(100%+8px)] z-[100] max-h-[340px] overflow-auto rounded-2xl border p-1 shadow-lg backdrop-blur-md"
           style={{ 
             borderColor: "var(--sb-border)",
             background: "var(--sb-card)",
@@ -131,7 +132,21 @@ export function Combobox(props: {
                   inputRef.current?.blur();
                 }}
               >
-                <span className="truncate">{o.label}</span>
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                  {o.imageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={o.imageUrl}
+                      alt={o.label}
+                      className="h-5 w-5 rounded-full object-cover flex-shrink-0"
+                    />
+                  ) : (
+                    <div className="h-5 w-5 rounded-full bg-white/60 dark:bg-white/10 flex items-center justify-center flex-shrink-0">
+                      <User className="h-3 w-3 opacity-40" />
+                    </div>
+                  )}
+                  <span className="truncate">{o.label}</span>
+                </div>
                 {active ? (
                   <Check className="ml-3 h-4 w-4 flex-shrink-0" strokeWidth={2.5} />
                 ) : null}

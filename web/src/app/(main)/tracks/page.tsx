@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { List } from "lucide-react";
 
 import { supabaseServer } from "@/lib/supabase/server";
+import { cachedQuery } from "@/lib/supabase/cache";
 import { formatInt, formatDateISO } from "@/lib/format";
 import { RememberParamRedirect } from "@/components/dashboard/RememberParamRedirect";
 import { TrackDashboardControls } from "@/components/dashboard/TrackDashboardControls";
@@ -98,13 +99,18 @@ export default async function TracksPage({
     const rangeDays = clampRangeDays(sp.range);
     const sb = await supabaseServer();
 
-    // Get all tracks for the selector
-    const { data: allTracks } = await sb
-      .from("tracks")
-      .select("isrc,name")
-      .not("name", "is", null)
-      .order("last_seen", { ascending: false })
-      .limit(1000);
+    // Get all tracks for the selector (cached for 1 hour)
+    const { data: allTracks } = await cachedQuery(
+      async () =>
+        await sb
+          .from("tracks")
+          .select("isrc,name")
+          .not("name", "is", null)
+          .order("last_seen", { ascending: false })
+          .limit(1000),
+      "tracks-list",
+      3600,
+    );
 
     const trackOptions = (allTracks ?? [])
       .map((t) => ({ isrc: t.isrc, name: t.name ?? t.isrc }))
@@ -125,12 +131,17 @@ export default async function TracksPage({
       );
     }
 
-    // Get track details
-    const { data: track, error: trackError } = await sb
-      .from("tracks")
-      .select("isrc,name,spotify_artist_ids,spotify_artist_names,spotify_album_image_url")
-      .eq("isrc", isrc)
-      .maybeSingle();
+    // Get track details (cached for 1 hour)
+    const { data: track, error: trackError } = await cachedQuery(
+      async () =>
+        await sb
+          .from("tracks")
+          .select("isrc,name,spotify_artist_ids,spotify_artist_names,spotify_album_image_url")
+          .eq("isrc", isrc)
+          .maybeSingle(),
+      `track-details-${isrc}`,
+      3600,
+    );
 
     if (trackError) {
       console.error("Error fetching track:", trackError);
@@ -146,14 +157,19 @@ export default async function TracksPage({
     const trackRow = (track ?? null) as TrackRow | null;
     const trackName = trackRow?.name ?? isrc;
 
-    // Canonical latest date (use all_catalog playlist stats as "ingestion day")
-    const { data: latestRun } = await sb
-      .from("playlist_daily_stats")
-      .select("date")
-      .eq("playlist_key", "all_catalog")
-      .order("date", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    // Canonical latest date (use all_catalog playlist stats as "ingestion day") - cached
+    const { data: latestRun } = await cachedQuery(
+      async () =>
+        await sb
+          .from("playlist_daily_stats")
+          .select("date")
+          .eq("playlist_key", "all_catalog")
+          .order("date", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+      "latest-date-all-catalog",
+      3600,
+    );
 
     const latestDate = (latestRun as { date: string } | null)?.date ?? null;
     const startDate = latestDate ? addDays(latestDate, -rangeDays) : null;

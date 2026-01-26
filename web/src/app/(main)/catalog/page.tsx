@@ -5,6 +5,7 @@ import { ExternalLink, List } from "lucide-react";
 import { supabaseServer } from "@/lib/supabase/server";
 import { cachedQuery } from "@/lib/supabase/cache";
 import { formatInt, formatDateISO } from "@/lib/format";
+import { getArtists } from "@/lib/spotify";
 import { RememberParamRedirect } from "@/components/dashboard/RememberParamRedirect";
 import { ArtistDashboardControls } from "@/components/dashboard/ArtistDashboardControls";
 import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/GlassTable";
@@ -185,7 +186,7 @@ function artistNameFor(rows: TrackRow[], artistId: string) {
   return null;
 }
 
-export default async function ArtistsPage({
+export default async function CatalogPage({
   searchParams,
 }: {
   searchParams?: Promise<{ artist_id?: string; isrc?: string; range?: string; view?: string }>;
@@ -284,7 +285,7 @@ export default async function ArtistsPage({
       params.set("artist_id", artistId);
       params.set("isrc", firstTrackIsrc);
       if (sp.range) params.set("range", String(rangeDays));
-      redirect(`/artists?${params.toString()}`);
+      redirect(`/catalog?${params.toString()}`);
     }
   }
 
@@ -406,33 +407,42 @@ export default async function ArtistsPage({
     .map((t) => ({ isrc: t.isrc, name: t.name ?? t.isrc }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
+  // Fetch artist images from Spotify API
+  const artistIds = artists.map((a) => a.id);
+  const artistDataMap = await getArtists(artistIds);
+  const artistsWithImages = artists.map((artist) => {
+    const artistData = artistDataMap.get(artist.id);
+    return {
+      ...artist,
+      imageUrl: artistData?.imageUrl ?? null,
+    };
+  });
+
+  // Fetch selected track details if isrc is available
+  let selectedTrack: { name: string | null; albumImageUrl: string | null } | null = null;
+  if (isrc) {
+    const { data: trackData } = await cachedQuery(
+      async () =>
+        await sb
+          .from("tracks")
+          .select("name,spotify_album_image_url")
+          .eq("isrc", isrc)
+          .maybeSingle(),
+      `track-selected-${isrc}`,
+      3600,
+    );
+    if (trackData) {
+      selectedTrack = {
+        name: trackData.name ?? null,
+        albumImageUrl: trackData.spotify_album_image_url ?? null,
+      };
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-end justify-between gap-4">
         <div>
-          <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
-            Dashboard / Artists
-          </div>
-          <div className="flex items-center gap-2">
-            <h1 className="font-display text-2xl font-semibold tracking-tight">
-              <Link
-                href={`/artists/${artistId}`}
-                className="transition-colors hover:text-lime-600 dark:hover:text-lime-400"
-              >
-                {artistName}
-              </Link>
-            </h1>
-            <Link
-              href={`https://open.spotify.com/artist/${artistId}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center justify-center rounded-full p-1.5 transition-colors hover:bg-black/5 dark:hover:bg-white/10"
-              title="Open on Spotify"
-              style={{ color: "var(--sb-muted)" }}
-            >
-              <ExternalLink className="h-4 w-4" />
-            </Link>
-          </div>
           <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
             {latestDate ? (
               <>
@@ -455,12 +465,33 @@ export default async function ArtistsPage({
       </div>
 
       <ArtistDashboardControls
-        artists={artists}
+        artists={artistsWithImages}
         artistId={artistId}
         tracks={trackOptions}
         isrc={isrc}
         rangeDays={rangeDays}
       />
+
+      <div className="flex items-center gap-2">
+        <h1 className="font-display text-2xl font-semibold tracking-tight">
+          <Link
+            href={`/artists/${artistId}`}
+            className="transition-colors hover:text-lime-600 dark:hover:text-lime-400"
+          >
+            {artistName}
+          </Link>
+        </h1>
+        <Link
+          href={`https://open.spotify.com/artist/${artistId}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center justify-center rounded-full p-1.5 transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+          title="Open on Spotify"
+          style={{ color: "var(--sb-muted)" }}
+        >
+          <ExternalLink className="h-4 w-4" />
+        </Link>
+      </div>
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
         <SpotlightCard className="lg:col-span-6 p-3">
@@ -579,29 +610,43 @@ export default async function ArtistsPage({
       </div>
 
       <div className="space-y-3">
-        <div className="flex items-end justify-between px-1">
-          <h2 className="text-sm font-semibold">Selected track</h2>
-          {isrc ? (
-            <Link
-              href={`/tracks/${isrc}`}
-              className="sb-ring rounded-full bg-white/70 px-3 py-1.5 text-xs font-medium transition hover:bg-white dark:bg-white/10 dark:hover:bg-white/15"
-            >
-              Open track detail
-            </Link>
-          ) : (
+        {isrc && selectedTrack ? (
+          <div className="flex items-center gap-3">
+            {selectedTrack.albumImageUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={selectedTrack.albumImageUrl}
+                alt="Album cover"
+                className="h-12 w-12 rounded-lg object-cover sb-ring"
+              />
+            ) : (
+              <div className="h-12 w-12 rounded-lg sb-ring bg-white/60" />
+            )}
+            <div>
+              <h2 className="text-sm font-semibold">
+                <Link
+                  href={`/tracks/${isrc}`}
+                  className="transition-colors hover:text-lime-600 dark:hover:text-lime-400"
+                >
+                  {selectedTrack.name ?? isrc}
+                </Link>
+              </h2>
+              <div className="mt-0.5 text-xs" style={{ color: "var(--sb-muted)" }}>
+                ISRC: <span className="font-mono">{isrc}</span>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-end justify-between px-1">
+            <h2 className="text-sm font-semibold">Selected track</h2>
             <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
               Pick a track to show track-specific panels.
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {isrc ? (
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
-            <StatCard title="Track 24h" value={<AnimatedCounter value={track24h} />} subtitle="Net streams" />
-            <StatCard title="Track 7d" value={<AnimatedCounter value={track7d} />} subtitle="Net streams" />
-            <StatCard title="Track 28d" value={<AnimatedCounter value={track28d} />} subtitle="Net streams" />
-            <StatCard title="Track 30d" value={<AnimatedCounter value={track30d} />} subtitle="Net streams" />
-
             <SpotlightCard className="lg:col-span-7 p-3">
               <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
                 Track cumulative streams
@@ -632,6 +677,11 @@ export default async function ArtistsPage({
                 />
               </div>
             </SpotlightCard>
+
+            <StatCard title="Track 24h" value={<AnimatedCounter value={track24h} />} subtitle="Net streams" />
+            <StatCard title="Track 7d" value={<AnimatedCounter value={track7d} />} subtitle="Net streams" />
+            <StatCard title="Track 28d" value={<AnimatedCounter value={track28d} />} subtitle="Net streams" />
+            <StatCard title="Track 30d" value={<AnimatedCounter value={track30d} />} subtitle="Net streams" />
           </div>
         ) : null}
       </div>
@@ -645,12 +695,12 @@ export default async function ArtistsPage({
         throw error;
       }
     }
-    console.error("Error in ArtistsPage:", error);
+    console.error("Error in CatalogPage:", error);
     const errorMessage = error instanceof Error ? error.message : String(error);
     return (
       <div className="space-y-4">
         <div className="rounded-2xl border border-red-300 bg-red-50 p-4 text-sm text-red-950 dark:border-red-900/30 dark:bg-red-900/10 dark:text-red-200">
-          <h2 className="font-semibold">Error loading artist page</h2>
+          <h2 className="font-semibold">Error loading catalog page</h2>
           <p className="mt-1">{errorMessage}</p>
         </div>
       </div>

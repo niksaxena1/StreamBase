@@ -3,6 +3,7 @@ import { Activity, List } from "lucide-react";
 import { redirect } from "next/navigation";
 
 import { supabaseServer } from "@/lib/supabase/server";
+import { cachedQuery } from "@/lib/supabase/cache";
 import { formatDateISO, formatInt } from "@/lib/format";
 import { GlassTable, TableRow, TableCell, EmptyState } from "@/components/ui/GlassTable";
 import { SpotlightCard } from "@/components/ui/SpotlightCard";
@@ -143,43 +144,67 @@ export default async function PlaylistsPage({
     );
   }
 
-  // Dashboard view - show analytics for selected playlist
-  const [{ data: playlists }, { data: latest }, { data: prev }, { data: history }] =
-    await Promise.all([
-      sb
-        .from("playlists")
-        .select("playlist_key,display_name,is_catalog")
-        .order("is_catalog", { ascending: false })
-        .order("display_name", { ascending: true }),
-      sb
-        .from("playlist_daily_stats")
-        .select("date,track_count,total_streams_cumulative,daily_streams_net")
-        .eq("playlist_key", playlistKey)
-        .order("date", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-      sb
-        .from("playlist_daily_stats")
-        .select("date")
-        .eq("playlist_key", playlistKey)
-        .order("date", { ascending: false })
-        .range(1, 1)
-        .maybeSingle(),
-      sb
-        .from("playlist_daily_stats")
-        .select("date,track_count,total_streams_cumulative,daily_streams_net")
-        .eq("playlist_key", playlistKey)
-        .order("date", { ascending: false })
-        .limit(rangeDays),
-    ]);
+  // Dashboard view - show analytics for selected playlist (cached for 1 hour)
+  const [
+    { data: playlists },
+    { data: latest },
+    { data: prev },
+    { data: history },
+  ] = await Promise.all([
+    cachedQuery(
+      async () =>
+        await sb
+          .from("playlists")
+          .select("playlist_key,display_name,is_catalog")
+          .order("is_catalog", { ascending: false })
+          .order("display_name", { ascending: true }),
+      "playlists-list",
+      3600,
+    ),
+    cachedQuery(
+      async () =>
+        await sb
+          .from("playlist_daily_stats")
+          .select("date,track_count,total_streams_cumulative,daily_streams_net")
+          .eq("playlist_key", playlistKey)
+          .order("date", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+      `playlist-latest-${playlistKey}`,
+      3600,
+    ),
+    cachedQuery(
+      async () =>
+        await sb
+          .from("playlist_daily_stats")
+          .select("date")
+          .eq("playlist_key", playlistKey)
+          .order("date", { ascending: false })
+          .range(1, 1)
+          .maybeSingle(),
+      `playlist-prev-${playlistKey}`,
+      3600,
+    ),
+    cachedQuery(
+      async () =>
+        await sb
+          .from("playlist_daily_stats")
+          .select("date,track_count,total_streams_cumulative,daily_streams_net")
+          .eq("playlist_key", playlistKey)
+          .order("date", { ascending: false })
+          .limit(rangeDays),
+      `playlist-history-${playlistKey}-${rangeDays}`,
+      3600,
+    ),
+  ]);
 
   const playlistOptions = (playlists ?? []) as PlaylistRow[];
   const title =
     playlistOptions.find((p) => p.playlist_key === playlistKey)?.display_name ??
     playlistKey;
 
-  const latestDate = latest?.date ?? null;
-  const prevDate = prev?.date ?? null;
+  const latestDate = (latest as PlaylistDailyStatsRow | null)?.date ?? null;
+  const prevDate = (prev as { date: string } | null)?.date ?? null;
 
   const hist = (history ?? []) as PlaylistDailyStatsRow[];
   const cumulativeSeries = hist.map((r) => ({
@@ -329,7 +354,7 @@ export default async function PlaylistsPage({
                 Cumulative streams
               </div>
               <div className="mt-1 font-display text-3xl font-bold tracking-tight">
-                <AnimatedCounter value={latest?.total_streams_cumulative ?? 0} />
+                <AnimatedCounter value={(latest as PlaylistDailyStatsRow | null)?.total_streams_cumulative ?? 0} />
               </div>
               <div className="mt-1 text-xs opacity-60">{rangeDays} day view</div>
             </div>
@@ -353,7 +378,7 @@ export default async function PlaylistsPage({
                 Daily streams (MA7)
               </div>
               <div className="mt-1 font-display text-3xl font-bold tracking-tight">
-                <AnimatedCounter value={latest?.daily_streams_net ?? 0} />
+                <AnimatedCounter value={(latest as PlaylistDailyStatsRow | null)?.daily_streams_net ?? 0} />
               </div>
               <div className="mt-1 text-xs opacity-60">
                 Newest day: {formatDateISO(latestDate)}
@@ -379,7 +404,7 @@ export default async function PlaylistsPage({
 
         <StatCard
           title="Active tracks"
-          value={<AnimatedCounter value={latest?.track_count ?? 0} />}
+          value={<AnimatedCounter value={(latest as PlaylistDailyStatsRow | null)?.track_count ?? 0} />}
           subtitle="Currently in playlist"
         />
         <StatCard

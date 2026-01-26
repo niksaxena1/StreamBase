@@ -4,12 +4,9 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 
 export function LogoMark({ size = 18 }: { size?: number }) {
-  const [mounted, setMounted] = useState(false);
   const [isDark, setIsDark] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
-    
     // Check current theme
     const checkTheme = () => {
       if (typeof window === "undefined") return;
@@ -44,7 +41,7 @@ export function LogoMark({ size = 18 }: { size?: number }) {
 
   // Use light logo as default during SSR to avoid hydration mismatch
   // Always show light logo initially, then switch to dark if needed
-  const logoSrc = mounted && isDark ? "/logo-dark.png" : "/logo-light.png";
+  const logoSrc = isDark ? "/logo-dark.png" : "/logo-light.png";
 
   return (
     <Image
