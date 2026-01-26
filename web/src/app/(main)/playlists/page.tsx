@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Activity, List } from "lucide-react";
+import { Activity, List, ExternalLink } from "lucide-react";
 import { redirect } from "next/navigation";
 
 import { supabaseServer } from "@/lib/supabase/server";
@@ -155,7 +155,7 @@ export default async function PlaylistsPage({
       async () =>
         await sb
           .from("playlists")
-          .select("playlist_key,display_name,is_catalog")
+          .select("playlist_key,display_name,is_catalog,spotify_playlist_id,spotify_playlist_image_url")
           .order("is_catalog", { ascending: false })
           .order("display_name", { ascending: true }),
       "playlists-list",
@@ -199,9 +199,13 @@ export default async function PlaylistsPage({
   ]);
 
   const playlistOptions = (playlists ?? []) as PlaylistRow[];
-  const title =
-    playlistOptions.find((p) => p.playlist_key === playlistKey)?.display_name ??
-    playlistKey;
+  const currentPlaylist = playlistOptions.find((p) => p.playlist_key === playlistKey);
+  const title = currentPlaylist?.display_name ?? playlistKey;
+  const playlistImageUrl = currentPlaylist?.spotify_playlist_image_url ?? null;
+  const spotifyPlaylistId = currentPlaylist?.spotify_playlist_id ?? null;
+  const spotifyUrl = spotifyPlaylistId
+    ? `https://open.spotify.com/playlist/${spotifyPlaylistId}`
+    : null;
 
   const latestDate = (latest as PlaylistDailyStatsRow | null)?.date ?? null;
   const prevDate = (prev as { date: string } | null)?.date ?? null;
@@ -312,18 +316,44 @@ export default async function PlaylistsPage({
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="font-display text-2xl font-semibold tracking-tight">
-            {title}
-          </h1>
-          <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
-            {latestDate ? (
-              <>
-                Latest snapshot: <span className="font-mono">{formatDateISO(latestDate)}</span>
-              </>
-            ) : (
-              "No stats found for this playlist yet."
-            )}
+        <div className="flex items-center gap-3">
+          {playlistImageUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={playlistImageUrl}
+              alt="Playlist cover"
+              className="h-12 w-12 rounded-lg object-cover sb-ring"
+            />
+          ) : (
+            <div className="h-12 w-12 rounded-lg sb-ring bg-white/60" />
+          )}
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="font-display text-2xl font-semibold tracking-tight">
+                {title}
+              </h1>
+              {spotifyUrl && (
+                <Link
+                  href={spotifyUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center rounded-full p-1.5 transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+                  title="Open on Spotify"
+                  style={{ color: "var(--sb-muted)" }}
+                >
+                  <ExternalLink className="h-4 w-4" />
+                </Link>
+              )}
+            </div>
+            <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
+              {latestDate ? (
+                <>
+                  Latest snapshot: <span className="font-mono">{formatDateISO(latestDate)}</span>
+                </>
+              ) : (
+                "No stats found for this playlist yet."
+              )}
+            </div>
           </div>
         </div>
         <Link
@@ -372,7 +402,7 @@ export default async function PlaylistsPage({
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
-                Daily streams (MA7)
+                Daily streams
               </div>
               <div className="mt-1 font-display text-3xl font-bold tracking-tight">
                 <AnimatedCounter value={(latest as PlaylistDailyStatsRow | null)?.daily_streams_net ?? 0} />
@@ -403,11 +433,6 @@ export default async function PlaylistsPage({
           title="Active tracks"
           value={<AnimatedCounter value={(latest as PlaylistDailyStatsRow | null)?.track_count ?? 0} />}
           subtitle="Currently in playlist"
-        />
-        <StatCard
-          title="Top tracks (table)"
-          value={formatInt(currentRows.length)}
-          subtitle="Sorted by last-day streams"
         />
         <StatCard
           title="Removed tracks"

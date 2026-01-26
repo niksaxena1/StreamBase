@@ -37,7 +37,6 @@ export default function RootLayout({
       <body
         className={`${inter.variable} ${geistMono.variable} ${spaceGrotesk.variable} antialiased`}
       >
-        <div className="sb-noise" />
         {children}
       </body>
     </html>

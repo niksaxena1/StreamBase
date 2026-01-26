@@ -149,9 +149,9 @@ function computeRollingAvg7(desc: Array<{ date: string; daily: number }>) {
   for (let i = 0; i < asc.length; i++) {
     const start = Math.max(0, i - 6);
     const window = asc.slice(start, i + 1).map((p) => Number(p.daily ?? 0));
-    const has7 = window.length >= 7;
-    const avg = window.reduce((a, b) => a + b, 0) / window.length;
-    outAsc.push({ date: asc[i].date, daily: asc[i].daily, ma7: has7 ? avg : null });
+    // Always compute average if we have at least 1 data point, but prefer 7+ for accuracy
+    const avg = window.length > 0 ? window.reduce((a, b) => a + b, 0) / window.length : null;
+    outAsc.push({ date: asc[i].date, daily: asc[i].daily, ma7: avg });
   }
   return outAsc.reverse();
 }
@@ -524,7 +524,6 @@ export default async function CatalogPage({
               <div className="mt-1 font-display text-3xl font-bold tracking-tight">
                 <AnimatedCounter value={latestCum} />
               </div>
-              <div className="mt-1 text-xs opacity-60">{rangeDays} day view</div>
             </div>
           </div>
           <div className="mt-2 min-h-[200px]">
@@ -541,13 +540,12 @@ export default async function CatalogPage({
 
         <SpotlightCard className="lg:col-span-6 p-3">
           <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
-            Artist daily streams (MA7)
+            Artist daily streams
           </div>
           <div className="mt-1 font-display text-3xl font-bold tracking-tight">
             <AnimatedCounter value={latestCum - prevCum} />
           </div>
           <div className="mt-1 text-xs opacity-60">
-            Newest day: {formatDateISO(latestDate)}
           </div>
           <div className="mt-2 min-h-[200px]">
             <DailyStreamsWithMAChart
@@ -709,7 +707,7 @@ export default async function CatalogPage({
 
             <SpotlightCard className="lg:col-span-5 p-3">
               <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
-                Track daily streams (MA7)
+                Track daily streams
               </div>
               <div className="mt-2 min-h-[180px]">
                 <DailyStreamsWithMAChart

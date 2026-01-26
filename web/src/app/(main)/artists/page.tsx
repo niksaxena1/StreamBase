@@ -146,9 +146,9 @@ function computeRollingAvg7(desc: Array<{ date: string; daily: number }>) {
   for (let i = 0; i < asc.length; i++) {
     const start = Math.max(0, i - 6);
     const window = asc.slice(start, i + 1).map((p) => Number(p.daily ?? 0));
-    const has7 = window.length >= 7;
-    const avg = window.reduce((a, b) => a + b, 0) / window.length;
-    outAsc.push({ date: asc[i].date, daily: asc[i].daily, ma7: has7 ? avg : null });
+    // Always compute average if we have at least 1 data point, but prefer 7+ for accuracy
+    const avg = window.length > 0 ? window.reduce((a, b) => a + b, 0) / window.length : null;
+    outAsc.push({ date: asc[i].date, daily: asc[i].daily, ma7: avg });
   }
   return outAsc.reverse();
 }
@@ -432,6 +432,9 @@ export default async function ArtistsPage({
             >
               <ExternalLink className="h-4 w-4" />
             </Link>
+          </div>
+          <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
+            {formatInt(artistTracks.length)} {artistTracks.length === 1 ? "track" : "tracks"}
           </div>
           <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
             {latestDate ? (
