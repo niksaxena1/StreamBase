@@ -1,10 +1,9 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Music } from "lucide-react";
 
-import { GlassTable, TableCell, TableRow } from "@/components/ui/GlassTable";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
+import { PlaylistSettingsTable } from "./PlaylistSettingsTable";
 
 export const dynamic = "force-dynamic";
 
@@ -45,8 +44,9 @@ export default async function PlaylistSettingsPage() {
   const { data, error } = await sb
     .from("playlists")
     .select(
-      "playlist_key,display_name,spotify_playlist_id,spotify_playlist_image_url",
+      "playlist_key,display_name,spotify_playlist_id,spotify_playlist_image_url,display_order",
     )
+    .order("display_order", { ascending: true, nullsFirst: false })
     .order("display_name", { ascending: true });
 
   async function updatePlaylist(formData: FormData) {
@@ -71,6 +71,26 @@ export default async function PlaylistSettingsPage() {
     if (upErr) throw new Error(upErr.message);
   }
 
+  async function reorderPlaylists(updates: { playlist_key: string; display_order: number }[]) {
+    "use server";
+
+    await requireAdmin();
+    const svc = supabaseService();
+
+    try {
+      await Promise.all(
+        updates.map((update) =>
+          svc
+            .from("playlists")
+            .update({ display_order: update.display_order })
+            .eq("playlist_key", update.playlist_key)
+        )
+      );
+    } catch (error) {
+      throw new Error(`Failed to update playlist order: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-end justify-between gap-4">
@@ -90,76 +110,7 @@ export default async function PlaylistSettingsPage() {
         </div>
       )}
 
-      <GlassTable headers={["", "Playlist", "Spotify playlist (URL/URI/ID)", ""]}>
-        {(data ?? []).map((p) => {
-          const isAllCatalog = p.playlist_key === "all_catalog";
-          return (
-            <TableRow key={p.playlist_key}>
-              <TableCell>
-                {isAllCatalog ? (
-                  <div
-                    className="sb-ring flex h-8 w-8 items-center justify-center rounded-lg"
-                    style={{ background: "var(--sb-accent)" }}
-                  >
-                    <Music className="h-4 w-4" style={{ color: "var(--sb-text)" }} />
-                  </div>
-                ) : p.spotify_playlist_image_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={p.spotify_playlist_image_url}
-                    alt="Playlist cover"
-                    className="h-8 w-8 rounded-lg object-cover sb-ring"
-                  />
-                ) : (
-                  <div className="h-8 w-8 rounded-lg sb-ring bg-white/60" />
-                )}
-              </TableCell>
-              <TableCell>
-                <div className="font-medium">{p.display_name}</div>
-                <div className="font-mono text-xs opacity-60">{p.playlist_key}</div>
-              </TableCell>
-              <TableCell>
-                {isAllCatalog ? (
-                  <span className="text-xs" style={{ color: "var(--sb-muted)" }}>
-                    Not a Spotify playlist
-                  </span>
-                ) : (
-                  <form action={updatePlaylist} className="flex items-center gap-2">
-                    <input type="hidden" name="playlist_key" value={p.playlist_key} />
-                    <input
-                      name="spotify_playlist_id"
-                      defaultValue={p.spotify_playlist_id ?? ""}
-                      placeholder="https://open.spotify.com/playlist/…"
-                      className="sb-ring w-full rounded-xl bg-white/70 px-3 py-2 text-sm outline-none placeholder:text-black/40 dark:bg-white/5 dark:placeholder:text-white/40"
-                    />
-                    <button
-                      type="submit"
-                      className="sb-ring rounded-xl bg-black px-3 py-2 text-sm font-medium text-white dark:bg-white dark:text-black"
-                    >
-                      Save
-                    </button>
-                  </form>
-                )}
-              </TableCell>
-              <TableCell>
-                <Link
-                  href={`/playlists/${p.playlist_key}`}
-                  className="text-xs underline"
-                >
-                  View
-                </Link>
-              </TableCell>
-            </TableRow>
-          );
-        })}
-        {!data?.length && (
-          <TableRow>
-            <TableCell className="text-center opacity-50 py-8" colSpan={4}>
-              No playlists found.
-            </TableCell>
-          </TableRow>
-        )}
-      </GlassTable>
+      <PlaylistSettingsTable playlists={data ?? []} updatePlaylist={updatePlaylist} reorderPlaylists={reorderPlaylists} />
     </div>
   );
 }

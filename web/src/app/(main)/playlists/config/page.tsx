@@ -2,9 +2,9 @@ import Link from "next/link";
 import { ArrowLeft, Settings } from "lucide-react";
 
 import { supabaseServer } from "@/lib/supabase/server";
-import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
 import { supabaseService } from "@/lib/supabase/service";
 import { getPlaylist } from "@/lib/spotify";
+import { PlaylistFilters } from "./PlaylistFilters";
 
 export const dynamic = "force-dynamic";
 
@@ -16,21 +16,75 @@ type PlaylistRow = {
   spotify_playlist_id: string | null;
   spotify_playlist_image_url: string | null;
   spotify_last_fetched_at: string | null;
+  display_order: number | null;
 };
 
 export default async function PlaylistsConfigPage() {
   const sb = await supabaseServer();
   const { data: isAdmin } = await sb.rpc("is_admin");
 
-  const { data, error } = await sb
+  // Try to fetch with playlist_type and display_order, fall back if columns don't exist
+  let { data, error } = await sb
     .from("playlists")
     .select(
-      "playlist_key,display_name,is_catalog,playlist_type,spotify_playlist_id,spotify_playlist_image_url,spotify_last_fetched_at",
+      "playlist_key,display_name,is_catalog,playlist_type,spotify_playlist_id,spotify_playlist_image_url,spotify_last_fetched_at,display_order",
     )
+    .order("display_order", { ascending: true, nullsFirst: false })
     .order("is_catalog", { ascending: false })
     .order("display_name", { ascending: true });
 
-  const playlists = (data ?? []) as PlaylistRow[];
+  // If columns don't exist, retry without them
+  if (error && (error.message?.includes("playlist_type") || error.message?.includes("display_order"))) {
+    const result = await sb
+      .from("playlists")
+      .select(
+        "playlist_key,display_name,is_catalog,spotify_playlist_id,spotify_playlist_image_url,spotify_last_fetched_at",
+      )
+      .order("is_catalog", { ascending: false })
+      .order("display_name", { ascending: true });
+    data = result.data;
+    error = result.error;
+  }
+
+  const playlists = (data ?? []).map((p: any) => ({
+    ...p,
+    playlist_type: p.playlist_type ?? null,
+    display_order: p.display_order ?? null,
+  })) as PlaylistRow[];
+
+  // Fetch latest stats for all playlists
+  const playlistKeys = playlists.map((p) => p.playlist_key);
+  const statsMap = new Map<string, { track_count: number | null; total_streams_cumulative: number | null; daily_streams_net: number | null }>();
+  
+  if (playlistKeys.length > 0) {
+    try {
+      // Fetch latest stats for each playlist
+      const statsPromises = playlistKeys.map(async (key) => {
+        const { data: statsData } = await sb
+          .from("playlist_daily_stats")
+          .select("track_count,total_streams_cumulative,daily_streams_net")
+          .eq("playlist_key", key)
+          .order("date", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        
+        return { key, stats: statsData };
+      });
+      
+      const statsResults = await Promise.all(statsPromises);
+      statsResults.forEach(({ key, stats }) => {
+        if (stats) {
+          statsMap.set(key, {
+            track_count: stats.track_count,
+            total_streams_cumulative: stats.total_streams_cumulative,
+            daily_streams_net: stats.daily_streams_net,
+          });
+        }
+      });
+    } catch {
+      // ignore stats fetch errors
+    }
+  }
 
   // Best-effort thumbnail refresh for rows that have spotify_playlist_id but no image (or stale).
   // We keep this conservative to avoid spamming Spotify requests.
@@ -62,7 +116,7 @@ export default async function PlaylistsConfigPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="flex h-full flex-col space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Link
@@ -102,74 +156,12 @@ export default async function PlaylistsConfigPage() {
         </div>
       )}
 
-      <GlassTable headers={["", "Key", "Name", "Type"]}>
-        {playlists.map((p) => (
-          <TableRow key={p.playlist_key}>
-            <TableCell>
-              {p.spotify_playlist_image_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={p.spotify_playlist_image_url}
-                  alt="Playlist cover"
-                  className="h-8 w-8 rounded-lg object-cover sb-ring"
-                />
-              ) : (
-                <div className="h-8 w-8 rounded-lg sb-ring bg-white/60" />
-              )}
-            </TableCell>
-            <TableCell mono>
-              <Link
-                className="transition-colors hover:text-lime-600 dark:hover:text-lime-400 font-medium"
-                href={`/playlists?playlist_key=${encodeURIComponent(p.playlist_key)}`}
-              >
-                {p.playlist_key}
-              </Link>
-            </TableCell>
-            <TableCell>
-              <span className="font-medium">{p.display_name}</span>
-            </TableCell>
-            <TableCell>
-              {(() => {
-                const type = p.playlist_type || (p.is_catalog ? "Catalog" : "Standard");
-                const typeColors: Record<string, { bg: string; text: string }> = {
-                  Catalog: {
-                    bg: "bg-lime-400/20",
-                    text: "text-lime-800 dark:text-lime-300",
-                  },
-                  Label: {
-                    bg: "bg-blue-400/20",
-                    text: "text-blue-800 dark:text-blue-300",
-                  },
-                  Entity: {
-                    bg: "bg-purple-400/20",
-                    text: "text-purple-800 dark:text-purple-300",
-                  },
-                  Distro: {
-                    bg: "bg-orange-400/20",
-                    text: "text-orange-800 dark:text-orange-300",
-                  },
-                };
-                const colors = typeColors[type] || {
-                  bg: "bg-black/10",
-                  text: "text-black/80 dark:text-white/60",
-                };
-                return (
-                  <span className={`inline-flex items-center rounded-full ${colors.bg} px-2.5 py-0.5 text-xs font-medium ${colors.text}`}>
-                    {type}
-                  </span>
-                );
-              })()}
-            </TableCell>
-          </TableRow>
-        ))}
-        {!playlists.length && (
-          <TableRow>
-            <TableCell className="py-8 text-center opacity-50" colSpan={4}>
-              No playlists found.
-            </TableCell>
-          </TableRow>
-        )}
-      </GlassTable>
+      <div className="flex-1 min-h-0">
+        <PlaylistFilters 
+          playlists={playlists} 
+          statsMap={Object.fromEntries(statsMap)} 
+        />
+      </div>
     </div>
   );
 }

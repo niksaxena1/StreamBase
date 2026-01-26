@@ -35,7 +35,7 @@ export function GlassTable({
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y" style={{ borderColor: "var(--sb-border)" }}>
+          <tbody className="">
             {children}
           </tbody>
         </table>
@@ -75,7 +75,9 @@ export function TableRow({ children, className, ...props }: { children: ReactNod
   return (
     <tr
       className={[
-        "group transition-colors hover:bg-black/[0.02] dark:hover:bg-white/[0.02]",
+        "group transition-colors",
+        "odd:bg-black/[0.02] dark:odd:bg-white/[0.02]", // Zebra striping
+        "hover:bg-black/[0.04] dark:hover:bg-white/[0.04]", // Slightly darker hover to be visible on zebra rows
         className,
       ].filter(Boolean).join(" ")}
       {...props}

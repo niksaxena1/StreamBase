@@ -54,7 +54,7 @@ export function AppShell(props: { children: ReactNode }) {
           </header>
 
           {/* Main surface */}
-          <main className="sb-glass p-4 sm:p-5">
+          <main className="sb-glass flex-1 p-4 sm:p-5">
             {props.children}
           </main>
 
