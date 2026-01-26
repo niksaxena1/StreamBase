@@ -187,7 +187,7 @@ export default async function HealthPage({
         name: t.name,
         artist_names: t.spotify_artist_names,
         artist_ids: t.spotify_artist_ids,
-        album_image_url: t.album_image_url,
+        album_image_url: t.spotify_album_image_url,
         playlists: Array.from(isrcToPlaylists.get(t.isrc) ?? []).sort(),
       }));
     }
