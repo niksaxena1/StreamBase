@@ -74,7 +74,7 @@ export function SideRail() {
 }
 
 export function IconGrid(props: { active: boolean }) {
-  const iconClass = props.active ? "text-white" : "text-current";
+  const iconClass = "text-current";
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className={iconClass}>
       <path
@@ -104,7 +104,7 @@ export function IconGrid(props: { active: boolean }) {
 }
 
 export function IconUser(props: { active: boolean }) {
-  const iconClass = props.active ? "text-white" : "text-current";
+  const iconClass = "text-current";
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className={iconClass}>
       <path
@@ -123,7 +123,7 @@ export function IconUser(props: { active: boolean }) {
 }
 
 export function IconList(props: { active: boolean }) {
-  const iconClass = props.active ? "text-white" : "text-current";
+  const iconClass = "text-current";
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className={iconClass}>
       <path d="M7 7H20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
@@ -166,7 +166,7 @@ export function IconList(props: { active: boolean }) {
 }
 
 export function IconPulse(props: { active: boolean }) {
-  const iconClass = props.active ? "text-white" : "text-current";
+  const iconClass = "text-current";
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className={iconClass}>
       <path
@@ -181,7 +181,7 @@ export function IconPulse(props: { active: boolean }) {
 }
 
 export function IconHome(props: { active: boolean }) {
-  const iconClass = props.active ? "text-white" : "text-current";
+  const iconClass = "text-current";
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className={iconClass}>
       <path
@@ -196,7 +196,7 @@ export function IconHome(props: { active: boolean }) {
 }
 
 export function IconMusic(props: { active: boolean }) {
-  const iconClass = props.active ? "text-white" : "text-current";
+  const iconClass = "text-current";
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className={iconClass}>
       <path

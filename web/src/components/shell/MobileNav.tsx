@@ -19,7 +19,7 @@ export function MobileNav() {
               className={`flex flex-col items-center justify-center gap-1.5 rounded-lg p-3 transition-colors min-w-[60px] ${
                 active
                   ? "text-black dark:text-white"
-                  : "text-black/60 dark:text-white/60 hover:bg-black/5 dark:hover:bg-white/5"
+                  : "text-black/70 dark:text-white/70 hover:bg-black/5 dark:hover:bg-white/5"
               }`}
             >
               <div>{item.icon(active)}</div>
