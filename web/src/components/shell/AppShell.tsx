@@ -7,6 +7,7 @@ import { MobileNavWithBadge } from "@/components/shell/MobileNavWithBadge";
 import { Breadcrumbs } from "@/components/shell/Breadcrumbs";
 import { LogoutButton } from "@/components/shell/LogoutButton";
 import { ThemeToggle } from "@/components/shell/ThemeToggle";
+import { IngestionStatusBanner } from "@/components/health/IngestionStatusBanner";
 
 export function AppShell(props: { children: ReactNode }) {
   return (
@@ -55,6 +56,7 @@ export function AppShell(props: { children: ReactNode }) {
 
           {/* Main surface */}
           <main className="sb-glass flex-1 p-4 sm:p-5">
+            <IngestionStatusBanner />
             {props.children}
           </main>
 

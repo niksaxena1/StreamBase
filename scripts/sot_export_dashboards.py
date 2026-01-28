@@ -25,6 +25,7 @@ class Playlist:
     name: str
     url: str
     is_catalog: bool
+    min_rows: int = 0
 
 
 def utc_date_parts() -> Tuple[str, str, str]:
@@ -202,8 +203,13 @@ def load_playlists_csv(path: str) -> List[Playlist]:
             name = (row.get("display_name") or "").strip()
             url = (row.get("dashboard_url") or "").strip()
             is_catalog = (row.get("is_catalog") or "").strip().lower() in ("1", "true", "yes", "y")
+            min_rows_raw = (row.get("min_rows") or "").strip()
+            try:
+                min_rows = int(min_rows_raw) if min_rows_raw else 0
+            except Exception:
+                min_rows = 0
             if key and name and url:
-                out.append(Playlist(key=key, name=name, url=url, is_catalog=is_catalog))
+                out.append(Playlist(key=key, name=name, url=url, is_catalog=is_catalog, min_rows=max(0, min_rows)))
 
     return out
 
@@ -343,6 +349,9 @@ def main():
             if args.fail_on_empty and rows == 0:
                 failures += 1
                 print("❌ Zero-row export (treating as failure).")
+            if pl.min_rows and rows < pl.min_rows:
+                failures += 1
+                print(f"❌ Row-count sanity check failed: rows={rows} < min_rows={pl.min_rows}")
 
             time.sleep(0.4)
 

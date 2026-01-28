@@ -4,14 +4,24 @@ on:
   schedule:
     # Primary run + a 1h-later fallback to reduce missed schedules.
     # Idempotency is enforced via a Supabase pre-check (see steps below).
-    - cron: "0 12 * * *" # 12:00 UTC daily
-    - cron: "0 13 * * *" # 13:00 UTC daily (fallback)
+    - cron: "0 10 * * *" # 10:00 UTC daily
+    - cron: "0 11 * * *" # 11:00 UTC daily (fallback)
   workflow_dispatch:
     inputs:
       run_date:
         description: "Override run date (YYYY-MM-DD). Default: UTC today"
         required: false
         type: string
+      force_reingest:
+        description: "Force a re-ingest for this run date even if already marked success"
+        required: false
+        type: boolean
+        default: false
+      skip_sync_gate:
+        description: "Skip the Dashboard Sync success gate (manual runs only; not recommended)"
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   export:
@@ -29,6 +39,54 @@ jobs:
           if [ -z "$RUN_DATE" ]; then RUN_DATE=$(date -u +'%Y-%m-%d'); fi
           echo "run_date=$RUN_DATE" >> "$GITHUB_OUTPUT"
 
+      - name: "Gate: require successful Dashboard Sync"
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Allow manual overrides if explicitly requested.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.skip_sync_gate }}" = "true" ]; then
+            echo "⚠️ Skipping Dashboard Sync gate (manual override)."
+            exit 0
+          fi
+
+          RUN_DATE="${{ steps.run_date.outputs.run_date }}"
+          echo "Checking Dashboard Sync runs for UTC date: $RUN_DATE"
+
+          # Query recent runs for the dashboard sync workflow (by file name, not numeric id).
+          RUNS_JSON="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/sot_daily_dashboard_sync.yml/runs?branch=main&per_page=30")"
+          export RUNS_JSON
+          export RUN_DATE
+
+          python - <<'PY'
+          import json, os, sys
+
+          run_date = os.environ["RUN_DATE"]
+          data = json.loads(os.environ["RUNS_JSON"])
+          runs = data.get("workflow_runs") or []
+
+          ok = False
+          for r in runs:
+            created = (r.get("created_at") or "")
+            if not created.startswith(run_date):
+              continue
+            # allow either schedule or manual re-run to satisfy the gate
+            if (r.get("status") == "completed") and (r.get("conclusion") == "success"):
+              ok = True
+              break
+
+          if not ok:
+            sys.stderr.write(f"❌ No successful 'SOT Daily Dashboard Sync' workflow run found for {run_date} UTC. Blocking export.\n")
+            sys.stderr.write("Recent runs (newest first):\n")
+            for r in runs[:10]:
+              sys.stderr.write(
+                f"- {r.get('created_at')} event={r.get('event')} status={r.get('status')} conclusion={r.get('conclusion')} run_id={r.get('id')}\n"
+              )
+            sys.exit(1)
+
+          print(f"✅ Dashboard Sync succeeded for {run_date} UTC. Proceeding.")
+          PY
+
       - name: "Pre-check: skip if already ingested"
         id: precheck
         shell: bash
@@ -39,6 +97,13 @@ jobs:
           # Default: run the workflow.
           SHOULD_RUN="true"
           RUN_DATE="${{ steps.run_date.outputs.run_date }}"
+          FORCE="${{ github.event.inputs.force_reingest }}"
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "$FORCE" = "true" ]; then
+            echo "⚠️ Force re-ingest enabled. Skipping idempotency pre-check for $RUN_DATE."
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
           if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
             echo "Supabase secrets not set; cannot pre-check. Proceeding."

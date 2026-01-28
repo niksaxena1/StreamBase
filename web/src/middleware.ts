@@ -12,19 +12,11 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // App is private: allow /login and redirect everything else if unauthenticated.
+  // Always allow the login page to render, even if we *think*
+  // the user is authenticated based on cookies alone.
+  // This avoids redirect loops when Supabase cookies are stale
+  // (e.g. "refresh_token_already_used" / invalid session).
   if (pathname === "/login") {
-    // If user is already authenticated, bounce them to home.
-    const hasAuthCookie = request.cookies
-      .getAll()
-      .some((c) => c.name.startsWith("sb-") || c.name.includes("supabase"));
-    if (hasAuthCookie) {
-      const next = request.nextUrl.searchParams.get("next") || "/";
-      const to = request.nextUrl.clone();
-      to.pathname = next;
-      to.search = "";
-      return NextResponse.redirect(to);
-    }
     return NextResponse.next();
   }
 

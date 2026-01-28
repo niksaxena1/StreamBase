@@ -24,6 +24,7 @@ class Playlist:
     is_catalog: bool
     playlist_type: Optional[str]
     dashboard_url: str
+    min_rows: int = 0
 
 
 def utc_today() -> date:
@@ -65,8 +66,22 @@ def load_playlists_csv(path: str) -> List[Playlist]:
             url = (row.get("dashboard_url") or "").strip()
             is_catalog = (row.get("is_catalog") or "").strip().lower() in ("1", "true", "yes", "y")
             playlist_type = (row.get("playlist_type") or "").strip() or None
+            min_rows_raw = (row.get("min_rows") or "").strip()
+            try:
+                min_rows = int(min_rows_raw) if min_rows_raw else 0
+            except Exception:
+                min_rows = 0
             if key and name:
-                out.append(Playlist(playlist_key=key, display_name=name, is_catalog=is_catalog, playlist_type=playlist_type, dashboard_url=url))
+                out.append(
+                    Playlist(
+                        playlist_key=key,
+                        display_name=name,
+                        is_catalog=is_catalog,
+                        playlist_type=playlist_type,
+                        dashboard_url=url,
+                        min_rows=max(0, min_rows),
+                    )
+                )
     return out
 
 
@@ -255,6 +270,7 @@ def main():
         track_meta: Dict[str, dict] = {}
         raw_export_rows: List[dict] = []
         catalog_zero_stream_ratio: Dict[str, float] = {}
+        hard_fail_warnings: List[dict] = []
 
         for pl_key in export_keys:
             csv_path = day_dir / f"{pl_key}.csv"
@@ -290,6 +306,21 @@ def main():
                     "exported_at": datetime.now(timezone.utc).isoformat(),
                 }
             )
+
+            # Hard safety: minimum row count checks for key exports (configured in playlists.csv).
+            pl_cfg = playlist_lookup.get(pl_key)
+            if pl_cfg and pl_cfg.min_rows and rows_count < pl_cfg.min_rows:
+                hard_fail_warnings.append(
+                    {
+                        "run_id": run_id,
+                        "run_date": run_date.isoformat(),
+                        "playlist_key": pl_key,
+                        "severity": "critical",
+                        "code": "min_rows_failed",
+                        "message": f"Export row-count below configured minimum ({rows_count} < {pl_cfg.min_rows}); aborting ingestion to protect data integrity",
+                        "details_json": {"rows_count": rows_count, "min_rows": pl_cfg.min_rows, "object_key": object_key},
+                    }
+                )
 
             if rows_count == 0:
                 pg.insert(
@@ -348,8 +379,48 @@ def main():
             if is_catalog and seen_stream_rows > 0:
                 catalog_zero_stream_ratio[pl_key] = zero_streams / float(seen_stream_rows)
 
-        # raw_exports
+        # Persist raw export metadata early (useful even if we abort later).
         pg.upsert("raw_exports", raw_export_rows, on_conflict="run_id,playlist_key")
+
+        # If any configured minimum row thresholds fail, abort BEFORE mutating memberships/stats.
+        if hard_fail_warnings:
+            pg.insert("ingestion_warnings", hard_fail_warnings)
+            raise SystemExit("Critical export integrity checks failed (min_rows). Aborting ingestion.")
+
+        # Additional hard safety: if catalog playlists swing wildly day-over-day, abort.
+        # This catches cases where a page partially loaded (e.g., only first ~20 rows) even if min_rows isn't configured.
+        swing_hard_fail: List[dict] = []
+        for pl in playlists:
+            pl_key = pl.playlist_key
+            todays_isrcs = playlist_to_isrcs.get(pl_key)
+            if not todays_isrcs:
+                continue
+
+            prev_stats = pg.select(
+                "playlist_daily_stats",
+                "track_count",
+                f"playlist_key=eq.{pl_key}&date=eq.{prev_date.isoformat()}&limit=1",
+            )
+            prev_count = int(prev_stats[0]["track_count"]) if prev_stats and prev_stats[0].get("track_count") is not None else None
+            if prev_count and prev_count > 0:
+                ratio = abs(len(todays_isrcs) - prev_count) / float(prev_count)
+                # For catalog exports, a huge swing is almost always a data integrity issue.
+                if pl.is_catalog and ratio >= 0.70:
+                    swing_hard_fail.append(
+                        {
+                            "run_id": run_id,
+                            "run_date": run_date.isoformat(),
+                            "playlist_key": pl_key,
+                            "severity": "critical",
+                            "code": "track_count_swing_hard_fail",
+                            "message": f"Catalog track count changed by {ratio:.0%} day-over-day ({prev_count} -> {len(todays_isrcs)}); aborting ingestion",
+                            "details_json": {"prev": prev_count, "today": len(todays_isrcs), "ratio": ratio},
+                        }
+                    )
+
+        if swing_hard_fail:
+            pg.insert("ingestion_warnings", swing_hard_fail)
+            raise SystemExit("Critical export integrity checks failed (track_count swing). Aborting ingestion.")
 
         # tracks + daily snapshots
         pg.upsert("tracks", list(track_meta.values()), on_conflict="isrc")

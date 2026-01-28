@@ -2,8 +2,8 @@ name: SOT Daily Dashboard Sync
 
 on:
   schedule:
-    # Run 1 hour before the export workflow (export is 12:00 UTC)
-    - cron: "0 11 * * *"
+    # Run 1 hour before the export workflow (export is 10:00 UTC)
+    - cron: "0 9 * * *"
   workflow_dispatch:
     inputs:
       dry_run:

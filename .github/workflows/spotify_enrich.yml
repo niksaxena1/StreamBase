@@ -8,8 +8,8 @@ on:
         required: false
         default: "500"
   schedule:
-    # 14:00 UTC daily
-    - cron: "0 14 * * *"
+    # 12:00 UTC daily
+    - cron: "0 12 * * *"
 
 concurrency:
   group: spotify-enrich

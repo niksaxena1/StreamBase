@@ -202,9 +202,12 @@ def scan_playlist_tracks(page, playlist_url: str) -> List[str]:
 
     selectors = ["a[href*='/tracks/']", "a[href^='/tracks/']"]
 
+    # IMPORTANT:
+    # Do NOT return early if we see some tracks initially.
+    # SpotOnTrack playlist pages often lazy-load additional rows on scroll.
+    # Returning early can yield only the first ~20 visible tracks, which is
+    # extremely dangerous for mirror operations (it can trigger massive removals).
     urls = extract_unique_hrefs(page, selectors)
-    if urls:
-        return urls
 
     scroll_script = """
     () => {
@@ -222,10 +225,23 @@ def scan_playlist_tracks(page, playlist_url: str) -> List[str]:
     }
     """
 
-    last_len = 0
+    last_len = len(urls)
     stable = 0
-    for _ in range(360):
-        page.evaluate(scroll_script)
+    for _ in range(420):
+        scrolled = False
+        try:
+            scrolled = bool(page.evaluate(scroll_script))
+        except Exception:
+            scrolled = False
+
+        # Fallback: some pages scroll the window, not a nested container.
+        if not scrolled:
+            try:
+                page.mouse.wheel(0, 4200)
+                scrolled = True
+            except Exception:
+                pass
+
         fast_pause(0.06, 0.14)
         urls = extract_unique_hrefs(page, selectors)
         if len(urls) > last_len:
@@ -233,14 +249,19 @@ def scan_playlist_tracks(page, playlist_url: str) -> List[str]:
             stable = 0
         else:
             stable += 1
-            if stable >= 7:
+            if stable >= 10:
                 break
     return urls
 
 
 def scan_with_retry(scan_fn, page, url: str, max_attempts: int = RETRIES, refresh: bool = False):
     for attempt in range(1, max_attempts + 1):
-        out = scan_fn(page, url)
+        try:
+            out = scan_fn(page, url)
+        except PWTimeout:
+            out = []
+        except Exception:
+            out = []
         if out and len(out) > 0:
             return out
 
@@ -481,6 +502,28 @@ def run_sync(
             print("—" * 72)
             print(f"🧹 Extra in dashboard (remove): {len(to_remove)}")
             print(f"➕ Missing from dashboard (add): {len(to_add)}")
+
+            # SAFETY: prevent catastrophic dashboard wipes when playlist scan is incomplete.
+            # If the playlist appears much smaller than the dashboard, it's often due to a scan
+            # issue (lazy load / scroll changes / transient rendering). Skipping is safer than
+            # destroying the dashboard contents.
+            if not no_sync and len(dashboard_set) >= 200:
+                if len(playlist_set) < max(50, int(0.25 * len(dashboard_set))) and len(to_remove) >= int(
+                    0.70 * len(dashboard_set)
+                ):
+                    print(
+                        "🛑 Safety: playlist scan suspiciously small vs dashboard; skipping to avoid mass removals."
+                    )
+                    log_row(
+                        log_path,
+                        task,
+                        -1,
+                        playlist_url,
+                        "skip",
+                        f"suspicious_scan: playlist={len(playlist_set)} dashboard={len(dashboard_set)} remove={len(to_remove)}",
+                    )
+                    total_skipped += 1
+                    continue
 
             if dry_run:
                 print("🟡 DRY RUN: skipping clicking for this task.")
