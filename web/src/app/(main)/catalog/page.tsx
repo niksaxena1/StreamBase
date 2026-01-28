@@ -366,6 +366,7 @@ export default async function CatalogPage({
     .map((id) => ({
       isrc: id,
       total: latestByIsrc.get(id) ?? null,
+      daily: null,
       name: artistTracks.find((t) => t.isrc === id)?.name ?? null,
     }))
     .filter((r) => r.total !== null)
@@ -380,6 +381,7 @@ export default async function CatalogPage({
       return {
         isrc: id,
         daily,
+        total: latestV ?? null,
         name: artistTracks.find((t) => t.isrc === id)?.name ?? null,
       };
     })
@@ -483,7 +485,6 @@ export default async function CatalogPage({
         artistId={artistId}
         tracks={trackOptions}
         isrc={isrc}
-        rangeDays={rangeDays}
         artistName={artistName}
         artistImageUrl={artistsWithImages.find((a) => a.id === artistId)?.imageUrl ?? null}
         topByCumulative={topByCumulative}

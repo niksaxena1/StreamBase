@@ -6,6 +6,7 @@ import { DailyStreamsWithMAChart } from "@/components/charts/DailyStreamsWithMAC
 import { SpotlightCard } from "@/components/ui/SpotlightCard";
 import { StatCard } from "@/components/StatCard";
 import { AnimatedCounter } from "@/components/ui/AnimatedCounter";
+import type { Metric } from "./CatalogMetricSelector";
 
 const STREAM_PAYOUT_USD = 0.002;
 

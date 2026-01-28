@@ -14,7 +14,6 @@ import { getPlaylist } from "@/lib/spotify";
 import { PlaylistPageClient } from "./PlaylistPageClient";
 import { PlaylistHeaderWithSelector } from "./PlaylistHeaderWithSelector";
 import { PlaylistMetricProvider } from "./PlaylistMetricContext";
-import { PlaylistHeaderClient } from "./PlaylistHeaderClient";
 
 export const dynamic = "force-dynamic";
 

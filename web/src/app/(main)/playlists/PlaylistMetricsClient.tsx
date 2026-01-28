@@ -7,6 +7,7 @@ import { StatCard } from "@/components/StatCard";
 import { AnimatedCounter } from "@/components/ui/AnimatedCounter";
 import { Activity } from "lucide-react";
 import { formatInt } from "@/lib/format";
+import type { Metric } from "./PlaylistMetricSelector";
 
 
 type PlaylistDailyStatsRow = {
