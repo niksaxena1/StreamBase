@@ -15,6 +15,28 @@ import { AnimatedCounter } from "@/components/ui/AnimatedCounter";
 import { DailyStreamsChart } from "@/components/charts/DailyStreamsChart";
 import { DailyStreamsWithMAChart } from "@/components/charts/DailyStreamsWithMAChart";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
+import { CatalogPageClient } from "./CatalogPageClient";
+
+const STREAM_PAYOUT_USD = 0.002;
+
+function computeRollingAvg7(desc: Array<{ date: string; daily: number }>) {
+  const asc = [...desc].reverse();
+  const outAsc: Array<{ date: string; daily: number; ma7: number | null }> = [];
+
+  for (let i = 0; i < asc.length; i++) {
+    const start = Math.max(0, i - 6);
+    const window = asc.slice(start, i + 1).map((p) => Number(p.daily ?? 0));
+    // Always compute average if we have at least 1 data point, but prefer 7+ for accuracy
+    const avg = window.length > 0 ? window.reduce((a, b) => a + b, 0) / window.length : null;
+    outAsc.push({ date: asc[i].date, daily: asc[i].daily, ma7: avg });
+  }
+
+  return outAsc.reverse();
+}
+
+function sumLastNDays(desc: Array<{ date: string; daily: number }>, days: number) {
+  return desc.slice(0, days).reduce((acc, r) => acc + Number(r.daily ?? 0), 0);
+}
 
 export const dynamic = "force-dynamic";
 
@@ -141,23 +163,6 @@ function addDays(iso: string, delta: number): string {
   const d = new Date(`${iso}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + delta);
   return d.toISOString().slice(0, 10);
-}
-
-function computeRollingAvg7(desc: Array<{ date: string; daily: number }>) {
-  const asc = [...desc].reverse();
-  const outAsc: Array<{ date: string; daily: number; ma7: number | null }> = [];
-  for (let i = 0; i < asc.length; i++) {
-    const start = Math.max(0, i - 6);
-    const window = asc.slice(start, i + 1).map((p) => Number(p.daily ?? 0));
-    // Always compute average if we have at least 1 data point, but prefer 7+ for accuracy
-    const avg = window.length > 0 ? window.reduce((a, b) => a + b, 0) / window.length : null;
-    outAsc.push({ date: asc[i].date, daily: asc[i].daily, ma7: avg });
-  }
-  return outAsc.reverse();
-}
-
-function sumLastNDays(desc: Array<{ date: string; daily: number }>, days: number) {
-  return desc.slice(0, days).reduce((acc, r) => acc + Number(r.daily ?? 0), 0);
 }
 
 function deriveArtists(rows: TrackRow[]) {
@@ -463,182 +468,27 @@ export default async function CatalogPage({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-end justify-between gap-4">
-        <div>
-          <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
-            {latestDate ? (
-              <>
-                Latest snapshot:{" "}
-                <span className="font-mono">{formatDateISO(latestDate)}</span>
-              </>
-            ) : (
-              "No ingestion date found yet."
-            )}
-          </div>
-        </div>
-      </div>
-
-      <ArtistDashboardControls
+      <CatalogPageClient
+        latestCum={latestCum}
+        latestDate={latestDate}
+        rangeDays={rangeDays}
+        cumSeriesAsc={cumSeriesAsc}
+        dailyArtistDesc={dailyArtistDesc}
+        artist24h={artist24h}
+        artist7d={artist7d}
+        artist28d={artist28d}
+        artist30d={artist30d}
+        trackCount={artistTracks.length}
         artists={artistsWithImages}
         artistId={artistId}
         tracks={trackOptions}
         isrc={isrc}
         rangeDays={rangeDays}
+        artistName={artistName}
+        artistImageUrl={artistsWithImages.find((a) => a.id === artistId)?.imageUrl ?? null}
+        topByCumulative={topByCumulative}
+        topByDaily={topByDaily}
       />
-
-      <div className="flex items-center gap-4">
-        {artistsWithImages.find((a) => a.id === artistId)?.imageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={artistsWithImages.find((a) => a.id === artistId)!.imageUrl!}
-            alt={artistName}
-            className="h-16 w-16 rounded-full object-cover sb-ring"
-          />
-        ) : (
-          <div className="h-16 w-16 rounded-full sb-ring bg-white/60 flex items-center justify-center">
-            <User className="h-8 w-8 opacity-40" />
-          </div>
-        )}
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="font-display text-2xl font-semibold tracking-tight">
-              <Link
-                href={`/artists/${artistId}`}
-                className="transition-colors hover:text-lime-600 dark:hover:text-lime-400"
-              >
-                {artistName}
-              </Link>
-            </h1>
-            <Link
-              href={`https://open.spotify.com/artist/${artistId}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center justify-center rounded-full p-1.5 transition-colors hover:bg-black/5 dark:hover:bg-white/10"
-              title="Open on Spotify"
-              style={{ color: "var(--sb-muted)" }}
-            >
-              <ExternalLink className="h-4 w-4" />
-            </Link>
-          </div>
-          <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
-            {formatInt(artistTracks.length)} {artistTracks.length === 1 ? "track" : "tracks"}
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
-        <SpotlightCard className="lg:col-span-6 p-3">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
-                Artist cumulative streams
-              </div>
-              <div className="mt-1 font-display text-3xl font-bold tracking-tight">
-                <AnimatedCounter value={latestCum} />
-              </div>
-            </div>
-          </div>
-          <div className="mt-2 min-h-[200px]">
-            <DailyStreamsChart
-              data={[...cumSeriesAsc].reverse()}
-              valueLabel="Total streams"
-              valueFormat="int"
-              yTickFormat="k"
-              heightPx={220}
-              isCumulative={true}
-            />
-          </div>
-        </SpotlightCard>
-
-        <SpotlightCard className="lg:col-span-6 p-3">
-          <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
-            Artist daily streams
-          </div>
-          <div className="mt-1 font-display text-3xl font-bold tracking-tight">
-            <AnimatedCounter value={latestCum - prevCum} />
-          </div>
-          <div className="mt-1 text-xs opacity-60">
-          </div>
-          <div className="mt-2 min-h-[200px]">
-            <DailyStreamsWithMAChart
-              data={dailyArtistWithMaDesc}
-              valueLabel="Daily streams"
-              valueFormat="int"
-              yTickFormat="k"
-              heightPx={220}
-            />
-          </div>
-        </SpotlightCard>
-
-        <StatCard title="Artist 24h" value={<AnimatedCounter value={artist24h} />} subtitle="Net streams" />
-        <StatCard title="Artist 7d" value={<AnimatedCounter value={artist7d} />} subtitle="Net streams" />
-        <StatCard title="Artist 28d" value={<AnimatedCounter value={artist28d} />} subtitle="Net streams" />
-        <StatCard title="Artist 30d" value={<AnimatedCounter value={artist30d} />} subtitle="Net streams" />
-      </div>
-
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-        <div className="space-y-3">
-          <div className="flex items-end justify-between px-1">
-            <h2 className="text-sm font-semibold">Top tracks (cumulative)</h2>
-            <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
-              Latest snapshot totals
-            </div>
-          </div>
-          <GlassTable headers={["Track", "ISRC", "Total"]}>
-            {topByCumulative.map((t) => (
-              <TableRow key={t.isrc}>
-                <TableCell>
-                  <Link
-                    href={`/tracks/${t.isrc}`}
-                    className="font-medium transition-colors hover:text-lime-600 dark:hover:text-lime-400"
-                  >
-                    {t.name ?? t.isrc}
-                  </Link>
-                </TableCell>
-                <TableCell mono className="text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>
-                  {t.isrc}
-                </TableCell>
-                <TableCell>{t.total === null ? "—" : formatInt(t.total)}</TableCell>
-              </TableRow>
-            ))}
-            {!topByCumulative.length && (
-              <EmptyState colSpan={3} message="No track totals found" />
-            )}
-          </GlassTable>
-        </div>
-
-        <div className="space-y-3">
-          <div className="flex items-end justify-between px-1">
-            <h2 className="text-sm font-semibold">Top tracks (daily)</h2>
-            <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
-              Best-effort (needs yesterday+today)
-            </div>
-          </div>
-          <GlassTable headers={["Track", "ISRC", "Daily"]}>
-            {topByDaily.map((t) => (
-              <TableRow key={t.isrc}>
-                <TableCell>
-                  <Link
-                    href={`/tracks/${t.isrc}`}
-                    className="font-medium transition-colors hover:text-lime-600 dark:hover:text-lime-400"
-                  >
-                    {t.name ?? t.isrc}
-                  </Link>
-                </TableCell>
-                <TableCell mono className="text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>
-                  {t.isrc}
-                </TableCell>
-                <TableCell className="font-medium text-lime-700 dark:text-lime-400">
-                  {t.daily === null ? "—" : `+${formatInt(t.daily)}`}
-                </TableCell>
-              </TableRow>
-            ))}
-            {!topByDaily.length && (
-              <EmptyState colSpan={3} message="No daily deltas found" />
-            )}
-          </GlassTable>
-        </div>
-      </div>
 
       <div className="space-y-3 border-t pt-3" style={{ borderColor: "var(--sb-border)" }}>
         {isrc && selectedTrack ? (

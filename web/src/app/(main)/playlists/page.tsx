@@ -1,21 +1,20 @@
 import Link from "next/link";
-import { Activity, List, ExternalLink } from "lucide-react";
+import { List, ExternalLink } from "lucide-react";
 import { redirect } from "next/navigation";
 
 import { supabaseServer } from "@/lib/supabase/server";
 import { cachedQuery } from "@/lib/supabase/cache";
 import { formatDateISO, formatInt } from "@/lib/format";
 import { GlassTable, TableRow, TableCell, EmptyState } from "@/components/ui/GlassTable";
-import { SpotlightCard } from "@/components/ui/SpotlightCard";
-import { DailyStreamsChart } from "@/components/charts/DailyStreamsChart";
-import { DailyStreamsWithMAChart } from "@/components/charts/DailyStreamsWithMAChart";
-import { AnimatedCounter } from "@/components/ui/AnimatedCounter";
-import { StatCard } from "@/components/StatCard";
 import { PlaylistDashboardControls } from "@/components/dashboard/PlaylistDashboardControls";
 import { RememberParamRedirect } from "@/components/dashboard/RememberParamRedirect";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { supabaseService } from "@/lib/supabase/service";
 import { getPlaylist } from "@/lib/spotify";
+import { PlaylistPageClient } from "./PlaylistPageClient";
+import { PlaylistHeaderWithSelector } from "./PlaylistHeaderWithSelector";
+import { PlaylistMetricProvider } from "./PlaylistMetricContext";
+import { PlaylistHeaderClient } from "./PlaylistHeaderClient";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +32,8 @@ type PlaylistDailyStatsRow = {
   track_count: number | null;
   total_streams_cumulative: number | null;
   daily_streams_net: number | null;
+  est_revenue_total: number | null;
+  est_revenue_daily_net: number | null;
 };
 
 type TrackRow = {
@@ -153,21 +154,6 @@ async function fetchMemberships(sb: Awaited<ReturnType<typeof supabaseServer>>, 
   return out;
 }
 
-function rollingAvg7(desc: Array<{ date: string; daily: number }>) {
-  // Input: newest-first. Output: newest-first with ma7.
-  const asc = [...desc].reverse();
-  const outAsc: Array<{ date: string; daily: number; ma7: number | null }> = [];
-
-  for (let i = 0; i < asc.length; i++) {
-    const start = Math.max(0, i - 6);
-    const window = asc.slice(start, i + 1).map((p) => Number(p.daily ?? 0));
-    const has7 = window.length >= 7;
-    const avg = window.reduce((a, b) => a + b, 0) / window.length;
-    outAsc.push({ date: asc[i].date, daily: asc[i].daily, ma7: has7 ? avg : null });
-  }
-
-  return outAsc.reverse();
-}
 
 export default async function PlaylistsPage({
   searchParams,
@@ -220,7 +206,7 @@ export default async function PlaylistsPage({
       async () =>
         await sb
           .from("playlist_daily_stats")
-          .select("date,track_count,total_streams_cumulative,daily_streams_net")
+          .select("date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net")
           .eq("playlist_key", playlistKey)
           .order("date", { ascending: false })
           .limit(1)
@@ -244,7 +230,7 @@ export default async function PlaylistsPage({
       async () =>
         await sb
           .from("playlist_daily_stats")
-          .select("date,track_count,total_streams_cumulative,daily_streams_net")
+          .select("date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net")
           .eq("playlist_key", playlistKey)
           .order("date", { ascending: false })
           .limit(rangeDays),
@@ -266,21 +252,6 @@ export default async function PlaylistsPage({
   const prevDate = (prev as { date: string } | null)?.date ?? null;
 
   const hist = (history ?? []) as PlaylistDailyStatsRow[];
-  const cumulativeSeries = hist.map((r) => ({
-    date: r.date,
-    value: Number(r.total_streams_cumulative ?? 0),
-  }));
-
-  const dailyDesc = hist.map((r) => ({
-    date: r.date,
-    daily: Number(r.daily_streams_net ?? 0),
-  }));
-  const dailyWithMaDesc = rollingAvg7(dailyDesc);
-
-  const trackCountSeries = hist.map((r) => ({
-    date: r.date,
-    value: Number(r.track_count ?? 0),
-  }));
 
   // Memberships (current + removed)
   const [current, removed] = await Promise.all([
@@ -369,154 +340,76 @@ export default async function PlaylistsPage({
   );
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div className="flex items-center gap-3">
-          {playlistImageUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={playlistImageUrl}
-              alt="Playlist cover"
-              className="h-12 w-12 rounded-lg object-cover sb-ring"
-            />
-          ) : (
-            <div className="h-12 w-12 rounded-lg sb-ring bg-white/60" />
-          )}
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="font-display text-2xl font-semibold tracking-tight">
-                {title}
-              </h1>
-              {spotifyUrl && (
-                <Link
-                  href={spotifyUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center rounded-full p-1.5 transition-colors hover:bg-black/5 dark:hover:bg-white/10"
-                  title="Open on Spotify"
-                  style={{ color: "var(--sb-muted)" }}
-                >
-                  <ExternalLink className="h-4 w-4" />
-                </Link>
-              )}
-            </div>
-            <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
-              {latestDate ? (
-                <>
-                  Latest snapshot: <span className="font-mono">{formatDateISO(latestDate)}</span>
-                </>
-              ) : (
-                "No stats found for this playlist yet."
-              )}
-            </div>
-          </div>
-        </div>
-        <Link
-          href="/playlists/config"
-          className="sb-ring grid h-8 w-8 place-items-center rounded-full bg-white/70 text-xs font-medium transition hover:bg-white dark:bg-white/10 dark:hover:bg-white/15"
-          aria-label="Playlist config"
-          title="Playlist config"
-        >
-          <List className="h-4 w-4" style={{ color: "var(--sb-text)" }} />
-        </Link>
-      </div>
-
-      <PlaylistDashboardControls
-        playlists={playlistOptions}
-        playlistKey={playlistKey}
-        rangeDays={rangeDays}
-      />
-
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
-        <SpotlightCard className="lg:col-span-7 p-3">
-          <div className="flex items-start justify-between gap-3">
+    <PlaylistMetricProvider>
+      <div className="space-y-4">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div className="flex items-center gap-3">
+            {playlistImageUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={playlistImageUrl}
+                alt="Playlist cover"
+                className="h-12 w-12 rounded-lg object-cover sb-ring"
+              />
+            ) : (
+              <div className="h-12 w-12 rounded-lg sb-ring bg-white/60" />
+            )}
             <div>
-              <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wider opacity-60">
-                <Activity className="h-3.5 w-3.5" />
-                Cumulative streams
-              </div>
-              <div className="mt-1 font-display text-3xl font-bold tracking-tight">
-                <AnimatedCounter value={(latest as PlaylistDailyStatsRow | null)?.total_streams_cumulative ?? 0} />
-              </div>
-              <div className="mt-1 text-xs opacity-60">{rangeDays} day view</div>
-            </div>
-          </div>
-          <div className="mt-2 min-h-[200px]">
-            <DailyStreamsChart
-              data={cumulativeSeries}
-              valueLabel="Total streams"
-              valueFormat="int"
-              yTickFormat="k"
-              heightPx={220}
-              isCumulative={true}
-            />
-          </div>
-        </SpotlightCard>
-
-        <SpotlightCard className="lg:col-span-5 p-3">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
-                Daily streams
-              </div>
-              <div className="mt-1 font-display text-3xl font-bold tracking-tight">
-                <AnimatedCounter value={(latest as PlaylistDailyStatsRow | null)?.daily_streams_net ?? 0} />
-              </div>
-              <div className="mt-1 text-xs opacity-60">
-                Newest day: {formatDateISO(latestDate)}
-              </div>
-            </div>
-            <Link
-              href={`/playlists/${playlistKey}`}
-              className="sb-ring rounded-full bg-white/70 px-3 py-1.5 text-xs font-medium transition hover:bg-white dark:bg-white/10 dark:hover:bg-white/15"
-            >
-              Detail
-            </Link>
-          </div>
-          <div className="mt-2 min-h-[200px]">
-            <DailyStreamsWithMAChart
-              data={dailyWithMaDesc}
-              valueLabel="Daily streams"
-              valueFormat="int"
-              yTickFormat="k"
-              heightPx={220}
-            />
-          </div>
-        </SpotlightCard>
-
-        <StatCard
-          title="Active tracks"
-          value={<AnimatedCounter value={(latest as PlaylistDailyStatsRow | null)?.track_count ?? 0} />}
-          subtitle="Currently in playlist"
-        />
-        <StatCard
-          title="Removed tracks"
-          value={formatInt(removed.length)}
-          subtitle="Historical removals"
-        />
-        <SpotlightCard className="lg:col-span-12 p-3">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
-                Track count over time
+              <div className="flex items-center gap-2">
+                <h1 className="font-display text-2xl font-semibold tracking-tight">
+                  {title}
+                </h1>
+                {spotifyUrl && (
+                  <Link
+                    href={spotifyUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center justify-center rounded-full p-1.5 transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+                    title="Open on Spotify"
+                    style={{ color: "var(--sb-muted)" }}
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                  </Link>
+                )}
               </div>
               <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
-                Daily snapshots from ingestion.
+                {latestDate ? (
+                  <>
+                    Latest snapshot: <span className="font-mono">{formatDateISO(latestDate)}</span>
+                  </>
+                ) : (
+                  "No stats found for this playlist yet."
+                )}
               </div>
             </div>
           </div>
-          <div className="mt-2 min-h-[180px]">
-            <DailyStreamsChart
-              data={trackCountSeries}
-              valueLabel="Tracks"
-              valueFormat="int"
-              yTickFormat="int"
-              heightPx={200}
-              color="#60a5fa"
-            />
+          <div className="flex items-center gap-2">
+            <PlaylistHeaderWithSelector />
+            <Link
+              href="/playlists/config"
+              className="sb-ring grid h-8 w-8 place-items-center rounded-full bg-white/70 text-xs font-medium transition hover:bg-white dark:bg-white/10 dark:hover:bg-white/15"
+              aria-label="Playlist config"
+              title="Playlist config"
+            >
+              <List className="h-4 w-4" style={{ color: "var(--sb-text)" }} />
+            </Link>
           </div>
-        </SpotlightCard>
-      </div>
+        </div>
+
+        <PlaylistDashboardControls
+          playlists={playlistOptions}
+          playlistKey={playlistKey}
+          rangeDays={rangeDays}
+        />
+
+        <PlaylistPageClient
+          latest={latest as PlaylistDailyStatsRow | null}
+          latestDate={latestDate}
+          rangeDays={rangeDays}
+          history={hist}
+          removedTracksCount={removed.length}
+          playlistKey={playlistKey}
+        />
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         <div className="space-y-3">
@@ -621,6 +514,7 @@ export default async function PlaylistsPage({
           </GlassTable>
         </div>
       </div>
-    </div>
+      </div>
+    </PlaylistMetricProvider>
   );
 }

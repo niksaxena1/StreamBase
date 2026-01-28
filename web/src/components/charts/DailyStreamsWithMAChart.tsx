@@ -36,6 +36,26 @@ function formatUsdCompact(n: number): string {
   }
 }
 
+function formatTooltipDate(dateString: string): string {
+  const date = new Date(dateString);
+  const dayOfWeek = date.toLocaleDateString("en-US", { weekday: "long" });
+  const day = date.getDate();
+  const month = date.toLocaleDateString("en-US", { month: "short" });
+  const year = date.getFullYear();
+  
+  // Add ordinal suffix (1st, 2nd, 3rd, 4th, etc.)
+  const getOrdinalSuffix = (n: number): string => {
+    const j = n % 10;
+    const k = n % 100;
+    if (j === 1 && k !== 11) return "st";
+    if (j === 2 && k !== 12) return "nd";
+    if (j === 3 && k !== 13) return "rd";
+    return "th";
+  };
+  
+  return `${dayOfWeek}, ${day}${getOrdinalSuffix(day)} ${month} ${year}`;
+}
+
 export function DailyStreamsWithMAChart({
   data,
   valueLabel = "Streams",
@@ -142,7 +162,9 @@ export function DailyStreamsWithMAChart({
             dataKey="date"
             tickFormatter={(value) => {
               const date = new Date(value);
-              return `${date.getMonth() + 1}/${date.getDate()}`;
+              const day = String(date.getDate()).padStart(2, '0');
+              const month = String(date.getMonth() + 1).padStart(2, '0');
+              return `${day}/${month}`;
             }}
             stroke="var(--sb-muted)"
             fontSize={10}
@@ -170,7 +192,7 @@ export function DailyStreamsWithMAChart({
               const label = name === "ma7" ? "MA (7d)" : valueLabel;
               return [fmtValue(Number(value ?? 0)), label];
             }}
-            labelFormatter={(label) => new Date(label).toLocaleDateString()}
+            labelFormatter={(label) => formatTooltipDate(label)}
             cursor={{
               stroke: dailyColor,
               strokeWidth: 1.5,
@@ -185,6 +207,7 @@ export function DailyStreamsWithMAChart({
             strokeWidth={2}
             fillOpacity={1}
             fill={`url(#${gid})`}
+            dot={{ r: 3, fill: dailyColor, stroke: "var(--sb-bg)", strokeWidth: 1.5 }}
             activeDot={{ r: 4, fill: dailyColor, stroke: "var(--sb-bg)", strokeWidth: 1.5 }}
           />
           {hasMa7Data && (

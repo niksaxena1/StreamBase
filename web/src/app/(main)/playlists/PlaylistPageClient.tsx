@@ -1,0 +1,37 @@
+"use client";
+
+import { PlaylistMetricsClient } from "./PlaylistMetricsClient";
+import { usePlaylistMetric } from "./PlaylistMetricContext";
+
+type PlaylistDailyStatsRow = {
+  date: string;
+  track_count: number | null;
+  total_streams_cumulative: number | null;
+  daily_streams_net: number | null;
+  est_revenue_total: number | null;
+  est_revenue_daily_net: number | null;
+};
+
+export function PlaylistPageClient(props: {
+  latest: PlaylistDailyStatsRow | null;
+  latestDate: string | null;
+  rangeDays: number;
+  history: PlaylistDailyStatsRow[];
+  removedTracksCount: number;
+  playlistKey: string;
+}) {
+  const { metric, setMetric } = usePlaylistMetric();
+
+  return (
+    <PlaylistMetricsClient
+      latest={props.latest}
+      latestDate={props.latestDate}
+      rangeDays={props.rangeDays}
+      history={props.history}
+      removedTracksCount={props.removedTracksCount}
+      playlistKey={props.playlistKey}
+      metric={metric}
+      setMetric={setMetric}
+    />
+  );
+}

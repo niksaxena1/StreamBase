@@ -35,7 +35,7 @@ export function AppShell(props: { children: ReactNode }) {
           <header className="sb-glass px-3 py-2">
             <div className="flex items-center justify-between gap-4">
               <div className="flex items-center gap-3">
-                <Link href="/" className="transition-opacity hover:opacity-80">
+                <Link href="/" className="transition-opacity hover:opacity-80" suppressHydrationWarning>
                   <LogoMark />
                 </Link>
                 <div className="flex items-center gap-2">

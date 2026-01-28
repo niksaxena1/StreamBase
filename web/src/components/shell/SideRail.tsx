@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import React from "react";
+import React, { useState, useEffect } from "react";
 
 export type Item = {
   href: string;
@@ -35,7 +35,7 @@ export const navItems: Item[] = [
   { href: "/health", label: "Health", icon: (a) => <IconPulse active={a} /> },
 ];
 
-export function SideRail({
+function SideRailContent({
   healthBadgeCount = 0,
   healthHasCritical = false,
 }: {
@@ -45,72 +45,96 @@ export function SideRail({
   const pathname = usePathname();
 
   return (
+    <div className="sb-glass sticky top-3 flex flex-col items-center gap-2 px-2 py-2">
+      {navItems.map((it) => {
+        const active = pathname ? (pathname === it.href || pathname.startsWith(`${it.href}/`)) : false;
+        const isHealth = it.href === "/health";
+        const showBadge = isHealth && healthBadgeCount > 0;
+        
+        return (
+          <Link
+            key={it.href}
+            href={it.href}
+            title={it.label}
+            className={[
+              "relative grid h-9 w-9 place-items-center rounded-full transition",
+              active
+                ? "bg-black text-white shadow-sm dark:bg-white dark:text-black"
+                : "bg-white/70 text-black/70 hover:bg-white dark:bg-white/10 dark:text-white/70 dark:hover:bg-white/20",
+            ].join(" ")}
+          >
+            {it.icon(active)}
+            {/* Health badge - show if count > 0 */}
+            {isHealth && healthBadgeCount > 0 && (
+              <span
+                className={[
+                  "absolute -right-0.5 -top-0.5 z-[100] flex h-5 min-w-[18px] items-center justify-center rounded-full px-1.5 text-[10px] font-bold leading-none whitespace-nowrap",
+                  healthHasCritical
+                    ? "bg-red-500 text-white"
+                    : "bg-orange-500 text-white",
+                ].join(" ")}
+                style={{
+                  boxShadow: "0 2px 6px rgba(0, 0, 0, 0.25)",
+                }}
+                title={`${healthBadgeCount} warning${healthBadgeCount !== 1 ? "s" : ""}${healthHasCritical ? " (critical)" : ""}`}
+              >
+                {healthBadgeCount > 99 ? "99+" : healthBadgeCount}
+              </span>
+            )}
+          </Link>
+        );
+      })}
+
+      <div className="my-2 h-px w-full" style={{ background: "var(--sb-border)" }} />
+
+      <Link
+        href="/settings"
+        className="grid h-9 w-9 place-items-center rounded-full transition hover:bg-white/70 dark:hover:bg-white/10 text-black"
+        style={{
+          background: "color-mix(in srgb, var(--sb-accent) 55%, white)",
+          boxShadow: "var(--sb-shadow-compact)",
+        }}
+        title="Settings"
+      >
+        <IconGear />
+      </Link>
+    </div>
+  );
+}
+
+export function SideRail({
+  healthBadgeCount = 0,
+  healthHasCritical = false,
+}: {
+  healthBadgeCount?: number;
+  healthHasCritical?: boolean;
+}) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  return (
     <aside className="hidden w-[60px] shrink-0 sm:block">
-      <div className="sb-glass sticky top-3 flex flex-col items-center gap-2 px-2 py-2">
-        {navItems.map((it) => {
-          const active = pathname === it.href || pathname.startsWith(`${it.href}/`);
-          const isHealth = it.href === "/health";
-          const showBadge = isHealth && healthBadgeCount > 0;
-          
-          // Debug: log badge state for health icon
-          if (isHealth) {
-            console.log("[SideRail] Health icon - Count:", healthBadgeCount, "Show:", showBadge, "Has Critical:", healthHasCritical);
-          }
-          
-          return (
-            <Link
+      {mounted ? (
+        <SideRailContent healthBadgeCount={healthBadgeCount} healthHasCritical={healthHasCritical} />
+      ) : (
+        <div className="sb-glass sticky top-3 flex flex-col items-center gap-2 px-2 py-2">
+          {navItems.map((it) => (
+            <div
               key={it.href}
-              href={it.href}
-              title={it.label}
-              className={[
-                "relative grid h-9 w-9 place-items-center rounded-full transition",
-                active
-                  ? "bg-black text-white shadow-sm dark:bg-white dark:text-black"
-                  : "bg-white/70 text-black/70 hover:bg-white dark:bg-white/10 dark:text-white/70 dark:hover:bg-white/20",
-              ].join(" ")}
+              className="relative grid h-9 w-9 place-items-center rounded-full bg-white/70"
             >
-              {it.icon(active)}
-              {/* Health badge - show if count > 0 */}
-              {isHealth && healthBadgeCount > 0 && (
-                <span
-                  className={[
-                    "absolute -right-0.5 -top-0.5 z-[100] flex h-5 min-w-[18px] items-center justify-center rounded-full px-1.5 text-[10px] font-bold leading-none whitespace-nowrap",
-                    healthHasCritical
-                      ? "bg-red-500 text-white"
-                      : "bg-orange-500 text-white",
-                  ].join(" ")}
-                  style={{
-                    boxShadow: "0 2px 6px rgba(0, 0, 0, 0.25)",
-                  }}
-                  title={`${healthBadgeCount} warning${healthBadgeCount !== 1 ? "s" : ""}${healthHasCritical ? " (critical)" : ""}`}
-                >
-                  {healthBadgeCount > 99 ? "99+" : healthBadgeCount}
-                </span>
-              )}
-              {/* Debug: Show count as text for health icon (temporary) */}
-              {isHealth && process.env.NODE_ENV === "development" && (
-                <span className="absolute -bottom-5 left-1/2 -translate-x-1/2 text-[8px] opacity-50 whitespace-nowrap">
-                  {healthBadgeCount}
-                </span>
-              )}
-            </Link>
-          );
-        })}
-
-        <div className="my-2 h-px w-full" style={{ background: "var(--sb-border)" }} />
-
-        <Link
-          href="/settings"
-          className="grid h-9 w-9 place-items-center rounded-full transition hover:bg-white/70 dark:hover:bg-white/10 text-black"
-          style={{
-            background: "color-mix(in srgb, var(--sb-accent) 55%, white)",
-            boxShadow: "var(--sb-shadow-compact)",
-          }}
-          title="Settings"
-        >
-          <IconGear />
-        </Link>
-      </div>
+              {it.icon(false)}
+            </div>
+          ))}
+          <div className="my-2 h-px w-full" style={{ background: "var(--sb-border)" }} />
+          <div className="grid h-9 w-9 place-items-center rounded-full">
+            <IconGear />
+          </div>
+        </div>
+      )}
     </aside>
   );
 }

@@ -5,8 +5,11 @@ import Image from "next/image";
 
 export function LogoMark({ size = 18 }: { size?: number }) {
   const [isDark, setIsDark] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
+    
     // Check current theme
     const checkTheme = () => {
       if (typeof window === "undefined") return;
@@ -39,9 +42,9 @@ export function LogoMark({ size = 18 }: { size?: number }) {
     };
   }, []);
 
-  // Use light logo as default during SSR to avoid hydration mismatch
-  // Always show light logo initially, then switch to dark if needed
-  const logoSrc = isDark ? "/logo-dark.png" : "/logo-light.png";
+  // Always use light logo during SSR and initial render to prevent hydration mismatch
+  // Only switch to dark after client mount
+  const logoSrc = mounted && isDark ? "/logo-dark.png" : "/logo-light.png";
 
   return (
     <Image
@@ -59,6 +62,7 @@ export function LogoMark({ size = 18 }: { size?: number }) {
       }}
       priority
       unoptimized
+      suppressHydrationWarning
     />
   );
 }
