@@ -23,7 +23,7 @@ export default function LoginPage() {
           <h1 className="font-display text-3xl font-semibold tracking-tight">
             SpotiBase
           </h1>
-          <p className="mt-2 text-sm text-black/60 dark:text-white/60">
+          <p className="mt-2 text-sm text-black/60 dark:text-white/80">
             Sign in to your analytics dashboard
           </p>
         </div>
