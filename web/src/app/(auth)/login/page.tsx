@@ -1,7 +1,7 @@
 import { LogoMark } from "@/components/LogoMark";
 import LoginForm from "./ui";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 86400; // 24h ISR - mostly static login UI
 
 export default function LoginPage() {
   return (

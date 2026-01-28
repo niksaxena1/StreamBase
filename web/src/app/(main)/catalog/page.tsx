@@ -39,7 +39,7 @@ function sumLastNDays(desc: Array<{ date: string; daily: number }>, days: number
   return desc.slice(0, days).reduce((acc, r) => acc + Number(r.daily ?? 0), 0);
 }
 
-export const dynamic = "force-dynamic";
+export const revalidate = 86400; // 24h ISR - data updates daily
 
 type TrackRow = {
   isrc: string;

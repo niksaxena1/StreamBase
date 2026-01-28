@@ -3,7 +3,7 @@ import Link from "next/link";
 import { supabaseServer } from "@/lib/supabase/server";
 import { dataDateFromRunDate, expectedLatestRunDateUtc } from "@/lib/sotDates";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 86400; // 24h ISR - data updates daily
 
 function isoTodayUtc(): string {
   return new Date().toISOString().slice(0, 10);

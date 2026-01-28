@@ -4,7 +4,7 @@ import React from "react";
 import { supabaseServer } from "@/lib/supabase/server";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 86400; // 24h ISR - catalog search over daily snapshots
 
 function pageHref(q: string, page: number) {
   const u = new URL("https://example.com/tracks/config");

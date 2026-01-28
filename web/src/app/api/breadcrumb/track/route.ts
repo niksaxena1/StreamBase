@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
 
+export const revalidate = 86400; // 24h ISR - track labels change with daily data
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const isrc = searchParams.get("isrc");

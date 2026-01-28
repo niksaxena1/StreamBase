@@ -13,7 +13,7 @@ import {
   type TopPlaylistRow,
 } from "./CollectorsClient";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 86400; // 24h ISR - data updates daily
 
 const COLLECTORS = ["A", "K", "N", "PL", "TG", "NL"] as const;
 type CollectorKey = (typeof COLLECTORS)[number];

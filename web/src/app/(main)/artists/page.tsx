@@ -14,7 +14,7 @@ import { AnimatedCounter } from "@/components/ui/AnimatedCounter";
 import { DailyStreamsChart } from "@/components/charts/DailyStreamsChart";
 import { DailyStreamsWithMAChart } from "@/components/charts/DailyStreamsWithMAChart";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 86400; // 24h ISR - data updates daily
 
 type TrackRow = {
   isrc: string;

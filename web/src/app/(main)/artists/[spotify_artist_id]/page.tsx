@@ -7,7 +7,7 @@ import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
 import { DailyStreamsChart } from "@/components/charts/DailyStreamsChart";
 import { getArtists } from "@/lib/spotify";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 86400; // 24h ISR - artist dashboards update daily
 
 type TrackRow = {
   isrc: string;

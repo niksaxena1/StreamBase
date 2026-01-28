@@ -8,7 +8,7 @@ import { findTrackByIsrc } from "@/lib/spotify";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { dataDateFromRunDate } from "@/lib/sotDates";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 86400; // 24h ISR - data updates daily
 
 type TrackRow = {
   isrc: string;

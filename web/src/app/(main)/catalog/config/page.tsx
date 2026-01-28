@@ -7,7 +7,7 @@ import { ArtistsList } from "./ArtistsList";
 import { ArtistsConfigClient } from "./ArtistsConfigClient";
 import { TracksConfigClient } from "./TracksConfigClient";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 86400; // 24h ISR - catalog config uses daily snapshots
 
 type TrackRow = {
   isrc: string;

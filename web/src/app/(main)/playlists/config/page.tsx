@@ -6,7 +6,7 @@ import { supabaseService } from "@/lib/supabase/service";
 import { getPlaylist } from "@/lib/spotify";
 import { PlaylistFilters } from "./PlaylistFilters";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 86400; // 24h ISR - playlist config is slow-changing
 
 type PlaylistRow = {
   playlist_key: string;

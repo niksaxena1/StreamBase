@@ -5,7 +5,7 @@ import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { PlaylistSettingsTable } from "./PlaylistSettingsTable";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 86400; // 24h ISR - admin config changes are infrequent
 
 function parseSpotifyPlaylistId(input: string): string | null {
   const raw = (input ?? "").trim();

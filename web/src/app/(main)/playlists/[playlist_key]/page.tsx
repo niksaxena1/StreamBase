@@ -10,7 +10,7 @@ import { getPlaylist } from "@/lib/spotify";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { dataDateFromRunDate, addDaysISO, SOT_DATA_LAG_DAYS } from "@/lib/sotDates";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 86400; // 24h ISR - playlist snapshots update daily
 
 type PlaylistRow = {
   playlist_key: string;
@@ -29,6 +29,19 @@ type TrackOnDate = {
   valid_from: string;
   valid_to: string | null;
 };
+
+export async function generateStaticParams() {
+  // Pre-build detail pages for all configured playlists.
+  const svc = supabaseService();
+  const { data } = await svc
+    .from("playlists")
+    .select("playlist_key")
+    .order("playlist_key", { ascending: true });
+
+  return (data ?? []).map((row: { playlist_key: string }) => ({
+    playlist_key: row.playlist_key,
+  }));
+}
 
 export default async function PlaylistDetailPage({
   params,

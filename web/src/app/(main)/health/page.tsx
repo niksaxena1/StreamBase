@@ -8,7 +8,7 @@ import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { ExportMissingTracksButton } from "@/components/health/ExportMissingTracksButton";
 import { addDaysISO, dataDateFromRunDate, SOT_DATA_LAG_DAYS } from "@/lib/sotDates";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 86400; // 24h ISR - data updates daily
 
 function FilterToggle({
   active,
