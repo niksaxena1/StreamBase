@@ -1,7 +1,10 @@
+import { Suspense } from "react";
+
 import { LogoMark } from "@/components/LogoMark";
 import LoginForm from "./ui";
 
-export const revalidate = 86400; // 24h ISR - mostly static login UI
+// Login reads `useSearchParams()` in a client component (next redirect), so avoid SSG/ISR prerender.
+export const dynamic = "force-dynamic";
 
 export default function LoginPage() {
   return (
@@ -27,7 +30,9 @@ export default function LoginPage() {
 
         {/* Card */}
         <div className="sb-glass p-4 shadow-2xl backdrop-blur-2xl">
-          <LoginForm />
+          <Suspense fallback={<div className="text-sm opacity-60">Loading…</div>}>
+            <LoginForm />
+          </Suspense>
         </div>
         
         <div className="mt-4 text-center text-[11px] opacity-40">
