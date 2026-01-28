@@ -26,6 +26,8 @@ NAV_PAUSE_MAX = 0.06
 CLICK_PAUSE_MIN = 0.01
 CLICK_PAUSE_MAX = 0.04
 
+TASK_RETRIES = 5
+
 
 @dataclass(frozen=True)
 class SyncTask:
@@ -475,10 +477,36 @@ def run_sync(
             print(f"Playlist URL:  {playlist_url}")
             print(f"Dashboard URL: {task.dashboard_url}")
 
-            # Scan sets with safety retries
-            dashboard_set = scan_with_retry(scan_dashboard_tracks, page, task.dashboard_url, refresh=False)
-            playlist_tracks = scan_with_retry(scan_playlist_tracks, page, playlist_url, refresh=True)
-            playlist_set = set(playlist_tracks or [])
+            # Scan sets with retries.
+            #
+            # SpotOnTrack sometimes returns a transient "empty" view (0 tracks) for a valid
+            # playlist. A simple within-page retry isn't always enough, so we do a task-level
+            # retry that re-navigates and re-scans up to TASK_RETRIES times before skipping.
+            dashboard_set: Set[str] = set()
+            playlist_set: Set[str] = set()
+            for attempt in range(1, TASK_RETRIES + 1):
+                if is_logged_out(page):
+                    ensure_logged_in(page, email=email, password=password)
+
+                dashboard_set = set(scan_with_retry(scan_dashboard_tracks, page, task.dashboard_url, refresh=False) or [])
+                playlist_tracks = scan_with_retry(scan_playlist_tracks, page, playlist_url, refresh=True)
+                playlist_set = set(playlist_tracks or [])
+
+                # If both are non-empty, proceed.
+                if dashboard_set and playlist_set:
+                    break
+
+                if attempt < TASK_RETRIES:
+                    wait_s = 1.5 * attempt
+                    print(
+                        f"🔁 Empty scan detected (dashboard={len(dashboard_set)} playlist={len(playlist_set)}). "
+                        f"Retrying task {attempt}/{TASK_RETRIES} after {wait_s:.1f}s..."
+                    )
+                    try:
+                        page.goto(SOT_BASE + "/dashboard", wait_until="networkidle", timeout=NAV_TIMEOUT_MS)
+                    except Exception:
+                        pass
+                    time.sleep(wait_s)
 
             print(f"✅ Dashboard tracks found: {len(dashboard_set)}")
             print(f"✅ Playlist tracks found:  {len(playlist_set)}")
@@ -486,13 +514,27 @@ def run_sync(
             # SAFETY: never mirror to/from empty
             if len(playlist_set) == 0:
                 print("🛑 Safety: playlist scan returned 0 after retries. Skipping.")
-                log_row(log_path, task, -1, playlist_url, "skip", "playlist scan returned 0 after retries")
+                log_row(
+                    log_path,
+                    task,
+                    -1,
+                    playlist_url,
+                    "skip",
+                    f"playlist scan returned 0 after retries (task_retries={TASK_RETRIES})",
+                )
                 total_skipped += 1
                 continue
 
             if len(dashboard_set) == 0:
                 print("🛑 Safety: dashboard scan returned 0 after retries. Skipping.")
-                log_row(log_path, task, -1, task.dashboard_url, "skip", "dashboard scan returned 0 after retries")
+                log_row(
+                    log_path,
+                    task,
+                    -1,
+                    task.dashboard_url,
+                    "skip",
+                    f"dashboard scan returned 0 after retries (task_retries={TASK_RETRIES})",
+                )
                 total_skipped += 1
                 continue
 
