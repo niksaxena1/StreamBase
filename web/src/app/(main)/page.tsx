@@ -7,6 +7,7 @@ import { LazyInteractiveChartSection } from "@/components/dashboard/LazyInteract
 import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
 import { supabaseServer } from "@/lib/supabase/server";
 import { cachedQuery } from "@/lib/supabase/cache";
+import { dataDateFromRunDate } from "@/lib/sotDates";
 
 type PlaylistDailyStatsRow = {
   date: string;
@@ -70,18 +71,18 @@ export default async function Home({
   // Calculate 7-day moving average for daily streams
   const dailyStreamsWithMA = computeRollingAvg7(dailyStreamsRaw);
   const dailyStreamsChartData = dailyStreamsWithMA.map((r) => ({
-    date: r.date,
+    date: dataDateFromRunDate(r.date),
     value: r.daily,
     ma7: r.ma7,
   }));
 
   const totalStreamsChartData = ((history as PlaylistDailyStatsRow[] | null) ?? []).map((r) => ({
-    date: r.date,
+    date: dataDateFromRunDate(r.date),
     value: Number(r.total_streams_cumulative ?? 0),
   }));
 
   const activeTracksChartData = ((history as PlaylistDailyStatsRow[] | null) ?? []).map((r) => ({
-    date: r.date,
+    date: dataDateFromRunDate(r.date),
     value: Number(r.track_count ?? 0),
   }));
 
@@ -169,7 +170,7 @@ export default async function Home({
         dailyStreamsValue={getDailyStreams(latest as PlaylistDailyStatsRow | null) ?? 0}
         totalStreamsValue={latest?.total_streams_cumulative ?? 0}
         rangeDays={rangeDays}
-        latestDate={latest?.date ?? null}
+        latestDate={latest?.date ? dataDateFromRunDate(latest.date) : null}
       />
 
       {/* Additional Stat Cards */}
@@ -201,7 +202,7 @@ export default async function Home({
         <GlassTable headers={["Date", "Tracks", "Total Streams", "Daily"]}>
           {(history ?? []).map((r) => (
             <TableRow key={r.date}>
-              <TableCell mono>{formatDateISO(r.date)}</TableCell>
+              <TableCell mono>{formatDateISO(dataDateFromRunDate(r.date))}</TableCell>
               <TableCell>{formatInt(r.track_count)}</TableCell>
               <TableCell>{formatInt(r.total_streams_cumulative)}</TableCell>
               <TableCell className="text-lime-700 dark:text-lime-400 font-medium">

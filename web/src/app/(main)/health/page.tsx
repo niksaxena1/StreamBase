@@ -6,6 +6,7 @@ import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
 import { WarningRow } from "@/components/health/WarningRow";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { ExportMissingTracksButton } from "@/components/health/ExportMissingTracksButton";
+import { addDaysISO, dataDateFromRunDate, SOT_DATA_LAG_DAYS } from "@/lib/sotDates";
 
 export const dynamic = "force-dynamic";
 
@@ -51,12 +52,16 @@ export default async function HealthPage({
     .order("run_date", { ascending: false })
     .limit(30);
 
-  // Determine which date to show (from filter or latest)
-  const latestDate = runs?.[0]?.run_date ?? null;
-  const selectedDate = dateFilter ?? latestDate;
+  // UI uses "data date" (SpotOnTrack lag), DB stores "run_date" as ingestion snapshot date.
+  const latestRunDate = runs?.[0]?.run_date ?? null;
+  const latestDataDate = latestRunDate ? dataDateFromRunDate(latestRunDate) : null;
+  const selectedDataDate = dateFilter ?? latestDataDate;
+  const selectedRunDate = selectedDataDate
+    ? addDaysISO(selectedDataDate, SOT_DATA_LAG_DAYS)
+    : latestRunDate;
 
-  // Get run ID for selected date
-  const selectedRun = runs?.find((r) => r.run_date === selectedDate);
+  // Get run ID for selected run date
+  const selectedRun = runs?.find((r) => r.run_date === selectedRunDate);
   const selectedRunId = selectedRun?.id ?? null;
 
   const { data: exportsForLatest, error: exportsErr } = selectedRunId
@@ -74,8 +79,8 @@ export default async function HealthPage({
     .order("severity", { ascending: false })
     .order("playlist_key", { ascending: true });
 
-  if (selectedDate) {
-    warningsQuery = warningsQuery.eq("run_date", selectedDate);
+  if (selectedRunDate) {
+    warningsQuery = warningsQuery.eq("run_date", selectedRunDate);
   }
 
   if (severityFilter !== "all") {
@@ -90,12 +95,12 @@ export default async function HealthPage({
 
   // Fetch non-catalog tracks for warnings of type "non_catalog_tracks_present"
   const nonCatalogWarnings = (warnings ?? []).filter(
-    (w) => w.code === "non_catalog_tracks_present" && w.playlist_key && selectedDate
+    (w) => w.code === "non_catalog_tracks_present" && w.playlist_key && selectedRunDate
   );
 
   const nonCatalogTracksMap = new Map<string, Array<{ isrc: string; name: string | null }>>();
 
-  if (nonCatalogWarnings.length > 0 && selectedDate) {
+  if (nonCatalogWarnings.length > 0 && selectedRunDate) {
     // Pre-fetch all catalog streams once (paginated) to reuse across warnings
     const pageSize = 1000;
     const allCatalogStreamsForDate: Array<{ isrc: string }> = [];
@@ -105,7 +110,7 @@ export default async function HealthPage({
       const { data, error } = await sb
         .from("track_daily_streams")
         .select("isrc")
-        .eq("date", selectedDate)
+        .eq("date", selectedRunDate)
         .range(from, to);
       
       if (error || !data || data.length === 0) break;
@@ -127,8 +132,8 @@ export default async function HealthPage({
           .from("playlist_memberships")
           .select("isrc")
           .eq("playlist_key", warning.playlist_key)
-          .lte("valid_from", selectedDate)
-          .or(`valid_to.is.null,valid_to.gte.${selectedDate}`)
+          .lte("valid_from", selectedRunDate)
+          .or(`valid_to.is.null,valid_to.gte.${selectedRunDate}`)
           .range(from, to);
         
         if (error || !data || data.length === 0) break;
@@ -163,7 +168,7 @@ export default async function HealthPage({
 
   // Fetch added/removed tracks for track_count_swing warnings
   const trackCountSwingWarnings = (warnings ?? []).filter(
-    (w) => w.code === "track_count_swing" && w.playlist_key && selectedDate
+    (w) => w.code === "track_count_swing" && w.playlist_key && selectedRunDate
   );
 
   const trackCountSwingTracksMap = new Map<
@@ -186,9 +191,9 @@ export default async function HealthPage({
     }
   >();
 
-  if (trackCountSwingWarnings.length > 0 && selectedDate) {
+  if (trackCountSwingWarnings.length > 0 && selectedRunDate) {
     // Calculate previous date
-    const selectedDateObj = new Date(selectedDate);
+    const selectedDateObj = new Date(selectedRunDate);
     const prevDateObj = new Date(selectedDateObj);
     prevDateObj.setDate(prevDateObj.getDate() - 1);
     const prevDate = prevDateObj.toISOString().split("T")[0];
@@ -207,8 +212,8 @@ export default async function HealthPage({
           .from("playlist_memberships")
           .select("isrc")
           .eq("playlist_key", warning.playlist_key)
-          .lte("valid_from", selectedDate)
-          .or(`valid_to.is.null,valid_to.gte.${selectedDate}`)
+          .lte("valid_from", selectedRunDate)
+          .or(`valid_to.is.null,valid_to.gte.${selectedRunDate}`)
           .range(from, to);
 
         if (error || !data || data.length === 0) break;
@@ -285,7 +290,7 @@ export default async function HealthPage({
     playlists: string[];
   }> = [];
 
-  if (selectedDate) {
+  if (selectedRunDate) {
     // Get all tracks in all playlists on the selected date (paginated)
     const pageSize = 1000;
     const allMemberships: Array<{ isrc: string; playlist_key: string }> = [];
@@ -295,8 +300,8 @@ export default async function HealthPage({
       const { data, error } = await sb
         .from("playlist_memberships")
         .select("isrc,playlist_key")
-        .lte("valid_from", selectedDate)
-        .or(`valid_to.is.null,valid_to.gte.${selectedDate}`)
+        .lte("valid_from", selectedRunDate)
+        .or(`valid_to.is.null,valid_to.gte.${selectedRunDate}`)
         .range(from, to);
       
       if (error || !data || data.length === 0) break;
@@ -313,7 +318,7 @@ export default async function HealthPage({
       const { data, error } = await sb
         .from("track_daily_streams")
         .select("isrc")
-        .eq("date", selectedDate)
+        .eq("date", selectedRunDate)
         .range(from, to);
       
       if (error || !data || data.length === 0) break;
@@ -368,8 +373,9 @@ export default async function HealthPage({
   }
 
   // Get date range for picker
-  const firstDate = runs?.[runs.length - 1]?.run_date ?? selectedDate ?? new Date().toISOString().split("T")[0];
-  const today = new Date().toISOString().split("T")[0];
+  const firstRunDate = runs?.[runs.length - 1]?.run_date ?? selectedRunDate ?? new Date().toISOString().split("T")[0];
+  const firstDate = dataDateFromRunDate(firstRunDate);
+  const today = dataDateFromRunDate(new Date().toISOString().split("T")[0]);
 
   return (
     <div className="space-y-4">
@@ -414,8 +420,8 @@ export default async function HealthPage({
         <div className="flex items-center justify-between px-1">
           <h2 className="text-sm font-semibold">
             Warnings{" "}
-            {selectedDate ? (
-              <span className="text-xs font-normal opacity-60">({selectedDate})</span>
+            {selectedDataDate ? (
+              <span className="text-xs font-normal opacity-60">({selectedDataDate})</span>
             ) : null}
           </h2>
           <Link className="text-xs underline opacity-60" href="/playlists">
@@ -445,13 +451,13 @@ export default async function HealthPage({
         </GlassTable>
       </div>
 
-      {selectedDate && (
+      {selectedRunDate && (
         <div className="space-y-2">
           <div className="flex items-center justify-between px-1">
             <div>
               <h2 className="text-sm font-semibold">
                 All Missing Catalog Tracks{" "}
-                <span className="text-xs font-normal opacity-60">({selectedDate})</span>
+                <span className="text-xs font-normal opacity-60">({selectedDataDate})</span>
               </h2>
               <p className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
                 Tracks in playlists that don't have stream data in the catalog snapshot for this day
@@ -460,7 +466,7 @@ export default async function HealthPage({
             {allMissingTracks.length > 0 && (
               <div className="flex items-center gap-2">
                 <span className="text-xs opacity-60">{allMissingTracks.length} tracks</span>
-                <ExportMissingTracksButton tracks={allMissingTracks} date={selectedDate} />
+                <ExportMissingTracksButton tracks={allMissingTracks} date={selectedDataDate ?? "—"} />
               </div>
             )}
           </div>
@@ -524,7 +530,7 @@ export default async function HealthPage({
             ) : (
               <TableRow>
                 <TableCell className="text-center opacity-50 py-8" colSpan={3}>
-                  No missing catalog tracks found for {selectedDate}.
+                  No missing catalog tracks found for {selectedDataDate}.
                 </TableCell>
               </TableRow>
             )}
@@ -539,7 +545,7 @@ export default async function HealthPage({
         <GlassTable headers={["Run Date", "Status", "Logs"]}>
           {(runs ?? []).map((r) => (
             <TableRow key={r.run_date}>
-              <TableCell mono>{formatDateISO(r.run_date)}</TableCell>
+              <TableCell mono>{formatDateISO(dataDateFromRunDate(r.run_date))}</TableCell>
               <TableCell>
                 <span
                   className={[
@@ -582,8 +588,8 @@ export default async function HealthPage({
         <div className="flex items-center justify-between px-1">
           <h2 className="text-sm font-semibold">
             Raw Exports{" "}
-            {selectedDate ? (
-              <span className="text-xs font-normal opacity-60">({selectedDate})</span>
+            {selectedDataDate ? (
+              <span className="text-xs font-normal opacity-60">({selectedDataDate})</span>
             ) : null}
           </h2>
           <span className="text-xs opacity-50">Signed links (60s)</span>

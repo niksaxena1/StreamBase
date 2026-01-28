@@ -6,6 +6,7 @@ import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { findTrackByIsrc } from "@/lib/spotify";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
+import { dataDateFromRunDate } from "@/lib/sotDates";
 
 export const dynamic = "force-dynamic";
 
@@ -272,7 +273,7 @@ export default async function TrackDetailPage({
                   {m.playlist_key}
                 </Link>
                 <span className="font-mono text-[11px]" style={{ color: "var(--sb-muted)" }}>
-                  since {m.valid_from}
+                  since {dataDateFromRunDate(m.valid_from)}
                 </span>
               </div>
             ))}
@@ -313,8 +314,10 @@ export default async function TrackDetailPage({
                       {h.playlist_key}
                     </Link>
                   </td>
-                  <td className="px-4 py-2 font-mono text-[11px]">{h.valid_from}</td>
-                  <td className="px-4 py-2 font-mono text-[11px]">{h.valid_to ?? "—"}</td>
+                  <td className="px-4 py-2 font-mono text-[11px]">{dataDateFromRunDate(h.valid_from)}</td>
+                  <td className="px-4 py-2 font-mono text-[11px]">
+                    {h.valid_to ? dataDateFromRunDate(h.valid_to) : "—"}
+                  </td>
                 </tr>
               ))}
               {!history?.length && (

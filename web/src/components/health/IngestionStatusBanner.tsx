@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { supabaseServer } from "@/lib/supabase/server";
+import { dataDateFromRunDate, expectedLatestRunDateUtc } from "@/lib/sotDates";
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +43,8 @@ export async function IngestionStatusBanner() {
     .eq("severity", "critical");
 
   const todayUtc = isoTodayUtc();
-  const stalenessDays = daysBetweenUtc(runDate, todayUtc);
+  const expectedLatest = expectedLatestRunDateUtc(todayUtc);
+  const stalenessDays = daysBetweenUtc(runDate, expectedLatest);
   const isStale = stalenessDays >= 1;
   const hasCritical = (criticalWarnings ?? 0) > 0;
   const hasAnyWarnings = (totalWarnings ?? 0) > 0;
@@ -74,8 +76,9 @@ export async function IngestionStatusBanner() {
           : "Health notice";
 
   const details: string[] = [];
-  details.push(`Latest run date (UTC): ${runDate}`);
-  if (isStale) details.push(`Staleness: ${stalenessDays} day(s) behind UTC`);
+  details.push(`Latest data date (UTC): ${dataDateFromRunDate(runDate)}`);
+  details.push(`Ingested on (UTC): ${runDate}`);
+  if (isStale) details.push(`Staleness: ${stalenessDays} day(s) behind expected`);
   if (hasAnyWarnings) {
     details.push(
       `Warnings: ${totalWarnings ?? 0}${hasCritical ? ` (critical: ${criticalWarnings ?? 0})` : ""}`,

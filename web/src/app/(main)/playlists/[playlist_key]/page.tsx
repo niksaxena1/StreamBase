@@ -8,6 +8,7 @@ import { DatePicker } from "@/components/ui/DatePicker";
 import { supabaseService } from "@/lib/supabase/service";
 import { getPlaylist } from "@/lib/spotify";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
+import { dataDateFromRunDate, addDaysISO, SOT_DATA_LAG_DAYS } from "@/lib/sotDates";
 
 export const dynamic = "force-dynamic";
 
@@ -83,7 +84,12 @@ export default async function PlaylistDetailPage({
 
   // Determine selected date (from query param or latest stats date)
   const latestDate = stats?.[0]?.date ?? null;
-  const selectedDate = sp.date ?? latestDate ?? new Date().toISOString().split("T")[0];
+  // UI shows "data date" (run_date - lag). Map back to stored run_date for querying.
+  const selectedDataDate = sp.date ?? (latestDate ? dataDateFromRunDate(latestDate) : null);
+  const selectedDate =
+    selectedDataDate
+      ? addDaysISO(selectedDataDate, SOT_DATA_LAG_DAYS)
+      : latestDate ?? new Date().toISOString().split("T")[0];
 
   // Query tracks active on selected date
   const { data: memberships, error: tracksErr } = await sb
@@ -119,8 +125,10 @@ export default async function PlaylistDetailPage({
   });
 
   // Get date range for picker (first stats date to today)
-  const firstDate = stats?.[stats.length - 1]?.date ?? selectedDate;
+  const firstRunDate = stats?.[stats.length - 1]?.date ?? selectedDate;
+  const firstDate = dataDateFromRunDate(firstRunDate);
   const today = new Date().toISOString().split("T")[0];
+  const todayDataDate = dataDateFromRunDate(today);
 
   return (
     <div className="space-y-4">
@@ -190,9 +198,9 @@ export default async function PlaylistDetailPage({
         <div className="flex items-center justify-between px-1">
           <h2 className="text-sm font-semibold">Tracks on Date</h2>
           <DatePicker
-            value={selectedDate}
+            value={selectedDataDate ?? dataDateFromRunDate(selectedDate)}
             min={firstDate}
-            max={today}
+            max={todayDataDate}
             label="View date"
             path={`/playlists/${playlist_key}`}
           />
@@ -233,10 +241,10 @@ export default async function PlaylistDetailPage({
                 {t.isrc}
               </TableCell>
               <TableCell mono className="text-[11px]">
-                {formatDateISO(t.valid_from)}
+                {formatDateISO(dataDateFromRunDate(t.valid_from))}
               </TableCell>
               <TableCell mono className="text-[11px]">
-                {t.valid_to ? formatDateISO(t.valid_to) : "—"}
+                {t.valid_to ? formatDateISO(dataDateFromRunDate(t.valid_to)) : "—"}
               </TableCell>
             </TableRow>
           ))}
@@ -261,7 +269,7 @@ export default async function PlaylistDetailPage({
         <GlassTable headers={["Date", "Tracks", "Total Streams", "Daily", "Est. Rev", "Missing"]}>
           {(stats ?? []).map((r) => (
             <TableRow key={r.date}>
-              <TableCell mono>{formatDateISO(r.date)}</TableCell>
+              <TableCell mono>{formatDateISO(dataDateFromRunDate(r.date))}</TableCell>
               <TableCell>{formatInt(r.track_count)}</TableCell>
               <TableCell>{formatInt(r.total_streams_cumulative)}</TableCell>
               <TableCell className="text-lime-700 dark:text-lime-400 font-medium">
