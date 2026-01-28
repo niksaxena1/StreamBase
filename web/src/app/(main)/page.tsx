@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import { StatCard } from "@/components/StatCard";
 import { GlassTable, TableRow, TableCell, EmptyState } from "@/components/ui/GlassTable";
@@ -20,8 +21,8 @@ type PlaylistDailyStatsRow = {
 
 const STREAM_PAYOUT_USD = 0.002;
 
-// Revalidate every hour since data updates daily
-export const revalidate = 3600;
+// Uses Supabase session cookies; this route must be dynamic in Next 16.
+export const dynamic = "force-dynamic";
 
 export default async function Home({
   searchParams,
@@ -38,6 +39,13 @@ export default async function Home({
     scope === "releases" ? "releases" : scope === "ext" ? "ext" : "all_catalog";
 
   const sb = await supabaseServer();
+  const {
+    data: { session },
+  } = await sb.auth.getSession();
+
+  // Middleware should already redirect, but keep a hard server-side guard
+  // and avoid caching a sessionless response in production.
+  if (!session) redirect("/login");
 
   // Single query: fetch history and derive latest from first row (cached for 1 hour)
   const { data: history, error: historyErr } = await cachedQuery(
@@ -50,7 +58,7 @@ export default async function Home({
         .eq("playlist_key", playlistKey)
         .order("date", { ascending: false })
         .limit(rangeDays),
-    `home-playlist-stats-${playlistKey}-${rangeDays}`,
+    `home-playlist-stats-${playlistKey}-${rangeDays}-${session.user.id}`,
     3600, // 1 hour
   );
 
