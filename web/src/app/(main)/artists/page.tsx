@@ -14,7 +14,8 @@ import { AnimatedCounter } from "@/components/ui/AnimatedCounter";
 import { DailyStreamsChart } from "@/components/charts/DailyStreamsChart";
 import { DailyStreamsWithMAChart } from "@/components/charts/DailyStreamsWithMAChart";
 
-export const revalidate = 86400; // 24h ISR - data updates daily
+// Uses Supabase session cookies; this route must be dynamic in Next 16.
+export const dynamic = "force-dynamic";
 
 type TrackRow = {
   isrc: string;
@@ -188,18 +189,10 @@ function artistNameFor(rows: TrackRow[], artistId: string) {
 export default async function ArtistsPage({
   searchParams,
 }: {
-  // Next 16 App Router's generated `PageProps` types currently model `searchParams` as a Promise.
-  // We intentionally treat it as a plain object (no `await`) to keep this route statically renderable.
-  // (Awaiting searchParams triggers a build-time "Dynamic server usage" error.)
-  searchParams?: any;
+  searchParams?: Promise<{ artist_id?: string; isrc?: string; range?: string; view?: string }>;
 }) {
   try {
-    const sp = (searchParams ?? {}) as {
-      artist_id?: string;
-      isrc?: string;
-      range?: string;
-      view?: string;
-    };
+    const sp = (await searchParams) ?? {};
     
     // Backwards-compat: old query-driven list view
     if ((sp.view ?? "").trim().toLowerCase() === "list") {

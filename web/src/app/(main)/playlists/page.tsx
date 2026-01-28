@@ -15,7 +15,8 @@ import { PlaylistPageClient } from "./PlaylistPageClient";
 import { PlaylistHeaderWithSelector } from "./PlaylistHeaderWithSelector";
 import { PlaylistMetricProvider } from "./PlaylistMetricContext";
 
-export const revalidate = 86400; // 24h ISR - data updates daily
+// Uses Supabase session cookies; this route must be dynamic in Next 16.
+export const dynamic = "force-dynamic";
 
 type PlaylistRow = {
   playlist_key: string;
@@ -157,11 +158,9 @@ async function fetchMemberships(sb: Awaited<ReturnType<typeof supabaseServer>>, 
 export default async function PlaylistsPage({
   searchParams,
 }: {
-  // See note in other pages: keep this as `any` to satisfy Next's generated PageProps typing
-  // while avoiding `await searchParams` (which breaks static generation in Next 16).
-  searchParams?: any;
+  searchParams?: Promise<{ playlist_key?: string; range?: string; view?: string }>;
 }) {
-  const sp = (searchParams ?? {}) as { playlist_key?: string; range?: string; view?: string };
+  const sp = (await searchParams) ?? {};
   const playlistKey = (sp.playlist_key ?? "").trim();
   const rangeDays = clampRangeDays(sp.range);
 

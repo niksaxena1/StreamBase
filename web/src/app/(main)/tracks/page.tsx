@@ -14,7 +14,8 @@ import { DailyStreamsChart } from "@/components/charts/DailyStreamsChart";
 import { DailyStreamsWithMAChart } from "@/components/charts/DailyStreamsWithMAChart";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
 
-export const revalidate = 86400; // 24h ISR - data updates daily
+// Uses Supabase session cookies; this route must be dynamic in Next 16.
+export const dynamic = "force-dynamic";
 
 type TrackRow = {
   isrc: string;
@@ -86,12 +87,10 @@ async function fetchAllTrackSeries(
 export default async function TracksPage({
   searchParams,
 }: {
-  // See note in other pages: keep this as `any` to satisfy Next's generated PageProps typing
-  // while avoiding `await searchParams` (which breaks static generation in Next 16).
-  searchParams?: any;
+  searchParams?: Promise<{ isrc?: string; range?: string; view?: string }>;
 }) {
   try {
-    const sp = (searchParams ?? {}) as { isrc?: string; range?: string; view?: string };
+    const sp = (await searchParams) ?? {};
     
     // Backwards-compat: old query-driven list view
     if ((sp.view ?? "").trim().toLowerCase() === "list") {
