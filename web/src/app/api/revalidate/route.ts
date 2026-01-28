@@ -21,8 +21,9 @@ export async function POST(request: Request) {
     "/health",
   ];
 
-  // Revalidate all Supabase-backed cached queries (tag and full cache key).
-  revalidateTag("supabase", undefined);
+  // Revalidate all Supabase-backed cached queries.
+  // In Next 16, passing only the tag is sufficient.
+  revalidateTag("supabase");
 
   // Optionally revalidate a set of known paths.
   for (const path of paths) {
