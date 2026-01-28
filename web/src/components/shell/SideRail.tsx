@@ -22,14 +22,14 @@ export const navItems: Item[] = [
     icon: (a) => <IconList active={a} />,
   },
   {
-    href: "/collectors",
-    label: "Collectors",
-    icon: (a) => <IconUser active={a} />,
-  },
-  {
     href: "/catalog",
     label: "Catalog",
     icon: (a) => <IconVinyl active={a} />,
+  },
+  {
+    href: "/collectors",
+    label: "Collectors",
+    icon: (a) => <IconUser active={a} />,
   },
   { href: "/tracks", label: "Tracks", icon: (a) => <IconMusic active={a} /> },
   { href: "/health", label: "Health", icon: (a) => <IconPulse active={a} /> },

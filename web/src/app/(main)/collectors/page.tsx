@@ -5,6 +5,7 @@ import { formatDateISO } from "@/lib/format";
 import { RememberParamRedirect } from "@/components/dashboard/RememberParamRedirect";
 import { cachedQueries, cachedQuery } from "@/lib/supabase/cache";
 import { DateRangePicker } from "@/components/ui/DateRangePicker";
+import { dataDateFromRunDate, SOT_DATA_LAG_DAYS, addDaysISO } from "@/lib/sotDates";
 import {
   CollectorsClient,
   type CollectorSeriesPoint,
@@ -83,8 +84,9 @@ export default async function CollectorsPage({
     600,
   ).then((r) => r.latest);
 
-  const latestDate = (latestRow as { date: string } | null)?.date ?? null;
-  if (!latestDate) {
+  const latestRunDate = (latestRow as { date: string } | null)?.date ?? null;
+  const latestDataDate = latestRunDate ? dataDateFromRunDate(latestRunDate) : null;
+  if (!latestRunDate) {
     return (
       <div className="sb-card p-4 text-sm" style={{ color: "var(--sb-muted)" }}>
         No playlist stats found yet.
@@ -92,13 +94,15 @@ export default async function CollectorsPage({
     );
   }
 
-  const sparkStart = addDaysIso(latestDate, -13);
+  const sparkStart = latestRunDate ? addDaysIso(latestRunDate, -13) : null;
   // Use custom start date if provided, otherwise calculate from rangeDays
   const rangeStart = sp.start && sp.end
-    ? sp.start
-    : addDaysIso(latestDate, -(rangeDays - 1));
-  // Use custom end date if provided, otherwise use latestDate
-  const rangeEnd = sp.end && sp.start ? sp.end : latestDate;
+    ? addDaysISO(sp.start, SOT_DATA_LAG_DAYS) // data date -> run date
+    : latestRunDate
+      ? addDaysIso(latestRunDate, -(rangeDays - 1))
+      : null;
+  // Use custom end date if provided, otherwise use latestRunDate
+  const rangeEnd = sp.end && sp.start ? addDaysISO(sp.end, SOT_DATA_LAG_DAYS) : latestRunDate;
 
   const results = await cachedQueries(
     {
@@ -120,8 +124,8 @@ export default async function CollectorsPage({
         await sb
           .from("collector_daily_agg")
           .select("collector,date,track_count,daily_streams_net,est_revenue_daily_net")
-          .gte("date", sparkStart)
-          .lte("date", latestDate)
+          .gte("date", sparkStart!)
+          .lte("date", latestRunDate!)
           .order("date", { ascending: false }),
 
       series: async () =>
@@ -131,8 +135,8 @@ export default async function CollectorsPage({
             "date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net",
           )
           .eq("collector", selectedCollector)
-          .gte("date", rangeStart)
-          .lte("date", rangeEnd)
+          .gte("date", rangeStart!)
+          .lte("date", rangeEnd!)
           .order("date", { ascending: false }),
     },
     `collectors-${selectedCollector}-${rangeStart}-${rangeEnd}`,
@@ -187,7 +191,11 @@ export default async function CollectorsPage({
     };
   });
 
-  const seriesDesc = (results.series.data ?? []) as CollectorSeriesPoint[];
+  const seriesDescRun = (results.series.data ?? []) as CollectorSeriesPoint[];
+  const seriesDesc = seriesDescRun.map((p) => ({
+    ...p,
+    date: dataDateFromRunDate(p.date),
+  }));
 
   const selectedPlaylists = playlists.filter(
     (p) => (p.collector ?? "").toUpperCase() === selectedCollector,
@@ -202,11 +210,11 @@ export default async function CollectorsPage({
             await sb
               .from("playlist_daily_stats")
               .select("playlist_key,est_revenue_daily_net,daily_streams_net,missing_streams_track_count")
-              .eq("date", latestDate)
+          .eq("date", latestRunDate)
               .in("playlist_key", selectedKeys)
               .order("est_revenue_daily_net", { ascending: false })
               .limit(15),
-          `collectors-top-${selectedCollector}-${latestDate}`,
+          `collectors-top-${selectedCollector}-${latestRunDate}`,
           600,
         );
 
@@ -235,7 +243,10 @@ export default async function CollectorsPage({
         <div>
           <h1 className="font-display text-xl font-semibold tracking-tight sm:text-2xl">Collectors</h1>
           <p className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
-            Latest snapshot: <span className="font-mono">{formatDateISO(latestDate)}</span>
+            Latest data date:{" "}
+            <span className="font-mono">
+              {latestDataDate ? formatDateISO(latestDataDate) : "—"}
+            </span>
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -256,12 +267,12 @@ export default async function CollectorsPage({
               </Link>
             ))}
           </div>
-          <DateRangePicker latestDate={latestDate} currentRangeDays={rangeDays} />
+          <DateRangePicker latestDate={latestDataDate ?? null} currentRangeDays={rangeDays} />
         </div>
       </div>
 
       <CollectorsClient
-        latestDate={latestDate}
+        latestDate={latestDataDate}
         selectedCollector={selectedCollector}
         rangeDays={rangeDays}
         summary={summary}

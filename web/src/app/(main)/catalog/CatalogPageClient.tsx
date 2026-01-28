@@ -9,6 +9,11 @@ import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/Gla
 import { CatalogMetricSelector, type Metric } from "./CatalogMetricSelector";
 import { CatalogMetricsClient } from "./CatalogMetricsClient";
 import { Combobox } from "@/components/ui/Combobox";
+import { SpotlightCard } from "@/components/ui/SpotlightCard";
+import { DailyStreamsChart } from "@/components/charts/DailyStreamsChart";
+import { DailyStreamsWithMAChart } from "@/components/charts/DailyStreamsWithMAChart";
+import { StatCard } from "@/components/StatCard";
+import { AnimatedCounter } from "@/components/ui/AnimatedCounter";
 
 type ChartDataPoint = {
   date: string;
@@ -23,6 +28,17 @@ type DailyDataPoint = {
 type ArtistOption = { id: string; name: string; imageUrl?: string | null };
 type TrackOption = { isrc: string; name: string; albumImageUrl?: string | null };
 type TopTrack = { isrc: string; name: string | null; total: number | null; daily: number | null };
+type TrackSeriesPoint = { date: string; value: number };
+type TrackDailyPoint = { date: string; daily: number; ma7?: number | null };
+type SelectedTrack = {
+  name: string | null;
+  albumImageUrl: string | null;
+  spotifyTrackId: string | null;
+  artistNames: string[] | null;
+  artistIds: string[] | null;
+};
+
+const STREAM_PAYOUT_USD = 0.002;
 
 export function CatalogPageClient(props: {
   latestCum: number;
@@ -43,6 +59,13 @@ export function CatalogPageClient(props: {
   artistImageUrl: string | null;
   topByCumulative: TopTrack[];
   topByDaily: TopTrack[];
+  selectedTrack: SelectedTrack | null;
+  trackCumDesc: TrackSeriesPoint[];
+  trackDailyWithMaDesc: TrackDailyPoint[];
+  track24h: number;
+  track7d: number;
+  track28d: number;
+  track30d: number;
 }) {
   const [metric, setMetric] = useState<Metric>("streams");
   const [isArtistExpanded, setIsArtistExpanded] = useState(true);
@@ -159,7 +182,7 @@ export function CatalogPageClient(props: {
 
       <div
         className={`overflow-hidden transition-all duration-300 ease-in-out ${
-          isArtistExpanded ? "max-h-[2000px] opacity-100" : "max-h-0 opacity-0"
+          isArtistExpanded ? "max-h-[5000px] opacity-100" : "max-h-0 opacity-0"
         }`}
       >
         <div className="space-y-4 pt-2">
@@ -266,23 +289,154 @@ export function CatalogPageClient(props: {
               </GlassTable>
             </div>
           </div>
+
+          <CatalogMetricsClient
+            latestCum={props.latestCum}
+            latestDate={props.latestDate}
+            rangeDays={props.rangeDays}
+            cumSeriesAsc={props.cumSeriesAsc}
+            dailyArtistDesc={props.dailyArtistDesc}
+            artist24h={props.artist24h}
+            artist7d={props.artist7d}
+            artist28d={props.artist28d}
+            artist30d={props.artist30d}
+            trackCount={props.trackCount}
+            metric={metric}
+            setMetric={setMetric}
+          />
         </div>
       </div>
 
-      <CatalogMetricsClient
-        latestCum={props.latestCum}
-        latestDate={props.latestDate}
-        rangeDays={props.rangeDays}
-        cumSeriesAsc={props.cumSeriesAsc}
-        dailyArtistDesc={props.dailyArtistDesc}
-        artist24h={props.artist24h}
-        artist7d={props.artist7d}
-        artist28d={props.artist28d}
-        artist30d={props.artist30d}
-        trackCount={props.trackCount}
-        metric={metric}
-        setMetric={setMetric}
-      />
+      {/* Selected track panels (not part of artist collapse) */}
+      <div className="space-y-3 border-t pt-3" style={{ borderColor: "var(--sb-border)" }}>
+        {props.isrc && props.selectedTrack ? (
+          <div className="flex items-center gap-3">
+            {props.selectedTrack.albumImageUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={props.selectedTrack.albumImageUrl}
+                alt="Album cover"
+                className="h-16 w-16 rounded-lg object-cover sb-ring"
+              />
+            ) : (
+              <div className="h-16 w-16 rounded-lg sb-ring bg-white/60" />
+            )}
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="font-display text-2xl font-semibold tracking-tight">
+                  <Link
+                    href={`/tracks/${props.isrc}`}
+                    className="transition-colors hover:text-lime-600 dark:hover:text-lime-400"
+                  >
+                    {props.selectedTrack.name ?? props.isrc}
+                  </Link>
+                </h1>
+                {props.selectedTrack.spotifyTrackId && (
+                  <Link
+                    href={`https://open.spotify.com/track/${props.selectedTrack.spotifyTrackId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center justify-center rounded-full p-1.5 transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+                    title="Open on Spotify"
+                    style={{ color: "var(--sb-muted)" }}
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                  </Link>
+                )}
+              </div>
+              <div className="mt-0.5 flex items-center gap-2 text-xs" style={{ color: "var(--sb-muted)" }}>
+                {props.selectedTrack.artistNames?.length ? (
+                  <>
+                    <span>{props.selectedTrack.artistNames.join(", ")}</span>
+                    <span>•</span>
+                  </>
+                ) : null}
+                <span>
+                  ISRC: <span className="font-mono">{props.isrc}</span>
+                </span>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-end justify-between px-1">
+            <h2 className="text-sm font-semibold">Selected track</h2>
+            <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
+              Pick a track to show track-specific panels.
+            </div>
+          </div>
+        )}
+
+        {props.isrc ? (() => {
+          // For track panels, "Tracks" doesn’t mean anything (it’s always 1),
+          // so we keep the track charts on streams when metric === "tracks".
+          const trackMode: "revenue" | "streams" = metric === "revenue" ? "revenue" : "streams";
+          const valueFormat = trackMode === "revenue" ? ("usd" as const) : ("int" as const);
+          const yTickFormat = trackMode === "revenue" ? ("usd_compact" as const) : ("k" as const);
+
+          const cumSeries = trackMode === "revenue"
+            ? props.trackCumDesc.map((p) => ({ date: p.date, value: p.value * STREAM_PAYOUT_USD }))
+            : props.trackCumDesc;
+
+          const dailySeries = trackMode === "revenue"
+            ? props.trackDailyWithMaDesc.map((p) => ({
+                date: p.date,
+                daily: p.daily * STREAM_PAYOUT_USD,
+                ma7: p.ma7 == null ? p.ma7 : p.ma7 * STREAM_PAYOUT_USD,
+              }))
+            : props.trackDailyWithMaDesc;
+
+          const stat24h = trackMode === "revenue" ? props.track24h * STREAM_PAYOUT_USD : props.track24h;
+          const stat7d = trackMode === "revenue" ? props.track7d * STREAM_PAYOUT_USD : props.track7d;
+          const stat28d = trackMode === "revenue" ? props.track28d * STREAM_PAYOUT_USD : props.track28d;
+          const stat30d = trackMode === "revenue" ? props.track30d * STREAM_PAYOUT_USD : props.track30d;
+
+          const cumulativeTitle = trackMode === "revenue" ? "Track cumulative revenue" : "Track cumulative streams";
+          const dailyTitle = trackMode === "revenue" ? "Track daily revenue" : "Track daily streams";
+          const dailyLabel = trackMode === "revenue" ? "Daily revenue" : "Daily streams";
+          const totalLabel = trackMode === "revenue" ? "Total revenue" : "Total streams";
+          const statSubtitle = trackMode === "revenue" ? "Est. revenue" : "Net streams";
+
+          return (
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
+              <SpotlightCard className="lg:col-span-7 p-3">
+                <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
+                  {cumulativeTitle}
+                </div>
+                <div className="mt-2 min-h-[180px]">
+                  <DailyStreamsChart
+                    data={cumSeries}
+                    valueLabel={totalLabel}
+                    valueFormat={valueFormat}
+                    yTickFormat={yTickFormat}
+                    heightPx={220}
+                    isCumulative={true}
+                  />
+                </div>
+              </SpotlightCard>
+
+              <SpotlightCard className="lg:col-span-5 p-3">
+                <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
+                  {dailyTitle}
+                </div>
+                <div className="mt-2 min-h-[180px]">
+                  <DailyStreamsWithMAChart
+                    data={dailySeries}
+                    valueLabel={dailyLabel}
+                    valueFormat={valueFormat}
+                    yTickFormat={yTickFormat}
+                    heightPx={220}
+                  />
+                </div>
+              </SpotlightCard>
+
+              <StatCard title="Track 24h" value={<AnimatedCounter value={stat24h} format={valueFormat} />} subtitle={statSubtitle} />
+              <StatCard title="Track 7d" value={<AnimatedCounter value={stat7d} format={valueFormat} />} subtitle={statSubtitle} />
+              <StatCard title="Track 28d" value={<AnimatedCounter value={stat28d} format={valueFormat} />} subtitle={statSubtitle} />
+              <StatCard title="Track 30d" value={<AnimatedCounter value={stat30d} format={valueFormat} />} subtitle={statSubtitle} />
+            </div>
+          );
+        })() : null}
+      </div>
     </>
   );
 }

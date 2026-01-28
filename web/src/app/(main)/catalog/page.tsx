@@ -16,6 +16,7 @@ import { DailyStreamsChart } from "@/components/charts/DailyStreamsChart";
 import { DailyStreamsWithMAChart } from "@/components/charts/DailyStreamsWithMAChart";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { CatalogPageClient } from "./CatalogPageClient";
+import { dataDateFromRunDate } from "@/lib/sotDates";
 
 const STREAM_PAYOUT_USD = 0.002;
 
@@ -260,7 +261,7 @@ export default async function CatalogPage({
     artistNameFor(artistTracks, artistId) ??
     artistId;
 
-  // Canonical latest date (use all_catalog playlist stats as "ingestion day") - cached
+  // Canonical latest RUN date (DB snapshot date) - cached
   const { data: latestRun } = await cachedQuery(
     async () =>
       await sb
@@ -274,8 +275,9 @@ export default async function CatalogPage({
     3600,
   );
 
-  const latestDate = (latestRun as PlaylistDailyStatsRow | null)?.date ?? null;
-  const startDate = latestDate ? addDays(latestDate, -rangeDays) : null;
+  const latestRunDate = (latestRun as PlaylistDailyStatsRow | null)?.date ?? null;
+  const latestDataDate = latestRunDate ? dataDateFromRunDate(latestRunDate) : null;
+  const startRunDate = latestRunDate ? addDays(latestRunDate, -rangeDays) : null;
 
   const isrc = (sp.isrc ?? "").trim() || null;
 
@@ -298,13 +300,13 @@ export default async function CatalogPage({
 
   // Pull per-track cumulative series for the whole artist (best-effort; chunk to keep URL sizes sane)
   const dailyRows: TrackDailyRow[] = [];
-  if (isrcs.length && latestDate && startDate) {
+  if (isrcs.length && latestRunDate && startRunDate) {
     await Promise.all(
       chunk(isrcs, 120).map(async (isrcChunk) => {
         const rows = await fetchAllTrackDaily(sb, {
           isrcs: isrcChunk,
-          startDate,
-          endDate: latestDate,
+          startDate: startRunDate,
+          endDate: latestRunDate,
           maxRows: 200000,
         });
         dailyRows.push(...rows);
@@ -328,18 +330,21 @@ export default async function CatalogPage({
     perIsrc.set(r.date, v);
   }
 
-  const cumSeriesAsc = Array.from(cumByDate.entries())
+  const cumSeriesAscRun = Array.from(cumByDate.entries())
     .map(([date, value]) => ({ date, value }))
     .sort((a, b) => a.date.localeCompare(b.date));
 
-  const latestCum = cumSeriesAsc.length ? cumSeriesAsc[cumSeriesAsc.length - 1].value : 0;
-  const prevCum = cumSeriesAsc.length > 1 ? cumSeriesAsc[cumSeriesAsc.length - 2].value : 0;
+  const cumSeriesAsc = cumSeriesAscRun.map((p) => ({ ...p, date: dataDateFromRunDate(p.date) }));
 
-  const dailyArtistAsc = cumSeriesAsc.map((p, idx) => {
+  const latestCum = cumSeriesAscRun.length ? cumSeriesAscRun[cumSeriesAscRun.length - 1].value : 0;
+  const prevCum = cumSeriesAscRun.length > 1 ? cumSeriesAscRun[cumSeriesAscRun.length - 2].value : 0;
+
+  const dailyArtistAscRun = cumSeriesAscRun.map((p, idx) => {
     if (idx === 0) return { date: p.date, daily: 0 };
-    const prev = cumSeriesAsc[idx - 1].value;
+    const prev = cumSeriesAscRun[idx - 1].value;
     return { date: p.date, daily: Math.max(0, p.value - prev) };
   });
+  const dailyArtistAsc = dailyArtistAscRun.map((p) => ({ ...p, date: dataDateFromRunDate(p.date) }));
   const dailyArtistDesc = [...dailyArtistAsc].reverse();
   const dailyArtistWithMaDesc = computeRollingAvg7(dailyArtistDesc);
 
@@ -351,12 +356,12 @@ export default async function CatalogPage({
   // Per-track latest and daily deltas (for top lists)
   const latestByIsrc = new Map<string, number>();
   const prevByIsrc = new Map<string, number>();
-  if (latestDate) {
+  if (latestRunDate) {
     for (const [isrcKey, perDate] of byIsrcByDate.entries()) {
-      const latestV = perDate.get(latestDate);
+      const latestV = perDate.get(latestRunDate);
       if (latestV !== undefined) latestByIsrc.set(isrcKey, latestV);
       // Use previous calendar day; if missing, it's ok (daily becomes null)
-      const prevDay = addDays(latestDate, -1);
+      const prevDay = addDays(latestRunDate, -1);
       const prevV = perDate.get(prevDay);
       if (prevV !== undefined) prevByIsrc.set(isrcKey, prevV);
     }
@@ -391,21 +396,28 @@ export default async function CatalogPage({
 
   // Selected track panels (optional)
   const trackSeries =
-    isrc && latestDate && startDate
-      ? await fetchAllTrackSeries(sb, { isrc, startDate, endDate: latestDate, maxRows: 5000 })
+    isrc && latestRunDate && startRunDate
+      ? await fetchAllTrackSeries(sb, { isrc, startDate: startRunDate, endDate: latestRunDate, maxRows: 5000 })
       : ([] as Array<{ date: string; streams_cumulative: number | null }>);
 
   const trackCumDesc = (trackSeries ?? []).map((r) => ({
+    date: dataDateFromRunDate(r.date),
+    value: Number(r.streams_cumulative ?? 0),
+  }));
+  // Compute daily deltas based on RUN ordering but display DATA dates.
+  const trackCumDescRun = (trackSeries ?? []).map((r) => ({
     date: r.date,
     value: Number(r.streams_cumulative ?? 0),
   }));
-  const trackCumAsc = [...trackCumDesc].reverse();
-  const trackDailyAsc = trackCumAsc.map((p, idx) => {
+  const trackCumAscRun = [...trackCumDescRun].reverse();
+  const trackDailyAsc = trackCumAscRun.map((p, idx) => {
     if (idx === 0) return { date: p.date, daily: 0 };
-    const prev = trackCumAsc[idx - 1].value;
+    const prev = trackCumAscRun[idx - 1].value;
     return { date: p.date, daily: Math.max(0, p.value - prev) };
   });
-  const trackDailyDesc = [...trackDailyAsc].reverse();
+  const trackDailyDesc = [...trackDailyAsc]
+    .reverse()
+    .map((p) => ({ ...p, date: dataDateFromRunDate(p.date) }));
   const trackDailyWithMaDesc = computeRollingAvg7(trackDailyDesc);
   const track24h = trackDailyDesc[0]?.daily ?? 0;
   const track7d = sumLastNDays(trackDailyDesc, 7);
@@ -472,7 +484,7 @@ export default async function CatalogPage({
     <div className="space-y-4">
       <CatalogPageClient
         latestCum={latestCum}
-        latestDate={latestDate}
+        latestDate={latestDataDate}
         rangeDays={rangeDays}
         cumSeriesAsc={cumSeriesAsc}
         dailyArtistDesc={dailyArtistDesc}
@@ -489,107 +501,14 @@ export default async function CatalogPage({
         artistImageUrl={artistsWithImages.find((a) => a.id === artistId)?.imageUrl ?? null}
         topByCumulative={topByCumulative}
         topByDaily={topByDaily}
+        selectedTrack={selectedTrack}
+        trackCumDesc={trackCumDesc}
+        trackDailyWithMaDesc={trackDailyWithMaDesc}
+        track24h={track24h}
+        track7d={track7d}
+        track28d={track28d}
+        track30d={track30d}
       />
-
-      <div className="space-y-3 border-t pt-3" style={{ borderColor: "var(--sb-border)" }}>
-        {isrc && selectedTrack ? (
-          <div className="flex items-center gap-3">
-            {selectedTrack.albumImageUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={selectedTrack.albumImageUrl}
-                alt="Album cover"
-                className="h-16 w-16 rounded-lg object-cover sb-ring"
-              />
-            ) : (
-              <div className="h-16 w-16 rounded-lg sb-ring bg-white/60" />
-            )}
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="font-display text-2xl font-semibold tracking-tight">
-                  <Link
-                    href={`/tracks/${isrc}`}
-                    className="transition-colors hover:text-lime-600 dark:hover:text-lime-400"
-                  >
-                    {selectedTrack.name ?? isrc}
-                  </Link>
-                </h1>
-                {selectedTrack.spotifyTrackId && (
-                  <Link
-                    href={`https://open.spotify.com/track/${selectedTrack.spotifyTrackId}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center justify-center rounded-full p-1.5 transition-colors hover:bg-black/5 dark:hover:bg-white/10"
-                    title="Open on Spotify"
-                    style={{ color: "var(--sb-muted)" }}
-                  >
-                    <ExternalLink className="h-4 w-4" />
-                  </Link>
-                )}
-              </div>
-              <div className="mt-0.5 flex items-center gap-2 text-xs" style={{ color: "var(--sb-muted)" }}>
-                {selectedTrack.artistNames?.length ? (
-                  <>
-                    <ArtistLinks
-                      artistNames={selectedTrack.artistNames}
-                      artistIds={selectedTrack.artistIds ?? undefined}
-                    />
-                    <span>•</span>
-                  </>
-                ) : null}
-                <span>ISRC: <span className="font-mono">{isrc}</span></span>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="flex items-end justify-between px-1">
-            <h2 className="text-sm font-semibold">Selected track</h2>
-            <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
-              Pick a track to show track-specific panels.
-            </div>
-          </div>
-        )}
-
-        {isrc ? (
-          <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
-            <SpotlightCard className="lg:col-span-7 p-3">
-              <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
-                Track cumulative streams
-              </div>
-              <div className="mt-2 min-h-[180px]">
-                <DailyStreamsChart
-                  data={trackCumDesc}
-                  valueLabel="Total streams"
-                  valueFormat="int"
-                  yTickFormat="k"
-                  heightPx={220}
-                  isCumulative={true}
-                />
-              </div>
-            </SpotlightCard>
-
-            <SpotlightCard className="lg:col-span-5 p-3">
-              <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
-                Track daily streams
-              </div>
-              <div className="mt-2 min-h-[180px]">
-                <DailyStreamsWithMAChart
-                  data={trackDailyWithMaDesc}
-                  valueLabel="Daily streams"
-                  valueFormat="int"
-                  yTickFormat="k"
-                  heightPx={220}
-                />
-              </div>
-            </SpotlightCard>
-
-            <StatCard title="Track 24h" value={<AnimatedCounter value={track24h} />} subtitle="Net streams" />
-            <StatCard title="Track 7d" value={<AnimatedCounter value={track7d} />} subtitle="Net streams" />
-            <StatCard title="Track 28d" value={<AnimatedCounter value={track28d} />} subtitle="Net streams" />
-            <StatCard title="Track 30d" value={<AnimatedCounter value={track30d} />} subtitle="Net streams" />
-          </div>
-        ) : null}
-      </div>
     </div>
   );
   } catch (error) {

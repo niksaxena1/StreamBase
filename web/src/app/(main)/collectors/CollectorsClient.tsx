@@ -7,6 +7,7 @@ import { GlassTable, TableCell, TableRow } from "@/components/ui/GlassTable";
 import { SpotlightCard } from "@/components/ui/SpotlightCard";
 import { DailyStreamsChart } from "@/components/charts/DailyStreamsChart";
 import { DailyStreamsWithMAChart } from "@/components/charts/DailyStreamsWithMAChart";
+import { MonthlyBarChart } from "@/components/charts/MonthlyBarChart";
 import { AnimatedCounter } from "@/components/ui/AnimatedCounter";
 import { Sparkline } from "@/components/charts/Sparkline";
 import { StatCard } from "@/components/StatCard";
@@ -42,6 +43,48 @@ function ma7ForValueDesc(desc: Array<{ date: string; value: number }>) {
     outAsc.push({ date: asc[i].date, value: asc[i].value, ma7: has7 ? avg : null });
   }
   return outAsc.reverse();
+}
+
+function aggregateMonthlyDelta(
+  seriesDesc: CollectorSeriesPoint[],
+  metric: "revenue" | "streams" | "tracks"
+): Array<{ month: string; value: number }> {
+  // seriesDesc is newest-first, so reverse to get oldest-first for easier aggregation
+  const asc = [...seriesDesc].reverse();
+
+  const monthlyMap = new Map<string, number>();
+
+  for (let i = 0; i < asc.length; i++) {
+    const cur = asc[i];
+    const curMonth = cur.date.substring(0, 7); // yyyy-mm
+
+    const prev = i > 0 ? asc[i - 1] : null;
+    const prevMonth = prev?.date.substring(0, 7);
+
+    // Get the delta for this day
+    let delta = 0;
+    if (metric === "revenue") {
+      delta = Number(cur.est_revenue_daily_net ?? 0);
+    } else if (metric === "streams") {
+      delta = Number(cur.daily_streams_net ?? 0);
+    } else if (metric === "tracks") {
+      // For tracks, calculate the delta from previous day
+      const curTracks = Number(cur.track_count ?? 0);
+      const prevTracks = prev ? Number(prev.track_count ?? 0) : 0;
+      delta = curTracks - prevTracks;
+    }
+
+    // Add to the month's total
+    const current = monthlyMap.get(curMonth) ?? 0;
+    monthlyMap.set(curMonth, current + delta);
+  }
+
+  // Convert to array and sort by month
+  const result = Array.from(monthlyMap.entries())
+    .map(([month, value]) => ({ month, value }))
+    .sort((a, b) => a.month.localeCompare(b.month));
+
+  return result;
 }
 
 export type CollectorSummaryRow = {
@@ -153,6 +196,16 @@ export function CollectorsClient(props: {
     } as const;
   }, [props.seriesDesc]);
 
+  const monthlyData = useMemo(() => {
+    // Get all available historical data (not limited by range selection)
+    // This uses the full seriesDesc for unfiltered monthly aggregation
+    return {
+      revenue: aggregateMonthlyDelta(props.seriesDesc, "revenue"),
+      streams: aggregateMonthlyDelta(props.seriesDesc, "streams"),
+      tracks: aggregateMonthlyDelta(props.seriesDesc, "tracks"),
+    };
+  }, [props.seriesDesc]);
+
   const metricLabel = metric === "revenue" ? "Est. revenue" : metric === "streams" ? "Streams" : "Tracks";
   const dailyLabel =
     metric === "revenue" ? "Est. revenue (daily)" : metric === "streams" ? "Streams (daily)" : "Track change (daily)";
@@ -172,7 +225,8 @@ export function CollectorsClient(props: {
               Comparison Table
             </div>
             <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
-              Showing {metricLabel.toLowerCase()} on {formatDateISO(props.latestDate)}
+              Showing {metricLabel.toLowerCase()} on data date{" "}
+              {props.latestDate ? formatDateISO(props.latestDate) : "—"}
             </div>
           </div>
 
@@ -291,7 +345,7 @@ export function CollectorsClient(props: {
           <div>
             <h2 className="text-sm font-semibold">{props.selectedCollector} (combined)</h2>
             <p className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
-              Newest day: <span className="font-mono">{formatDateISO(props.latestDate)}</span> • {props.rangeDays} day view
+              {props.rangeDays} day view
             </p>
           </div>
         </div>
@@ -367,13 +421,32 @@ export function CollectorsClient(props: {
           </SpotlightCard>
         </div>
 
+        <SpotlightCard className="p-3">
+          <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
+            Monthly {metric === "revenue" ? "Est. Revenue" : metric === "streams" ? "Streams" : "Track"}
+          </div>
+          <p className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
+            All-time monthly aggregation (not affected by date range)
+          </p>
+          <div className="mt-3 min-h-[220px]">
+            <MonthlyBarChart
+              data={monthlyData[metric]}
+              valueLabel={metricLabel}
+              valueFormat={valueFormat as any}
+              yTickFormat={yTickFormat as any}
+              heightPx={220}
+            />
+          </div>
+        </SpotlightCard>
+
         {/* Top playlists breakdown */}
         <div className="space-y-2">
           <div className="flex items-end justify-between px-1">
             <div>
               <h3 className="text-sm font-semibold">Top playlists</h3>
               <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
-                Ranked by est. revenue (daily) on {formatDateISO(props.latestDate)}
+                Ranked by est. revenue (daily) on data date{" "}
+                {props.latestDate ? formatDateISO(props.latestDate) : "—"}
               </div>
             </div>
           </div>
