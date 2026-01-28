@@ -118,7 +118,7 @@ export default async function CollectorsPage({
           .select(
             "collector,date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net,daily_streams_delta_yday,daily_streams_delta_ma7,est_revenue_daily_delta_yday,est_revenue_daily_delta_ma7,track_count_delta_yday,track_count_delta_ma7",
           )
-          .eq("date", latestDate),
+          .eq("date", latestRunDate),
 
       spark14: async () =>
         await sb
