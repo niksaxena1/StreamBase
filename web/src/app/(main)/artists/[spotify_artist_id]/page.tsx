@@ -24,9 +24,9 @@ type DailyStreamsRow = {
 export default async function ArtistPage({
   params,
 }: {
-  params: Promise<{ spotify_artist_id: string }>;
+  params: any;
 }) {
-  const { spotify_artist_id } = await params;
+  const { spotify_artist_id } = params as { spotify_artist_id: string };
   const sb = await supabaseServer();
 
   // Find all tracks by this artist

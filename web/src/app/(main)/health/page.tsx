@@ -37,9 +37,11 @@ function FilterToggle({
 export default async function HealthPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ severity?: string; playlist?: string; date?: string }>;
+  // See note in other pages: keep this as `any` to satisfy Next's generated PageProps typing
+  // while avoiding `await searchParams` (which breaks static generation in Next 16).
+  searchParams?: any;
 }) {
-  const sp = (await searchParams) ?? {};
+  const sp = (searchParams ?? {}) as { severity?: string; playlist?: string; date?: string };
   const severityFilter = sp.severity ?? "all";
   const playlistFilter = sp.playlist ?? "all";
   const dateFilter = sp.date;

@@ -99,7 +99,7 @@ export function CatalogPageClient(props: {
         <CatalogMetricSelector metric={metric} setMetric={setMetric} />
       </div>
 
-      <div className="relative z-10 rounded-xl border border-lime-500/20 bg-lime-500/10 p-3 shadow-sm backdrop-blur-sm dark:bg-lime-400/10 dark:border-lime-400/20">
+      <div className="relative z-20 rounded-xl border border-lime-500/20 bg-lime-500/10 p-3 shadow-sm backdrop-blur-sm dark:bg-lime-400/10 dark:border-lime-400/20">
         <div className="flex items-start gap-2">
           <button
             type="button"

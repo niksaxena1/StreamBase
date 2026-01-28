@@ -36,9 +36,11 @@ function PageLink(props: { href: string; disabled?: boolean; children: React.Rea
 export default async function TracksConfigPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ q?: string; page?: string }>;
+  // See note in other pages: keep this as `any` to satisfy Next's generated PageProps typing
+  // while avoiding `await searchParams` (which breaks static generation in Next 16).
+  searchParams?: any;
 }) {
-  const sp = (await searchParams) ?? {};
+  const sp = (searchParams ?? {}) as { q?: string; page?: string };
   const q = (sp.q ?? "").trim();
   const page = Math.max(1, Number(sp.page ?? "1") || 1);
   const pageSize = 50;

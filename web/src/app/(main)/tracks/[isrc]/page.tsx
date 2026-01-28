@@ -32,9 +32,9 @@ type SpotifyMeta = {
 export default async function TrackDetailPage({
   params,
 }: {
-  params: Promise<{ isrc: string }>;
+  params: any;
 }) {
-  const { isrc } = await params;
+  const { isrc } = params as { isrc: string };
   const sb = await supabaseServer();
   const { data: isAdmin } = await sb.rpc("is_admin");
   const spotifyEnvOk = Boolean(

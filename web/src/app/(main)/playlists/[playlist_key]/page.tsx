@@ -47,11 +47,11 @@ export default async function PlaylistDetailPage({
   params,
   searchParams,
 }: {
-  params: Promise<{ playlist_key: string }>;
-  searchParams?: Promise<{ date?: string }>;
+  params: any;
+  searchParams?: any;
 }) {
-  const { playlist_key } = await params;
-  const sp = (await searchParams) ?? {};
+  const { playlist_key } = params as { playlist_key: string };
+  const sp = (searchParams ?? {}) as { date?: string };
   const sb = await supabaseServer();
   const { data: isAdmin } = await sb.rpc("is_admin");
 

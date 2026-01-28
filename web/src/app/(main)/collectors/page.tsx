@@ -40,9 +40,11 @@ type PlaylistRow = {
 export default async function CollectorsPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ collector?: string; range?: string; start?: string; end?: string }>;
+  // See note in other pages: keep this as `any` to satisfy Next's generated PageProps typing
+  // while avoiding `await searchParams` (which breaks static generation in Next 16).
+  searchParams?: any;
 }) {
-  const sp = (await searchParams) ?? {};
+  const sp = (searchParams ?? {}) as { collector?: string; range?: string; start?: string; end?: string };
   const sb = await supabaseServer();
 
   // If custom start/end dates are provided, calculate range from them

@@ -157,9 +157,11 @@ async function fetchMemberships(sb: Awaited<ReturnType<typeof supabaseServer>>, 
 export default async function PlaylistsPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ playlist_key?: string; range?: string; view?: string }>;
+  // See note in other pages: keep this as `any` to satisfy Next's generated PageProps typing
+  // while avoiding `await searchParams` (which breaks static generation in Next 16).
+  searchParams?: any;
 }) {
-  const sp = (await searchParams) ?? {};
+  const sp = (searchParams ?? {}) as { playlist_key?: string; range?: string; view?: string };
   const playlistKey = (sp.playlist_key ?? "").trim();
   const rangeDays = clampRangeDays(sp.range);
 

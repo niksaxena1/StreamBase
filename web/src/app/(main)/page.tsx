@@ -26,9 +26,11 @@ export const revalidate = 3600;
 export default async function Home({
   searchParams,
 }: {
-  searchParams?: Promise<{ scope?: string; range?: string; daily?: string }>;
+  // See note in other pages: keep this as `any` to satisfy Next's generated PageProps typing
+  // while avoiding `await searchParams` (which breaks static generation in Next 16).
+  searchParams?: any;
 }) {
-  const sp = (await searchParams) ?? {};
+  const sp = (searchParams ?? {}) as { scope?: string; range?: string; daily?: string };
   const scope = (sp.scope ?? "all_catalog").toLowerCase();
   const rangeDays = Math.max(7, Math.min(365, Number(sp.range ?? "30") || 30));
 

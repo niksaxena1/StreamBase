@@ -86,10 +86,12 @@ async function fetchAllTrackSeries(
 export default async function TracksPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ isrc?: string; range?: string; view?: string }>;
+  // See note in other pages: keep this as `any` to satisfy Next's generated PageProps typing
+  // while avoiding `await searchParams` (which breaks static generation in Next 16).
+  searchParams?: any;
 }) {
   try {
-    const sp = (await searchParams) ?? {};
+    const sp = (searchParams ?? {}) as { isrc?: string; range?: string; view?: string };
     
     // Backwards-compat: old query-driven list view
     if ((sp.view ?? "").trim().toLowerCase() === "list") {

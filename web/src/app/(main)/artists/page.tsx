@@ -188,10 +188,18 @@ function artistNameFor(rows: TrackRow[], artistId: string) {
 export default async function ArtistsPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ artist_id?: string; isrc?: string; range?: string; view?: string }>;
+  // Next 16 App Router's generated `PageProps` types currently model `searchParams` as a Promise.
+  // We intentionally treat it as a plain object (no `await`) to keep this route statically renderable.
+  // (Awaiting searchParams triggers a build-time "Dynamic server usage" error.)
+  searchParams?: any;
 }) {
   try {
-    const sp = (await searchParams) ?? {};
+    const sp = (searchParams ?? {}) as {
+      artist_id?: string;
+      isrc?: string;
+      range?: string;
+      view?: string;
+    };
     
     // Backwards-compat: old query-driven list view
     if ((sp.view ?? "").trim().toLowerCase() === "list") {

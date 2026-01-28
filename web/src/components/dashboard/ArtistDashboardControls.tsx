@@ -120,7 +120,7 @@ export function ArtistDashboardControls(props: {
   }
 
   return (
-    <div className="relative z-10 rounded-xl border border-lime-500/20 bg-lime-500/10 p-3 shadow-sm backdrop-blur-sm dark:bg-lime-400/10 dark:border-lime-400/20">
+    <div className="relative z-20 rounded-xl border border-lime-500/20 bg-lime-500/10 p-3 shadow-sm backdrop-blur-sm dark:bg-lime-400/10 dark:border-lime-400/20">
       <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <div className="flex items-center gap-2">
