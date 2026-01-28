@@ -12,7 +12,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export async function cachedQuery<T>(
   queryFn: () => Promise<{ data: T | null; error: any }>,
   key: string,
-  revalidateSeconds = 3600, // 1 hour default
+  revalidateSeconds: number | false = 3600, // 1 hour default, or false to disable
 ): Promise<{ data: T | null; error: any }> {
   return unstable_cache(
     async () => {

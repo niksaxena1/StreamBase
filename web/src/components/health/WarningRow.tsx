@@ -11,20 +11,40 @@ type WarningRowProps = {
     code: string;
     playlist_key: string | null;
     message: string;
+    details_json?: any;
   };
-  nonCatalogTracks?: Array<{ 
-    isrc: string; 
+  nonCatalogTracks?: Array<{
+    isrc: string;
     name: string | null;
     artist_names?: string[] | null;
     artist_ids?: string[] | null;
     album_image_url?: string | null;
   }>;
+  trackCountSwingTracks?: {
+    added: Array<{
+      isrc: string;
+      name: string | null;
+      artist_names?: string[] | null;
+      artist_ids?: string[] | null;
+      album_image_url?: string | null;
+    }>;
+    removed: Array<{
+      isrc: string;
+      name: string | null;
+      artist_names?: string[] | null;
+      artist_ids?: string[] | null;
+      album_image_url?: string | null;
+    }>;
+  };
 };
 
-export function WarningRow({ warning, nonCatalogTracks }: WarningRowProps) {
+export function WarningRow({ warning, nonCatalogTracks, trackCountSwingTracks }: WarningRowProps) {
   const [expanded, setExpanded] = useState(false);
   const hasTracks = nonCatalogTracks && nonCatalogTracks.length > 0;
-  const canExpand = warning.code === "non_catalog_tracks_present" && hasTracks;
+  const hasSwingTracks = trackCountSwingTracks && 
+    (trackCountSwingTracks.added.length > 0 || trackCountSwingTracks.removed.length > 0);
+  const canExpand = (warning.code === "non_catalog_tracks_present" && hasTracks) ||
+                   (warning.code === "track_count_swing" && hasSwingTracks);
 
   return (
     <>
@@ -37,21 +57,14 @@ export function WarningRow({ warning, nonCatalogTracks }: WarningRowProps) {
       >
         <td className="px-6 py-4">
           <span
-            className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium"
-            style={{
-              background:
-                warning.severity === "critical"
-                  ? "rgba(239, 68, 68, 0.2)"
-                  : warning.severity === "warn"
-                    ? "rgba(245, 158, 11, 0.2)"
-                    : "rgba(59, 130, 246, 0.2)",
-              color:
-                warning.severity === "critical"
-                  ? "#991b1b"
-                  : warning.severity === "warn"
-                    ? "#92400e"
-                    : "#1e40af",
-            }}
+            className={[
+              "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
+              warning.severity === "critical"
+                ? "bg-red-500/20 text-red-700 dark:bg-red-500/30 dark:text-red-300"
+                : warning.severity === "warn"
+                  ? "bg-orange-500/20 text-orange-700 dark:bg-orange-500/30 dark:text-orange-300"
+                  : "bg-blue-500/20 text-blue-700 dark:bg-blue-500/30 dark:text-blue-300",
+            ].join(" ")}
           >
             {warning.severity}
           </span>
@@ -91,54 +104,156 @@ export function WarningRow({ warning, nonCatalogTracks }: WarningRowProps) {
           </div>
         </td>
       </tr>
-      {expanded && hasTracks && (
+      {expanded && (
         <tr className="bg-black/[0.01] dark:bg-white/[0.01]">
           <td colSpan={4} className="px-6 py-4">
-            <div className="space-y-2">
-              <div className="text-xs font-medium opacity-70 mb-2">
-                Non-catalog tracks ({nonCatalogTracks.length}):
-              </div>
+            {warning.code === "non_catalog_tracks_present" && hasTracks && (
               <div className="space-y-2">
-                {nonCatalogTracks.map((track) => (
-                  <div key={track.isrc} className="flex items-center gap-3 text-xs">
-                    {track.album_image_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={track.album_image_url}
-                        alt="Album cover"
-                        className="h-10 w-10 rounded object-cover sb-ring flex-shrink-0"
-                      />
-                    ) : (
-                      <div className="h-10 w-10 rounded sb-ring bg-white/60 flex-shrink-0" />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <Link
-                          href={`/tracks/${track.isrc}`}
-                          className="font-medium hover:underline"
-                          style={{ color: "var(--sb-text)" }}
-                        >
-                          {track.name || track.isrc}
-                        </Link>
-                        {track.artist_names && track.artist_names.length > 0 && (
-                          <span className="opacity-60">
-                            by <ArtistLinks artistNames={track.artist_names} artistIds={track.artist_ids ?? undefined} />
-                          </span>
-                        )}
-                      </div>
-                      <div className="mt-0.5">
-                        <Link
-                          href={`/tracks/${track.isrc}`}
-                          className="font-mono text-[10px] text-lime-600 dark:text-lime-400 underline hover:opacity-80"
-                        >
-                          {track.isrc}
-                        </Link>
+                <div className="text-xs font-medium opacity-70 mb-2">
+                  Non-catalog tracks ({nonCatalogTracks.length}):
+                </div>
+                <div className="space-y-2">
+                  {nonCatalogTracks.map((track) => (
+                    <div key={track.isrc} className="flex items-center gap-3 text-xs">
+                      {track.album_image_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={track.album_image_url}
+                          alt="Album cover"
+                          className="h-10 w-10 rounded object-cover sb-ring flex-shrink-0"
+                        />
+                      ) : (
+                        <div className="h-10 w-10 rounded sb-ring bg-white/60 flex-shrink-0" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Link
+                            href={`/tracks/${track.isrc}`}
+                            className="font-medium hover:underline"
+                            style={{ color: "var(--sb-text)" }}
+                          >
+                            {track.name || track.isrc}
+                          </Link>
+                          {track.artist_names && track.artist_names.length > 0 && (
+                            <span className="opacity-60">
+                              by <ArtistLinks artistNames={track.artist_names} artistIds={track.artist_ids ?? undefined} />
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-0.5">
+                          <Link
+                            href={`/tracks/${track.isrc}`}
+                            className="font-mono text-[10px] text-lime-600 dark:text-lime-400 underline hover:opacity-80"
+                          >
+                            {track.isrc}
+                          </Link>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
+
+            {warning.code === "track_count_swing" && hasSwingTracks && trackCountSwingTracks && (
+              <div className="space-y-4">
+                {trackCountSwingTracks.added.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-xs font-medium opacity-70 mb-2">
+                      Added tracks ({trackCountSwingTracks.added.length}):
+                    </div>
+                    <div className="space-y-2">
+                      {trackCountSwingTracks.added.map((track) => (
+                        <div key={track.isrc} className="flex items-center gap-3 text-xs">
+                          {track.album_image_url ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={track.album_image_url}
+                              alt="Album cover"
+                              className="h-10 w-10 rounded object-cover sb-ring flex-shrink-0"
+                            />
+                          ) : (
+                            <div className="h-10 w-10 rounded sb-ring bg-white/60 flex-shrink-0" />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Link
+                                href={`/tracks/${track.isrc}`}
+                                className="font-medium hover:underline"
+                                style={{ color: "var(--sb-text)" }}
+                              >
+                                {track.name || track.isrc}
+                              </Link>
+                              {track.artist_names && track.artist_names.length > 0 && (
+                                <span className="opacity-60">
+                                  by <ArtistLinks artistNames={track.artist_names} artistIds={track.artist_ids ?? undefined} />
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-0.5">
+                              <Link
+                                href={`/tracks/${track.isrc}`}
+                                className="font-mono text-[10px] text-lime-600 dark:text-lime-400 underline hover:opacity-80"
+                              >
+                                {track.isrc}
+                              </Link>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {trackCountSwingTracks.removed.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-xs font-medium opacity-70 mb-2">
+                      Removed tracks ({trackCountSwingTracks.removed.length}):
+                    </div>
+                    <div className="space-y-2">
+                      {trackCountSwingTracks.removed.map((track) => (
+                        <div key={track.isrc} className="flex items-center gap-3 text-xs">
+                          {track.album_image_url ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={track.album_image_url}
+                              alt="Album cover"
+                              className="h-10 w-10 rounded object-cover sb-ring flex-shrink-0"
+                            />
+                          ) : (
+                            <div className="h-10 w-10 rounded sb-ring bg-white/60 flex-shrink-0" />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Link
+                                href={`/tracks/${track.isrc}`}
+                                className="font-medium hover:underline"
+                                style={{ color: "var(--sb-text)" }}
+                              >
+                                {track.name || track.isrc}
+                              </Link>
+                              {track.artist_names && track.artist_names.length > 0 && (
+                                <span className="opacity-60">
+                                  by <ArtistLinks artistNames={track.artist_names} artistIds={track.artist_ids ?? undefined} />
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-0.5">
+                              <Link
+                                href={`/tracks/${track.isrc}`}
+                                className="font-mono text-[10px] text-lime-600 dark:text-lime-400 underline hover:opacity-80"
+                              >
+                                {track.isrc}
+                              </Link>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </td>
         </tr>
       )}

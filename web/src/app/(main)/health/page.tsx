@@ -5,6 +5,7 @@ import { supabaseServer } from "@/lib/supabase/server";
 import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
 import { WarningRow } from "@/components/health/WarningRow";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
+import { ExportMissingTracksButton } from "@/components/health/ExportMissingTracksButton";
 
 export const dynamic = "force-dynamic";
 
@@ -69,7 +70,7 @@ export default async function HealthPage({
   // Build warnings query with filters
   let warningsQuery = sb
     .from("ingestion_warnings")
-    .select("severity,code,playlist_key,message,run_date")
+    .select("severity,code,playlist_key,message,run_date,details_json")
     .order("severity", { ascending: false })
     .order("playlist_key", { ascending: true });
 
@@ -95,26 +96,49 @@ export default async function HealthPage({
   const nonCatalogTracksMap = new Map<string, Array<{ isrc: string; name: string | null }>>();
 
   if (nonCatalogWarnings.length > 0 && selectedDate) {
+    // Pre-fetch all catalog streams once (paginated) to reuse across warnings
+    const pageSize = 1000;
+    const allCatalogStreamsForDate: Array<{ isrc: string }> = [];
+    let from = 0;
+    while (true) {
+      const to = from + pageSize - 1;
+      const { data, error } = await sb
+        .from("track_daily_streams")
+        .select("isrc")
+        .eq("date", selectedDate)
+        .range(from, to);
+      
+      if (error || !data || data.length === 0) break;
+      allCatalogStreamsForDate.push(...data);
+      if (data.length < pageSize) break;
+      from += pageSize;
+    }
+    const allCatalogIsrcs = new Set(allCatalogStreamsForDate.map((s) => s.isrc));
+
     for (const warning of nonCatalogWarnings) {
       if (!warning.playlist_key) continue;
 
-      // Get all tracks in the playlist on the selected date
-      const { data: memberships } = await sb
-        .from("playlist_memberships")
-        .select("isrc")
-        .eq("playlist_key", warning.playlist_key)
-        .lte("valid_from", selectedDate)
-        .or(`valid_to.is.null,valid_to.gte.${selectedDate}`);
+      // Get all tracks in the playlist on the selected date (paginated)
+      const memberships: Array<{ isrc: string }> = [];
+      from = 0;
+      while (true) {
+        const to = from + pageSize - 1;
+        const { data, error } = await sb
+          .from("playlist_memberships")
+          .select("isrc")
+          .eq("playlist_key", warning.playlist_key)
+          .lte("valid_from", selectedDate)
+          .or(`valid_to.is.null,valid_to.gte.${selectedDate}`)
+          .range(from, to);
+        
+        if (error || !data || data.length === 0) break;
+        memberships.push(...data);
+        if (data.length < pageSize) break;
+        from += pageSize;
+      }
 
-      const playlistIsrcs = new Set((memberships ?? []).map((m) => m.isrc));
-
-      // Get all tracks that have catalog stream snapshots on the selected date
-      const { data: catalogStreams } = await sb
-        .from("track_daily_streams")
-        .select("isrc")
-        .eq("date", selectedDate);
-
-      const catalogIsrcs = new Set((catalogStreams ?? []).map((s) => s.isrc));
+      const playlistIsrcs = new Set(memberships.map((m) => m.isrc));
+      const catalogIsrcs = allCatalogIsrcs;
 
       // Find tracks in playlist but not in catalog
       const nonCatalogIsrcs = Array.from(playlistIsrcs).filter((isrc) => !catalogIsrcs.has(isrc));
@@ -137,6 +161,120 @@ export default async function HealthPage({
     }
   }
 
+  // Fetch added/removed tracks for track_count_swing warnings
+  const trackCountSwingWarnings = (warnings ?? []).filter(
+    (w) => w.code === "track_count_swing" && w.playlist_key && selectedDate
+  );
+
+  const trackCountSwingTracksMap = new Map<
+    string,
+    {
+      added: Array<{
+        isrc: string;
+        name: string | null;
+        artist_names?: string[] | null;
+        artist_ids?: string[] | null;
+        album_image_url?: string | null;
+      }>;
+      removed: Array<{
+        isrc: string;
+        name: string | null;
+        artist_names?: string[] | null;
+        artist_ids?: string[] | null;
+        album_image_url?: string | null;
+      }>;
+    }
+  >();
+
+  if (trackCountSwingWarnings.length > 0 && selectedDate) {
+    // Calculate previous date
+    const selectedDateObj = new Date(selectedDate);
+    const prevDateObj = new Date(selectedDateObj);
+    prevDateObj.setDate(prevDateObj.getDate() - 1);
+    const prevDate = prevDateObj.toISOString().split("T")[0];
+
+    const pageSize = 1000;
+
+    for (const warning of trackCountSwingWarnings) {
+      if (!warning.playlist_key) continue;
+
+      // Get tracks for selected date
+      const todayMemberships: Array<{ isrc: string }> = [];
+      let from = 0;
+      while (true) {
+        const to = from + pageSize - 1;
+        const { data, error } = await sb
+          .from("playlist_memberships")
+          .select("isrc")
+          .eq("playlist_key", warning.playlist_key)
+          .lte("valid_from", selectedDate)
+          .or(`valid_to.is.null,valid_to.gte.${selectedDate}`)
+          .range(from, to);
+
+        if (error || !data || data.length === 0) break;
+        todayMemberships.push(...data);
+        if (data.length < pageSize) break;
+        from += pageSize;
+      }
+
+      // Get tracks for previous date
+      const prevMemberships: Array<{ isrc: string }> = [];
+      from = 0;
+      while (true) {
+        const to = from + pageSize - 1;
+        const { data, error } = await sb
+          .from("playlist_memberships")
+          .select("isrc")
+          .eq("playlist_key", warning.playlist_key)
+          .lte("valid_from", prevDate)
+          .or(`valid_to.is.null,valid_to.gte.${prevDate}`)
+          .range(from, to);
+
+        if (error || !data || data.length === 0) break;
+        prevMemberships.push(...data);
+        if (data.length < pageSize) break;
+        from += pageSize;
+      }
+
+      const todayIsrcs = new Set(todayMemberships.map((m) => m.isrc));
+      const prevIsrcs = new Set(prevMemberships.map((m) => m.isrc));
+
+      // Find added tracks (in today but not in previous day)
+      const addedIsrcs = Array.from(todayIsrcs).filter((isrc) => !prevIsrcs.has(isrc));
+      // Find removed tracks (in previous day but not in today)
+      const removedIsrcs = Array.from(prevIsrcs).filter((isrc) => !todayIsrcs.has(isrc));
+
+      // Fetch track metadata for added and removed tracks
+      const allChangedIsrcs = [...addedIsrcs, ...removedIsrcs];
+      if (allChangedIsrcs.length > 0) {
+        const { data: tracks } = await sb
+          .from("tracks")
+          .select("isrc,name,spotify_artist_names,spotify_artist_ids,spotify_album_image_url")
+          .in("isrc", allChangedIsrcs);
+
+        const tracksMap = new Map(
+          (tracks ?? []).map((t) => [
+            t.isrc,
+            {
+              isrc: t.isrc,
+              name: t.name,
+              artist_names: t.spotify_artist_names,
+              artist_ids: t.spotify_artist_ids,
+              album_image_url: t.spotify_album_image_url,
+            },
+          ])
+        );
+
+        trackCountSwingTracksMap.set(warning.playlist_key ?? "", {
+          added: addedIsrcs.map((isrc) => tracksMap.get(isrc) ?? { isrc, name: null }),
+          removed: removedIsrcs.map((isrc) => tracksMap.get(isrc) ?? { isrc, name: null }),
+        });
+      } else {
+        trackCountSwingTracksMap.set(warning.playlist_key ?? "", { added: [], removed: [] });
+      }
+    }
+  }
+
   // Fetch ALL tracks missing from catalog across all playlists for the selected date
   let allMissingTracks: Array<{
     isrc: string;
@@ -148,20 +286,43 @@ export default async function HealthPage({
   }> = [];
 
   if (selectedDate) {
-    // Get all tracks in all playlists on the selected date
-    const { data: allMemberships } = await sb
-      .from("playlist_memberships")
-      .select("isrc,playlist_key")
-      .lte("valid_from", selectedDate)
-      .or(`valid_to.is.null,valid_to.gte.${selectedDate}`);
+    // Get all tracks in all playlists on the selected date (paginated)
+    const pageSize = 1000;
+    const allMemberships: Array<{ isrc: string; playlist_key: string }> = [];
+    let from = 0;
+    while (true) {
+      const to = from + pageSize - 1;
+      const { data, error } = await sb
+        .from("playlist_memberships")
+        .select("isrc,playlist_key")
+        .lte("valid_from", selectedDate)
+        .or(`valid_to.is.null,valid_to.gte.${selectedDate}`)
+        .range(from, to);
+      
+      if (error || !data || data.length === 0) break;
+      allMemberships.push(...data);
+      if (data.length < pageSize) break;
+      from += pageSize;
+    }
 
-    // Get all tracks that have catalog stream snapshots on the selected date
-    const { data: catalogStreamsAll } = await sb
-      .from("track_daily_streams")
-      .select("isrc")
-      .eq("date", selectedDate);
+    // Get all tracks that have catalog stream snapshots on the selected date (paginated)
+    const catalogStreamsAll: Array<{ isrc: string }> = [];
+    from = 0;
+    while (true) {
+      const to = from + pageSize - 1;
+      const { data, error } = await sb
+        .from("track_daily_streams")
+        .select("isrc")
+        .eq("date", selectedDate)
+        .range(from, to);
+      
+      if (error || !data || data.length === 0) break;
+      catalogStreamsAll.push(...data);
+      if (data.length < pageSize) break;
+      from += pageSize;
+    }
 
-    const catalogIsrcsAll = new Set((catalogStreamsAll ?? []).map((s) => s.isrc));
+    const catalogIsrcsAll = new Set(catalogStreamsAll.map((s) => s.isrc));
 
     // Group by ISRC and collect playlist keys
     const isrcToPlaylists = new Map<string, Set<string>>();
@@ -269,6 +430,9 @@ export default async function HealthPage({
               nonCatalogTracks={w.code === "non_catalog_tracks_present" && w.playlist_key
                 ? nonCatalogTracksMap.get(w.playlist_key)
                 : undefined}
+              trackCountSwingTracks={w.code === "track_count_swing" && w.playlist_key
+                ? trackCountSwingTracksMap.get(w.playlist_key)
+                : undefined}
             />
           ))}
           {!warnings?.length && (
@@ -294,7 +458,10 @@ export default async function HealthPage({
               </p>
             </div>
             {allMissingTracks.length > 0 && (
-              <span className="text-xs opacity-60">{allMissingTracks.length} tracks</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs opacity-60">{allMissingTracks.length} tracks</span>
+                <ExportMissingTracksButton tracks={allMissingTracks} date={selectedDate} />
+              </div>
             )}
           </div>
           <GlassTable headers={["Track", "Artists", "Playlists"]}>
@@ -375,16 +542,12 @@ export default async function HealthPage({
               <TableCell mono>{formatDateISO(r.run_date)}</TableCell>
               <TableCell>
                 <span
-                  className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                    r.status === "success" ? "" : "bg-black/6 dark:bg-white/6"
-                  }`}
-                  style={{
-                    background:
-                      r.status === "success"
-                        ? "rgba(199, 243, 60, 0.2)"
-                        : undefined,
-                    color: r.status === "success" ? "#4d6600" : "inherit",
-                  }}
+                  className={[
+                    "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
+                    r.status === "success"
+                      ? "bg-lime-500/20 text-lime-700 dark:bg-lime-500/30 dark:text-lime-300"
+                      : "bg-red-500/20 text-red-700 dark:bg-red-500/30 dark:text-red-300",
+                  ].join(" ")}
                 >
                   {r.status}
                 </span>

@@ -67,6 +67,61 @@ async function fetchMemberships(sb: Awaited<ReturnType<typeof supabaseServer>>, 
   removed: boolean;
   maxRows: number;
 }): Promise<MembershipRow[]> {
+  // Handle all_catalog as a combined playlist of releases and ext
+  if (args.playlistKey === "all_catalog") {
+    // Fetch all memberships (both current and removed) from both playlists to properly combine
+    const [releasesCurrent, releasesRemoved, extCurrent, extRemoved] = await Promise.all([
+      fetchMemberships(sb, { playlistKey: "releases", removed: false, maxRows: 10000 }),
+      fetchMemberships(sb, { playlistKey: "releases", removed: true, maxRows: 10000 }),
+      fetchMemberships(sb, { playlistKey: "ext", removed: false, maxRows: 10000 }),
+      fetchMemberships(sb, { playlistKey: "ext", removed: true, maxRows: 10000 }),
+    ]);
+
+    // Combine all memberships: for each ISRC, take the earliest valid_from
+    // For valid_to: null if either playlist has null (track is current), otherwise latest date
+    const combinedMap = new Map<string, MembershipRow>();
+
+    for (const m of [...releasesCurrent, ...releasesRemoved, ...extCurrent, ...extRemoved]) {
+      const existing = combinedMap.get(m.isrc);
+      if (!existing) {
+        combinedMap.set(m.isrc, { ...m });
+      } else {
+        // Use earliest valid_from
+        if (m.valid_from < existing.valid_from) {
+          existing.valid_from = m.valid_from;
+        }
+        // If either playlist has null (current), the combined should be null
+        // Otherwise, use the latest valid_to date
+        if (m.valid_to === null || existing.valid_to === null) {
+          existing.valid_to = null;
+        } else if (m.valid_to > existing.valid_to) {
+          existing.valid_to = m.valid_to;
+        }
+      }
+    }
+
+    // Filter based on removed flag
+    let combined = Array.from(combinedMap.values());
+    if (args.removed) {
+      combined = combined.filter((m) => m.valid_to !== null);
+    } else {
+      combined = combined.filter((m) => m.valid_to === null);
+    }
+    
+    // Sort appropriately
+    if (args.removed) {
+      combined.sort((a, b) => {
+        if (a.valid_to === null || b.valid_to === null) return 0;
+        return b.valid_to.localeCompare(a.valid_to);
+      });
+    } else {
+      combined.sort((a, b) => b.valid_from.localeCompare(a.valid_from));
+    }
+
+    return combined.slice(0, args.maxRows);
+  }
+
+  // Regular playlist query
   const pageSize = 1000;
   const out: MembershipRow[] = [];
   let from = 0;

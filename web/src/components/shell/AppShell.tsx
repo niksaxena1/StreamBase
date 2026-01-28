@@ -2,8 +2,8 @@ import { ReactNode } from "react";
 import Link from "next/link";
 
 import { LogoMark } from "@/components/LogoMark";
-import { SideRail } from "@/components/shell/SideRail";
-import { MobileNav } from "@/components/shell/MobileNav";
+import { SideRailWithBadge } from "@/components/shell/SideRailWithBadge";
+import { MobileNavWithBadge } from "@/components/shell/MobileNavWithBadge";
 import { Breadcrumbs } from "@/components/shell/Breadcrumbs";
 import { LogoutButton } from "@/components/shell/LogoutButton";
 import { ThemeToggle } from "@/components/shell/ThemeToggle";
@@ -28,7 +28,7 @@ export function AppShell(props: { children: ReactNode }) {
       </div>
 
       <div className="mx-auto flex w-full max-w-[1600px] gap-3 px-3 py-3 pb-24 sm:pb-3">
-        <SideRail />
+        <SideRailWithBadge />
 
         <div className="flex min-w-0 flex-1 flex-col gap-3">
           {/* Top bar with breadcrumbs (glass) */}
@@ -65,7 +65,7 @@ export function AppShell(props: { children: ReactNode }) {
       </div>
 
       {/* Mobile Navigation */}
-      <MobileNav />
+      <MobileNavWithBadge />
     </div>
   );
 }
