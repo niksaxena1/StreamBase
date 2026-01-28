@@ -20,14 +20,15 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const hasAuthCookie = request.cookies
-    .getAll()
-    .some((c) => c.name.startsWith("sb-") || c.name.includes("supabase"));
+  // Important: keep this check lightweight.
+  // We only gate on presence of Supabase cookies; we do NOT call Supabase here.
+  const cookieHeader = request.headers.get("cookie") ?? "";
+  const hasAuthCookie = cookieHeader.includes("sb-") || cookieHeader.includes("supabase");
 
   if (!hasAuthCookie) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = "/login";
-    loginUrl.searchParams.set("next", pathname);
+    loginUrl.searchParams.set("next", `${pathname}${request.nextUrl.search}`);
     return NextResponse.redirect(loginUrl);
   }
 
@@ -35,6 +36,18 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // Only run auth gating on protected app routes (avoid extra work on every request).
+  // Static assets are already excluded above, but narrowing the matcher reduces middleware invocations.
+  matcher: [
+    "/",
+    "/artists/:path*",
+    "/catalog/:path*",
+    "/tracks/:path*",
+    "/playlists/:path*",
+    "/collectors/:path*",
+    "/health/:path*",
+    "/exports/:path*",
+    "/api/exports/:path*",
+  ],
 };
 
