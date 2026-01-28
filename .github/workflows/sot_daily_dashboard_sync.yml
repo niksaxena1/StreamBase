@@ -11,6 +11,11 @@ on:
         required: false
         type: boolean
         default: false
+      add_only:
+        description: "Add-only mode (never remove from dashboards)"
+        required: false
+        type: boolean
+        default: false
       limit:
         description: "Run only first N tasks (for testing)"
         required: false
@@ -49,10 +54,11 @@ jobs:
           SOT_EMAIL: ${{ secrets.SOT_EMAIL }}
           SOT_PASSWORD: ${{ secrets.SOT_PASSWORD }}
         run: |
-          DRY="--fail-on-errors --headless"
-          if [ "${{ inputs.dry_run }}" = "true" ]; then DRY="$DRY --dry-run"; fi
-          if [ -n "${{ inputs.limit }}" ]; then DRY="$DRY --limit ${{ inputs.limit }}"; fi
-          python scripts/sot_sync_dashboards.py --config config/playlists.csv --storage-state sot_state.json $DRY
+          ARGS="--headless"
+          if [ "${{ inputs.dry_run }}" = "true" ]; then ARGS="$ARGS --dry-run"; fi
+          if [ "${{ inputs.add_only }}" = "true" ]; then ARGS="$ARGS --no-sync"; fi
+          if [ -n "${{ inputs.limit }}" ]; then ARGS="$ARGS --limit ${{ inputs.limit }}"; fi
+          python scripts/sot_sync_dashboards.py --config config/playlists.csv --storage-state sot_state.json $ARGS
 
       - name: Upload sync log artifact
         if: always()

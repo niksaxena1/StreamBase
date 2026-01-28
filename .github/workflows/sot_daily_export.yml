@@ -1,5 +1,9 @@
 name: SOT Daily Export
 
+permissions:
+  actions: read
+  contents: read
+
 on:
   schedule:
     # Primary run + a 1h-later fallback to reduce missed schedules.

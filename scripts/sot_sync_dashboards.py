@@ -533,49 +533,8 @@ def run_sync(
                 print("✅ Already mirrored. Nothing to do.")
                 continue
 
-            # Remove first
-            removed_ok = 0
-            removed_err = 0
-            if not no_sync and to_remove:
-                print("🧹 Removing extras…")
-                start = time.time()
-                last_update = 0.0
-                total = len(to_remove)
-
-                for i, track_url in enumerate(to_remove, start=1):
-                    try:
-                        page.goto(track_url, wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
-                        if is_logged_out(page) and not ensure_logged_in(page, email=email, password=password):
-                            raise RuntimeError("logged_out")
-                        page.get_by_role("button", name="Add to Dashboard").wait_for(timeout=BTN_TIMEOUT_MS)
-                        fast_pause(NAV_PAUSE_MIN, NAV_PAUSE_MAX)
-                        result = click_dashboard_toggle(page, task.dashboard_name)
-                        if result == "toggled":
-                            removed_ok += 1
-                            log_row(log_path, task, i, track_url, "removed", f"Removed from -> {task.dashboard_name}")
-                        else:
-                            removed_err += 1
-                            log_row(log_path, task, i, track_url, "remove_error", result)
-                    except PWTimeout as e:
-                        removed_err += 1
-                        log_row(log_path, task, i, track_url, "remove_timeout", str(e))
-                    except Exception as e:
-                        removed_err += 1
-                        log_row(log_path, task, i, track_url, "remove_error", repr(e))
-
-                    if time.time() - last_update >= 1.0 or i == total:
-                        print_progress_line(
-                            label=f"REMOVE {task_label}",
-                            done=i,
-                            total=total,
-                            ok=removed_ok,
-                            errors=removed_err,
-                            start_time=start,
-                            force_newline=(i == total),
-                        )
-                        last_update = time.time()
-
-            # Add
+            # Add first (safer): if the job fails mid-run, we prefer leaving extra tracks
+            # rather than accidentally removing a lot and not completing additions.
             added_ok = 0
             added_err = 0
             if to_add:
@@ -612,6 +571,48 @@ def run_sync(
                             total=total,
                             ok=added_ok,
                             errors=added_err,
+                            start_time=start,
+                            force_newline=(i == total),
+                        )
+                        last_update = time.time()
+
+            # Remove after add (mirror mode only).
+            removed_ok = 0
+            removed_err = 0
+            if not no_sync and to_remove:
+                print("🧹 Removing extras…")
+                start = time.time()
+                last_update = 0.0
+                total = len(to_remove)
+
+                for i, track_url in enumerate(to_remove, start=1):
+                    try:
+                        page.goto(track_url, wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
+                        if is_logged_out(page) and not ensure_logged_in(page, email=email, password=password):
+                            raise RuntimeError("logged_out")
+                        page.get_by_role("button", name="Add to Dashboard").wait_for(timeout=BTN_TIMEOUT_MS)
+                        fast_pause(NAV_PAUSE_MIN, NAV_PAUSE_MAX)
+                        result = click_dashboard_toggle(page, task.dashboard_name)
+                        if result == "toggled":
+                            removed_ok += 1
+                            log_row(log_path, task, i, track_url, "removed", f"Removed from -> {task.dashboard_name}")
+                        else:
+                            removed_err += 1
+                            log_row(log_path, task, i, track_url, "remove_error", result)
+                    except PWTimeout as e:
+                        removed_err += 1
+                        log_row(log_path, task, i, track_url, "remove_timeout", str(e))
+                    except Exception as e:
+                        removed_err += 1
+                        log_row(log_path, task, i, track_url, "remove_error", repr(e))
+
+                    if time.time() - last_update >= 1.0 or i == total:
+                        print_progress_line(
+                            label=f"REMOVE {task_label}",
+                            done=i,
+                            total=total,
+                            ok=removed_ok,
+                            errors=removed_err,
                             start_time=start,
                             force_newline=(i == total),
                         )
