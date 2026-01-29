@@ -50,7 +50,7 @@ export function PlaylistDashboardControls(props: {
   }
 
   return (
-    <div className="sb-card p-3">
+    <div className="sticky top-0 z-20 sb-card p-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <div className="text-xs font-medium" style={{ color: "var(--sb-text)" }}>Playlist</div>

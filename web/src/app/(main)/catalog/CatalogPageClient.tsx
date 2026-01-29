@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ExternalLink, User, ChevronRight } from "lucide-react";
+import { ExternalLink, User, ChevronRight, Download } from "lucide-react";
 import { formatDateISO, formatInt } from "@/lib/format";
 import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/GlassTable";
 import { CatalogMetricSelector, type Metric } from "./CatalogMetricSelector";
@@ -27,7 +27,13 @@ type DailyDataPoint = {
 
 type ArtistOption = { id: string; name: string; imageUrl?: string | null };
 type TrackOption = { isrc: string; name: string; albumImageUrl?: string | null };
-type TopTrack = { isrc: string; name: string | null; total: number | null; daily: number | null };
+type TopTrack = {
+  isrc: string;
+  name: string | null;
+  total: number | null;
+  daily: number | null;
+  albumImageUrl: string | null;
+};
 type TrackSeriesPoint = { date: string; value: number };
 type TrackDailyPoint = { date: string; daily: number; ma7?: number | null };
 type SelectedTrack = {
@@ -81,6 +87,41 @@ export function CatalogPageClient(props: {
     return `?${u.toString()}`;
   }
 
+  function downloadAsCSV(data: TopTrack[], filename: string, isDaily: boolean) {
+    const headers = ["Track", "ISRC", isDaily ? "Daily" : "Total"];
+    const rows = data.map((t) => [
+      t.name ?? t.isrc,
+      t.isrc,
+      isDaily 
+        ? (t.daily === null ? "" : String(t.daily))
+        : (t.total === null ? "" : String(t.total))
+    ]);
+
+    const csvContent = [
+      headers.join(","),
+      ...rows.map((row) => 
+        row.map((cell) => {
+          // Escape quotes and wrap in quotes if contains comma, quote, or newline
+          const cellStr = String(cell);
+          if (cellStr.includes(",") || cellStr.includes('"') || cellStr.includes("\n")) {
+            return `"${cellStr.replace(/"/g, '""')}"`;
+          }
+          return cellStr;
+        }).join(",")
+      )
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", filename);
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
   return (
     <>
       <div className="flex items-end justify-between gap-4">
@@ -99,7 +140,7 @@ export function CatalogPageClient(props: {
         <CatalogMetricSelector metric={metric} setMetric={setMetric} />
       </div>
 
-      <div className="relative z-20 rounded-xl border border-lime-500/20 bg-lime-500/10 p-3 shadow-sm backdrop-blur-sm dark:bg-lime-400/10 dark:border-lime-400/20">
+      <div className="sticky top-0 z-20 rounded-xl border border-lime-500/20 bg-lime-500/10 p-3 shadow-sm backdrop-blur-sm dark:bg-lime-400/10 dark:border-lime-400/20">
         <div className="flex items-start gap-2">
           <button
             type="button"
@@ -229,14 +270,41 @@ export function CatalogPageClient(props: {
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             <div className="space-y-3">
               <div className="flex items-end justify-between px-1">
-                <h2 className="text-sm font-semibold">Top tracks (cumulative)</h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-sm font-semibold">Top tracks (cumulative)</h2>
+                  <button
+                    type="button"
+                    onClick={() => downloadAsCSV(
+                      props.topByCumulative,
+                      `top-tracks-cumulative-${props.artistName.replace(/[^a-z0-9]/gi, "-").toLowerCase()}-${new Date().toISOString().split("T")[0]}.csv`,
+                      false
+                    )}
+                    className="inline-flex items-center justify-center p-0 transition-colors hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
+                    title="Download as CSV"
+                    style={{ color: "var(--sb-muted)" }}
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                  </button>
+                </div>
                 <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
                   Latest snapshot totals
                 </div>
               </div>
-              <GlassTable headers={["Track", "ISRC", "Total"]}>
+              <GlassTable headers={["", "Track", "ISRC", "Total"]}>
                 {props.topByCumulative.map((t) => (
                   <TableRow key={t.isrc}>
+                    <TableCell>
+                      {t.albumImageUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={t.albumImageUrl}
+                          alt="Album cover"
+                          className="h-8 w-8 rounded-lg object-cover sb-ring"
+                        />
+                      ) : (
+                        <div className="h-8 w-8 rounded-lg sb-ring bg-white/60" />
+                      )}
+                    </TableCell>
                     <TableCell>
                       <Link
                         href={`/tracks/${t.isrc}`}
@@ -252,21 +320,48 @@ export function CatalogPageClient(props: {
                   </TableRow>
                 ))}
                 {!props.topByCumulative.length && (
-                  <EmptyState colSpan={3} message="No track totals found" />
+                  <EmptyState colSpan={4} message="No track totals found" />
                 )}
               </GlassTable>
             </div>
 
             <div className="space-y-3">
               <div className="flex items-end justify-between px-1">
-                <h2 className="text-sm font-semibold">Top tracks (daily)</h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-sm font-semibold">Top tracks (daily)</h2>
+                  <button
+                    type="button"
+                    onClick={() => downloadAsCSV(
+                      props.topByDaily,
+                      `top-tracks-daily-${props.artistName.replace(/[^a-z0-9]/gi, "-").toLowerCase()}-${new Date().toISOString().split("T")[0]}.csv`,
+                      true
+                    )}
+                    className="inline-flex items-center justify-center p-0 transition-colors hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
+                    title="Download as CSV"
+                    style={{ color: "var(--sb-muted)" }}
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                  </button>
+                </div>
                 <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
                   Best-effort (needs yesterday+today)
                 </div>
               </div>
-              <GlassTable headers={["Track", "ISRC", "Daily"]}>
+              <GlassTable headers={["", "Track", "ISRC", "Daily"]}>
                 {props.topByDaily.map((t) => (
                   <TableRow key={t.isrc}>
+                    <TableCell>
+                      {t.albumImageUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={t.albumImageUrl}
+                          alt="Album cover"
+                          className="h-8 w-8 rounded-lg object-cover sb-ring"
+                        />
+                      ) : (
+                        <div className="h-8 w-8 rounded-lg sb-ring bg-white/60" />
+                      )}
+                    </TableCell>
                     <TableCell>
                       <Link
                         href={`/tracks/${t.isrc}`}
@@ -284,7 +379,7 @@ export function CatalogPageClient(props: {
                   </TableRow>
                 ))}
                 {!props.topByDaily.length && (
-                  <EmptyState colSpan={3} message="No daily deltas found" />
+                  <EmptyState colSpan={4} message="No daily deltas found" />
                 )}
               </GlassTable>
             </div>

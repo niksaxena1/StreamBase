@@ -374,6 +374,7 @@ export default async function CatalogPage({
       total: latestByIsrc.get(id) ?? null,
       daily: null,
       name: artistTracks.find((t) => t.isrc === id)?.name ?? null,
+      albumImageUrl: artistTracks.find((t) => t.isrc === id)?.spotify_album_image_url ?? null,
     }))
     .filter((r) => r.total !== null)
     .sort((a, b) => Number(b.total) - Number(a.total))
@@ -389,6 +390,7 @@ export default async function CatalogPage({
         daily,
         total: latestV ?? null,
         name: artistTracks.find((t) => t.isrc === id)?.name ?? null,
+        albumImageUrl: artistTracks.find((t) => t.isrc === id)?.spotify_album_image_url ?? null,
       };
     })
     .filter((r) => r.daily !== null)
