@@ -7,6 +7,7 @@ import { MobileNavWithBadge } from "@/components/shell/MobileNavWithBadge";
 import { Breadcrumbs } from "@/components/shell/Breadcrumbs";
 import { LogoutButton } from "@/components/shell/LogoutButton";
 import { ThemeToggle } from "@/components/shell/ThemeToggle";
+import { SearchBar } from "@/components/shell/SearchBar";
 import { IngestionStatusBanner } from "@/components/health/IngestionStatusBanner";
 
 export function AppShell(props: { children: ReactNode }) {
@@ -45,6 +46,10 @@ export function AppShell(props: { children: ReactNode }) {
                   </div>
                   <Breadcrumbs />
                 </div>
+              </div>
+
+              <div className="flex items-center gap-3 flex-1 max-w-md">
+                <SearchBar />
               </div>
 
               <div className="flex items-center gap-2">
