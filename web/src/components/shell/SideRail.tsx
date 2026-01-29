@@ -31,7 +31,6 @@ export const navItems: Item[] = [
     label: "Collectors",
     icon: (a) => <IconUser active={a} />,
   },
-  { href: "/tracks", label: "Tracks", icon: (a) => <IconMusic active={a} /> },
   { href: "/health", label: "Health", icon: (a) => <IconPulse active={a} /> },
 ];
 
@@ -257,6 +256,23 @@ export function IconHome(props: { active: boolean }) {
         strokeLinecap="round"
         strokeLinejoin="round"
       />
+    </svg>
+  );
+}
+
+export function IconMusic(props: { active: boolean }) {
+  const iconClass = "text-current";
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className={iconClass}>
+      <path
+        d="M9 18V5L21 3V16"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle cx="6" cy="18" r="3" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="18" cy="16" r="3" stroke="currentColor" strokeWidth="1.8" />
     </svg>
   );
 }

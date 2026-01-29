@@ -7,7 +7,6 @@ const items = [
   { href: "/playlists", label: "Playlist Dash" },
   { href: "/collectors", label: "Collectors" },
   { href: "/catalog", label: "Catalog" },
-  { href: "/tracks", label: "Tracks" },
   { href: "/playlists", label: "Playlists" },
   { href: "/health", label: "System Health" },
 ];
