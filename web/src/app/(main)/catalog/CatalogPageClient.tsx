@@ -491,6 +491,9 @@ export function CatalogPageClient(props: {
           const totalLabel = trackMode === "revenue" ? "Total revenue" : "Total streams";
           const statSubtitle = trackMode === "revenue" ? "Est. revenue" : "Net streams";
 
+          // Use emerald for revenue, lime for streams (tracks don't have a separate mode like artist/playlist)
+          const trackChartColor = trackMode === "revenue" ? "#10b981" : "#c7f33c";
+
           return (
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
               <SpotlightCard className="lg:col-span-7 p-3">
@@ -505,6 +508,7 @@ export function CatalogPageClient(props: {
                     yTickFormat={yTickFormat}
                     heightPx={220}
                     isCumulative={true}
+                    color={trackChartColor}
                   />
                 </div>
               </SpotlightCard>
@@ -520,6 +524,7 @@ export function CatalogPageClient(props: {
                     valueFormat={valueFormat}
                     yTickFormat={yTickFormat}
                     heightPx={220}
+                    dailyColor={trackChartColor}
                   />
                 </div>
               </SpotlightCard>

@@ -27,11 +27,9 @@ export const dynamic = "force-dynamic";
 export default async function Home({
   searchParams,
 }: {
-  // See note in other pages: keep this as `any` to satisfy Next's generated PageProps typing
-  // while avoiding `await searchParams` (which breaks static generation in Next 16).
-  searchParams?: any;
+  searchParams?: Promise<{ scope?: string; range?: string; daily?: string }>;
 }) {
-  const sp = (searchParams ?? {}) as { scope?: string; range?: string; daily?: string };
+  const sp = (await searchParams) ?? {};
   const scope = (sp.scope ?? "all_catalog").toLowerCase();
   const rangeDays = Math.max(7, Math.min(365, Number(sp.range ?? "30") || 30));
 
@@ -180,7 +178,6 @@ export default async function Home({
         dailyStreamsValue={getDailyStreams(latest as PlaylistDailyStatsRow | null) ?? 0}
         totalStreamsValue={latest?.total_streams_cumulative ?? 0}
         rangeDays={rangeDays}
-        latestDate={latest?.date ? dataDateFromRunDate(latest.date) : null}
       />
 
       {/* Additional Stat Cards */}
@@ -244,9 +241,8 @@ function computeRollingAvg7(desc: Array<{ date: string; daily: number }>) {
   for (let i = 0; i < asc.length; i++) {
     const start = Math.max(0, i - 6);
     const window = asc.slice(start, i + 1).map((p) => Number(p.daily ?? 0));
-    const has7 = window.length >= 7;
     const avg = window.reduce((a, b) => a + b, 0) / window.length;
-    outAsc.push({ date: asc[i].date, daily: asc[i].daily, ma7: has7 ? avg : null });
+    outAsc.push({ date: asc[i].date, daily: asc[i].daily, ma7: avg });
   }
 
   return outAsc.reverse();
@@ -288,12 +284,12 @@ function hrefWith(
   existing: { scope?: string; range?: string; daily?: string },
   patch: { scope?: string; range?: string; daily?: string },
 ) {
-  const u = new URL("https://example.com/");
+  const params = new URLSearchParams();
   const scope = (patch.scope ?? existing.scope ?? "all_catalog").toString();
   const range = (patch.range ?? existing.range ?? "30").toString();
-  u.searchParams.set("scope", scope);
-  u.searchParams.set("range", range);
-  return `${u.pathname}?${u.searchParams.toString()}`;
+  params.set("scope", scope);
+  params.set("range", range);
+  return `/?${params.toString()}`;
 }
 
 function ToggleLink(props: { href: string; active: boolean; children: React.ReactNode }) {

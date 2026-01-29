@@ -17,9 +17,8 @@ function computeRollingAvg7(desc: Array<{ date: string; daily: number }>) {
   for (let i = 0; i < asc.length; i++) {
     const start = Math.max(0, i - 6);
     const window = asc.slice(start, i + 1).map((p) => Number(p.daily ?? 0));
-    const has7 = window.length >= 7;
     const avg = window.reduce((a, b) => a + b, 0) / window.length;
-    outAsc.push({ date: asc[i].date, daily: asc[i].daily, ma7: has7 ? avg : null });
+    outAsc.push({ date: asc[i].date, daily: asc[i].daily, ma7: avg });
   }
 
   return outAsc.reverse();
@@ -111,6 +110,9 @@ export function CatalogMetricsClient(props: {
   const stat28d = props.metric === "revenue" ? props.artist28d * STREAM_PAYOUT_USD : props.artist28d;
   const stat30d = props.metric === "revenue" ? props.artist30d * STREAM_PAYOUT_USD : props.artist30d;
 
+  // Use different colors based on metric: blue for tracks, emerald for revenue, lime for streams
+  const chartColor = props.metric === "tracks" ? "#3b82f6" : props.metric === "revenue" ? "#10b981" : "#c7f33c";
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
@@ -133,6 +135,7 @@ export function CatalogMetricsClient(props: {
               yTickFormat={yTickFormat}
               heightPx={220}
               isCumulative={true}
+              color={chartColor}
             />
           </div>
         </SpotlightCard>
@@ -155,6 +158,7 @@ export function CatalogMetricsClient(props: {
               valueFormat={valueFormat}
               yTickFormat={yTickFormat}
               heightPx={220}
+              dailyColor={chartColor}
             />
           </div>
         </SpotlightCard>

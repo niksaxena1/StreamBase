@@ -56,6 +56,107 @@ function formatTooltipDate(dateString: string): string {
   return `${dayOfWeek}, ${day}${getOrdinalSuffix(day)} ${month} ${year}`;
 }
 
+type TooltipPayload = {
+  name: string;
+  value: number | string;
+  dataKey: string;
+};
+
+function CustomTooltip({
+  active,
+  label,
+  payload,
+  valueLabel,
+  fmtValue,
+  isDark,
+  chartColor,
+}: {
+  active?: boolean;
+  label?: string;
+  payload?: TooltipPayload[];
+  valueLabel: string;
+  fmtValue: (n: number) => string;
+  isDark: boolean;
+  chartColor: string;
+}) {
+  if (!active || !payload || payload.length === 0) return null;
+
+  // Sort payload: daily first, then ma7
+  const sorted = [...payload].sort((a, b) => {
+    const aIsMA = a.dataKey === "ma7";
+    const bIsMA = b.dataKey === "ma7";
+    if (aIsMA && !bIsMA) return 1;
+    if (!aIsMA && bIsMA) return -1;
+    return 0;
+  });
+
+  const mainValue = sorted[0];
+  const mainValueFormatted = fmtValue(Number(mainValue.value ?? 0));
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(mainValueFormatted);
+      // Show notification
+      const notification = document.createElement("div");
+      notification.textContent = "Copied to clipboard!";
+      notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background-color: #22c55e;
+        color: white;
+        padding: 12px 16px;
+        border-radius: 8px;
+        font-size: 14px;
+        z-index: 9999;
+        animation: slideIn 0.3s ease-out;
+      `;
+      document.body.appendChild(notification);
+      setTimeout(() => notification.remove(), 2000);
+    } catch (err) {
+      console.error("Failed to copy:", err);
+    }
+  };
+
+  return (
+    <div
+      className="rounded-lg border p-3 cursor-pointer hover:opacity-80 transition-opacity"
+      style={{
+        backgroundColor: "var(--sb-card)",
+        borderColor: "var(--sb-border)",
+        boxShadow: "var(--sb-shadow-compact)",
+        color: "var(--sb-text)",
+      }}
+      onClick={handleCopy}
+    >
+      {label && (
+        <div className="mb-2 text-xs font-medium">{formatTooltipDate(label)}</div>
+      )}
+      {sorted.map((entry, index) => {
+        const isMA = entry.dataKey === "ma7";
+        const label = isMA ? "MA (7d)" : valueLabel;
+        let value = fmtValue(Number(entry.value ?? 0));
+        
+        // Round MA7 to nearest whole number
+        if (isMA) {
+          const numValue = Math.round(Number(entry.value ?? 0));
+          value = fmtValue(numValue);
+        }
+
+        const valueColor = isDark ? chartColor : "var(--sb-text)";
+
+        return (
+          <div key={index} className="text-xs">
+            <span style={{ color: "var(--sb-text)" }}>
+              {label}: <span className="font-bold" style={{ color: valueColor }}>{value}</span>
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function DailyStreamsWithMAChart({
   data,
   valueLabel = "Streams",
@@ -180,19 +281,17 @@ export function DailyStreamsWithMAChart({
             tickFormatter={(value) => fmtYTick(Number(value ?? 0))}
           />
           <Tooltip
-            contentStyle={{
-              backgroundColor: "var(--sb-card)",
-              borderColor: "var(--sb-border)",
-              borderRadius: "10px",
-              boxShadow: "var(--sb-shadow-compact)",
-              color: "var(--sb-text)",
-            }}
-            itemStyle={{ color: "var(--sb-text)" }}
-            formatter={(value, name) => {
-              const label = name === "ma7" ? "MA (7d)" : valueLabel;
-              return [fmtValue(Number(value ?? 0)), label];
-            }}
-            labelFormatter={(label) => formatTooltipDate(label)}
+            content={({ active, label, payload }) => (
+              <CustomTooltip
+                active={active}
+                label={label as string}
+                payload={payload as TooltipPayload[]}
+                valueLabel={valueLabel}
+                fmtValue={fmtValue}
+                isDark={isDark}
+                chartColor={dailyColor}
+              />
+            )}
             cursor={{
               stroke: dailyColor,
               strokeWidth: 1.5,
@@ -228,4 +327,3 @@ export function DailyStreamsWithMAChart({
     </div>
   );
 }
-

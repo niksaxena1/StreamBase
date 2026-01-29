@@ -6,7 +6,6 @@ import { StatCard } from "@/components/StatCard";
 import { SpotlightCard } from "@/components/ui/SpotlightCard";
 import { DailyStreamsChart } from "@/components/charts/DailyStreamsChart";
 import { AnimatedCounter } from "@/components/ui/AnimatedCounter";
-import { formatDateISO } from "@/lib/format";
 
 type ChartData = {
   date: string;
@@ -19,7 +18,6 @@ type InteractiveChartSectionProps = {
   dailyStreamsValue: number;
   totalStreamsValue: number;
   rangeDays: number;
-  latestDate: string | null;
 };
 
 type ChartType = "daily" | "total";
@@ -30,7 +28,6 @@ export function InteractiveChartSection({
   dailyStreamsValue,
   totalStreamsValue,
   rangeDays,
-  latestDate,
 }: InteractiveChartSectionProps) {
   const [selectedChart, setSelectedChart] = useState<ChartType>("daily");
 
@@ -84,19 +81,10 @@ export function InteractiveChartSection({
 
       {/* Chart */}
       <SpotlightCard className="relative p-3">
-        <div className="flex flex-wrap items-end justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <Activity className="h-3.5 w-3.5 opacity-60" />
-            <div className="text-xs font-medium uppercase tracking-wide opacity-70">
-              {currentChart.title}
-            </div>
-          </div>
-          <div className="text-[11px] opacity-60">
-            {latestDate && (
-              <>
-                Last updated <span className="font-mono">{formatDateISO(latestDate)}</span>
-              </>
-            )}
+        <div className="flex items-center gap-2">
+          <Activity className="h-3.5 w-3.5 opacity-60" />
+          <div className="text-xs font-medium uppercase tracking-wide opacity-70">
+            {currentChart.title}
           </div>
         </div>
 

@@ -26,9 +26,8 @@ function rollingAvg7(desc: Array<{ date: string; daily: number }>) {
   for (let i = 0; i < asc.length; i++) {
     const start = Math.max(0, i - 6);
     const window = asc.slice(start, i + 1).map((p) => Number(p.daily ?? 0));
-    const has7 = window.length >= 7;
     const avg = window.reduce((a, b) => a + b, 0) / window.length;
-    outAsc.push({ date: asc[i].date, daily: asc[i].daily, ma7: has7 ? avg : null });
+    outAsc.push({ date: asc[i].date, daily: asc[i].daily, ma7: avg });
   }
 
   return outAsc.reverse();
@@ -93,6 +92,9 @@ export function PlaylistMetricsClient(props: {
     ? 0 // Track count daily is calculated differently
     : (effectiveLatest?.daily_streams_net ?? 0);
 
+  // Use different colors based on metric: blue for tracks, emerald for revenue, lime for streams
+  const chartColor = props.metric === "tracks" ? "#3b82f6" : props.metric === "revenue" ? "#10b981" : "#c7f33c";
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
@@ -116,6 +118,7 @@ export function PlaylistMetricsClient(props: {
               yTickFormat={yTickFormat}
               heightPx={220}
               isCumulative={true}
+              color={chartColor}
             />
           </div>
         </SpotlightCard>
@@ -138,6 +141,7 @@ export function PlaylistMetricsClient(props: {
               valueFormat={valueFormat}
               yTickFormat={yTickFormat}
               heightPx={220}
+              dailyColor={chartColor}
             />
           </div>
         </SpotlightCard>
