@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ExternalLink, User, ChevronRight, Download } from "lucide-react";
+import { ExternalLink, User, ChevronRight, Download, List } from "lucide-react";
 import { formatDateISO, formatInt } from "@/lib/format";
 import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/GlassTable";
 import { CatalogMetricSelector, type Metric } from "./CatalogMetricSelector";
@@ -137,7 +137,17 @@ export function CatalogPageClient(props: {
             )}
           </div>
         </div>
-        <CatalogMetricSelector metric={metric} setMetric={setMetric} />
+        <div className="flex items-center gap-2">
+          <CatalogMetricSelector metric={metric} setMetric={setMetric} />
+          <Link
+            href="/catalog/config"
+            className="sb-ring grid h-8 w-8 place-items-center rounded-full bg-white/70 text-xs font-medium transition hover:bg-white dark:bg-white/10 dark:hover:bg-white/15"
+            aria-label="Catalog config"
+            title="Catalog config"
+          >
+            <List className="h-4 w-4" style={{ color: "var(--sb-text)" }} />
+          </Link>
+        </div>
       </div>
 
       <div className="sticky top-0 z-20 rounded-xl border border-lime-500/20 bg-lime-500/10 p-3 shadow-sm backdrop-blur-sm dark:bg-lime-400/10 dark:border-lime-400/20">
