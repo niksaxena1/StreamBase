@@ -2,6 +2,46 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
 import { getArtists } from "@/lib/spotify";
 
+type SearchResult = {
+  type: "track" | "artist" | "playlist";
+  id: string;
+  name: string;
+  subtitle?: string;
+  imageUrl?: string;
+  trackCount?: number;
+  firstArtistId?: string | null;
+  artistIds?: string[] | null;
+  artistNames?: string[] | null;
+};
+
+function normalizeStringArray(v: unknown): string[] {
+  if (!v) return [];
+  if (Array.isArray(v)) return v.filter((x) => typeof x === "string") as string[];
+  if (typeof v === "string") {
+    try {
+      const parsed = JSON.parse(v);
+      return Array.isArray(parsed)
+        ? (parsed.filter((x) => typeof x === "string") as string[])
+        : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function scoreArtistNameMatch(artistName: string, query: string): number {
+  const a = (artistName ?? "").trim().toLowerCase();
+  const q = (query ?? "").trim().toLowerCase();
+  if (!a || !q) return 0;
+  if (a === q) return 100;
+  if (a.startsWith(q)) return 80;
+  // Prefer word-boundary-ish matches over arbitrary substrings
+  if (a.includes(` ${q}`)) return 70;
+  if (a.includes(q)) return 60;
+  return 0;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
@@ -12,35 +52,45 @@ export async function GET(request: NextRequest) {
     }
 
     const sb = await supabaseServer();
-    const lowerQuery = query.toLowerCase();
-    const artists: any[] = [];
-    const tracks: any[] = [];
-    const playlists: any[] = [];
+    const artists: SearchResult[] = [];
+    const tracks: SearchResult[] = [];
+    const playlists: SearchResult[] = [];
 
     // 1. Search for artists first (prioritized)
-    const { data: allTracks } = await sb
-      .from("tracks")
-      .select("spotify_artist_ids,spotify_artist_names")
-      .not("spotify_artist_ids", "is", null)
-      .limit(100);
-
-    const artistMap = new Map<string, string>();
-    if (allTracks) {
-      for (const track of allTracks) {
-        const ids = track.spotify_artist_ids || [];
-        const names = track.spotify_artist_names || [];
-        for (let i = 0; i < Math.min(ids.length, names.length); i++) {
-          if (ids[i] && names[i] && names[i].toLowerCase().includes(lowerQuery)) {
-            if (!artistMap.has(ids[i])) {
-              artistMap.set(ids[i], names[i]);
-            }
-          }
-        }
-      }
+    // IMPORTANT: Do NOT scan tracks in app code. Use a SQL function to search
+    // across all tracks efficiently and correctly.
+    const { data: artistRows, error: artistErr } = await sb.rpc("search_artists", {
+      q: query,
+      max_results: 20,
+    });
+    if (artistErr) {
+      // If the DB function isn't deployed yet, fail soft (tracks/playlists can still work).
+      console.warn("search_artists RPC failed:", artistErr);
     }
 
+    // Determine the "primary" artist match for this query so we can order tracks.
+    // Example: query "dosa" should prioritize artist "DOSA" tracks above "8DOSA".
+    const primaryArtistId: string | null = (() => {
+      let bestId: string | null = null;
+      let bestScore = -1;
+      for (const r of artistRows ?? []) {
+        const id = String((r as any).spotify_artist_id ?? "");
+        const name = String((r as any).spotify_artist_name ?? "");
+        if (!id || !name) continue;
+        const s = scoreArtistNameMatch(name, query);
+        if (s > bestScore) {
+          bestScore = s;
+          bestId = id;
+        }
+      }
+      return bestId;
+    })();
+
+    const artistIds = (artistRows ?? [])
+      .map((r: any) => String(r.spotify_artist_id ?? ""))
+      .filter(Boolean);
+
     // Fetch artist images from Spotify
-    const artistIds = Array.from(artistMap.keys());
     let artistImages = new Map<string, string | null>();
     if (artistIds.length > 0) {
       const artistDataMap = await getArtists(artistIds);
@@ -49,58 +99,68 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Get track counts for artists efficiently
-    const artistTrackCounts = new Map<string, number>();
-    if (artistIds.length > 0) {
-      const { data: trackCountData } = await sb
-        .from("tracks")
-        .select("spotify_artist_ids")
-        .contains("spotify_artist_ids", artistIds);
-      
-      // Count tracks per artist from the result set
-      if (trackCountData) {
-        for (const track of trackCountData) {
-          const ids = track.spotify_artist_ids || [];
-          for (const id of ids) {
-            if (artistTrackCounts.has(id)) {
-              artistTrackCounts.set(id, (artistTrackCounts.get(id) || 0) + 1);
-            } else if (artistIds.includes(id)) {
-              artistTrackCounts.set(id, 1);
-            }
-          }
-        }
-      }
-    }
-
-    for (const [artistId, artistName] of artistMap) {
+    for (const r of artistRows ?? []) {
+      const id = String((r as any).spotify_artist_id ?? "");
+      const name = String((r as any).spotify_artist_name ?? "");
+      const trackCount = Number((r as any).track_count ?? 0);
+      if (!id || !name) continue;
       artists.push({
         type: "artist",
-        id: artistId,
-        name: artistName,
-        imageUrl: artistImages.get(artistId) || undefined,
-        trackCount: artistTrackCounts.get(artistId) || 0,
+        id,
+        name,
+        imageUrl: artistImages.get(id) || undefined,
+        trackCount,
       });
     }
 
-    // 2. Search for tracks
+    // 2. Search for tracks by name and ISRC
     const { data: tracksData } = await sb
       .from("tracks")
       .select("isrc,name,spotify_artist_names,spotify_artist_ids,spotify_album_image_url")
       .or(`isrc.ilike.%${query}%,name.ilike.%${query}%`)
       .limit(50);
+    
+    // If query has multiple words, also try splitting and searching for individual words
+    // e.g. "Revelries Somewhere" → also search for "Revelries" (artist) and "Somewhere" (track)
+    let additionalTracksData: any[] = [];
+    const queryParts = query.split(/\s+/).filter(Boolean);
+    if (queryParts.length > 1) {
+      // Try searching for tracks matching ANY of the query parts
+      const { data: extraTracks } = await sb
+        .from("tracks")
+        .select("isrc,name,spotify_artist_names,spotify_artist_ids,spotify_album_image_url")
+        .or(queryParts.map(part => `name.ilike.%${part}%`).join(","))
+        .limit(50);
+      additionalTracksData = extraTracks ?? [];
+    }
 
-    if (tracksData) {
+    // Deduplicate by isrc and convert to search results
+    const seenIsrcs = new Set<string>();
+    const allTracksData = [...(tracksData ?? []), ...additionalTracksData];
+    
+    if (allTracksData.length > 0) {
       tracks.push(
-        ...tracksData.map((track: any) => ({
-          type: "track",
-          id: track.isrc,
-          name: track.name || track.isrc,
-          subtitle: track.spotify_artist_names?.join(", ") || "Unknown Artist",
-          imageUrl: track.spotify_album_image_url || undefined,
-          firstArtistId: track.spotify_artist_ids?.[0] || null,
-          artistIds: track.spotify_artist_ids || null,
-          artistNames: track.spotify_artist_names || null,
-        }))
+        ...allTracksData
+          .filter((track: any) => {
+            if (seenIsrcs.has(track.isrc)) return false;
+            seenIsrcs.add(track.isrc);
+            return true;
+          })
+          .map((track: any): SearchResult => {
+            const artistNames = normalizeStringArray(track.spotify_artist_names);
+            const artistIds = normalizeStringArray(track.spotify_artist_ids);
+            
+            return {
+              type: "track" as const,
+              id: track.isrc,
+              name: track.name || track.isrc,
+              subtitle: artistNames?.join(", ") || "Unknown Artist",
+              imageUrl: track.spotify_album_image_url || undefined,
+              firstArtistId: artistIds?.[0] || null,
+              artistIds: artistIds || null,
+              artistNames: artistNames || null,
+            };
+          })
       );
     }
 
@@ -109,23 +169,29 @@ export async function GET(request: NextRequest) {
       const { data: artistTracks } = await sb
         .from("tracks")
         .select("isrc,name,spotify_album_image_url,spotify_artist_names,spotify_artist_ids")
-        .contains("spotify_artist_ids", artistIds)
+        // IMPORTANT: "contains" with an array means the track must contain *all* artistIds.
+        // When multiple artists match (e.g. searching "dosa" returns both DOSA and 8DOSA),
+        // that can yield zero tracks. We want ANY overlap.
+        .overlaps("spotify_artist_ids", artistIds)
         .order("last_seen", { ascending: false })
         .limit(200);
 
       if (artistTracks) {
         for (const track of artistTracks) {
+          const artistNames = normalizeStringArray(track.spotify_artist_names);
+          const artistIdList = normalizeStringArray(track.spotify_artist_ids);
+          
           // Avoid duplicates
           if (!tracks.find(r => r.type === "track" && r.id === track.isrc)) {
             tracks.push({
               type: "track",
               id: track.isrc,
               name: track.name,
-              subtitle: track.spotify_artist_names?.join(", ") || "Unknown Artist",
+              subtitle: artistNames?.join(", ") || "Unknown Artist",
               imageUrl: track.spotify_album_image_url || undefined,
-              firstArtistId: track.spotify_artist_ids?.[0] || null,
-              artistIds: track.spotify_artist_ids || null,
-              artistNames: track.spotify_artist_names || null,
+              firstArtistId: artistIdList?.[0] || null,
+              artistIds: artistIdList || null,
+              artistNames: artistNames || null,
             });
           }
         }
@@ -158,6 +224,18 @@ export async function GET(request: NextRequest) {
           trackCount: count || 0,
         });
       }
+    }
+
+    // Prefer tracks from the best matching artist first (stable).
+    if (primaryArtistId) {
+      const preferred: SearchResult[] = [];
+      const others: SearchResult[] = [];
+      for (const t of tracks) {
+        const ids = t.artistIds ?? [];
+        if (ids.includes(primaryArtistId)) preferred.push(t);
+        else others.push(t);
+      }
+      tracks.splice(0, tracks.length, ...preferred, ...others);
     }
 
     // Combine results with artists first, then tracks, then playlists

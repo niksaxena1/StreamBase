@@ -36,6 +36,7 @@ class SyncTask:
     dashboard_url: str
     dashboard_name: str
     sot_playlist_id: str
+    min_rows: int = 0
 
 
 def fast_pause(a: float, b: float) -> None:
@@ -55,7 +56,115 @@ def format_hhmmss(seconds: float) -> str:
 
 
 def is_logged_out(page) -> bool:
-    return "/login" in (page.url or "")
+    # SpotOnTrack may either redirect to /login or render an in-page login form.
+    url = (page.url or "")
+    if "/login" in url:
+        return True
+    try:
+        # Heuristic: presence of a password field + login button is a strong signal.
+        if page.locator("input[type='password']").count() > 0:
+            if page.get_by_role("button", name="Log in", exact=False).count() > 0:
+                return True
+            if page.get_by_role("button", name="Login", exact=False).count() > 0:
+                return True
+            if page.get_by_role("button", name="Sign in", exact=False).count() > 0:
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def page_looks_blocked(page) -> bool:
+    """
+    Detect common anti-bot / outage pages that yield zero tracks but are not real empties.
+    This must be best-effort and non-throwing.
+    """
+    try:
+        title = (page.title() or "").lower()
+        if any(x in title for x in ["just a moment", "access denied", "forbidden", "temporarily unavailable"]):
+            return True
+    except Exception:
+        pass
+
+    needles = [
+        "checking your browser",
+        "just a moment",
+        "access denied",
+        "forbidden",
+        "too many requests",
+        "temporarily unavailable",
+        "service unavailable",
+        "something went wrong",
+    ]
+    for n in needles:
+        try:
+            if page.locator(f"text={n}").count() > 0:
+                return True
+        except Exception:
+            pass
+    return False
+
+
+def goto_best_effort(page, url: str) -> None:
+    """
+    Prefer networkidle (more reliable for JS-rendered lists), but fall back to domcontentloaded.
+    """
+    try:
+        page.goto(url, wait_until="networkidle", timeout=NAV_TIMEOUT_MS)
+        return
+    except PWTimeout:
+        pass
+    except Exception:
+        pass
+    page.goto(url, wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
+
+
+def wait_for_tracks_or_empty_state(page, timeout_ms: int = 15_000) -> None:
+    """
+    Wait for either some track links to appear or an explicit empty state to render.
+    Avoids scanning too early (which can incorrectly yield 0 tracks).
+    """
+    start = time.time()
+    while (time.time() - start) * 1000.0 < timeout_ms:
+        if page_looks_blocked(page):
+            return
+        try:
+            if page.locator("a[href*='/tracks/']").count() > 0:
+                return
+        except Exception:
+            pass
+        # Empty-state heuristics (best-effort; wording may vary).
+        try:
+            if page.locator("text=/\\b0\\s+tracks\\b/i").count() > 0:
+                return
+            if page.locator("text=/\\bno\\s+tracks\\b/i").count() > 0:
+                return
+            if page.locator("text=/\\bno\\s+data\\b/i").count() > 0:
+                return
+        except Exception:
+            pass
+        time.sleep(0.25)
+
+
+def debug_dump(page, slug: str) -> Tuple[str, str]:
+    """
+    Save HTML + screenshot for post-mortem debugging.
+    Returns (html_path, png_path). Best-effort; failures return ("","").
+    """
+    out_dir = Path(".artifacts") / "debug"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    safe = "".join([c if (c.isalnum() or c in ("-", "_")) else "_" for c in slug])[:80]
+    html_path = out_dir / f"{safe}.html"
+    png_path = out_dir / f"{safe}.png"
+    try:
+        html_path.write_text(page.content(), encoding="utf-8")
+    except Exception:
+        html_path = Path("")
+    try:
+        page.screenshot(path=str(png_path), full_page=True)
+    except Exception:
+        png_path = Path("")
+    return (str(html_path) if str(html_path) else "", str(png_path) if str(png_path) else "")
 
 
 def try_login(page, email: str, password: str) -> bool:
@@ -176,8 +285,9 @@ def try_click_refresh_now(page) -> bool:
 
 
 def scan_dashboard_tracks(page, dashboard_url: str) -> Set[str]:
-    page.goto(dashboard_url, wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
+    goto_best_effort(page, dashboard_url)
     fast_pause(0.35, 0.75)
+    wait_for_tracks_or_empty_state(page, timeout_ms=12_000)
 
     selectors = ["a[href*='/tracks/']", "a[href^='/tracks/']"]
 
@@ -199,8 +309,9 @@ def scan_dashboard_tracks(page, dashboard_url: str) -> Set[str]:
 
 
 def scan_playlist_tracks(page, playlist_url: str) -> List[str]:
-    page.goto(playlist_url, wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
+    goto_best_effort(page, playlist_url)
     fast_pause(0.5, 1.1)
+    wait_for_tracks_or_empty_state(page, timeout_ms=15_000)
 
     selectors = ["a[href*='/tracks/']", "a[href^='/tracks/']"]
 
@@ -257,15 +368,24 @@ def scan_playlist_tracks(page, playlist_url: str) -> List[str]:
 
 
 def scan_with_retry(scan_fn, page, url: str, max_attempts: int = RETRIES, refresh: bool = False):
+    last_note = "empty"
     for attempt in range(1, max_attempts + 1):
         try:
             out = scan_fn(page, url)
+            last_note = "ok" if out else "empty"
         except PWTimeout:
             out = []
+            last_note = "timeout"
         except Exception:
             out = []
+            last_note = "error"
         if out and len(out) > 0:
             return out
+
+        # If we hit an anti-bot / outage page, waiting longer is more effective than tight retries.
+        if page_looks_blocked(page):
+            last_note = "blocked"
+            time.sleep(8.0 + attempt * 3.0)
 
         if refresh:
             try_click_refresh_now(page)
@@ -395,6 +515,11 @@ def load_sync_tasks(path: str) -> List[SyncTask]:
             dashboard_url = (row.get("dashboard_url") or "").strip()
             sot_playlist_id = (row.get("sot_playlist_id") or "").strip()
             dashboard_name = (row.get("sot_dashboard_name") or "").strip() or display_name
+            min_rows_raw = (row.get("min_rows") or "").strip()
+            try:
+                min_rows = int(min_rows_raw) if min_rows_raw else 0
+            except Exception:
+                min_rows = 0
 
             if not playlist_key or not display_name or not dashboard_url:
                 continue
@@ -410,6 +535,7 @@ def load_sync_tasks(path: str) -> List[SyncTask]:
                     dashboard_url=dashboard_url,
                     dashboard_name=dashboard_name,
                     sot_playlist_id=sot_playlist_id,
+                    min_rows=max(0, min_rows),
                 )
             )
 
@@ -492,11 +618,27 @@ def run_sync(
                 playlist_tracks = scan_with_retry(scan_playlist_tracks, page, playlist_url, refresh=True)
                 playlist_set = set(playlist_tracks or [])
 
-                # If both are non-empty, proceed.
-                if dashboard_set and playlist_set:
+                # If both are non-empty (and meet any configured minimum), proceed.
+                min_ok = (task.min_rows <= 0) or (len(playlist_set) >= task.min_rows)
+                if dashboard_set and playlist_set and min_ok:
                     break
 
                 if attempt < TASK_RETRIES:
+                    # If we look blocked, dump evidence and cool down more aggressively.
+                    if page_looks_blocked(page):
+                        html_p, png_p = debug_dump(page, f"blocked_{task.playlist_key}_{attempt}")
+                        print(
+                            f"🧱 Possible block/outage detected (dashboard={len(dashboard_set)} playlist={len(playlist_set)}). "
+                            f"Debug: html={html_p or 'n/a'} png={png_p or 'n/a'}"
+                        )
+                        time.sleep(12.0 + attempt * 6.0)
+
+                    if task.min_rows > 0 and playlist_set and len(playlist_set) < task.min_rows:
+                        print(
+                            f"⚠️ Sanity check: playlist scan below min_rows "
+                            f"({len(playlist_set)} < {task.min_rows}). Treating as incomplete and retrying."
+                        )
+
                     wait_s = 1.5 * attempt
                     print(
                         f"🔁 Empty scan detected (dashboard={len(dashboard_set)} playlist={len(playlist_set)}). "
@@ -514,26 +656,42 @@ def run_sync(
             # SAFETY: never mirror to/from empty
             if len(playlist_set) == 0:
                 print("🛑 Safety: playlist scan returned 0 after retries. Skipping.")
+                html_p, png_p = debug_dump(page, f"playlist_empty_{task.playlist_key}")
                 log_row(
                     log_path,
                     task,
                     -1,
                     playlist_url,
                     "skip",
-                    f"playlist scan returned 0 after retries (task_retries={TASK_RETRIES})",
+                    f"playlist scan returned 0 after retries (task_retries={TASK_RETRIES}) debug_html={html_p or 'n/a'} debug_png={png_p or 'n/a'}",
+                )
+                total_skipped += 1
+                continue
+
+            if task.min_rows > 0 and len(playlist_set) < task.min_rows:
+                print(f"🛑 Safety: playlist scan below min_rows ({len(playlist_set)} < {task.min_rows}). Skipping.")
+                html_p, png_p = debug_dump(page, f"playlist_below_min_{task.playlist_key}")
+                log_row(
+                    log_path,
+                    task,
+                    -1,
+                    playlist_url,
+                    "skip",
+                    f"playlist scan below min_rows ({len(playlist_set)} < {task.min_rows}) debug_html={html_p or 'n/a'} debug_png={png_p or 'n/a'}",
                 )
                 total_skipped += 1
                 continue
 
             if len(dashboard_set) == 0:
                 print("🛑 Safety: dashboard scan returned 0 after retries. Skipping.")
+                html_p, png_p = debug_dump(page, f"dashboard_empty_{task.playlist_key}")
                 log_row(
                     log_path,
                     task,
                     -1,
                     task.dashboard_url,
                     "skip",
-                    f"dashboard scan returned 0 after retries (task_retries={TASK_RETRIES})",
+                    f"dashboard scan returned 0 after retries (task_retries={TASK_RETRIES}) debug_html={html_p or 'n/a'} debug_png={png_p or 'n/a'}",
                 )
                 total_skipped += 1
                 continue

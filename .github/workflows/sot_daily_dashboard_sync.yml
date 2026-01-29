@@ -65,6 +65,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: sot-dashboard-sync-${{ github.run_id }}
-          path: .artifacts/dashboard_sync_log.csv
+          path: .artifacts/
           if-no-files-found: warn
 
