@@ -9,7 +9,7 @@ import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { ExportMissingTracksButton } from "@/components/health/ExportMissingTracksButton";
 import { addDaysISO, dataDateFromRunDate, SOT_DATA_LAG_DAYS } from "@/lib/sotDates";
 
-export const revalidate = 86400; // 24h ISR - data updates daily
+export const revalidate = 60; // Revalidate every 60 seconds for fresher health data
 
 function FilterToggle({
   active,
@@ -475,7 +475,9 @@ export default async function HealthPage({
           <h2 className="text-sm font-semibold">
             Warnings{" "}
             {selectedDataDate ? (
-              <span className="text-xs font-normal opacity-60">({selectedDataDate})</span>
+              <span className="text-xs font-normal opacity-60">
+                (Data: {selectedDataDate}, Run: {selectedRunDate})
+              </span>
             ) : null}
           </h2>
           <Link className="text-xs underline opacity-60" href="/playlists">
@@ -501,6 +503,9 @@ export default async function HealthPage({
                 : undefined}
               trackCountSwingTracks={w.code === "track_count_swing" && w.playlist_key
                 ? trackCountSwingTracksMap.get(w.playlist_key)
+                : undefined}
+              enrichmentWarning={w.code === "tracks_missing_enrichment"
+                ? w.details_json
                 : undefined}
             />
           ))}

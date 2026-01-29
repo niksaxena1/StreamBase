@@ -89,20 +89,15 @@ export async function IngestionStatusBanner() {
 
   return (
     <div className={className}>
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between pointer-events-none">
         <div>
           <div className="font-medium">{headline}</div>
           <div className="mt-0.5 text-xs opacity-80">{details.join(" • ")}</div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 pointer-events-auto">
           <Link className="text-xs underline" href={healthHref}>
             View health
           </Link>
-          {logsUrl ? (
-            <a className="text-xs underline" href={logsUrl} target="_blank" rel="noreferrer">
-              Open logs
-            </a>
-          ) : null}
         </div>
       </div>
     </div>

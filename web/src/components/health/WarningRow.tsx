@@ -36,15 +36,21 @@ type WarningRowProps = {
       album_image_url?: string | null;
     }>;
   };
+  enrichmentWarning?: {
+    missing_enrichment_track_count?: number;
+    note?: string;
+  };
 };
 
-export function WarningRow({ warning, nonCatalogTracks, trackCountSwingTracks }: WarningRowProps) {
+export function WarningRow({ warning, nonCatalogTracks, trackCountSwingTracks, enrichmentWarning }: WarningRowProps) {
   const [expanded, setExpanded] = useState(false);
   const hasTracks = nonCatalogTracks && nonCatalogTracks.length > 0;
   const hasSwingTracks = trackCountSwingTracks && 
     (trackCountSwingTracks.added.length > 0 || trackCountSwingTracks.removed.length > 0);
+  const hasEnrichmentWarning = enrichmentWarning && enrichmentWarning.missing_enrichment_track_count && enrichmentWarning.missing_enrichment_track_count > 0;
   const canExpand = (warning.code === "non_catalog_tracks_present" && hasTracks) ||
-                   (warning.code === "track_count_swing" && hasSwingTracks);
+                   (warning.code === "track_count_swing" && hasSwingTracks) ||
+                   (warning.code === "tracks_missing_enrichment" && hasEnrichmentWarning);
 
   return (
     <>
@@ -252,6 +258,17 @@ export function WarningRow({ warning, nonCatalogTracks, trackCountSwingTracks }:
                     </div>
                   </div>
                 )}
+              </div>
+            )}
+
+            {warning.code === "tracks_missing_enrichment" && enrichmentWarning && (
+              <div className="space-y-2">
+                <div className="text-xs font-medium opacity-70">
+                  Missing Enrichment ({enrichmentWarning.missing_enrichment_track_count}):
+                </div>
+                <p className="text-xs opacity-60">
+                  {enrichmentWarning.note}
+                </p>
               </div>
             )}
           </td>

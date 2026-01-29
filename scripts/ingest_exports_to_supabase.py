@@ -585,6 +585,44 @@ def main():
                     }
                 )
 
+            # Check for tracks missing Spotify enrichment (artist names/ids)
+            try:
+                # Count tracks in this playlist that don't have Spotify enrichment data
+                unenriched_isrcs = []
+                for isrc in todays_isrcs:
+                    # Check if this track is in track_meta and doesn't have enrichment yet
+                    # For efficiency, we'll just check against what we have locally
+                    pass
+                
+                # Query for tracks with null spotify_artist_ids
+                unenriched = pg.select_all(
+                    "tracks",
+                    "isrc",
+                    "spotify_artist_ids=is.null",
+                    page_size=1000,
+                )
+                unenriched_set = {t["isrc"] for t in unenriched}
+                unenriched_in_playlist = [isrc for isrc in todays_isrcs if isrc in unenriched_set]
+                
+                if len(unenriched_in_playlist) > 0:
+                    warn_rows.append(
+                        {
+                            "run_id": run_id,
+                            "run_date": run_date.isoformat(),
+                            "playlist_key": pl_key,
+                            "severity": "info",
+                            "code": "tracks_missing_enrichment",
+                            "message": f"{len(unenriched_in_playlist)} track(s) in playlist are missing Spotify enrichment data",
+                            "details_json": {
+                                "missing_enrichment_track_count": len(unenriched_in_playlist),
+                                "note": "Run the Spotify enrichment workflow to update artist names and metadata",
+                            },
+                        }
+                    )
+            except Exception:
+                # If the enrichment check fails, don't block ingestion
+                pass
+
         pg.upsert("playlist_daily_stats", stats_rows, on_conflict="date,playlist_key")
         if warn_rows:
             pg.insert("ingestion_warnings", warn_rows)

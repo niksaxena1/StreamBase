@@ -119,13 +119,10 @@ def main():
 
     # Fetch candidate tracks.
     # Note: PostgREST URL encoding is picky; keep filters simple.
-    # Default behavior: only enrich missing (because this is slow and API-limited).
+    # Updated to enrich all tracks daily to catch artist name changes.
     filters = [
         "order=last_seen.desc",
         f"limit={int(args.limit)}",
-        # Default behavior: only enrich missing tracks (API-limited).
-        # --only-missing keeps this explicit (and is currently redundant).
-        "spotify_artist_ids=is.null",
     ]
 
     candidates = pg.select("tracks", "isrc,name,spotify_artist_ids,spotify_last_fetched_at", "&".join(filters))
