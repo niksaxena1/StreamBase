@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
-export default function ArtistDetailPage({ params }: { params: { spotify_artist_id: string } }) {
+export default async function ArtistDetailPage({ params }: { params: Promise<{ spotify_artist_id: string }> }) {
+  const { spotify_artist_id } = await params;
   // Redirect to the catalog page with the artist ID
-  redirect(`/catalog?artist_id=${encodeURIComponent(params.spotify_artist_id)}`);
+  redirect(`/catalog?artist_id=${encodeURIComponent(spotify_artist_id)}`);
 }
