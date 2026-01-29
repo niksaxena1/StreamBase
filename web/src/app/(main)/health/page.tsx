@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { formatDateISO } from "@/lib/format";
 import { supabaseServer } from "@/lib/supabase/server";
+import { supabaseService } from "@/lib/supabase/service";
 import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
 import { WarningRow } from "@/components/health/WarningRow";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
@@ -47,6 +48,46 @@ export default async function HealthPage({
   const dateFilter = sp.date;
 
   const sb = await supabaseServer();
+  const svc = supabaseService();
+
+  // Health warning exclusions (best-effort; table may not exist yet).
+  // Used to suppress intentional "non-catalog" tracks from warning calculations.
+  const exclusionCode = "non_catalog_tracks_present";
+  const excludedGlobal = new Set<string>();
+  const excludedByPlaylist = new Map<string, Set<string>>();
+
+  try {
+    const { data: exclusionRows, error: exclusionErr } = await svc
+      .from("health_warning_exclusions")
+      .select("playlist_key,isrc")
+      .eq("code", exclusionCode)
+      .limit(2000);
+
+    if (!exclusionErr) {
+      for (const r of exclusionRows ?? []) {
+        const isrc = String((r as any).isrc ?? "").trim().toUpperCase();
+        const playlist_key = String((r as any).playlist_key ?? "").trim();
+        if (!isrc) continue;
+        if (!playlist_key) {
+          excludedGlobal.add(isrc);
+        } else {
+          if (!excludedByPlaylist.has(playlist_key)) excludedByPlaylist.set(playlist_key, new Set());
+          excludedByPlaylist.get(playlist_key)!.add(isrc);
+        }
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  function isExcluded(playlist_key: string, isrc: string) {
+    if (!isrc) return false;
+    if (excludedGlobal.has(isrc)) return true;
+    const s = excludedByPlaylist.get(playlist_key);
+    return Boolean(s && s.has(isrc));
+  }
+
+  const exclusionsEnabled = excludedGlobal.size > 0 || excludedByPlaylist.size > 0;
 
   const { data: runs, error: runsErr } = await sb
     .from("ingestion_runs")
@@ -100,7 +141,16 @@ export default async function HealthPage({
     (w) => w.code === "non_catalog_tracks_present" && w.playlist_key && selectedRunDate
   );
 
-  const nonCatalogTracksMap = new Map<string, Array<{ isrc: string; name: string | null }>>();
+  const nonCatalogTracksMap = new Map<
+    string,
+    Array<{
+      isrc: string;
+      name: string | null;
+      artist_names?: string[] | null;
+      artist_ids?: string[] | null;
+      album_image_url?: string | null;
+    }>
+  >();
 
   if (nonCatalogWarnings.length > 0 && selectedRunDate) {
     // Pre-fetch all catalog streams once (paginated) to reuse across warnings
@@ -148,7 +198,9 @@ export default async function HealthPage({
       const catalogIsrcs = allCatalogIsrcs;
 
       // Find tracks in playlist but not in catalog
-      const nonCatalogIsrcs = Array.from(playlistIsrcs).filter((isrc) => !catalogIsrcs.has(isrc));
+      const nonCatalogIsrcs = Array.from(playlistIsrcs).filter(
+        (isrc) => !catalogIsrcs.has(isrc) && !isExcluded(warning.playlist_key ?? "", isrc),
+      );
 
       if (nonCatalogIsrcs.length > 0) {
         // Fetch track names, artist names, artist IDs, and album images
@@ -334,7 +386,7 @@ export default async function HealthPage({
     // Group by ISRC and collect playlist keys
     const isrcToPlaylists = new Map<string, Set<string>>();
     for (const m of allMemberships ?? []) {
-      if (!catalogIsrcsAll.has(m.isrc)) {
+      if (!catalogIsrcsAll.has(m.isrc) && !isExcluded(m.playlist_key, m.isrc)) {
         if (!isrcToPlaylists.has(m.isrc)) {
           isrcToPlaylists.set(m.isrc, new Set());
         }
@@ -431,7 +483,16 @@ export default async function HealthPage({
           </Link>
         </div>
         <GlassTable headers={["Severity", "Code", "Playlist", "Message"]}>
-          {(warnings ?? []).map((w, i) => (
+          {(warnings ?? [])
+            .filter((w) => {
+              // If exclusions are configured and *all* non-catalog tracks for a warning are excluded,
+              // hide that warning row in the UI (the next ingestion run will also stop generating it).
+              if (!exclusionsEnabled) return true;
+              if (w.code !== "non_catalog_tracks_present" || !w.playlist_key) return true;
+              const tracks = nonCatalogTracksMap.get(w.playlist_key) ?? [];
+              return tracks.length > 0;
+            })
+            .map((w, i) => (
             <WarningRow
               key={`${w.code}-${w.playlist_key ?? "global"}-${i}`}
               warning={w}
@@ -443,7 +504,13 @@ export default async function HealthPage({
                 : undefined}
             />
           ))}
-          {!warnings?.length && (
+          {!((warnings ?? [])
+            .filter((w) => {
+              if (!exclusionsEnabled) return true;
+              if (w.code !== "non_catalog_tracks_present" || !w.playlist_key) return true;
+              const tracks = nonCatalogTracksMap.get(w.playlist_key) ?? [];
+              return tracks.length > 0;
+            }).length) && (
             <TableRow>
               <TableCell className="text-center opacity-50 py-8" colSpan={4}>
                 No warnings found for the selected filters.

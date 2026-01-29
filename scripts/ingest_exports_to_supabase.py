@@ -207,6 +207,21 @@ def main():
     pg = Postgrest(supabase_url=supabase_url, service_role_key=service_key)
     run_id: Optional[str] = None
 
+    # Optional: load health warning exclusions (best-effort; table may not exist yet).
+    # These exclusions are used to suppress "non_catalog_tracks_present" warnings and to
+    # exclude those tracks from missing-streams counts.
+    exclusion_code = "non_catalog_tracks_present"
+    excluded_global: Set[str] = set()
+    excluded_by_playlist: Dict[str, Set[str]] = {}
+
+    def is_excluded(playlist_key: str, isrc: str) -> bool:
+        if not isrc:
+            return False
+        if isrc in excluded_global:
+            return True
+        s = excluded_by_playlist.get(playlist_key)
+        return bool(s and isrc in s)
+
     try:
         # --- playlists config ---
         pg.upsert(
@@ -223,6 +238,26 @@ def main():
             ],
             on_conflict="playlist_key",
         )
+
+        try:
+            rows = pg.select_all(
+                "health_warning_exclusions",
+                "playlist_key,isrc",
+                f"code=eq.{exclusion_code}",
+                page_size=1000,
+            )
+            for r in rows:
+                isrc = norm_isrc(r.get("isrc") or "")
+                if not isrc:
+                    continue
+                plk = (r.get("playlist_key") or "").strip()
+                if plk:
+                    excluded_by_playlist.setdefault(plk, set()).add(isrc)
+                else:
+                    excluded_global.add(isrc)
+        except Exception:
+            # Table might not exist or might be blocked; ignore and proceed without exclusions.
+            pass
 
         # --- ingestion_runs ---
         gha_sha = os.environ.get("GITHUB_SHA", "")
@@ -470,11 +505,14 @@ def main():
 
             total = 0
             missing = 0
+            missing_isrcs: List[str] = []
             for isrc in todays_isrcs:
                 if isrc in catalog_streams_today:
                     total += int(catalog_streams_today[isrc])
                 else:
-                    missing += 1
+                    if not is_excluded(pl_key, isrc):
+                        missing += 1
+                        missing_isrcs.append(isrc)
 
             prev_stats = pg.select(
                 "playlist_daily_stats",
@@ -508,7 +546,13 @@ def main():
                         "severity": "warn",
                         "code": "non_catalog_tracks_present",
                         "message": f"{missing} track(s) in playlist have no catalog stream snapshot today",
-                        "details_json": {"missing_streams_track_count": missing},
+                        "details_json": {
+                            "missing_streams_track_count": missing,
+                            # Include a small sample for debugging/UI; avoid huge payloads.
+                            "missing_isrcs_sample": missing_isrcs[:100],
+                            "missing_isrcs_total": len(missing_isrcs),
+                            "exclusions_applied": True,
+                        },
                     }
                 )
 
