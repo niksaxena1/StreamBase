@@ -129,7 +129,7 @@ export function CatalogPageClient(props: {
           <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
             {props.latestDate ? (
               <>
-                Latest snapshot:{" "}
+                Latest data date:{" "}
                 <span className="font-mono">{formatDateISO(props.latestDate)}</span>
               </>
             ) : (
@@ -296,9 +296,6 @@ export function CatalogPageClient(props: {
                     <Download className="h-3.5 w-3.5" />
                   </button>
                 </div>
-                <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
-                  Latest snapshot totals
-                </div>
               </div>
               <GlassTable headers={["", "Track", "ISRC", "Total"]}>
                 {props.topByCumulative.map((t) => (
@@ -352,9 +349,6 @@ export function CatalogPageClient(props: {
                   >
                     <Download className="h-3.5 w-3.5" />
                   </button>
-                </div>
-                <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
-                  Best-effort (needs yesterday+today)
                 </div>
               </div>
               <GlassTable headers={["", "Track", "ISRC", "Daily"]}>

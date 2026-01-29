@@ -162,7 +162,7 @@ export default async function HealthPage({
       const { data, error } = await sb
         .from("track_daily_streams")
         .select("isrc")
-        .eq("date", selectedRunDate)
+        .eq("date", selectedDataDate)
         .range(from, to);
       
       if (error || !data || data.length === 0) break;
@@ -372,7 +372,7 @@ export default async function HealthPage({
       const { data, error } = await sb
         .from("track_daily_streams")
         .select("isrc")
-        .eq("date", selectedRunDate)
+        .eq("date", selectedDataDate)
         .range(from, to);
       
       if (error || !data || data.length === 0) break;
@@ -454,7 +454,7 @@ export default async function HealthPage({
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2">
-        <div className="sb-ring flex items-center gap-0.5 rounded-full bg-white/70 p-0.5 text-xs">
+        <div className="sb-ring flex items-center gap-0.5 rounded-full bg-white/70 p-0.5 text-xs dark:bg-black/50">
           <FilterToggle active={severityFilter === "all"} href={hrefWith({ severity: "all" })}>
             All
           </FilterToggle>
