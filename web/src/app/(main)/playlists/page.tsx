@@ -14,6 +14,7 @@ import { getPlaylist } from "@/lib/spotify";
 import { PlaylistPageClient } from "./PlaylistPageClient";
 import { PlaylistHeaderWithSelector } from "./PlaylistHeaderWithSelector";
 import { PlaylistMetricProvider } from "./PlaylistMetricContext";
+import { dataDateFromRunDate } from "@/lib/sotDates";
 
 // Uses Supabase session cookies; this route must be dynamic in Next 16.
 export const dynamic = "force-dynamic";
@@ -55,6 +56,14 @@ type TrackStreamsRow = { isrc: string; streams_cumulative: number | null };
 function clampRangeDays(x: unknown) {
   const n = Number(x ?? "90") || 90;
   return Math.max(7, Math.min(365, n));
+}
+
+function isoDateMinusDays(iso: string, days: number): string {
+  // iso is expected yyyy-mm-dd (or yyyy-mm-ddTHH:MM...). Return yyyy-mm-dd.
+  const base = new Date(iso.length > 10 ? iso : `${iso}T00:00:00Z`);
+  if (Number.isNaN(base.getTime())) return iso.slice(0, 10);
+  base.setUTCDate(base.getUTCDate() - days);
+  return base.toISOString().slice(0, 10);
 }
 
 function chunk<T>(arr: T[], size: number): T[][] {
@@ -197,7 +206,7 @@ export default async function PlaylistsPage({
         await sb
           .from("playlists")
           .select("playlist_key,display_name,is_catalog,spotify_playlist_id,spotify_playlist_image_url")
-          .order("is_catalog", { ascending: false })
+          .order("display_order", { ascending: true, nullsFirst: false })
           .order("display_name", { ascending: true }),
       "playlists-list",
       3600,
@@ -339,6 +348,13 @@ export default async function PlaylistsPage({
     }),
   );
 
+  // Tracks added in the last 7 days (based on membership valid_from, relative to latest snapshot date)
+  const cutoffIso = latestDate ? isoDateMinusDays(latestDate, 7) : isoDateMinusDays(new Date().toISOString(), 7);
+  const addedLast7Days = current
+    .filter((m) => (m.valid_from ?? "").slice(0, 10) >= cutoffIso)
+    .slice()
+    .sort((a, b) => b.valid_from.localeCompare(a.valid_from));
+
   return (
     <PlaylistMetricProvider>
       <div className="space-y-4">
@@ -375,7 +391,7 @@ export default async function PlaylistsPage({
               <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
                 {latestDate ? (
                   <>
-                    Latest snapshot: <span className="font-mono">{formatDateISO(latestDate)}</span>
+                    Latest data date: <span className="font-mono">{formatDateISO(dataDateFromRunDate(latestDate))}</span>
                   </>
                 ) : (
                   "No stats found for this playlist yet."
@@ -415,9 +431,6 @@ export default async function PlaylistsPage({
         <div className="space-y-3">
           <div className="flex items-end justify-between px-1">
             <h2 className="text-sm font-semibold">Tracks currently in playlist</h2>
-            <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
-              Daily streams are best-effort (requires catalog snapshot).
-            </div>
           </div>
           <GlassTable headers={["", "Track", "ISRC", "Daily", "Total", "Added"]}>
             {currentRows.map((t) => (
@@ -468,50 +481,127 @@ export default async function PlaylistsPage({
           </GlassTable>
         </div>
 
-        <div className="space-y-3">
-          <div className="flex items-end justify-between px-1">
-            <h2 className="text-sm font-semibold">Tracks removed</h2>
-            <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
-              Most recent removals first.
+        <div className="flex h-full flex-col gap-3">
+          <div className="space-y-3">
+            <div className="flex items-end justify-between px-1">
+              <h2 className="text-sm font-semibold">Tracks added (last 7 days)</h2>
+              <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
+                Based on membership added date.
+              </div>
             </div>
-          </div>
-          <GlassTable headers={["Track", "ISRC", "Removed", "Added"]}>
-            {removed.map((m, idx) => {
-              const meta = removedMetaByIsrc.get(m.isrc);
-              return (
-                <TableRow key={`${m.isrc}-${m.valid_from}-${idx}`}>
-                  <TableCell>
-                    <Link
-                      href={`/tracks/${m.isrc}`}
-                      className="font-medium transition-colors hover:text-lime-600 dark:hover:text-lime-400"
-                    >
-                      {meta?.name ?? m.isrc}
-                    </Link>
-                    {meta?.spotify_artist_names?.length ? (
-                      <div className="mt-0.5 text-xs opacity-60">
-                        <ArtistLinks
-                          artistNames={meta.spotify_artist_names}
-                          artistIds={meta.spotify_artist_ids ?? undefined}
+            <GlassTable
+              headers={["", "Track", "ISRC", "Added"]}
+              maxBodyHeightClassName="max-h-[260px]"
+            >
+              {addedLast7Days.map((m, idx) => {
+                const meta = metaByIsrc.get(m.isrc);
+                return (
+                  <TableRow key={`${m.isrc}-${m.valid_from}-${idx}`}>
+                    <TableCell>
+                      {meta?.spotify_album_image_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={meta.spotify_album_image_url}
+                          alt="Album cover"
+                          className="h-8 w-8 rounded-lg object-cover sb-ring"
                         />
-                      </div>
-                    ) : null}
-                  </TableCell>
-                  <TableCell mono className="text-xs">
-                    {m.isrc}
-                  </TableCell>
-                  <TableCell mono className="text-xs">
-                    {m.valid_to ? formatDateISO(m.valid_to) : "—"}
-                  </TableCell>
-                  <TableCell mono className="text-xs">
-                    {formatDateISO(m.valid_from)}
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-            {!removed.length && (
-              <EmptyState colSpan={4} message="No removed tracks found" />
-            )}
-          </GlassTable>
+                      ) : (
+                        <div className="h-8 w-8 rounded-lg sb-ring bg-white/60" />
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Link
+                        href={`/tracks/${m.isrc}`}
+                        className="font-medium transition-colors hover:text-lime-600 dark:hover:text-lime-400"
+                      >
+                        {meta?.name ?? m.isrc}
+                      </Link>
+                      {meta?.spotify_artist_names?.length ? (
+                        <div className="mt-0.5 text-xs opacity-60">
+                          <ArtistLinks
+                            artistNames={meta.spotify_artist_names}
+                            artistIds={meta.spotify_artist_ids ?? undefined}
+                          />
+                        </div>
+                      ) : null}
+                    </TableCell>
+                    <TableCell mono className="text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>
+                      {m.isrc}
+                    </TableCell>
+                    <TableCell mono className="text-xs">
+                      {formatDateISO(m.valid_from)}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+              {!addedLast7Days.length && (
+                <EmptyState colSpan={4} message="No tracks added in the last 7 days" />
+              )}
+            </GlassTable>
+          </div>
+
+          <div className="flex flex-1 flex-col gap-3">
+            <div className="flex items-end justify-between px-1">
+              <h2 className="text-sm font-semibold">Tracks removed</h2>
+              <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
+                Most recent removals first.
+              </div>
+            </div>
+            <GlassTable
+              className="flex-1"
+              bodyClassName="flex-1"
+              maxBodyHeightClassName="flex-1"
+              headers={["", "Track", "ISRC", "Removed", "Added"]}
+            >
+              {removed.map((m, idx) => {
+                const meta = removedMetaByIsrc.get(m.isrc);
+                return (
+                  <TableRow key={`${m.isrc}-${m.valid_from}-${idx}`}>
+                    <TableCell>
+                      {meta?.spotify_album_image_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={meta.spotify_album_image_url}
+                          alt="Album cover"
+                          className="h-8 w-8 rounded-lg object-cover sb-ring"
+                        />
+                      ) : (
+                        <div className="h-8 w-8 rounded-lg sb-ring bg-white/60" />
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Link
+                        href={`/tracks/${m.isrc}`}
+                        className="font-medium transition-colors hover:text-lime-600 dark:hover:text-lime-400"
+                      >
+                        {meta?.name ?? m.isrc}
+                      </Link>
+                      {meta?.spotify_artist_names?.length ? (
+                        <div className="mt-0.5 text-xs opacity-60">
+                          <ArtistLinks
+                            artistNames={meta.spotify_artist_names}
+                            artistIds={meta.spotify_artist_ids ?? undefined}
+                          />
+                        </div>
+                      ) : null}
+                    </TableCell>
+                    <TableCell mono className="text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>
+                      {m.isrc}
+                    </TableCell>
+                    <TableCell mono className="text-xs">
+                      {m.valid_to ? formatDateISO(m.valid_to) : "—"}
+                    </TableCell>
+                    <TableCell mono className="text-xs">
+                      {formatDateISO(m.valid_from)}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+              {!removed.length && (
+                <EmptyState colSpan={5} message="No removed tracks found" />
+              )}
+            </GlassTable>
+          </div>
         </div>
       </div>
       </div>

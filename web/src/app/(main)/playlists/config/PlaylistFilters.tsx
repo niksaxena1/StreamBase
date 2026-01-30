@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { Search, X } from "lucide-react";
+import { Search, X, Music } from "lucide-react";
 import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
 import { formatInt } from "@/lib/format";
 
@@ -189,7 +189,14 @@ export function PlaylistFilters({ playlists, statsMap }: PlaylistFiltersProps) {
           return (
             <TableRow key={p.playlist_key}>
               <TableCell className="w-12">
-                {p.spotify_playlist_image_url ? (
+                {p.playlist_key === "all_catalog" ? (
+                  <div
+                    className="sb-ring flex h-8 w-8 items-center justify-center rounded-lg"
+                    style={{ background: "var(--sb-accent)" }}
+                  >
+                    <Music className="h-4 w-4" style={{ color: "black" }} />
+                  </div>
+                ) : p.spotify_playlist_image_url ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={p.spotify_playlist_image_url}
