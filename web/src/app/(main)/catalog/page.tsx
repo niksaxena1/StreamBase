@@ -59,6 +59,14 @@ type TrackDailyRow = {
 };
 
 type PlaylistDailyStatsRow = { date: string };
+type CatalogArtistSeriesRow = { date: string; streams_cumulative: number | null };
+type CatalogTopTrackRow = {
+  isrc: string;
+  name: string | null;
+  album_image_url: string | null;
+  total: number | null;
+  daily: number | null;
+};
 
 function clampRangeDays(x: unknown) {
   const n = Number(x ?? "90") || 90;
@@ -69,6 +77,24 @@ function chunk<T>(arr: T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
   return out;
+}
+
+async function fetchRecentTracksMetaForArtists(sb: SupabaseClient, maxRows = 2000): Promise<TrackRow[]> {
+  // Intentionally bounded: we only need a "recent artists" dropdown list.
+  // For full discovery, the global search (`/api/search`) is the scalable path.
+  const { data, error } = await sb
+    .from("tracks")
+    .select("isrc,name,spotify_artist_ids,spotify_artist_names,spotify_album_image_url")
+    .not("spotify_artist_ids", "is", null)
+    .order("last_seen", { ascending: false })
+    .limit(maxRows);
+
+  if (error) {
+    console.error("Error fetching recent tracks metadata:", error);
+    return [];
+  }
+
+  return (data ?? []) as TrackRow[];
 }
 
 async function fetchAllTracksMeta(
@@ -94,36 +120,6 @@ async function fetchAllTracksMeta(
     }
 
     const rows = (data ?? []) as TrackRow[];
-    if (!rows.length) break;
-    out.push(...rows);
-    if (rows.length < pageSize) break;
-    from += pageSize;
-  }
-
-  return out;
-}
-
-async function fetchAllTrackDaily(
-  sb: SupabaseClient,
-  args: { isrcs: string[]; startDate: string; endDate: string; maxRows?: number },
-): Promise<TrackDailyRow[]> {
-  const pageSize = 1000;
-  const out: TrackDailyRow[] = [];
-  let from = 0;
-  const max = args.maxRows ?? 200000;
-
-  while (from < max) {
-    const to = from + pageSize - 1;
-    const { data } = await sb
-      .from("track_daily_streams")
-      .select("date,isrc,streams_cumulative")
-      .in("isrc", args.isrcs)
-      .gte("date", args.startDate)
-      .lte("date", args.endDate)
-      .order("date", { ascending: false })
-      .range(from, to);
-
-    const rows = (data ?? []) as TrackDailyRow[];
     if (!rows.length) break;
     out.push(...rows);
     if (rows.length < pageSize) break;
@@ -224,23 +220,48 @@ export default async function CatalogPage({
     // access is still gated above.
     const svc = supabaseService();
 
-    // We don't have an artists table; derive from track metadata.
-    const trackMetaRows = await fetchAllTracksMeta(svc, 5000);
-    const artists = deriveArtists(trackMetaRows);
-    const firstArtistId = artists[0]?.id ?? null;
-
     const artistId = (sp.artist_id ?? "").trim();
     if (!artistId) {
+      // Scalable default: pick the most recently seen track's first artist (no "scan 5k tracks").
+      const { data: recent } = await cachedQuery(
+        async () =>
+          await svc
+            .from("tracks")
+            .select("spotify_artist_ids")
+            .not("spotify_artist_ids", "is", null)
+            .order("last_seen", { ascending: false })
+            .limit(1)
+            .maybeSingle(),
+        "catalog-default-artist-v1",
+        3600,
+      );
+
+      const defaultArtistId = Array.isArray((recent as any)?.spotify_artist_ids)
+        ? String((recent as any).spotify_artist_ids?.[0] ?? "").trim()
+        : "";
+
       return (
         <RememberParamRedirect
           param="artist_id"
           storageKey="sb:last_artist_id"
-          defaultValue={firstArtistId}
+          defaultValue={defaultArtistId || null}
           loadingTitle="Opening your last artist…"
           loadingSubtitle="If this is your first time, we'll pick the first artist we find."
         />
       );
     }
+
+    // We don't have an artists table; derive a bounded "recent artists" list for the dropdown.
+    // For long-tail discovery, use the global search bar.
+    const trackMetaRows = await cachedQuery(
+      async () => ({
+        data: await fetchRecentTracksMetaForArtists(svc, 2000),
+        error: null as any,
+      }),
+      "catalog-recent-tracks-meta-v1",
+      3600,
+    );
+    const artists = deriveArtists((trackMetaRows.data ?? []) as TrackRow[]);
 
   // Track list for this artist (cached for 1 hour)
   const { data: tracks, error: tracksError } = await cachedQuery(
@@ -290,7 +311,6 @@ export default async function CatalogPage({
   );
 
   const latestRunDate = (latestRun as PlaylistDailyStatsRow | null)?.date ?? null;
-  const latestDataDate = latestRunDate ? dataDateFromRunDate(latestRunDate) : null;
   const startRunDate = latestRunDate ? addDays(latestRunDate, -rangeDays) : null;
 
   const isrc = (sp.isrc ?? "").trim() || null;
@@ -312,54 +332,61 @@ export default async function CatalogPage({
     }
   }
 
-  // Pull per-track cumulative series for the whole artist (best-effort; chunk to keep URL sizes sane)
-  const dailyRows: TrackDailyRow[] = [];
-  if (isrcs.length && latestRunDate && startRunDate) {
-    await Promise.all(
-      chunk(isrcs, 120).map(async (isrcChunk) => {
-        const rows = await fetchAllTrackDaily(svc, {
-          isrcs: isrcChunk,
-          startDate: startRunDate,
-          endDate: latestRunDate,
-          maxRows: 200000,
-        });
-        dailyRows.push(...rows);
-      }),
-    );
-  }
+  // Artist series + top tracks are computed in Postgres (scales to large tables).
+  const [{ data: seriesRows }, { data: topTotalRows }, { data: topDailyRows }] = await Promise.all([
+    latestRunDate && startRunDate
+      ? cachedQuery(
+          async () =>
+            await svc.rpc("catalog_artist_series", {
+              artist_id: artistId,
+              start_date: startRunDate,
+              end_date: latestRunDate,
+            }),
+          `catalog-artist-series-${artistId}-${startRunDate}-${latestRunDate}`,
+          3600,
+        )
+      : Promise.resolve({ data: [] as any, error: null as any }),
+    latestRunDate
+      ? cachedQuery(
+          async () =>
+            await svc.rpc("catalog_artist_top_tracks_total", {
+              artist_id: artistId,
+              run_date: latestRunDate,
+              limit_rows: 25,
+            }),
+          `catalog-artist-top-total-${artistId}-${latestRunDate}`,
+          3600,
+        )
+      : Promise.resolve({ data: [] as any, error: null as any }),
+    latestRunDate
+      ? cachedQuery(
+          async () =>
+            await svc.rpc("catalog_artist_top_tracks_daily", {
+              artist_id: artistId,
+              run_date: latestRunDate,
+              limit_rows: 25,
+            }),
+          `catalog-artist-top-daily-${artistId}-${latestRunDate}`,
+          3600,
+        )
+      : Promise.resolve({ data: [] as any, error: null as any }),
+  ]);
 
-  // Aggregate cumulative by date (sum streams_cumulative across tracks)
-  const cumByDate = new Map<string, number>();
-  const byIsrcByDate = new Map<string, Map<string, number>>();
-
-  for (const r of dailyRows) {
-    const v = Number(r.streams_cumulative ?? 0);
-    cumByDate.set(r.date, (cumByDate.get(r.date) ?? 0) + v);
-
-    let perIsrc = byIsrcByDate.get(r.isrc);
-    if (!perIsrc) {
-      perIsrc = new Map();
-      byIsrcByDate.set(r.isrc, perIsrc);
-    }
-    perIsrc.set(r.date, v);
-  }
-
-  const cumSeriesAscRun = Array.from(cumByDate.entries())
-    .map(([date, value]) => ({ date, value }))
+  const cumSeriesAscRun = ((seriesRows ?? []) as CatalogArtistSeriesRow[])
+    .map((r) => ({ date: r.date, value: Number(r.streams_cumulative ?? 0) }))
     .sort((a, b) => a.date.localeCompare(b.date));
 
-  const cumSeriesAsc = cumSeriesAscRun.map((p) => ({ ...p, date: dataDateFromRunDate(p.date) }));
+  // Keep dates as RUN dates in server payload; UI shifts to "data date" for display.
+  const cumSeriesAsc = cumSeriesAscRun;
 
   const latestCum = cumSeriesAscRun.length ? cumSeriesAscRun[cumSeriesAscRun.length - 1].value : 0;
-  const prevCum = cumSeriesAscRun.length > 1 ? cumSeriesAscRun[cumSeriesAscRun.length - 2].value : 0;
 
   const dailyArtistAscRun = cumSeriesAscRun.map((p, idx) => {
     if (idx === 0) return { date: p.date, daily: 0 };
     const prev = cumSeriesAscRun[idx - 1].value;
     return { date: p.date, daily: Math.max(0, p.value - prev) };
   });
-  const dailyArtistAsc = dailyArtistAscRun.map((p) => ({ ...p, date: dataDateFromRunDate(p.date) }));
-  const dailyArtistDesc = [...dailyArtistAsc].reverse();
+  const dailyArtistDesc = [...dailyArtistAscRun].reverse();
   const dailyArtistWithMaDesc = computeRollingAvg7(dailyArtistDesc);
 
   const artist24h = dailyArtistDesc[0]?.daily ?? 0;
@@ -367,48 +394,21 @@ export default async function CatalogPage({
   const artist28d = sumLastNDays(dailyArtistDesc, 28);
   const artist30d = sumLastNDays(dailyArtistDesc, 30);
 
-  // Per-track latest and daily deltas (for top lists)
-  const latestByIsrc = new Map<string, number>();
-  const prevByIsrc = new Map<string, number>();
-  if (latestRunDate) {
-    for (const [isrcKey, perDate] of byIsrcByDate.entries()) {
-      const latestV = perDate.get(latestRunDate);
-      if (latestV !== undefined) latestByIsrc.set(isrcKey, latestV);
-      // Use previous calendar day; if missing, it's ok (daily becomes null)
-      const prevDay = addDays(latestRunDate, -1);
-      const prevV = perDate.get(prevDay);
-      if (prevV !== undefined) prevByIsrc.set(isrcKey, prevV);
-    }
-  }
+  const topByCumulative = ((topTotalRows ?? []) as CatalogTopTrackRow[]).map((r) => ({
+    isrc: r.isrc,
+    total: r.total ?? null,
+    daily: null,
+    name: r.name ?? null,
+    albumImageUrl: r.album_image_url ?? null,
+  }));
 
-  const topByCumulative = isrcs
-    .map((id) => ({
-      isrc: id,
-      total: latestByIsrc.get(id) ?? null,
-      daily: null,
-      name: artistTracks.find((t) => t.isrc === id)?.name ?? null,
-      albumImageUrl: artistTracks.find((t) => t.isrc === id)?.spotify_album_image_url ?? null,
-    }))
-    .filter((r) => r.total !== null)
-    .sort((a, b) => Number(b.total) - Number(a.total))
-    .slice(0, 25);
-
-  const topByDaily = isrcs
-    .map((id) => {
-      const latestV = latestByIsrc.get(id);
-      const prevV = prevByIsrc.get(id);
-      const daily = latestV !== undefined && prevV !== undefined ? Math.max(0, latestV - prevV) : null;
-      return {
-        isrc: id,
-        daily,
-        total: latestV ?? null,
-        name: artistTracks.find((t) => t.isrc === id)?.name ?? null,
-        albumImageUrl: artistTracks.find((t) => t.isrc === id)?.spotify_album_image_url ?? null,
-      };
-    })
-    .filter((r) => r.daily !== null)
-    .sort((a, b) => Number(b.daily) - Number(a.daily))
-    .slice(0, 25);
+  const topByDaily = ((topDailyRows ?? []) as CatalogTopTrackRow[]).map((r) => ({
+    isrc: r.isrc,
+    daily: r.daily ?? null,
+    total: r.total ?? null,
+    name: r.name ?? null,
+    albumImageUrl: r.album_image_url ?? null,
+  }));
 
   // Selected track panels (optional)
   const trackSeries =
@@ -417,7 +417,7 @@ export default async function CatalogPage({
       : ([] as Array<{ date: string; streams_cumulative: number | null }>);
 
   const trackCumDesc = (trackSeries ?? []).map((r) => ({
-    date: dataDateFromRunDate(r.date),
+    date: r.date,
     value: Number(r.streams_cumulative ?? 0),
   }));
   // Compute daily deltas based on RUN ordering but display DATA dates.
@@ -433,7 +433,7 @@ export default async function CatalogPage({
   });
   const trackDailyDesc = [...trackDailyAsc]
     .reverse()
-    .map((p) => ({ ...p, date: dataDateFromRunDate(p.date) }));
+    .map((p) => ({ ...p }));
   const trackDailyWithMaDesc = computeRollingAvg7(trackDailyDesc);
   const track24h = trackDailyDesc[0]?.daily ?? 0;
   const track7d = sumLastNDays(trackDailyDesc, 7);
@@ -448,16 +448,10 @@ export default async function CatalogPage({
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  // Fetch artist images from Spotify API
-  const artistIds = artists.map((a) => a.id);
-  const artistDataMap = await getArtists(artistIds);
-  const artistsWithImages = artists.map((artist) => {
-    const artistData = artistDataMap.get(artist.id);
-    return {
-      ...artist,
-      imageUrl: artistData?.imageUrl ?? null,
-    };
-  });
+  // Fetch only the *selected* artist image from Spotify (fast + avoids rate limits).
+  const selectedArtistData = await getArtists([artistId]);
+  const selectedArtistImageUrl = selectedArtistData.get(artistId)?.imageUrl ?? null;
+  const artistsWithImages = artists.map((a) => ({ ...a, imageUrl: null as string | null }));
 
   // Fetch selected track details if isrc is available
   let selectedTrack: { 
@@ -500,7 +494,7 @@ export default async function CatalogPage({
     <div className="space-y-4">
       <CatalogPageClient
         latestCum={latestCum}
-        latestDate={latestDataDate}
+        latestDate={latestRunDate}
         rangeDays={rangeDays}
         cumSeriesAsc={cumSeriesAsc}
         dailyArtistDesc={dailyArtistDesc}
@@ -514,7 +508,7 @@ export default async function CatalogPage({
         tracks={trackOptions}
         isrc={isrc}
         artistName={artistName}
-        artistImageUrl={artistsWithImages.find((a) => a.id === artistId)?.imageUrl ?? null}
+        artistImageUrl={selectedArtistImageUrl}
         topByCumulative={topByCumulative}
         topByDaily={topByDaily}
         selectedTrack={selectedTrack}
