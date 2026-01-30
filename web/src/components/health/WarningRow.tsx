@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
@@ -36,21 +36,92 @@ type WarningRowProps = {
       album_image_url?: string | null;
     }>;
   };
+  missingEnrichmentTracks?: Array<{
+    isrc: string;
+    name: string | null;
+    artist_names?: string[] | null;
+    artist_ids?: string[] | null;
+    album_image_url?: string | null;
+  }> | null;
   enrichmentWarning?: {
     missing_enrichment_track_count?: number;
     note?: string;
   };
 };
 
-export function WarningRow({ warning, nonCatalogTracks, trackCountSwingTracks, enrichmentWarning }: WarningRowProps) {
+export function WarningRow({ warning, nonCatalogTracks, trackCountSwingTracks, missingEnrichmentTracks, enrichmentWarning }: WarningRowProps) {
   const [expanded, setExpanded] = useState(false);
+  const [thumbByIsrc, setThumbByIsrc] = useState<Record<string, string | null>>({});
   const hasTracks = nonCatalogTracks && nonCatalogTracks.length > 0;
   const hasSwingTracks = trackCountSwingTracks && 
     (trackCountSwingTracks.added.length > 0 || trackCountSwingTracks.removed.length > 0);
-  const hasEnrichmentWarning = enrichmentWarning && enrichmentWarning.missing_enrichment_track_count && enrichmentWarning.missing_enrichment_track_count > 0;
+  const hasMissingEnrichmentTracks = missingEnrichmentTracks !== undefined && (
+    (Array.isArray(missingEnrichmentTracks) && missingEnrichmentTracks.length > 0) || 
+    missingEnrichmentTracks === null
+  );
   const canExpand = (warning.code === "non_catalog_tracks_present" && hasTracks) ||
                    (warning.code === "track_count_swing" && hasSwingTracks) ||
-                   (warning.code === "tracks_missing_enrichment" && hasEnrichmentWarning);
+                   (warning.code === "tracks_missing_enrichment" && hasMissingEnrichmentTracks);
+
+  const missingThumbIsrcs = useMemo(() => {
+    if (!expanded) return [];
+    if (warning.code !== "tracks_missing_enrichment") return [];
+    if (!Array.isArray(missingEnrichmentTracks)) return [];
+    const need = missingEnrichmentTracks
+      .filter((t) => !t.album_image_url)
+      .map((t) => (t.isrc ?? "").trim().toUpperCase())
+      .filter(Boolean);
+    // Limit per expand to keep UI snappy / avoid rate limits
+    return need.slice(0, 50);
+  }, [expanded, warning.code, missingEnrichmentTracks]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function run() {
+      if (missingThumbIsrcs.length === 0) return;
+
+      // Prefer a single batched request (faster + fewer token fetches).
+      try {
+        const res = await fetch("/api/spotify-track-batch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+          body: JSON.stringify({ isrcs: missingThumbIsrcs }),
+        });
+        if (res.status === 404) {
+          // Older dev servers may not pick up new route files without restart.
+          // Fallback: hit the single-track endpoint for each ISRC.
+          for (const isrc of missingThumbIsrcs) {
+            if (cancelled) return;
+            if (thumbByIsrc[isrc] !== undefined) continue;
+            try {
+              const one = await fetch(`/api/spotify-track?isrc=${encodeURIComponent(isrc)}`, {
+                cache: "no-store",
+              });
+              const j = (await one.json()) as { albumImageUrl?: string | null };
+              const url = one.ok ? (j.albumImageUrl ?? null) : null;
+              if (!cancelled) setThumbByIsrc((prev) => ({ ...prev, [isrc]: url }));
+            } catch {
+              if (!cancelled) setThumbByIsrc((prev) => ({ ...prev, [isrc]: null }));
+            }
+          }
+          return;
+        }
+
+        const json = (await res.json()) as { byIsrc?: Record<string, string | null> };
+        const byIsrc = res.ok ? (json.byIsrc ?? {}) : {};
+        if (!cancelled) setThumbByIsrc((prev) => ({ ...prev, ...byIsrc }));
+      } catch {
+        // If the batch route fails, fall back to doing nothing (placeholders remain).
+      }
+    }
+    run();
+    return () => {
+      cancelled = true;
+    };
+    // thumbByIsrc intentionally omitted to avoid refetch loops
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [missingThumbIsrcs]);
 
   return (
     <>
@@ -261,14 +332,71 @@ export function WarningRow({ warning, nonCatalogTracks, trackCountSwingTracks, e
               </div>
             )}
 
-            {warning.code === "tracks_missing_enrichment" && enrichmentWarning && (
+            {warning.code === "tracks_missing_enrichment" && hasMissingEnrichmentTracks && (
               <div className="space-y-2">
-                <div className="text-xs font-medium opacity-70">
-                  Missing Enrichment ({enrichmentWarning.missing_enrichment_track_count}):
-                </div>
-                <p className="text-xs opacity-60">
-                  {enrichmentWarning.note}
-                </p>
+                {Array.isArray(missingEnrichmentTracks) && missingEnrichmentTracks.length > 0 ? (
+                  <>
+                    <div className="text-xs font-medium opacity-70 mb-2">
+                      Missing Enrichment ({missingEnrichmentTracks.length}):
+                    </div>
+                    <div className="space-y-2">
+                      {missingEnrichmentTracks.map((track) => {
+                        const isrc = (track.isrc ?? "").trim().toUpperCase();
+                        const fetchedUrl = thumbByIsrc[isrc];
+                        const hasThumb =
+                          fetchedUrl !== undefined
+                            ? fetchedUrl !== null
+                            : !!track.album_image_url;
+                        const imageUrl =
+                          fetchedUrl !== undefined ? fetchedUrl : track.album_image_url;
+
+                        return (
+                          <div key={track.isrc} className="flex items-center gap-3 text-xs">
+                            {hasThumb && imageUrl ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={imageUrl}
+                                alt="Album cover"
+                                className="h-10 w-10 rounded object-cover sb-ring flex-shrink-0"
+                              />
+                            ) : (
+                              <div className="h-10 w-10 rounded sb-ring bg-white/60 flex-shrink-0" />
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <Link
+                                  href={`/tracks/${track.isrc}`}
+                                  className="font-medium hover:underline"
+                                  style={{ color: "var(--sb-text)" }}
+                                >
+                                  {track.name || track.isrc}
+                                </Link>
+                                {track.artist_names && track.artist_names.length > 0 && (
+                                  <span className="opacity-60">
+                                    by <ArtistLinks artistNames={track.artist_names} artistIds={track.artist_ids ?? undefined} />
+                                  </span>
+                                )}
+                              </div>
+                              <div className="mt-0.5">
+                                <Link
+                                  href={`/tracks/${track.isrc}`}
+                                  className="font-mono text-[10px] text-lime-600 dark:text-lime-400 underline hover:opacity-80"
+                                >
+                                  {track.isrc}
+                                </Link>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-xs opacity-60">
+                    <p className="mb-2">Track details not available in current warning record.</p>
+                    <p>{enrichmentWarning?.note || "Run the Spotify enrichment workflow to update artist names and metadata."}</p>
+                  </div>
+                )}
               </div>
             )}
           </td>

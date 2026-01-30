@@ -1,3 +1,5 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 type SpotifyToken = {
   access_token: string;
   token_type: string;
@@ -178,6 +180,98 @@ export async function getArtists(artistIds: string[]): Promise<Map<string, Spoti
     }
   }
   
+  return result;
+}
+
+type CachedArtistRow = {
+  artist_id: string;
+  name: string | null;
+  image_url: string | null;
+  external_url: string | null;
+  refreshed_at: string;
+};
+
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+/**
+ * Get artists using a DB cache (service role recommended), refreshing stale entries.
+ *
+ * This reduces Spotify API usage (and tail latency) for hot paths like global search.
+ */
+export async function getArtistsCached(
+  sb: SupabaseClient,
+  artistIds: string[],
+  opts?: { maxAgeDays?: number },
+): Promise<Map<string, SpotifyArtistLookup>> {
+  const maxAgeDays = Math.max(1, Math.floor(opts?.maxAgeDays ?? 31));
+  const now = Date.now();
+  const maxAgeMs = maxAgeDays * 24 * 60 * 60 * 1000;
+
+  const ids = Array.from(new Set(artistIds.filter(Boolean)));
+  const result = new Map<string, SpotifyArtistLookup>();
+  if (ids.length === 0) return result;
+
+  // Read cached rows (chunked to avoid very large IN lists).
+  const cachedRows: CachedArtistRow[] = [];
+  for (const idsChunk of chunk(ids, 500)) {
+    const { data } = await sb
+      .from("spotify_artist_images")
+      .select("artist_id,name,image_url,external_url,refreshed_at")
+      .in("artist_id", idsChunk);
+    if (data?.length) cachedRows.push(...(data as CachedArtistRow[]));
+  }
+
+  const cachedById = new Map<string, CachedArtistRow>();
+  for (const r of cachedRows) cachedById.set(r.artist_id, r);
+
+  const needsRefresh: string[] = [];
+  for (const id of ids) {
+    const row = cachedById.get(id);
+    if (!row) {
+      needsRefresh.push(id);
+      continue;
+    }
+    const refreshedAtMs = Date.parse(row.refreshed_at);
+    if (!Number.isFinite(refreshedAtMs) || now - refreshedAtMs > maxAgeMs) {
+      needsRefresh.push(id);
+      continue;
+    }
+    result.set(id, {
+      artistId: row.artist_id,
+      name: row.name ?? "",
+      imageUrl: row.image_url ?? null,
+      externalUrl: row.external_url ?? null,
+    });
+  }
+
+  // Refresh missing/stale artists from Spotify (batched).
+  if (needsRefresh.length > 0) {
+    const fresh = await getArtists(needsRefresh);
+
+    const upserts = Array.from(fresh.values()).map((a) => ({
+      artist_id: a.artistId,
+      name: a.name,
+      image_url: a.imageUrl,
+      external_url: a.externalUrl,
+      refreshed_at: new Date().toISOString(),
+    }));
+
+    if (upserts.length > 0) {
+      // Best-effort upsert; never fail the page on cache write.
+      try {
+        await sb.from("spotify_artist_images").upsert(upserts, { onConflict: "artist_id" });
+      } catch (e) {
+        console.error("[spotify] failed to upsert artist cache:", e);
+      }
+    }
+
+    for (const [id, a] of fresh.entries()) result.set(id, a);
+  }
+
   return result;
 }
 

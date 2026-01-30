@@ -1,9 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
-  
-  // Skip middleware for static files
+
+  // Skip proxy for static files
   if (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon") ||
@@ -37,7 +37,7 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   // Only run auth gating on protected app routes (avoid extra work on every request).
-  // Static assets are already excluded above, but narrowing the matcher reduces middleware invocations.
+  // Static assets are already excluded above, but narrowing the matcher reduces proxy invocations.
   matcher: [
     "/",
     "/artists/:path*",

@@ -1,0 +1,52 @@
+name: Spotify artist image cache refresh
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_refresh:
+        description: "Max cached artists to refresh"
+        required: false
+        default: "5000"
+      max_age_days:
+        description: "Refresh cached rows older than N days"
+        required: false
+        default: "31"
+  schedule:
+    # First Friday of the month at 21:00 Asia/Abu_Dhabi (UTC+4) => 17:00 UTC
+    - cron: "0 17 1-7 * 5"
+
+concurrency:
+  group: spotify-artist-image-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
+      SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
+      MAX_REFRESH: ${{ inputs.max_refresh || '5000' }}
+      MAX_AGE_DAYS: ${{ inputs.max_age_days || '31' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install web dependencies
+        run: npm ci
+        working-directory: web
+
+      - name: Refresh cached artist images
+        run: node scripts/refresh_spotify_artist_images.mjs
+        working-directory: web
+

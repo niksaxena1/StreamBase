@@ -17,6 +17,7 @@ import { AnimatedCounter } from "@/components/ui/AnimatedCounter";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
 import { downloadCsv, slugifyForFilename, todayIsoDate } from "@/lib/csv";
 import { dataDateFromRunDate } from "@/lib/sotDates";
+import { ArtistLinks } from "@/components/ui/ArtistLinks";
 
 type ChartDataPoint = {
   date: string;
@@ -234,12 +235,7 @@ export function CatalogPageClient(props: {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="font-display text-2xl font-semibold tracking-tight">
-                  <Link
-                    href={`/artists/${props.artistId}`}
-                    className="transition-colors hover:text-lime-600 dark:hover:text-lime-400"
-                  >
-                    {props.artistName}
-                  </Link>
+                  {props.artistName}
                 </h1>
                 <Link
                   href={`https://open.spotify.com/artist/${props.artistId}`}
@@ -412,12 +408,7 @@ export function CatalogPageClient(props: {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="font-display text-2xl font-semibold tracking-tight">
-                  <Link
-                    href={`/tracks/${props.isrc}`}
-                    className="transition-colors hover:text-lime-600 dark:hover:text-lime-400"
-                  >
-                    {props.selectedTrack.name ?? props.isrc}
-                  </Link>
+                  {props.selectedTrack.name ?? props.isrc}
                 </h1>
                 {props.selectedTrack.spotifyTrackId && (
                   <Link
@@ -435,7 +426,10 @@ export function CatalogPageClient(props: {
               <div className="mt-0.5 flex items-center gap-2 text-xs" style={{ color: "var(--sb-muted)" }}>
                 {props.selectedTrack.artistNames?.length ? (
                   <>
-                    <span>{props.selectedTrack.artistNames.join(", ")}</span>
+                    <ArtistLinks
+                      artistNames={props.selectedTrack.artistNames}
+                      artistIds={props.selectedTrack.artistIds}
+                    />
                     <span>•</span>
                   </>
                 ) : null}

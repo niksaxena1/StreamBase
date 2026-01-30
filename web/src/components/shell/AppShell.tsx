@@ -9,6 +9,7 @@ import { LogoutButton } from "@/components/shell/LogoutButton";
 import { ThemeToggle } from "@/components/shell/ThemeToggle";
 import { SearchBar } from "@/components/shell/SearchBar";
 import { IngestionStatusBanner } from "@/components/health/IngestionStatusBanner";
+import { SAIWidget } from "@/components/sai/SAIWidget";
 
 export function AppShell(props: { children: ReactNode }) {
   return (
@@ -75,6 +76,9 @@ export function AppShell(props: { children: ReactNode }) {
 
       {/* Mobile Navigation */}
       <MobileNavWithBadge />
+
+      {/* SAI (SpotiBase AI) assistant */}
+      <SAIWidget />
     </div>
   );
 }

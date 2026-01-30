@@ -60,8 +60,13 @@ export default async function HealthPage({
   // Health warning exclusions (best-effort; table may not exist yet).
   // Used to suppress intentional "non-catalog" tracks from warning calculations.
   const exclusionCode = "non_catalog_tracks_present";
+  const enrichmentExclusionCode = "tracks_missing_enrichment";
+
   const excludedGlobal = new Set<string>();
   const excludedByPlaylist = new Map<string, Set<string>>();
+
+  const excludedEnrichmentGlobal = new Set<string>();
+  const excludedEnrichmentByPlaylist = new Map<string, Set<string>>();
 
   try {
     const { data: exclusionRows, error: exclusionErr } = await svc
@@ -87,6 +92,31 @@ export default async function HealthPage({
     // ignore
   }
 
+  try {
+    const { data: exclusionRows, error: exclusionErr } = await svc
+      .from("health_warning_exclusions")
+      .select("playlist_key,isrc")
+      .eq("code", enrichmentExclusionCode)
+      .limit(2000);
+
+    if (!exclusionErr) {
+      for (const r of exclusionRows ?? []) {
+        const isrc = String((r as any).isrc ?? "").trim().toUpperCase();
+        const playlist_key = String((r as any).playlist_key ?? "").trim();
+        if (!isrc) continue;
+        if (!playlist_key) {
+          excludedEnrichmentGlobal.add(isrc);
+        } else {
+          if (!excludedEnrichmentByPlaylist.has(playlist_key))
+            excludedEnrichmentByPlaylist.set(playlist_key, new Set());
+          excludedEnrichmentByPlaylist.get(playlist_key)!.add(isrc);
+        }
+      }
+    }
+  } catch {
+    // ignore
+  }
+
   function isExcluded(playlist_key: string, isrc: string) {
     if (!isrc) return false;
     if (excludedGlobal.has(isrc)) return true;
@@ -94,7 +124,16 @@ export default async function HealthPage({
     return Boolean(s && s.has(isrc));
   }
 
+  function isExcludedEnrichment(playlist_key: string, isrc: string) {
+    if (!isrc) return false;
+    if (excludedEnrichmentGlobal.has(isrc)) return true;
+    const s = excludedEnrichmentByPlaylist.get(playlist_key);
+    return Boolean(s && s.has(isrc));
+  }
+
   const exclusionsEnabled = excludedGlobal.size > 0 || excludedByPlaylist.size > 0;
+  const enrichmentExclusionsEnabled =
+    excludedEnrichmentGlobal.size > 0 || excludedEnrichmentByPlaylist.size > 0;
 
   const { data: runs, error: runsErr } = await svc
     .from("ingestion_runs")
@@ -242,6 +281,100 @@ export default async function HealthPage({
     }
   }
 
+  // Fetch missing enrichment tracks for warnings
+  const missingEnrichmentWarnings = (warnings ?? []).filter(
+    (w) => w.code === "tracks_missing_enrichment" && w.playlist_key && selectedRunDate
+  );
+
+  const missingEnrichmentTracksMap = new Map<
+    string,
+    Array<{
+      isrc: string;
+      name: string | null;
+      artist_names?: string[] | null;
+      artist_ids?: string[] | null;
+      album_image_url?: string | null;
+    }> | null
+  >();
+
+  if (missingEnrichmentWarnings.length > 0 && selectedRunDate) {
+    for (const warning of missingEnrichmentWarnings) {
+      if (!warning.playlist_key) continue;
+      const isrcList = warning.details_json?.isrc_list ?? [];
+      
+      // If we have ISRCs, fetch their details
+      if (Array.isArray(isrcList) && isrcList.length > 0) {
+        const filteredIsrcs = enrichmentExclusionsEnabled
+          ? (isrcList as any[])
+              .map((x) => String(x ?? "").trim().toUpperCase().replace(/\s+/g, ""))
+              .filter(Boolean)
+              .filter((isrc) => !isExcludedEnrichment(warning.playlist_key!, isrc))
+          : isrcList;
+
+        if (Array.isArray(filteredIsrcs) && filteredIsrcs.length === 0) {
+          // All tracks were excluded for this warning.
+          missingEnrichmentTracksMap.set(warning.playlist_key ?? "", []);
+          continue;
+        }
+
+        const { data: rows, error } = await svc
+          .from("tracks")
+          .select("isrc,name,spotify_artist_names,spotify_artist_ids,spotify_album_image_url")
+          .in("isrc", filteredIsrcs);
+
+        if (error) {
+          console.error("Failed to fetch missing enrichment tracks:", error);
+          // Set null to indicate we couldn't fetch the details
+          missingEnrichmentTracksMap.set(warning.playlist_key, null);
+          continue;
+        }
+
+        const tracksRaw = (rows ?? []).map((t: any) => ({
+          isrc: t.isrc,
+          name: t.name,
+          artist_names: t.spotify_artist_names,
+          artist_ids: t.spotify_artist_ids,
+          album_image_url: t.spotify_album_image_url,
+        }));
+        const tracks = enrichmentExclusionsEnabled
+          ? tracksRaw.filter((t) => !isExcludedEnrichment(warning.playlist_key!, String(t.isrc ?? "").trim().toUpperCase()))
+          : tracksRaw;
+        missingEnrichmentTracksMap.set(warning.playlist_key ?? "", tracks);
+      } else {
+        // Fallback for older warnings: compute affected tracks from membership snapshot
+        const { data: rows, error } = await svc.rpc("health_playlist_missing_enrichment_tracks", {
+          playlist_key: warning.playlist_key,
+          run_date: selectedRunDate,
+          limit_rows: 200,
+        });
+
+        if (error) {
+          console.error("health_playlist_missing_enrichment_tracks RPC failed:", error);
+          missingEnrichmentTracksMap.set(warning.playlist_key, null);
+          continue;
+        }
+
+        const tracksRaw: Array<{
+          isrc: string;
+          name: string | null;
+          artist_names: string[] | null;
+          artist_ids: string[] | null;
+          album_image_url: string | null;
+        }> = (rows ?? []).map((t: any) => ({
+          isrc: String(t?.isrc ?? "").trim().toUpperCase(),
+          name: (t?.name ?? null) as string | null,
+          artist_names: (t?.artist_names ?? null) as string[] | null,
+          artist_ids: (t?.artist_ids ?? null) as string[] | null,
+          album_image_url: (t?.album_image_url ?? null) as string | null,
+        }));
+        const tracks = enrichmentExclusionsEnabled
+          ? tracksRaw.filter((t) => !isExcludedEnrichment(warning.playlist_key!, String(t.isrc ?? "").trim().toUpperCase()))
+          : tracksRaw;
+        missingEnrichmentTracksMap.set(warning.playlist_key ?? "", tracks);
+      }
+    }
+  }
+
   // Fetch ALL tracks missing from catalog across all playlists for the selected date
   let allMissingTracks: Array<{
     isrc: string;
@@ -347,10 +480,21 @@ export default async function HealthPage({
             .filter((w) => {
               // If exclusions are configured and *all* non-catalog tracks for a warning are excluded,
               // hide that warning row in the UI (the next ingestion run will also stop generating it).
-              if (!exclusionsEnabled) return true;
-              if (w.code !== "non_catalog_tracks_present" || !w.playlist_key) return true;
-              const tracks = nonCatalogTracksMap.get(w.playlist_key) ?? [];
-              return tracks.length > 0;
+              if (w.code === "non_catalog_tracks_present" && w.playlist_key) {
+                if (!exclusionsEnabled) return true;
+                const tracks = nonCatalogTracksMap.get(w.playlist_key) ?? [];
+                return tracks.length > 0;
+              }
+
+              if (w.code === "tracks_missing_enrichment" && w.playlist_key) {
+                if (!enrichmentExclusionsEnabled) return true;
+                const tracks = missingEnrichmentTracksMap.get(w.playlist_key);
+                // If we successfully computed the list and it's empty, suppress the row.
+                if (Array.isArray(tracks)) return tracks.length > 0;
+                return true;
+              }
+
+              return true;
             })
             .map((w, i) => (
             <WarningRow
@@ -362,6 +506,9 @@ export default async function HealthPage({
               trackCountSwingTracks={w.code === "track_count_swing" && w.playlist_key
                 ? trackCountSwingTracksMap.get(w.playlist_key)
                 : undefined}
+              missingEnrichmentTracks={w.code === "tracks_missing_enrichment" && w.playlist_key
+                ? missingEnrichmentTracksMap.get(w.playlist_key)
+                : undefined}
               enrichmentWarning={w.code === "tracks_missing_enrichment"
                 ? w.details_json
                 : undefined}
@@ -369,10 +516,20 @@ export default async function HealthPage({
           ))}
           {!((warnings ?? [])
             .filter((w) => {
-              if (!exclusionsEnabled) return true;
-              if (w.code !== "non_catalog_tracks_present" || !w.playlist_key) return true;
-              const tracks = nonCatalogTracksMap.get(w.playlist_key) ?? [];
-              return tracks.length > 0;
+              if (w.code === "non_catalog_tracks_present" && w.playlist_key) {
+                if (!exclusionsEnabled) return true;
+                const tracks = nonCatalogTracksMap.get(w.playlist_key) ?? [];
+                return tracks.length > 0;
+              }
+
+              if (w.code === "tracks_missing_enrichment" && w.playlist_key) {
+                if (!enrichmentExclusionsEnabled) return true;
+                const tracks = missingEnrichmentTracksMap.get(w.playlist_key);
+                if (Array.isArray(tracks)) return tracks.length > 0;
+                return true;
+              }
+
+              return true;
             }).length) && (
             <TableRow>
               <TableCell className="text-center opacity-50 py-8" colSpan={4}>

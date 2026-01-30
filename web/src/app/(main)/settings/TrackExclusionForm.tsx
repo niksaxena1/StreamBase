@@ -19,11 +19,22 @@ type TrackExclusionFormProps = {
   addHealthExclusion: (formData: FormData) => Promise<void>;
   tracks: Track[];
   playlists: Playlist[];
+  notePlaceholder?: string;
+  allowMulti?: boolean;
+  submitLabel?: string;
 };
 
-export function TrackExclusionForm({ addHealthExclusion, tracks, playlists }: TrackExclusionFormProps) {
+export function TrackExclusionForm({
+  addHealthExclusion,
+  tracks,
+  playlists,
+  notePlaceholder,
+  allowMulti,
+  submitLabel,
+}: TrackExclusionFormProps) {
   const [selectedPlaylistKey, setSelectedPlaylistKey] = useState<string>("");
   const [selectedTrackIsrc, setSelectedTrackIsrc] = useState<string>("");
+  const [selectedTrackIsrcs, setSelectedTrackIsrcs] = useState<string[]>([]);
   const [note, setNote] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,6 +53,12 @@ export function TrackExclusionForm({ addHealthExclusion, tracks, playlists }: Tr
     [tracks],
   );
 
+  const trackLabelByIsrc = useMemo(() => {
+    const m = new Map<string, { label: string; imageUrl?: string | null }>();
+    for (const o of trackOptions) m.set(o.value, { label: o.label, imageUrl: o.imageUrl });
+    return m;
+  }, [trackOptions]);
+
   const playlistOptions: ComboboxOption[] = useMemo(
     () =>
       playlists.map((p) => ({
@@ -51,12 +68,22 @@ export function TrackExclusionForm({ addHealthExclusion, tracks, playlists }: Tr
     [playlists],
   );
 
+  function addSelectedIsrc(isrcRaw: string) {
+    const isrc = String(isrcRaw ?? "").trim().toUpperCase().replace(/\s+/g, "");
+    if (!isrc) return;
+    setSelectedTrackIsrcs((prev) => (prev.includes(isrc) ? prev : [...prev, isrc]));
+  }
+
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
 
-    if (!selectedTrackIsrc.trim()) {
-      setError("Please select a track");
+    const isrcs = allowMulti
+      ? selectedTrackIsrcs
+      : [String(selectedTrackIsrc ?? "").trim().toUpperCase().replace(/\s+/g, "")].filter(Boolean);
+
+    if (isrcs.length === 0) {
+      setError("Please select at least one track");
       return;
     }
 
@@ -64,7 +91,11 @@ export function TrackExclusionForm({ addHealthExclusion, tracks, playlists }: Tr
     try {
       const formData = new FormData();
       if (selectedPlaylistKey) formData.set("playlist_key", selectedPlaylistKey);
-      formData.set("isrc", selectedTrackIsrc);
+      if (allowMulti) {
+        formData.set("isrcs", JSON.stringify(isrcs));
+      } else {
+        formData.set("isrc", isrcs[0]);
+      }
       if (note) formData.set("note", note);
 
       await addHealthExclusion(formData);
@@ -72,6 +103,7 @@ export function TrackExclusionForm({ addHealthExclusion, tracks, playlists }: Tr
       // Reset form
       setSelectedPlaylistKey("");
       setSelectedTrackIsrc("");
+      setSelectedTrackIsrcs([]);
       setNote("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to add exclusion");
@@ -119,10 +151,46 @@ export function TrackExclusionForm({ addHealthExclusion, tracks, playlists }: Tr
               options={trackOptions}
               placeholder="Search by name, artist or ISRC…"
               ariaLabel="Select track to exclude"
-              onChange={setSelectedTrackIsrc}
+              onChange={(next) => {
+                if (allowMulti) {
+                  addSelectedIsrc(next);
+                  // Keep it fast to add many: clear the combobox for the next search.
+                  setSelectedTrackIsrc("");
+                  return;
+                }
+                setSelectedTrackIsrc(next);
+              }}
               imageShape="square"
             />
           </div>
+          {allowMulti && selectedTrackIsrcs.length > 0 ? (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {selectedTrackIsrcs.map((isrc) => {
+                const meta = trackLabelByIsrc.get(isrc);
+                return (
+                  <button
+                    key={isrc}
+                    type="button"
+                    onClick={() => setSelectedTrackIsrcs((prev) => prev.filter((x) => x !== isrc))}
+                    className="sb-ring inline-flex items-center gap-2 rounded-full bg-white/70 px-2 py-1 text-[11px] transition hover:bg-white dark:bg-white/5 dark:hover:bg-white/10"
+                    title="Remove"
+                  >
+                    <span className="font-mono opacity-70">{isrc}</span>
+                    <span className="max-w-[260px] truncate opacity-80">{meta?.label ?? "selected"}</span>
+                    <span className="opacity-50">✕</span>
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                onClick={() => setSelectedTrackIsrcs([])}
+                className="text-[11px] underline opacity-60 hover:opacity-100"
+                title="Clear selected tracks"
+              >
+                Clear
+              </button>
+            </div>
+          ) : null}
         </div>
 
         <div className="sm:col-span-4">
@@ -130,7 +198,7 @@ export function TrackExclusionForm({ addHealthExclusion, tracks, playlists }: Tr
           <input
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            placeholder="Intentional non-catalog track"
+            placeholder={notePlaceholder ?? "Optional note"}
             className="mt-1 sb-ring w-full rounded-xl bg-white/70 px-3 py-2 text-sm outline-none placeholder:text-black/40 dark:bg-white/5 dark:placeholder:text-white/40"
           />
         </div>
@@ -141,7 +209,7 @@ export function TrackExclusionForm({ addHealthExclusion, tracks, playlists }: Tr
             disabled={isSubmitting}
             className="sb-ring w-full rounded-xl bg-black px-3 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-black"
           >
-            {isSubmitting ? "Adding…" : "Add"}
+            {isSubmitting ? "Adding…" : (submitLabel ?? (allowMulti ? "Add all" : "Add"))}
           </button>
         </div>
       </form>

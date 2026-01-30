@@ -3,6 +3,16 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 const DEFAULT_REVALIDATE_SECONDS = 86400; // 24 hours - data updates daily
 
+function isTimingEnabled(): boolean {
+  const v = (process.env.SB_TIMING ?? process.env.SOT_TIMING ?? "").toLowerCase();
+  return v === "1" || v === "true" || v === "yes";
+}
+
+function slowMsThreshold(): number {
+  const n = Number(process.env.SB_TIMING_SLOW_MS ?? "250") || 250;
+  return Math.max(0, n);
+}
+
 /**
  * Cache Supabase query results for faster page loads.
  * Since data updates daily, we cache for 24 hours by default.
@@ -18,9 +28,23 @@ export async function cachedQuery<T>(
 ): Promise<{ data: T | null; error: any }> {
   return unstable_cache(
     async () => {
+      const timingOn = isTimingEnabled();
+      const t0 = timingOn ? performance.now() : 0;
       try {
-        return await queryFn();
+        const res = await queryFn();
+        if (timingOn) {
+          const ms = performance.now() - t0;
+          if (ms >= slowMsThreshold()) {
+            // Only logs on cache miss/revalidate (unstable_cache does not call this on cache hits).
+            console.log(`[cachedQuery] key=${key} ms=${ms.toFixed(1)} error=${res.error ? "yes" : "no"}`);
+          }
+        }
+        return res;
       } catch (error) {
+        if (timingOn) {
+          const ms = performance.now() - t0;
+          console.log(`[cachedQuery] key=${key} ms=${ms.toFixed(1)} error=throw`);
+        }
         return { data: null, error };
       }
     },

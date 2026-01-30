@@ -12,37 +12,28 @@ type HealthSummary = {
 
 function shouldShow(summary: HealthSummary): boolean {
   const status = summary.latestRun?.status ?? "unknown";
-  const hasCritical = (summary.criticalWarnings ?? 0) > 0;
-  const isRunning = status === "running";
-  const isFailed = status !== "success" && status !== "running";
-  return isRunning || isFailed || hasCritical;
+  // Per requirement: only show the banner while ingestion is actively running.
+  return status === "running";
 }
 
 function classNameFor(summary: HealthSummary): string {
   const status = summary.latestRun?.status ?? "unknown";
-  const hasCritical = (summary.criticalWarnings ?? 0) > 0;
   const isRunning = status === "running";
 
   if (isRunning) {
     return "mb-3 rounded-xl border border-yellow-300 bg-yellow-50 p-3 text-sm text-yellow-950 dark:border-yellow-900/30 dark:bg-yellow-900/10 dark:text-yellow-200";
   }
 
-  if (status !== "success" || hasCritical) {
-    return "mb-3 rounded-xl border border-red-300 bg-red-50 p-3 text-sm text-red-950 dark:border-red-900/30 dark:bg-red-900/10 dark:text-red-200";
-  }
-
   // Shouldn't happen if shouldShow() is correct, but keep a safe default.
-  return "mb-3 rounded-xl border border-blue-300 bg-blue-50 p-3 text-sm text-blue-950 dark:border-blue-900/30 dark:bg-blue-900/10 dark:text-blue-200";
+  return "mb-3 rounded-xl border border-yellow-300 bg-yellow-50 p-3 text-sm text-yellow-950 dark:border-yellow-900/30 dark:bg-yellow-900/10 dark:text-yellow-200";
 }
 
 function headlineFor(summary: HealthSummary): string {
   const status = summary.latestRun?.status ?? "unknown";
-  const hasCritical = (summary.criticalWarnings ?? 0) > 0;
 
   if (status === "running") return "Ingestion in progress";
-  if (status !== "success") return `Data ingestion status: ${status}`;
-  if (hasCritical) return "Critical health warning";
-  return "Health notice";
+  // Shouldn't happen if shouldShow() is correct, but keep a safe default.
+  return "Ingestion in progress";
 }
 
 export function IngestionStatusBannerClient(props: { initialSummary: HealthSummary; pollMs?: number }) {

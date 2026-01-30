@@ -214,6 +214,9 @@ def main():
     exclusion_code = "non_catalog_tracks_present"
     excluded_global: Set[str] = set()
     excluded_by_playlist: Dict[str, Set[str]] = {}
+    # Optional: taken-down/unplayable track ignores (separate table).
+    unplayable_global: Set[str] = set()
+    unplayable_by_playlist: Dict[str, Set[str]] = {}
 
     def is_excluded(playlist_key: str, isrc: str) -> bool:
         if not isrc:
@@ -222,6 +225,18 @@ def main():
             return True
         s = excluded_by_playlist.get(playlist_key)
         return bool(s and isrc in s)
+
+    def is_unplayable_ignored(playlist_key: str, isrc: str) -> bool:
+        if not isrc:
+            return False
+        if isrc in unplayable_global:
+            return True
+        s = unplayable_by_playlist.get(playlist_key)
+        return bool(s and isrc in s)
+
+    def is_missing_catalog_ignored(playlist_key: str, isrc: str) -> bool:
+        # Combined rule for missing-catalog warning computations.
+        return is_excluded(playlist_key, isrc) or is_unplayable_ignored(playlist_key, isrc)
 
     try:
         # --- playlists config ---
@@ -258,6 +273,26 @@ def main():
                     excluded_global.add(isrc)
         except Exception:
             # Table might not exist or might be blocked; ignore and proceed without exclusions.
+            pass
+
+        try:
+            rows = pg.select_all(
+                "health_unplayable_track_exclusions",
+                "playlist_key,isrc",
+                "",
+                page_size=1000,
+            )
+            for r in rows:
+                isrc = norm_isrc(r.get("isrc") or "")
+                if not isrc:
+                    continue
+                plk = (r.get("playlist_key") or "").strip()
+                if plk:
+                    unplayable_by_playlist.setdefault(plk, set()).add(isrc)
+                else:
+                    unplayable_global.add(isrc)
+        except Exception:
+            # Table might not exist yet; ignore.
             pass
 
         # --- ingestion_runs ---
@@ -511,7 +546,7 @@ def main():
                 if isrc in catalog_streams_today:
                     total += int(catalog_streams_today[isrc])
                 else:
-                    if not is_excluded(pl_key, isrc):
+                    if not is_missing_catalog_ignored(pl_key, isrc):
                         missing += 1
                         missing_isrcs.append(isrc)
 
@@ -638,6 +673,7 @@ def main():
                             "message": f"{len(unenriched_in_playlist)} track(s) in playlist are missing Spotify enrichment data",
                             "details_json": {
                                 "missing_enrichment_track_count": len(unenriched_in_playlist),
+                                "isrc_list": unenriched_in_playlist,
                                 "note": "Run the Spotify enrichment workflow to update artist names and metadata",
                             },
                         }
