@@ -1,0 +1,64 @@
+name: SOT Daily Playlist Refresh
+
+on:
+  schedule:
+    # 11:00 Abu Dhabi (GST, UTC+4) == 07:00 UTC
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Preview only (no clicking)"
+        required: false
+        type: boolean
+        default: false
+      limit:
+        description: "Run only first N playlists (for testing)"
+        required: false
+        type: string
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+
+      - name: Write storage state from secret
+        env:
+          SOT_STORAGE_STATE_B64: ${{ secrets.SOT_STORAGE_STATE_B64 }}
+        run: |
+          if [ -z "$SOT_STORAGE_STATE_B64" ]; then
+            echo "SOT_STORAGE_STATE_B64 not set (ok). Will rely on login fallback if configured."
+            exit 0
+          fi
+          echo "$SOT_STORAGE_STATE_B64" | base64 --decode > sot_state.json
+
+      - name: Refresh SpotOnTrack playlists
+        env:
+          SOT_EMAIL: ${{ secrets.SOT_EMAIL }}
+          SOT_PASSWORD: ${{ secrets.SOT_PASSWORD }}
+        run: |
+          ARGS="--headless"
+          if [ "${{ inputs.dry_run }}" = "true" ]; then ARGS="$ARGS --dry-run"; fi
+          if [ -n "${{ inputs.limit }}" ]; then ARGS="$ARGS --limit ${{ inputs.limit }}"; fi
+          python scripts/sot_refresh_playlists.py --config config/playlists.csv --storage-state sot_state.json $ARGS
+
+      - name: Upload refresh logs artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sot-playlist-refresh-${{ github.run_id }}
+          path: .artifacts/
+          if-no-files-found: warn
+
