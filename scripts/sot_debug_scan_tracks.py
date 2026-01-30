@@ -366,6 +366,25 @@ def write_set(path: Path, s: Set[str]) -> None:
     path.write_text("\n".join(sorted(s)), encoding="utf-8")
 
 
+def write_histogram_csv(path: Path, hist: Dict[str, int]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["track_url", "seen_count"])
+        for url, n in sorted(hist.items(), key=lambda kv: (-kv[1], kv[0])):
+            w.writerow([url, n])
+
+
+def print_sample(label: str, items: Set[str], limit: int = 20) -> None:
+    if not items:
+        return
+    print(f"— {label} (showing up to {limit}) —")
+    for i, u in enumerate(sorted(items), start=1):
+        if i > limit:
+            break
+        print(f"  {i:02d}. {u}")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default="config/playlists.csv", help="CSV config path")
@@ -405,7 +424,7 @@ def main() -> None:
             if not ensure_logged_in(page, email=email, password=password):
                 raise SystemExit("❌ Not logged in and login fallback failed. Provide storage_state or SOT_EMAIL/SOT_PASSWORD.")
 
-        playlist_set, _ = scan_tracks_accumulating(
+        playlist_set, playlist_hist = scan_tracks_accumulating(
             page,
             playlist_url,
             max_scrolls=args.max_scrolls,
@@ -414,7 +433,7 @@ def main() -> None:
             debug_dir=out_dir,
         )
 
-        dashboard_set, _ = scan_tracks_accumulating(
+        dashboard_set, dashboard_hist = scan_tracks_accumulating(
             page,
             task.dashboard_url,
             max_scrolls=args.max_scrolls,
@@ -433,6 +452,8 @@ def main() -> None:
     write_set(out_dir / "dashboard_tracks.txt", dashboard_set)
     write_set(out_dir / "missing_from_dashboard.txt", missing_from_dashboard)
     write_set(out_dir / "extra_in_dashboard.txt", extra_in_dashboard)
+    write_histogram_csv(out_dir / "playlist_histogram.csv", playlist_hist)
+    write_histogram_csv(out_dir / "dashboard_histogram.csv", dashboard_hist)
 
     (out_dir / "summary.txt").write_text(
         "\n".join(
@@ -456,6 +477,8 @@ def main() -> None:
     print(f"Dashboard unique tracks: {len(dashboard_set)}")
     print(f"Missing from dashboard:  {len(missing_from_dashboard)}")
     print(f"Extra in dashboard:      {len(extra_in_dashboard)}")
+    print_sample("Missing from dashboard", missing_from_dashboard, limit=20)
+    print_sample("Extra in dashboard", extra_in_dashboard, limit=20)
     print(f"Artifacts: {out_dir}")
 
 
