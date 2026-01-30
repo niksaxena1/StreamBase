@@ -1,0 +1,75 @@
+name: SOT Debug Scan Tracks
+
+on:
+  workflow_dispatch:
+    inputs:
+      playlist_key:
+        description: "playlist_key from config/playlists.csv (e.g. p_total)"
+        required: true
+        type: string
+      headless:
+        description: "Run Playwright headless"
+        required: false
+        type: boolean
+        default: true
+      max_scrolls:
+        description: "Max scroll iterations per page"
+        required: false
+        type: string
+        default: "520"
+      stable_rounds:
+        description: "Stop after N rounds with no growth"
+        required: false
+        type: string
+        default: "12"
+
+jobs:
+  debug-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+
+      - name: Write storage state from secret
+        env:
+          SOT_STORAGE_STATE_B64: ${{ secrets.SOT_STORAGE_STATE_B64 }}
+        run: |
+          if [ -z "$SOT_STORAGE_STATE_B64" ]; then
+            echo "SOT_STORAGE_STATE_B64 not set (ok). Will rely on login fallback if configured."
+            exit 0
+          fi
+          echo "$SOT_STORAGE_STATE_B64" | base64 --decode > sot_state.json
+
+      - name: Debug scan playlist vs dashboard
+        env:
+          SOT_EMAIL: ${{ secrets.SOT_EMAIL }}
+          SOT_PASSWORD: ${{ secrets.SOT_PASSWORD }}
+        run: |
+          HEADLESS=""
+          if [ "${{ inputs.headless }}" = "true" ]; then HEADLESS="--headless"; fi
+          python scripts/sot_debug_scan_tracks.py \
+            --playlist-key "${{ inputs.playlist_key }}" \
+            --storage-state sot_state.json \
+            $HEADLESS \
+            --max-scrolls "${{ inputs.max_scrolls }}" \
+            --stable-rounds "${{ inputs.stable_rounds }}"
+
+      - name: Upload debug artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sot-debug-scan-${{ inputs.playlist_key }}-${{ github.run_id }}
+          path: .artifacts/debug_scan/
+          if-no-files-found: warn
+
