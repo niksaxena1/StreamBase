@@ -44,7 +44,7 @@ export default async function PlaylistSettingsPage() {
   const { data, error } = await sb
     .from("playlists")
     .select(
-      "playlist_key,display_name,spotify_playlist_id,spotify_playlist_image_url,display_order,collector",
+      "playlist_key,display_name,spotify_playlist_id,spotify_playlist_image_url,display_order,collector,playlist_type",
     )
     .order("display_order", { ascending: true, nullsFirst: false })
     .order("display_name", { ascending: true });
@@ -64,6 +64,26 @@ export default async function PlaylistSettingsPage() {
     const { error: upErr } = await svc
       .from("playlists")
       .update({ collector })
+      .eq("playlist_key", playlistKey);
+
+    if (upErr) throw new Error(upErr.message);
+  }
+
+  async function updatePlaylistType(formData: FormData) {
+    "use server";
+
+    await requireAdmin();
+    const playlistKey = String(formData.get("playlist_key") ?? "");
+    const raw = String(formData.get("playlist_type") ?? "").trim();
+
+    const allowed = new Set(["Catalog", "Label", "Entity", "Distro"]);
+    const playlistType = raw ? (allowed.has(raw) ? raw : null) : null;
+    if (raw && !playlistType) throw new Error(`Invalid playlist type: ${raw}`);
+
+    const svc = supabaseService();
+    const { error: upErr } = await svc
+      .from("playlists")
+      .update({ playlist_type: playlistType })
       .eq("playlist_key", playlistKey);
 
     if (upErr) throw new Error(upErr.message);
@@ -134,6 +154,7 @@ export default async function PlaylistSettingsPage() {
         playlists={data ?? []}
         updatePlaylist={updatePlaylist}
         updateCollector={updateCollector}
+        updatePlaylistType={updatePlaylistType}
         reorderPlaylists={reorderPlaylists}
       />
     </div>

@@ -11,12 +11,14 @@ type Playlist = {
   spotify_playlist_image_url: string | null;
   display_order: number | null;
   collector?: string | null;
+  playlist_type?: string | null;
 };
 
 type PlaylistSettingsTableProps = {
   playlists: Playlist[];
   updatePlaylist: (formData: FormData) => Promise<void>;
   updateCollector: (formData: FormData) => Promise<void>;
+  updatePlaylistType: (formData: FormData) => Promise<void>;
   reorderPlaylists: (updates: { playlist_key: string; display_order: number }[]) => Promise<void>;
 };
 
@@ -24,6 +26,7 @@ export function PlaylistSettingsTable({
   playlists: initialPlaylists,
   updatePlaylist,
   updateCollector,
+  updatePlaylistType,
   reorderPlaylists,
 }: PlaylistSettingsTableProps) {
   const [playlists, setPlaylists] = useState(initialPlaylists);
@@ -33,6 +36,9 @@ export function PlaylistSettingsTable({
 
   const [collectorDraft, setCollectorDraft] = useState<Record<string, string>>(() =>
     Object.fromEntries(initialPlaylists.map((p) => [p.playlist_key, String(p.collector ?? "")])),
+  );
+  const [playlistTypeDraft, setPlaylistTypeDraft] = useState<Record<string, string>>(() =>
+    Object.fromEntries(initialPlaylists.map((p) => [p.playlist_key, String(p.playlist_type ?? "")])),
   );
   const [spotifyDraft, setSpotifyDraft] = useState<Record<string, string>>(() =>
     Object.fromEntries(initialPlaylists.map((p) => [p.playlist_key, String(p.spotify_playlist_id ?? "")])),
@@ -104,6 +110,33 @@ export function PlaylistSettingsTable({
     });
   }
 
+  function savePlaylistType(playlist_key: string, playlistType: string) {
+    const fieldKey = `${playlist_key}:type`;
+    setFieldStatus(fieldKey, "saving");
+
+    startTransition(() => {
+      void (async () => {
+        try {
+          const fd = new FormData();
+          fd.set("playlist_key", playlist_key);
+          fd.set("playlist_type", playlistType);
+          await updatePlaylistType(fd);
+
+          setPlaylists((prev) =>
+            prev.map((p) =>
+              p.playlist_key === playlist_key ? { ...p, playlist_type: playlistType || null } : p,
+            ),
+          );
+
+          setFieldStatus(fieldKey, "saved");
+        } catch (e) {
+          console.error("Failed to update playlist type:", e);
+          setFieldStatus(fieldKey, "error");
+        }
+      })();
+    });
+  }
+
   function saveSpotifyId(playlist_key: string, raw: string) {
     const fieldKey = `${playlist_key}:spotify`;
     setFieldStatus(fieldKey, "saving");
@@ -163,11 +196,13 @@ export function PlaylistSettingsTable({
   }
 
   return (
-    <GlassTable headers={["", "", "Playlist", "Collector", "Spotify playlist (URL/URI/ID)"]}>
+    <GlassTable headers={["", "", "Playlist", "Type", "Collector", "Spotify playlist (URL/URI/ID)"]}>
       {playlists.map((p, index) => {
         const isAllCatalog = p.playlist_key === "all_catalog";
         const draftCollector = collectorDraft[p.playlist_key] ?? String(p.collector ?? "");
+        const draftPlaylistType = playlistTypeDraft[p.playlist_key] ?? String(p.playlist_type ?? "");
         const draftSpotify = spotifyDraft[p.playlist_key] ?? String(p.spotify_playlist_id ?? "");
+        const isDistro = draftPlaylistType === "Distro";
         return (
           <TableRow
             key={p.playlist_key}
@@ -203,13 +238,13 @@ export function PlaylistSettingsTable({
                 <GripVertical className="h-4 w-4" />
               </div>
             </TableCell>
-            <TableCell>
+            <TableCell className="w-12">
               {isAllCatalog ? (
                 <div
                   className="sb-ring flex h-8 w-8 items-center justify-center rounded-lg"
                   style={{ background: "var(--sb-accent)" }}
                 >
-                  <Music className="h-4 w-4" style={{ color: "var(--sb-text)" }} />
+                  <Music className="h-4 w-4" style={{ color: "black" }} />
                 </div>
               ) : p.spotify_playlist_image_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -219,7 +254,7 @@ export function PlaylistSettingsTable({
                   className="h-8 w-8 rounded-lg object-cover sb-ring"
                 />
               ) : (
-                <div className="h-8 w-8 rounded-lg sb-ring bg-white/60" />
+                <div className="h-8 w-8 rounded-lg sb-ring bg-white/60 dark:bg-white/10" />
               )}
             </TableCell>
             <TableCell>
@@ -227,7 +262,28 @@ export function PlaylistSettingsTable({
               <div className="font-mono text-xs opacity-60">{p.playlist_key}</div>
             </TableCell>
             <TableCell>
-              {isAllCatalog ? (
+              <div className="flex items-center gap-2">
+                <select
+                  value={draftPlaylistType}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setPlaylistTypeDraft((s) => ({ ...s, [p.playlist_key]: next }));
+                    savePlaylistType(p.playlist_key, next);
+                  }}
+                  className="sb-ring w-full rounded-xl border bg-white/70 px-3 py-2 text-sm outline-none transition dark:bg-white/5 dark:text-white dark:border-white/10 dark:focus:border-white/20 dark:focus:ring-white/5"
+                  style={{ borderColor: "var(--sb-border)", colorScheme: "light dark" }}
+                >
+                  <option value="">—</option>
+                  <option value="Catalog">Catalog</option>
+                  <option value="Label">Label</option>
+                  <option value="Entity">Entity</option>
+                  <option value="Distro">Distro</option>
+                </select>
+                {renderStatus(`${p.playlist_key}:type`)}
+              </div>
+            </TableCell>
+            <TableCell>
+              {!isDistro || isAllCatalog ? (
                 <span className="text-xs" style={{ color: "var(--sb-muted)" }}>
                   —
                 </span>
@@ -240,7 +296,8 @@ export function PlaylistSettingsTable({
                       setCollectorDraft((s) => ({ ...s, [p.playlist_key]: next }));
                       saveCollector(p.playlist_key, next);
                     }}
-                    className="sb-ring w-full rounded-xl bg-white/70 px-3 py-2 text-sm outline-none dark:bg-white/5"
+                    className="sb-ring w-full rounded-xl border bg-white/70 px-3 py-2 text-sm outline-none transition dark:bg-white/5 dark:text-white dark:border-white/10 dark:focus:border-white/20 dark:focus:ring-white/5"
+                    style={{ borderColor: "var(--sb-border)", colorScheme: "light dark" }}
                   >
                     <option value="">—</option>
                     <option value="A">A</option>
@@ -297,7 +354,7 @@ export function PlaylistSettingsTable({
       })}
       {!playlists.length && (
         <TableRow>
-          <TableCell className="text-center opacity-50 py-8" colSpan={5}>
+          <TableCell className="text-center opacity-50 py-8" colSpan={6}>
             No playlists found.
           </TableCell>
         </TableRow>

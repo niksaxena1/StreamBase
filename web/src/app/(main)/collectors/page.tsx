@@ -44,7 +44,7 @@ export default async function CollectorsPage({
   // while avoiding `await searchParams` (which breaks static generation in Next 16).
   searchParams?: any;
 }) {
-  const sp = (searchParams ?? {}) as { collector?: string; range?: string; start?: string; end?: string };
+  const sp = (await searchParams ?? {}) as { collector?: string; range?: string; start?: string; end?: string };
   const sb = await supabaseServer();
 
   // If custom start/end dates are provided, calculate range from them

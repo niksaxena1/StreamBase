@@ -277,6 +277,21 @@ export function CatalogPageClient(props: {
             </div>
           </div>
 
+          <CatalogMetricsClient
+            latestCum={props.latestCum}
+            latestDate={props.latestDate}
+            rangeDays={props.rangeDays}
+            cumSeriesAsc={props.cumSeriesAsc}
+            dailyArtistDesc={props.dailyArtistDesc}
+            artist24h={props.artist24h}
+            artist7d={props.artist7d}
+            artist28d={props.artist28d}
+            artist30d={props.artist30d}
+            trackCount={props.trackCount}
+            metric={metric}
+            setMetric={setMetric}
+          />
+
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             <div className="space-y-3">
               <div className="flex items-end justify-between px-1">
@@ -388,21 +403,6 @@ export function CatalogPageClient(props: {
               </GlassTable>
             </div>
           </div>
-
-          <CatalogMetricsClient
-            latestCum={props.latestCum}
-            latestDate={props.latestDate}
-            rangeDays={props.rangeDays}
-            cumSeriesAsc={props.cumSeriesAsc}
-            dailyArtistDesc={props.dailyArtistDesc}
-            artist24h={props.artist24h}
-            artist7d={props.artist7d}
-            artist28d={props.artist28d}
-            artist30d={props.artist30d}
-            trackCount={props.trackCount}
-            metric={metric}
-            setMetric={setMetric}
-          />
         </div>
       </div>
 
@@ -532,11 +532,6 @@ export function CatalogPageClient(props: {
                   />
                 </div>
               </SpotlightCard>
-
-              <StatCard title="Track 24h" value={<AnimatedCounter value={stat24h} format={valueFormat} />} subtitle={statSubtitle} />
-              <StatCard title="Track 7d" value={<AnimatedCounter value={stat7d} format={valueFormat} />} subtitle={statSubtitle} />
-              <StatCard title="Track 28d" value={<AnimatedCounter value={stat28d} format={valueFormat} />} subtitle={statSubtitle} />
-              <StatCard title="Track 30d" value={<AnimatedCounter value={stat30d} format={valueFormat} />} subtitle={statSubtitle} />
             </div>
           );
         })() : null}

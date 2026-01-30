@@ -4,7 +4,6 @@ import { useMemo } from "react";
 import { DailyStreamsChart } from "@/components/charts/DailyStreamsChart";
 import { DailyStreamsWithMAChart } from "@/components/charts/DailyStreamsWithMAChart";
 import { SpotlightCard } from "@/components/ui/SpotlightCard";
-import { StatCard } from "@/components/StatCard";
 import { AnimatedCounter } from "@/components/ui/AnimatedCounter";
 import type { Metric } from "./CatalogMetricSelector";
 
@@ -162,11 +161,6 @@ export function CatalogMetricsClient(props: {
             />
           </div>
         </SpotlightCard>
-
-        <StatCard title={`Artist 24h`} value={<AnimatedCounter value={stat24h} format={valueFormat} />} subtitle={props.metric === "tracks" ? "Tracks" : "Net streams"} />
-        <StatCard title={`Artist 7d`} value={<AnimatedCounter value={stat7d} format={valueFormat} />} subtitle={props.metric === "tracks" ? "Tracks" : "Net streams"} />
-        <StatCard title={`Artist 28d`} value={<AnimatedCounter value={stat28d} format={valueFormat} />} subtitle={props.metric === "tracks" ? "Tracks" : "Net streams"} />
-        <StatCard title={`Artist 30d`} value={<AnimatedCounter value={stat30d} format={valueFormat} />} subtitle={props.metric === "tracks" ? "Tracks" : "Net streams"} />
       </div>
     </div>
   );
