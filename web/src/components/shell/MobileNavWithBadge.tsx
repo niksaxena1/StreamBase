@@ -2,8 +2,8 @@ import { supabaseServer } from "@/lib/supabase/server";
 import { MobileNav } from "./MobileNav";
 
 export async function MobileNavWithBadge() {
-  // Fetch warning counts for the latest run date
-  // Wrap in try-catch to prevent errors from breaking the navigation
+  // Fetch warning counts for the latest run date (best-effort).
+  // Keep this cheap: use count queries (no pagination / row fetch).
   let badgeCount = 0;
   let hasCritical = false;
 
@@ -23,40 +23,21 @@ export async function MobileNavWithBadge() {
     }
 
     const runDate = latestRun.run_date;
-    
-    // Query warnings directly (can't use cache with cookies/supabaseServer)
-    // Get all warnings for the latest date (paginated to handle large counts)
-    const pageSize = 1000;
-    const allWarnings: Array<{ severity: string }> = [];
-    let from = 0;
-    let hasMore = true;
-    
-    while (hasMore) {
-      const to = from + pageSize - 1;
-      const { data, error } = await sb
+
+    const [{ count: totalWarnings }, { count: criticalWarnings }] = await Promise.all([
+      sb
         .from("ingestion_warnings")
-        .select("severity")
+        .select("id", { count: "exact", head: true })
+        .eq("run_date", runDate),
+      sb
+        .from("ingestion_warnings")
+        .select("id", { count: "exact", head: true })
         .eq("run_date", runDate)
-        .range(from, to);
-      
-      if (error || !data || data.length === 0) {
-        hasMore = false;
-        break;
-      }
-      
-      allWarnings.push(...data);
-      if (data.length < pageSize) {
-        hasMore = false;
-      } else {
-        from += pageSize;
-      }
-    }
+        .eq("severity", "critical"),
+    ]);
 
-    const total = allWarnings.length;
-    const critical = allWarnings.filter((w) => w.severity === "critical").length;
-
-    badgeCount = total;
-    hasCritical = critical > 0;
+    badgeCount = totalWarnings ?? 0;
+    hasCritical = (criticalWarnings ?? 0) > 0;
   } catch (error) {
     // Silently fail - don't break navigation if badge fetch fails
     console.error("[Health Badge] Failed to fetch health badge counts:", error);

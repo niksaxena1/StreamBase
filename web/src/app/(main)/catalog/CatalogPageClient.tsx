@@ -293,7 +293,11 @@ export function CatalogPageClient(props: {
                   </button>
                 </div>
               </div>
-              <GlassTable headers={["", "Track", "ISRC", "Total"]}>
+              <GlassTable
+                headers={["", "Track", "ISRC", "Total"]}
+                maxBodyHeightClassName="max-h-56"
+                bodyClassName="overflow-x-hidden"
+              >
                 {props.topByCumulative.map((t) => (
                   <TableRow key={t.isrc}>
                     <TableCell>
@@ -347,7 +351,11 @@ export function CatalogPageClient(props: {
                   </button>
                 </div>
               </div>
-              <GlassTable headers={["", "Track", "ISRC", "Daily"]}>
+              <GlassTable
+                headers={["", "Track", "ISRC", "Daily"]}
+                maxBodyHeightClassName="max-h-56"
+                bodyClassName="overflow-x-hidden"
+              >
                 {props.topByDaily.map((t) => (
                   <TableRow key={t.isrc}>
                     <TableCell>
