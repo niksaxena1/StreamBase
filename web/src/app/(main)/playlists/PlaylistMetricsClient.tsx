@@ -8,6 +8,9 @@ import { AnimatedCounter } from "@/components/ui/AnimatedCounter";
 import { Activity } from "lucide-react";
 import { formatInt } from "@/lib/format";
 import type { Metric } from "./PlaylistMetricSelector";
+import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
+import { slugifyForFilename, todayIsoDate } from "@/lib/csv";
+import { dataDateFromRunDate } from "@/lib/sotDates";
 
 
 type PlaylistDailyStatsRow = {
@@ -46,25 +49,25 @@ export function PlaylistMetricsClient(props: {
 
   const cumulativeSeries = props.history.map((r) => {
     if (props.metric === "revenue") {
-      return { date: r.date, value: Number(r.est_revenue_total ?? 0) };
+      return { date: dataDateFromRunDate(r.date), value: Number(r.est_revenue_total ?? 0) };
     } else if (props.metric === "tracks") {
-      return { date: r.date, value: Number(r.track_count ?? 0) };
+      return { date: dataDateFromRunDate(r.date), value: Number(r.track_count ?? 0) };
     } else {
-      return { date: r.date, value: Number(r.total_streams_cumulative ?? 0) };
+      return { date: dataDateFromRunDate(r.date), value: Number(r.total_streams_cumulative ?? 0) };
     }
   });
 
   const dailyDesc = props.history.map((r) => {
     if (props.metric === "revenue") {
-      return { date: r.date, daily: Number(r.est_revenue_daily_net ?? 0) };
+      return { date: dataDateFromRunDate(r.date), daily: Number(r.est_revenue_daily_net ?? 0) };
     } else if (props.metric === "tracks") {
       // Track count doesn't have daily, so calculate delta (can be negative for removals)
       const idx = props.history.findIndex((h) => h.date === r.date);
       const prev = idx < props.history.length - 1 ? props.history[idx + 1] : null;
       const daily = prev ? Number(r.track_count ?? 0) - Number(prev.track_count ?? 0) : 0;
-      return { date: r.date, daily };
+      return { date: dataDateFromRunDate(r.date), daily };
     } else {
-      return { date: r.date, daily: Number(r.daily_streams_net ?? 0) };
+      return { date: dataDateFromRunDate(r.date), daily: Number(r.daily_streams_net ?? 0) };
     }
   });
   const dailyWithMaDesc = rollingAvg7(dailyDesc);
@@ -109,6 +112,11 @@ export function PlaylistMetricsClient(props: {
                 <AnimatedCounter value={latestValue} format={valueFormat} />
               </div>
             </div>
+            <ChartCsvDownloadButton
+              rows={cumulativeSeries as unknown as Array<Record<string, unknown>>}
+              filename={`playlist-${slugifyForFilename(cumulativeLabel)}-${props.rangeDays}d-${todayIsoDate()}.csv`}
+              title="Download CSV"
+            />
           </div>
           <div className="mt-2 min-h-[200px]">
             <DailyStreamsChart
@@ -133,6 +141,11 @@ export function PlaylistMetricsClient(props: {
                 <AnimatedCounter value={latestDaily} format={valueFormat} />
               </div>
             </div>
+            <ChartCsvDownloadButton
+              rows={dailyWithMaDesc as unknown as Array<Record<string, unknown>>}
+              filename={`playlist-${slugifyForFilename(dailyLabel)}-${props.rangeDays}d-${todayIsoDate()}.csv`}
+              title="Download CSV"
+            />
           </div>
           <div className="mt-2 min-h-[200px]">
             <DailyStreamsWithMAChart
@@ -146,16 +159,6 @@ export function PlaylistMetricsClient(props: {
           </div>
         </SpotlightCard>
 
-        <StatCard
-          title="Active tracks"
-          value={<AnimatedCounter value={props.latest?.track_count ?? 0} />}
-          subtitle="Currently in playlist"
-        />
-        <StatCard
-          title="Removed tracks"
-          value={formatInt(props.removedTracksCount)}
-          subtitle="Historical removals"
-        />
         {props.metric === "tracks" && (
           <SpotlightCard className="lg:col-span-12 p-3">
             <div className="flex items-center justify-between gap-3">
@@ -167,6 +170,11 @@ export function PlaylistMetricsClient(props: {
                   Daily snapshots from ingestion.
                 </div>
               </div>
+              <ChartCsvDownloadButton
+                rows={cumulativeSeries as unknown as Array<Record<string, unknown>>}
+                filename={`playlist-${slugifyForFilename("track-count-over-time")}-${props.rangeDays}d-${todayIsoDate()}.csv`}
+                title="Download CSV"
+              />
             </div>
             <div className="mt-2 min-h-[180px]">
               <DailyStreamsChart

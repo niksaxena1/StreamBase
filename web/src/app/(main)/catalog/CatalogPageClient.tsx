@@ -14,6 +14,9 @@ import { DailyStreamsChart } from "@/components/charts/DailyStreamsChart";
 import { DailyStreamsWithMAChart } from "@/components/charts/DailyStreamsWithMAChart";
 import { StatCard } from "@/components/StatCard";
 import { AnimatedCounter } from "@/components/ui/AnimatedCounter";
+import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
+import { downloadCsv, slugifyForFilename, todayIsoDate } from "@/lib/csv";
+import { dataDateFromRunDate } from "@/lib/sotDates";
 
 type ChartDataPoint = {
   date: string;
@@ -87,39 +90,17 @@ export function CatalogPageClient(props: {
     return `?${u.toString()}`;
   }
 
-  function downloadAsCSV(data: TopTrack[], filename: string, isDaily: boolean) {
-    const headers = ["Track", "ISRC", isDaily ? "Daily" : "Total"];
-    const rows = data.map((t) => [
-      t.name ?? t.isrc,
-      t.isrc,
-      isDaily 
-        ? (t.daily === null ? "" : String(t.daily))
-        : (t.total === null ? "" : String(t.total))
-    ]);
-
-    const csvContent = [
-      headers.join(","),
-      ...rows.map((row) => 
-        row.map((cell) => {
-          // Escape quotes and wrap in quotes if contains comma, quote, or newline
-          const cellStr = String(cell);
-          if (cellStr.includes(",") || cellStr.includes('"') || cellStr.includes("\n")) {
-            return `"${cellStr.replace(/"/g, '""')}"`;
-          }
-          return cellStr;
-        }).join(",")
-      )
-    ].join("\n");
-
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const link = document.createElement("a");
-    const url = URL.createObjectURL(blob);
-    link.setAttribute("href", url);
-    link.setAttribute("download", filename);
-    link.style.visibility = "hidden";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  function downloadTopTracksAsCsv(data: TopTrack[], filename: string, isDaily: boolean) {
+    downloadCsv({
+      filename,
+      rows: data.map((t) => ({
+        track: t.name ?? t.isrc,
+        isrc: t.isrc,
+        value: isDaily ? t.daily : t.total,
+      })) as Array<Record<string, unknown>>,
+      headers: ["track", "isrc", "value"],
+      sortForExport: false,
+    });
   }
 
   return (
@@ -130,7 +111,7 @@ export function CatalogPageClient(props: {
             {props.latestDate ? (
               <>
                 Latest data date:{" "}
-                <span className="font-mono">{formatDateISO(props.latestDate)}</span>
+                <span className="font-mono">{formatDateISO(dataDateFromRunDate(props.latestDate))}</span>
               </>
             ) : (
               "No ingestion date found yet."
@@ -299,9 +280,9 @@ export function CatalogPageClient(props: {
                   <h2 className="text-sm font-semibold">Top tracks (cumulative)</h2>
                   <button
                     type="button"
-                    onClick={() => downloadAsCSV(
+                    onClick={() => downloadTopTracksAsCsv(
                       props.topByCumulative,
-                      `top-tracks-cumulative-${props.artistName.replace(/[^a-z0-9]/gi, "-").toLowerCase()}-${new Date().toISOString().split("T")[0]}.csv`,
+                      `top-tracks-cumulative-${slugifyForFilename(props.artistName)}-${todayIsoDate()}.csv`,
                       false
                     )}
                     className="inline-flex items-center justify-center p-0 transition-colors hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
@@ -353,9 +334,9 @@ export function CatalogPageClient(props: {
                   <h2 className="text-sm font-semibold">Top tracks (daily)</h2>
                   <button
                     type="button"
-                    onClick={() => downloadAsCSV(
+                    onClick={() => downloadTopTracksAsCsv(
                       props.topByDaily,
-                      `top-tracks-daily-${props.artistName.replace(/[^a-z0-9]/gi, "-").toLowerCase()}-${new Date().toISOString().split("T")[0]}.csv`,
+                      `top-tracks-daily-${slugifyForFilename(props.artistName)}-${todayIsoDate()}.csv`,
                       true
                     )}
                     className="inline-flex items-center justify-center p-0 transition-colors hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
@@ -473,16 +454,20 @@ export function CatalogPageClient(props: {
           const yTickFormat = trackMode === "revenue" ? ("usd_compact" as const) : ("k" as const);
 
           const cumSeries = trackMode === "revenue"
-            ? props.trackCumDesc.map((p) => ({ date: p.date, value: p.value * STREAM_PAYOUT_USD }))
-            : props.trackCumDesc;
+            ? props.trackCumDesc.map((p) => ({ date: dataDateFromRunDate(p.date), value: p.value * STREAM_PAYOUT_USD }))
+            : props.trackCumDesc.map((p) => ({ date: dataDateFromRunDate(p.date), value: p.value }));
 
           const dailySeries = trackMode === "revenue"
             ? props.trackDailyWithMaDesc.map((p) => ({
-                date: p.date,
+                date: dataDateFromRunDate(p.date),
                 daily: p.daily * STREAM_PAYOUT_USD,
                 ma7: p.ma7 == null ? p.ma7 : p.ma7 * STREAM_PAYOUT_USD,
               }))
-            : props.trackDailyWithMaDesc;
+            : props.trackDailyWithMaDesc.map((p) => ({
+                date: dataDateFromRunDate(p.date),
+                daily: p.daily,
+                ma7: p.ma7,
+              }));
 
           const stat24h = trackMode === "revenue" ? props.track24h * STREAM_PAYOUT_USD : props.track24h;
           const stat7d = trackMode === "revenue" ? props.track7d * STREAM_PAYOUT_USD : props.track7d;
@@ -501,8 +486,15 @@ export function CatalogPageClient(props: {
           return (
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
               <SpotlightCard className="lg:col-span-7 p-3">
-                <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
-                  {cumulativeTitle}
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
+                    {cumulativeTitle}
+                  </div>
+                  <ChartCsvDownloadButton
+                    rows={cumSeries as unknown as Array<Record<string, unknown>>}
+                    filename={`catalog-track-${slugifyForFilename(cumulativeTitle)}-${props.rangeDays}d-${todayIsoDate()}.csv`}
+                    title="Download CSV"
+                  />
                 </div>
                 <div className="mt-2 min-h-[180px]">
                   <DailyStreamsChart
@@ -518,8 +510,15 @@ export function CatalogPageClient(props: {
               </SpotlightCard>
 
               <SpotlightCard className="lg:col-span-5 p-3">
-                <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
-                  {dailyTitle}
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
+                    {dailyTitle}
+                  </div>
+                  <ChartCsvDownloadButton
+                    rows={dailySeries as unknown as Array<Record<string, unknown>>}
+                    filename={`catalog-track-${slugifyForFilename(dailyTitle)}-${props.rangeDays}d-${todayIsoDate()}.csv`}
+                    title="Download CSV"
+                  />
                 </div>
                 <div className="mt-2 min-h-[180px]">
                   <DailyStreamsWithMAChart

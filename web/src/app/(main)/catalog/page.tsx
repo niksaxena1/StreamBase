@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ExternalLink, User } from "lucide-react";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { supabaseServer } from "@/lib/supabase/server";
+import { supabaseService } from "@/lib/supabase/service";
 import { cachedQuery } from "@/lib/supabase/cache";
 import { formatInt, formatDateISO } from "@/lib/format";
 import { getArtists } from "@/lib/spotify";
@@ -70,7 +72,7 @@ function chunk<T>(arr: T[], size: number): T[][] {
 }
 
 async function fetchAllTracksMeta(
-  sb: Awaited<ReturnType<typeof supabaseServer>>,
+  sb: SupabaseClient,
   maxRows = 5000,
 ): Promise<TrackRow[]> {
   const pageSize = 1000;
@@ -102,7 +104,7 @@ async function fetchAllTracksMeta(
 }
 
 async function fetchAllTrackDaily(
-  sb: Awaited<ReturnType<typeof supabaseServer>>,
+  sb: SupabaseClient,
   args: { isrcs: string[]; startDate: string; endDate: string; maxRows?: number },
 ): Promise<TrackDailyRow[]> {
   const pageSize = 1000;
@@ -132,7 +134,7 @@ async function fetchAllTrackDaily(
 }
 
 async function fetchAllTrackSeries(
-  sb: Awaited<ReturnType<typeof supabaseServer>>,
+  sb: SupabaseClient,
   args: { isrc: string; startDate: string; endDate: string; maxRows?: number },
 ) {
   const pageSize = 1000;
@@ -210,9 +212,20 @@ export default async function CatalogPage({
 
     const rangeDays = clampRangeDays(sp.range);
     const sb = await supabaseServer();
+    const { data: userData } = await sb.auth.getUser();
+    if (!userData.user) redirect("/login");
+
+    const { data: isAdmin } = await sb.rpc("is_admin");
+    if (!isAdmin) redirect("/");
+
+    // IMPORTANT: Core analytics tables are admin-only via RLS. If we cache queries using
+    // a request-scoped Supabase client, revalidation can run without cookies and fail,
+    // leaving stale cached data. Use the service-role client for all data reads here;
+    // access is still gated above.
+    const svc = supabaseService();
 
     // We don't have an artists table; derive from track metadata.
-    const trackMetaRows = await fetchAllTracksMeta(sb, 5000);
+    const trackMetaRows = await fetchAllTracksMeta(svc, 5000);
     const artists = deriveArtists(trackMetaRows);
     const firstArtistId = artists[0]?.id ?? null;
 
@@ -232,7 +245,7 @@ export default async function CatalogPage({
   // Track list for this artist (cached for 1 hour)
   const { data: tracks, error: tracksError } = await cachedQuery(
     async () =>
-      await sb
+      await svc
         .from("tracks")
         .select("isrc,name,spotify_artist_ids,spotify_artist_names,spotify_album_image_url")
         .contains("spotify_artist_ids", [artistId])
@@ -265,7 +278,7 @@ export default async function CatalogPage({
   // Canonical latest RUN date (DB snapshot date) - cached
   const { data: latestRun } = await cachedQuery(
     async () =>
-      await sb
+      await svc
         .from("playlist_daily_stats")
         .select("date")
         .eq("playlist_key", "all_catalog")
@@ -304,7 +317,7 @@ export default async function CatalogPage({
   if (isrcs.length && latestRunDate && startRunDate) {
     await Promise.all(
       chunk(isrcs, 120).map(async (isrcChunk) => {
-        const rows = await fetchAllTrackDaily(sb, {
+        const rows = await fetchAllTrackDaily(svc, {
           isrcs: isrcChunk,
           startDate: startRunDate,
           endDate: latestRunDate,
@@ -400,7 +413,7 @@ export default async function CatalogPage({
   // Selected track panels (optional)
   const trackSeries =
     isrc && latestRunDate && startRunDate
-      ? await fetchAllTrackSeries(sb, { isrc, startDate: startRunDate, endDate: latestRunDate, maxRows: 5000 })
+      ? await fetchAllTrackSeries(svc, { isrc, startDate: startRunDate, endDate: latestRunDate, maxRows: 5000 })
       : ([] as Array<{ date: string; streams_cumulative: number | null }>);
 
   const trackCumDesc = (trackSeries ?? []).map((r) => ({
@@ -457,7 +470,7 @@ export default async function CatalogPage({
   if (isrc) {
     const { data: trackData } = await cachedQuery(
       async () =>
-        await sb
+        await svc
           .from("tracks")
           .select("name,spotify_album_image_url,spotify_track_id,spotify_artist_names,spotify_artist_ids")
           .eq("isrc", isrc)

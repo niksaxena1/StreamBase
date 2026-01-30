@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import { formatDateISO } from "@/lib/format";
 import { supabaseServer } from "@/lib/supabase/server";
@@ -48,6 +49,12 @@ export default async function HealthPage({
   const dateFilter = sp.date;
 
   const sb = await supabaseServer();
+  const { data: userData } = await sb.auth.getUser();
+  if (!userData.user) redirect("/login");
+
+  const { data: isAdmin } = await sb.rpc("is_admin");
+  if (!isAdmin) redirect("/");
+
   const svc = supabaseService();
 
   // Health warning exclusions (best-effort; table may not exist yet).
@@ -89,7 +96,7 @@ export default async function HealthPage({
 
   const exclusionsEnabled = excludedGlobal.size > 0 || excludedByPlaylist.size > 0;
 
-  const { data: runs, error: runsErr } = await sb
+  const { data: runs, error: runsErr } = await svc
     .from("ingestion_runs")
     .select("id,run_date,status,logs_url,started_at,finished_at")
     .order("run_date", { ascending: false })
@@ -108,7 +115,7 @@ export default async function HealthPage({
   const selectedRunId = selectedRun?.id ?? null;
 
   const { data: exportsForLatest, error: exportsErr } = selectedRunId
-    ? await sb
+    ? await svc
         .from("raw_exports")
         .select("playlist_key,storage_bucket,object_key,rows_count,file_sha256,exported_at")
         .eq("run_id", selectedRunId)
@@ -116,7 +123,7 @@ export default async function HealthPage({
     : { data: [], error: null };
 
   // Build warnings query with filters
-  let warningsQuery = sb
+  let warningsQuery = svc
     .from("ingestion_warnings")
     .select("severity,code,playlist_key,message,run_date,details_json")
     .order("severity", { ascending: false })
@@ -159,7 +166,7 @@ export default async function HealthPage({
     let from = 0;
     while (true) {
       const to = from + pageSize - 1;
-      const { data, error } = await sb
+      const { data, error } = await svc
         .from("track_daily_streams")
         .select("isrc")
         .eq("date", selectedDataDate)
@@ -180,7 +187,7 @@ export default async function HealthPage({
       from = 0;
       while (true) {
         const to = from + pageSize - 1;
-        const { data, error } = await sb
+        const { data, error } = await svc
           .from("playlist_memberships")
           .select("isrc")
           .eq("playlist_key", warning.playlist_key)
@@ -204,7 +211,7 @@ export default async function HealthPage({
 
       if (nonCatalogIsrcs.length > 0) {
         // Fetch track names, artist names, artist IDs, and album images
-        const { data: tracks } = await sb
+        const { data: tracks } = await svc
           .from("tracks")
           .select("isrc,name,spotify_artist_names,spotify_artist_ids,spotify_album_image_url")
           .in("isrc", nonCatalogIsrcs);
@@ -262,7 +269,7 @@ export default async function HealthPage({
       let from = 0;
       while (true) {
         const to = from + pageSize - 1;
-        const { data, error } = await sb
+        const { data, error } = await svc
           .from("playlist_memberships")
           .select("isrc")
           .eq("playlist_key", warning.playlist_key)
@@ -281,7 +288,7 @@ export default async function HealthPage({
       from = 0;
       while (true) {
         const to = from + pageSize - 1;
-        const { data, error } = await sb
+        const { data, error } = await svc
           .from("playlist_memberships")
           .select("isrc")
           .eq("playlist_key", warning.playlist_key)
@@ -306,7 +313,7 @@ export default async function HealthPage({
       // Fetch track metadata for added and removed tracks
       const allChangedIsrcs = [...addedIsrcs, ...removedIsrcs];
       if (allChangedIsrcs.length > 0) {
-        const { data: tracks } = await sb
+        const { data: tracks } = await svc
           .from("tracks")
           .select("isrc,name,spotify_artist_names,spotify_artist_ids,spotify_album_image_url")
           .in("isrc", allChangedIsrcs);
@@ -351,7 +358,7 @@ export default async function HealthPage({
     let from = 0;
     while (true) {
       const to = from + pageSize - 1;
-      const { data, error } = await sb
+      const { data, error } = await svc
         .from("playlist_memberships")
         .select("isrc,playlist_key")
         .lte("valid_from", selectedRunDate)
@@ -369,7 +376,7 @@ export default async function HealthPage({
     from = 0;
     while (true) {
       const to = from + pageSize - 1;
-      const { data, error } = await sb
+      const { data, error } = await svc
         .from("track_daily_streams")
         .select("isrc")
         .eq("date", selectedDataDate)
@@ -397,7 +404,7 @@ export default async function HealthPage({
     const missingIsrcs = Array.from(isrcToPlaylists.keys());
     if (missingIsrcs.length > 0) {
       // Fetch track metadata
-      const { data: tracks } = await sb
+      const { data: tracks } = await svc
         .from("tracks")
         .select("isrc,name,spotify_artist_names,spotify_artist_ids,spotify_album_image_url")
         .in("isrc", missingIsrcs);

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { List, ExternalLink } from "lucide-react";
 import { redirect } from "next/navigation";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { supabaseServer } from "@/lib/supabase/server";
 import { cachedQuery } from "@/lib/supabase/cache";
@@ -72,7 +73,7 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
-async function fetchMemberships(sb: Awaited<ReturnType<typeof supabaseServer>>, args: {
+async function fetchMemberships(sb: SupabaseClient, args: {
   playlistKey: string;
   removed: boolean;
   maxRows: number;
@@ -174,7 +175,17 @@ export default async function PlaylistsPage({
   const rangeDays = clampRangeDays(sp.range);
 
   const sb = await supabaseServer();
+  const { data: userData } = await sb.auth.getUser();
+  if (!userData.user) redirect("/login");
+
   const { data: isAdmin } = await sb.rpc("is_admin");
+  if (!isAdmin) redirect("/");
+
+  // IMPORTANT: Core analytics tables are admin-only via RLS. Using a request-scoped
+  // Supabase client inside Next's cache revalidation can drop cookies, causing
+  // revalidation to fail and stale cached data to persist. Use the service role
+  // client for cached reads; access is still gated above.
+  const svc = supabaseService();
 
   // Backwards-compat: old query-driven list view
   if ((sp.view ?? "").trim().toLowerCase() === "list") {
@@ -203,7 +214,7 @@ export default async function PlaylistsPage({
   ] = await Promise.all([
     cachedQuery(
       async () =>
-        await sb
+        await svc
           .from("playlists")
           .select("playlist_key,display_name,is_catalog,spotify_playlist_id,spotify_playlist_image_url")
           .order("display_order", { ascending: true, nullsFirst: false })
@@ -213,7 +224,7 @@ export default async function PlaylistsPage({
     ),
     cachedQuery(
       async () =>
-        await sb
+        await svc
           .from("playlist_daily_stats")
           .select("date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net")
           .eq("playlist_key", playlistKey)
@@ -225,7 +236,7 @@ export default async function PlaylistsPage({
     ),
     cachedQuery(
       async () =>
-        await sb
+        await svc
           .from("playlist_daily_stats")
           .select("date")
           .eq("playlist_key", playlistKey)
@@ -237,7 +248,7 @@ export default async function PlaylistsPage({
     ),
     cachedQuery(
       async () =>
-        await sb
+        await svc
           .from("playlist_daily_stats")
           .select("date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net")
           .eq("playlist_key", playlistKey)
@@ -264,8 +275,8 @@ export default async function PlaylistsPage({
 
   // Memberships (current + removed)
   const [current, removed] = await Promise.all([
-    fetchMemberships(sb, { playlistKey, removed: false, maxRows: 5000 }),
-    fetchMemberships(sb, { playlistKey, removed: true, maxRows: 500 }),
+    fetchMemberships(svc, { playlistKey, removed: false, maxRows: 5000 }),
+    fetchMemberships(svc, { playlistKey, removed: true, maxRows: 500 }),
   ]);
 
   const currentIsrcs = current.map((m) => m.isrc);
@@ -280,19 +291,19 @@ export default async function PlaylistsPage({
   await Promise.all(
     chunks.map(async (isrcChunk) => {
       const [metaRes, todayRes, prevRes] = await Promise.all([
-        sb
+        svc
           .from("tracks")
           .select("isrc,name,spotify_album_image_url,spotify_artist_names,spotify_artist_ids")
           .in("isrc", isrcChunk),
         latestDate
-          ? sb
+          ? svc
               .from("track_daily_streams")
               .select("isrc,streams_cumulative")
               .eq("date", latestDate)
               .in("isrc", isrcChunk)
           : Promise.resolve({ data: [] as TrackStreamsRow[] }),
         prevDate
-          ? sb
+          ? svc
               .from("track_daily_streams")
               .select("isrc,streams_cumulative")
               .eq("date", prevDate)
@@ -340,7 +351,7 @@ export default async function PlaylistsPage({
   const removedMetaByIsrc = new Map<string, TrackRow>();
   await Promise.all(
     chunk(removedIsrcs, 200).map(async (isrcChunk) => {
-      const { data } = await sb
+      const { data } = await svc
         .from("tracks")
         .select("isrc,name,spotify_album_image_url,spotify_artist_names,spotify_artist_ids")
         .in("isrc", isrcChunk);

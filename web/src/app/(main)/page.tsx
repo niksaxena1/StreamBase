@@ -7,6 +7,7 @@ import { AnimatedCounter } from "@/components/ui/AnimatedCounter";
 import { LazyInteractiveChartSection } from "@/components/dashboard/LazyInteractiveChartSection";
 import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
 import { supabaseServer } from "@/lib/supabase/server";
+import { supabaseService } from "@/lib/supabase/service";
 import { cachedQuery } from "@/lib/supabase/cache";
 import { dataDateFromRunDate } from "@/lib/sotDates";
 
@@ -45,10 +46,17 @@ export default async function Home({
   // and avoid caching a sessionless response in production.
   if (!session) redirect("/login");
 
+  const { data: isAdmin } = await sb.rpc("is_admin");
+  if (!isAdmin) redirect("/");
+
+  // IMPORTANT: playlist_daily_stats is protected by admin-only RLS. Use service client
+  // for cached reads so cache revalidation can't fail due to missing cookies.
+  const svc = supabaseService();
+
   // Single query: fetch history and derive latest from first row (cached for 1 hour)
   const { data: history, error: historyErr } = await cachedQuery(
     async () =>
-      await sb
+      await svc
         .from("playlist_daily_stats")
         .select(
           "date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net",

@@ -5,6 +5,8 @@ interface GlassTableProps {
   headers: (string | ReactNode)[];
   children: ReactNode;
   className?: string;
+  bodyClassName?: string;
+  maxBodyHeightClassName?: string;
   emptyMessage?: string;
   emptyIcon?: ReactNode;
 }
@@ -12,11 +14,19 @@ interface GlassTableProps {
 export function GlassTable({ 
   headers, 
   children, 
-  className
+  className,
+  bodyClassName,
+  maxBodyHeightClassName,
 }: GlassTableProps) {
   return (
     <div className={["sb-card relative overflow-hidden", className].filter(Boolean).join(" ")}>
-      <div className="max-h-[440px] overflow-auto">
+      <div
+        className={[
+          maxBodyHeightClassName ?? "max-h-[440px]",
+          "overflow-auto",
+          bodyClassName ?? "",
+        ].filter(Boolean).join(" ")}
+      >
         <table className="min-w-full text-xs">
           <thead
             className="sticky top-0 z-10 text-left text-[11px] uppercase tracking-wider backdrop-blur-xl"

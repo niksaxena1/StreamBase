@@ -6,6 +6,9 @@ import { DailyStreamsWithMAChart } from "@/components/charts/DailyStreamsWithMAC
 import { SpotlightCard } from "@/components/ui/SpotlightCard";
 import { AnimatedCounter } from "@/components/ui/AnimatedCounter";
 import type { Metric } from "./CatalogMetricSelector";
+import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
+import { slugifyForFilename, todayIsoDate } from "@/lib/csv";
+import { dataDateFromRunDate } from "@/lib/sotDates";
 
 const STREAM_PAYOUT_USD = 0.002;
 
@@ -51,35 +54,41 @@ export function CatalogMetricsClient(props: {
   const cumulativeSeries = useMemo(() => {
     if (props.metric === "revenue") {
       return props.cumSeriesAsc.map((p) => ({
-        date: p.date,
+        date: dataDateFromRunDate(p.date),
         value: p.value * STREAM_PAYOUT_USD,
       }));
     } else if (props.metric === "tracks") {
       // For tracks, we don't have historical track count per artist
       // So we'll just show a flat line or return empty
       return props.cumSeriesAsc.map((p) => ({
-        date: p.date,
+        date: dataDateFromRunDate(p.date),
         value: props.trackCount,
       }));
     } else {
-      return props.cumSeriesAsc;
+      return props.cumSeriesAsc.map((p) => ({
+        date: dataDateFromRunDate(p.date),
+        value: p.value,
+      }));
     }
   }, [props.metric, props.cumSeriesAsc, props.trackCount]);
 
   const dailyDesc = useMemo(() => {
     if (props.metric === "revenue") {
       return props.dailyArtistDesc.map((p) => ({
-        date: p.date,
+        date: dataDateFromRunDate(p.date),
         daily: p.daily * STREAM_PAYOUT_USD,
       }));
     } else if (props.metric === "tracks") {
       // Track count doesn't change daily for an artist's catalog
       return props.dailyArtistDesc.map((p) => ({
-        date: p.date,
+        date: dataDateFromRunDate(p.date),
         daily: 0,
       }));
     } else {
-      return props.dailyArtistDesc;
+      return props.dailyArtistDesc.map((p) => ({
+        date: dataDateFromRunDate(p.date),
+        daily: p.daily,
+      }));
     }
   }, [props.metric, props.dailyArtistDesc]);
 
@@ -125,6 +134,11 @@ export function CatalogMetricsClient(props: {
                 <AnimatedCounter value={latestValue} format={valueFormat} />
               </div>
             </div>
+            <ChartCsvDownloadButton
+              rows={cumulativeSeries as unknown as Array<Record<string, unknown>>}
+              filename={`catalog-artist-${slugifyForFilename(cumulativeLabel)}-${props.rangeDays}d-${todayIsoDate()}.csv`}
+              title="Download CSV"
+            />
           </div>
           <div className="mt-2 min-h-[200px]">
             <DailyStreamsChart
@@ -149,6 +163,11 @@ export function CatalogMetricsClient(props: {
                 <AnimatedCounter value={latestDaily} format={valueFormat} />
               </div>
             </div>
+            <ChartCsvDownloadButton
+              rows={dailyWithMaDesc as unknown as Array<Record<string, unknown>>}
+              filename={`catalog-artist-${slugifyForFilename(dailyLabel)}-${props.rangeDays}d-${todayIsoDate()}.csv`}
+              title="Download CSV"
+            />
           </div>
           <div className="mt-2 min-h-[200px]">
             <DailyStreamsWithMAChart

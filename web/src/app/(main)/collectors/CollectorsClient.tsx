@@ -12,6 +12,9 @@ import { AnimatedCounter } from "@/components/ui/AnimatedCounter";
 import { Sparkline } from "@/components/charts/Sparkline";
 import { StatCard } from "@/components/StatCard";
 import { formatDateISO, formatInt, formatUsd2 } from "@/lib/format";
+import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
+import { slugifyForFilename, todayIsoDate } from "@/lib/csv";
+import { dataDateFromRunDate } from "@/lib/sotDates";
 
 const METRICS = ["revenue", "streams", "tracks"] as const;
 type Metric = (typeof METRICS)[number];
@@ -56,10 +59,12 @@ function aggregateMonthlyDelta(
 
   for (let i = 0; i < asc.length; i++) {
     const cur = asc[i];
-    const curMonth = cur.date.substring(0, 7); // yyyy-mm
+    const curDataDate = dataDateFromRunDate(cur.date);
+    const curMonth = curDataDate.substring(0, 7); // yyyy-mm from data date
 
     const prev = i > 0 ? asc[i - 1] : null;
-    const prevMonth = prev?.date.substring(0, 7);
+    const prevDataDate = prev ? dataDateFromRunDate(prev.date) : null;
+    const prevMonth = prevDataDate?.substring(0, 7);
 
     // Get the delta for this day
     let delta = 0;
@@ -166,18 +171,18 @@ export function CollectorsClient(props: {
   const series = useMemo(() => {
     const datesDesc = props.seriesDesc.map((p) => p.date);
 
-    const revenueTotalDesc = datesDesc.map((d, i) => ({ date: d, value: Number(props.seriesDesc[i]?.est_revenue_total ?? 0) }));
-    const revenueDailyDesc = datesDesc.map((d, i) => ({ date: d, daily: Number(props.seriesDesc[i]?.est_revenue_daily_net ?? 0) }));
+    const revenueTotalDesc = datesDesc.map((d, i) => ({ date: dataDateFromRunDate(d), value: Number(props.seriesDesc[i]?.est_revenue_total ?? 0) }));
+    const revenueDailyDesc = datesDesc.map((d, i) => ({ date: dataDateFromRunDate(d), daily: Number(props.seriesDesc[i]?.est_revenue_daily_net ?? 0) }));
 
-    const streamsTotalDesc = datesDesc.map((d, i) => ({ date: d, value: Number(props.seriesDesc[i]?.total_streams_cumulative ?? 0) }));
-    const streamsDailyDesc = datesDesc.map((d, i) => ({ date: d, daily: Number(props.seriesDesc[i]?.daily_streams_net ?? 0) }));
+    const streamsTotalDesc = datesDesc.map((d, i) => ({ date: dataDateFromRunDate(d), value: Number(props.seriesDesc[i]?.total_streams_cumulative ?? 0) }));
+    const streamsDailyDesc = datesDesc.map((d, i) => ({ date: dataDateFromRunDate(d), daily: Number(props.seriesDesc[i]?.daily_streams_net ?? 0) }));
 
-    const tracksTotalDesc = datesDesc.map((d, i) => ({ date: d, value: Number(props.seriesDesc[i]?.track_count ?? 0) }));
+    const tracksTotalDesc = datesDesc.map((d, i) => ({ date: dataDateFromRunDate(d), value: Number(props.seriesDesc[i]?.track_count ?? 0) }));
     const tracksDailyDeltaDesc = datesDesc.map((d, i) => {
       const cur = Number(props.seriesDesc[i]?.track_count ?? 0);
       const prev = Number(props.seriesDesc[i + 1]?.track_count ?? 0);
       // oldest->newest diff is more intuitive, but we keep newest-first: compare to next older day
-      return { date: d, daily: i + 1 < props.seriesDesc.length ? cur - prev : 0 };
+      return { date: dataDateFromRunDate(d), daily: i + 1 < props.seriesDesc.length ? cur - prev : 0 };
     });
 
     return {
@@ -389,8 +394,15 @@ export function CollectorsClient(props: {
 
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
           <SpotlightCard className="lg:col-span-7 p-3">
-            <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
-              {cumulativeLabel}
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
+                {cumulativeLabel}
+              </div>
+              <ChartCsvDownloadButton
+                rows={series[metric].cumulative as unknown as Array<Record<string, unknown>>}
+                filename={`collectors-${slugifyForFilename(cumulativeLabel)}-${props.rangeDays}d-${todayIsoDate()}.csv`}
+                title="Download CSV"
+              />
             </div>
             <div className="mt-2 min-h-[220px]">
               <DailyStreamsChart
@@ -406,8 +418,15 @@ export function CollectorsClient(props: {
           </SpotlightCard>
 
           <SpotlightCard className="lg:col-span-5 p-3">
-            <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
-              {dailyLabel}
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
+                {dailyLabel}
+              </div>
+              <ChartCsvDownloadButton
+                rows={series[metric].daily as unknown as Array<Record<string, unknown>>}
+                filename={`collectors-${slugifyForFilename(dailyLabel)}-${props.rangeDays}d-${todayIsoDate()}.csv`}
+                title="Download CSV"
+              />
             </div>
             <div className="mt-2 min-h-[220px]">
               <DailyStreamsWithMAChart
@@ -422,8 +441,15 @@ export function CollectorsClient(props: {
         </div>
 
         <SpotlightCard className="p-3">
-          <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
-            Monthly {metric === "revenue" ? "Est. Revenue" : metric === "streams" ? "Streams" : "Track"}
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
+              Monthly {metric === "revenue" ? "Est. Revenue" : metric === "streams" ? "Streams" : "Track"}
+            </div>
+            <ChartCsvDownloadButton
+              rows={monthlyData[metric] as unknown as Array<Record<string, unknown>>}
+              filename={`collectors-${slugifyForFilename(`monthly-${metric}`)}-${todayIsoDate()}.csv`}
+              title="Download CSV"
+            />
           </div>
           <p className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
             All-time monthly aggregation (not affected by date range)

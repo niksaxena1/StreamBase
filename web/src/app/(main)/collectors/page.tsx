@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import { supabaseServer } from "@/lib/supabase/server";
+import { supabaseService } from "@/lib/supabase/service";
 import { formatDateISO } from "@/lib/format";
 import { RememberParamRedirect } from "@/components/dashboard/RememberParamRedirect";
 import { cachedQueries, cachedQuery } from "@/lib/supabase/cache";
@@ -46,6 +48,15 @@ export default async function CollectorsPage({
 }) {
   const sp = (await searchParams ?? {}) as { collector?: string; range?: string; start?: string; end?: string };
   const sb = await supabaseServer();
+  const { data: userData } = await sb.auth.getUser();
+  if (!userData.user) redirect("/login");
+
+  const { data: isAdmin } = await sb.rpc("is_admin");
+  if (!isAdmin) redirect("/");
+
+  // IMPORTANT: These tables are protected by admin-only RLS. Use the service-role client
+  // for cached reads; access is still gated above.
+  const svc = supabaseService();
 
   // If custom start/end dates are provided, calculate range from them
   let rangeDays = clampRangeDays(sp.range);
@@ -75,7 +86,7 @@ export default async function CollectorsPage({
   const { data: latestRow } = await cachedQueries(
     {
       latest: async () =>
-        await sb
+        await svc
           .from("playlist_daily_stats")
           .select("date")
           .order("date", { ascending: false })
@@ -109,13 +120,13 @@ export default async function CollectorsPage({
   const results = await cachedQueries(
     {
       playlistRows: async () =>
-        await sb
+        await svc
           .from("playlists")
           .select("playlist_key,display_name,collector")
           .in("collector", [...COLLECTORS]),
 
       compareToday: async () =>
-        await sb
+        await svc
           .from("collector_daily_compare")
           .select(
             "collector,date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net,daily_streams_delta_yday,daily_streams_delta_ma7,est_revenue_daily_delta_yday,est_revenue_daily_delta_ma7,track_count_delta_yday,track_count_delta_ma7",
@@ -123,7 +134,7 @@ export default async function CollectorsPage({
           .eq("date", latestRunDate),
 
       spark14: async () =>
-        await sb
+        await svc
           .from("collector_daily_agg")
           .select("collector,date,track_count,daily_streams_net,est_revenue_daily_net")
           .gte("date", sparkStart!)
@@ -131,7 +142,7 @@ export default async function CollectorsPage({
           .order("date", { ascending: false }),
 
       series: async () =>
-        await sb
+        await svc
           .from("collector_daily_agg")
           .select(
             "date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net",
@@ -209,7 +220,7 @@ export default async function CollectorsPage({
     ? await (async () => {
         const { data: topRows } = await cachedQuery(
           async () =>
-            await sb
+            await svc
               .from("playlist_daily_stats")
               .select("playlist_key,est_revenue_daily_net,daily_streams_net,missing_streams_track_count")
           .eq("date", latestRunDate)
