@@ -15,6 +15,7 @@ STREAM_PAYOUT_USD = 0.002
 # Warning thresholds (tune later)
 TRACK_COUNT_SWING_WARN_RATIO = 0.30  # 30% day-over-day swing
 ZERO_STREAM_WARN_RATIO = 0.60  # 60% rows with 0 cumulative streams (catalog exports only)
+CATALOG_TRACK_COUNT_DROP_CRITICAL = 5  # critical if catalog track_count drops by >5 day-over-day
 
 
 @dataclass(frozen=True)
@@ -543,7 +544,7 @@ def main():
                         "run_id": run_id,
                         "run_date": run_date.isoformat(),
                         "playlist_key": pl_key,
-                        "severity": "warn",
+                        "severity": "critical",
                         "code": "non_catalog_tracks_present",
                         "message": f"{missing} track(s) in playlist have no catalog stream snapshot today",
                         "details_json": {
@@ -557,8 +558,30 @@ def main():
                 )
 
             if prev_count and prev_count > 0:
-                ratio = abs(len(todays_isrcs) - prev_count) / float(prev_count)
-                if ratio >= TRACK_COUNT_SWING_WARN_RATIO:
+                today_count = len(todays_isrcs)
+                delta = today_count - prev_count
+                ratio = abs(delta) / float(prev_count)
+
+                # Critical: catalog track count drop by an absolute threshold (even if ratio is small).
+                if pl.is_catalog and (prev_count - today_count) > CATALOG_TRACK_COUNT_DROP_CRITICAL:
+                    warn_rows.append(
+                        {
+                            "run_id": run_id,
+                            "run_date": run_date.isoformat(),
+                            "playlist_key": pl_key,
+                            "severity": "critical",
+                            "code": "track_count_swing",
+                            "message": f"Catalog track count dropped by {prev_count - today_count} day-over-day ({prev_count} -> {today_count})",
+                            "details_json": {
+                                "prev": prev_count,
+                                "today": today_count,
+                                "delta": delta,
+                                "ratio": ratio,
+                                "drop_threshold": CATALOG_TRACK_COUNT_DROP_CRITICAL,
+                            },
+                        }
+                    )
+                elif ratio >= TRACK_COUNT_SWING_WARN_RATIO:
                     warn_rows.append(
                         {
                             "run_id": run_id,
@@ -566,8 +589,8 @@ def main():
                             "playlist_key": pl_key,
                             "severity": "warn",
                             "code": "track_count_swing",
-                            "message": f"Track count changed by {ratio:.0%} day-over-day ({prev_count} -> {len(todays_isrcs)})",
-                            "details_json": {"prev": prev_count, "today": len(todays_isrcs), "ratio": ratio},
+                            "message": f"Track count changed by {ratio:.0%} day-over-day ({prev_count} -> {today_count})",
+                            "details_json": {"prev": prev_count, "today": today_count, "delta": delta, "ratio": ratio},
                         }
                     )
 

@@ -1,19 +1,9 @@
 import Link from "next/link";
 
 import { supabaseServer } from "@/lib/supabase/server";
-import { dataDateFromRunDate, expectedLatestRunDateUtc } from "@/lib/sotDates";
+import { dataDateFromRunDate } from "@/lib/sotDates";
 
-export const revalidate = 86400; // 24h ISR - data updates daily
-
-function isoTodayUtc(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function daysBetweenUtc(aIso: string, bIso: string): number {
-  const a = new Date(`${aIso}T00:00:00Z`).getTime();
-  const b = new Date(`${bIso}T00:00:00Z`).getTime();
-  return Math.round((b - a) / (24 * 60 * 60 * 1000));
-}
+export const revalidate = 30; // 30s ISR - refresh frequently to catch running ingestions
 
 export async function IngestionStatusBanner() {
   const sb = await supabaseServer();
@@ -29,12 +19,6 @@ export async function IngestionStatusBanner() {
 
   const runDate = latestRun.run_date as string;
   const status = (latestRun.status as string | null) ?? "unknown";
-  const logsUrl = (latestRun.logs_url as string | null) ?? null;
-
-  const { count: totalWarnings } = await sb
-    .from("ingestion_warnings")
-    .select("id", { count: "exact", head: true })
-    .eq("run_date", runDate);
 
   const { count: criticalWarnings } = await sb
     .from("ingestion_warnings")
@@ -42,48 +26,28 @@ export async function IngestionStatusBanner() {
     .eq("run_date", runDate)
     .eq("severity", "critical");
 
-  const todayUtc = isoTodayUtc();
-  const expectedLatest = expectedLatestRunDateUtc(todayUtc);
-  const stalenessDays = daysBetweenUtc(runDate, expectedLatest);
-  const isStale = stalenessDays >= 1;
   const hasCritical = (criticalWarnings ?? 0) > 0;
-  const hasAnyWarnings = (totalWarnings ?? 0) > 0;
+  const isRunning = status === "running";
 
-  // Only show banner when it matters.
-  if (status === "success" && !hasAnyWarnings && !isStale) return null;
-
-  const tone =
-    status !== "success" || hasCritical
-      ? "critical"
-      : isStale
-        ? "warn"
-        : "info";
+  // Only show banner when it matters: running, failed, or has critical warnings.
+  if (status === "success" && !hasCritical && !isRunning) return null;
 
   const className =
-    tone === "critical"
-      ? "mb-3 rounded-xl border border-red-300 bg-red-50 p-3 text-sm text-red-950 dark:border-red-900/30 dark:bg-red-900/10 dark:text-red-200"
-      : tone === "warn"
-        ? "mb-3 rounded-xl border border-orange-300 bg-orange-50 p-3 text-sm text-orange-950 dark:border-orange-900/30 dark:bg-orange-900/10 dark:text-orange-200"
-        : "mb-3 rounded-xl border border-blue-300 bg-blue-50 p-3 text-sm text-blue-950 dark:border-blue-900/30 dark:bg-blue-900/10 dark:text-blue-200";
+    status === "running"
+      ? "mb-3 rounded-xl border border-yellow-300 bg-yellow-50 p-3 text-sm text-yellow-950 dark:border-yellow-900/30 dark:bg-yellow-900/10 dark:text-yellow-200"
+      : "mb-3 rounded-xl border border-red-300 bg-red-50 p-3 text-sm text-red-950 dark:border-red-900/30 dark:bg-red-900/10 dark:text-red-200";
 
   const headline =
-    status !== "success"
-      ? `Data ingestion status: ${status}`
-      : hasCritical
-        ? "Data integrity warning"
-        : isStale
-          ? "Data may be stale"
-          : "Health notice";
+    status === "running"
+      ? "Ingestion in progress"
+      : status !== "success"
+        ? `Data ingestion status: ${status}`
+        : "Critical health warning";
 
   const details: string[] = [];
   details.push(`Latest data date (UTC): ${dataDateFromRunDate(runDate)}`);
   details.push(`Ingested on (UTC): ${runDate}`);
-  if (isStale) details.push(`Staleness: ${stalenessDays} day(s) behind expected`);
-  if (hasAnyWarnings) {
-    details.push(
-      `Warnings: ${totalWarnings ?? 0}${hasCritical ? ` (critical: ${criticalWarnings ?? 0})` : ""}`,
-    );
-  }
+  if (hasCritical) details.push(`Critical warnings: ${criticalWarnings ?? 0}`);
 
   const healthHref = `/health?date=${encodeURIComponent(runDate)}`;
 

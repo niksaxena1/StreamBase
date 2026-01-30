@@ -160,70 +160,28 @@ export default async function HealthPage({
   >();
 
   if (nonCatalogWarnings.length > 0 && selectedRunDate) {
-    // Pre-fetch all catalog streams once (paginated) to reuse across warnings
-    const pageSize = 1000;
-    const allCatalogStreamsForDate: Array<{ isrc: string }> = [];
-    let from = 0;
-    while (true) {
-      const to = from + pageSize - 1;
-      const { data, error } = await svc
-        .from("track_daily_streams")
-        .select("isrc")
-        .eq("date", selectedDataDate)
-        .range(from, to);
-      
-      if (error || !data || data.length === 0) break;
-      allCatalogStreamsForDate.push(...data);
-      if (data.length < pageSize) break;
-      from += pageSize;
-    }
-    const allCatalogIsrcs = new Set(allCatalogStreamsForDate.map((s) => s.isrc));
-
     for (const warning of nonCatalogWarnings) {
       if (!warning.playlist_key) continue;
+      const { data: rows, error } = await svc.rpc("health_playlist_missing_catalog_tracks", {
+        playlist_key: warning.playlist_key,
+        run_date: selectedRunDate,
+      });
 
-      // Get all tracks in the playlist on the selected date (paginated)
-      const memberships: Array<{ isrc: string }> = [];
-      from = 0;
-      while (true) {
-        const to = from + pageSize - 1;
-        const { data, error } = await svc
-          .from("playlist_memberships")
-          .select("isrc")
-          .eq("playlist_key", warning.playlist_key)
-          .lte("valid_from", selectedRunDate)
-          .or(`valid_to.is.null,valid_to.gte.${selectedRunDate}`)
-          .range(from, to);
-        
-        if (error || !data || data.length === 0) break;
-        memberships.push(...data);
-        if (data.length < pageSize) break;
-        from += pageSize;
+      if (error) {
+        console.error("health_playlist_missing_catalog_tracks RPC failed:", error);
+        continue;
       }
 
-      const playlistIsrcs = new Set(memberships.map((m) => m.isrc));
-      const catalogIsrcs = allCatalogIsrcs;
-
-      // Find tracks in playlist but not in catalog
-      const nonCatalogIsrcs = Array.from(playlistIsrcs).filter(
-        (isrc) => !catalogIsrcs.has(isrc) && !isExcluded(warning.playlist_key ?? "", isrc),
-      );
-
-      if (nonCatalogIsrcs.length > 0) {
-        // Fetch track names, artist names, artist IDs, and album images
-        const { data: tracks } = await svc
-          .from("tracks")
-          .select("isrc,name,spotify_artist_names,spotify_artist_ids,spotify_album_image_url")
-          .in("isrc", nonCatalogIsrcs);
-
-        nonCatalogTracksMap.set(warning.playlist_key ?? "", (tracks ?? []).map((t) => ({ 
-          isrc: t.isrc, 
+      nonCatalogTracksMap.set(
+        warning.playlist_key ?? "",
+        (rows ?? []).map((t: any) => ({
+          isrc: t.isrc,
           name: t.name,
-          artist_names: t.spotify_artist_names,
-          artist_ids: t.spotify_artist_ids,
-          album_image_url: t.spotify_album_image_url,
-        })));
-      }
+          artist_names: t.artist_names,
+          artist_ids: t.artist_ids,
+          album_image_url: t.album_image_url,
+        })),
+      );
     }
   }
 
@@ -253,91 +211,34 @@ export default async function HealthPage({
   >();
 
   if (trackCountSwingWarnings.length > 0 && selectedRunDate) {
-    // Calculate previous date
-    const selectedDateObj = new Date(selectedRunDate);
-    const prevDateObj = new Date(selectedDateObj);
-    prevDateObj.setDate(prevDateObj.getDate() - 1);
-    const prevDate = prevDateObj.toISOString().split("T")[0];
-
-    const pageSize = 1000;
-
     for (const warning of trackCountSwingWarnings) {
       if (!warning.playlist_key) continue;
+      const { data: rows, error } = await svc.rpc("health_track_count_swing_tracks", {
+        playlist_key: warning.playlist_key,
+        run_date: selectedRunDate,
+      });
 
-      // Get tracks for selected date
-      const todayMemberships: Array<{ isrc: string }> = [];
-      let from = 0;
-      while (true) {
-        const to = from + pageSize - 1;
-        const { data, error } = await svc
-          .from("playlist_memberships")
-          .select("isrc")
-          .eq("playlist_key", warning.playlist_key)
-          .lte("valid_from", selectedRunDate)
-          .or(`valid_to.is.null,valid_to.gte.${selectedRunDate}`)
-          .range(from, to);
-
-        if (error || !data || data.length === 0) break;
-        todayMemberships.push(...data);
-        if (data.length < pageSize) break;
-        from += pageSize;
+      if (error) {
+        console.error("health_track_count_swing_tracks RPC failed:", error);
+        continue;
       }
 
-      // Get tracks for previous date
-      const prevMemberships: Array<{ isrc: string }> = [];
-      from = 0;
-      while (true) {
-        const to = from + pageSize - 1;
-        const { data, error } = await svc
-          .from("playlist_memberships")
-          .select("isrc")
-          .eq("playlist_key", warning.playlist_key)
-          .lte("valid_from", prevDate)
-          .or(`valid_to.is.null,valid_to.gte.${prevDate}`)
-          .range(from, to);
+      const added = (rows ?? []).filter((r: any) => r.change_type === "added").map((r: any) => ({
+        isrc: r.isrc,
+        name: r.name ?? null,
+        artist_names: r.artist_names ?? null,
+        artist_ids: r.artist_ids ?? null,
+        album_image_url: r.album_image_url ?? null,
+      }));
+      const removed = (rows ?? []).filter((r: any) => r.change_type === "removed").map((r: any) => ({
+        isrc: r.isrc,
+        name: r.name ?? null,
+        artist_names: r.artist_names ?? null,
+        artist_ids: r.artist_ids ?? null,
+        album_image_url: r.album_image_url ?? null,
+      }));
 
-        if (error || !data || data.length === 0) break;
-        prevMemberships.push(...data);
-        if (data.length < pageSize) break;
-        from += pageSize;
-      }
-
-      const todayIsrcs = new Set(todayMemberships.map((m) => m.isrc));
-      const prevIsrcs = new Set(prevMemberships.map((m) => m.isrc));
-
-      // Find added tracks (in today but not in previous day)
-      const addedIsrcs = Array.from(todayIsrcs).filter((isrc) => !prevIsrcs.has(isrc));
-      // Find removed tracks (in previous day but not in today)
-      const removedIsrcs = Array.from(prevIsrcs).filter((isrc) => !todayIsrcs.has(isrc));
-
-      // Fetch track metadata for added and removed tracks
-      const allChangedIsrcs = [...addedIsrcs, ...removedIsrcs];
-      if (allChangedIsrcs.length > 0) {
-        const { data: tracks } = await svc
-          .from("tracks")
-          .select("isrc,name,spotify_artist_names,spotify_artist_ids,spotify_album_image_url")
-          .in("isrc", allChangedIsrcs);
-
-        const tracksMap = new Map(
-          (tracks ?? []).map((t) => [
-            t.isrc,
-            {
-              isrc: t.isrc,
-              name: t.name,
-              artist_names: t.spotify_artist_names,
-              artist_ids: t.spotify_artist_ids,
-              album_image_url: t.spotify_album_image_url,
-            },
-          ])
-        );
-
-        trackCountSwingTracksMap.set(warning.playlist_key ?? "", {
-          added: addedIsrcs.map((isrc) => tracksMap.get(isrc) ?? { isrc, name: null }),
-          removed: removedIsrcs.map((isrc) => tracksMap.get(isrc) ?? { isrc, name: null }),
-        });
-      } else {
-        trackCountSwingTracksMap.set(warning.playlist_key ?? "", { added: [], removed: [] });
-      }
+      trackCountSwingTracksMap.set(warning.playlist_key ?? "", { added, removed });
     }
   }
 
@@ -352,70 +253,20 @@ export default async function HealthPage({
   }> = [];
 
   if (selectedRunDate) {
-    // Get all tracks in all playlists on the selected date (paginated)
-    const pageSize = 1000;
-    const allMemberships: Array<{ isrc: string; playlist_key: string }> = [];
-    let from = 0;
-    while (true) {
-      const to = from + pageSize - 1;
-      const { data, error } = await svc
-        .from("playlist_memberships")
-        .select("isrc,playlist_key")
-        .lte("valid_from", selectedRunDate)
-        .or(`valid_to.is.null,valid_to.gte.${selectedRunDate}`)
-        .range(from, to);
-      
-      if (error || !data || data.length === 0) break;
-      allMemberships.push(...data);
-      if (data.length < pageSize) break;
-      from += pageSize;
-    }
+    const { data: rows, error } = await svc.rpc("health_missing_catalog_tracks", {
+      run_date: selectedRunDate,
+    });
 
-    // Get all tracks that have catalog stream snapshots on the selected date (paginated)
-    const catalogStreamsAll: Array<{ isrc: string }> = [];
-    from = 0;
-    while (true) {
-      const to = from + pageSize - 1;
-      const { data, error } = await svc
-        .from("track_daily_streams")
-        .select("isrc")
-        .eq("date", selectedDataDate)
-        .range(from, to);
-      
-      if (error || !data || data.length === 0) break;
-      catalogStreamsAll.push(...data);
-      if (data.length < pageSize) break;
-      from += pageSize;
-    }
-
-    const catalogIsrcsAll = new Set(catalogStreamsAll.map((s) => s.isrc));
-
-    // Group by ISRC and collect playlist keys
-    const isrcToPlaylists = new Map<string, Set<string>>();
-    for (const m of allMemberships ?? []) {
-      if (!catalogIsrcsAll.has(m.isrc) && !isExcluded(m.playlist_key, m.isrc)) {
-        if (!isrcToPlaylists.has(m.isrc)) {
-          isrcToPlaylists.set(m.isrc, new Set());
-        }
-        isrcToPlaylists.get(m.isrc)!.add(m.playlist_key);
-      }
-    }
-
-    const missingIsrcs = Array.from(isrcToPlaylists.keys());
-    if (missingIsrcs.length > 0) {
-      // Fetch track metadata
-      const { data: tracks } = await svc
-        .from("tracks")
-        .select("isrc,name,spotify_artist_names,spotify_artist_ids,spotify_album_image_url")
-        .in("isrc", missingIsrcs);
-
-      allMissingTracks = (tracks ?? []).map((t) => ({
+    if (error) {
+      console.error("health_missing_catalog_tracks RPC failed:", error);
+    } else {
+      allMissingTracks = (rows ?? []).map((t: any) => ({
         isrc: t.isrc,
         name: t.name,
-        artist_names: t.spotify_artist_names,
-        artist_ids: t.spotify_artist_ids,
-        album_image_url: t.spotify_album_image_url,
-        playlists: Array.from(isrcToPlaylists.get(t.isrc) ?? []).sort(),
+        artist_names: t.artist_names,
+        artist_ids: t.artist_ids,
+        album_image_url: t.album_image_url,
+        playlists: Array.isArray(t.playlist_keys) ? t.playlist_keys : [],
       }));
     }
   }

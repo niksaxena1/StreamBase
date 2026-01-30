@@ -1,21 +1,19 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { List, ExternalLink } from "lucide-react";
 import { redirect } from "next/navigation";
-import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { supabaseServer } from "@/lib/supabase/server";
 import { cachedQuery } from "@/lib/supabase/cache";
-import { formatDateISO, formatInt } from "@/lib/format";
-import { GlassTable, TableRow, TableCell, EmptyState } from "@/components/ui/GlassTable";
+import { formatDateISO } from "@/lib/format";
 import { PlaylistDashboardControls } from "@/components/dashboard/PlaylistDashboardControls";
 import { RememberParamRedirect } from "@/components/dashboard/RememberParamRedirect";
-import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { supabaseService } from "@/lib/supabase/service";
-import { getPlaylist } from "@/lib/spotify";
 import { PlaylistPageClient } from "./PlaylistPageClient";
 import { PlaylistHeaderWithSelector } from "./PlaylistHeaderWithSelector";
 import { PlaylistMetricProvider } from "./PlaylistMetricContext";
 import { dataDateFromRunDate } from "@/lib/sotDates";
+import { PlaylistTracksSection } from "./PlaylistTracksSection";
 
 // Uses Supabase session cookies; this route must be dynamic in Next 16.
 export const dynamic = "force-dynamic";
@@ -38,130 +36,9 @@ type PlaylistDailyStatsRow = {
   est_revenue_daily_net: number | null;
 };
 
-type TrackRow = {
-  isrc: string;
-  name: string | null;
-  spotify_album_image_url: string | null;
-  spotify_artist_names: string[] | null;
-  spotify_artist_ids: string[] | null;
-};
-
-type MembershipRow = {
-  isrc: string;
-  valid_from: string;
-  valid_to: string | null;
-};
-
-type TrackStreamsRow = { isrc: string; streams_cumulative: number | null };
-
 function clampRangeDays(x: unknown) {
   const n = Number(x ?? "90") || 90;
   return Math.max(7, Math.min(365, n));
-}
-
-function isoDateMinusDays(iso: string, days: number): string {
-  // iso is expected yyyy-mm-dd (or yyyy-mm-ddTHH:MM...). Return yyyy-mm-dd.
-  const base = new Date(iso.length > 10 ? iso : `${iso}T00:00:00Z`);
-  if (Number.isNaN(base.getTime())) return iso.slice(0, 10);
-  base.setUTCDate(base.getUTCDate() - days);
-  return base.toISOString().slice(0, 10);
-}
-
-function chunk<T>(arr: T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
-}
-
-async function fetchMemberships(sb: SupabaseClient, args: {
-  playlistKey: string;
-  removed: boolean;
-  maxRows: number;
-}): Promise<MembershipRow[]> {
-  // Handle all_catalog as a combined playlist of releases and ext
-  if (args.playlistKey === "all_catalog") {
-    // Fetch all memberships (both current and removed) from both playlists to properly combine
-    const [releasesCurrent, releasesRemoved, extCurrent, extRemoved] = await Promise.all([
-      fetchMemberships(sb, { playlistKey: "releases", removed: false, maxRows: 10000 }),
-      fetchMemberships(sb, { playlistKey: "releases", removed: true, maxRows: 10000 }),
-      fetchMemberships(sb, { playlistKey: "ext", removed: false, maxRows: 10000 }),
-      fetchMemberships(sb, { playlistKey: "ext", removed: true, maxRows: 10000 }),
-    ]);
-
-    // Combine all memberships: for each ISRC, take the earliest valid_from
-    // For valid_to: null if either playlist has null (track is current), otherwise latest date
-    const combinedMap = new Map<string, MembershipRow>();
-
-    for (const m of [...releasesCurrent, ...releasesRemoved, ...extCurrent, ...extRemoved]) {
-      const existing = combinedMap.get(m.isrc);
-      if (!existing) {
-        combinedMap.set(m.isrc, { ...m });
-      } else {
-        // Use earliest valid_from
-        if (m.valid_from < existing.valid_from) {
-          existing.valid_from = m.valid_from;
-        }
-        // If either playlist has null (current), the combined should be null
-        // Otherwise, use the latest valid_to date
-        if (m.valid_to === null || existing.valid_to === null) {
-          existing.valid_to = null;
-        } else if (m.valid_to > existing.valid_to) {
-          existing.valid_to = m.valid_to;
-        }
-      }
-    }
-
-    // Filter based on removed flag
-    let combined = Array.from(combinedMap.values());
-    if (args.removed) {
-      combined = combined.filter((m) => m.valid_to !== null);
-    } else {
-      combined = combined.filter((m) => m.valid_to === null);
-    }
-    
-    // Sort appropriately
-    if (args.removed) {
-      combined.sort((a, b) => {
-        if (a.valid_to === null || b.valid_to === null) return 0;
-        return b.valid_to.localeCompare(a.valid_to);
-      });
-    } else {
-      combined.sort((a, b) => b.valid_from.localeCompare(a.valid_from));
-    }
-
-    return combined.slice(0, args.maxRows);
-  }
-
-  // Regular playlist query
-  const pageSize = 1000;
-  const out: MembershipRow[] = [];
-  let from = 0;
-
-  while (from < args.maxRows) {
-    const to = from + pageSize - 1;
-    const q = sb
-      .from("playlist_memberships")
-      .select("isrc,valid_from,valid_to")
-      .eq("playlist_key", args.playlistKey);
-
-    const { data } = args.removed
-      ? await q
-          .not("valid_to", "is", null)
-          .order("valid_to", { ascending: false })
-          .range(from, to)
-      : await q
-          .is("valid_to", null)
-          .order("valid_from", { ascending: false })
-          .range(from, to);
-
-    const rows = (data ?? []) as MembershipRow[];
-    if (!rows.length) break;
-    out.push(...rows);
-    if (rows.length < pageSize) break;
-    from += pageSize;
-  }
-
-  return out;
 }
 
 
@@ -273,98 +150,17 @@ export default async function PlaylistsPage({
 
   const hist = (history ?? []) as PlaylistDailyStatsRow[];
 
-  // Memberships (current + removed)
-  const [current, removed] = await Promise.all([
-    fetchMemberships(svc, { playlistKey, removed: false, maxRows: 5000 }),
-    fetchMemberships(svc, { playlistKey, removed: true, maxRows: 500 }),
-  ]);
-
-  const currentIsrcs = current.map((m) => m.isrc);
-  const removedIsrcs = removed.map((m) => m.isrc);
-
-  // Enrich memberships with track meta + last-day streams (best-effort)
-  const metaByIsrc = new Map<string, TrackRow>();
-  const todayByIsrc = new Map<string, number>();
-  const prevByIsrc = new Map<string, number>();
-
-  const chunks = chunk(currentIsrcs, 200);
-  await Promise.all(
-    chunks.map(async (isrcChunk) => {
-      const [metaRes, todayRes, prevRes] = await Promise.all([
-        svc
-          .from("tracks")
-          .select("isrc,name,spotify_album_image_url,spotify_artist_names,spotify_artist_ids")
-          .in("isrc", isrcChunk),
-        latestDate
-          ? svc
-              .from("track_daily_streams")
-              .select("isrc,streams_cumulative")
-              .eq("date", latestDate)
-              .in("isrc", isrcChunk)
-          : Promise.resolve({ data: [] as TrackStreamsRow[] }),
-        prevDate
-          ? svc
-              .from("track_daily_streams")
-              .select("isrc,streams_cumulative")
-              .eq("date", prevDate)
-              .in("isrc", isrcChunk)
-          : Promise.resolve({ data: [] as TrackStreamsRow[] }),
-      ]);
-
-      for (const t of (metaRes.data ?? []) as TrackRow[]) metaByIsrc.set(t.isrc, t);
-      for (const r of (todayRes.data ?? []) as TrackStreamsRow[]) {
-        todayByIsrc.set(r.isrc, Number(r.streams_cumulative ?? 0));
-      }
-      for (const r of (prevRes.data ?? []) as TrackStreamsRow[]) {
-        prevByIsrc.set(r.isrc, Number(r.streams_cumulative ?? 0));
-      }
-    }),
+  // Removed count is displayed in the metrics panel; we cap at 500 (same as UI table).
+  const { data: removedRows } = await cachedQuery(
+    async () =>
+      await svc.rpc("playlist_removed_tracks", {
+        playlist_key: playlistKey,
+        limit_rows: 500,
+      }),
+    `playlist-removed-rows-v1-${playlistKey}-${latestDate ?? "none"}`,
+    86400,
   );
-
-  const currentRows = current
-    .map((m) => {
-      const meta = metaByIsrc.get(m.isrc);
-      const today = todayByIsrc.get(m.isrc) ?? null;
-      const prevv = prevByIsrc.get(m.isrc) ?? null;
-      const daily =
-        today !== null && prevv !== null ? Math.max(0, today - prevv) : null;
-      return {
-        isrc: m.isrc,
-        name: meta?.name ?? null,
-        img: meta?.spotify_album_image_url ?? null,
-        artists: meta?.spotify_artist_names ?? null,
-        artistIds: meta?.spotify_artist_ids ?? null,
-        valid_from: m.valid_from,
-        daily,
-        total: today,
-      };
-    })
-    .sort((a, b) => {
-      const ad = a.daily ?? -1;
-      const bd = b.daily ?? -1;
-      if (bd !== ad) return bd - ad;
-      return (b.total ?? 0) - (a.total ?? 0);
-    })
-    .slice(0, 200);
-
-  // Removed meta (best-effort)
-  const removedMetaByIsrc = new Map<string, TrackRow>();
-  await Promise.all(
-    chunk(removedIsrcs, 200).map(async (isrcChunk) => {
-      const { data } = await svc
-        .from("tracks")
-        .select("isrc,name,spotify_album_image_url,spotify_artist_names,spotify_artist_ids")
-        .in("isrc", isrcChunk);
-      for (const t of (data ?? []) as TrackRow[]) removedMetaByIsrc.set(t.isrc, t);
-    }),
-  );
-
-  // Tracks added in the last 7 days (based on membership valid_from, relative to latest snapshot date)
-  const cutoffIso = latestDate ? isoDateMinusDays(latestDate, 7) : isoDateMinusDays(new Date().toISOString(), 7);
-  const addedLast7Days = current
-    .filter((m) => (m.valid_from ?? "").slice(0, 10) >= cutoffIso)
-    .slice()
-    .sort((a, b) => b.valid_from.localeCompare(a.valid_from));
+  const removedTracksCount = Array.isArray(removedRows) ? removedRows.length : 0;
 
   return (
     <PlaylistMetricProvider>
@@ -434,187 +230,24 @@ export default async function PlaylistsPage({
           latestDate={latestDate}
           rangeDays={rangeDays}
           history={hist}
-          removedTracksCount={removed.length}
+          removedTracksCount={removedTracksCount}
           playlistKey={playlistKey}
         />
 
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-        <div className="space-y-3">
-          <div className="flex items-end justify-between px-1">
-            <h2 className="text-sm font-semibold">Tracks currently in playlist</h2>
-          </div>
-          <GlassTable headers={["", "Track", "ISRC", "Daily", "Total", "Added"]}>
-            {currentRows.map((t) => (
-              <TableRow key={t.isrc}>
-                <TableCell>
-                  {t.img ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={t.img}
-                      alt="Album cover"
-                      className="h-8 w-8 rounded-lg object-cover sb-ring"
-                    />
-                  ) : (
-                    <div className="h-8 w-8 rounded-lg sb-ring bg-white/60" />
-                  )}
-                </TableCell>
-                <TableCell>
-                  <Link
-                    href={`/tracks/${t.isrc}`}
-                    className="font-medium transition-colors hover:text-lime-600 dark:hover:text-lime-400"
-                  >
-                    {t.name ?? t.isrc}
-                  </Link>
-                  {t.artists?.length ? (
-                    <div className="mt-0.5 text-xs opacity-60">
-                      <ArtistLinks
-                        artistNames={t.artists}
-                        artistIds={t.artistIds ?? undefined}
-                      />
-                    </div>
-                  ) : null}
-                </TableCell>
-                <TableCell mono className="text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>
-                  {t.isrc}
-                </TableCell>
-                <TableCell className="font-medium text-lime-700 dark:text-lime-400">
-                  {t.daily === null ? "—" : `+${formatInt(t.daily)}`}
-                </TableCell>
-                <TableCell>{t.total === null ? "—" : formatInt(t.total)}</TableCell>
-                <TableCell mono className="text-xs">
-                  {formatDateISO(t.valid_from)}
-                </TableCell>
-              </TableRow>
-            ))}
-            {!currentRows.length && (
-              <EmptyState colSpan={6} message="No active tracks found" />
-            )}
-          </GlassTable>
-        </div>
-
-        <div className="flex h-full flex-col gap-3">
-          <div className="space-y-3">
-            <div className="flex items-end justify-between px-1">
-              <h2 className="text-sm font-semibold">Tracks added (last 7 days)</h2>
-              <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
-                Based on membership added date.
+        <Suspense
+          fallback={
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+              <div className="rounded-2xl border p-4 text-sm opacity-70" style={{ borderColor: "var(--sb-border)" }}>
+                Loading playlist tracks…
+              </div>
+              <div className="rounded-2xl border p-4 text-sm opacity-70" style={{ borderColor: "var(--sb-border)" }}>
+                Loading recent changes…
               </div>
             </div>
-            <GlassTable
-              headers={["", "Track", "ISRC", "Added"]}
-              maxBodyHeightClassName="max-h-[260px]"
-            >
-              {addedLast7Days.map((m, idx) => {
-                const meta = metaByIsrc.get(m.isrc);
-                return (
-                  <TableRow key={`${m.isrc}-${m.valid_from}-${idx}`}>
-                    <TableCell>
-                      {meta?.spotify_album_image_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={meta.spotify_album_image_url}
-                          alt="Album cover"
-                          className="h-8 w-8 rounded-lg object-cover sb-ring"
-                        />
-                      ) : (
-                        <div className="h-8 w-8 rounded-lg sb-ring bg-white/60" />
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Link
-                        href={`/tracks/${m.isrc}`}
-                        className="font-medium transition-colors hover:text-lime-600 dark:hover:text-lime-400"
-                      >
-                        {meta?.name ?? m.isrc}
-                      </Link>
-                      {meta?.spotify_artist_names?.length ? (
-                        <div className="mt-0.5 text-xs opacity-60">
-                          <ArtistLinks
-                            artistNames={meta.spotify_artist_names}
-                            artistIds={meta.spotify_artist_ids ?? undefined}
-                          />
-                        </div>
-                      ) : null}
-                    </TableCell>
-                    <TableCell mono className="text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>
-                      {m.isrc}
-                    </TableCell>
-                    <TableCell mono className="text-xs">
-                      {formatDateISO(m.valid_from)}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-              {!addedLast7Days.length && (
-                <EmptyState colSpan={4} message="No tracks added in the last 7 days" />
-              )}
-            </GlassTable>
-          </div>
-
-          <div className="flex flex-1 flex-col gap-3">
-            <div className="flex items-end justify-between px-1">
-              <h2 className="text-sm font-semibold">Tracks removed</h2>
-              <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
-                Most recent removals first.
-              </div>
-            </div>
-            <GlassTable
-              className="flex-1"
-              bodyClassName="flex-1"
-              maxBodyHeightClassName="flex-1"
-              headers={["", "Track", "ISRC", "Removed", "Added"]}
-            >
-              {removed.map((m, idx) => {
-                const meta = removedMetaByIsrc.get(m.isrc);
-                return (
-                  <TableRow key={`${m.isrc}-${m.valid_from}-${idx}`}>
-                    <TableCell>
-                      {meta?.spotify_album_image_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={meta.spotify_album_image_url}
-                          alt="Album cover"
-                          className="h-8 w-8 rounded-lg object-cover sb-ring"
-                        />
-                      ) : (
-                        <div className="h-8 w-8 rounded-lg sb-ring bg-white/60" />
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Link
-                        href={`/tracks/${m.isrc}`}
-                        className="font-medium transition-colors hover:text-lime-600 dark:hover:text-lime-400"
-                      >
-                        {meta?.name ?? m.isrc}
-                      </Link>
-                      {meta?.spotify_artist_names?.length ? (
-                        <div className="mt-0.5 text-xs opacity-60">
-                          <ArtistLinks
-                            artistNames={meta.spotify_artist_names}
-                            artistIds={meta.spotify_artist_ids ?? undefined}
-                          />
-                        </div>
-                      ) : null}
-                    </TableCell>
-                    <TableCell mono className="text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>
-                      {m.isrc}
-                    </TableCell>
-                    <TableCell mono className="text-xs">
-                      {m.valid_to ? formatDateISO(m.valid_to) : "—"}
-                    </TableCell>
-                    <TableCell mono className="text-xs">
-                      {formatDateISO(m.valid_from)}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-              {!removed.length && (
-                <EmptyState colSpan={5} message="No removed tracks found" />
-              )}
-            </GlassTable>
-          </div>
-        </div>
-      </div>
+          }
+        >
+          <PlaylistTracksSection playlistKey={playlistKey} latestRunDate={latestDate} prevRunDate={prevDate} />
+        </Suspense>
       </div>
     </PlaylistMetricProvider>
   );
