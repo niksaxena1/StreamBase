@@ -49,7 +49,7 @@ export default async function Home({
     playlistKey === "all_catalog"
       ? null
       : (
-          await cachedQuery(
+          await cachedQuery<{ spotify_playlist_image_url: string | null }>(
             async () =>
               await svc
                 .from("playlists")
