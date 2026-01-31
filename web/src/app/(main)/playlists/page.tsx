@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { List, ExternalLink } from "lucide-react";
+import { List, ExternalLink, Music } from "lucide-react";
 import { redirect } from "next/navigation";
 
 import { supabaseServer } from "@/lib/supabase/server";
@@ -25,6 +25,7 @@ type PlaylistRow = {
   spotify_playlist_id: string | null;
   spotify_playlist_image_url: string | null;
   spotify_last_fetched_at: string | null;
+  track_count?: number | null;
 };
 
 type PlaylistDailyStatsRow = {
@@ -136,12 +137,40 @@ export default async function PlaylistsPage({
     ),
   ]);
 
+  // Fetch latest stats for all playlists to show track counts in dropdown
+  const { data: allPlaylistsLatestStats } = await cachedQuery(
+    async () => {
+      const playlistKeys = (playlists ?? []).map((p: any) => p.playlist_key);
+      if (playlistKeys.length === 0) return { data: [], error: null };
+      
+      const rows = await Promise.all(
+        playlistKeys.map(async (key: string) => {
+          const { data } = await svc
+            .from("playlist_daily_stats")
+            .select("track_count")
+            .eq("playlist_key", key)
+            .order("date", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          return { playlist_key: key, track_count: data?.track_count ?? null };
+        }),
+      );
+
+      return { data: rows, error: null };
+    },
+    "playlists-all-latest-stats",
+    3600,
+  );
+
+  const statsMap = new Map(
+    (allPlaylistsLatestStats ?? []).map((stat: any) => [stat.playlist_key, stat.track_count])
+  );
+
   const playlistOptions = (playlists ?? []).map((p) => ({
     ...p,
-    spotify_playlist_image_url:
-      p.playlist_key === "all_catalog"
-        ? "/globe.svg" // Default image for All Catalog
-        : p.spotify_playlist_image_url,
+    spotify_playlist_image_url: p.spotify_playlist_image_url,
+    track_count: statsMap.get(p.playlist_key) ?? null,
   })) as PlaylistRow[];
   const currentPlaylist = playlistOptions.find((p) => p.playlist_key === playlistKey);
   const title = currentPlaylist?.display_name ?? playlistKey;
@@ -173,7 +202,14 @@ export default async function PlaylistsPage({
       <div className="space-y-4">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div className="flex items-center gap-3">
-            {playlistImageUrl ? (
+            {playlistKey === "all_catalog" ? (
+              <div
+                className="sb-ring flex h-12 w-12 items-center justify-center rounded-lg"
+                style={{ background: "var(--sb-accent)" }}
+              >
+                <Music className="h-6 w-6" style={{ color: "black" }} />
+              </div>
+            ) : playlistImageUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={playlistImageUrl}

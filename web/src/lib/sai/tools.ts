@@ -56,6 +56,27 @@ function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
 
+function formatInt(n: unknown): string {
+  const x = Number(n ?? 0);
+  return Intl.NumberFormat().format(Number.isFinite(x) ? x : 0);
+}
+
+function dateMinusDays(iso: string, days: number): string {
+  // iso is YYYY-MM-DD
+  const d = new Date(`${iso}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() - days);
+  return d.toISOString().slice(0, 10);
+}
+
+function summarizeSeries(rows: any[], valueKey: string): { first?: any; last?: any; delta?: number } {
+  if (!Array.isArray(rows) || rows.length === 0) return {};
+  const first = rows[0];
+  const last = rows[rows.length - 1];
+  const a = Number(first?.[valueKey] ?? 0);
+  const b = Number(last?.[valueKey] ?? 0);
+  return { first, last, delta: Number.isFinite(a) && Number.isFinite(b) ? b - a : undefined };
+}
+
 export function formatDataPayload(templateId: DataQueryTemplateId, payload: any): string {
   try {
     if (!payload) return "No data.";
@@ -70,26 +91,68 @@ export function formatDataPayload(templateId: DataQueryTemplateId, payload: any)
     }
 
     if (templateId === "artist_total_streams") {
-      return `Total streams: ${Intl.NumberFormat().format(Number(payload?.streams ?? 0))}`;
+      return `Total streams: ${formatInt(payload?.streams ?? 0)}`;
     }
 
     if (templateId === "playlist_total_streams") {
-      return `Total streams: ${Intl.NumberFormat().format(Number(payload?.streams ?? 0))}`;
+      return `Total streams: ${formatInt(payload?.streams ?? 0)}`;
     }
 
     if (templateId === "track_total_streams") {
-      return `Total streams: ${Intl.NumberFormat().format(Number(payload?.streams ?? 0))}`;
+      return `Total streams: ${formatInt(payload?.streams ?? 0)}`;
     }
 
     if (templateId === "artist_series" || templateId === "track_series" || templateId === "playlist_series") {
-      const rows = Array.isArray(payload?.rows) ? payload.rows.length : 0;
+      const rowsArr = Array.isArray(payload?.rows) ? payload.rows : [];
       const range = payload?.range ? `${payload.range.start_date} → ${payload.range.end_date}` : "";
-      return `Series rows: ${rows}${range ? ` (${range})` : ""}`;
+      if (templateId === "playlist_series") {
+        const s = summarizeSeries(rowsArr, "total_streams_cumulative");
+        const last = s.last ?? null;
+        const dailySum = rowsArr.reduce((acc: number, r: any) => acc + Number(r?.daily_streams_net ?? 0), 0);
+        return [
+          `Series rows: ${rowsArr.length}${range ? ` (${range})` : ""}`,
+          last
+            ? `Latest (${last.date}): total=${formatInt(last.total_streams_cumulative)} daily=${formatInt(last.daily_streams_net)} tracks=${formatInt(last.track_count)}`
+            : "Latest: —",
+          `Net change over range: ${formatInt(s.delta ?? 0)} (sum of daily: ${formatInt(dailySum)})`,
+        ].join("\n");
+      }
+      if (templateId === "track_series") {
+        const s = summarizeSeries(rowsArr, "streams_cumulative");
+        const last = s.last ?? null;
+        return [
+          `Series rows: ${rowsArr.length}${range ? ` (${range})` : ""}`,
+          last ? `Latest (${last.date}): total=${formatInt(last.streams_cumulative)}` : "Latest: —",
+          `Net change over range: ${formatInt(s.delta ?? 0)}`,
+        ].join("\n");
+      }
+      if (templateId === "artist_series") {
+        const s = summarizeSeries(rowsArr, "streams_cumulative");
+        const last = s.last ?? null;
+        return [
+          `Series rows: ${rowsArr.length}${range ? ` (${range})` : ""}`,
+          last ? `Latest (${last.date}): total=${formatInt(last.streams_cumulative)}` : "Latest: —",
+          `Net change over range: ${formatInt(s.delta ?? 0)}`,
+        ].join("\n");
+      }
+
+      return `Series rows: ${rowsArr.length}${range ? ` (${range})` : ""}`;
     }
 
     if (templateId.endsWith("_top_tracks_total") || templateId === "artist_top_tracks_daily") {
-      const rows = Array.isArray(payload?.rows) ? payload.rows.length : 0;
-      return `Top tracks returned: ${rows}`;
+      const rowsArr = Array.isArray(payload?.rows) ? payload.rows : [];
+      const top = rowsArr.slice(0, 10);
+      const lines = top.map((r: any, i: number) => {
+        const name = String(r?.name ?? r?.isrc ?? "—");
+        const total = r?.total != null ? `total=${formatInt(r.total)}` : `total=${formatInt(r?.streams_cumulative ?? 0)}`;
+        const daily = r?.daily != null ? ` daily=${formatInt(r.daily)}` : "";
+        const isrc = r?.isrc ? ` (${String(r.isrc)})` : "";
+        return `${i + 1}. ${name}${isrc} — ${total}${daily}`;
+      });
+      return [
+        `Top tracks returned: ${rowsArr.length}`,
+        ...(lines.length ? ["", ...lines] : []),
+      ].join("\n");
     }
   } catch {
     // ignore
@@ -194,7 +257,7 @@ export async function runDataQuery(
     if (!artist_id || !end_date) {
       return { toolCall: { tool: "data_query", templateId: plan.templateId, params: plan.params, rowCount: null, notes: "Missing artist_id or end_date" }, payload: null };
     }
-    const start = start_date ?? end_date; // default to single-day series
+    const start = start_date ?? dateMinusDays(end_date, 29); // default to last 30 days
     const { data, error } = await sb.rpc("catalog_artist_series", { artist_id, start_date: start, end_date });
     if (error) return { toolCall: { tool: "data_query", templateId: plan.templateId, params: { artist_id, start_date: start, end_date }, rowCount: null, notes: error.message }, payload: null };
     const rows = Array.isArray(data) ? data : [];
@@ -211,7 +274,7 @@ export async function runDataQuery(
     if (!isrc || !end_date) {
       return { toolCall: { tool: "data_query", templateId: plan.templateId, params: plan.params, rowCount: null, notes: "Missing isrc or end_date" }, payload: null };
     }
-    const start = start_date ?? end_date;
+    const start = start_date ?? dateMinusDays(end_date, 29);
     const { data, error } = await sb.rpc("track_series", { isrc, start_date: start, end_date });
     if (error) return { toolCall: { tool: "data_query", templateId: plan.templateId, params: { isrc, start_date: start, end_date }, rowCount: null, notes: error.message }, payload: null };
     const rows = Array.isArray(data) ? data : [];
@@ -228,7 +291,7 @@ export async function runDataQuery(
     if (!playlist_key || !end_date) {
       return { toolCall: { tool: "data_query", templateId: plan.templateId, params: plan.params, rowCount: null, notes: "Missing playlist_key or end_date" }, payload: null };
     }
-    const start = start_date ?? end_date;
+    const start = start_date ?? dateMinusDays(end_date, 29);
     const { data, error } = await sb.rpc("playlist_series", { playlist_key, start_date: start, end_date });
     if (error) return { toolCall: { tool: "data_query", templateId: plan.templateId, params: { playlist_key, start_date: start, end_date }, rowCount: null, notes: error.message }, payload: null };
     const rows = Array.isArray(data) ? data : [];

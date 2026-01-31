@@ -57,6 +57,86 @@ export async function GET(req: NextRequest) {
     if (res.error) out.ok = false;
   }
 
+  // Determine canonical latest run date (used by multiple tools)
+  let latestRunDate: string | null = null;
+  {
+    const { data: latest, error } = await svc
+      .from("playlist_daily_stats")
+      .select("date")
+      .eq("playlist_key", "all_catalog")
+      .order("date", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    latestRunDate = (latest as any)?.date ?? null;
+    out.checks.latest_run_date = { ok: !error && !!latestRunDate, latestRunDate, error: error?.message ?? null };
+    if (error) out.ok = false;
+  }
+
+  // Grab a sample ISRC that exists on latest run date (for testing track RPCs)
+  let sampleIsrc: string | null = null;
+  if (latestRunDate) {
+    const { data: row, error } = await svc
+      .from("track_daily_streams")
+      .select("isrc")
+      .eq("date", latestRunDate)
+      .limit(1)
+      .maybeSingle();
+    sampleIsrc = (row as any)?.isrc ?? null;
+    out.checks.sample_isrc = { ok: !error && !!sampleIsrc, sampleIsrc, error: error?.message ?? null };
+    if (error) out.ok = false;
+  }
+
+  // Verify SAI data RPCs exist + work
+  if (latestRunDate) {
+    const playlist_key = "all_catalog";
+
+    // playlist_series
+    {
+      const res = await svc.rpc("playlist_series", { playlist_key, start_date: latestRunDate, end_date: latestRunDate });
+      out.checks.playlist_series = {
+        ok: !res.error,
+        rows: Array.isArray(res.data) ? res.data.length : null,
+        error: res.error?.message ?? null,
+      };
+      if (res.error) out.ok = false;
+    }
+
+    // playlist_top_tracks_total
+    {
+      const res = await svc.rpc("playlist_top_tracks_total", { playlist_key, run_date: latestRunDate, limit_rows: 5 });
+      out.checks.playlist_top_tracks_total = {
+        ok: !res.error,
+        rows: Array.isArray(res.data) ? res.data.length : null,
+        error: res.error?.message ?? null,
+      };
+      if (res.error) out.ok = false;
+    }
+
+    if (sampleIsrc) {
+      // track_total_streams_for_date
+      {
+        const res = await svc.rpc("track_total_streams_for_date", { isrc: sampleIsrc, run_date: latestRunDate });
+        out.checks.track_total_streams_for_date = {
+          ok: !res.error,
+          streams: res.data ?? null,
+          error: res.error?.message ?? null,
+        };
+        if (res.error) out.ok = false;
+      }
+
+      // track_series
+      {
+        const res = await svc.rpc("track_series", { isrc: sampleIsrc, start_date: latestRunDate, end_date: latestRunDate });
+        out.checks.track_series = {
+          ok: !res.error,
+          rows: Array.isArray(res.data) ? res.data.length : null,
+          error: res.error?.message ?? null,
+        };
+        if (res.error) out.ok = false;
+      }
+    }
+  }
+
   // Check: vector search RPC works (only if embeddings enabled)
   if (embeddingsEnabled()) {
     try {

@@ -1,12 +1,15 @@
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { Check, User } from "lucide-react";
+import { Check, User, Music } from "lucide-react";
+import { formatInt } from "@/lib/format";
 
 export type ComboboxOption = {
   value: string;
   label: string;
   imageUrl?: string | null;
+  isAllCatalog?: boolean;
+  trackCount?: number | null;
 };
 
 export function Combobox(props: {
@@ -133,7 +136,14 @@ export function Combobox(props: {
                 }}
               >
                 <div className="flex items-center gap-2 min-w-0 flex-1">
-                  {o.imageUrl ? (
+                  {o.isAllCatalog ? (
+                    <div
+                      className={`h-5 w-5 ${props.imageShape === "square" ? "rounded-lg" : "rounded-full"} bg-black/10 dark:bg-white/20 flex items-center justify-center flex-shrink-0`}
+                      style={{ background: "var(--sb-accent)" }}
+                    >
+                      <Music className="h-3 w-3" style={{ color: "black" }} />
+                    </div>
+                  ) : o.imageUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={o.imageUrl}
@@ -147,9 +157,16 @@ export function Combobox(props: {
                   )}
                   <span className="truncate">{o.label}</span>
                 </div>
-                {active ? (
-                  <Check className="ml-3 h-4 w-4 flex-shrink-0" strokeWidth={2.5} />
-                ) : null}
+                <div className="flex items-center gap-3 flex-shrink-0">
+                  {o.trackCount !== null && o.trackCount !== undefined && (
+                    <span className="text-xs" style={{ color: "var(--sb-muted)" }}>
+                      {formatInt(o.trackCount)} tracks
+                    </span>
+                  )}
+                  {active ? (
+                    <Check className="h-4 w-4" strokeWidth={2.5} />
+                  ) : null}
+                </div>
               </button>
             );
           })}

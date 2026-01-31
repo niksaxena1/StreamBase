@@ -31,7 +31,9 @@ export function planMessage(message: string, envelope?: SaiEnvelope): SaiPlan {
     /\brows?\b/.test(q) ||
     /\btrend\b/.test(q) ||
     /\bover time\b/.test(q) ||
-    /\blast (7|14|28|30|90) days\b/.test(q);
+    /\blast (7|14|28|30|90) days\b/.test(q) ||
+    // Ranking queries are data questions even without explicit counts.
+    (/\btop\b/.test(q) && /\btracks?\b/.test(q));
 
   const looksLikeHelp =
     /\bhow do i\b/.test(q) ||
@@ -48,8 +50,17 @@ export function planMessage(message: string, envelope?: SaiEnvelope): SaiPlan {
   const artistIdMatch = /\b[0-9A-Za-z]{22}\b/.exec(message);
   const maybeArtistId = artistIdMatch ? artistIdMatch[0] : envelope?.selected?.artist_id ?? null;
 
+  // Try to extract a playlist key from common phrasings:
+  // - "in <playlist_key>"
+  // - "playlist <playlist_key>"
+  // Otherwise fall back to known short keys or the UI envelope.
+  const explicitPlaylistKeyMatch =
+    /\b(?:in|playlist)\s+([a-z0-9_]{3,})\b/i.exec(message) ||
+    /\b([a-z0-9_]{6,})\b/i.exec(message); // last resort: token-looking playlist key
   const playlistKeyMatch = /\b(all_catalog|releases|ext)\b/i.exec(message);
-  const maybePlaylistKey = playlistKeyMatch ? playlistKeyMatch[1].toLowerCase() : envelope?.selected?.playlist_key ?? null;
+  const maybePlaylistKey =
+    (explicitPlaylistKeyMatch?.[1] ?? playlistKeyMatch?.[1] ?? envelope?.selected?.playlist_key ?? null)?.toLowerCase() ??
+    null;
 
   const dateMatch = /\b(20\d{2}-\d{2}-\d{2})\b/.exec(message);
   const maybeDate = dateMatch ? dateMatch[1] : null;
@@ -72,6 +83,15 @@ export function planMessage(message: string, envelope?: SaiEnvelope): SaiPlan {
 
   if (looksLikeData) {
     // Prefer entity-specific templates when possible.
+    // Allow "top tracks in all_catalog" even if the user doesn't say "playlist".
+    if (wantsTop && maybePlaylistKey) {
+      return {
+        lane: "data",
+        data: { queries: [{ templateId: "playlist_top_tracks_total", params: { playlist_key: maybePlaylistKey, run_date: maybeDate } }] },
+        notes: ["data: playlist_top_tracks_total", ...notes],
+      };
+    }
+
     if (/\bartist\b/.test(q) && maybeArtistId) {
       if (wantsTop) {
         return {

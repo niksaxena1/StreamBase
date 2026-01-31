@@ -11,6 +11,7 @@ type PlaylistOption = {
   display_name: string;
   is_catalog: boolean;
   spotify_playlist_image_url: string | null;
+  track_count?: number | null;
 };
 
 const RANGE_CHOICES = [30, 90, 365] as const;
@@ -55,16 +56,18 @@ export function PlaylistDashboardControls(props: {
   return (
     <div className="sticky top-0 z-20 sb-card p-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:flex-1 sm:min-w-0">
           <div className="text-xs font-medium" style={{ color: "var(--sb-text)" }}>Playlist</div>
-          <div className="sb-ring rounded-xl bg-black/10 px-2.5 py-1.5 dark:bg-white/10">
+          <div className="sb-ring rounded-xl bg-black/10 px-2.5 py-1.5 dark:bg-white/10 flex-1 min-w-0">
             <Combobox
               ariaLabel="Select playlist"
               value={props.playlistKey}
               options={props.playlists.map((p) => ({
                 value: p.playlist_key,
                 label: p.display_name,
-                imageUrl: p.spotify_playlist_image_url,
+                imageUrl: p.playlist_key === "all_catalog" ? null : p.spotify_playlist_image_url,
+                isAllCatalog: p.playlist_key === "all_catalog",
+                trackCount: p.track_count,
               }))}
               placeholder="Type a playlist…"
               onChange={onSelectPlaylist}

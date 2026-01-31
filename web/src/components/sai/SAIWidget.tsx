@@ -101,7 +101,7 @@ export function SAIWidget() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isStreaming]);
 
-  async function newChat() {
+  async function newChat(): Promise<string | null> {
     setIsStreaming(false);
     setQueue([]);
     setMessages([]);
@@ -110,19 +110,19 @@ export function SAIWidget() {
       setMessages([
         { id: uuid(), role: "assistant", content: "Failed to create a new chat (are you logged in?)." },
       ]);
-      return;
+      return null;
     }
     const json = (await res.json()) as { conversationId?: string };
-    setConversationId(json.conversationId ?? null);
+    const cid = json.conversationId ?? null;
+    setConversationId(cid);
+    return cid;
   }
 
   async function sendMessage(text: string) {
     const t = text.trim();
     if (!t) return;
-    if (!conversationId) {
-      await newChat();
-    }
-    const cid = conversationId ?? null;
+    let cid = conversationId ?? null;
+    if (!cid) cid = await newChat();
     if (!cid) return;
 
     const userMsg: UiMessage = { id: uuid(), role: "user", content: t };
@@ -133,11 +133,25 @@ export function SAIWidget() {
     setIsStreaming(true);
 
     try {
-      const resp = await fetch("/api/sai/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversationId: cid, message: t, envelope }),
-      });
+      async function doFetch(convoId: string) {
+        return await fetch("/api/sai/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ conversationId: convoId, message: t, envelope }),
+        });
+      }
+
+      let resp = await doFetch(cid);
+
+      // If the server says the conversation was deleted (410), auto-create a new one and retry once.
+      if (resp.status === 410) {
+        const fresh = await newChat();
+        if (fresh) {
+          cid = fresh;
+          resp = await doFetch(fresh);
+        }
+      }
+
       if (!resp.ok || !resp.body) {
         throw new Error(`HTTP ${resp.status}`);
       }

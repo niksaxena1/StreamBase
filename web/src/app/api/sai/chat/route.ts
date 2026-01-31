@@ -136,10 +136,13 @@ export async function POST(req: Request) {
             : "") +
           `${formatDataPayload(q.templateId as any, res.data.payload)}\n`;
       } else {
-        meta.toolCalls?.push(res.data?.toolCall ?? { tool: "data_query", templateId: q.templateId, params: q.params });
+        const tc =
+          res.data?.toolCall ?? ({ tool: "data_query", templateId: q.templateId, params: q.params } as any);
+        meta.toolCalls?.push(tc);
         answer +=
           (answer ? "\n\n" : "") +
-          `I attempted a data query (\`${q.templateId}\`) but it returned no data or errored.\n`;
+          `I attempted a data query (\`${q.templateId}\`) but it returned no data or errored.\n` +
+          (tc?.notes ? `Details: ${String(tc.notes)}\n` : "");
       }
     }
   }

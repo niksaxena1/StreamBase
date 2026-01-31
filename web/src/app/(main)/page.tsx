@@ -10,6 +10,7 @@ import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { cachedQuery } from "@/lib/supabase/cache";
 import { dataDateFromRunDate } from "@/lib/sotDates";
+import { Music } from "lucide-react";
 
 type PlaylistDailyStatsRow = {
   date: string;
@@ -52,6 +53,52 @@ export default async function Home({
   // IMPORTANT: playlist_daily_stats is protected by admin-only RLS. Use service client
   // for cached reads so cache revalidation can't fail due to missing cookies.
   const svc = supabaseService();
+
+  // Fetch playlist metadata (including image) for display
+  const { data: playlistData } = await cachedQuery(
+    async () =>
+      await svc
+        .from("playlists")
+        .select("playlist_key,display_name,is_catalog,spotify_playlist_id,spotify_playlist_image_url")
+        .in("playlist_key", ["all_catalog", "releases", "ext"])
+        .single()
+        .then((result) => {
+          // For all_catalog, if we don't have data, return a default
+          if (result.error && playlistKey === "all_catalog") {
+            return {
+              data: {
+                playlist_key: "all_catalog",
+                display_name: "All Catalog",
+                is_catalog: true,
+                spotify_playlist_id: null,
+                spotify_playlist_image_url: null,
+              },
+              error: null,
+            };
+          }
+          return result;
+        }),
+    `home-playlist-metadata-${playlistKey}`,
+    3600,
+  );
+
+  // Fetch metadata for all three playlists to get their images
+  const { data: allPlaylistsData } = await cachedQuery(
+    async () =>
+      await svc
+        .from("playlists")
+        .select("playlist_key,display_name,is_catalog,spotify_playlist_id,spotify_playlist_image_url")
+        .in("playlist_key", ["all_catalog", "releases", "ext"]),
+    "home-playlists-metadata",
+    3600,
+  );
+
+  const playlistMetadataMap = new Map(
+    (allPlaylistsData ?? []).map((p: any) => [p.playlist_key, p])
+  );
+  
+  const currentPlaylistMetadata = playlistMetadataMap.get(playlistKey);
+  const playlistImageUrl = currentPlaylistMetadata?.spotify_playlist_image_url ?? null;
 
   // Single query: fetch history and derive latest from first row (cached for 1 hour)
   const { data: history, error: historyErr } = await cachedQuery(
@@ -110,19 +157,38 @@ export default async function Home({
       {/* Header Section */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="font-display text-xl font-semibold tracking-tight sm:text-2xl">
-              {title}
-            </h1>
-            {latest?.track_count !== null && latest?.track_count !== undefined && (
-              <span className="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium tracking-wide" style={{ 
-                borderColor: "var(--sb-border)",
-                backgroundColor: "var(--sb-surface)",
-                color: "var(--sb-muted)"
-              }}>
-                {formatInt(latest.track_count)} tracks
-              </span>
+          <div className="flex items-center gap-3">
+            {playlistKey === "all_catalog" ? (
+              <div
+                className="sb-ring flex h-10 w-10 items-center justify-center rounded-lg"
+                style={{ background: "var(--sb-accent)" }}
+              >
+                <Music className="h-5 w-5" style={{ color: "black" }} />
+              </div>
+            ) : playlistImageUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={playlistImageUrl}
+                alt="Playlist cover"
+                className="h-10 w-10 rounded-lg object-cover sb-ring"
+              />
+            ) : (
+              <div className="h-10 w-10 rounded-lg sb-ring bg-white/60" />
             )}
+            <div className="flex items-center gap-2">
+              <h1 className="font-display text-xl font-semibold tracking-tight sm:text-2xl">
+                {title}
+              </h1>
+              {latest?.track_count !== null && latest?.track_count !== undefined && (
+                <span className="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium tracking-wide" style={{ 
+                  borderColor: "var(--sb-border)",
+                  backgroundColor: "var(--sb-surface)",
+                  color: "var(--sb-muted)"
+                }}>
+                  {formatInt(latest.track_count)} tracks
+                </span>
+              )}
+            </div>
           </div>
           <p className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
             Overview of your catalog performance across all playlists.
