@@ -159,7 +159,7 @@ export default async function PlaylistsPage({
 
       return { data: rows, error: null };
     },
-    "playlists-all-latest-stats",
+    "playlists-all-latest-stats-v2",
     3600,
   );
 
