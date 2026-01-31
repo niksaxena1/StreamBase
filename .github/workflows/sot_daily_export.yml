@@ -58,43 +58,25 @@ jobs:
           echo "Checking Dashboard Sync runs for UTC date: $RUN_DATE"
 
           # Query recent runs for the dashboard sync workflow (by file name, not numeric id).
-          # NOTE: Do NOT store the full JSON in an env var (can exceed runner limits and crash python).
-          # Instead, stream JSON into python via stdin.
-          #
-          # We fetch more than 1 page to be robust to bursts of runs.
-          # (Even though output can be large, stdin is safe here.)
-          PY_CODE="$(cat <<'PY'
-          import json, sys
+          # Reliability goals:
+          # - Avoid huge env vars (runner limit → "argument list too long")
+          # - Avoid pipe+heredoc stdin conflicts
+          # - Fail closed: if we can't verify sync succeeded, we block export
+          RUNS_ENDPOINT="repos/${GITHUB_REPOSITORY}/actions/workflows/sot_daily_dashboard_sync.yml/runs?branch=main&per_page=100"
 
-          run_date = sys.argv[1]
-          data = json.load(sys.stdin)
-          runs = data.get("workflow_runs") or []
+          # Returns "true" if any successful sync run exists for RUN_DATE.
+          # NOTE: Keep quoting simple to avoid bash escaping edge-cases.
+          OK="$(gh api "$RUNS_ENDPOINT" --jq '.workflow_runs | any(.[]; (.created_at | startswith("'"$RUN_DATE"'")) and .status=="completed" and .conclusion=="success")' || true)"
 
-          ok = False
-          for r in runs:
-            created = (r.get("created_at") or "")
-            if not created.startswith(run_date):
-              continue
-            # allow either schedule or manual re-run to satisfy the gate
-            if (r.get("status") == "completed") and (r.get("conclusion") == "success"):
-              ok = True
-              break
+          if [ "$OK" != "true" ]; then
+            echo "❌ No successful 'SOT Daily Dashboard Sync' workflow run found for $RUN_DATE UTC. Blocking export."
+            echo "Recent runs (newest first):"
+            # Best-effort debug output (do not un-block export if this fails).
+            gh api "$RUNS_ENDPOINT" --jq '.workflow_runs[:10] | .[] | "- \(.created_at) event=\(.event) status=\(.status) conclusion=\(.conclusion) run_id=\(.id)"' || true
+            exit 1
+          fi
 
-          if not ok:
-            sys.stderr.write(f"❌ No successful 'SOT Daily Dashboard Sync' workflow run found for {run_date} UTC. Blocking export.\n")
-            sys.stderr.write("Recent runs (newest first):\n")
-            for r in runs[:10]:
-              sys.stderr.write(
-                f"- {r.get('created_at')} event={r.get('event')} status={r.get('status')} conclusion={r.get('conclusion')} run_id={r.get('id')}\n"
-              )
-            sys.exit(1)
-
-          print(f"✅ Dashboard Sync succeeded for {run_date} UTC. Proceeding.")
-          PY
-          )"
-
-          gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/sot_daily_dashboard_sync.yml/runs?branch=main&per_page=100" \
-            | python -c "$PY_CODE" "$RUN_DATE"
+          echo "✅ Dashboard Sync succeeded for $RUN_DATE UTC. Proceeding."
 
       - name: "Pre-check: skip if already ingested"
         id: precheck
