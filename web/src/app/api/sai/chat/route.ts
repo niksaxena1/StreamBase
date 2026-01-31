@@ -5,7 +5,7 @@ import { supabaseService } from "@/lib/supabase/service";
 import { cachedQuery } from "@/lib/supabase/cache";
 import { retrieveDocs } from "@/lib/sai/docs";
 import { planMessage } from "@/lib/sai/planner";
-import { runDataQuery } from "@/lib/sai/tools";
+import { formatDataPayload, runDataQuery } from "@/lib/sai/tools";
 import { synthesizeFromDocs } from "@/lib/sai/llm";
 import type { SaiAssistantMeta, SaiEnvelope, SaiStreamEvent } from "@/lib/sai/types";
 
@@ -131,7 +131,10 @@ export async function POST(req: Request) {
           (answer ? "\n\n" : "") +
           "Data answer (calculated from safe query templates):\n\n" +
           `Template: \`${q.templateId}\`\n` +
-          `Payload: \`${JSON.stringify(res.data.payload)}\`\n`;
+          (res.data.toolCall?.params && Object.keys(res.data.toolCall.params).length > 0
+            ? `Filters: \`${JSON.stringify(res.data.toolCall.params)}\`\n`
+            : "") +
+          `${formatDataPayload(q.templateId as any, res.data.payload)}\n`;
       } else {
         meta.toolCalls?.push(res.data?.toolCall ?? { tool: "data_query", templateId: q.templateId, params: q.params });
         answer +=

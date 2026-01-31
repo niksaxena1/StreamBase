@@ -294,9 +294,14 @@ export function SAIWidget() {
                         <div className="font-medium opacity-80">Sources</div>
                         <div className="mt-1 space-y-1">
                           {m.meta.citations.slice(0, 5).map((c: any) => (
-                            <div key={c.chunkId} className="font-mono">
+                            <a
+                              key={c.chunkId}
+                              href={`/docs#${c.chunkId}`}
+                              className="block font-mono underline underline-offset-2 transition-opacity hover:opacity-80"
+                              style={{ color: "var(--sb-accent)", textDecorationColor: "var(--sb-accent)" }}
+                            >
                               /docs#{c.chunkId} — {c.title}
-                            </div>
+                            </a>
                           ))}
                         </div>
                       </div>
@@ -309,6 +314,7 @@ export function SAIWidget() {
                           {m.meta.toolCalls.map((t: any, idx: number) => (
                             <div key={idx} className="font-mono">
                               template={t.templateId}
+                              {t.params && Object.keys(t.params).length ? ` params=${JSON.stringify(t.params)}` : ""}
                             </div>
                           ))}
                         </div>

@@ -136,7 +136,13 @@ export default async function PlaylistsPage({
     ),
   ]);
 
-  const playlistOptions = (playlists ?? []) as PlaylistRow[];
+  const playlistOptions = (playlists ?? []).map((p) => ({
+    ...p,
+    spotify_playlist_image_url:
+      p.playlist_key === "all_catalog"
+        ? "/globe.svg" // Default image for All Catalog
+        : p.spotify_playlist_image_url,
+  })) as PlaylistRow[];
   const currentPlaylist = playlistOptions.find((p) => p.playlist_key === playlistKey);
   const title = currentPlaylist?.display_name ?? playlistKey;
   const playlistImageUrl = currentPlaylist?.spotify_playlist_image_url ?? null;
