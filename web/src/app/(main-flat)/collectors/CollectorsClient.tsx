@@ -33,6 +33,33 @@ const COLLECTOR_ORDER = ["A", "K", "N", "PL", "TG", "NL"] as const;
 
 const GRANULARITIES = ["daily", "weekly", "monthly", "quarterly", "yearly"] as const;
 
+const COLLECTORS_DETAILS_STORAGE = {
+  playlistsOpen: "sb:collectors:details:playlists_open",
+  tracksOpen: "sb:collectors:details:tracks_open",
+} as const;
+
+function readStoredBool(key: string, fallback: boolean): boolean {
+  // NOTE: Client components can still render on the server, so guard `window`.
+  if (typeof window === "undefined") return fallback;
+  try {
+    const v = localStorage.getItem(key);
+    if (v == null) return fallback;
+    if (v === "1" || v === "true") return true;
+    if (v === "0" || v === "false") return false;
+    return fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeStoredBool(key: string, value: boolean) {
+  try {
+    localStorage.setItem(key, value ? "1" : "0");
+  } catch {
+    // ignore (private mode, disabled storage, etc.)
+  }
+}
+
 // Helper to get ISO week number (weeks start Monday)
 function getISOWeek(date: Date): { year: number; week: number } {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
@@ -270,6 +297,9 @@ export function CollectorsClient(props: {
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  const [openPlaylists, setOpenPlaylists] = useState(true);
+  const [openTracks, setOpenTracks] = useState(true);
+
   // Metric is controlled by the page header; read it from the URL so it updates immediately.
   const metric: Metric = (() => {
     const urlMetric = searchParams.get("metric");
@@ -302,6 +332,22 @@ export function CollectorsClient(props: {
     }
     return "daily"; // Default to daily
   });
+
+  // Restore collapsible state (best-effort).
+  // This runs after mount, which avoids SSR accessing localStorage.
+  useEffect(() => {
+    setOpenPlaylists(readStoredBool(COLLECTORS_DETAILS_STORAGE.playlistsOpen, true));
+    setOpenTracks(readStoredBool(COLLECTORS_DETAILS_STORAGE.tracksOpen, true));
+  }, []);
+
+  // Persist collapsible state.
+  useEffect(() => {
+    writeStoredBool(COLLECTORS_DETAILS_STORAGE.playlistsOpen, openPlaylists);
+  }, [openPlaylists]);
+
+  useEffect(() => {
+    writeStoredBool(COLLECTORS_DETAILS_STORAGE.tracksOpen, openTracks);
+  }, [openTracks]);
   
   // Update URL when comparison settings change
   useEffect(() => {
@@ -496,217 +542,216 @@ export function CollectorsClient(props: {
 
   return (
     <div className="space-y-6">
-      {/* Collector Comparison Charts */}
-      <SpotlightCard className="relative p-3">
-        <div className="flex flex-col gap-3">
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <div className="flex items-center gap-2">
-                <Activity className="h-3.5 w-3.5 opacity-60" />
-                <div className="text-xs font-medium uppercase tracking-wide opacity-70">
-                  Collector Comparison
+      {/* Middle card: comparison chart + table */}
+      <div className="sb-card p-4 space-y-4">
+        <SpotlightCard className="relative p-3">
+          <div className="flex flex-col gap-3">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Activity className="h-3.5 w-3.5 opacity-60" />
+                  <div className="text-xs font-medium uppercase tracking-wide opacity-70">
+                    Collector Comparison
+                  </div>
+                </div>
+                <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
+                  Compare revenue, streams, and track change over time
                 </div>
               </div>
-              <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
-                Compare revenue, streams, and track change over time
+
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Mode toggle */}
+                <div className="sb-ring flex items-center gap-0.5 rounded-full bg-white/70 p-0.5 dark:bg-white/10">
+                  {(["combined", "individual", "percentage"] as const).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setComparisonMode(m)}
+                      className={[
+                        "rounded-full px-2.5 py-1.5 text-[11px] font-medium transition",
+                        comparisonMode === m
+                          ? "bg-black text-white shadow-sm dark:bg-white dark:text-black"
+                          : "hover:bg-white/70 dark:hover:bg-white/10",
+                      ].join(" ")}
+                      style={comparisonMode === m ? undefined : { color: "var(--sb-muted)" }}
+                    >
+                      {m === "combined" ? "Combined" : m === "individual" ? "Individual" : "Percentage"}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              {/* Mode toggle */}
-              <div className="sb-ring flex items-center gap-0.5 rounded-full bg-white/70 p-0.5 dark:bg-white/10">
-                {(["combined", "individual", "percentage"] as const).map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => setComparisonMode(m)}
-                    className={[
-                      "rounded-full px-2.5 py-1.5 text-[11px] font-medium transition",
-                      comparisonMode === m
-                        ? "bg-black text-white shadow-sm dark:bg-white dark:text-black"
-                        : "hover:bg-white/70 dark:hover:bg-white/10",
-                    ].join(" ")}
-                    style={comparisonMode === m ? undefined : { color: "var(--sb-muted)" }}
-                  >
-                    {m === "combined" ? "Combined" : m === "individual" ? "Individual" : "Percentage"}
-                  </button>
-                ))}
-              </div>
+              <CollectorMultiSelect selected={comparisonCollectors} onChange={setComparisonCollectors} />
+              <GranularitySelect value={granularity} onChange={setGranularity} />
             </div>
-          </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <CollectorMultiSelect selected={comparisonCollectors} onChange={setComparisonCollectors} />
-            <GranularitySelect value={granularity} onChange={setGranularity} />
-          </div>
-
-          {/* Legend + note */}
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            {comparisonMode !== "combined" && comparisonCollectors.length > 0 && (
-              <div className="flex flex-wrap items-center gap-3">
-                {COLLECTOR_ORDER.filter((c) => comparisonCollectors.includes(c)).map((collector) => (
-                  <div key={collector} className="flex items-center gap-1.5 text-xs">
-                    <span
-                      className="inline-block h-2 w-2 rounded-full"
-                      style={{ backgroundColor: COLLECTOR_COLORS[collector] }}
-                    />
-                    <span style={{ color: "var(--sb-text)" }}>{collector}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-            {granularity !== "daily" && (
-              <div className="text-[10px]" style={{ color: "var(--sb-muted)" }}>
-                {granularity === "weekly" ? "Weeks start Monday (ISO)" : "Showing all-time data"}
-              </div>
-            )}
-          </div>
-
-          {/* Chart */}
-          <div className="mt-2 min-h-[260px]">
-            <CollectorComparisonChart
-              data={comparisonChartData}
-              selectedCollectors={comparisonCollectors}
-              mode={comparisonMode}
-              metric={metric}
-              heightPx={260}
-              granularity={granularity}
-            />
-          </div>
-        </div>
-        {/* Decorative background glow (subtle) */}
-        <div
-          className="pointer-events-none absolute -right-14 -top-14 h-40 w-40 rounded-full opacity-15 blur-3xl"
-          style={{ background: "var(--sb-accent)" }}
-        />
-      </SpotlightCard>
-
-      {/* Collector vs Collector mini view */}
-      <div className="space-y-2">
-        <div className="flex items-end justify-between px-1">
-          <div>
-            <div className="text-xs font-medium" style={{ color: "var(--sb-text)" }}>
-              Comparison Table
-            </div>
-            <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
-              Showing {metricLabel.toLowerCase()} on data date{" "}
-              {props.latestDate ? formatDateISO(props.latestDate) : "—"}
-            </div>
-          </div>
-        </div>
-
-        <GlassTable
-            headers={[
-              "Collector",
-              "Playlists",
-              "Value",
-              <span
-                key="yday"
-                title="Yesterday's value for this metric"
-              >
-                Yesterday
-              </span>,
-              <span
-                key="ma7"
-                title="7-day moving average of the previous 7 days (excluding today)"
-              >
-                7d avg
-              </span>,
-              "Trend (14d)",
-            ]}
-          >
-            {ranked.map((r) => {
-              const value =
-                metric === "revenue" ? r.est_revenue_daily_net : metric === "streams" ? r.daily_streams_net : r.track_count;
-              const deltaYday =
-                metric === "revenue"
-                  ? r.est_revenue_daily_delta_yday
-                  : metric === "streams"
-                    ? r.daily_streams_delta_yday
-                    : r.track_count_delta_yday;
-              const deltaMa7 =
-                metric === "revenue"
-                  ? r.est_revenue_daily_delta_ma7
-                  : metric === "streams"
-                    ? r.daily_streams_delta_ma7
-                    : r.track_count_delta_ma7;
-
-              // Calculate actual values from deltas
-              const ydayValue = deltaYday != null ? value - deltaYday : null;
-              const ma7Value = deltaMa7 != null ? value - deltaMa7 : null;
-
-              const spark =
-                metric === "revenue"
-                  ? r.spark_rev_daily
-                  : metric === "streams"
-                    ? r.spark_streams_daily
-                    : r.spark_tracks;
-
-              const fmtValue =
-                metric === "revenue"
-                  ? formatUsd2(value)
-                  : formatInt(value);
-
-              const fmtYdayOrMa7 =
-                metric === "revenue"
-                  ? (n: number | null | undefined) => (n == null ? "—" : formatUsd2(n))
-                  : (n: number | null | undefined) => (n == null ? "—" : formatInt(n));
-
-              const isSelectedCollector = r.collector === props.selectedCollector;
-
-              return (
-                <TableRow
-                  key={r.collector}
-                  className={
-                    isSelectedCollector
-                      ? "hover:bg-transparent dark:hover:bg-transparent odd:bg-transparent dark:odd:bg-transparent"
-                      : undefined
-                  }
-                  style={
-                    isSelectedCollector
-                      ? {
-                          // Lime highlight that stays readable in both themes.
-                          // Mix into the surface instead of using full accent fill.
-                          background: "color-mix(in srgb, var(--sb-accent) 28%, var(--sb-surface))",
-                        }
-                      : undefined
-                  }
-                >
-                  <TableCell>
-                    <Link
-                      href={`?collector=${encodeURIComponent(r.collector)}&range=${props.rangeDays}`}
-                      className={[
-                        "inline-flex items-center gap-2 font-medium transition-colors hover:text-lime-600 dark:hover:text-lime-400",
-                        r.collector === props.selectedCollector ? "opacity-100" : "opacity-70",
-                      ].join(" ")}
-                    >
+            {/* Legend + note */}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              {comparisonMode !== "combined" && comparisonCollectors.length > 0 && (
+                <div className="flex flex-wrap items-center gap-3">
+                  {COLLECTOR_ORDER.filter((c) => comparisonCollectors.includes(c)).map((collector) => (
+                    <div key={collector} className="flex items-center gap-1.5 text-xs">
                       <span
                         className="inline-block h-2 w-2 rounded-full"
-                        style={{ backgroundColor: COLLECTOR_COLORS[r.collector] ?? "var(--sb-muted)" }}
-                        aria-hidden="true"
+                        style={{ backgroundColor: COLLECTOR_COLORS[collector] }}
                       />
-                      {r.collector}
-                    </Link>
-                  </TableCell>
-                  <TableCell>{formatInt(r.playlists)}</TableCell>
-                  <TableCell className="font-medium">{fmtValue}</TableCell>
-                  <TableCell>{fmtYdayOrMa7(ydayValue)}</TableCell>
-                  <TableCell>{fmtYdayOrMa7(ma7Value)}</TableCell>
-                  <TableCell>
-                    <div className="h-5 w-20 opacity-60">
-                      <Sparkline data={spark?.slice().reverse()} trend="neutral" />
+                      <span style={{ color: "var(--sb-text)" }}>{collector}</span>
                     </div>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </GlassTable>
+                  ))}
+                </div>
+              )}
+              {granularity !== "daily" && (
+                <div className="text-[10px]" style={{ color: "var(--sb-muted)" }}>
+                  {granularity === "weekly" ? "Weeks start Monday (ISO)" : "Showing all-time data"}
+                </div>
+              )}
+            </div>
+
+            {/* Chart */}
+            <div className="mt-2 min-h-[260px]">
+              <CollectorComparisonChart
+                data={comparisonChartData}
+                selectedCollectors={comparisonCollectors}
+                mode={comparisonMode}
+                metric={metric}
+                heightPx={260}
+                granularity={granularity}
+              />
+            </div>
+          </div>
+          {/* Decorative background glow (subtle) */}
+          <div
+            className="pointer-events-none absolute -right-14 -top-14 h-40 w-40 rounded-full opacity-15 blur-3xl"
+            style={{ background: "var(--sb-accent)" }}
+          />
+        </SpotlightCard>
+
+        {/* Comparison table */}
+        <div className="space-y-2">
+          <div className="flex items-end justify-between px-1">
+            <div>
+              <div className="text-xs font-medium" style={{ color: "var(--sb-text)" }}>
+                Comparison Table
+              </div>
+              <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
+                Showing {metricLabel.toLowerCase()} on data date{" "}
+                {props.latestDate ? formatDateISO(props.latestDate) : "—"}
+              </div>
+            </div>
+          </div>
+
+          <GlassTable
+              headers={[
+                "Collector",
+                "Playlists",
+                "Value",
+                <span
+                  key="yday"
+                  title="Yesterday's value for this metric"
+                >
+                  Yesterday
+                </span>,
+                <span
+                  key="ma7"
+                  title="7-day moving average of the previous 7 days (excluding today)"
+                >
+                  7d avg
+                </span>,
+                "Trend (14d)",
+              ]}
+            >
+              {ranked.map((r) => {
+                const value =
+                  metric === "revenue" ? r.est_revenue_daily_net : metric === "streams" ? r.daily_streams_net : r.track_count;
+                const deltaYday =
+                  metric === "revenue"
+                    ? r.est_revenue_daily_delta_yday
+                    : metric === "streams"
+                      ? r.daily_streams_delta_yday
+                      : r.track_count_delta_yday;
+                const deltaMa7 =
+                  metric === "revenue"
+                    ? r.est_revenue_daily_delta_ma7
+                    : metric === "streams"
+                      ? r.daily_streams_delta_ma7
+                      : r.track_count_delta_ma7;
+
+                // Calculate actual values from deltas
+                const ydayValue = deltaYday != null ? value - deltaYday : null;
+                const ma7Value = deltaMa7 != null ? value - deltaMa7 : null;
+
+                const spark =
+                  metric === "revenue"
+                    ? r.spark_rev_daily
+                    : metric === "streams"
+                      ? r.spark_streams_daily
+                      : r.spark_tracks;
+
+                const fmtValue =
+                  metric === "revenue"
+                    ? formatUsd2(value)
+                    : formatInt(value);
+
+                const fmtYdayOrMa7 =
+                  metric === "revenue"
+                    ? (n: number | null | undefined) => (n == null ? "—" : formatUsd2(n))
+                    : (n: number | null | undefined) => (n == null ? "—" : formatInt(n));
+
+                const isSelectedCollector = r.collector === props.selectedCollector;
+
+                return (
+                  <TableRow
+                    key={r.collector}
+                    className={
+                      isSelectedCollector
+                        ? "hover:bg-transparent dark:hover:bg-transparent odd:bg-transparent dark:odd:bg-transparent"
+                        : undefined
+                    }
+                    style={
+                      isSelectedCollector
+                        ? {
+                            background: "color-mix(in srgb, var(--sb-accent) 28%, var(--sb-surface))",
+                          }
+                        : undefined
+                    }
+                  >
+                    <TableCell>
+                      <Link
+                        href={`?collector=${encodeURIComponent(r.collector)}&range=${props.rangeDays}`}
+                        className={[
+                          "inline-flex items-center gap-2 font-medium transition-colors hover:text-lime-600 dark:hover:text-lime-400",
+                          r.collector === props.selectedCollector ? "opacity-100" : "opacity-70",
+                        ].join(" ")}
+                      >
+                        <span
+                          className="inline-block h-2 w-2 rounded-full"
+                          style={{ backgroundColor: COLLECTOR_COLORS[r.collector] ?? "var(--sb-muted)" }}
+                          aria-hidden="true"
+                        />
+                        {r.collector}
+                      </Link>
+                    </TableCell>
+                    <TableCell>{formatInt(r.playlists)}</TableCell>
+                    <TableCell className="font-medium">{fmtValue}</TableCell>
+                    <TableCell>{fmtYdayOrMa7(ydayValue)}</TableCell>
+                    <TableCell>{fmtYdayOrMa7(ma7Value)}</TableCell>
+                    <TableCell>
+                      <div className="h-5 w-20 opacity-60">
+                        <Sparkline data={spark?.slice().reverse()} trend="neutral" />
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </GlassTable>
+        </div>
       </div>
 
-      <div className="h-px w-full" style={{ backgroundColor: "var(--sb-border)" }} />
-
       {/* Selected collector combined view */}
-      <div className="space-y-6">
+      <div className="sb-card p-4">
+        <div className="space-y-6">
         <div className="flex items-end justify-between">
           <div>
             <h2 className="font-display text-xl font-semibold tracking-tight sm:text-2xl flex items-center gap-2">
@@ -803,25 +848,27 @@ export function CollectorsClient(props: {
 
         {/* Top playlists (collapsible) */}
         <details
-          open
+          open={openPlaylists}
+          onToggle={(ev) => setOpenPlaylists(ev.currentTarget.open)}
           className="rounded-xl border bg-white/50 p-3 dark:bg-white/[0.03]"
           style={{ borderColor: "var(--sb-border)" }}
         >
           <summary className="cursor-pointer select-none">
             <div className="flex items-start justify-between gap-3">
-              <div>
+              <div className="flex items-start gap-2">
+                <span className="flex-shrink-0 text-xs opacity-60 mt-0.5">▸</span>
                 <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
-                  Top playlists
-                </div>
-                <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
-                  Ranked by est. revenue (daily) on data date{" "}
-                  {props.latestDate ? formatDateISO(props.latestDate) : "—"}
+                  Playlists
                 </div>
               </div>
             </div>
           </summary>
 
           <div className="mt-3">
+            <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
+              Ranked by est. revenue (daily) on data date{" "}
+              {props.latestDate ? formatDateISO(props.latestDate) : "—"}
+            </div>
             <GlassTable
               headers={[
                 "Playlist",
@@ -875,18 +922,17 @@ export function CollectorsClient(props: {
 
         {/* Tracks (collapsible) */}
         <details
-          open
+          open={openTracks}
+          onToggle={(ev) => setOpenTracks(ev.currentTarget.open)}
           className="rounded-xl border bg-white/50 p-3 dark:bg-white/[0.03]"
           style={{ borderColor: "var(--sb-border)" }}
         >
           <summary className="cursor-pointer select-none">
             <div className="flex items-start justify-between gap-3">
-              <div>
+              <div className="flex items-start gap-2">
+                <span className="flex-shrink-0 text-xs opacity-60 mt-0.5">▸</span>
                 <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
                   Tracks
-                </div>
-                <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
-                  Cumulative streams are totals from the DB on the data date. “Δ1d” is today minus yesterday.
                 </div>
               </div>
               <div
@@ -905,6 +951,9 @@ export function CollectorsClient(props: {
           </summary>
 
           <div className="mt-3 space-y-4">
+            <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
+              Cumulative streams are totals from the DB on the data date. "Δ1d" is today minus yesterday.
+            </div>
             {/* Quick summary */}
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <StatCard
@@ -1272,6 +1321,7 @@ export function CollectorsClient(props: {
             </div>
           </div>
         </details>
+        </div>
       </div>
     </div>
   );

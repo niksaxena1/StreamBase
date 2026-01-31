@@ -192,3 +192,13 @@ html[data-theme="dark"] .sb-accent-glow {
 .pt-safe {
   padding-top: env(safe-area-inset-top, 0);
 }
+
+/* Details/Summary styling */
+details > summary {
+  list-style: none;
+  marker: none;
+}
+
+details > summary::-webkit-details-marker {
+  display: none;
+}

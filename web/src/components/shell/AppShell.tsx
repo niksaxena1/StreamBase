@@ -11,6 +11,8 @@ import { SearchBar } from "@/components/shell/SearchBar";
 import { IngestionStatusBanner } from "@/components/health/IngestionStatusBanner";
 import { SAIWidget } from "@/components/sai/SAIWidget";
 
+type MainSurface = "glass" | "plain";
+
 function SettingsGearIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="text-current">
@@ -32,7 +34,8 @@ function SettingsGearIcon() {
   );
 }
 
-export function AppShell(props: { children: ReactNode }) {
+export function AppShell(props: { children: ReactNode; mainSurface?: MainSurface }) {
+  const mainSurface = props.mainSurface ?? "glass";
   return (
     <div className="min-h-dvh">
       {/* subtle accent glow */}
@@ -93,7 +96,7 @@ export function AppShell(props: { children: ReactNode }) {
           </header>
 
           {/* Main surface */}
-          <main className="sb-glass flex-1 p-4 sm:p-5">
+          <main className={(mainSurface === "glass" ? "sb-glass " : "") + "flex-1 p-4 sm:p-5"}>
             <IngestionStatusBanner />
             {props.children}
           </main>
