@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 import { navItems } from "./SideRail";
 
 export function MobileNav({
@@ -12,9 +13,39 @@ export function MobileNav({
   healthHasCritical?: boolean;
 }) {
   const pathname = usePathname();
+  const [hasScrolled, setHasScrolled] = useState(false);
+  const [isScrolling, setIsScrolling] = useState(false);
+  const scrollTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    function onScroll() {
+      const y = window.scrollY || 0;
+      setHasScrolled(y > 4);
+
+      setIsScrolling(true);
+      if (scrollTimerRef.current) window.clearTimeout(scrollTimerRef.current);
+      scrollTimerRef.current = window.setTimeout(() => {
+        setIsScrolling(false);
+      }, 160);
+    }
+
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      if (scrollTimerRef.current) window.clearTimeout(scrollTimerRef.current);
+    };
+  }, []);
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 block sb-glass border-t pb-safe sm:hidden" style={{ borderColor: "var(--sb-border)" }}>
+    <nav
+      className={[
+        "fixed bottom-0 left-0 right-0 z-50 block sb-glass sb-glass-nav pb-safe sm:hidden",
+        hasScrolled ? "sb-glass-nav--scrolled" : "",
+        isScrolling ? "sb-glass-nav--scrolling" : "",
+      ].join(" ")}
+      style={{ borderColor: "var(--sb-border)" }}
+    >
       <div className="flex h-20 items-center justify-around px-2 pb-2">
         {navItems.map((item) => {
           const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
