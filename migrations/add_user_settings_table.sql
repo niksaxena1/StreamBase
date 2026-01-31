@@ -14,4 +14,5 @@ alter table user_settings enable row level security;
 create policy "Users can manage their own settings"
   on user_settings
   for all
-  using (auth.uid() = user_id);
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);

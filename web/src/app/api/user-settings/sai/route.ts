@@ -22,13 +22,19 @@ export async function GET() {
     .maybeSingle();
 
   if (error) {
+    // Graceful fallback: if the table hasn't been migrated yet, default to enabled.
+    // This prevents the UI from breaking on older DBs.
+    const msg = String(error.message ?? "");
+    if (msg.includes("Could not find the table") || msg.includes("schema cache")) {
+      return NextResponse.json({ sai_enabled: true, configured: false }, { status: 200 });
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
   // Default to true if no settings exist yet
   const saiEnabled = settings?.sai_enabled ?? true;
 
-  return NextResponse.json({ sai_enabled: saiEnabled }, { status: 200 });
+  return NextResponse.json({ sai_enabled: saiEnabled, configured: true }, { status: 200 });
 }
 
 export async function POST(request: NextRequest) {
@@ -44,32 +50,23 @@ export async function POST(request: NextRequest) {
 
   const svc = supabaseService();
 
-  // Try to update first
-  const { data: updated, error: updateError } = await svc
+  // Use upsert to create/update in one call.
+  const { data: upserted, error } = await svc
     .from("user_settings")
-    .update({ sai_enabled: saiEnabled })
-    .eq("user_id", user.id)
+    .upsert([{ user_id: user.id, sai_enabled: saiEnabled }], { onConflict: "user_id" })
     .select("sai_enabled")
     .maybeSingle();
 
-  if (updateError && !updateError.message?.includes("no rows")) {
-    return NextResponse.json({ error: updateError.message }, { status: 500 });
-  }
-
-  // If no rows were updated, insert
-  if (!updated) {
-    const { data: inserted, error: insertError } = await svc
-      .from("user_settings")
-      .insert([{ user_id: user.id, sai_enabled: saiEnabled }])
-      .select("sai_enabled")
-      .maybeSingle();
-
-    if (insertError) {
-      return NextResponse.json({ error: insertError.message }, { status: 500 });
+  if (error) {
+    const msg = String(error.message ?? "");
+    if (msg.includes("Could not find the table") || msg.includes("schema cache")) {
+      return NextResponse.json(
+        { error: "SAI setting isn’t configured in the database yet. Apply migrations, then retry." },
+        { status: 503 },
+      );
     }
-
-    return NextResponse.json({ sai_enabled: inserted?.sai_enabled ?? saiEnabled }, { status: 200 });
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ sai_enabled: updated.sai_enabled }, { status: 200 });
+  return NextResponse.json({ sai_enabled: upserted?.sai_enabled ?? saiEnabled, configured: true }, { status: 200 });
 }

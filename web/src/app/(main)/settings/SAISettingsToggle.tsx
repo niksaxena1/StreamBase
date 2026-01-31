@@ -7,14 +7,20 @@ export function SAISettingsToggle() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [configured, setConfigured] = useState(true);
 
   // Fetch current setting
   useEffect(() => {
     setLoading(true);
     void fetch("/api/user-settings/sai")
-      .then((res) => res.json())
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error((data as any)?.error ?? "Failed to load setting");
+        return data;
+      })
       .then((data) => {
         setSaiEnabled(data.sai_enabled ?? true);
+        setConfigured(data.configured !== false);
         setLoading(false);
       })
       .catch((err) => {
@@ -36,8 +42,8 @@ export function SAISettingsToggle() {
       });
 
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error ?? "Failed to update setting");
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data as any)?.error ?? "Failed to update setting");
       }
 
       setSaved(true);
@@ -61,6 +67,8 @@ export function SAISettingsToggle() {
         <div className="flex items-center gap-3">
           {loading ? (
             <div className="text-xs opacity-60">Loading…</div>
+          ) : !configured ? (
+            <div className="text-xs opacity-60">DB not migrated yet</div>
           ) : error ? (
             <div className="text-xs text-red-600 dark:text-red-400">{error}</div>
           ) : saved ? (
@@ -70,7 +78,7 @@ export function SAISettingsToggle() {
           <button
             type="button"
             onClick={() => handleToggle(!saiEnabled)}
-            disabled={loading}
+            disabled={loading || !configured}
             className={[
               "sb-ring relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
               saiEnabled
