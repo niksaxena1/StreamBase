@@ -88,9 +88,10 @@ function SideRailContent({
 
       <Link
         href="/settings"
-        className="grid h-9 w-9 place-items-center rounded-full transition hover:bg-white/70 dark:hover:bg-white/10 text-black"
+        className="grid h-9 w-9 place-items-center rounded-full transition hover:opacity-90"
         style={{
-          background: "color-mix(in srgb, var(--sb-accent) 55%, white)",
+          background: "var(--sb-accent)",
+          color: "#000",
           boxShadow: "var(--sb-shadow-compact)",
         }}
         title="Settings"

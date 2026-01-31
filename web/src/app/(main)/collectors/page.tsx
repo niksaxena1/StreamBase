@@ -14,6 +14,7 @@ import {
   type CollectorSummaryRow,
   type TopPlaylistRow,
 } from "./CollectorsClient";
+import { CollectorsPageHeader } from "./CollectorsPageHeader";
 
 export const revalidate = 86400; // 24h ISR - data updates daily
 
@@ -37,6 +38,18 @@ type PlaylistRow = {
   playlist_key: string;
   display_name: string;
   collector: string | null;
+};
+
+type CollectorTrackRow = {
+  isrc: string;
+  name: string | null;
+  album_image_url: string | null;
+  artist_names: string[] | null;
+  artist_ids: string[] | null;
+  playlist_keys: string[] | null;
+  distro_playlist_keys: string[] | null;
+  total_streams_cumulative: number | null;
+  daily_streams_delta: number | null;
 };
 
 export default async function CollectorsPage({
@@ -108,6 +121,7 @@ export default async function CollectorsPage({
   }
 
   const sparkStart = latestRunDate ? addDaysIso(latestRunDate, -13) : null;
+  const prevRunDate = latestRunDate ? addDaysIso(latestRunDate, -1) : null;
   // Use custom start date if provided, otherwise calculate from rangeDays
   const rangeStart = sp.start && sp.end
     ? addDaysISO(sp.start, SOT_DATA_LAG_DAYS) // data date -> run date
@@ -151,8 +165,36 @@ export default async function CollectorsPage({
           .gte("date", rangeStart!)
           .lte("date", rangeEnd!)
           .order("date", { ascending: false }),
+
+      // Fetch all collectors data for comparison chart (date-range filtered for daily view)
+      allCollectorsSeries: async () =>
+        await svc
+          .from("collector_daily_agg")
+          .select(
+            "collector,date,track_count,daily_streams_net,est_revenue_daily_net",
+          )
+          .gte("date", rangeStart!)
+          .lte("date", rangeEnd!)
+          .order("date", { ascending: true }),
+
+      // Fetch ALL-TIME data for non-daily granularities (weekly/monthly/quarterly/yearly)
+      allCollectorsAllTime: async () =>
+        await svc
+          .from("collector_daily_agg")
+          .select(
+            "collector,date,track_count,daily_streams_net,est_revenue_daily_net",
+          )
+          .order("date", { ascending: true }),
+
+      collectorTracks: async () =>
+        await svc.rpc("collector_tracks", {
+          collector: selectedCollector,
+          run_date: latestRunDate,
+          prev_date: prevRunDate,
+          limit_rows: 5000,
+        }),
     },
-    `collectors-${selectedCollector}-${rangeStart}-${rangeEnd}`,
+    `collectors-${selectedCollector}-${rangeStart}-${rangeEnd}-${latestRunDate}`,
     600,
   );
 
@@ -210,6 +252,32 @@ export default async function CollectorsPage({
     date: dataDateFromRunDate(p.date),
   }));
 
+  // Process all collectors data for comparison chart (date-range filtered)
+  const allCollectorsRaw = (results.allCollectorsSeries.data ?? []) as Array<{
+    collector: string;
+    date: string;
+    track_count: number;
+    daily_streams_net: number;
+    est_revenue_daily_net: number;
+  }>;
+  const allCollectorsSeries = allCollectorsRaw.map((p) => ({
+    ...p,
+    date: dataDateFromRunDate(p.date),
+  }));
+
+  // Process all-time data for non-daily granularities
+  const allCollectorsAllTimeRaw = (results.allCollectorsAllTime.data ?? []) as Array<{
+    collector: string;
+    date: string;
+    track_count: number;
+    daily_streams_net: number;
+    est_revenue_daily_net: number;
+  }>;
+  const allCollectorsAllTime = allCollectorsAllTimeRaw.map((p) => ({
+    ...p,
+    date: dataDateFromRunDate(p.date),
+  }));
+
   const selectedPlaylists = playlists.filter(
     (p) => (p.collector ?? "").toUpperCase() === selectedCollector,
   );
@@ -250,39 +318,25 @@ export default async function CollectorsPage({
     missing_streams_track_count: r.missing_streams_track_count,
   }));
 
+  const collectorTracks = ((results.collectorTracks.data ?? []) as any[]).map((r): CollectorTrackRow => ({
+    isrc: String(r.isrc),
+    name: r.name == null ? null : String(r.name),
+    album_image_url: r.album_image_url == null ? null : String(r.album_image_url),
+    artist_names: (r.artist_names ?? null) as string[] | null,
+    artist_ids: (r.artist_ids ?? null) as string[] | null,
+    playlist_keys: (r.playlist_keys ?? null) as string[] | null,
+    distro_playlist_keys: (r.distro_playlist_keys ?? null) as string[] | null,
+    total_streams_cumulative: r.total_streams_cumulative == null ? null : Number(r.total_streams_cumulative),
+    daily_streams_delta: r.daily_streams_delta == null ? null : Number(r.daily_streams_delta),
+  }));
+
   return (
     <div className="space-y-4">
-      <div className="flex items-end justify-between gap-4">
-        <div>
-          <h1 className="font-display text-xl font-semibold tracking-tight sm:text-2xl">Collectors</h1>
-          <p className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
-            Latest data date:{" "}
-            <span className="font-mono">
-              {latestDataDate ? formatDateISO(latestDataDate) : "—"}
-            </span>
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="sb-ring flex items-center gap-0.5 rounded-full bg-white/70 p-0.5 text-[11px] dark:bg-white/10">
-            {RANGE_CHOICES.map((d) => (
-              <Link
-                key={d}
-                href={`?collector=${encodeURIComponent(selectedCollector)}&range=${d}`}
-                className={[
-                  "rounded-full px-2.5 py-1.5 font-medium transition",
-                  rangeDays === d && !sp.start && !sp.end
-                    ? "bg-black text-white shadow-sm dark:bg-white dark:text-black"
-                    : "hover:bg-white/70 dark:hover:bg-white/10",
-                ].join(" ")}
-                style={rangeDays === d && !sp.start && !sp.end ? undefined : { color: "var(--sb-muted)" }}
-              >
-                {d}d
-              </Link>
-            ))}
-          </div>
-          <DateRangePicker latestDate={latestDataDate ?? null} currentRangeDays={rangeDays} />
-        </div>
-      </div>
+      <CollectorsPageHeader
+        selectedCollector={selectedCollector}
+        rangeDays={rangeDays}
+        latestDataDate={latestDataDate}
+      />
 
       <CollectorsClient
         latestDate={latestDataDate}
@@ -291,6 +345,9 @@ export default async function CollectorsPage({
         summary={summary}
         seriesDesc={seriesDesc as CollectorSeriesPoint[]}
         topPlaylists={normalizedTopPlaylists}
+        collectorTracks={collectorTracks}
+        allCollectorsSeries={allCollectorsSeries}
+        allCollectorsAllTime={allCollectorsAllTime}
       />
     </div>
   );

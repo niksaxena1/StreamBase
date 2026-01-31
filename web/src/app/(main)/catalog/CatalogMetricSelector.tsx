@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-const METRICS = ["revenue", "streams", "tracks"] as const;
+const METRICS = ["streams", "revenue", "tracks"] as const;
 export type Metric = (typeof METRICS)[number];
 
 export function CatalogMetricSelector({

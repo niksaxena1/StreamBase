@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Activity, Search, X } from "lucide-react";
 
 import { GlassTable, TableCell, TableRow } from "@/components/ui/GlassTable";
 import { SpotlightCard } from "@/components/ui/SpotlightCard";
@@ -15,9 +17,123 @@ import { formatDateISO, formatInt, formatUsd2 } from "@/lib/format";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
 import { slugifyForFilename, todayIsoDate } from "@/lib/csv";
 import { dataDateFromRunDate } from "@/lib/sotDates";
+import {
+  CollectorComparisonChart,
+  COLLECTOR_COLORS,
+  type CollectorDailyData,
+  type ComparisonMode,
+} from "@/components/charts/CollectorComparisonChart";
+import { CollectorMultiSelect } from "@/components/ui/CollectorMultiSelect";
+import { GranularitySelect, type Granularity } from "@/components/ui/GranularitySelect";
 
-const METRICS = ["revenue", "streams", "tracks"] as const;
+const METRICS = ["streams", "revenue", "tracks"] as const;
 type Metric = (typeof METRICS)[number];
+
+const COLLECTOR_ORDER = ["A", "K", "N", "PL", "TG", "NL"] as const;
+
+const GRANULARITIES = ["daily", "weekly", "monthly", "quarterly", "yearly"] as const;
+
+// Helper to get ISO week number (weeks start Monday)
+function getISOWeek(date: Date): { year: number; week: number } {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+  return { year: d.getUTCFullYear(), week: weekNo };
+}
+
+// Helper to get quarter from date
+function getQuarter(date: Date): { year: number; quarter: number } {
+  return { year: date.getFullYear(), quarter: Math.floor(date.getMonth() / 3) + 1 };
+}
+
+// Aggregate daily data into buckets based on granularity
+function aggregateByGranularity(
+  data: CollectorDailyData[],
+  granularity: Granularity,
+  selectedCollectors: string[],
+): CollectorDailyData[] {
+  if (granularity === "daily") return data;
+
+  // Group by collector and bucket
+  const buckets = new Map<string, Map<string, { streams: number; revenue: number; firstTrackCount: number; lastTrackCount: number; lastDate: string }>>();
+
+  for (const row of data) {
+    if (!selectedCollectors.includes(row.collector)) continue;
+
+    const date = new Date(row.date);
+    let bucketKey: string;
+
+    switch (granularity) {
+      case "weekly": {
+        const { year, week } = getISOWeek(date);
+        bucketKey = `${year}-W${String(week).padStart(2, "0")}`;
+        break;
+      }
+      case "monthly":
+        bucketKey = row.date.substring(0, 7); // yyyy-mm
+        break;
+      case "quarterly": {
+        const { year, quarter } = getQuarter(date);
+        bucketKey = `Q${quarter} ${year}`;
+        break;
+      }
+      case "yearly":
+        bucketKey = row.date.substring(0, 4); // yyyy
+        break;
+      default:
+        bucketKey = row.date;
+    }
+
+    const collectorKey = `${row.collector}|${bucketKey}`;
+
+    if (!buckets.has(collectorKey)) {
+      buckets.set(collectorKey, new Map());
+    }
+
+    const existing = buckets.get(collectorKey)!.get(bucketKey);
+    if (!existing) {
+      buckets.get(collectorKey)!.set(bucketKey, {
+        streams: Number(row.daily_streams_net ?? 0),
+        revenue: Number(row.est_revenue_daily_net ?? 0),
+        firstTrackCount: Number(row.track_count ?? 0),
+        lastTrackCount: Number(row.track_count ?? 0),
+        lastDate: row.date,
+      });
+    } else {
+      existing.streams += Number(row.daily_streams_net ?? 0);
+      existing.revenue += Number(row.est_revenue_daily_net ?? 0);
+      // Update last track count if this date is later
+      if (row.date > existing.lastDate) {
+        existing.lastTrackCount = Number(row.track_count ?? 0);
+        existing.lastDate = row.date;
+      }
+    }
+  }
+
+  // Convert buckets back to CollectorDailyData format
+  const result: CollectorDailyData[] = [];
+
+  for (const [collectorKey, bucketMap] of buckets) {
+    const collector = collectorKey.split("|")[0];
+
+    for (const [bucketKey, values] of bucketMap) {
+      result.push({
+        date: bucketKey, // Use bucket key as the "date" for display
+        collector,
+        daily_streams_net: values.streams,
+        est_revenue_daily_net: values.revenue,
+        track_count: values.lastTrackCount - values.firstTrackCount, // Net track change in bucket
+      });
+    }
+  }
+
+  // Sort by date/bucket key ascending
+  result.sort((a, b) => a.date.localeCompare(b.date));
+
+  return result;
+}
 
 function rollingAvg7(desc: Array<{ date: string; daily: number }>) {
   // Input: newest-first. Output: newest-first with ma7.
@@ -27,9 +143,8 @@ function rollingAvg7(desc: Array<{ date: string; daily: number }>) {
   for (let i = 0; i < asc.length; i++) {
     const start = Math.max(0, i - 6);
     const window = asc.slice(start, i + 1).map((p) => Number(p.daily ?? 0));
-    const has7 = window.length >= 7;
     const avg = window.reduce((a, b) => a + b, 0) / window.length;
-    outAsc.push({ date: asc[i].date, daily: asc[i].daily, ma7: has7 ? avg : null });
+    outAsc.push({ date: asc[i].date, daily: asc[i].daily, ma7: avg });
   }
 
   return outAsc.reverse();
@@ -41,9 +156,8 @@ function ma7ForValueDesc(desc: Array<{ date: string; value: number }>) {
   for (let i = 0; i < asc.length; i++) {
     const start = Math.max(0, i - 6);
     const window = asc.slice(start, i + 1).map((p) => Number(p.value ?? 0));
-    const has7 = window.length >= 7;
     const avg = window.reduce((a, b) => a + b, 0) / window.length;
-    outAsc.push({ date: asc[i].date, value: asc[i].value, ma7: has7 ? avg : null });
+    outAsc.push({ date: asc[i].date, value: asc[i].value, ma7: avg });
   }
   return outAsc.reverse();
 }
@@ -130,6 +244,18 @@ export type TopPlaylistRow = {
   missing_streams_track_count: number | null;
 };
 
+export type CollectorTrackRow = {
+  isrc: string;
+  name: string | null;
+  album_image_url: string | null;
+  artist_names: string[] | null;
+  artist_ids: string[] | null;
+  playlist_keys: string[] | null;
+  distro_playlist_keys: string[] | null;
+  total_streams_cumulative: number | null;
+  daily_streams_delta: number | null;
+};
+
 export function CollectorsClient(props: {
   latestDate: string | null;
   selectedCollector: string;
@@ -137,8 +263,66 @@ export function CollectorsClient(props: {
   summary: CollectorSummaryRow[];
   seriesDesc: CollectorSeriesPoint[]; // newest-first
   topPlaylists: TopPlaylistRow[]; // for latestDate
+  collectorTracks: CollectorTrackRow[]; // for latestDate (all tracks for selected collector)
+  allCollectorsSeries: CollectorDailyData[]; // for comparison chart (date-range filtered)
+  allCollectorsAllTime: CollectorDailyData[]; // for comparison chart (all-time, for non-daily granularities)
 }) {
-  const [metric, setMetric] = useState<Metric>("revenue");
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // Metric is controlled by the page header; read it from the URL so it updates immediately.
+  const metric: Metric = (() => {
+    const urlMetric = searchParams.get("metric");
+    return urlMetric === "streams" || urlMetric === "revenue" || urlMetric === "tracks"
+      ? (urlMetric as Metric)
+      : "revenue";
+  })();
+  
+  // Comparison chart state - initialize from URL or defaults
+  const [comparisonCollectors, setComparisonCollectors] = useState<string[]>(() => {
+    const urlCollectors = searchParams.get("collectors");
+    if (urlCollectors) {
+      return urlCollectors.split(",").filter((c) => COLLECTOR_ORDER.includes(c as any));
+    }
+    return ["PL", "TG"]; // Default to PL and TG
+  });
+  
+  const [comparisonMode, setComparisonMode] = useState<ComparisonMode>(() => {
+    const urlMode = searchParams.get("mode");
+    if (urlMode === "combined" || urlMode === "individual" || urlMode === "percentage") {
+      return urlMode;
+    }
+    return "individual"; // Default to individual
+  });
+
+  const [granularity, setGranularity] = useState<Granularity>(() => {
+    const urlGranularity = searchParams.get("granularity");
+    if (GRANULARITIES.includes(urlGranularity as Granularity)) {
+      return urlGranularity as Granularity;
+    }
+    return "daily"; // Default to daily
+  });
+  
+  // Update URL when comparison settings change
+  useEffect(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("collectors", comparisonCollectors.join(","));
+    params.set("mode", comparisonMode);
+    params.set("granularity", granularity);
+    
+    // Use replace to avoid adding to history on every change
+    const newUrl = `?${params.toString()}`;
+    if (newUrl !== `?${searchParams.toString()}`) {
+      router.replace(newUrl, { scroll: false });
+    }
+  }, [comparisonCollectors, comparisonMode, granularity, searchParams, router]);
+
+  // Compute aggregated data based on granularity
+  const comparisonChartData = useMemo(() => {
+    // For daily, use the date-range filtered data; for others, use all-time
+    const sourceData = granularity === "daily" ? props.allCollectorsSeries : props.allCollectorsAllTime;
+    return aggregateByGranularity(sourceData, granularity, comparisonCollectors);
+  }, [granularity, props.allCollectorsSeries, props.allCollectorsAllTime, comparisonCollectors]);
 
   // Remember last collector (like playlist dashboard)
   useEffect(() => {
@@ -148,8 +332,6 @@ export function CollectorsClient(props: {
       // ignore
     }
   }, [props.selectedCollector]);
-
-  const COLLECTOR_ORDER = ["A", "K", "N", "PL", "TG", "NL"] as const;
 
   const ranked = useMemo(() => {
     const rows = [...props.summary];
@@ -219,12 +401,189 @@ export function CollectorsClient(props: {
 
   const valueFormat = metric === "revenue" ? "usd" : "int";
   const yTickFormat = metric === "revenue" ? "usd_compact" : metric === "streams" ? "k" : "int";
+  const chartColor = metric === "tracks" ? "#3b82f6" : metric === "revenue" ? "#10b981" : "var(--sb-accent)";
+
+  const revenuePerStreamDaily =
+    latest?.daily_streams_net && latest.daily_streams_net !== 0
+      ? Number(latest.est_revenue_daily_net ?? 0) / Number(latest.daily_streams_net ?? 0)
+      : null;
+  const revenuePerStreamTotal =
+    latest?.total_streams_cumulative && latest.total_streams_cumulative !== 0
+      ? Number(latest.est_revenue_total ?? 0) / Number(latest.total_streams_cumulative ?? 0)
+      : null;
+
+  type TrackSort = "delta_desc" | "delta_asc" | "total_desc" | "total_asc" | "name_asc" | "name_desc";
+  const [trackQuery, setTrackQuery] = useState("");
+  const [trackDistroOnly, setTrackDistroOnly] = useState(false);
+  const [trackSort, setTrackSort] = useState<TrackSort>("delta_desc");
+
+  const filteredSortedTracks = useMemo(() => {
+    const q = trackQuery.trim().toLowerCase();
+    let rows = props.collectorTracks ?? [];
+
+    if (trackDistroOnly) {
+      rows = rows.filter((t) => (t.distro_playlist_keys ?? []).length > 0);
+    }
+
+    if (q) {
+      rows = rows.filter((t) => {
+        const name = (t.name ?? "").toLowerCase();
+        const isrc = (t.isrc ?? "").toLowerCase();
+        const artists = (t.artist_names ?? []).join(", ").toLowerCase();
+        return name.includes(q) || isrc.includes(q) || artists.includes(q);
+      });
+    }
+
+    const safeNum = (n: number | null | undefined) => (n == null || Number.isNaN(n) ? null : Number(n));
+
+    rows = [...rows].sort((a, b) => {
+      const aDelta = safeNum(a.daily_streams_delta);
+      const bDelta = safeNum(b.daily_streams_delta);
+      const aTotal = safeNum(a.total_streams_cumulative);
+      const bTotal = safeNum(b.total_streams_cumulative);
+      const aName = (a.name ?? a.isrc ?? "").toLowerCase();
+      const bName = (b.name ?? b.isrc ?? "").toLowerCase();
+
+      const cmpNum = (x: number | null, y: number | null, dir: "asc" | "desc") => {
+        if (x == null && y == null) return 0;
+        if (x == null) return 1; // nulls last
+        if (y == null) return -1;
+        return dir === "asc" ? x - y : y - x;
+      };
+
+      switch (trackSort) {
+        case "delta_desc":
+          return cmpNum(aDelta, bDelta, "desc") || cmpNum(aTotal, bTotal, "desc") || aName.localeCompare(bName);
+        case "delta_asc":
+          return cmpNum(aDelta, bDelta, "asc") || cmpNum(aTotal, bTotal, "desc") || aName.localeCompare(bName);
+        case "total_desc":
+          return cmpNum(aTotal, bTotal, "desc") || cmpNum(aDelta, bDelta, "desc") || aName.localeCompare(bName);
+        case "total_asc":
+          return cmpNum(aTotal, bTotal, "asc") || cmpNum(aDelta, bDelta, "desc") || aName.localeCompare(bName);
+        case "name_asc":
+          return aName.localeCompare(bName) || cmpNum(aTotal, bTotal, "desc");
+        case "name_desc":
+          return bName.localeCompare(aName) || cmpNum(aTotal, bTotal, "desc");
+        default:
+          return 0;
+      }
+    });
+
+    return rows;
+  }, [props.collectorTracks, trackQuery, trackDistroOnly, trackSort]);
+
+  const topTrackCards = useMemo(() => {
+    const rows = props.collectorTracks ?? [];
+
+    const bestDelta = rows
+      .filter((t) => t.daily_streams_delta != null)
+      .reduce<typeof rows[number] | null>((best, cur) => {
+        if (!best) return cur;
+        return (cur.daily_streams_delta ?? -Infinity) > (best.daily_streams_delta ?? -Infinity) ? cur : best;
+      }, null);
+
+    const bestTotal = rows
+      .filter((t) => t.total_streams_cumulative != null)
+      .reduce<typeof rows[number] | null>((best, cur) => {
+        if (!best) return cur;
+        return (cur.total_streams_cumulative ?? -Infinity) > (best.total_streams_cumulative ?? -Infinity) ? cur : best;
+      }, null);
+
+    const distroCount = rows.filter((t) => (t.distro_playlist_keys ?? []).length > 0).length;
+
+    return { bestDelta, bestTotal, distroCount, totalCount: rows.length };
+  }, [props.collectorTracks]);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
+      {/* Collector Comparison Charts */}
+      <SpotlightCard className="relative p-3">
+        <div className="flex flex-col gap-3">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <div className="flex items-center gap-2">
+                <Activity className="h-3.5 w-3.5 opacity-60" />
+                <div className="text-xs font-medium uppercase tracking-wide opacity-70">
+                  Collector Comparison
+                </div>
+              </div>
+              <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
+                Compare revenue, streams, and track change over time
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Mode toggle */}
+              <div className="sb-ring flex items-center gap-0.5 rounded-full bg-white/70 p-0.5 dark:bg-white/10">
+                {(["combined", "individual", "percentage"] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setComparisonMode(m)}
+                    className={[
+                      "rounded-full px-2.5 py-1.5 text-[11px] font-medium transition",
+                      comparisonMode === m
+                        ? "bg-black text-white shadow-sm dark:bg-white dark:text-black"
+                        : "hover:bg-white/70 dark:hover:bg-white/10",
+                    ].join(" ")}
+                    style={comparisonMode === m ? undefined : { color: "var(--sb-muted)" }}
+                  >
+                    {m === "combined" ? "Combined" : m === "individual" ? "Individual" : "Percentage"}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <CollectorMultiSelect selected={comparisonCollectors} onChange={setComparisonCollectors} />
+            <GranularitySelect value={granularity} onChange={setGranularity} />
+          </div>
+
+          {/* Legend + note */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            {comparisonMode !== "combined" && comparisonCollectors.length > 0 && (
+              <div className="flex flex-wrap items-center gap-3">
+                {COLLECTOR_ORDER.filter((c) => comparisonCollectors.includes(c)).map((collector) => (
+                  <div key={collector} className="flex items-center gap-1.5 text-xs">
+                    <span
+                      className="inline-block h-2 w-2 rounded-full"
+                      style={{ backgroundColor: COLLECTOR_COLORS[collector] }}
+                    />
+                    <span style={{ color: "var(--sb-text)" }}>{collector}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {granularity !== "daily" && (
+              <div className="text-[10px]" style={{ color: "var(--sb-muted)" }}>
+                {granularity === "weekly" ? "Weeks start Monday (ISO)" : "Showing all-time data"}
+              </div>
+            )}
+          </div>
+
+          {/* Chart */}
+          <div className="mt-2 min-h-[260px]">
+            <CollectorComparisonChart
+              data={comparisonChartData}
+              selectedCollectors={comparisonCollectors}
+              mode={comparisonMode}
+              metric={metric}
+              heightPx={260}
+              granularity={granularity}
+            />
+          </div>
+        </div>
+        {/* Decorative background glow (subtle) */}
+        <div
+          className="pointer-events-none absolute -right-14 -top-14 h-40 w-40 rounded-full opacity-15 blur-3xl"
+          style={{ background: "var(--sb-accent)" }}
+        />
+      </SpotlightCard>
+
       {/* Collector vs Collector mini view */}
-      <div className="sb-card p-3">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="space-y-2">
+        <div className="flex items-end justify-between px-1">
           <div>
             <div className="text-xs font-medium" style={{ color: "var(--sb-text)" }}>
               Comparison Table
@@ -234,31 +593,9 @@ export function CollectorsClient(props: {
               {props.latestDate ? formatDateISO(props.latestDate) : "—"}
             </div>
           </div>
-
-          <div className="flex items-center gap-2">
-            <div className="sb-ring flex items-center gap-0.5 rounded-full bg-white/70 p-0.5 dark:bg-white/10">
-              {METRICS.map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => setMetric(m)}
-                  className={[
-                    "rounded-full px-2.5 py-1.5 text-[11px] font-medium transition",
-                    metric === m
-                      ? "bg-black text-white shadow-sm dark:bg-white dark:text-black"
-                      : "hover:bg-white/70 dark:hover:bg-white/10",
-                  ].join(" ")}
-                  style={metric === m ? undefined : { color: "var(--sb-muted)" }}
-                >
-                  {m === "revenue" ? "Revenue" : m === "streams" ? "Streams" : "Tracks"}
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
 
-        <div className="mt-3">
-          <GlassTable
+        <GlassTable
             headers={[
               "Collector",
               "Playlists",
@@ -315,16 +652,39 @@ export function CollectorsClient(props: {
                   ? (n: number | null | undefined) => (n == null ? "—" : formatUsd2(n))
                   : (n: number | null | undefined) => (n == null ? "—" : formatInt(n));
 
+              const isSelectedCollector = r.collector === props.selectedCollector;
+
               return (
-                <TableRow key={r.collector}>
+                <TableRow
+                  key={r.collector}
+                  className={
+                    isSelectedCollector
+                      ? "hover:bg-transparent dark:hover:bg-transparent odd:bg-transparent dark:odd:bg-transparent"
+                      : undefined
+                  }
+                  style={
+                    isSelectedCollector
+                      ? {
+                          // Lime highlight that stays readable in both themes.
+                          // Mix into the surface instead of using full accent fill.
+                          background: "color-mix(in srgb, var(--sb-accent) 28%, var(--sb-surface))",
+                        }
+                      : undefined
+                  }
+                >
                   <TableCell>
                     <Link
                       href={`?collector=${encodeURIComponent(r.collector)}&range=${props.rangeDays}`}
                       className={[
-                        "font-medium transition-colors hover:text-lime-600 dark:hover:text-lime-400",
+                        "inline-flex items-center gap-2 font-medium transition-colors hover:text-lime-600 dark:hover:text-lime-400",
                         r.collector === props.selectedCollector ? "opacity-100" : "opacity-70",
                       ].join(" ")}
                     >
+                      <span
+                        className="inline-block h-2 w-2 rounded-full"
+                        style={{ backgroundColor: COLLECTOR_COLORS[r.collector] ?? "var(--sb-muted)" }}
+                        aria-hidden="true"
+                      />
                       {r.collector}
                     </Link>
                   </TableCell>
@@ -341,55 +701,28 @@ export function CollectorsClient(props: {
               );
             })}
           </GlassTable>
-        </div>
       </div>
 
+      <div className="h-px w-full" style={{ backgroundColor: "var(--sb-border)" }} />
+
       {/* Selected collector combined view */}
-      <div className="space-y-3">
+      <div className="space-y-6">
         <div className="flex items-end justify-between">
           <div>
-            <h2 className="text-sm font-semibold">{props.selectedCollector} (combined)</h2>
+            <h2 className="font-display text-xl font-semibold tracking-tight sm:text-2xl flex items-center gap-2">
+              <span
+                className="inline-block h-2.5 w-2.5 rounded-full"
+                style={{
+                  backgroundColor: COLLECTOR_COLORS[props.selectedCollector] ?? "var(--sb-muted)",
+                }}
+                aria-hidden="true"
+              />
+              {props.selectedCollector} <span className="opacity-60">(combined)</span>
+            </h2>
             <p className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
               {props.rangeDays} day view
             </p>
           </div>
-        </div>
-
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
-          <StatCard
-            title="Est. revenue (daily)"
-            value={
-              <AnimatedCounter
-                value={latest?.est_revenue_daily_net ?? 0}
-                format="usd"
-                usdMaximumFractionDigits={2}
-                usdMinimumFractionDigits={2}
-              />
-            }
-            subtitle={props.latestDate ? `Newest day: ${formatDateISO(props.latestDate)}` : undefined}
-          />
-          <StatCard
-            title="Est. revenue (total)"
-            value={
-              <AnimatedCounter
-                value={latest?.est_revenue_total ?? 0}
-                format="usd"
-                usdMaximumFractionDigits={2}
-                usdMinimumFractionDigits={0}
-              />
-            }
-            subtitle={`${props.rangeDays} day view`}
-          />
-          <StatCard
-            title="Daily streams"
-            value={<AnimatedCounter value={latest?.daily_streams_net ?? 0} />}
-            subtitle={props.latestDate ? `Newest day: ${formatDateISO(props.latestDate)}` : undefined}
-          />
-          <StatCard
-            title="Total streams"
-            value={<AnimatedCounter value={latest?.total_streams_cumulative ?? 0} />}
-            subtitle={`${props.rangeDays} day view`}
-          />
         </div>
 
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
@@ -412,7 +745,8 @@ export function CollectorsClient(props: {
                 yTickFormat={yTickFormat as any}
                 heightPx={220}
                 isCumulative={metric !== "tracks"}
-                showMA7={true}
+                showMA7={false}
+                color={chartColor}
               />
             </div>
           </SpotlightCard>
@@ -435,6 +769,7 @@ export function CollectorsClient(props: {
                 valueFormat={valueFormat as any}
                 yTickFormat={yTickFormat as any}
                 heightPx={220}
+                dailyColor={chartColor}
               />
             </div>
           </SpotlightCard>
@@ -461,75 +796,483 @@ export function CollectorsClient(props: {
               valueFormat={valueFormat as any}
               yTickFormat={yTickFormat as any}
               heightPx={220}
+              color={chartColor}
             />
           </div>
         </SpotlightCard>
 
-        {/* Top playlists breakdown */}
-        <div className="space-y-2">
-          <div className="flex items-end justify-between px-1">
-            <div>
-              <h3 className="text-sm font-semibold">Top playlists</h3>
-              <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
-                Ranked by est. revenue (daily) on data date{" "}
-                {props.latestDate ? formatDateISO(props.latestDate) : "—"}
+        {/* Top playlists (collapsible) */}
+        <details
+          open
+          className="rounded-xl border bg-white/50 p-3 dark:bg-white/[0.03]"
+          style={{ borderColor: "var(--sb-border)" }}
+        >
+          <summary className="cursor-pointer select-none">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
+                  Top playlists
+                </div>
+                <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
+                  Ranked by est. revenue (daily) on data date{" "}
+                  {props.latestDate ? formatDateISO(props.latestDate) : "—"}
+                </div>
               </div>
             </div>
-          </div>
+          </summary>
 
-          <GlassTable
-            headers={[
-              "Playlist",
-              "Est. Rev (Daily)",
-              "Daily Streams",
-              <span key="missing" title="Number of tracks in the playlist that don't have stream data in the catalog snapshot for this day. This may indicate tracks that were recently added, removed from the catalog, or have data processing issues.">
-                Missing Streams
-              </span>,
-            ]}
-          >
-            {props.topPlaylists.map((p) => (
-              <TableRow key={p.playlist_key}>
-                <TableCell>
-                  <Link
-                    href={`/playlists/${p.playlist_key}`}
-                    className="font-medium transition-colors hover:text-lime-600 dark:hover:text-lime-400"
-                  >
-                    {p.display_name}
-                  </Link>
-                  <div className="font-mono text-[11px] opacity-50">{p.playlist_key}</div>
-                </TableCell>
-                <TableCell className="font-medium">{formatUsd2(p.est_revenue_daily_net)}</TableCell>
-                <TableCell className="text-lime-700 dark:text-lime-400 font-medium">
-                  +{formatInt(p.daily_streams_net)}
-                </TableCell>
-                <TableCell
-                  title={
-                    p.missing_streams_track_count
-                      ? "Number of tracks in this playlist that don't have stream data in the catalog snapshot for this day. This may indicate tracks that were recently added, removed from the catalog, or have data processing issues."
-                      : undefined
-                  }
+          <div className="mt-3">
+            <GlassTable
+              headers={[
+                "Playlist",
+                "Est. Rev (Daily)",
+                "Daily Streams",
+                <span
+                  key="missing"
+                  title="Number of tracks in the playlist that don't have stream data in the catalog snapshot for this day."
                 >
-                  {p.missing_streams_track_count ? (
-                    <span className="text-red-600 dark:text-red-400 font-medium">
-                      {formatInt(p.missing_streams_track_count)}
-                    </span>
-                  ) : (
-                    <span className="opacity-30">—</span>
-                  )}
-                </TableCell>
-              </TableRow>
-            ))}
-            {!props.topPlaylists.length ? (
-              <TableRow>
-                <TableCell className="py-8 text-center opacity-50" colSpan={4}>
-                  No playlists found for this collector/date.
-                </TableCell>
-              </TableRow>
-            ) : null}
-          </GlassTable>
-        </div>
+                  Cat. Missing Tracks
+                </span>,
+              ]}
+              maxBodyHeightClassName="max-h-[320px]"
+            >
+              {props.topPlaylists.map((p) => (
+                <TableRow key={p.playlist_key}>
+                  <TableCell>
+                    <Link
+                      href={`/playlists/${p.playlist_key}`}
+                      className="font-medium transition-colors hover:text-lime-600 dark:hover:text-lime-400"
+                    >
+                      {p.display_name}
+                    </Link>
+                    <div className="font-mono text-[11px] opacity-50">{p.playlist_key}</div>
+                  </TableCell>
+                  <TableCell className="font-medium">{formatUsd2(p.est_revenue_daily_net)}</TableCell>
+                  <TableCell className="text-lime-700 dark:text-lime-400 font-medium">
+                    +{formatInt(p.daily_streams_net)}
+                  </TableCell>
+                  <TableCell title={p.missing_streams_track_count ? "Missing catalog tracks for this date." : undefined}>
+                    {p.missing_streams_track_count ? (
+                      <span className="text-red-600 dark:text-red-400 font-medium">
+                        {formatInt(p.missing_streams_track_count)}
+                      </span>
+                    ) : (
+                      <span className="opacity-30">—</span>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+              {!props.topPlaylists.length ? (
+                <TableRow>
+                  <TableCell className="py-8 text-center opacity-50" colSpan={4}>
+                    No playlists found for this collector/date.
+                  </TableCell>
+                </TableRow>
+              ) : null}
+            </GlassTable>
+          </div>
+        </details>
+
+        {/* Tracks (collapsible) */}
+        <details
+          open
+          className="rounded-xl border bg-white/50 p-3 dark:bg-white/[0.03]"
+          style={{ borderColor: "var(--sb-border)" }}
+        >
+          <summary className="cursor-pointer select-none">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
+                  Tracks
+                </div>
+                <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
+                  Cumulative streams are totals from the DB on the data date. “Δ1d” is today minus yesterday.
+                </div>
+              </div>
+              <div
+                onClick={(ev) => {
+                  ev.preventDefault();
+                  ev.stopPropagation();
+                }}
+              >
+                <ChartCsvDownloadButton
+                  rows={props.collectorTracks as unknown as Array<Record<string, unknown>>}
+                  filename={`collectors-${slugifyForFilename(props.selectedCollector)}-tracks-${todayIsoDate()}.csv`}
+                  title="Download CSV"
+                />
+              </div>
+            </div>
+          </summary>
+
+          <div className="mt-3 space-y-4">
+            {/* Quick summary */}
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <StatCard
+              title="Top Δ1d track"
+              value={
+                topTrackCards.bestDelta?.daily_streams_delta == null
+                  ? "—"
+                  : metric === "revenue"
+                    ? revenuePerStreamDaily == null
+                      ? "—"
+                      : formatUsd2(topTrackCards.bestDelta.daily_streams_delta * revenuePerStreamDaily)
+                    : `${topTrackCards.bestDelta.daily_streams_delta >= 0 ? "+" : ""}${formatInt(topTrackCards.bestDelta.daily_streams_delta)}`
+              }
+              subtitle={
+                topTrackCards.bestDelta ? (
+                  <div className="flex items-center gap-2">
+                    {topTrackCards.bestDelta.album_image_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={topTrackCards.bestDelta.album_image_url}
+                        alt="Album cover"
+                        className="h-6 w-6 rounded object-cover"
+                      />
+                    ) : (
+                      <div className="h-6 w-6 rounded bg-white/60 dark:bg-white/10" />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <Link
+                        href={`/tracks/${topTrackCards.bestDelta.isrc}`}
+                        className="block truncate transition-colors hover:text-lime-600 dark:hover:text-lime-400 font-medium text-xs"
+                      >
+                        {topTrackCards.bestDelta.name ?? topTrackCards.bestDelta.isrc}
+                      </Link>
+                      {topTrackCards.bestDelta.artist_names?.length ? (
+                        <div className="truncate text-xs opacity-60">
+                          {topTrackCards.bestDelta.artist_names.join(", ")}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : (
+                  "—"
+                )
+              }
+            />
+            <StatCard
+              title="Top total track"
+              value={
+                topTrackCards.bestTotal?.total_streams_cumulative == null
+                  ? "—"
+                  : metric === "revenue"
+                    ? revenuePerStreamTotal == null
+                      ? "—"
+                      : formatUsd2(topTrackCards.bestTotal.total_streams_cumulative * revenuePerStreamTotal)
+                    : formatInt(topTrackCards.bestTotal.total_streams_cumulative)
+              }
+              subtitle={
+                topTrackCards.bestTotal ? (
+                  <div className="flex items-center gap-2">
+                    {topTrackCards.bestTotal.album_image_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={topTrackCards.bestTotal.album_image_url}
+                        alt="Album cover"
+                        className="h-6 w-6 rounded object-cover"
+                      />
+                    ) : (
+                      <div className="h-6 w-6 rounded bg-white/60 dark:bg-white/10" />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <Link
+                        href={`/tracks/${topTrackCards.bestTotal.isrc}`}
+                        className="block truncate transition-colors hover:text-lime-600 dark:hover:text-lime-400 font-medium text-xs"
+                      >
+                        {topTrackCards.bestTotal.name ?? topTrackCards.bestTotal.isrc}
+                      </Link>
+                      {topTrackCards.bestTotal.artist_names?.length ? (
+                        <div className="truncate text-xs opacity-60">
+                          {topTrackCards.bestTotal.artist_names.join(", ")}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : (
+                  "—"
+                )
+              }
+            />
+            </div>
+
+            {/* Controls */}
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+            <div className="relative flex-1 min-w-[220px]">
+              <Search
+                className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2"
+                style={{ color: "var(--sb-muted)" }}
+              />
+              <input
+                type="text"
+                value={trackQuery}
+                onChange={(e) => setTrackQuery(e.target.value)}
+                placeholder="Search tracks / artists / ISRC…"
+                className="w-full rounded-xl border bg-white/70 pl-8 pr-8 py-1.5 text-xs outline-none transition dark:bg-white/5"
+                style={{ borderColor: "var(--sb-border)" }}
+              />
+              {trackQuery && (
+                <button
+                  type="button"
+                  onClick={() => setTrackQuery("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 transition hover:bg-black/5 dark:hover:bg-white/10"
+                  aria-label="Clear search"
+                >
+                  <X className="h-3.5 w-3.5" style={{ color: "var(--sb-muted)" }} />
+                </button>
+              )}
+            </div>
+
+            <label className="inline-flex items-center gap-2 text-xs" style={{ color: "var(--sb-muted)" }}>
+              <input
+                type="checkbox"
+                checked={trackDistroOnly}
+                onChange={(e) => setTrackDistroOnly(e.target.checked)}
+              />
+              Distro only
+            </label>
+
+            <select
+              value={trackSort}
+              onChange={(e) => setTrackSort(e.target.value as any)}
+              className="rounded-xl border bg-white/70 px-2.5 py-1.5 text-xs outline-none transition dark:bg-white/5"
+              style={{ borderColor: "var(--sb-border)" }}
+            >
+              <option value="delta_desc">Δ1d ↓</option>
+              <option value="delta_asc">Δ1d ↑</option>
+              <option value="total_desc">Total ↓</option>
+              <option value="total_asc">Total ↑</option>
+              <option value="name_asc">Name ↑</option>
+              <option value="name_desc">Name ↓</option>
+            </select>
+
+            <div className="text-xs whitespace-nowrap" style={{ color: "var(--sb-muted)" }}>
+              {formatInt(filteredSortedTracks.length)} / {formatInt(props.collectorTracks.length)}
+            </div>
+            </div>
+
+            {/* Top tracks table */}
+            <div className="mt-4 space-y-2">
+              <div className="flex items-end justify-between">
+              <div>
+                <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
+                  Top tracks
+                </div>
+                <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
+                  Ranked by {metric === "revenue" ? "Δ1d revenue (est.)" : "Δ1d streams"}.
+                  {metric === "tracks" ? " (Track metric is playlist-level; this uses streams Δ1d.)" : ""}
+                </div>
+              </div>
+              <ChartCsvDownloadButton
+                rows={
+                  filteredSortedTracks.slice(0, 25).map((t) => ({
+                    isrc: t.isrc,
+                    name: t.name,
+                    artist: (t.artist_names ?? []).join(", "),
+                    total_streams_cumulative: t.total_streams_cumulative,
+                    daily_streams_delta: t.daily_streams_delta,
+                    est_revenue_delta_1d:
+                      revenuePerStreamDaily == null || t.daily_streams_delta == null
+                        ? null
+                        : Number(t.daily_streams_delta) * revenuePerStreamDaily,
+                    distro_playlists: (t.distro_playlist_keys ?? []).join(", "),
+                  })) as unknown as Array<Record<string, unknown>>
+                }
+                filename={`collectors-${slugifyForFilename(props.selectedCollector)}-top-tracks-${todayIsoDate()}.csv`}
+                title="Download CSV"
+              />
+            </div>
+
+            <GlassTable
+                headers={
+                  metric === "revenue"
+                    ? [
+                        "",
+                        "Track",
+                        <span key="rev" title="Estimated revenue based on the collector’s avg revenue/stream for the day.">
+                          Rev (Δ1d)
+                        </span>,
+                        "Streams (Δ1d)",
+                        "Streams (total)",
+                        "Distro",
+                      ]
+                    : ["", "Track", "Streams (Δ1d)", "Streams (total)", "Distro"]
+                }
+                maxBodyHeightClassName="max-h-[260px]"
+              >
+                {filteredSortedTracks.slice(0, 25).map((t) => {
+                  const distroKeys = (t.distro_playlist_keys ?? []).filter(Boolean);
+                  const distroLabel = distroKeys.length ? distroKeys.join(", ") : "—";
+                  const deltaStreams = t.daily_streams_delta;
+                  const deltaRevenue =
+                    revenuePerStreamDaily == null || deltaStreams == null
+                      ? null
+                      : Number(deltaStreams) * revenuePerStreamDaily;
+
+                  return (
+                    <TableRow key={`top-${t.isrc}`}>
+                      <TableCell>
+                        {t.album_image_url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={t.album_image_url}
+                            alt="Album cover"
+                            className="h-8 w-8 rounded-lg object-cover sb-ring"
+                          />
+                        ) : (
+                          <div className="h-8 w-8 rounded-lg sb-ring bg-white/60 dark:bg-white/10" />
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Link
+                          href={`/tracks/${t.isrc}`}
+                          className="font-medium transition-colors hover:text-lime-600 dark:hover:text-lime-400"
+                        >
+                          {t.name ?? t.isrc}
+                        </Link>
+                        {t.artist_names?.length ? (
+                          <div className="mt-0.5 text-xs opacity-60">
+                            {t.artist_names.join(", ")}
+                          </div>
+                        ) : null}
+                      </TableCell>
+
+                      {metric === "revenue" ? (
+                        <>
+                          <TableCell className="font-medium">
+                            {deltaRevenue == null ? "—" : formatUsd2(deltaRevenue)}
+                          </TableCell>
+                          <TableCell
+                            className={
+                              deltaStreams != null && deltaStreams < 0
+                                ? "text-red-600 dark:text-red-400 font-medium"
+                                : "text-lime-700 dark:text-lime-400 font-medium"
+                            }
+                          >
+                            {deltaStreams == null
+                              ? "—"
+                              : `${deltaStreams >= 0 ? "+" : ""}${formatInt(deltaStreams)}`}
+                          </TableCell>
+                          <TableCell className="font-medium">
+                            {t.total_streams_cumulative == null ? "—" : formatInt(t.total_streams_cumulative)}
+                          </TableCell>
+                          <TableCell title={distroKeys.length ? distroKeys.join(", ") : undefined}>
+                            {distroLabel}
+                          </TableCell>
+                        </>
+                      ) : (
+                        <>
+                          <TableCell
+                            className={
+                              deltaStreams != null && deltaStreams < 0
+                                ? "text-red-600 dark:text-red-400 font-medium"
+                                : "text-lime-700 dark:text-lime-400 font-medium"
+                            }
+                          >
+                            {deltaStreams == null
+                              ? "—"
+                              : `${deltaStreams >= 0 ? "+" : ""}${formatInt(deltaStreams)}`}
+                          </TableCell>
+                          <TableCell className="font-medium">
+                            {t.total_streams_cumulative == null ? "—" : formatInt(t.total_streams_cumulative)}
+                          </TableCell>
+                          <TableCell title={distroKeys.length ? distroKeys.join(", ") : undefined}>
+                            {distroLabel}
+                          </TableCell>
+                        </>
+                      )}
+                    </TableRow>
+                  );
+                })}
+                {!filteredSortedTracks.length ? (
+                  <TableRow>
+                    <TableCell className="py-6 text-center opacity-50" colSpan={metric === "revenue" ? 6 : 5}>
+                      No matching tracks.
+                    </TableCell>
+                  </TableRow>
+                ) : null}
+              </GlassTable>
+            </div>
+
+            <div className="mt-4">
+              <GlassTable
+                headers={[
+                  "",
+                  "Track",
+                  "ISRC",
+                  "Streams (total)",
+                  <span key="d1" title="Today minus yesterday (based on cumulative streams).">
+                    Streams (Δ1d)
+                  </span>,
+                  "Distro",
+                ]}
+                maxBodyHeightClassName="max-h-[520px]"
+              >
+              {filteredSortedTracks.map((t) => {
+                const distroKeys = (t.distro_playlist_keys ?? []).filter(Boolean);
+                const distroLabel = distroKeys.length ? distroKeys.join(", ") : "—";
+
+                return (
+                  <TableRow key={t.isrc}>
+                    <TableCell>
+                      {t.album_image_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={t.album_image_url}
+                          alt="Album cover"
+                          className="h-8 w-8 rounded-lg object-cover sb-ring"
+                        />
+                      ) : (
+                        <div className="h-8 w-8 rounded-lg sb-ring bg-white/60 dark:bg-white/10" />
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Link
+                        href={`/tracks/${t.isrc}`}
+                        className="font-medium transition-colors hover:text-lime-600 dark:hover:text-lime-400"
+                      >
+                        {t.name ?? t.isrc}
+                      </Link>
+                      {t.artist_names?.length ? (
+                        <div className="mt-0.5 text-xs opacity-60">
+                          {t.artist_names.join(", ")}
+                        </div>
+                      ) : null}
+                    </TableCell>
+                    <TableCell mono className="text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>
+                      {t.isrc}
+                    </TableCell>
+                    <TableCell className="font-medium">
+                      {t.total_streams_cumulative == null ? "—" : formatInt(t.total_streams_cumulative)}
+                    </TableCell>
+                    <TableCell
+                      className={
+                        t.daily_streams_delta != null && t.daily_streams_delta < 0
+                          ? "text-red-600 dark:text-red-400 font-medium"
+                          : "text-lime-700 dark:text-lime-400 font-medium"
+                      }
+                    >
+                      {t.daily_streams_delta == null
+                        ? "—"
+                        : `${t.daily_streams_delta >= 0 ? "+" : ""}${formatInt(t.daily_streams_delta)}`}
+                    </TableCell>
+                    <TableCell title={distroKeys.length ? distroKeys.join(", ") : undefined}>
+                      {distroLabel}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+              {!filteredSortedTracks.length ? (
+                <TableRow>
+                  <TableCell className="py-8 text-center opacity-50" colSpan={6}>
+                    No matching tracks.
+                  </TableCell>
+                </TableRow>
+              ) : null}
+              </GlassTable>
+            </div>
+          </div>
+        </details>
       </div>
     </div>
   );
 }
-
