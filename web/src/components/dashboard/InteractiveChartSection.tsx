@@ -12,6 +12,7 @@ import { slugifyForFilename, todayIsoDate } from "@/lib/csv";
 type ChartData = {
   date: string;
   value: number;
+  ma7?: number | null;
 };
 
 type InteractiveChartSectionProps = {
@@ -20,6 +21,19 @@ type InteractiveChartSectionProps = {
   dailyStreamsValue: number;
   totalStreamsValue: number;
   rangeDays: number;
+  dailyTitle?: string;
+  totalTitle?: string;
+  dailyValueLabel?: string;
+  totalValueLabel?: string;
+  valueFormat?: "int" | "usd";
+  yTickFormat?: "k" | "int" | "usd_compact";
+  color?: string;
+  /**
+   * Optional controlled mode for which chart is selected.
+   * If omitted, the component manages its own state.
+   */
+  selectedChart?: ChartType;
+  onSelectChart?: (next: ChartType) => void;
 };
 
 type ChartType = "daily" | "total";
@@ -30,19 +44,31 @@ export function InteractiveChartSection({
   dailyStreamsValue,
   totalStreamsValue,
   rangeDays,
+  dailyTitle = "Daily Streams",
+  totalTitle = "Total Streams",
+  dailyValueLabel = "Streams",
+  totalValueLabel = "Total Streams",
+  valueFormat = "int",
+  yTickFormat = "k",
+  color = "#c7f33c",
+  selectedChart: selectedChartProp,
+  onSelectChart,
 }: InteractiveChartSectionProps) {
-  const [selectedChart, setSelectedChart] = useState<ChartType>("daily");
+  const [selectedChartState, setSelectedChartState] =
+    useState<ChartType>("daily");
+  const selectedChart = selectedChartProp ?? selectedChartState;
+  const setSelectedChart = onSelectChart ?? setSelectedChartState;
 
   const chartConfigs = {
     daily: {
-      title: "Daily Streams",
+      title: dailyTitle,
       data: dailyStreamsData,
-      valueLabel: "Streams",
+      valueLabel: dailyValueLabel,
     },
     total: {
-      title: "Total Streams",
+      title: totalTitle,
       data: totalStreamsData,
-      valueLabel: "Total Streams",
+      valueLabel: totalValueLabel,
     },
   };
 
@@ -58,8 +84,8 @@ export function InteractiveChartSection({
           type="button"
         >
           <StatCard
-            title="Daily Streams"
-            value={<AnimatedCounter value={dailyStreamsValue} />}
+            title={dailyTitle}
+            value={<AnimatedCounter value={dailyStreamsValue} format={valueFormat} />}
             subtitle={`${rangeDays}d view`}
             accent={selectedChart === "daily"}
             trend="up"
@@ -72,8 +98,8 @@ export function InteractiveChartSection({
           type="button"
         >
           <StatCard
-            title="Total Streams"
-            value={<AnimatedCounter value={totalStreamsValue} />}
+            title={totalTitle}
+            value={<AnimatedCounter value={totalStreamsValue} format={valueFormat} />}
             subtitle="Lifetime"
             accent={selectedChart === "total"}
             trendData={totalStreamsData.map((d) => d.value).slice(0, 30).reverse()}
@@ -101,6 +127,9 @@ export function InteractiveChartSection({
           <DailyStreamsChart
             data={currentChart.data}
             valueLabel={currentChart.valueLabel}
+            valueFormat={valueFormat}
+            yTickFormat={yTickFormat}
+            color={color}
             heightPx={220}
             showMA7={selectedChart === "daily"}
             isCumulative={selectedChart === "total"}

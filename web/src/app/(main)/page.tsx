@@ -1,16 +1,9 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { StatCard } from "@/components/StatCard";
-import { GlassTable, TableRow, TableCell, EmptyState } from "@/components/ui/GlassTable";
-import { AnimatedCounter } from "@/components/ui/AnimatedCounter";
-import { LazyInteractiveChartSection } from "@/components/dashboard/LazyInteractiveChartSection";
-import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { cachedQuery } from "@/lib/supabase/cache";
-import { dataDateFromRunDate } from "@/lib/sotDates";
-import { Music } from "lucide-react";
+import { HomeDashboardClient } from "./HomeDashboardClient";
 
 type PlaylistDailyStatsRow = {
   date: string;
@@ -20,8 +13,6 @@ type PlaylistDailyStatsRow = {
   est_revenue_total?: number | null;
   est_revenue_daily_net?: number | null;
 };
-
-const STREAM_PAYOUT_USD = 0.002;
 
 // Uses Supabase session cookies; this route must be dynamic in Next 16.
 export const dynamic = "force-dynamic";
@@ -35,7 +26,7 @@ export default async function Home({
   const scope = (sp.scope ?? "all_catalog").toLowerCase();
   const rangeDays = Math.max(7, Math.min(365, Number(sp.range ?? "30") || 30));
 
-  const playlistKey =
+  const playlistKey: "all_catalog" | "releases" | "ext" =
     scope === "releases" ? "releases" : scope === "ext" ? "ext" : "all_catalog";
 
   const sb = await supabaseServer();
@@ -54,51 +45,21 @@ export default async function Home({
   // for cached reads so cache revalidation can't fail due to missing cookies.
   const svc = supabaseService();
 
-  // Fetch playlist metadata (including image) for display
-  const { data: playlistData } = await cachedQuery(
-    async () =>
-      await svc
-        .from("playlists")
-        .select("playlist_key,display_name,is_catalog,spotify_playlist_id,spotify_playlist_image_url")
-        .in("playlist_key", ["all_catalog", "releases", "ext"])
-        .single()
-        .then((result) => {
-          // For all_catalog, if we don't have data, return a default
-          if (result.error && playlistKey === "all_catalog") {
-            return {
-              data: {
-                playlist_key: "all_catalog",
-                display_name: "All Catalog",
-                is_catalog: true,
-                spotify_playlist_id: null,
-                spotify_playlist_image_url: null,
-              },
-              error: null,
-            };
-          }
-          return result;
-        }),
-    `home-playlist-metadata-${playlistKey}`,
-    3600,
-  );
-
-  // Fetch metadata for all three playlists to get their images
-  const { data: allPlaylistsData } = await cachedQuery(
-    async () =>
-      await svc
-        .from("playlists")
-        .select("playlist_key,display_name,is_catalog,spotify_playlist_id,spotify_playlist_image_url")
-        .in("playlist_key", ["all_catalog", "releases", "ext"]),
-    "home-playlists-metadata",
-    3600,
-  );
-
-  const playlistMetadataMap = new Map(
-    (allPlaylistsData ?? []).map((p: any) => [p.playlist_key, p])
-  );
-  
-  const currentPlaylistMetadata = playlistMetadataMap.get(playlistKey);
-  const playlistImageUrl = currentPlaylistMetadata?.spotify_playlist_image_url ?? null;
+  const playlistImageUrl =
+    playlistKey === "all_catalog"
+      ? null
+      : (
+          await cachedQuery(
+            async () =>
+              await svc
+                .from("playlists")
+                .select("spotify_playlist_image_url")
+                .eq("playlist_key", playlistKey)
+                .maybeSingle(),
+            `home-playlist-image-${playlistKey}`,
+            3600,
+          )
+        ).data?.spotify_playlist_image_url ?? null;
 
   // Single query: fetch history and derive latest from first row (cached for 1 hour)
   const { data: history, error: historyErr } = await cachedQuery(
@@ -125,257 +86,16 @@ export default async function Home({
         ? "ext"
         : "All Catalog";
 
-  // Prepare chart data for all three chart types
-  const dailyStreamsRaw = ((history as PlaylistDailyStatsRow[] | null) ?? []).map((r) => ({
-    date: r.date,
-    daily: Number(getDailyStreams(r) ?? 0),
-  }));
-  
-  // Calculate 7-day moving average for daily streams
-  const dailyStreamsWithMA = computeRollingAvg7(dailyStreamsRaw);
-  const dailyStreamsChartData = dailyStreamsWithMA.map((r) => ({
-    date: dataDateFromRunDate(r.date),
-    value: r.daily,
-    ma7: r.ma7,
-  }));
-
-  const totalStreamsChartData = ((history as PlaylistDailyStatsRow[] | null) ?? []).map((r) => ({
-    date: dataDateFromRunDate(r.date),
-    value: Number(r.total_streams_cumulative ?? 0),
-  }));
-
-  const activeTracksChartData = ((history as PlaylistDailyStatsRow[] | null) ?? []).map((r) => ({
-    date: dataDateFromRunDate(r.date),
-    value: Number(r.track_count ?? 0),
-  }));
-
-  const roll7 = rollingSums((history as PlaylistDailyStatsRow[] | null) ?? [], 7);
-  const roll30 = rollingSums((history as PlaylistDailyStatsRow[] | null) ?? [], 30);
-
   return (
-    <div className="space-y-4">
-      {/* Header Section */}
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <div className="flex items-center gap-3">
-            {playlistKey === "all_catalog" ? (
-              <div
-                className="sb-ring flex h-10 w-10 items-center justify-center rounded-lg"
-                style={{ background: "var(--sb-accent)" }}
-              >
-                <Music className="h-5 w-5" style={{ color: "black" }} />
-              </div>
-            ) : playlistImageUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={playlistImageUrl}
-                alt="Playlist cover"
-                className="h-10 w-10 rounded-lg object-cover sb-ring"
-              />
-            ) : (
-              <div className="h-10 w-10 rounded-lg sb-ring bg-white/60" />
-            )}
-            <div className="flex items-center gap-2">
-              <h1 className="font-display text-xl font-semibold tracking-tight sm:text-2xl">
-                {title}
-              </h1>
-              {latest?.track_count !== null && latest?.track_count !== undefined && (
-                <span className="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium tracking-wide" style={{ 
-                  borderColor: "var(--sb-border)",
-                  backgroundColor: "var(--sb-surface)",
-                  color: "var(--sb-muted)"
-                }}>
-                  {formatInt(latest.track_count)} tracks
-                </span>
-              )}
-            </div>
-          </div>
-          <p className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
-            Overview of your catalog performance across all playlists.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <div className="sb-ring flex items-center gap-0.5 rounded-full bg-white/60 p-0.5">
-            <ToggleLink
-              active={playlistKey === "all_catalog"}
-              href={hrefWith(sp, { scope: "all_catalog" })}
-            >
-              All
-            </ToggleLink>
-            <ToggleLink
-              active={playlistKey === "releases"}
-              href={hrefWith(sp, { scope: "releases" })}
-            >
-              Releases
-            </ToggleLink>
-            <ToggleLink
-              active={playlistKey === "ext"}
-              href={hrefWith(sp, { scope: "ext" })}
-            >
-              Ext
-            </ToggleLink>
-          </div>
-
-          <div className="sb-ring flex items-center gap-0.5 rounded-full bg-white/60 p-0.5">
-            <ToggleLink
-              active={rangeDays === 30}
-              href={hrefWith(sp, { range: "30" })}
-            >
-              30d
-            </ToggleLink>
-            <ToggleLink
-              active={rangeDays === 90}
-              href={hrefWith(sp, { range: "90" })}
-            >
-              90d
-            </ToggleLink>
-            <ToggleLink
-              active={rangeDays === 365}
-              href={hrefWith(sp, { range: "365" })}
-            >
-              365d
-            </ToggleLink>
-          </div>
-        </div>
-      </div>
-
-      {historyErr && (
-        <div className="rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-950 dark:border-red-900/30 dark:bg-red-900/10 dark:text-red-200">
-          Query error: {historyErr.message ?? "unknown error"}
-        </div>
-      )}
-
-      {/* Interactive KPI Row and Chart */}
-      <LazyInteractiveChartSection
-        dailyStreamsData={dailyStreamsChartData}
-        totalStreamsData={totalStreamsChartData}
-        dailyStreamsValue={getDailyStreams(latest as PlaylistDailyStatsRow | null) ?? 0}
-        totalStreamsValue={latest?.total_streams_cumulative ?? 0}
-        rangeDays={rangeDays}
-      />
-
-      {/* Additional Stat Cards */}
-      <div className="grid grid-cols-2 gap-2 lg:grid-cols-6">
-        <StatCard
-          title="Revenue (Daily)"
-          value={formatUsd(getRevenueDaily(latest as PlaylistDailyStatsRow | null))}
-          subtitle="Est."
-          trendData={((history as PlaylistDailyStatsRow[] | null) ?? [])
-            .map((r) => Number(getRevenueDaily(r) ?? 0))
-            .slice(0, 30)
-            .reverse()}
-        />
-        <StatCard
-          title="Streams (7d)"
-          value={roll7.hasData ? <AnimatedCounter value={roll7.streamsSum} /> : "—"}
-          subtitle={roll7.hasData ? formatUsd(roll7.revenueSum) : "Need 2+ days"}
-        />
-        <StatCard
-          title="Streams (30d)"
-          value={roll30.hasData ? <AnimatedCounter value={roll30.streamsSum} /> : "—"}
-          subtitle={roll30.hasData ? formatUsd(roll30.revenueSum) : "Need 2+ days"}
-        />
-      </div>
-
-      {/* Recent History Table */}
-      <div className="space-y-2">
-        <h2 className="text-sm font-semibold tracking-tight">Recent History</h2>
-        <GlassTable headers={["Date", "Tracks", "Total Streams", "Daily"]}>
-          {(history ?? []).map((r) => (
-            <TableRow key={r.date}>
-              <TableCell mono>{formatDateISO(dataDateFromRunDate(r.date))}</TableCell>
-              <TableCell>{formatInt(r.track_count)}</TableCell>
-              <TableCell>{formatInt(r.total_streams_cumulative)}</TableCell>
-              <TableCell className="text-lime-700 dark:text-lime-400 font-medium">
-                +{formatInt(r.daily_streams_net)}
-              </TableCell>
-            </TableRow>
-          ))}
-          {!history?.length && (
-            <EmptyState colSpan={4} message="No stats found yet" />
-          )}
-        </GlassTable>
-      </div>
-    </div>
-  );
-}
-
-function getDailyStreams(
-  row: PlaylistDailyStatsRow | null,
-): number | null {
-  if (!row) return null;
-  return row.daily_streams_net;
-}
-
-function computeRollingAvg7(desc: Array<{ date: string; daily: number }>) {
-  // Input: newest-first. Output: newest-first with ma7.
-  const asc = [...desc].reverse();
-  const outAsc: Array<{ date: string; daily: number; ma7: number | null }> = [];
-
-  for (let i = 0; i < asc.length; i++) {
-    const start = Math.max(0, i - 6);
-    const window = asc.slice(start, i + 1).map((p) => Number(p.daily ?? 0));
-    const avg = window.reduce((a, b) => a + b, 0) / window.length;
-    outAsc.push({ date: asc[i].date, daily: asc[i].daily, ma7: avg });
-  }
-
-  return outAsc.reverse();
-}
-
-function getRevenueDaily(
-  row: PlaylistDailyStatsRow | null,
-): number | null {
-  if (!row) return null;
-  return row.est_revenue_daily_net ?? null;
-}
-
-function rollingSums(
-  rowsDesc: PlaylistDailyStatsRow[],
-  days: number,
-): { hasData: boolean; streamsSum: number; revenueSum: number; countedDays: number } {
-  const slice = rowsDesc.slice(0, days);
-  let streamsSum = 0;
-  let revenueSum = 0;
-  let countedDays = 0;
-
-  for (const r of slice) {
-    const ds = getDailyStreams(r);
-    if (ds === null || !Number.isFinite(ds)) continue;
-    streamsSum += Number(ds);
-    countedDays += 1;
-
-    const rev =
-      getRevenueDaily(r) ??
-      (Number.isFinite(ds) ? Number(ds) * STREAM_PAYOUT_USD : null);
-    if (rev !== null && Number.isFinite(rev)) revenueSum += Number(rev);
-  }
-
-  // Require at least 2 daily points to avoid showing sums on day 1.
-  return { hasData: countedDays >= 2, streamsSum, revenueSum, countedDays };
-}
-
-function hrefWith(
-  existing: { scope?: string; range?: string; daily?: string },
-  patch: { scope?: string; range?: string; daily?: string },
-) {
-  const params = new URLSearchParams();
-  const scope = (patch.scope ?? existing.scope ?? "all_catalog").toString();
-  const range = (patch.range ?? existing.range ?? "30").toString();
-  params.set("scope", scope);
-  params.set("range", range);
-  return `/?${params.toString()}`;
-}
-
-function ToggleLink(props: { href: string; active: boolean; children: React.ReactNode }) {
-  return (
-    <Link
-      href={props.href}
-      className={[
-        "rounded-full px-2.5 py-1.5 text-[11px] font-medium transition",
-        props.active ? "bg-black text-white dark:bg-white dark:text-black" : "text-black/70 hover:bg-white/70 dark:text-white/70 dark:hover:bg-white/20",
-      ].join(" ")}
-    >
-      {props.children}
-    </Link>
+    <HomeDashboardClient
+      sp={sp}
+      playlistKey={playlistKey}
+      title={title}
+      rangeDays={rangeDays}
+      latest={latest as PlaylistDailyStatsRow | null}
+      history={(history as PlaylistDailyStatsRow[] | null) ?? []}
+      playlistImageUrl={playlistImageUrl}
+      historyErrorMessage={historyErr?.message ?? null}
+    />
   );
 }

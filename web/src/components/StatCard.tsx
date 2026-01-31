@@ -11,7 +11,13 @@ export function StatCard(props: {
 }) {
   const className = [
     "relative overflow-hidden sb-card p-3 transition-shadow duration-200 hover:shadow-md",
-    props.accent ? "ring-1 ring-lime-400/40" : "",
+    props.accent
+      ? [
+          // Stronger selection affordance (visible in light + dark mode)
+          "ring-1 ring-lime-400/70",
+          "shadow-[0_0_0_1px_rgba(199,243,60,0.35),0_0_24px_rgba(199,243,60,0.18)]",
+        ].join(" ")
+      : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -25,7 +31,7 @@ export function StatCard(props: {
           but the user asked for "Border gradient".
       */}
       {props.accent && (
-        <div className="absolute inset-0 pointer-events-none rounded-[var(--sb-radius)] ring-1 ring-inset ring-lime-500/20" />
+        <div className="absolute inset-0 pointer-events-none rounded-[var(--sb-radius)] ring-1 ring-inset ring-lime-400/30" />
       )}
 
       {props.accent ? (
