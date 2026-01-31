@@ -63,8 +63,7 @@ jobs:
           #
           # We fetch more than 1 page to be robust to bursts of runs.
           # (Even though output can be large, stdin is safe here.)
-          gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/sot_daily_dashboard_sync.yml/runs?branch=main&per_page=100" \
-            | python - "$RUN_DATE" <<'PY'
+          PY_CODE="$(cat <<'PY'
           import json, sys
 
           run_date = sys.argv[1]
@@ -92,6 +91,10 @@ jobs:
 
           print(f"✅ Dashboard Sync succeeded for {run_date} UTC. Proceeding.")
           PY
+          )"
+
+          gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/sot_daily_dashboard_sync.yml/runs?branch=main&per_page=100" \
+            | python -c "$PY_CODE" "$RUN_DATE"
 
       - name: "Pre-check: skip if already ingested"
         id: precheck
