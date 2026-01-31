@@ -334,9 +334,29 @@ export async function runDataQuery(
   }
 
   if (plan.templateId === "playlist_top_tracks_total") {
-    const playlist_key = String(plan.params.playlist_key ?? "").trim();
+    const playlist_query = String(plan.params.playlist_query ?? "").trim();
+    let playlist_key = String(plan.params.playlist_key ?? "").trim();
     const run_date = asDateString(plan.params.run_date) ?? runDateDefault;
     const limit_rows = clamp(asInt(plan.params.limit_rows, 25), 1, 100);
+
+    if (!playlist_key && playlist_query) {
+      const { data: rows, error } = await sb.rpc("search_all", { q: playlist_query, max_results: 10 });
+      if (error) {
+        return {
+          toolCall: {
+            tool: "data_query",
+            templateId: plan.templateId,
+            params: { playlist_query, run_date, limit_rows },
+            rowCount: null,
+            notes: `Failed to resolve playlist from name via search_all(): ${error.message}`,
+          },
+          payload: null,
+        };
+      }
+      const best = (Array.isArray(rows) ? rows : []).find((r: any) => r?.type === "playlist" && r?.id);
+      if (best?.id) playlist_key = String(best.id);
+    }
+
     if (!playlist_key || !run_date) {
       return { toolCall: { tool: "data_query", templateId: plan.templateId, params: plan.params, rowCount: null, notes: "Missing playlist_key or run_date" }, payload: null };
     }
@@ -344,7 +364,13 @@ export async function runDataQuery(
     if (error) return { toolCall: { tool: "data_query", templateId: plan.templateId, params: { playlist_key, run_date, limit_rows }, rowCount: null, notes: error.message }, payload: null };
     const rows = Array.isArray(data) ? data : [];
     return {
-      toolCall: { tool: "data_query", templateId: plan.templateId, params: { playlist_key, run_date, limit_rows }, rowCount: rows.length, notes: "playlist_top_tracks_total()" },
+      toolCall: {
+        tool: "data_query",
+        templateId: plan.templateId,
+        params: { playlist_key, playlist_query: playlist_query || undefined, run_date, limit_rows },
+        rowCount: rows.length,
+        notes: playlist_query ? "Resolved playlist via search_all() → playlist_top_tracks_total()" : "playlist_top_tracks_total()",
+      },
       payload: { run_date, rows },
     };
   }

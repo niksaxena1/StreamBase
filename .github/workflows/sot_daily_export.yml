@@ -58,15 +58,17 @@ jobs:
           echo "Checking Dashboard Sync runs for UTC date: $RUN_DATE"
 
           # Query recent runs for the dashboard sync workflow (by file name, not numeric id).
-          RUNS_JSON="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/sot_daily_dashboard_sync.yml/runs?branch=main&per_page=30")"
-          export RUNS_JSON
-          export RUN_DATE
+          # NOTE: Do NOT store the full JSON in an env var (can exceed runner limits and crash python).
+          # Instead, stream JSON into python via stdin.
+          #
+          # We fetch more than 1 page to be robust to bursts of runs.
+          # (Even though output can be large, stdin is safe here.)
+          gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/sot_daily_dashboard_sync.yml/runs?branch=main&per_page=100" \
+            | python - "$RUN_DATE" <<'PY'
+          import json, sys
 
-          python - <<'PY'
-          import json, os, sys
-
-          run_date = os.environ["RUN_DATE"]
-          data = json.loads(os.environ["RUNS_JSON"])
+          run_date = sys.argv[1]
+          data = json.load(sys.stdin)
           runs = data.get("workflow_runs") or []
 
           ok = False

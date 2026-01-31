@@ -50,17 +50,28 @@ export function planMessage(message: string, envelope?: SaiEnvelope): SaiPlan {
   const artistIdMatch = /\b[0-9A-Za-z]{22}\b/.exec(message);
   const maybeArtistId = artistIdMatch ? artistIdMatch[0] : envelope?.selected?.artist_id ?? null;
 
-  // Try to extract a playlist key from common phrasings:
-  // - "in <playlist_key>"
-  // - "playlist <playlist_key>"
-  // Otherwise fall back to known short keys or the UI envelope.
-  const explicitPlaylistKeyMatch =
-    /\b(?:in|playlist)\s+([a-z0-9_]{3,})\b/i.exec(message) ||
-    /\b([a-z0-9_]{6,})\b/i.exec(message); // last resort: token-looking playlist key
-  const playlistKeyMatch = /\b(all_catalog|releases|ext)\b/i.exec(message);
+  const knownPlaylistKeyMatch = /\b(all_catalog|releases|ext)\b/i.exec(message);
+  const knownPlaylistKey = knownPlaylistKeyMatch?.[1]?.toLowerCase() ?? null;
+
+  // If user says "Top tracks in <...>", capture the full phrase. This is used either as
+  // a direct playlist key (ext/releasess/all_catalog) OR as a playlist name to resolve.
+  const inPhraseMatch = /\btop\s+tracks?\s+in\s+(.+?)\s*$/i.exec(message);
+  const inPhraseRaw = inPhraseMatch?.[1]?.trim() ?? null;
+
+  // Token candidate for explicit keys like "playlist releases" or "in releases".
+  const inTokenMatch = /\b(?:in|playlist)\s+([a-z0-9_]{3,})\b/i.exec(message);
+  const inToken = inTokenMatch?.[1]?.toLowerCase() ?? null;
+
+  const stopTokens = new Set(["track", "tracks", "top", "playlist", "playlists", "in"]);
+  const tokenLooksLikePlaylistKey =
+    !!inToken && !stopTokens.has(inToken) && (inToken === "all_catalog" || inToken === "releases" || inToken === "ext" || inToken.includes("_"));
+
   const maybePlaylistKey =
-    (explicitPlaylistKeyMatch?.[1] ?? playlistKeyMatch?.[1] ?? envelope?.selected?.playlist_key ?? null)?.toLowerCase() ??
-    null;
+    (knownPlaylistKey ?? (tokenLooksLikePlaylistKey ? inToken : null) ?? envelope?.selected?.playlist_key ?? null) ?? null;
+
+  const playlistQuery =
+    // If user provided a phrase and it wasn't a recognized key, treat it as a playlist name.
+    inPhraseRaw && inPhraseRaw.toLowerCase() !== maybePlaylistKey ? inPhraseRaw : null;
 
   const dateMatch = /\b(20\d{2}-\d{2}-\d{2})\b/.exec(message);
   const maybeDate = dateMatch ? dateMatch[1] : null;
@@ -84,10 +95,17 @@ export function planMessage(message: string, envelope?: SaiEnvelope): SaiPlan {
   if (looksLikeData) {
     // Prefer entity-specific templates when possible.
     // Allow "top tracks in all_catalog" even if the user doesn't say "playlist".
-    if (wantsTop && maybePlaylistKey) {
+    if (wantsTop && (maybePlaylistKey || playlistQuery)) {
       return {
         lane: "data",
-        data: { queries: [{ templateId: "playlist_top_tracks_total", params: { playlist_key: maybePlaylistKey, run_date: maybeDate } }] },
+        data: {
+          queries: [
+            {
+              templateId: "playlist_top_tracks_total",
+              params: { playlist_key: maybePlaylistKey, playlist_query: playlistQuery, run_date: maybeDate },
+            },
+          ],
+        },
         notes: ["data: playlist_top_tracks_total", ...notes],
       };
     }
