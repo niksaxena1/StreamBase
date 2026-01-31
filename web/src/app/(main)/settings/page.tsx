@@ -6,6 +6,7 @@ import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { GlassTable, TableCell, TableRow } from "@/components/ui/GlassTable";
 import { TrackExclusionForm } from "./TrackExclusionForm";
+import { SAISettingsToggle } from "./SAISettingsToggle";
 
 export const revalidate = 86400; // 24h ISR - admin config changes are infrequent
 
@@ -303,6 +304,13 @@ export default async function SettingsPage() {
             Docs
           </Link>
         </div>
+      </div>
+
+      <div className="space-y-2">
+        <div className="px-1">
+          <h2 className="text-sm font-semibold">AI Assistant</h2>
+        </div>
+        <SAISettingsToggle />
       </div>
 
       <div className="space-y-2">

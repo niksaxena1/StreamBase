@@ -66,6 +66,8 @@ export function SAIWidget() {
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [queue, setQueue] = useState<QueueItem[]>([]);
+  const [copiedAt, setCopiedAt] = useState<number | null>(null);
+  const [saiEnabled, setSaiEnabled] = useState(true);
 
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -73,6 +75,14 @@ export function SAIWidget() {
     () => buildEnvelope(pathname, new URLSearchParams(searchParams?.toString() ?? "")),
     [pathname, searchParams],
   );
+
+  useEffect(() => {
+    // Fetch SAI enabled setting on mount
+    void fetch("/api/user-settings/sai")
+      .then((res) => res.json())
+      .then((data) => setSaiEnabled(data.sai_enabled ?? true))
+      .catch(() => setSaiEnabled(true));
+  }, []);
 
   useEffect(() => {
     // Auto-create conversation on first open.
@@ -100,6 +110,67 @@ export function SAIWidget() {
     void sendMessage(next.content);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isStreaming]);
+
+  function buildTranscript(msgs: UiMessage[]) {
+    const lines: string[] = [];
+    lines.push("SpotiBase — SAI chat transcript");
+    lines.push(`Exported: ${new Date().toISOString()}`);
+    lines.push("");
+
+    for (const m of msgs) {
+      const who = m.role === "user" ? "You" : "SAI";
+      lines.push(`${who}:`);
+      lines.push((m.content ?? "").trim() || "—");
+
+      if (m.role === "assistant") {
+        const citations = m.meta?.citations;
+        if (Array.isArray(citations) && citations.length > 0) {
+          lines.push("");
+          lines.push("Sources:");
+          for (const c of citations) {
+            const chunkId = String(c?.chunkId ?? "");
+            const title = String(c?.title ?? "");
+            if (chunkId) lines.push(`- /docs#${chunkId}${title ? ` — ${title}` : ""}`);
+          }
+        }
+
+        const toolCalls = m.meta?.toolCalls;
+        if (Array.isArray(toolCalls) && toolCalls.length > 0) {
+          lines.push("");
+          lines.push("Calculated from:");
+          for (const t of toolCalls) {
+            const templateId = String(t?.templateId ?? "");
+            const params = t?.params && Object.keys(t.params).length ? JSON.stringify(t.params) : "";
+            lines.push(`- template=${templateId}${params ? ` params=${params}` : ""}`);
+          }
+        }
+
+        const retrieval = m.meta?.retrieval;
+        if (retrieval?.method || retrieval?.confidence) {
+          lines.push("");
+          lines.push(`Retrieval: method=${retrieval?.method ?? "—"} confidence=${retrieval?.confidence ?? "—"}`);
+        }
+      }
+
+      lines.push("");
+      lines.push("---");
+      lines.push("");
+    }
+
+    return lines.join("\n").trim() + "\n";
+  }
+
+  async function copyChat() {
+    const text = buildTranscript(messages);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedAt(Date.now());
+      setTimeout(() => setCopiedAt(null), 900);
+    } catch {
+      // Fallback: manual copy prompt
+      window.prompt("Copy chat transcript:", text);
+    }
+  }
 
   async function newChat(): Promise<string | null> {
     setIsStreaming(false);
@@ -239,15 +310,17 @@ export function SAIWidget() {
   return (
     <>
       {/* Bubble */}
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="fixed bottom-5 right-5 z-[60] sb-ring flex h-12 w-12 items-center justify-center rounded-full bg-black text-white shadow-lg transition hover:opacity-90 dark:bg-white dark:text-black"
-        title="Open SAI"
-        aria-label="Open SAI"
-      >
-        SAI
-      </button>
+      {saiEnabled && (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="fixed bottom-5 right-5 z-[60] sb-ring flex h-12 w-12 items-center justify-center rounded-full bg-black text-white shadow-lg transition hover:opacity-90 dark:bg-white dark:text-black"
+          title="Open SAI"
+          aria-label="Open SAI"
+        >
+          SAI
+        </button>
+      )}
 
       {/* Drawer / modal */}
       {open && (
@@ -264,6 +337,14 @@ export function SAIWidget() {
                 <div className="text-[11px] opacity-60">Truth-first assistant</div>
               </div>
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void copyChat()}
+                  className="sb-ring rounded-full bg-white/70 px-2.5 py-1.5 text-[11px] font-medium transition hover:opacity-80 dark:bg-white/10"
+                  title="Copy this chat"
+                >
+                  {copiedAt ? "Copied" : "Copy chat"}
+                </button>
                 <button
                   type="button"
                   onClick={() => void newChat()}
