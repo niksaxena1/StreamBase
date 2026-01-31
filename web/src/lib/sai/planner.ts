@@ -20,14 +20,18 @@ export function planMessage(message: string, envelope?: SaiEnvelope): SaiPlan {
   const q = norm(message);
 
   const notes: string[] = [];
+  // Data questions should be explicit (numbers/totals/trends). Merely mentioning
+  // entities like "tracks/playlists" is NOT enough.
   const looksLikeData =
     /\bhow many\b/.test(q) ||
     /\bcount\b/.test(q) ||
+    /\btotal\b/.test(q) ||
+    /\b(sum|average|avg|median|min|max)\b/.test(q) ||
     /\bstats?\b/.test(q) ||
     /\brows?\b/.test(q) ||
-    /\btracks?\b/.test(q) ||
-    /\bplaylists?\b/.test(q) ||
-    /\bartists?\b/.test(q);
+    /\btrend\b/.test(q) ||
+    /\bover time\b/.test(q) ||
+    /\blast (7|14|28|30|90) days\b/.test(q);
 
   const looksLikeHelp =
     /\bhow do i\b/.test(q) ||

@@ -33,6 +33,7 @@ export type SaiToolCall = {
 export type SaiAssistantMeta = {
   envelope?: SaiEnvelope;
   plan?: unknown;
+  retrieval?: { method: "vector" | "lexical"; confidence: "high" | "medium" | "low" } | null;
   citations?: SaiCitation[];
   toolCalls?: SaiToolCall[];
   warnings?: string[];

@@ -6,6 +6,7 @@ import { cachedQuery } from "@/lib/supabase/cache";
 import { retrieveDocs } from "@/lib/sai/docs";
 import { planMessage } from "@/lib/sai/planner";
 import { runDataQuery } from "@/lib/sai/tools";
+import { synthesizeFromDocs } from "@/lib/sai/llm";
 import type { SaiAssistantMeta, SaiEnvelope, SaiStreamEvent } from "@/lib/sai/types";
 
 export const runtime = "nodejs";
@@ -74,35 +75,44 @@ export async function POST(req: Request) {
   const plan = planMessage(message, envelope);
 
   // Build assistant response using the two lanes.
-  const meta: SaiAssistantMeta = { envelope, plan, citations: [], toolCalls: [], warnings: [] };
+  const meta: SaiAssistantMeta = { envelope, plan, retrieval: null, citations: [], toolCalls: [], warnings: [] };
 
   let answer = "";
 
-  // Lane A: docs retrieval (lexical now; embeddings can be plugged later).
+  // Lane A: docs retrieval + grounded synthesis.
   if (plan.lane === "docs" || plan.lane === "hybrid") {
     const r = await retrieveDocs(plan.docs?.query ?? message, { maxChunks: 5 });
     meta.citations = r.citations;
+    meta.retrieval = { method: r.method, confidence: r.confidence };
 
-    if (!r.contextText || r.confidence === "low") {
-      meta.warnings?.push("Low retrieval confidence: not enough matching docs chunks.");
+    if (!r.contextText) {
+      meta.warnings?.push("No docs context retrieved.");
       answer +=
-        "I couldn’t confidently find this in the docs I have indexed.\n\n" +
+        "I couldn’t find anything relevant in the docs I have indexed.\n\n" +
         "Try asking more specifically, or add/update a relevant `/docs` section.\n";
     } else {
-      answer +=
-        "Here’s what I can answer based on SpotiBase docs (truth-first):\n\n" +
-        r.citations
-          .slice(0, 3)
-          .map((c, i) => `${i + 1}) ${c.title} (chunk: ${c.chunkId})`)
-          .join("\n") +
-        "\n\n";
+      // Even with "low" confidence, attempt a grounded synthesis; if it's not supported,
+      // the model is instructed to say it doesn't know.
+      try {
+        const synth = await synthesizeFromDocs({
+          question: message,
+          context: r.contextText,
+          availableChunkIds: r.citations.map((c) => c.chunkId),
+        });
 
-      // v1 no-LLM mode: surface the most relevant excerpt(s) verbatim-ish.
-      // This is intentionally conservative to avoid hallucinations.
-      answer +=
-        "Most relevant excerpt(s):\n\n" +
-        r.contextText.split("\n---\n").slice(0, 2).join("\n---\n").trim() +
-        "\n";
+        answer += synth.answer;
+        if (synth.missingInfo.length > 0) meta.warnings?.push(...synth.missingInfo);
+
+        // Reduce citations list to what was actually used (when provided).
+        if (synth.usedChunkIds.length > 0) {
+          const used = new Set(synth.usedChunkIds);
+          meta.citations = (meta.citations ?? []).filter((c) => used.has(c.chunkId));
+        }
+      } catch (e: any) {
+        meta.warnings?.push(`LLM synthesis failed: ${e?.message ?? "unknown"}`);
+        // Fall back to showing the most relevant excerpt(s).
+        answer += r.contextText.split("\n---\n").slice(0, 1).join("\n---\n").trim();
+      }
     }
   }
 
