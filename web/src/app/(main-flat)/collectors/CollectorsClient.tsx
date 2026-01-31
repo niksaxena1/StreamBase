@@ -25,6 +25,7 @@ import {
 } from "@/components/charts/CollectorComparisonChart";
 import { CollectorMultiSelect } from "@/components/ui/CollectorMultiSelect";
 import { GranularitySelect, type Granularity } from "@/components/ui/GranularitySelect";
+import { TrackSortSelect, type TrackSort } from "@/components/ui/TrackSortSelect";
 
 const METRICS = ["streams", "revenue", "tracks"] as const;
 type Metric = (typeof METRICS)[number];
@@ -278,7 +279,9 @@ export type CollectorTrackRow = {
   artist_names: string[] | null;
   artist_ids: string[] | null;
   playlist_keys: string[] | null;
+  playlist_names: string[] | null;
   distro_playlist_keys: string[] | null;
+  distro_playlist_names: string[] | null;
   total_streams_cumulative: number | null;
   daily_streams_delta: number | null;
 };
@@ -290,6 +293,11 @@ export function CollectorsClient(props: {
   summary: CollectorSummaryRow[];
   seriesDesc: CollectorSeriesPoint[]; // newest-first
   topPlaylists: TopPlaylistRow[]; // for latestDate
+  selectedPlaylistsMeta: Array<{
+    playlist_key: string;
+    display_name: string;
+    spotify_playlist_image_url: string | null;
+  }>;
   collectorTracks: CollectorTrackRow[]; // for latestDate (all tracks for selected collector)
   allCollectorsSeries: CollectorDailyData[]; // for comparison chart (date-range filtered)
   allCollectorsAllTime: CollectorDailyData[]; // for comparison chart (all-time, for non-daily granularities)
@@ -458,18 +466,12 @@ export function CollectorsClient(props: {
       ? Number(latest.est_revenue_total ?? 0) / Number(latest.total_streams_cumulative ?? 0)
       : null;
 
-  type TrackSort = "delta_desc" | "delta_asc" | "total_desc" | "total_asc" | "name_asc" | "name_desc";
   const [trackQuery, setTrackQuery] = useState("");
-  const [trackDistroOnly, setTrackDistroOnly] = useState(false);
   const [trackSort, setTrackSort] = useState<TrackSort>("delta_desc");
 
   const filteredSortedTracks = useMemo(() => {
     const q = trackQuery.trim().toLowerCase();
     let rows = props.collectorTracks ?? [];
-
-    if (trackDistroOnly) {
-      rows = rows.filter((t) => (t.distro_playlist_keys ?? []).length > 0);
-    }
 
     if (q) {
       rows = rows.filter((t) => {
@@ -516,7 +518,11 @@ export function CollectorsClient(props: {
     });
 
     return rows;
-  }, [props.collectorTracks, trackQuery, trackDistroOnly, trackSort]);
+  }, [props.collectorTracks, trackQuery, trackSort]);
+
+  const playlistMetaByKey = useMemo(() => {
+    return new Map(props.selectedPlaylistsMeta.map((p) => [p.playlist_key, p]));
+  }, [props.selectedPlaylistsMeta]);
 
   const topTrackCards = useMemo(() => {
     const rows = props.collectorTracks ?? [];
@@ -559,7 +565,7 @@ export function CollectorsClient(props: {
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-col items-end gap-2">
                 {/* Mode toggle */}
                 <div className="sb-ring flex items-center gap-0.5 rounded-full bg-white/70 p-0.5 dark:bg-white/10">
                   {(["combined", "individual", "percentage"] as const).map((m) => (
@@ -579,12 +585,13 @@ export function CollectorsClient(props: {
                     </button>
                   ))}
                 </div>
-              </div>
-            </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <CollectorMultiSelect selected={comparisonCollectors} onChange={setComparisonCollectors} />
-              <GranularitySelect value={granularity} onChange={setGranularity} />
+                {/* Dropdowns */}
+                <div className="flex flex-wrap items-center" style={{ gap: "0.2rem" }}>
+                  <CollectorMultiSelect selected={comparisonCollectors} onChange={setComparisonCollectors} />
+                  <GranularitySelect value={granularity} onChange={setGranularity} />
+                </div>
+              </div>
             </div>
 
             {/* Legend + note */}
@@ -762,7 +769,7 @@ export function CollectorsClient(props: {
                 }}
                 aria-hidden="true"
               />
-              {props.selectedCollector} <span className="opacity-60">(combined)</span>
+              {props.selectedCollector}
             </h2>
             <p className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
               {props.rangeDays} day view
@@ -886,12 +893,36 @@ export function CollectorsClient(props: {
               {props.topPlaylists.map((p) => (
                 <TableRow key={p.playlist_key}>
                   <TableCell>
-                    <Link
-                      href={`/playlists/${p.playlist_key}`}
-                      className="font-medium transition-colors hover:text-lime-600 dark:hover:text-lime-400"
-                    >
-                      {p.display_name}
-                    </Link>
+                    <div className="flex items-center gap-2">
+                      {(() => {
+                        const meta = playlistMetaByKey.get(String(p.playlist_key));
+                        const imgUrl = meta?.spotify_playlist_image_url ?? null;
+                        const label = meta?.display_name ?? p.display_name ?? p.playlist_key;
+                        return imgUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={imgUrl}
+                            alt={label}
+                            className="h-6 w-6 rounded-full object-cover sb-ring flex-shrink-0"
+                            title={label}
+                          />
+                        ) : (
+                          <div
+                            className="h-6 w-6 rounded-full sb-ring flex items-center justify-center text-[10px] font-bold flex-shrink-0"
+                            style={{ backgroundColor: "var(--sb-surface)", color: "var(--sb-muted)" }}
+                            title={label}
+                          >
+                            {String(label).trim().slice(0, 1).toUpperCase()}
+                          </div>
+                        );
+                      })()}
+                      <Link
+                        href={`/playlists/${p.playlist_key}`}
+                        className="font-medium transition-colors hover:text-lime-600 dark:hover:text-lime-400"
+                      >
+                        {p.display_name}
+                      </Link>
+                    </div>
                     <div className="font-mono text-[11px] opacity-50">{p.playlist_key}</div>
                   </TableCell>
                   <TableCell className="font-medium">{formatUsd2(p.est_revenue_daily_net)}</TableCell>
@@ -1071,175 +1102,11 @@ export function CollectorsClient(props: {
               )}
             </div>
 
-            <label className="inline-flex items-center gap-2 text-xs" style={{ color: "var(--sb-muted)" }}>
-              <input
-                type="checkbox"
-                checked={trackDistroOnly}
-                onChange={(e) => setTrackDistroOnly(e.target.checked)}
-              />
-              Distro only
-            </label>
-
-            <select
-              value={trackSort}
-              onChange={(e) => setTrackSort(e.target.value as any)}
-              className="rounded-xl border bg-white/70 px-2.5 py-1.5 text-xs outline-none transition dark:bg-white/5"
-              style={{ borderColor: "var(--sb-border)" }}
-            >
-              <option value="delta_desc">Δ1d ↓</option>
-              <option value="delta_asc">Δ1d ↑</option>
-              <option value="total_desc">Total ↓</option>
-              <option value="total_asc">Total ↑</option>
-              <option value="name_asc">Name ↑</option>
-              <option value="name_desc">Name ↓</option>
-            </select>
+            <TrackSortSelect value={trackSort} onChange={setTrackSort} />
 
             <div className="text-xs whitespace-nowrap" style={{ color: "var(--sb-muted)" }}>
               {formatInt(filteredSortedTracks.length)} / {formatInt(props.collectorTracks.length)}
             </div>
-            </div>
-
-            {/* Top tracks table */}
-            <div className="mt-4 space-y-2">
-              <div className="flex items-end justify-between">
-              <div>
-                <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
-                  Top tracks
-                </div>
-                <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
-                  Ranked by {metric === "revenue" ? "Δ1d revenue (est.)" : "Δ1d streams"}.
-                  {metric === "tracks" ? " (Track metric is playlist-level; this uses streams Δ1d.)" : ""}
-                </div>
-              </div>
-              <ChartCsvDownloadButton
-                rows={
-                  filteredSortedTracks.slice(0, 25).map((t) => ({
-                    isrc: t.isrc,
-                    name: t.name,
-                    artist: (t.artist_names ?? []).join(", "),
-                    total_streams_cumulative: t.total_streams_cumulative,
-                    daily_streams_delta: t.daily_streams_delta,
-                    est_revenue_delta_1d:
-                      revenuePerStreamDaily == null || t.daily_streams_delta == null
-                        ? null
-                        : Number(t.daily_streams_delta) * revenuePerStreamDaily,
-                    distro_playlists: (t.distro_playlist_keys ?? []).join(", "),
-                  })) as unknown as Array<Record<string, unknown>>
-                }
-                filename={`collectors-${slugifyForFilename(props.selectedCollector)}-top-tracks-${todayIsoDate()}.csv`}
-                title="Download CSV"
-              />
-            </div>
-
-            <GlassTable
-                headers={
-                  metric === "revenue"
-                    ? [
-                        "",
-                        "Track",
-                        <span key="rev" title="Estimated revenue based on the collector’s avg revenue/stream for the day.">
-                          Rev (Δ1d)
-                        </span>,
-                        "Streams (Δ1d)",
-                        "Streams (total)",
-                        "Distro",
-                      ]
-                    : ["", "Track", "Streams (Δ1d)", "Streams (total)", "Distro"]
-                }
-                maxBodyHeightClassName="max-h-[260px]"
-              >
-                {filteredSortedTracks.slice(0, 25).map((t) => {
-                  const distroKeys = (t.distro_playlist_keys ?? []).filter(Boolean);
-                  const distroLabel = distroKeys.length ? distroKeys.join(", ") : "—";
-                  const deltaStreams = t.daily_streams_delta;
-                  const deltaRevenue =
-                    revenuePerStreamDaily == null || deltaStreams == null
-                      ? null
-                      : Number(deltaStreams) * revenuePerStreamDaily;
-
-                  return (
-                    <TableRow key={`top-${t.isrc}`}>
-                      <TableCell>
-                        {t.album_image_url ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={t.album_image_url}
-                            alt="Album cover"
-                            className="h-8 w-8 rounded-lg object-cover sb-ring"
-                          />
-                        ) : (
-                          <div className="h-8 w-8 rounded-lg sb-ring bg-white/60 dark:bg-white/10" />
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Link
-                          href={`/tracks/${t.isrc}`}
-                          className="font-medium transition-colors hover:text-lime-600 dark:hover:text-lime-400"
-                        >
-                          {t.name ?? t.isrc}
-                        </Link>
-                        {t.artist_names?.length ? (
-                          <div className="mt-0.5 text-xs opacity-60">
-                            {t.artist_names.join(", ")}
-                          </div>
-                        ) : null}
-                      </TableCell>
-
-                      {metric === "revenue" ? (
-                        <>
-                          <TableCell className="font-medium">
-                            {deltaRevenue == null ? "—" : formatUsd2(deltaRevenue)}
-                          </TableCell>
-                          <TableCell
-                            className={
-                              deltaStreams != null && deltaStreams < 0
-                                ? "text-red-600 dark:text-red-400 font-medium"
-                                : "text-lime-700 dark:text-lime-400 font-medium"
-                            }
-                          >
-                            {deltaStreams == null
-                              ? "—"
-                              : `${deltaStreams >= 0 ? "+" : ""}${formatInt(deltaStreams)}`}
-                          </TableCell>
-                          <TableCell className="font-medium">
-                            {t.total_streams_cumulative == null ? "—" : formatInt(t.total_streams_cumulative)}
-                          </TableCell>
-                          <TableCell title={distroKeys.length ? distroKeys.join(", ") : undefined}>
-                            {distroLabel}
-                          </TableCell>
-                        </>
-                      ) : (
-                        <>
-                          <TableCell
-                            className={
-                              deltaStreams != null && deltaStreams < 0
-                                ? "text-red-600 dark:text-red-400 font-medium"
-                                : "text-lime-700 dark:text-lime-400 font-medium"
-                            }
-                          >
-                            {deltaStreams == null
-                              ? "—"
-                              : `${deltaStreams >= 0 ? "+" : ""}${formatInt(deltaStreams)}`}
-                          </TableCell>
-                          <TableCell className="font-medium">
-                            {t.total_streams_cumulative == null ? "—" : formatInt(t.total_streams_cumulative)}
-                          </TableCell>
-                          <TableCell title={distroKeys.length ? distroKeys.join(", ") : undefined}>
-                            {distroLabel}
-                          </TableCell>
-                        </>
-                      )}
-                    </TableRow>
-                  );
-                })}
-                {!filteredSortedTracks.length ? (
-                  <TableRow>
-                    <TableCell className="py-6 text-center opacity-50" colSpan={metric === "revenue" ? 6 : 5}>
-                      No matching tracks.
-                    </TableCell>
-                  </TableRow>
-                ) : null}
-              </GlassTable>
             </div>
 
             <div className="mt-4">
@@ -1258,7 +1125,8 @@ export function CollectorsClient(props: {
               >
               {filteredSortedTracks.map((t) => {
                 const distroKeys = (t.distro_playlist_keys ?? []).filter(Boolean);
-                const distroLabel = distroKeys.length ? distroKeys.join(", ") : "—";
+                const distroNames = (t.distro_playlist_names ?? []).filter(Boolean);
+                const distroTitle = distroNames.length ? distroNames.join(", ") : distroKeys.join(", ");
 
                 return (
                   <TableRow key={t.isrc}>
@@ -1304,8 +1172,51 @@ export function CollectorsClient(props: {
                         ? "—"
                         : `${t.daily_streams_delta >= 0 ? "+" : ""}${formatInt(t.daily_streams_delta)}`}
                     </TableCell>
-                    <TableCell title={distroKeys.length ? distroKeys.join(", ") : undefined}>
-                      {distroLabel}
+                    <TableCell title={distroKeys.length ? distroTitle : undefined}>
+                      {distroKeys.length ? (
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="flex -space-x-1">
+                            {distroKeys.slice(0, 4).map((k) => {
+                              const meta = playlistMetaByKey.get(String(k));
+                              const imgUrl = meta?.spotify_playlist_image_url ?? null;
+                              const label = meta?.display_name ?? String(k);
+                              return imgUrl ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  key={k}
+                                  src={imgUrl}
+                                  alt={label}
+                                  className="h-5 w-5 rounded-full object-cover sb-ring"
+                                  title={label}
+                                />
+                              ) : (
+                                <div
+                                  key={k}
+                                  className="h-5 w-5 rounded-full sb-ring flex items-center justify-center text-[10px] font-bold"
+                                  style={{ backgroundColor: "var(--sb-surface)", color: "var(--sb-muted)" }}
+                                  title={label}
+                                >
+                                  {label.trim().slice(0, 1).toUpperCase()}
+                                </div>
+                              );
+                            })}
+                            {distroKeys.length > 4 ? (
+                              <div
+                                className="h-5 w-5 rounded-full sb-ring flex items-center justify-center text-[10px] font-bold"
+                                style={{ backgroundColor: "var(--sb-surface)", color: "var(--sb-text)" }}
+                                title={distroTitle}
+                              >
+                                +{distroKeys.length - 4}
+                              </div>
+                            ) : null}
+                          </div>
+                          <span className="truncate text-xs opacity-70">
+                            {distroNames.length ? distroNames.join(", ") : "Distro"}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="opacity-30">—</span>
+                      )}
                     </TableCell>
                   </TableRow>
                 );

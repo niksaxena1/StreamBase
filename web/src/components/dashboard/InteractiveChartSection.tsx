@@ -79,6 +79,19 @@ export function InteractiveChartSection({
       {/* KPI Row */}
       <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
         <button
+          onClick={() => setSelectedChart("total")}
+          className="w-full text-left transition-opacity hover:opacity-80 focus:outline-none"
+          type="button"
+        >
+          <StatCard
+            title={totalTitle}
+            value={<AnimatedCounter value={totalStreamsValue} format={valueFormat} />}
+            subtitle="Lifetime"
+            accent={selectedChart === "total"}
+            trendData={totalStreamsData.map((d) => d.value).slice(0, 30).reverse()}
+          />
+        </button>
+        <button
           onClick={() => setSelectedChart("daily")}
           className="w-full text-left transition-opacity hover:opacity-80 focus:outline-none"
           type="button"
@@ -90,19 +103,6 @@ export function InteractiveChartSection({
             accent={selectedChart === "daily"}
             trend="up"
             trendData={dailyStreamsData.map((d) => d.value).slice(0, 30).reverse()}
-          />
-        </button>
-        <button
-          onClick={() => setSelectedChart("total")}
-          className="w-full text-left transition-opacity hover:opacity-80 focus:outline-none"
-          type="button"
-        >
-          <StatCard
-            title={totalTitle}
-            value={<AnimatedCounter value={totalStreamsValue} format={valueFormat} />}
-            subtitle="Lifetime"
-            accent={selectedChart === "total"}
-            trendData={totalStreamsData.map((d) => d.value).slice(0, 30).reverse()}
           />
         </button>
       </div>

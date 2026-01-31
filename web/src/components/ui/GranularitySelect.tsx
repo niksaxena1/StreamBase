@@ -21,6 +21,8 @@ export function GranularitySelect({
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const [buttonWidth, setButtonWidth] = useState<number | undefined>();
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -34,14 +36,22 @@ export function GranularitySelect({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // Update button width when dropdown opens
+  useEffect(() => {
+    if (isOpen && buttonRef.current) {
+      setButtonWidth(buttonRef.current.offsetWidth);
+    }
+  }, [isOpen]);
+
   const selectedLabel = GRANULARITIES.find((g) => g.value === value)?.label ?? "Daily";
 
   return (
     <div className="relative" ref={containerRef}>
       <button
+        ref={buttonRef}
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 rounded-[var(--sb-radius)] border px-3 py-1.5 text-[11px] font-medium transition"
+        className="flex items-center gap-2 rounded-[var(--sb-radius)] border px-2.5 py-1.5 text-[11px] font-medium transition"
         style={{
           backgroundColor: "var(--sb-surface)",
           borderColor: "var(--sb-border-2)",
@@ -82,20 +92,15 @@ export function GranularitySelect({
 
       {isOpen && (
         <div
-          className="absolute left-0 top-full z-50 mt-2 min-w-[140px] rounded-[var(--sb-radius)] border p-1 shadow-lg"
+          className="absolute left-0 top-full z-50 mt-2 rounded-[var(--sb-radius)] border p-1 shadow-lg"
           style={{
+            width: buttonWidth,
             backgroundColor: "var(--sb-card)",
             borderColor: "var(--sb-border-2)",
             backdropFilter: "blur(var(--sb-blur))",
             WebkitBackdropFilter: "blur(var(--sb-blur))",
           }}
         >
-          <div className="border-b px-2 py-1.5" style={{ borderColor: "var(--sb-border-2)" }}>
-            <div className="text-[10px] font-medium uppercase tracking-wider" style={{ color: "var(--sb-muted)" }}>
-              Time Granularity
-            </div>
-          </div>
-
           {GRANULARITIES.map((granularity) => {
             const isSelected = value === granularity.value;
 
@@ -123,17 +128,6 @@ export function GranularitySelect({
                   }
                 }}
               >
-                <span
-                  className={`flex h-4 w-4 items-center justify-center rounded-full border-2 transition`}
-                  style={{
-                    backgroundColor: isSelected ? "var(--sb-accent)" : "transparent",
-                    borderColor: "var(--sb-muted)",
-                  }}
-                >
-                  {isSelected && (
-                    <span className="h-1.5 w-1.5 rounded-full bg-black" />
-                  )}
-                </span>
                 <span>{granularity.label}</span>
               </button>
             );

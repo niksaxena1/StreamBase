@@ -207,8 +207,6 @@ function HomeDashboardInner(props: {
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5">
-          <MetricSelector metric={metric} setMetric={setMetric} />
-
           <div className="sb-ring flex items-center gap-0.5 rounded-full bg-white/60 p-0.5 dark:bg-white/10">
             <ToggleLink
               active={props.playlistKey === "all_catalog"}
@@ -229,6 +227,8 @@ function HomeDashboardInner(props: {
               Ext
             </ToggleLink>
           </div>
+
+          <MetricSelector metric={metric} setMetric={setMetric} />
 
           <div className="sb-ring flex items-center gap-0.5 rounded-full bg-white/60 p-0.5 dark:bg-white/10">
             <ToggleLink active={props.rangeDays === 30} href={hrefWith(props.sp, { range: "30" })}>
@@ -284,7 +284,11 @@ function HomeDashboardInner(props: {
       {/* Recent History Table */}
       <div className="space-y-2">
         <h2 className="text-sm font-semibold tracking-tight">Recent History</h2>
-        <GlassTable headers={["Date", "Tracks", "Total Streams", "Daily"]}>
+        <GlassTable 
+          headers={["Date", "Tracks", "Total Streams", "Daily"]}
+          // Constrain height so ~7 rows are visible; scroll for more.
+          maxBodyHeightClassName="max-h-[228px] overflow-auto"
+        >
           {(props.history ?? []).map((r) => (
             <TableRow key={r.date}>
               <TableCell mono>{formatDateISO(dataDateFromRunDate(r.date))}</TableCell>

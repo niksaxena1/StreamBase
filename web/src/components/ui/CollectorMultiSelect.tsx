@@ -14,6 +14,8 @@ export function CollectorMultiSelect({
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const [buttonWidth, setButtonWidth] = useState<number | undefined>();
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -26,6 +28,13 @@ export function CollectorMultiSelect({
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  // Update button width when dropdown opens
+  useEffect(() => {
+    if (isOpen && buttonRef.current) {
+      setButtonWidth(buttonRef.current.offsetWidth);
+    }
+  }, [isOpen]);
 
   const toggleCollector = (collector: string) => {
     if (selected.includes(collector)) {
@@ -46,9 +55,10 @@ export function CollectorMultiSelect({
   return (
     <div className="relative" ref={containerRef}>
       <button
+        ref={buttonRef}
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 rounded-[var(--sb-radius)] border px-3 py-1.5 text-[11px] font-medium transition"
+        className="flex items-center gap-2 rounded-[var(--sb-radius)] border px-2.5 py-1.5 text-[11px] font-medium transition"
         style={{
           backgroundColor: "var(--sb-surface)",
           borderColor: "var(--sb-border-2)",
@@ -97,20 +107,15 @@ export function CollectorMultiSelect({
 
       {isOpen && (
         <div
-          className="absolute left-0 top-full z-50 mt-2 min-w-[160px] rounded-[var(--sb-radius)] border p-1 shadow-lg"
+          className="absolute left-0 top-full z-50 mt-2 rounded-[var(--sb-radius)] border p-1 shadow-lg"
           style={{
+            width: buttonWidth,
             backgroundColor: "var(--sb-card)",
             borderColor: "var(--sb-border-2)",
             backdropFilter: "blur(var(--sb-blur))",
             WebkitBackdropFilter: "blur(var(--sb-blur))",
           }}
         >
-          <div className="border-b px-2 py-1.5" style={{ borderColor: "var(--sb-border-2)" }}>
-            <div className="text-[10px] font-medium uppercase tracking-wider" style={{ color: "var(--sb-muted)" }}>
-              Filter by Collectors
-            </div>
-          </div>
-
           <button
             type="button"
             onClick={selectAll}
@@ -157,19 +162,6 @@ export function CollectorMultiSelect({
                   }
                 }}
               >
-                <span
-                  className={`flex h-4 w-4 items-center justify-center rounded-sm border-2 transition`}
-                  style={{
-                    backgroundColor: isSelected ? color : "transparent",
-                    borderColor: color,
-                  }}
-                >
-                  {isSelected && (
-                    <svg className="h-2.5 w-2.5 text-black" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                    </svg>
-                  )}
-                </span>
                 <span
                   className="inline-block h-2 w-2 rounded-full"
                   style={{ backgroundColor: color }}
