@@ -202,3 +202,12 @@ details > summary {
 details > summary::-webkit-details-marker {
   display: none;
 }
+
+/* Native select dropdown theming (affects the opened option menu too) */
+.sb-native-select {
+  color-scheme: light;
+}
+
+html[data-theme="dark"] .sb-native-select {
+  color-scheme: dark;
+}

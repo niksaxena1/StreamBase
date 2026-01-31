@@ -19,7 +19,15 @@ type PlaylistRow = {
   display_order: number | null;
 };
 
-export default async function PlaylistsConfigPage() {
+export default async function PlaylistsConfigPage({
+  searchParams,
+}: {
+  // keep as `any` to satisfy Next's generated PageProps typing
+  // while avoiding sync access to a Promise in Next 16.
+  searchParams?: any;
+}) {
+  const sp = (await searchParams ?? {}) as { refresh_spotify?: string };
+  const forceRefreshSpotify = String(sp.refresh_spotify ?? "") === "1";
   const sb = await supabaseServer();
   const { data: isAdmin } = await sb.rpc("is_admin");
 
@@ -91,17 +99,22 @@ export default async function PlaylistsConfigPage() {
     }
   }
 
-  // Best-effort thumbnail refresh for rows that have spotify_playlist_id but no image (or stale).
-  // We keep this conservative to avoid spamming Spotify requests.
+  // Best-effort thumbnail refresh.
+  // Default behavior is conservative (only fill missing thumbnails).
+  // If `?refresh_spotify=1` is present, force-refresh thumbnails for ALL playlists
+  // that have a spotify_playlist_id.
   try {
-    const candidates = playlists.filter(
-      (p) => Boolean(p.spotify_playlist_id) && !p.spotify_playlist_image_url,
-    );
+    const candidates = playlists.filter((p) => {
+      if (!p.spotify_playlist_id) return false;
+      if (forceRefreshSpotify) return true;
+      return !p.spotify_playlist_image_url;
+    });
 
     if (candidates.length) {
       const svc = supabaseService();
-      // refresh up to 3 per request
-      for (const p of candidates.slice(0, 3)) {
+      // When forcing, refresh everything (small N), otherwise keep it conservative.
+      const batch = forceRefreshSpotify ? candidates : candidates.slice(0, 3);
+      for (const p of batch) {
         const id = p.spotify_playlist_id;
         if (!id) continue;
         const meta = await getPlaylist(id);
@@ -114,6 +127,7 @@ export default async function PlaylistsConfigPage() {
           })
           .eq("playlist_key", p.playlist_key);
         p.spotify_playlist_image_url = meta.imageUrl;
+        p.spotify_last_fetched_at = new Date().toISOString();
       }
     }
   } catch {

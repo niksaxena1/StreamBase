@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation";
-import { Music } from "lucide-react";
 
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { PlaylistSettingsTable } from "./PlaylistSettingsTable";
+import { RefreshSpotifyThumbnailsButton } from "./RefreshSpotifyThumbnailsButton";
 
 export const revalidate = 86400; // 24h ISR - admin config changes are infrequent
 
@@ -141,6 +141,9 @@ export default async function PlaylistSettingsPage() {
           <p className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
             Paste a Spotify playlist URL/URI/ID to enable playlist thumbnails in SpotiBase.
           </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <RefreshSpotifyThumbnailsButton />
         </div>
       </div>
 

@@ -1,9 +1,54 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { Calendar, X } from "lucide-react";
-import { useState, useEffect } from "react";
-import { formatDateISO } from "@/lib/format";
+import { Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { DayPicker, type DateRange } from "react-day-picker";
+import { DateInput } from "@/components/ui/DateInput";
+
+function parseYmd(ymd: string): Date {
+  const [y, m, d] = ymd.split("-").map((n) => Number(n));
+  return new Date(y, (m ?? 1) - 1, d ?? 1);
+}
+
+function formatYmd(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+// Format as DD MMM YYYY (e.g., "31 Jan 2026")
+function formatDisplay(date: Date): string {
+  const d = String(date.getDate()).padStart(2, "0");
+  const m = date.toLocaleString("en-US", { month: "short" });
+  const y = date.getFullYear();
+  return `${d} ${m} ${y}`;
+}
+
+function utcMsFromYmd(ymd: string): number {
+  const [y, m, d] = ymd.split("-").map((n) => Number(n));
+  return Date.UTC(y, (m ?? 1) - 1, d ?? 1);
+}
+
+function clampDaysInclusive(startYmd: string, endYmd: string): number {
+  const days = Math.round((utcMsFromYmd(endYmd) - utcMsFromYmd(startYmd)) / 86400000) + 1;
+  return Math.max(7, Math.min(365, days));
+}
+
+type Preset = { name: string; label: string };
+type ConcreteRange = { from: Date; to: Date };
+
+const PRESETS: Preset[] = [
+  { name: "last7", label: "Last 7 days" },
+  { name: "last14", label: "Last 14 days" },
+  { name: "last30", label: "Last 30 days" },
+  { name: "last90", label: "Last 90 days" },
+  { name: "last365", label: "Last 365 days" },
+  { name: "thisMonth", label: "This month" },
+  { name: "lastMonth", label: "Last month" },
+];
 
 export function DateRangePicker({
   latestDate,
@@ -15,47 +60,42 @@ export function DateRangePicker({
   const router = useRouter();
   const sp = useSearchParams();
   const [isOpen, setIsOpen] = useState(false);
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  const [range, setRange] = useState<DateRange | undefined>(undefined);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const [popoverPos, setPopoverPos] = useState<{ top: number; left: number } | null>(null);
+  const [portalReady, setPortalReady] = useState(false);
+  const openedRangeRef = useRef<DateRange | undefined>(undefined);
+  const [selectedPreset, setSelectedPreset] = useState<string | undefined>(undefined);
+  const [isSmallScreen, setIsSmallScreen] = useState(false);
+  const [displayMonth, setDisplayMonth] = useState<Date | undefined>(undefined);
 
   useEffect(() => {
     if (!latestDate) return;
-    // If custom range is active, use it; otherwise sync with currentRangeDays
     const customStart = sp.get("start");
     const customEnd = sp.get("end");
     if (customStart && customEnd) {
-      setStartDate(customStart);
-      setEndDate(customEnd);
+      setRange({ from: parseYmd(customStart), to: parseYmd(customEnd) });
     } else {
       const end = latestDate;
       const start = (() => {
-        const d = new Date(`${end}T00:00:00Z`);
-        d.setUTCDate(d.getUTCDate() - (currentRangeDays - 1));
-        return d.toISOString().slice(0, 10);
+        const d = parseYmd(end);
+        d.setDate(d.getDate() - (currentRangeDays - 1));
+        return formatYmd(d);
       })();
-      setEndDate(end);
-      setStartDate(start);
+      setRange({ from: parseYmd(start), to: parseYmd(end) });
     }
   }, [latestDate, currentRangeDays, sp]);
 
   function handleApply() {
-    if (!startDate || !endDate) return;
-    if (startDate > endDate) {
-      const tmp = startDate;
-      setStartDate(endDate);
-      setEndDate(tmp);
-      return;
-    }
-
-    const start = new Date(`${startDate}T00:00:00Z`);
-    const end = new Date(`${endDate}T00:00:00Z`);
-    const days = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-    const clampedDays = Math.max(7, Math.min(365, days));
+    if (!range?.from || !range.to) return;
+    const startYmd = formatYmd(range.from);
+    const endYmd = formatYmd(range.to);
+    const clampedDays = clampDaysInclusive(startYmd, endYmd);
 
     const params = new URLSearchParams(sp.toString());
     params.set("range", String(clampedDays));
-    params.set("start", startDate);
-    params.set("end", endDate);
+    params.set("start", startYmd);
+    params.set("end", endYmd);
     router.push(`?${params.toString()}`);
     setIsOpen(false);
   }
@@ -64,7 +104,6 @@ export function DateRangePicker({
     const params = new URLSearchParams(sp.toString());
     params.delete("start");
     params.delete("end");
-    // Keep the current range days
     router.push(`?${params.toString()}`);
     setIsOpen(false);
   }
@@ -75,11 +114,188 @@ export function DateRangePicker({
 
   if (!latestDate) return null;
 
+  const minDate = useMemo(() => {
+    const d = parseYmd(latestDate);
+    d.setDate(d.getDate() - 365);
+    return d;
+  }, [latestDate]);
+  const maxDate = useMemo(() => parseYmd(latestDate), [latestDate]);
+
+  useEffect(() => {
+    const handleResize = () => setIsSmallScreen(window.innerWidth < 640);
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  useEffect(() => {
+    setPortalReady(true);
+  }, []);
+
+  // Set initial display month when opening
+  useEffect(() => {
+    if (isOpen && !displayMonth) {
+      // Show the month containing maxDate (and previous month if 2-month view)
+      setDisplayMonth(new Date(maxDate.getFullYear(), maxDate.getMonth() - (isSmallScreen ? 0 : 1), 1));
+    }
+  }, [isOpen, maxDate, isSmallScreen, displayMonth]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const update = () => {
+      const el = buttonRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const width = isSmallScreen ? 320 : 580;
+      const margin = 8;
+
+      let left = rect.right - width;
+      left = Math.max(margin, Math.min(left, window.innerWidth - width - margin));
+
+      const preferBelow = rect.bottom + 12 + 420 <= window.innerHeight;
+      const top = preferBelow ? rect.bottom + 8 : Math.max(margin, rect.top - 8 - 420);
+
+      setPopoverPos({ top, left });
+    };
+
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, [isOpen, isSmallScreen]);
+
+  function clampToBounds(d: Date): Date {
+    if (d < minDate) return new Date(minDate);
+    if (d > maxDate) return new Date(maxDate);
+    return d;
+  }
+
+  function getPresetRange(name: string): ConcreteRange {
+    const to = new Date(maxDate);
+    to.setHours(0, 0, 0, 0);
+    const from = new Date(to);
+
+    switch (name) {
+      case "last7":
+        from.setDate(from.getDate() - 6);
+        break;
+      case "last14":
+        from.setDate(from.getDate() - 13);
+        break;
+      case "last30":
+        from.setDate(from.getDate() - 29);
+        break;
+      case "last90":
+        from.setDate(from.getDate() - 89);
+        break;
+      case "last365":
+        from.setDate(from.getDate() - 364);
+        break;
+      case "thisMonth":
+        from.setDate(1);
+        break;
+      case "lastMonth": {
+        const d = new Date(to);
+        d.setDate(1);
+        d.setMonth(d.getMonth() - 1);
+        from.setFullYear(d.getFullYear(), d.getMonth(), 1);
+        break;
+      }
+      default:
+        break;
+    }
+
+    const clampedFrom = clampToBounds(from);
+    const clampedTo = clampToBounds(to);
+    if (clampedFrom > clampedTo) return { from: clampedTo, to: clampedTo };
+    return { from: clampedFrom, to: clampedTo };
+  }
+
+  function setPreset(name: string) {
+    setSelectedPreset(name);
+    const r = getPresetRange(name);
+    setRange(r);
+    // Navigate to show the range
+    setDisplayMonth(new Date(r.from.getFullYear(), r.from.getMonth(), 1));
+  }
+
+  function checkPreset() {
+    if (!range?.from || !range.to) {
+      setSelectedPreset(undefined);
+      return;
+    }
+    const aFrom = new Date(range.from);
+    const aTo = new Date(range.to);
+    aFrom.setHours(0, 0, 0, 0);
+    aTo.setHours(0, 0, 0, 0);
+
+    for (const p of PRESETS) {
+      const r = getPresetRange(p.name);
+      const bFrom = new Date(r.from);
+      const bTo = new Date(r.to);
+      bFrom.setHours(0, 0, 0, 0);
+      bTo.setHours(0, 0, 0, 0);
+      if (aFrom.getTime() === bFrom.getTime() && aTo.getTime() === bTo.getTime()) {
+        setSelectedPreset(p.name);
+        return;
+      }
+    }
+    setSelectedPreset(undefined);
+  }
+
+  useEffect(() => {
+    checkPreset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [range?.from?.getTime?.(), range?.to?.getTime?.(), maxDate.getTime()]);
+
+  // Navigation handlers
+  function goToPrevMonth() {
+    if (!displayMonth) return;
+    const prev = new Date(displayMonth);
+    prev.setMonth(prev.getMonth() - 1);
+    if (prev >= new Date(minDate.getFullYear(), minDate.getMonth(), 1)) {
+      setDisplayMonth(prev);
+    }
+  }
+
+  function goToNextMonth() {
+    if (!displayMonth) return;
+    const next = new Date(displayMonth);
+    next.setMonth(next.getMonth() + 1);
+    // For 2-month view, the right month is displayMonth + 1
+    const rightMonth = isSmallScreen ? next : new Date(next.getFullYear(), next.getMonth() + 1, 1);
+    if (rightMonth <= new Date(maxDate.getFullYear(), maxDate.getMonth() + 1, 1)) {
+      setDisplayMonth(next);
+    }
+  }
+
+  const canGoPrev = displayMonth && displayMonth > new Date(minDate.getFullYear(), minDate.getMonth(), 1);
+  const canGoNext = (() => {
+    if (!displayMonth) return false;
+    const rightMonth = isSmallScreen ? displayMonth : new Date(displayMonth.getFullYear(), displayMonth.getMonth() + 1, 1);
+    return rightMonth < new Date(maxDate.getFullYear(), maxDate.getMonth() + 1, 1);
+  })();
+
+  // Display label for button
+  const buttonLabel = hasCustomRange
+    ? `${formatDisplay(parseYmd(customStart!))} – ${formatDisplay(parseYmd(customEnd!))}`
+    : "Range";
+
   return (
     <div className="relative">
       <button
+        ref={buttonRef}
         type="button"
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => {
+          if (!isOpen) {
+            openedRangeRef.current = range ? { ...range } : undefined;
+            setDisplayMonth(new Date(maxDate.getFullYear(), maxDate.getMonth() - (isSmallScreen ? 0 : 1), 1));
+          }
+          setIsOpen(!isOpen);
+        }}
         className={[
           "sb-ring flex items-center gap-1.5 rounded-full px-2.5 py-2 text-[11px] font-medium transition",
           isOpen || hasCustomRange
@@ -87,7 +303,7 @@ export function DateRangePicker({
             : "bg-white/70 hover:bg-white/70 dark:bg-white/10 dark:hover:bg-white/10",
         ].join(" ")}
         style={isOpen || hasCustomRange ? undefined : { color: "var(--sb-muted)" }}
-        title={hasCustomRange ? `${formatDateISO(customStart!)} to ${formatDateISO(customEnd!)}` : "Custom date range"}
+        title={hasCustomRange ? `${formatDisplay(parseYmd(customStart!))} to ${formatDisplay(parseYmd(customEnd!))}` : "Custom date range"}
       >
         <Calendar
           className={[
@@ -95,102 +311,218 @@ export function DateRangePicker({
             isOpen || hasCustomRange ? "text-white dark:text-black" : "",
           ].join(" ")}
         />
+        <ChevronDown className={["h-3 w-3 opacity-70", isOpen ? "rotate-180 transition" : "transition"].join(" ")} />
         {hasCustomRange ? (
-          <span className="font-mono">
-            {formatDateISO(customStart!)}–{formatDateISO(customEnd!)}
+          <span className="font-mono text-[10px]">
+            {formatDisplay(parseYmd(customStart!))}–{formatDisplay(parseYmd(customEnd!))}
           </span>
         ) : (
           "Range"
         )}
       </button>
 
-      {isOpen && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
-          <div className="absolute right-0 top-full z-50 mt-2 w-64 sb-card p-4 shadow-lg">
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center justify-between">
-                <div className="text-xs font-medium" style={{ color: "var(--sb-text)" }}>
-                  Custom date range
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setIsOpen(false)}
-                  className="sb-ring grid h-6 w-6 place-items-center rounded-full hover:bg-white/10"
-                  style={{ color: "var(--sb-muted)" }}
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-
-              <div className="flex flex-col gap-2.5">
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[11px] font-medium" style={{ color: "var(--sb-muted)" }}>
-                    From
-                  </label>
-                  <div className="sb-ring rounded-xl bg-white/70 px-3 py-2 dark:bg-white/5">
-                    <input
-                      type="date"
-                      value={startDate}
-                      onChange={(e) => setStartDate(e.target.value)}
-                      max={endDate || latestDate}
-                      min={(() => {
-                        const d = new Date(`${latestDate}T00:00:00Z`);
-                        d.setUTCDate(d.getUTCDate() - 365);
-                        return d.toISOString().slice(0, 10);
-                      })()}
-                      className="w-full bg-transparent text-xs outline-none"
-                      style={{ color: "var(--sb-text)" }}
+      {portalReady && isOpen && popoverPos
+        ? createPortal(
+            <>
+              <div
+                className="fixed inset-0 z-40"
+                onMouseDown={() => {
+                  setRange(openedRangeRef.current);
+                  setIsOpen(false);
+                }}
+              />
+              <div
+                className={["fixed z-50 sb-card shadow-lg overflow-hidden", isSmallScreen ? "w-[320px]" : "w-[580px]"].join(" ")}
+                style={{ top: popoverPos.top, left: popoverPos.left }}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Header with inputs and close */}
+                <div className="flex items-center justify-between gap-2 border-b px-3 py-2" style={{ borderColor: "var(--sb-border)" }}>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <DateInput
+                      value={range?.from}
+                      onChange={(d) => {
+                        const from = clampToBounds(d);
+                        const to = range?.to ? clampToBounds(range.to) : undefined;
+                        const nextTo = !to || from > to ? from : to;
+                        setRange({ from, to: nextTo });
+                        setDisplayMonth(new Date(from.getFullYear(), from.getMonth(), 1));
+                      }}
+                    />
+                    <span className="text-xs opacity-40">–</span>
+                    <DateInput
+                      value={range?.to}
+                      onChange={(d) => {
+                        const to = clampToBounds(d);
+                        const from = range?.from ? clampToBounds(range.from) : to;
+                        const nextFrom = to < from ? to : from;
+                        setRange({ from: nextFrom, to });
+                      }}
                     />
                   </div>
-                </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[11px] font-medium" style={{ color: "var(--sb-muted)" }}>
-                    To
-                  </label>
-                  <div className="sb-ring rounded-xl bg-white/70 px-3 py-2 dark:bg-white/5">
-                    <input
-                      type="date"
-                      value={endDate}
-                      onChange={(e) => setEndDate(e.target.value)}
-                      max={latestDate}
-                      min={startDate || (() => {
-                        const d = new Date(`${latestDate}T00:00:00Z`);
-                        d.setUTCDate(d.getUTCDate() - 365);
-                        return d.toISOString().slice(0, 10);
-                      })()}
-                      className="w-full bg-transparent text-xs outline-none"
-                      style={{ color: "var(--sb-text)" }}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={handleApply}
-                  disabled={!startDate || !endDate}
-                  className="sb-ring flex-1 rounded-xl bg-black px-3 py-2 text-xs font-medium text-white transition hover:bg-black/90 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-white dark:text-black dark:hover:bg-white/90"
-                >
-                  Apply
-                </button>
-                {hasCustomRange && (
                   <button
                     type="button"
-                    onClick={handleClear}
-                    className="sb-ring rounded-xl bg-white/70 px-3 py-2 text-xs font-medium transition hover:bg-white dark:bg-white/10 dark:hover:bg-white/20"
-                    style={{ color: "var(--sb-text)" }}
+                    onClick={() => {
+                      setRange(openedRangeRef.current);
+                      setIsOpen(false);
+                    }}
+                    className="sb-ring grid h-6 w-6 flex-shrink-0 place-items-center rounded-full hover:bg-black/5 dark:hover:bg-white/10"
+                    style={{ color: "var(--sb-muted)" }}
+                    aria-label="Close"
                   >
-                    Clear
+                    <X className="h-3.5 w-3.5" />
                   </button>
-                )}
+                </div>
+
+                <div className={["flex", isSmallScreen ? "flex-col" : "flex-row"].join(" ")}>
+                  {/* Presets sidebar */}
+                  <div
+                    className={[
+                      "flex gap-1 border-r p-2",
+                      isSmallScreen ? "flex-row flex-wrap border-r-0 border-b" : "flex-col w-[120px]",
+                    ].join(" ")}
+                    style={{ borderColor: "var(--sb-border)" }}
+                  >
+                    {PRESETS.map((p) => {
+                      const isSel = selectedPreset === p.name;
+                      return (
+                        <button
+                          key={p.name}
+                          type="button"
+                          onClick={() => setPreset(p.name)}
+                          className={[
+                            "sb-ring flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium transition whitespace-nowrap",
+                            isSel
+                              ? "text-black dark:text-black"
+                              : "hover:bg-black/5 dark:hover:bg-white/10",
+                          ].join(" ")}
+                          style={isSel ? { backgroundColor: "var(--sb-accent)" } : { color: "var(--sb-text)" }}
+                        >
+                          {isSel && <Check className="h-3 w-3" />}
+                          <span>{p.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Calendar area */}
+                  <div className="flex-1 p-2">
+                    {/* Navigation row */}
+                    <div className="flex items-center justify-between mb-2">
+                      <button
+                        type="button"
+                        onClick={goToPrevMonth}
+                        disabled={!canGoPrev}
+                        className="sb-ring grid h-7 w-7 place-items-center rounded-md hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed"
+                        style={{ color: "var(--sb-text)" }}
+                        aria-label="Previous month"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </button>
+                      <div className="text-xs font-medium" style={{ color: "var(--sb-text)" }}>
+                        {displayMonth?.toLocaleString("en-US", { month: "long", year: "numeric" })}
+                        {!isSmallScreen && displayMonth && (
+                          <> – {new Date(displayMonth.getFullYear(), displayMonth.getMonth() + 1, 1).toLocaleString("en-US", { month: "long", year: "numeric" })}</>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={goToNextMonth}
+                        disabled={!canGoNext}
+                        className="sb-ring grid h-7 w-7 place-items-center rounded-md hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed"
+                        style={{ color: "var(--sb-text)" }}
+                        aria-label="Next month"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
+                    </div>
+
+                    {/* DayPicker */}
+                    <DayPicker
+                      mode="range"
+                      selected={range}
+                      onSelect={(v) => {
+                        if (!v?.from) return;
+                        const from = clampToBounds(v.from);
+                        const to = v.to ? clampToBounds(v.to) : undefined;
+                        setRange({ from, to });
+                      }}
+                      disabled={[{ before: minDate }, { after: maxDate }]}
+                      weekStartsOn={1}
+                      showOutsideDays
+                      numberOfMonths={isSmallScreen ? 1 : 2}
+                      month={displayMonth}
+                      onMonthChange={setDisplayMonth}
+                      hideNavigation
+                      classNames={{
+                        months: "flex gap-4",
+                        month: "flex flex-col gap-1",
+                        month_caption: "hidden",
+                        month_grid: "border-collapse",
+                        weekdays: "flex",
+                        weekday: "w-8 h-6 text-center text-[10px] font-medium opacity-50",
+                        week: "flex",
+                        day: "w-8 h-8 p-0 text-center",
+                        day_button: "w-full h-full rounded-md text-[11px] font-medium cursor-pointer transition-colors hover:bg-black/5 dark:hover:bg-white/10 focus:outline-none",
+                        today: "ring-1 ring-inset ring-[color:var(--sb-accent)]",
+                        selected: "!bg-[color:var(--sb-accent)] !text-black hover:!bg-[color:var(--sb-accent)]",
+                        range_start: "!bg-[color:var(--sb-accent)] !text-black !rounded-r-none hover:!bg-[color:var(--sb-accent)]",
+                        range_middle: "!bg-[color:var(--sb-accent)]/30 !rounded-none",
+                        range_end: "!bg-[color:var(--sb-accent)] !text-black !rounded-l-none hover:!bg-[color:var(--sb-accent)]",
+                        outside: "opacity-30",
+                        disabled: "opacity-20 cursor-not-allowed hover:bg-transparent dark:hover:bg-transparent",
+                        hidden: "invisible",
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Footer with actions */}
+                <div className="flex items-center justify-between gap-2 border-t px-3 py-2" style={{ borderColor: "var(--sb-border)" }}>
+                  <div className="text-[10px] font-medium" style={{ color: "var(--sb-muted)" }}>
+                    {range?.from && range.to
+                      ? `${formatDisplay(range.from)} → ${formatDisplay(range.to)}`
+                      : "Select a date range"}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRange(openedRangeRef.current);
+                        setIsOpen(false);
+                      }}
+                      className="sb-ring rounded-md px-2.5 py-1.5 text-[10px] font-medium transition hover:bg-black/5 dark:hover:bg-white/10"
+                      style={{ color: "var(--sb-text)" }}
+                    >
+                      Cancel
+                    </button>
+                    {hasCustomRange && (
+                      <button
+                        type="button"
+                        onClick={handleClear}
+                        className="sb-ring rounded-md px-2.5 py-1.5 text-[10px] font-medium transition hover:bg-black/5 dark:hover:bg-white/10"
+                        style={{ color: "var(--sb-text)" }}
+                      >
+                        Clear
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleApply}
+                      disabled={!range?.from || !range.to}
+                      className="rounded-md px-2.5 py-1.5 text-[10px] font-medium text-black transition disabled:cursor-not-allowed disabled:opacity-50"
+                      style={{ backgroundColor: "var(--sb-accent)" }}
+                    >
+                      Apply
+                    </button>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
-        </>
-      )}
+            </>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }

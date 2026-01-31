@@ -1,11 +1,21 @@
 function escapeCsvCell(value: unknown): string {
   if (value === null || value === undefined) return "";
-  const str =
-    typeof value === "string"
-      ? value
-      : typeof value === "number" || typeof value === "boolean"
-        ? String(value)
-        : JSON.stringify(value);
+  const str = (() => {
+    // Flatten arrays (e.g. artist_names, artist_ids, playlist_keys) into a readable string.
+    // Use " | " to avoid commas that force CSV quoting in many viewers.
+    if (Array.isArray(value)) {
+      return value
+        .filter((v) => v !== null && v !== undefined)
+        .map((v) => String(v))
+        .join(" | ");
+    }
+
+    if (typeof value === "string") return value;
+    if (typeof value === "number" || typeof value === "boolean") return String(value);
+
+    // Fallback for objects (rare in our exports).
+    return JSON.stringify(value);
+  })();
 
   // Escape quotes and wrap if needed
   if (str.includes(",") || str.includes('"') || str.includes("\n") || str.includes("\r")) {
@@ -79,7 +89,8 @@ export function downloadCsv(args: {
   sortForExport?: boolean;
 }): void {
   if (typeof window === "undefined") return;
-  const csv = toCsv(args.rows, { headers: args.headers, sortForExport: args.sortForExport });
+  // Add UTF-8 BOM for Excel compatibility on Windows (prevents mojibake like "FoÃ­nix").
+  const csv = `\ufeff${toCsv(args.rows, { headers: args.headers, sortForExport: args.sortForExport })}`;
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
 
   const url = URL.createObjectURL(blob);

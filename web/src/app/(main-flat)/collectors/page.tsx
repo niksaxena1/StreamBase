@@ -38,6 +38,7 @@ type PlaylistRow = {
   playlist_key: string;
   display_name: string;
   collector: string | null;
+  spotify_playlist_image_url: string | null;
 };
 
 type CollectorTrackRow = {
@@ -47,7 +48,9 @@ type CollectorTrackRow = {
   artist_names: string[] | null;
   artist_ids: string[] | null;
   playlist_keys: string[] | null;
+  playlist_names: string[] | null;
   distro_playlist_keys: string[] | null;
+  distro_playlist_names: string[] | null;
   total_streams_cumulative: number | null;
   daily_streams_delta: number | null;
 };
@@ -189,7 +192,7 @@ export default async function CollectorsPage({
       playlistRows: async () =>
         await svc
           .from("playlists")
-          .select("playlist_key,display_name,collector")
+          .select("playlist_key,display_name,collector,spotify_playlist_image_url")
           .in("collector", [...COLLECTORS]),
 
       compareToday: async () =>
@@ -239,15 +242,33 @@ export default async function CollectorsPage({
           )
           .order("date", { ascending: true }),
 
-      collectorTracks: async () =>
-        await svc.rpc("collector_tracks", {
-          collector: selectedCollector,
-          run_date: latestRunDate,
-          prev_date: prevRunDate,
-          limit_rows: 5000,
-        }),
+      // NOTE: Supabase/PostgREST often caps API responses at 1000 rows.
+      // Use a paged RPC so we can fetch the full set reliably.
+      collectorTracks: async () => {
+        const pageSize = 1000;
+        const hardCap = 50_000; // safety guard to avoid runaway payloads
+
+        const all: any[] = [];
+        for (let offset = 0; offset < hardCap; offset += pageSize) {
+          const { data, error } = await svc.rpc("collector_tracks_paged", {
+            collector: selectedCollector,
+            run_date: latestRunDate,
+            prev_date: prevRunDate,
+            offset_rows: offset,
+            limit_rows: pageSize,
+          });
+
+          if (error) throw error;
+          const rows = (data ?? []) as any[];
+          all.push(...rows);
+          if (rows.length < pageSize) break;
+        }
+
+        return { data: all, error: null };
+      },
     },
-    `collectors-${selectedCollector}-${rangeStart}-${rangeEnd}-${latestRunDate}`,
+    // bump cache key when changing server-side track pagination behavior
+    `collectors-${selectedCollector}-${rangeStart}-${rangeEnd}-${latestRunDate}-tracksPaged1`,
     600,
   );
 
@@ -336,6 +357,9 @@ export default async function CollectorsPage({
   );
   const selectedKeys = selectedPlaylists.map((p) => p.playlist_key);
   const nameByKey = new Map(selectedPlaylists.map((p) => [p.playlist_key, p.display_name]));
+  const imageByKey = new Map(
+    selectedPlaylists.map((p) => [p.playlist_key, p.spotify_playlist_image_url ?? null]),
+  );
 
   const topPlaylists: TopPlaylistRow[] = selectedKeys.length
     ? await (async () => {
@@ -371,6 +395,11 @@ export default async function CollectorsPage({
     missing_streams_track_count: r.missing_streams_track_count,
   }));
 
+  const mapPlaylistKeysToNames = (keys: string[] | null): string[] | null => {
+    if (!keys?.length) return keys;
+    return keys.map((k) => String(nameByKey.get(String(k)) ?? k));
+  };
+
   const collectorTracks = ((results.collectorTracks.data ?? []) as any[]).map((r): CollectorTrackRow => ({
     isrc: String(r.isrc),
     name: r.name == null ? null : String(r.name),
@@ -378,7 +407,9 @@ export default async function CollectorsPage({
     artist_names: (r.artist_names ?? null) as string[] | null,
     artist_ids: (r.artist_ids ?? null) as string[] | null,
     playlist_keys: (r.playlist_keys ?? null) as string[] | null,
+    playlist_names: mapPlaylistKeysToNames((r.playlist_keys ?? null) as string[] | null),
     distro_playlist_keys: (r.distro_playlist_keys ?? null) as string[] | null,
+    distro_playlist_names: mapPlaylistKeysToNames((r.distro_playlist_keys ?? null) as string[] | null),
     total_streams_cumulative: r.total_streams_cumulative == null ? null : Number(r.total_streams_cumulative),
     daily_streams_delta: r.daily_streams_delta == null ? null : Number(r.daily_streams_delta),
   }));
@@ -398,6 +429,11 @@ export default async function CollectorsPage({
         summary={summary}
         seriesDesc={seriesDesc as CollectorSeriesPoint[]}
         topPlaylists={normalizedTopPlaylists}
+        selectedPlaylistsMeta={selectedPlaylists.map((p) => ({
+          playlist_key: p.playlist_key,
+          display_name: String(nameByKey.get(p.playlist_key) ?? p.display_name ?? p.playlist_key),
+          spotify_playlist_image_url: imageByKey.get(p.playlist_key) ?? null,
+        }))}
         collectorTracks={collectorTracks}
         allCollectorsSeries={allCollectorsSeries}
         allCollectorsAllTime={allCollectorsAllTime}
