@@ -37,6 +37,14 @@ type PlaylistRemovedRow = {
   valid_to: string | null;
 };
 
+type DebugCounts = {
+  totalRows: number | null;
+  nullValidToRows: number | null;
+  activeAtRunDateRows: number | null;
+  maxValidFrom: string | null;
+  minValidFrom: string | null;
+};
+
 async function rpcTopTracks(
   svc: SupabaseClient,
   args: { playlistKey: string; runDate: string; prevDate: string | null },
@@ -87,7 +95,9 @@ export async function PlaylistTracksSection(props: {
     );
   }
 
-  const cacheKeyBase = `playlist-tables-v1-${props.playlistKey}-${props.latestRunDate}-${props.prevRunDate ?? "none"}`;
+  // NOTE: This cache stores *both data and errors*. When we change playlist RPCs,
+  // we must bump this version to avoid serving stale cached error payloads.
+  const cacheKeyBase = `playlist-tables-v2-${props.playlistKey}-${props.latestRunDate}-${props.prevRunDate ?? "none"}`;
 
   const results = await cachedQueries<{
     top: PlaylistTopTrackRow[];
@@ -126,12 +136,77 @@ export async function PlaylistTracksSection(props: {
   const addedErr = results.added.error;
   const removedErr = results.removed.error;
 
+  const debug: DebugCounts | null = await (async () => {
+    // Only compute when something looks wrong (keeps page fast).
+    if (!topErr && currentRows.length) return null;
+    const runDate = props.latestRunDate!;
+    const key = props.playlistKey;
+
+    // Use lightweight COUNT(head:true) queries.
+    const [total, nullValidTo, active] = await Promise.all([
+      svc.from("playlist_memberships").select("isrc", { count: "exact", head: true }).eq("playlist_key", key),
+      svc
+        .from("playlist_memberships")
+        .select("isrc", { count: "exact", head: true })
+        .eq("playlist_key", key)
+        .is("valid_to", null),
+      svc
+        .from("playlist_memberships")
+        .select("isrc", { count: "exact", head: true })
+        .eq("playlist_key", key)
+        .lte("valid_from", runDate)
+        .or(`valid_to.is.null,valid_to.gte.${runDate}`),
+    ]);
+
+    // Range info (best-effort).
+    const { data: minRow } = await svc
+      .from("playlist_memberships")
+      .select("valid_from")
+      .eq("playlist_key", key)
+      .order("valid_from", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    const { data: maxRow } = await svc
+      .from("playlist_memberships")
+      .select("valid_from")
+      .eq("playlist_key", key)
+      .order("valid_from", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    return {
+      totalRows: total.count ?? null,
+      nullValidToRows: nullValidTo.count ?? null,
+      activeAtRunDateRows: active.count ?? null,
+      minValidFrom: (minRow as any)?.valid_from ?? null,
+      maxValidFrom: (maxRow as any)?.valid_from ?? null,
+    };
+  })();
+
   return (
     <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
       <div className="space-y-3">
         <div className="flex items-end justify-between px-1">
           <h2 className="text-sm font-semibold">Tracks currently in playlist</h2>
         </div>
+        {debug ? (
+          <details
+            className="rounded-xl border px-3 py-2 text-xs"
+            style={{ borderColor: "var(--sb-border)", color: "var(--sb-muted)" }}
+          >
+            <summary className="cursor-pointer select-none">Debug: playlist_memberships snapshot</summary>
+            <div className="mt-2 grid grid-cols-1 gap-1 font-mono">
+              <div>playlist_key={props.playlistKey}</div>
+              <div>run_date={props.latestRunDate}</div>
+              <div>rows_total={debug.totalRows ?? "?"}</div>
+              <div>rows_valid_to_null={debug.nullValidToRows ?? "?"}</div>
+              <div>rows_active_at_run_date={debug.activeAtRunDateRows ?? "?"}</div>
+              <div>valid_from_min={debug.minValidFrom ?? "?"}</div>
+              <div>valid_from_max={debug.maxValidFrom ?? "?"}</div>
+            </div>
+          </details>
+        ) : null}
         <GlassTable headers={["", "Track", "ISRC", "Daily", "Total", "Added"]}>
           {topErr ? (
             <EmptyState
