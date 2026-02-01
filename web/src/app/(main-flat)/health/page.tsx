@@ -175,6 +175,33 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
 
   const { data: warnings, error: warnErr } = await warningsQuery.limit(200);
 
+  // Playlist metadata (for name + thumbnail display).
+  const playlistMetaByKey = new Map<string, { name: string; imageUrl: string | null }>();
+  const playlistKeysNeedingMeta = Array.from(
+    new Set(
+      [
+        ...(warnings ?? []).map((w) => (w?.playlist_key ?? "").trim()),
+        ...(exportsForLatest ?? []).map((e) => String((e ?? {}).playlist_key ?? "").trim()),
+      ].filter(Boolean),
+    ),
+  );
+  if (playlistKeysNeedingMeta.length > 0) {
+    const { data: plRows } = await svc
+      .from("playlists")
+      .select("playlist_key,display_name,spotify_playlist_image_url")
+      .in("playlist_key", playlistKeysNeedingMeta)
+      .limit(2000);
+
+    for (const r of plRows ?? []) {
+      const row = (r ?? {}) as Record<string, unknown>;
+      const key = String(row.playlist_key ?? "").trim();
+      if (!key) continue;
+      const name = String(row.display_name ?? "").trim() || key;
+      const imageUrl = (row.spotify_playlist_image_url ?? null) as string | null;
+      playlistMetaByKey.set(key, { name, imageUrl });
+    }
+  }
+
   // Fetch non-catalog tracks for warnings of type "non_catalog_tracks_present"
   const nonCatalogWarnings = (warnings ?? []).filter(
     (w) => w.code === "non_catalog_tracks_present" && w.playlist_key && selectedRunDate
@@ -513,13 +540,17 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
               ) : null}
             </>
           }
-          actions={
-            <Link className="text-xs underline opacity-60" href="/playlists">
-              View playlists
-            </Link>
-          }
+          actions={undefined}
         />
-        <GlassTable headers={["Severity", "Code", "Playlist", "Message"]}>
+        <GlassTable
+          tableLayout="fixed"
+          headers={[
+            { label: "Severity", className: "w-[74px]" },
+            { label: "Code", className: "hidden sm:table-cell sm:w-[160px]" },
+            { label: "Playlist", className: "hidden sm:table-cell sm:w-[190px]" },
+            { label: "Message" },
+          ]}
+        >
           {(warnings ?? [])
             .filter((w) => {
               // If exclusions are configured and *all* non-catalog tracks for a warning are excluded,
@@ -544,6 +575,7 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
             <WarningRow
               key={`${w.code}-${w.playlist_key ?? "global"}-${i}`}
               warning={w}
+              playlistMeta={w.playlist_key ? playlistMetaByKey.get(w.playlist_key) ?? null : null}
               nonCatalogTracks={w.code === "non_catalog_tracks_present" && w.playlist_key
                 ? nonCatalogTracksMap.get(w.playlist_key)
                 : undefined}
@@ -661,7 +693,7 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
 
       <div className="space-y-2">
         <SectionHeader title="Ingestion Runs (30d)" />
-        <GlassTable headers={["Run Date", "Status", "Logs"]}>
+        <GlassTable headers={["Run Date", "Status", "Logs"]} maxBodyHeightClassName="max-h-[260px]">
           {(runs ?? []).map((r) => (
             <TableRow key={r.run_date}>
               <TableCell mono>{formatDateISO(dataDateFromRunDate(r.run_date))}</TableCell>
@@ -705,7 +737,7 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
               {selectedDataDate ? <span className="text-xs font-normal opacity-60">({selectedDataDate})</span> : null}
             </>
           }
-          actions={<span className="text-xs opacity-50">Signed links (60s)</span>}
+          actions={undefined}
         />
         <GlassTable
           headers={[
@@ -718,7 +750,40 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
           {(exportsForLatest ?? []).map((r) => (
             <TableRow key={r.playlist_key}>
               <TableCell mono className="text-xs">
-                {r.playlist_key}
+                {(() => {
+                  const key = String(r.playlist_key ?? "").trim();
+                  const meta = playlistMetaByKey.get(key) ?? null;
+                  const name = meta?.name ?? key;
+                  const imgUrl = meta?.imageUrl ?? null;
+
+                  return (
+                    <div className="flex items-center gap-2 min-w-0">
+                      {imgUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={imgUrl}
+                          alt=""
+                          className="h-8 w-8 rounded object-cover sb-ring flex-shrink-0"
+                        />
+                      ) : (
+                        <div className="h-8 w-8 rounded sb-ring bg-white/60 flex-shrink-0" />
+                      )}
+                      <div className="min-w-0">
+                        <Link
+                          href={`/playlists/${key}`}
+                          className="font-medium hover:underline block truncate"
+                          style={{ color: "var(--sb-text)" }}
+                          title={name}
+                        >
+                          {name}
+                        </Link>
+                        <div className="text-[10px] opacity-60 truncate" title={key}>
+                          {key}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </TableCell>
               <TableCell numeric>{r.rows_count ?? null}</TableCell>
               <TableCell numeric mono className="text-xs">

@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, Music } from "lucide-react";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
+import { TableCell, TableRow } from "@/components/ui/GlassTable";
 
 type WarningRowProps = {
   warning: {
@@ -13,6 +14,7 @@ type WarningRowProps = {
     message: string;
     details_json?: any;
   };
+  playlistMeta?: { name: string; imageUrl: string | null } | null;
   nonCatalogTracks?: Array<{
     isrc: string;
     name: string | null;
@@ -49,7 +51,24 @@ type WarningRowProps = {
   };
 };
 
-export function WarningRow({ warning, nonCatalogTracks, trackCountSwingTracks, missingEnrichmentTracks, enrichmentWarning }: WarningRowProps) {
+function formatCodeLabel(code: string) {
+  const raw = (code ?? "").trim();
+  if (!raw) return "—";
+  return raw
+    .split("_")
+    .filter(Boolean)
+    .map((w) => w.slice(0, 1).toUpperCase() + w.slice(1).toLowerCase())
+    .join(" ");
+}
+
+export function WarningRow({
+  warning,
+  playlistMeta,
+  nonCatalogTracks,
+  trackCountSwingTracks,
+  missingEnrichmentTracks,
+  enrichmentWarning,
+}: WarningRowProps) {
   const [expanded, setExpanded] = useState(false);
   const [thumbByIsrc, setThumbByIsrc] = useState<Record<string, string | null>>({});
   const hasTracks = nonCatalogTracks && nonCatalogTracks.length > 0;
@@ -125,17 +144,14 @@ export function WarningRow({ warning, nonCatalogTracks, trackCountSwingTracks, m
 
   return (
     <>
-      <tr
-        className={[
-          "group transition-colors hover:bg-black/[0.02] dark:hover:bg-white/[0.02]",
-          canExpand ? "cursor-pointer" : "",
-        ].filter(Boolean).join(" ")}
+      <TableRow
+        className={[canExpand ? "cursor-pointer" : ""].filter(Boolean).join(" ")}
         onClick={canExpand ? () => setExpanded(!expanded) : undefined}
       >
-        <td className="px-6 py-4">
+        <TableCell>
           <span
             className={[
-              "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
+              "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium",
               warning.severity === "critical"
                 ? "bg-red-500/20 text-red-700 dark:bg-red-500/30 dark:text-red-300"
                 : warning.severity === "warn"
@@ -145,23 +161,57 @@ export function WarningRow({ warning, nonCatalogTracks, trackCountSwingTracks, m
           >
             {warning.severity}
           </span>
-        </td>
-        <td className="px-6 py-4 font-mono text-xs">{warning.code}</td>
-        <td className="px-6 py-4">
+        </TableCell>
+
+        <TableCell className="hidden sm:table-cell text-xs font-medium">
+          <div className="truncate" title={warning.code}>
+            {formatCodeLabel(warning.code)}
+          </div>
+        </TableCell>
+
+        <TableCell className="hidden sm:table-cell">
           {warning.playlist_key ? (
             <Link
               href={`/playlists/${warning.playlist_key}`}
-              className="font-mono text-xs underline transition-colors hover:text-lime-600 dark:hover:text-lime-400"
+              className="flex items-center gap-2 min-w-0 transition-colors hover:text-lime-600 dark:hover:text-lime-400"
               onClick={(e) => e.stopPropagation()}
+              title={`${playlistMeta?.name ?? warning.playlist_key} (${warning.playlist_key})`}
             >
-              {warning.playlist_key}
+              {warning.playlist_key === "all_catalog" ? (
+                <span
+                  className="h-5 w-5 rounded-full sb-ring flex items-center justify-center flex-shrink-0"
+                  style={{ background: "var(--sb-accent)", color: "#000" }}
+                  aria-hidden="true"
+                >
+                  <Music className="h-3.5 w-3.5" />
+                </span>
+              ) : playlistMeta?.imageUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={playlistMeta.imageUrl}
+                  alt={playlistMeta.name}
+                  className="h-5 w-5 rounded-full object-cover sb-ring flex-shrink-0"
+                />
+              ) : (
+                <div
+                  className="h-5 w-5 rounded-full sb-ring flex items-center justify-center text-[10px] font-bold flex-shrink-0"
+                  style={{ backgroundColor: "var(--sb-surface)", color: "var(--sb-muted)" }}
+                  aria-hidden="true"
+                >
+                  {(playlistMeta?.name ?? warning.playlist_key).trim().slice(0, 1).toUpperCase()}
+                </div>
+              )}
+              <span className="min-w-0 flex-1 truncate text-xs">
+                {playlistMeta?.name ?? warning.playlist_key}
+              </span>
             </Link>
           ) : (
-            <span className="font-mono text-xs opacity-30">—</span>
+            <span className="text-xs opacity-30">—</span>
           )}
-        </td>
-        <td className="px-6 py-4">
-          <div className="flex items-center gap-2">
+        </TableCell>
+
+        <TableCell>
+          <div className="flex items-center gap-2 min-w-0">
             {canExpand && (
               <button
                 className="flex-shrink-0 opacity-50 hover:opacity-100 transition-opacity"
@@ -177,13 +227,59 @@ export function WarningRow({ warning, nonCatalogTracks, trackCountSwingTracks, m
                 )}
               </button>
             )}
-            <span>{warning.message}</span>
+            <div className="min-w-0 flex-1">
+              <div className="truncate">{warning.message}</div>
+
+              {/* Mobile meta: show code + playlist inline so Message gets width */}
+              <div className="mt-1 flex items-center gap-2 text-[11px] opacity-70 sm:hidden min-w-0">
+                <span className="truncate">{formatCodeLabel(warning.code)}</span>
+                {warning.playlist_key ? (
+                  <>
+                    <span className="opacity-40">·</span>
+                    <Link
+                      href={`/playlists/${warning.playlist_key}`}
+                      className="flex items-center gap-1.5 min-w-0 hover:opacity-90"
+                      onClick={(e) => e.stopPropagation()}
+                      title={`${playlistMeta?.name ?? warning.playlist_key} (${warning.playlist_key})`}
+                    >
+                      {warning.playlist_key === "all_catalog" ? (
+                        <span
+                          className="h-4 w-4 rounded-full sb-ring flex items-center justify-center flex-shrink-0"
+                          style={{ background: "var(--sb-accent)", color: "#000" }}
+                          aria-hidden="true"
+                        >
+                          <Music className="h-3 w-3" />
+                        </span>
+                      ) : playlistMeta?.imageUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={playlistMeta.imageUrl}
+                          alt={playlistMeta.name}
+                          className="h-4 w-4 rounded-full object-cover sb-ring flex-shrink-0"
+                        />
+                      ) : (
+                        <div
+                          className="h-4 w-4 rounded-full sb-ring flex items-center justify-center text-[9px] font-bold flex-shrink-0"
+                          style={{ backgroundColor: "var(--sb-surface)", color: "var(--sb-muted)" }}
+                          aria-hidden="true"
+                        >
+                          {(playlistMeta?.name ?? warning.playlist_key).trim().slice(0, 1).toUpperCase()}
+                        </div>
+                      )}
+                      <span className="truncate">
+                        {playlistMeta?.name ?? warning.playlist_key}
+                      </span>
+                    </Link>
+                  </>
+                ) : null}
+              </div>
+            </div>
           </div>
-        </td>
-      </tr>
+        </TableCell>
+      </TableRow>
       {expanded && (
-        <tr className="bg-black/[0.01] dark:bg-white/[0.01]">
-          <td colSpan={4} className="px-6 py-4">
+        <TableRow className="bg-black/[0.01] dark:bg-white/[0.01]">
+          <TableCell colSpan={4} className="py-4">
             {warning.code === "non_catalog_tracks_present" && hasTracks && (
               <div className="space-y-2">
                 <div className="text-xs font-medium opacity-70 mb-2">
@@ -399,8 +495,8 @@ export function WarningRow({ warning, nonCatalogTracks, trackCountSwingTracks, m
                 )}
               </div>
             )}
-          </td>
-        </tr>
+          </TableCell>
+        </TableRow>
       )}
     </>
   );

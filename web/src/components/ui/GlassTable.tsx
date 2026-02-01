@@ -18,6 +18,7 @@ interface GlassTableProps {
   maxBodyHeightClassName?: string;
   emptyMessage?: string;
   emptyIcon?: ReactNode;
+  tableLayout?: "auto" | "fixed";
 }
 
 function headerAlignClass(align?: "left" | "right" | "center") {
@@ -32,6 +33,7 @@ export function GlassTable({
   className,
   bodyClassName,
   maxBodyHeightClassName,
+  tableLayout = "auto",
 }: GlassTableProps) {
   return (
     <div className={["sb-card relative overflow-hidden", className].filter(Boolean).join(" ")}>
@@ -42,7 +44,7 @@ export function GlassTable({
           bodyClassName ?? "",
         ].filter(Boolean).join(" ")}
       >
-        <table className="min-w-full text-xs">
+        <table className={["min-w-full text-xs", tableLayout === "fixed" ? "table-fixed" : "table-auto"].join(" ")}>
           <thead
             className="sticky top-0 z-10 text-left text-[11px] uppercase tracking-wider backdrop-blur-xl"
             style={{ 

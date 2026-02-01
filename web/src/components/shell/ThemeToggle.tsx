@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Moon, Sun } from "lucide-react";
 import { IconButton } from "@/components/ui/Button";
 
 type Theme = "light" | "dark";
@@ -32,18 +33,18 @@ export function ThemeToggle() {
   }, [theme]);
 
   const isDark = theme === "dark";
+  const nextTheme: Theme = isDark ? "light" : "dark";
 
   return (
     <IconButton
       type="button"
       onClick={() => {
-        const next: Theme = isDark ? "light" : "dark";
-        setTheme(next);
+        setTheme(nextTheme);
       }}
-      aria-label="Toggle light and dark theme"
+      aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"}
     >
-      <span className="text-xs leading-none" suppressHydrationWarning>
-        {isDark ? "☾" : "☼"}
+      <span className="inline-flex" suppressHydrationWarning>
+        {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
       </span>
     </IconButton>
   );
