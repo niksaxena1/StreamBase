@@ -251,7 +251,6 @@ export function DailyStreamsWithMAChart({
   const lastPointerTypeRef = useRef<string | null>(null);
   const longPressTimerRef = useRef<number | null>(null);
   const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
-  const [isTouchUi, setIsTouchUi] = useState(false);
   
   useEffect(() => {
     const checkTheme = () => {
@@ -277,26 +276,6 @@ export function DailyStreamsWithMAChart({
       if (mediaQuery) {
         mediaQuery.removeEventListener("change", checkTheme);
       }
-    };
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const mqls = [
-      window.matchMedia?.("(pointer: coarse)"),
-      window.matchMedia?.("(hover: none)"),
-    ].filter(Boolean) as MediaQueryList[];
-
-    const recompute = () => {
-      const coarse = mqls.some((m) => m.matches);
-      const touchPoints = typeof navigator !== "undefined" && (navigator.maxTouchPoints ?? 0) > 0;
-      setIsTouchUi(coarse || touchPoints);
-    };
-
-    recompute();
-    for (const m of mqls) m.addEventListener?.("change", recompute);
-    return () => {
-      for (const m of mqls) m.removeEventListener?.("change", recompute);
     };
   }, []);
 
@@ -394,18 +373,24 @@ export function DailyStreamsWithMAChart({
       }}
       onPointerDown={(e) => {
         lastPointerTypeRef.current = (e as any).pointerType ?? null;
-        if (!isTouchUi) return;
-        if ((e as any).pointerType !== "touch") return;
+        const pt = (e as any).pointerType ?? null;
+        if (pt !== "touch" && pt !== "pen") return;
 
         clearLongPressTimer();
         longPressStartRef.current = { x: e.clientX, y: e.clientY };
         longPressTimerRef.current = window.setTimeout(() => {
-          openCopyDialogIfPossible();
+          const v = lastTooltipValuesRef.current;
+          if (!v) return;
+          if (v.ma7) {
+            openCopyDialogIfPossible();
+            return;
+          }
+          void handleCopyValue(v.main, "Copied to clipboard!");
         }, 550);
       }}
       onPointerMove={(e) => {
-        if (!isTouchUi) return;
-        if ((e as any).pointerType !== "touch") return;
+        const pt = (e as any).pointerType ?? null;
+        if (pt !== "touch" && pt !== "pen") return;
         const start = longPressStartRef.current;
         if (!start) return;
         const dx = e.clientX - start.x;
@@ -421,8 +406,8 @@ export function DailyStreamsWithMAChart({
         clearLongPressTimer();
       }}
       onClick={async (e) => {
-        // Mobile/touch: taps do nothing (copy is via long-press dialog).
-        if (isTouchUi || lastPointerTypeRef.current === "touch") return;
+        // Touch/pen: taps do nothing (copy is via long-press dialog).
+        if (lastPointerTypeRef.current === "touch" || lastPointerTypeRef.current === "pen") return;
         const lastTooltipValues = lastTooltipValuesRef.current;
         if (!lastTooltipValues) return;
         const wantMA = (e.ctrlKey || e.metaKey) && !!lastTooltipValues.ma7;
