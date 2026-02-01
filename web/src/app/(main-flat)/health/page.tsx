@@ -268,7 +268,15 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
         continue;
       }
 
-      const added = (rows ?? [])
+      const changeRows = (rows ?? []) as unknown[];
+
+      const added: Array<{
+        isrc: string;
+        name: string | null;
+        artist_names?: string[] | null;
+        artist_ids?: string[] | null;
+        album_image_url?: string | null;
+      }> = changeRows
         .filter((r) => String(((r ?? {}) as Record<string, unknown>).change_type ?? "") === "added")
         .map((r) => {
           const row = (r ?? {}) as Record<string, unknown>;
@@ -280,7 +288,14 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
             album_image_url: (row.album_image_url ?? null) as string | null,
           };
         });
-      const removed = (rows ?? [])
+
+      const removed: Array<{
+        isrc: string;
+        name: string | null;
+        artist_names?: string[] | null;
+        artist_ids?: string[] | null;
+        album_image_url?: string | null;
+      }> = changeRows
         .filter((r) => String(((r ?? {}) as Record<string, unknown>).change_type ?? "") === "removed")
         .map((r) => {
           const row = (r ?? {}) as Record<string, unknown>;
