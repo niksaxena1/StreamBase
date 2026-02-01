@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import { Combobox, type ComboboxOption } from "@/components/ui/Combobox";
 import { Alert } from "@/components/ui/Alert";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
 
 type Track = {
   isrc: string;
@@ -129,11 +131,11 @@ export function ManualStreamOverrideForm({
                 From Health warnings on the latest run date. Click a track to prefill the override form.
               </div>
             </div>
-            <input
+            <Input
               value={suggestQ}
               onChange={(e) => setSuggestQ(e.target.value)}
               placeholder="Filter by ISRC, name, artist…"
-              className="sb-ring w-full rounded-xl bg-white/70 px-3 py-2 text-sm outline-none placeholder:text-black/40 dark:bg-white/5 dark:placeholder:text-white/40 sm:w-80"
+              className="sm:w-80"
             />
           </div>
 
@@ -197,11 +199,11 @@ export function ManualStreamOverrideForm({
       <form onSubmit={handleSubmit} className="grid gap-2 sm:grid-cols-12">
         <div className="sm:col-span-3">
           <label className="block text-[11px] font-medium opacity-70">Run date (UTC)</label>
-          <input
+          <Input
             type="date"
             value={runDate}
             onChange={(e) => setRunDate(e.target.value)}
-            className="mt-1 sb-ring w-full rounded-xl bg-white/70 px-3 py-2 text-sm outline-none dark:bg-white/5"
+            className="mt-1"
           />
           <div className="mt-1 text-[11px] opacity-60">
             This is the ingestion snapshot date (not “data date”).
@@ -224,12 +226,12 @@ export function ManualStreamOverrideForm({
 
         <div className="sm:col-span-2">
           <label className="block text-[11px] font-medium opacity-70">Cumulative streams</label>
-          <input
+          <Input
             value={streams}
             onChange={(e) => setStreams(e.target.value)}
             inputMode="numeric"
             placeholder="e.g. 123456"
-            className="mt-1 sb-ring w-full rounded-xl bg-white/70 px-3 py-2 text-sm outline-none placeholder:text-black/40 dark:bg-white/5 dark:placeholder:text-white/40"
+            className="mt-1"
           />
           <div className="mt-1 text-[11px] opacity-60">Whole number.</div>
         </div>
@@ -251,22 +253,24 @@ export function ManualStreamOverrideForm({
 
         <div className="sm:col-span-12">
           <label className="block text-[11px] font-medium opacity-70">Note (required)</label>
-          <input
+          <Input
             value={note}
             onChange={(e) => setNote(e.target.value)}
             placeholder="Why is this being overridden? (source issue, manual verification, etc.)"
-            className="mt-1 sb-ring w-full rounded-xl bg-white/70 px-3 py-2 text-sm outline-none placeholder:text-black/40 dark:bg-white/5 dark:placeholder:text-white/40"
+            className="mt-1"
           />
         </div>
 
         <div className="sm:col-span-12 flex items-end justify-end">
-          <button
+          <Button
             type="submit"
             disabled={isSubmitting}
-            className="sb-ring rounded-xl bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-black"
+            variant="primary"
+            size="md"
+            className="rounded-xl"
           >
             {isSubmitting ? "Saving…" : "Save override"}
-          </button>
+          </Button>
         </div>
       </form>
 

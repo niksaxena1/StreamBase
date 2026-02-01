@@ -18,6 +18,9 @@ import { dataDateFromRunDate } from "@/lib/sotDates";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { PageHeader } from "@/components/shell/PageHeader";
 import { hrefWithPatchedSearchParams } from "@/lib/searchParams";
+import { FilterBar } from "@/components/ui/FilterBar";
+import { ChipGroup } from "@/components/ui/Chip";
+import { IconButton } from "@/components/ui/Button";
 
 type ChartDataPoint = {
   date: string;
@@ -115,73 +118,74 @@ export function CatalogPageClient(props: {
         actions={
           <>
             <CatalogMetricSelector metric={metric} setMetric={setMetric} />
-            <Link
-              href="/catalog/config"
-              className="sb-ring grid h-8 w-8 place-items-center rounded-full bg-white/70 text-xs font-medium transition hover:bg-white dark:bg-white/10 dark:hover:bg-white/15"
+            <IconButton
+              variant="secondary"
               aria-label="Catalog config"
               title="Catalog config"
+              className="grid place-items-center"
+              onClick={() => {
+                router.push("/catalog/config");
+              }}
             >
               <List className="h-4 w-4" style={{ color: "var(--sb-text)" }} />
-            </Link>
+            </IconButton>
           </>
         }
       />
 
-      <div className="sticky top-0 z-20 rounded-xl border border-lime-500/20 bg-lime-500/10 p-3 shadow-sm backdrop-blur-sm dark:bg-lime-400/10 dark:border-lime-400/20">
-        <div className="flex items-start gap-2">
-          <button
-            type="button"
-            onClick={() => setIsArtistExpanded(!isArtistExpanded)}
-            className="sb-ring mt-0.5 inline-flex items-center justify-center rounded p-1 transition-colors hover:bg-white/10 dark:hover:bg-white/5"
-            aria-label={isArtistExpanded ? "Collapse artist info" : "Expand artist info"}
-            style={{ color: "var(--sb-muted)" }}
-          >
-            <ChevronRight
-              className={`h-3.5 w-3.5 transition-transform duration-200 ${
-                isArtistExpanded ? "rotate-90" : ""
-              }`}
-            />
-          </button>
-          <div className="flex-1 min-w-0">
-            <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                <div className="flex items-center gap-2">
-                  <div className="text-xs font-medium">Artist</div>
-                  <div className="sb-ring rounded-xl bg-black/10 px-2.5 py-1.5 dark:bg-white/10 min-w-[280px] w-full max-w-[400px]">
-                    <Combobox
-                      ariaLabel="Select artist"
-                      value={props.artistId}
-                      options={props.artists.map((a) => ({ value: a.id, label: a.name, imageUrl: a.imageUrl }))}
-                      placeholder="Type an artist…"
-                      onChange={(id) => {
-                        router.push(hrefWithPatchedSearchParams(sp, { artist_id: id, isrc: null }));
-                      }}
-                    />
+      <FilterBar
+        left={
+          <div className="flex items-start gap-2">
+            <IconButton
+              aria-label={isArtistExpanded ? "Collapse artist info" : "Expand artist info"}
+              title={isArtistExpanded ? "Collapse artist info" : "Expand artist info"}
+              variant="ghost"
+              className="mt-0.5 rounded"
+              onClick={() => setIsArtistExpanded(!isArtistExpanded)}
+            >
+              <ChevronRight
+                className={`h-3.5 w-3.5 transition-transform duration-200 ${isArtistExpanded ? "rotate-90" : ""}`}
+              />
+            </IconButton>
+            <div className="flex-1 min-w-0">
+              <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <div className="flex items-center gap-2">
+                    <div className="text-xs font-medium">Artist</div>
+                    <div className="sb-ring rounded-xl bg-black/10 px-2.5 py-1.5 dark:bg-white/10 min-w-[280px] w-full max-w-[400px]">
+                      <Combobox
+                        ariaLabel="Select artist"
+                        value={props.artistId}
+                        options={props.artists.map((a) => ({ value: a.id, label: a.name, imageUrl: a.imageUrl }))}
+                        placeholder="Type an artist…"
+                        onChange={(id) => {
+                          router.push(hrefWithPatchedSearchParams(sp, { artist_id: id, isrc: null }));
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <div className="text-xs font-medium">Track</div>
+                    <div className="sb-ring rounded-xl bg-black/10 px-2.5 py-1.5 dark:bg-white/10 min-w-[280px] w-full max-w-[400px]">
+                      <Combobox
+                        ariaLabel="Select track"
+                        value={props.isrc ?? null}
+                        options={[
+                          { value: "", label: "(none)" },
+                          ...props.tracks.map((t) => ({ value: t.isrc, label: t.name, imageUrl: t.albumImageUrl })),
+                        ]}
+                        placeholder="Type a track…"
+                        onChange={(isrc) => {
+                          router.push(hrefWithPatchedSearchParams(sp, { isrc: isrc || null }));
+                        }}
+                        imageShape="square"
+                      />
+                    </div>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <div className="text-xs font-medium">Track</div>
-                  <div className="sb-ring rounded-xl bg-black/10 px-2.5 py-1.5 dark:bg-white/10 min-w-[280px] w-full max-w-[400px]">
-                    <Combobox
-                      ariaLabel="Select track"
-                      value={props.isrc ?? null}
-                      options={[
-                        { value: "", label: "(none)" },
-                        ...props.tracks.map((t) => ({ value: t.isrc, label: t.name, imageUrl: t.albumImageUrl })),
-                      ]}
-                      placeholder="Type a track…"
-                      onChange={(isrc) => {
-                        router.push(hrefWithPatchedSearchParams(sp, { isrc: isrc || null }));
-                      }}
-                      imageShape="square"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <div className="sb-ring flex items-center gap-0.5 rounded-full bg-black/10 p-0.5 dark:bg-white/10">
+                <ChipGroup>
                   {[30, 90, 365].map((d) => (
                     <Link
                       key={d}
@@ -190,23 +194,18 @@ export function CatalogPageClient(props: {
                         "rounded-full px-2.5 py-1.5 text-[11px] font-medium transition",
                         props.rangeDays === d
                           ? "bg-black text-white shadow-sm dark:bg-white dark:text-black"
-                          : "hover:bg-black/10 dark:hover:bg-white/10",
+                          : "text-black/70 hover:bg-black/10 dark:text-white/70 dark:hover:bg-white/10",
                       ].join(" ")}
-                      style={
-                        props.rangeDays === d
-                          ? undefined
-                          : { opacity: 0.7 }
-                      }
                     >
                       {d}d
                     </Link>
                   ))}
-                </div>
+                </ChipGroup>
               </div>
             </div>
           </div>
-        </div>
-      </div>
+        }
+      />
 
       <div
         className={`overflow-hidden transition-all duration-300 ease-in-out ${
@@ -285,7 +284,12 @@ export function CatalogPageClient(props: {
                 </div>
               </div>
               <GlassTable
-                headers={["", "Track", "ISRC", "Total"]}
+                headers={[
+                  "",
+                  "Track",
+                  "ISRC",
+                  { label: "Total", align: "right" },
+                ]}
                 maxBodyHeightClassName="max-h-56"
                 bodyClassName="overflow-x-hidden"
               >
@@ -314,7 +318,7 @@ export function CatalogPageClient(props: {
                     <TableCell mono className="text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>
                       {t.isrc}
                     </TableCell>
-                    <TableCell>{t.total === null ? "—" : formatInt(t.total)}</TableCell>
+                    <TableCell numeric>{t.total === null ? null : formatInt(t.total)}</TableCell>
                   </TableRow>
                 ))}
                 {!props.topByCumulative.length && (
@@ -343,7 +347,12 @@ export function CatalogPageClient(props: {
                 </div>
               </div>
               <GlassTable
-                headers={["", "Track", "ISRC", "Daily"]}
+                headers={[
+                  "",
+                  "Track",
+                  "ISRC",
+                  { label: "Daily", align: "right" },
+                ]}
                 maxBodyHeightClassName="max-h-56"
                 bodyClassName="overflow-x-hidden"
               >
@@ -372,8 +381,8 @@ export function CatalogPageClient(props: {
                     <TableCell mono className="text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>
                       {t.isrc}
                     </TableCell>
-                    <TableCell className="font-medium text-lime-700 dark:text-lime-400">
-                      {t.daily === null ? "—" : `+${formatInt(t.daily)}`}
+                    <TableCell numeric className="font-medium text-lime-700 dark:text-lime-400">
+                      {t.daily === null ? null : `+${formatInt(t.daily)}`}
                     </TableCell>
                   </TableRow>
                 ))}

@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/shell/PageHeader";
 import { DateRangePicker } from "@/components/ui/DateRangePicker";
 import { formatDateISO } from "@/lib/format";
 import { hrefWithPatchedSearchParams } from "@/lib/searchParams";
+import { Chip, ChipGroup } from "@/components/ui/Chip";
 
 const RANGE_CHOICES = [30, 90, 365] as const;
 const METRICS = ["streams", "revenue", "tracks"] as const;
@@ -45,6 +46,15 @@ export function CollectorsPageHeader({
 
   const sp = searchParams ? Object.fromEntries(searchParams) : {};
 
+  function chipLinkClass(active: boolean) {
+    return [
+      "rounded-full px-2.5 py-1.5 text-[11px] font-medium transition",
+      active
+        ? "bg-black text-white shadow-sm dark:bg-white dark:text-black"
+        : "text-black/70 hover:bg-white/70 dark:text-white/70 dark:hover:bg-white/20",
+    ].join(" ");
+  }
+
   return (
     <PageHeader
       title="Collectors"
@@ -59,27 +69,16 @@ export function CollectorsPageHeader({
       actions={
         <>
           {/* Metric selector */}
-          <div className="sb-ring flex items-center gap-0.5 rounded-full bg-white/70 p-0.5 dark:bg-white/10">
+          <ChipGroup>
             {METRICS.map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setMetric(m)}
-                className={[
-                  "rounded-full px-2.5 py-1.5 text-[11px] font-medium transition",
-                  metric === m
-                    ? "bg-black text-white shadow-sm dark:bg-white dark:text-black"
-                    : "hover:bg-white/70 dark:hover:bg-white/10",
-                ].join(" ")}
-                style={metric === m ? undefined : { color: "var(--sb-muted)" }}
-              >
+              <Chip key={m} selected={metric === m} onClick={() => setMetric(m)}>
                 {m === "revenue" ? "Revenue" : m === "streams" ? "Streams" : "Tracks"}
-              </button>
+              </Chip>
             ))}
-          </div>
+          </ChipGroup>
 
           {/* Range selector */}
-          <div className="sb-ring flex items-center gap-0.5 rounded-full bg-white/70 p-0.5 text-[11px] dark:bg-white/10">
+          <ChipGroup className="text-[11px]">
             {RANGE_CHOICES.map((d) => (
               <Link
                 key={d}
@@ -89,18 +88,12 @@ export function CollectorsPageHeader({
                   start: null,
                   end: null,
                 })}
-                className={[
-                  "rounded-full px-2.5 py-1.5 font-medium transition",
-                  rangeDays === d && !sp.start && !sp.end
-                    ? "bg-black text-white shadow-sm dark:bg-white dark:text-black"
-                    : "hover:bg-white/70 dark:hover:bg-white/10",
-                ].join(" ")}
-                style={rangeDays === d && !sp.start && !sp.end ? undefined : { color: "var(--sb-muted)" }}
+                className={chipLinkClass(rangeDays === d && !sp.start && !sp.end)}
               >
                 {d}d
               </Link>
             ))}
-          </div>
+          </ChipGroup>
 
           {/* Date picker */}
           <DateRangePicker latestDate={latestDataDate ?? null} currentRangeDays={rangeDays} />

@@ -3,6 +3,9 @@
 import { useState, useMemo } from "react";
 import { Combobox, type ComboboxOption } from "@/components/ui/Combobox";
 import { Alert } from "@/components/ui/Alert";
+import { Button, IconButton } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
+import { Chip } from "@/components/ui/Chip";
 
 type Track = {
   isrc: string;
@@ -129,14 +132,16 @@ export function TrackExclusionForm({
               />
             </div>
             {selectedPlaylistKey && (
-              <button
+              <IconButton
                 type="button"
                 onClick={() => setSelectedPlaylistKey("")}
-                className="sb-ring rounded-xl bg-white/70 px-2 py-2 text-xs font-medium text-black/60 transition hover:bg-white dark:bg-white/5 dark:text-white/60 dark:hover:bg-white/10"
                 title="Clear playlist selection"
+                aria-label="Clear playlist selection"
+                variant="secondary"
+                className="rounded-xl"
               >
-                ✕
-              </button>
+                <span className="text-xs leading-none">✕</span>
+              </IconButton>
             )}
           </div>
           <div className="mt-1 text-[11px] opacity-60">
@@ -169,17 +174,15 @@ export function TrackExclusionForm({
               {selectedTrackIsrcs.map((isrc) => {
                 const meta = trackLabelByIsrc.get(isrc);
                 return (
-                  <button
+                  <Chip
                     key={isrc}
-                    type="button"
                     onClick={() => setSelectedTrackIsrcs((prev) => prev.filter((x) => x !== isrc))}
-                    className="sb-ring inline-flex items-center gap-2 rounded-full bg-white/70 px-2 py-1 text-[11px] transition hover:bg-white dark:bg-white/5 dark:hover:bg-white/10"
                     title="Remove"
                   >
                     <span className="font-mono opacity-70">{isrc}</span>
                     <span className="max-w-[260px] truncate opacity-80">{meta?.label ?? "selected"}</span>
                     <span className="opacity-50">✕</span>
-                  </button>
+                  </Chip>
                 );
               })}
               <button
@@ -196,22 +199,24 @@ export function TrackExclusionForm({
 
         <div className="sm:col-span-4">
           <label className="block text-[11px] font-medium opacity-70">Note (optional)</label>
-          <input
+          <Input
             value={note}
             onChange={(e) => setNote(e.target.value)}
             placeholder={notePlaceholder ?? "Optional note"}
-            className="mt-1 sb-ring w-full rounded-xl bg-white/70 px-3 py-2 text-sm outline-none placeholder:text-black/40 dark:bg-white/5 dark:placeholder:text-white/40"
+            className="mt-1"
           />
         </div>
 
         <div className="sm:col-span-1 flex items-end">
-          <button
+          <Button
             type="submit"
             disabled={isSubmitting}
-            className="sb-ring w-full rounded-xl bg-black px-3 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-black"
+            variant="primary"
+            size="md"
+            className="w-full rounded-xl"
           >
             {isSubmitting ? "Adding…" : (submitLabel ?? (allowMulti ? "Add all" : "Add"))}
-          </button>
+          </Button>
         </div>
       </form>
 

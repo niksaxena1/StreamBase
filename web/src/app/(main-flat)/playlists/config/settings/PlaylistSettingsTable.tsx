@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { GripVertical, Music } from "lucide-react";
 import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/GlassTable";
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 
 type Playlist = {
   playlist_key: string;
@@ -263,22 +265,20 @@ export function PlaylistSettingsTable({
             </TableCell>
             <TableCell>
               <div className="flex items-center gap-2">
-                <select
+                <Select
                   value={draftPlaylistType}
                   onChange={(e) => {
                     const next = e.target.value;
                     setPlaylistTypeDraft((s) => ({ ...s, [p.playlist_key]: next }));
                     savePlaylistType(p.playlist_key, next);
                   }}
-                  className="sb-ring w-full rounded-xl border bg-white/70 px-3 py-2 text-sm outline-none transition dark:bg-white/5 dark:text-white dark:border-white/10 dark:focus:border-white/20 dark:focus:ring-white/5"
-                  style={{ borderColor: "var(--sb-border)", colorScheme: "light dark" }}
                 >
                   <option value="">—</option>
                   <option value="Catalog">Catalog</option>
                   <option value="Label">Label</option>
                   <option value="Entity">Entity</option>
                   <option value="Distro">Distro</option>
-                </select>
+                </Select>
                 {renderStatus(`${p.playlist_key}:type`)}
               </div>
             </TableCell>
@@ -289,15 +289,13 @@ export function PlaylistSettingsTable({
                 </span>
               ) : (
                 <div className="flex items-center gap-2">
-                  <select
+                  <Select
                     value={draftCollector}
                     onChange={(e) => {
                       const next = e.target.value;
                       setCollectorDraft((s) => ({ ...s, [p.playlist_key]: next }));
                       saveCollector(p.playlist_key, next);
                     }}
-                    className="sb-ring w-full rounded-xl border bg-white/70 px-3 py-2 text-sm outline-none transition dark:bg-white/5 dark:text-white dark:border-white/10 dark:focus:border-white/20 dark:focus:ring-white/5"
-                    style={{ borderColor: "var(--sb-border)", colorScheme: "light dark" }}
                   >
                     <option value="">—</option>
                     <option value="A">A</option>
@@ -306,7 +304,7 @@ export function PlaylistSettingsTable({
                     <option value="PL">PL</option>
                     <option value="TG">TG</option>
                     <option value="NL">NL</option>
-                  </select>
+                  </Select>
                   {renderStatus(`${p.playlist_key}:collector`)}
                 </div>
               )}
@@ -318,7 +316,7 @@ export function PlaylistSettingsTable({
                 </span>
               ) : (
                 <div className="flex items-center gap-2">
-                  <input
+                  <Input
                     value={draftSpotify}
                     onChange={(e) => {
                       const next = e.target.value;
@@ -343,7 +341,6 @@ export function PlaylistSettingsTable({
                       }
                     }}
                     placeholder="https://open.spotify.com/playlist/…"
-                    className="sb-ring w-full rounded-xl bg-white/70 px-3 py-2 text-sm outline-none placeholder:text-black/40 dark:bg-white/5 dark:placeholder:text-white/40"
                   />
                   {renderStatus(`${p.playlist_key}:spotify`)}
                 </div>

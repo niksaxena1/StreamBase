@@ -1,5 +1,7 @@
 "use client";
 
+import { Chip, ChipGroup } from "@/components/ui/Chip";
+
 const METRICS = ["streams", "revenue", "tracks"] as const;
 export type Metric = (typeof METRICS)[number];
 
@@ -11,24 +13,13 @@ export function MetricSelector({
   setMetric: (metric: Metric) => void;
 }) {
   return (
-    <div className="sb-ring flex items-center gap-0.5 rounded-full bg-white/70 p-0.5 dark:bg-white/10">
+    <ChipGroup>
       {METRICS.map((m) => (
-        <button
-          key={m}
-          type="button"
-          onClick={() => setMetric(m)}
-          className={[
-            "rounded-full px-2.5 py-1.5 text-[11px] font-medium transition",
-            metric === m
-              ? "bg-black text-white shadow-sm dark:bg-white dark:text-black"
-              : "hover:bg-white/70 dark:hover:bg-white/10",
-          ].join(" ")}
-          style={metric === m ? undefined : { color: "var(--sb-muted)" }}
-        >
+        <Chip key={m} selected={metric === m} onClick={() => setMetric(m)}>
           {m === "revenue" ? "Revenue" : m === "streams" ? "Streams" : "Tracks"}
-        </button>
+        </Chip>
       ))}
-    </div>
+    </ChipGroup>
   );
 }
 
