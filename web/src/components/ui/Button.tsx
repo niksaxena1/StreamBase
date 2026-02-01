@@ -1,4 +1,11 @@
-import { ButtonHTMLAttributes, forwardRef, ReactNode } from "react";
+import {
+  ButtonHTMLAttributes,
+  cloneElement,
+  forwardRef,
+  isValidElement,
+  ReactElement,
+  ReactNode,
+} from "react";
 
 type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 type ButtonSize = "sm" | "md";
@@ -28,23 +35,42 @@ export const Button = forwardRef<
     size?: ButtonSize;
     leftIcon?: ReactNode;
     rightIcon?: ReactNode;
+    asChild?: boolean;
   }
 >(function Button(
-  { className, variant = "secondary", size = "sm", leftIcon, rightIcon, children, ...props },
+  { className, variant = "secondary", size = "sm", leftIcon, rightIcon, asChild, children, ...props },
   ref,
 ) {
+  const composedClassName = cx(
+    "sb-ring inline-flex items-center justify-center gap-2 rounded-full font-medium transition",
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
+    "disabled:cursor-not-allowed disabled:opacity-50",
+    SIZE[size],
+    VARIANT[variant],
+    className,
+  );
+
+  if (asChild) {
+    if (!isValidElement(children)) return null;
+    const el = children as ReactElement<any>;
+    return cloneElement(el, {
+      ...props,
+      className: cx(el.props?.className, composedClassName),
+      children: (
+        <>
+          {leftIcon ? <span className="opacity-80">{leftIcon}</span> : null}
+          {el.props?.children}
+          {rightIcon ? <span className="opacity-80">{rightIcon}</span> : null}
+        </>
+      ),
+    });
+  }
+
   return (
     <button
       ref={ref}
       {...props}
-      className={cx(
-        "sb-ring inline-flex items-center justify-center gap-2 rounded-full font-medium transition",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
-        "disabled:cursor-not-allowed disabled:opacity-50",
-        SIZE[size],
-        VARIANT[variant],
-        className,
-      )}
+      className={composedClassName}
     >
       {leftIcon ? <span className="opacity-80">{leftIcon}</span> : null}
       {children}
@@ -59,8 +85,9 @@ export const IconButton = forwardRef<
     variant?: Exclude<ButtonVariant, "primary" | "danger"> | "primary";
     size?: "sm" | "md";
     "aria-label": string;
+    asChild?: boolean;
   }
->(function IconButton({ className, variant = "ghost", size = "sm", ...props }, ref) {
+>(function IconButton({ className, variant = "ghost", size = "sm", asChild, children, ...props }, ref) {
   const dim = size === "md" ? "h-9 w-9" : "h-8 w-8";
   const v =
     variant === "primary"
@@ -69,19 +96,39 @@ export const IconButton = forwardRef<
       ? VARIANT.secondary
       : VARIANT.ghost;
 
+  const composedClassName = cx(
+    "sb-ring inline-flex items-center justify-center rounded-full transition",
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
+    "disabled:cursor-not-allowed disabled:opacity-50",
+    dim,
+    v,
+    className,
+  );
+
+  if (asChild) {
+    if (!isValidElement(children)) return null;
+    const el = children as ReactElement<any>;
+
+    // Avoid passing button-only props to non-button children.
+    // (e.g. `type`/`disabled` don't belong on <a>).
+    // Keep a small, safe set and let callers decide semantics.
+    const { type: _type, disabled: _disabled, ...rest } = props;
+
+    return cloneElement(el, {
+      ...rest,
+      className: cx(el.props?.className, composedClassName),
+      children: el.props?.children,
+    });
+  }
+
   return (
     <button
       ref={ref}
       {...props}
-      className={cx(
-        "sb-ring inline-flex items-center justify-center rounded-full transition",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
-        "disabled:cursor-not-allowed disabled:opacity-50",
-        dim,
-        v,
-        className,
-      )}
-    />
+      className={composedClassName}
+    >
+      {children}
+    </button>
   );
 });
 

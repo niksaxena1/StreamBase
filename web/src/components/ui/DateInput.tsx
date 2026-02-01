@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 
 type DateParts = { day: number; month: number; year: number };
 
@@ -15,13 +15,6 @@ export function DateInput(props: { value?: Date; onChange: (date: Date) => void 
   const monthRef = useRef<HTMLInputElement | null>(null);
   const yearRef = useRef<HTMLInputElement | null>(null);
   const initialDate = useRef<DateParts>(date);
-
-  useEffect(() => {
-    const d = value ? new Date(value) : new Date();
-    const next = { day: d.getDate(), month: d.getMonth() + 1, year: d.getFullYear() };
-    setDate(next);
-    initialDate.current = next;
-  }, [value]);
 
   function validate(field: keyof DateParts, v: number, current: DateParts): boolean {
     if (
@@ -40,7 +33,7 @@ export function DateInput(props: { value?: Date; onChange: (date: Date) => void 
   const handleInputChange =
     (field: keyof DateParts) => (e: React.ChangeEvent<HTMLInputElement>) => {
       const newValue = e.target.value ? Number(e.target.value) : NaN;
-      const next = { ...date, [field]: Number.isNaN(newValue) ? (date as any)[field] : newValue } as DateParts;
+      const next = { ...date, [field]: Number.isNaN(newValue) ? date[field] : newValue } as DateParts;
       setDate(next);
 
       if (!Number.isNaN(newValue) && validate(field, newValue, next)) {
@@ -77,7 +70,7 @@ export function DateInput(props: { value?: Date; onChange: (date: Date) => void 
       if (e.key === "ArrowUp" || e.key === "ArrowDown") {
         e.preventDefault();
         const dir = e.key === "ArrowUp" ? 1 : -1;
-        let next = { ...date };
+        const next = { ...date };
 
         if (field === "day") {
           const lastDay = new Date(next.year, next.month, 0).getDate();

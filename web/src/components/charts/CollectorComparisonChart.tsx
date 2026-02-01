@@ -13,6 +13,7 @@ import {
 import { useId, useMemo } from "react";
 import { formatInt, formatUsd2 } from "@/lib/format";
 import { formatKmbTick, formatUsdCompact } from "@/components/charts/chartUtils";
+import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 
 export const COLLECTOR_COLORS: Record<string, string> = {
   // Individuals (softer)
@@ -162,6 +163,7 @@ export function CollectorComparisonChart({
   granularity?: Granularity;
 }) {
   const gid = useId();
+  const { streamPayoutPerStreamUsd } = usePayoutRate();
 
   // Process data into chart format
   const chartData = useMemo(() => {
@@ -214,7 +216,7 @@ export function CollectorComparisonChart({
 
         if (collectorData) {
           if (metric === "revenue") {
-            value = Number(collectorData.est_revenue_daily_net ?? 0);
+            value = Number(collectorData.daily_streams_net ?? 0) * streamPayoutPerStreamUsd;
           } else if (metric === "streams") {
             value = Number(collectorData.daily_streams_net ?? 0);
           } else if (metric === "tracks") {
@@ -250,7 +252,7 @@ export function CollectorComparisonChart({
     }
 
     return result;
-  }, [data, selectedCollectors, mode, metric, granularity]);
+  }, [data, selectedCollectors, mode, metric, granularity, streamPayoutPerStreamUsd]);
 
   const formatYTick = (n: number) => {
     if (mode === "percentage") return `${n.toFixed(0)}%`;

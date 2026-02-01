@@ -1,6 +1,7 @@
 import { AppShell } from "@/components/shell/AppShell";
 import { supabaseServer } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
+import { PayoutRateProvider } from "@/components/payout/PayoutRateContext";
 
 export default async function MainFlatLayout({
   children,
@@ -17,6 +18,10 @@ export default async function MainFlatLayout({
     redirect("/login");
   }
 
-  return <AppShell mainSurface="plain">{children}</AppShell>;
+  return (
+    <PayoutRateProvider>
+      <AppShell mainSurface="plain">{children}</AppShell>
+    </PayoutRateProvider>
+  );
 }
 

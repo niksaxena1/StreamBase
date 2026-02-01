@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/shell/PageHeader";
 import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/GlassTable";
 import { TrackExclusionForm } from "./TrackExclusionForm";
 import { SAISettingsToggle } from "./SAISettingsToggle";
+import { PayoutRateSetting } from "./PayoutRateSetting";
 import { ManualStreamOverrideForm } from "./ManualStreamOverrideForm";
 import { SectionHeader } from "@/components/ui/SectionHeader";
 
@@ -38,7 +39,7 @@ export default async function SettingsPage() {
   const latestRunDate = (latestRun?.run_date as string | null) ?? null;
 
   // Fetch all tracks for combobox (with artist names)
-  let allTracks: Array<{
+  const allTracks: Array<{
     isrc: string;
     name: string | null;
     spotify_album_image_url: string | null;
@@ -130,7 +131,7 @@ export default async function SettingsPage() {
 
   // Fetch ONLY tracks missing Spotify enrichment (spotify_artist_ids is NULL)
   // for the enrichment exclusion combobox.
-  let unenrichedTracks: Array<{
+  const unenrichedTracks: Array<{
     isrc: string;
     name: string | null;
     spotify_album_image_url: string | null;
@@ -467,6 +468,11 @@ export default async function SettingsPage() {
       <div className="space-y-2">
         <SectionHeader title="AI Assistant" />
         <SAISettingsToggle />
+      </div>
+
+      <div className="space-y-2">
+        <SectionHeader title="Revenue" subtitle="Configure how estimated revenue is calculated from streams." />
+        <PayoutRateSetting />
       </div>
 
       <div className="space-y-2">

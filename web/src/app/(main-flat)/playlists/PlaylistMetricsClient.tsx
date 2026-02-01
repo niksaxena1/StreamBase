@@ -11,6 +11,7 @@ import type { Metric } from "./PlaylistMetricSelector";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
 import { slugifyForFilename, todayIsoDate } from "@/lib/csv";
 import { dataDateFromRunDate } from "@/lib/sotDates";
+import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 
 
 type PlaylistDailyStatsRow = {
@@ -47,10 +48,11 @@ export function PlaylistMetricsClient(props: {
   metric: Metric;
   setMetric: (metric: Metric) => void;
 }) {
+  const { streamPayoutPerStreamUsd } = usePayoutRate();
 
   const cumulativeSeries = props.history.map((r) => {
     if (props.metric === "revenue") {
-      return { date: dataDateFromRunDate(r.date), value: Number(r.est_revenue_total ?? 0) };
+      return { date: dataDateFromRunDate(r.date), value: Number(r.total_streams_cumulative ?? 0) * streamPayoutPerStreamUsd };
     } else if (props.metric === "tracks") {
       return { date: dataDateFromRunDate(r.date), value: Number(r.track_count ?? 0) };
     } else {
@@ -60,7 +62,7 @@ export function PlaylistMetricsClient(props: {
 
   const dailyDesc = props.history.map((r) => {
     if (props.metric === "revenue") {
-      return { date: dataDateFromRunDate(r.date), daily: Number(r.est_revenue_daily_net ?? 0) };
+      return { date: dataDateFromRunDate(r.date), daily: Number(r.daily_streams_net ?? 0) * streamPayoutPerStreamUsd };
     } else if (props.metric === "tracks") {
       // Track count doesn't have daily, so calculate delta (can be negative for removals)
       const idx = props.history.findIndex((h) => h.date === r.date);
@@ -85,13 +87,13 @@ export function PlaylistMetricsClient(props: {
   const effectiveLatest = latestFromHistory ?? props.latest;
 
   const latestValue = props.metric === "revenue" 
-    ? (effectiveLatest?.est_revenue_total ?? 0)
+    ? Number(effectiveLatest?.total_streams_cumulative ?? 0) * streamPayoutPerStreamUsd
     : props.metric === "tracks"
     ? (effectiveLatest?.track_count ?? 0)
     : (effectiveLatest?.total_streams_cumulative ?? 0);
 
   const latestDaily = props.metric === "revenue"
-    ? (effectiveLatest?.est_revenue_daily_net ?? 0)
+    ? Number(effectiveLatest?.daily_streams_net ?? 0) * streamPayoutPerStreamUsd
     : props.metric === "tracks"
     ? 0 // Track count daily is calculated differently
     : (effectiveLatest?.daily_streams_net ?? 0);

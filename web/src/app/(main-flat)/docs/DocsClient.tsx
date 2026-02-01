@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { Chip, ChipGroup } from "@/components/ui/Chip";
+import { Input } from "@/components/ui/Input";
 
 type DocSection = {
   id: string;
@@ -120,55 +122,24 @@ export function DocsClient(props: {
           </div>
 
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <input
+            <Input
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Search docs…"
-              className="w-full rounded-lg border bg-white/70 px-3 py-2 text-sm outline-none placeholder:text-black/50 transition focus:border-black/30 focus:ring-2 focus:ring-black/5 dark:bg-white/5 dark:text-white dark:placeholder:text-white/50 dark:border-white/10 dark:focus:border-white/30 dark:focus:ring-white/5 sm:w-80"
-              style={{ borderColor: "var(--sb-border)" }}
+              className="sm:w-80"
             />
 
-            <div className="sb-ring flex items-center gap-0.5 rounded-full bg-white/70 p-0.5 text-[11px] dark:bg-white/10">
-              <button
-                type="button"
-                className={[
-                  "rounded-full px-2.5 py-1.5 font-medium transition",
-                  openMode === "auto"
-                    ? "bg-black text-white shadow-sm dark:bg-white dark:text-black"
-                    : "hover:bg-white/70 dark:hover:bg-white/10",
-                ].join(" ")}
-                onClick={() => setOpenMode("auto")}
-                title="Open matching sections while searching"
-              >
+            <ChipGroup segmented className="text-[11px]">
+              <Chip segmented selected={openMode === "auto"} onClick={() => setOpenMode("auto")} title="Open matching sections while searching">
                 Auto
-              </button>
-              <button
-                type="button"
-                className={[
-                  "rounded-full px-2.5 py-1.5 font-medium transition",
-                  openMode === "all"
-                    ? "bg-black text-white shadow-sm dark:bg-white dark:text-black"
-                    : "hover:bg-white/70 dark:hover:bg-white/10",
-                ].join(" ")}
-                onClick={() => setOpenMode("all")}
-                title="Expand all sections"
-              >
+              </Chip>
+              <Chip segmented selected={openMode === "all"} onClick={() => setOpenMode("all")} title="Expand all sections">
                 Expand all
-              </button>
-              <button
-                type="button"
-                className={[
-                  "rounded-full px-2.5 py-1.5 font-medium transition",
-                  openMode === "none"
-                    ? "bg-black text-white shadow-sm dark:bg-white dark:text-black"
-                    : "hover:bg-white/70 dark:hover:bg-white/10",
-                ].join(" ")}
-                onClick={() => setOpenMode("none")}
-                title="Collapse all sections"
-              >
+              </Chip>
+              <Chip segmented selected={openMode === "none"} onClick={() => setOpenMode("none")} title="Collapse all sections">
                 Collapse all
-              </button>
-            </div>
+              </Chip>
+            </ChipGroup>
           </div>
         </div>
 
@@ -178,20 +149,16 @@ export function DocsClient(props: {
             {allTags.map((t) => {
               const active = selectedTags.includes(t);
               return (
-                <button
+                <Chip
                   key={t}
-                  type="button"
                   onClick={() => {
                     setSelectedTags((prev) => (active ? prev.filter((x) => x !== t) : [...prev, t]));
                   }}
-                  className={[
-                    "rounded-full px-2 py-1 text-[11px] transition sb-ring",
-                    active ? "bg-black text-white dark:bg-white dark:text-black" : "bg-white/70 dark:bg-white/10",
-                  ].join(" ")}
+                  selected={active}
                   title={active ? "Remove tag filter" : "Filter by this tag"}
                 >
                   {t}
-                </button>
+                </Chip>
               );
             })}
             {selectedTags.length > 0 && (
@@ -402,14 +369,9 @@ function CopyChip(props: { value: string; label?: string }) {
   }
 
   return (
-    <button
-      type="button"
-      onClick={copy}
-      className="sb-ring rounded-full bg-white/70 px-2 py-1 text-[11px] transition hover:opacity-80 dark:bg-white/10"
-      title="Copy path"
-    >
+    <Chip onClick={copy} title="Copy">
       {props.label ?? "Copy"}
-    </button>
+    </Chip>
   );
 }
 

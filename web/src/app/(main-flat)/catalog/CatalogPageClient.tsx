@@ -21,6 +21,7 @@ import { hrefWithPatchedSearchParams } from "@/lib/searchParams";
 import { FilterBar } from "@/components/ui/FilterBar";
 import { ChipGroup } from "@/components/ui/Chip";
 import { IconButton } from "@/components/ui/Button";
+import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 
 type ChartDataPoint = {
   date: string;
@@ -50,8 +51,6 @@ type SelectedTrack = {
   artistNames: string[] | null;
   artistIds: string[] | null;
 };
-
-const STREAM_PAYOUT_USD = 0.002;
 
 export function CatalogPageClient(props: {
   latestCum: number;
@@ -85,6 +84,7 @@ export function CatalogPageClient(props: {
   const [isArtistExpanded, setIsArtistExpanded] = useState(true);
   const router = useRouter();
   const sp = useSearchParams();
+  const { streamPayoutPerStreamUsd } = usePayoutRate();
 
   function downloadTopTracksAsCsv(data: TopTrack[], filename: string, isDaily: boolean) {
     downloadCsv({
@@ -118,16 +118,31 @@ export function CatalogPageClient(props: {
         actions={
           <>
             <CatalogMetricSelector metric={metric} setMetric={setMetric} />
+            <ChipGroup segmented className="text-[11px]">
+              {[30, 90, 365].map((d) => (
+                <Link
+                  key={d}
+                  href={hrefWithPatchedSearchParams(sp, { range: String(d) })}
+                  className={[
+                    "rounded-full px-2.5 py-1.5 text-[11px] font-medium transition",
+                    props.rangeDays === d
+                      ? "bg-black text-white shadow-sm dark:bg-white dark:text-black"
+                      : "text-black/70 hover:bg-black/5 dark:text-white/70 dark:hover:bg-white/10",
+                  ].join(" ")}
+                >
+                  {d}d
+                </Link>
+              ))}
+            </ChipGroup>
             <IconButton
               variant="secondary"
               aria-label="Catalog config"
               title="Catalog config"
-              className="grid place-items-center"
-              onClick={() => {
-                router.push("/catalog/config");
-              }}
+              asChild
             >
-              <List className="h-4 w-4" style={{ color: "var(--sb-text)" }} />
+              <Link href="/catalog/config" className="grid place-items-center">
+                <List className="h-4 w-4" style={{ color: "var(--sb-text)" }} />
+              </Link>
             </IconButton>
           </>
         }
@@ -135,12 +150,12 @@ export function CatalogPageClient(props: {
 
       <FilterBar
         left={
-          <div className="flex items-start gap-2">
+          <div className="flex items-center gap-2">
             <IconButton
               aria-label={isArtistExpanded ? "Collapse artist info" : "Expand artist info"}
               title={isArtistExpanded ? "Collapse artist info" : "Expand artist info"}
               variant="ghost"
-              className="mt-0.5 rounded"
+              className="rounded"
               onClick={() => setIsArtistExpanded(!isArtistExpanded)}
             >
               <ChevronRight
@@ -184,23 +199,6 @@ export function CatalogPageClient(props: {
                     </div>
                   </div>
                 </div>
-
-                <ChipGroup>
-                  {[30, 90, 365].map((d) => (
-                    <Link
-                      key={d}
-                      href={hrefWithPatchedSearchParams(sp, { range: String(d) })}
-                      className={[
-                        "rounded-full px-2.5 py-1.5 text-[11px] font-medium transition",
-                        props.rangeDays === d
-                          ? "bg-black text-white shadow-sm dark:bg-white dark:text-black"
-                          : "text-black/70 hover:bg-black/10 dark:text-white/70 dark:hover:bg-white/10",
-                      ].join(" ")}
-                    >
-                      {d}d
-                    </Link>
-                  ))}
-                </ChipGroup>
               </div>
             </div>
           </div>
@@ -460,14 +458,14 @@ export function CatalogPageClient(props: {
           const yTickFormat = trackMode === "revenue" ? ("usd_compact" as const) : ("k" as const);
 
           const cumSeries = trackMode === "revenue"
-            ? props.trackCumDesc.map((p) => ({ date: dataDateFromRunDate(p.date), value: p.value * STREAM_PAYOUT_USD }))
+            ? props.trackCumDesc.map((p) => ({ date: dataDateFromRunDate(p.date), value: p.value * streamPayoutPerStreamUsd }))
             : props.trackCumDesc.map((p) => ({ date: dataDateFromRunDate(p.date), value: p.value }));
 
           const dailySeries = trackMode === "revenue"
             ? props.trackDailyWithMaDesc.map((p) => ({
                 date: dataDateFromRunDate(p.date),
-                daily: p.daily * STREAM_PAYOUT_USD,
-                ma7: p.ma7 == null ? p.ma7 : p.ma7 * STREAM_PAYOUT_USD,
+                daily: p.daily * streamPayoutPerStreamUsd,
+                ma7: p.ma7 == null ? p.ma7 : p.ma7 * streamPayoutPerStreamUsd,
               }))
             : props.trackDailyWithMaDesc.map((p) => ({
                 date: dataDateFromRunDate(p.date),

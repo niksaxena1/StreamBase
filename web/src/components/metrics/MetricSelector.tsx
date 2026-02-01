@@ -13,9 +13,9 @@ export function MetricSelector({
   setMetric: (metric: Metric) => void;
 }) {
   return (
-    <ChipGroup>
+    <ChipGroup segmented>
       {METRICS.map((m) => (
-        <Chip key={m} selected={metric === m} onClick={() => setMetric(m)}>
+        <Chip key={m} segmented selected={metric === m} onClick={() => setMetric(m)}>
           {m === "revenue" ? "Revenue" : m === "streams" ? "Streams" : "Tracks"}
         </Chip>
       ))}

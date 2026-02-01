@@ -1,11 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect } from "react";
 
 import { Combobox } from "@/components/ui/Combobox";
-import { hrefWithPatchedSearchParams } from "@/lib/searchParams";
+import { FilterBar } from "@/components/ui/FilterBar";
 
 type PlaylistOption = {
   playlist_key: string;
@@ -15,12 +14,9 @@ type PlaylistOption = {
   track_count?: number | null;
 };
 
-const RANGE_CHOICES = [30, 90, 365] as const;
-
 export function PlaylistDashboardControls(props: {
   playlists: PlaylistOption[];
   playlistKey: string;
-  rangeDays: number;
 }) {
   const router = useRouter();
   const sp = useSearchParams();
@@ -46,53 +42,37 @@ export function PlaylistDashboardControls(props: {
   }
 
   return (
-    <div className="sticky top-0 z-20 sb-card p-3">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:flex-1 sm:min-w-0">
-          <div className="text-xs font-medium" style={{ color: "var(--sb-text)" }}>Playlist</div>
-          <div className="sb-ring rounded-xl bg-black/10 px-2.5 py-1.5 dark:bg-white/10 flex-1 min-w-0">
-            <Combobox
-              ariaLabel="Select playlist"
-              value={props.playlistKey}
-              options={props.playlists.map((p) => ({
-                value: p.playlist_key,
-                label: p.display_name,
-                imageUrl: p.playlist_key === "all_catalog" ? null : p.spotify_playlist_image_url,
-                isAllCatalog: p.playlist_key === "all_catalog",
-                trackCount: p.track_count,
-              }))}
-              placeholder="Type a playlist…"
-              onChange={onSelectPlaylist}
-              imageShape="square"
-            />
-          </div>
-        </div>
-
+    <FilterBar
+      left={
         <div className="flex items-center gap-2">
-          <div className="sb-ring flex items-center gap-0.5 rounded-full bg-black/10 p-0.5 dark:bg-white/10">
-            {RANGE_CHOICES.map((d) => (
-              <Link
-                key={d}
-                href={hrefWithPatchedSearchParams(sp, { range: String(d) })}
-                className={[
-                  "rounded-full px-2.5 py-1.5 text-[11px] font-medium transition",
-                  props.rangeDays === d
-                    ? "bg-black text-white shadow-sm dark:bg-white dark:text-black"
-                    : "hover:bg-black/10 dark:hover:bg-white/10",
-                ].join(" ")}
-                style={
-                  props.rangeDays === d
-                    ? undefined
-                    : { opacity: 0.7 }
-                }
-              >
-                {d}d
-              </Link>
-            ))}
+          <div className="flex-1 min-w-0">
+            <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <div className="flex items-center gap-2">
+                  <div className="text-xs font-medium">Playlist</div>
+                  <div className="sb-ring rounded-xl bg-black/10 px-2.5 py-1.5 dark:bg-white/10 min-w-[280px] w-full max-w-[400px]">
+                    <Combobox
+                      ariaLabel="Select playlist"
+                      value={props.playlistKey}
+                      options={props.playlists.map((p) => ({
+                        value: p.playlist_key,
+                        label: p.display_name,
+                        imageUrl: p.playlist_key === "all_catalog" ? null : p.spotify_playlist_image_url,
+                        isAllCatalog: p.playlist_key === "all_catalog",
+                        trackCount: p.track_count,
+                      }))}
+                      placeholder="Type a playlist…"
+                      onChange={onSelectPlaylist}
+                      imageShape="square"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
-    </div>
+      }
+    />
   );
 }
 

@@ -6,6 +6,7 @@ import { useEffect } from "react";
 
 import { Combobox } from "@/components/ui/Combobox";
 import { hrefWithPatchedSearchParams } from "@/lib/searchParams";
+import { ChipGroup } from "@/components/ui/Chip";
 
 type TrackOption = { isrc: string; name: string };
 
@@ -58,7 +59,7 @@ export function TrackDashboardControls(props: {
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="sb-ring flex items-center gap-0.5 rounded-full bg-white/70 p-0.5 dark:bg-white/10">
+          <ChipGroup segmented>
             {RANGE_CHOICES.map((d) => (
               <Link
                 key={d}
@@ -67,18 +68,13 @@ export function TrackDashboardControls(props: {
                   "rounded-full px-2.5 py-1.5 text-[11px] font-medium transition",
                   props.rangeDays === d
                     ? "bg-black text-white shadow-sm dark:bg-white dark:text-black"
-                    : "hover:bg-white/70 dark:hover:bg-white/10",
+                    : "text-black/70 hover:bg-black/5 dark:text-white/70 dark:hover:bg-white/10",
                 ].join(" ")}
-                style={
-                  props.rangeDays === d
-                    ? undefined
-                    : { color: "var(--sb-muted)" }
-                }
               >
                 {d}d
               </Link>
             ))}
-          </div>
+          </ChipGroup>
         </div>
       </div>
     </div>

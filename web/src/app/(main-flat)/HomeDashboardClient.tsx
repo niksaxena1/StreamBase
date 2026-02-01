@@ -14,6 +14,7 @@ import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
 import { dataDateFromRunDate } from "@/lib/sotDates";
 import { Alert } from "@/components/ui/Alert";
 import { hrefWithPatchedSearchParams } from "@/lib/searchParams";
+import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 
 type PlaylistDailyStatsRow = {
   date: string;
@@ -74,6 +75,7 @@ function HomeDashboardInner(props: {
   historyErrorMessage?: string | null;
 }) {
   const { metric, setMetric } = useMetric();
+  const { streamPayoutPerStreamUsd } = usePayoutRate();
   const [selectedChart, setSelectedChart] = useState<"daily" | "total">("daily");
 
   const series = useMemo(() => {
@@ -82,17 +84,17 @@ function HomeDashboardInner(props: {
     if (metric === "revenue") {
       const dailyDesc = desc.map((r) => ({
         date: dataDateFromRunDate(r.date),
-        value: Number(r.est_revenue_daily_net ?? 0),
+        value: Number(r.daily_streams_net ?? 0) * streamPayoutPerStreamUsd,
       }));
       const totalDesc = desc.map((r) => ({
         date: dataDateFromRunDate(r.date),
-        value: Number(r.est_revenue_total ?? 0),
+        value: Number(r.total_streams_cumulative ?? 0) * streamPayoutPerStreamUsd,
       }));
       return {
         daily: computeRollingAvg7(dailyDesc),
         total: totalDesc,
-        dailyValue: Number(props.latest?.est_revenue_daily_net ?? 0),
-        totalValue: Number(props.latest?.est_revenue_total ?? 0),
+        dailyValue: Number(props.latest?.daily_streams_net ?? 0) * streamPayoutPerStreamUsd,
+        totalValue: Number(props.latest?.total_streams_cumulative ?? 0) * streamPayoutPerStreamUsd,
         dailyTitle: "Revenue (Daily)",
         totalTitle: "Revenue (Total)",
         dailyValueLabel: "Revenue",
@@ -154,7 +156,7 @@ function HomeDashboardInner(props: {
       yTickFormat: "k" as const,
       color: "#c7f33c",
     };
-  }, [metric, props.history, props.latest]);
+  }, [metric, props.history, props.latest, streamPayoutPerStreamUsd]);
 
   const chartDataDaily: ChartPoint[] = series.daily;
   const chartDataTotal: ChartPoint[] = series.total;
@@ -308,13 +310,13 @@ function HomeDashboardInner(props: {
       <div className="grid grid-cols-2 gap-2 lg:grid-cols-6">
         <StatCard
           title="Streams (7d)"
-          value={<AnimatedCounter value={rollSum(props.history ?? [], 7, "streams")} />}
-          subtitle={formatUsd(rollSum(props.history ?? [], 7, "revenue"))}
+          value={<AnimatedCounter value={rollSum(props.history ?? [], 7, "streams", streamPayoutPerStreamUsd)} />}
+          subtitle={formatUsd(rollSum(props.history ?? [], 7, "revenue", streamPayoutPerStreamUsd))}
         />
         <StatCard
           title="Streams (30d)"
-          value={<AnimatedCounter value={rollSum(props.history ?? [], 30, "streams")} />}
-          subtitle={formatUsd(rollSum(props.history ?? [], 30, "revenue"))}
+          value={<AnimatedCounter value={rollSum(props.history ?? [], 30, "streams", streamPayoutPerStreamUsd)} />}
+          subtitle={formatUsd(rollSum(props.history ?? [], 30, "revenue", streamPayoutPerStreamUsd))}
         />
       </div>
 
@@ -354,12 +356,17 @@ function HomeDashboardInner(props: {
   );
 }
 
-function rollSum(rowsDesc: PlaylistDailyStatsRow[], days: number, kind: "streams" | "revenue") {
+function rollSum(
+  rowsDesc: PlaylistDailyStatsRow[],
+  days: number,
+  kind: "streams" | "revenue",
+  payoutPerStreamUsd: number,
+) {
   const slice = rowsDesc.slice(0, days);
   let sum = 0;
   for (const r of slice) {
     if (kind === "streams") sum += Number(r.daily_streams_net ?? 0);
-    else sum += Number(r.est_revenue_daily_net ?? 0);
+    else sum += Number(r.daily_streams_net ?? 0) * payoutPerStreamUsd;
   }
   return sum;
 }

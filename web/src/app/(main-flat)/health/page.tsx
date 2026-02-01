@@ -27,7 +27,7 @@ function chipLinkClass(active: boolean) {
     "rounded-full px-2.5 py-1.5 text-[11px] font-medium transition",
     active
       ? "bg-black text-white shadow-sm dark:bg-white dark:text-black"
-      : "text-black/70 hover:bg-white/70 dark:text-white/70 dark:hover:bg-white/20",
+      : "text-black/70 hover:bg-black/5 dark:text-white/70 dark:hover:bg-white/10",
   ].join(" ");
 }
 
@@ -475,7 +475,7 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
         subtitle="Recent ingestion runs and anomaly warnings."
         actionsClassName="flex-wrap"
         actions={
-          <ChipGroup className="text-xs dark:bg-black/50">
+          <ChipGroup segmented className="text-xs dark:bg-black/50">
             <Link className={chipLinkClass(severityFilter === "all")} href={hrefWith({ severity: "all" })}>
               All
             </Link>

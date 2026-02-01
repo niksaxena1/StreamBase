@@ -57,13 +57,23 @@ export function DateRangePicker({
   latestDate: string | null;
   currentRangeDays: number;
 }) {
+  if (!latestDate) return null;
+  return <DateRangePickerInner latestDate={latestDate} currentRangeDays={currentRangeDays} />;
+}
+
+function DateRangePickerInner({
+  latestDate,
+  currentRangeDays,
+}: {
+  latestDate: string;
+  currentRangeDays: number;
+}) {
   const router = useRouter();
   const sp = useSearchParams();
   const [isOpen, setIsOpen] = useState(false);
   const [range, setRange] = useState<DateRange | undefined>(undefined);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const [popoverPos, setPopoverPos] = useState<{ top: number; left: number } | null>(null);
-  const [portalReady, setPortalReady] = useState(false);
   const openedRangeRef = useRef<DateRange | undefined>(undefined);
   const [selectedPreset, setSelectedPreset] = useState<string | undefined>(undefined);
   const [isSmallScreen, setIsSmallScreen] = useState(false);
@@ -108,11 +118,9 @@ export function DateRangePicker({
     setIsOpen(false);
   }
 
-  const hasCustomRange = sp.get("start") && sp.get("end");
+  const hasCustomRange = Boolean(sp.get("start") && sp.get("end"));
   const customStart = sp.get("start");
   const customEnd = sp.get("end");
-
-  if (!latestDate) return null;
 
   const minDate = useMemo(() => {
     const d = parseYmd(latestDate);
@@ -126,10 +134,6 @@ export function DateRangePicker({
     handleResize();
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
-  }, []);
-
-  useEffect(() => {
-    setPortalReady(true);
   }, []);
 
   // Set initial display month when opening
@@ -279,11 +283,6 @@ export function DateRangePicker({
     return rightMonth < new Date(maxDate.getFullYear(), maxDate.getMonth() + 1, 1);
   })();
 
-  // Display label for button
-  const buttonLabel = hasCustomRange
-    ? `${formatDisplay(parseYmd(customStart!))} – ${formatDisplay(parseYmd(customEnd!))}`
-    : "Range";
-
   return (
     <div className="relative">
       <button
@@ -298,6 +297,7 @@ export function DateRangePicker({
         }}
         className={[
           "sb-ring flex items-center gap-1.5 rounded-full px-2.5 py-2 text-[11px] font-medium transition",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
           isOpen || hasCustomRange
             ? "bg-black text-white shadow-sm dark:bg-white dark:text-black"
             : "bg-white/70 hover:bg-white/70 dark:bg-white/10 dark:hover:bg-white/10",
@@ -321,7 +321,7 @@ export function DateRangePicker({
         )}
       </button>
 
-      {portalReady && isOpen && popoverPos
+      {isOpen && popoverPos
         ? createPortal(
             <>
               <div
@@ -341,6 +341,7 @@ export function DateRangePicker({
                 <div className="flex items-center justify-between gap-2 border-b px-3 py-2" style={{ borderColor: "var(--sb-border)" }}>
                   <div className="flex items-center gap-2 flex-wrap">
                     <DateInput
+                      key={range?.from ? formatYmd(range.from) : "from-none"}
                       value={range?.from}
                       onChange={(d) => {
                         const from = clampToBounds(d);
@@ -352,6 +353,7 @@ export function DateRangePicker({
                     />
                     <span className="text-xs opacity-40">–</span>
                     <DateInput
+                      key={range?.to ? formatYmd(range.to) : "to-none"}
                       value={range?.to}
                       onChange={(d) => {
                         const to = clampToBounds(d);
@@ -367,7 +369,10 @@ export function DateRangePicker({
                       setRange(openedRangeRef.current);
                       setIsOpen(false);
                     }}
-                    className="sb-ring grid h-6 w-6 flex-shrink-0 place-items-center rounded-full hover:bg-black/5 dark:hover:bg-white/10"
+                    className={[
+                      "sb-ring grid h-6 w-6 flex-shrink-0 place-items-center rounded-full hover:bg-black/5 dark:hover:bg-white/10",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
+                    ].join(" ")}
                     style={{ color: "var(--sb-muted)" }}
                     aria-label="Close"
                   >
@@ -393,6 +398,7 @@ export function DateRangePicker({
                           onClick={() => setPreset(p.name)}
                           className={[
                             "sb-ring flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium transition whitespace-nowrap",
+                            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
                             isSel
                               ? "text-black dark:text-black"
                               : "hover:bg-black/5 dark:hover:bg-white/10",
@@ -414,7 +420,10 @@ export function DateRangePicker({
                         type="button"
                         onClick={goToPrevMonth}
                         disabled={!canGoPrev}
-                        className="sb-ring grid h-7 w-7 place-items-center rounded-md hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed"
+                        className={[
+                          "sb-ring grid h-7 w-7 place-items-center rounded-md hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed",
+                          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
+                        ].join(" ")}
                         style={{ color: "var(--sb-text)" }}
                         aria-label="Previous month"
                       >
@@ -430,7 +439,10 @@ export function DateRangePicker({
                         type="button"
                         onClick={goToNextMonth}
                         disabled={!canGoNext}
-                        className="sb-ring grid h-7 w-7 place-items-center rounded-md hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed"
+                        className={[
+                          "sb-ring grid h-7 w-7 place-items-center rounded-md hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed",
+                          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
+                        ].join(" ")}
                         style={{ color: "var(--sb-text)" }}
                         aria-label="Next month"
                       >
@@ -464,7 +476,11 @@ export function DateRangePicker({
                         weekday: "w-8 h-6 text-center text-[10px] font-medium opacity-50",
                         week: "flex",
                         day: "w-8 h-8 p-0 text-center",
-                        day_button: "w-full h-full rounded-md text-[11px] font-medium cursor-pointer transition-colors hover:bg-black/5 dark:hover:bg-white/10 focus:outline-none",
+                        day_button: [
+                          "w-full h-full rounded-md text-[11px] font-medium cursor-pointer transition-colors",
+                          "hover:bg-black/5 dark:hover:bg-white/10",
+                          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--sb-bg)]",
+                        ].join(" "),
                         today: "ring-1 ring-inset ring-[color:var(--sb-accent)]",
                         selected: "!bg-[color:var(--sb-accent)] !text-black hover:!bg-[color:var(--sb-accent)]",
                         range_start: "!bg-[color:var(--sb-accent)] !text-black !rounded-r-none hover:!bg-[color:var(--sb-accent)]",
@@ -492,7 +508,10 @@ export function DateRangePicker({
                         setRange(openedRangeRef.current);
                         setIsOpen(false);
                       }}
-                      className="sb-ring rounded-md px-2.5 py-1.5 text-[10px] font-medium transition hover:bg-black/5 dark:hover:bg-white/10"
+                      className={[
+                        "sb-ring rounded-md px-2.5 py-1.5 text-[10px] font-medium transition hover:bg-black/5 dark:hover:bg-white/10",
+                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
+                      ].join(" ")}
                       style={{ color: "var(--sb-text)" }}
                     >
                       Cancel
@@ -501,7 +520,10 @@ export function DateRangePicker({
                       <button
                         type="button"
                         onClick={handleClear}
-                        className="sb-ring rounded-md px-2.5 py-1.5 text-[10px] font-medium transition hover:bg-black/5 dark:hover:bg-white/10"
+                        className={[
+                          "sb-ring rounded-md px-2.5 py-1.5 text-[10px] font-medium transition hover:bg-black/5 dark:hover:bg-white/10",
+                          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
+                        ].join(" ")}
                         style={{ color: "var(--sb-text)" }}
                       >
                         Clear
@@ -511,7 +533,10 @@ export function DateRangePicker({
                       type="button"
                       onClick={handleApply}
                       disabled={!range?.from || !range.to}
-                      className="rounded-md px-2.5 py-1.5 text-[10px] font-medium text-black transition disabled:cursor-not-allowed disabled:opacity-50"
+                      className={[
+                        "rounded-md px-2.5 py-1.5 text-[10px] font-medium text-black transition disabled:cursor-not-allowed disabled:opacity-50",
+                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
+                      ].join(" ")}
                       style={{ backgroundColor: "var(--sb-accent)" }}
                     >
                       Apply

@@ -60,6 +60,28 @@ export default async function PlaylistDetailPage({
   const sb = await supabaseServer();
   const { data: isAdmin } = await sb.rpc("is_admin");
 
+  // User-configurable revenue rate (USD per 1,000 streams). Default: 2.00 => 0.002/stream.
+  let payoutPerStreamUsd = 0.002;
+  try {
+    const { data: userData } = await sb.auth.getUser();
+    const userId = userData.user?.id ?? null;
+    if (userId) {
+      const svc = supabaseService();
+      const { data: settings, error } = await svc
+        .from("user_settings")
+        .select("stream_payout_rate_per_k_usd")
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (!error) {
+        const perK = Number((settings as any)?.stream_payout_rate_per_k_usd ?? 2.0);
+        if (Number.isFinite(perK)) payoutPerStreamUsd = perK / 1000;
+      }
+    }
+  } catch {
+    // fall back to default
+  }
+
 
   const { data: playlist, error: playlistErr } = await sb
     .from("playlists")
@@ -302,7 +324,7 @@ export default async function PlaylistDetailPage({
               <TableCell numeric className="text-lime-700 dark:text-lime-400 font-medium">
                 +{formatInt(r.daily_streams_net)}
               </TableCell>
-              <TableCell numeric>{formatUsd(r.est_revenue_total)}</TableCell>
+              <TableCell numeric>{formatUsd(Number(r.total_streams_cumulative ?? 0) * payoutPerStreamUsd)}</TableCell>
               <TableCell numeric>
                 {r.missing_streams_track_count ? (
                   <span className="text-red-600 dark:text-red-400 font-medium">

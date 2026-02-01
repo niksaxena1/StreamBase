@@ -1,27 +1,15 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ExternalLink, User } from "lucide-react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { cachedQuery } from "@/lib/supabase/cache";
-import { formatInt, formatDateISO } from "@/lib/format";
 import { getArtistsCached } from "@/lib/spotify";
 import { RememberParamRedirect } from "@/components/dashboard/RememberParamRedirect";
-import { ArtistDashboardControls } from "@/components/dashboard/ArtistDashboardControls";
-import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/GlassTable";
-import { SpotlightCard } from "@/components/ui/SpotlightCard";
-import { StatCard } from "@/components/StatCard";
-import { AnimatedCounter } from "@/components/ui/AnimatedCounter";
-import { DailyStreamsChart } from "@/components/charts/DailyStreamsChart";
-import { DailyStreamsWithMAChart } from "@/components/charts/DailyStreamsWithMAChart";
-import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { CatalogPageClient } from "./CatalogPageClient";
 import { dataDateFromRunDate } from "@/lib/sotDates";
 import { Alert } from "@/components/ui/Alert";
 
-const STREAM_PAYOUT_USD = 0.002;
 const CATALOG_ARTIST_DROPDOWN_MAX_TRACKS = 10_000;
 const CATALOG_ARTIST_THUMBNAILS_MAX = 800;
 

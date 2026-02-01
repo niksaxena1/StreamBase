@@ -14,8 +14,8 @@ export function FilterBar(props: {
       ].filter(Boolean).join(" ")}
     >
       <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-        <div className="min-w-0">{props.left}</div>
-        <div className="flex flex-wrap items-center gap-2">{props.right}</div>
+        {props.left ? <div className="min-w-0">{props.left}</div> : null}
+        {props.right ? <div className="flex flex-wrap items-center gap-2">{props.right}</div> : null}
       </div>
     </div>
   );

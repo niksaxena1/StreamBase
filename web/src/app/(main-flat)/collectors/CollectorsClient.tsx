@@ -26,6 +26,10 @@ import {
 import { CollectorMultiSelect } from "@/components/ui/CollectorMultiSelect";
 import { GranularitySelect, type Granularity } from "@/components/ui/GranularitySelect";
 import { TrackSortSelect, type TrackSort } from "@/components/ui/TrackSortSelect";
+import { Chip, ChipGroup } from "@/components/ui/Chip";
+import { Input } from "@/components/ui/Input";
+import { IconButton } from "@/components/ui/Button";
+import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 
 const METRICS = ["streams", "revenue", "tracks"] as const;
 type Metric = (typeof METRICS)[number];
@@ -81,6 +85,7 @@ function aggregateByGranularity(
   data: CollectorDailyData[],
   granularity: Granularity,
   selectedCollectors: string[],
+  payoutPerStreamUsd: number,
 ): CollectorDailyData[] {
   if (granularity === "daily") return data;
 
@@ -124,14 +129,14 @@ function aggregateByGranularity(
     if (!existing) {
       buckets.get(collectorKey)!.set(bucketKey, {
         streams: Number(row.daily_streams_net ?? 0),
-        revenue: Number(row.est_revenue_daily_net ?? 0),
+        revenue: Number(row.daily_streams_net ?? 0) * payoutPerStreamUsd,
         firstTrackCount: Number(row.track_count ?? 0),
         lastTrackCount: Number(row.track_count ?? 0),
         lastDate: row.date,
       });
     } else {
       existing.streams += Number(row.daily_streams_net ?? 0);
-      existing.revenue += Number(row.est_revenue_daily_net ?? 0);
+      existing.revenue += Number(row.daily_streams_net ?? 0) * payoutPerStreamUsd;
       // Update last track count if this date is later
       if (row.date > existing.lastDate) {
         existing.lastTrackCount = Number(row.track_count ?? 0);
@@ -192,7 +197,8 @@ function ma7ForValueDesc(desc: Array<{ date: string; value: number }>) {
 
 function aggregateMonthlyDelta(
   seriesDesc: CollectorSeriesPoint[],
-  metric: "revenue" | "streams" | "tracks"
+  metric: "revenue" | "streams" | "tracks",
+  payoutPerStreamUsd: number,
 ): Array<{ month: string; value: number }> {
   // seriesDesc is newest-first, so reverse to get oldest-first for easier aggregation
   const asc = [...seriesDesc].reverse();
@@ -211,7 +217,7 @@ function aggregateMonthlyDelta(
     // Get the delta for this day
     let delta = 0;
     if (metric === "revenue") {
-      delta = Number(cur.est_revenue_daily_net ?? 0);
+      delta = Number(cur.daily_streams_net ?? 0) * payoutPerStreamUsd;
     } else if (metric === "streams") {
       delta = Number(cur.daily_streams_net ?? 0);
     } else if (metric === "tracks") {
@@ -304,6 +310,7 @@ export function CollectorsClient(props: {
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { streamPayoutPerStreamUsd } = usePayoutRate();
 
   const [openPlaylists, setOpenPlaylists] = useState(true);
   const [openTracks, setOpenTracks] = useState(true);
@@ -375,8 +382,8 @@ export function CollectorsClient(props: {
   const comparisonChartData = useMemo(() => {
     // For daily, use the date-range filtered data; for others, use all-time
     const sourceData = granularity === "daily" ? props.allCollectorsSeries : props.allCollectorsAllTime;
-    return aggregateByGranularity(sourceData, granularity, comparisonCollectors);
-  }, [granularity, props.allCollectorsSeries, props.allCollectorsAllTime, comparisonCollectors]);
+    return aggregateByGranularity(sourceData, granularity, comparisonCollectors, streamPayoutPerStreamUsd);
+  }, [granularity, props.allCollectorsSeries, props.allCollectorsAllTime, comparisonCollectors, streamPayoutPerStreamUsd]);
 
   // Remember last collector (like playlist dashboard)
   useEffect(() => {
@@ -407,8 +414,14 @@ export function CollectorsClient(props: {
   const series = useMemo(() => {
     const datesDesc = props.seriesDesc.map((p) => p.date);
 
-    const revenueTotalDesc = datesDesc.map((d, i) => ({ date: dataDateFromRunDate(d), value: Number(props.seriesDesc[i]?.est_revenue_total ?? 0) }));
-    const revenueDailyDesc = datesDesc.map((d, i) => ({ date: dataDateFromRunDate(d), daily: Number(props.seriesDesc[i]?.est_revenue_daily_net ?? 0) }));
+    const revenueTotalDesc = datesDesc.map((d, i) => ({
+      date: dataDateFromRunDate(d),
+      value: Number(props.seriesDesc[i]?.total_streams_cumulative ?? 0) * streamPayoutPerStreamUsd,
+    }));
+    const revenueDailyDesc = datesDesc.map((d, i) => ({
+      date: dataDateFromRunDate(d),
+      daily: Number(props.seriesDesc[i]?.daily_streams_net ?? 0) * streamPayoutPerStreamUsd,
+    }));
 
     const streamsTotalDesc = datesDesc.map((d, i) => ({ date: dataDateFromRunDate(d), value: Number(props.seriesDesc[i]?.total_streams_cumulative ?? 0) }));
     const streamsDailyDesc = datesDesc.map((d, i) => ({ date: dataDateFromRunDate(d), daily: Number(props.seriesDesc[i]?.daily_streams_net ?? 0) }));
@@ -435,17 +448,17 @@ export function CollectorsClient(props: {
         daily: rollingAvg7(tracksDailyDeltaDesc),
       },
     } as const;
-  }, [props.seriesDesc]);
+  }, [props.seriesDesc, streamPayoutPerStreamUsd]);
 
   const monthlyData = useMemo(() => {
     // Get all available historical data (not limited by range selection)
     // This uses the full seriesDesc for unfiltered monthly aggregation
     return {
-      revenue: aggregateMonthlyDelta(props.seriesDesc, "revenue"),
-      streams: aggregateMonthlyDelta(props.seriesDesc, "streams"),
-      tracks: aggregateMonthlyDelta(props.seriesDesc, "tracks"),
+      revenue: aggregateMonthlyDelta(props.seriesDesc, "revenue", streamPayoutPerStreamUsd),
+      streams: aggregateMonthlyDelta(props.seriesDesc, "streams", streamPayoutPerStreamUsd),
+      tracks: aggregateMonthlyDelta(props.seriesDesc, "tracks", streamPayoutPerStreamUsd),
     };
-  }, [props.seriesDesc]);
+  }, [props.seriesDesc, streamPayoutPerStreamUsd]);
 
   const metricLabel = metric === "revenue" ? "Est. revenue" : metric === "streams" ? "Streams" : "Tracks";
   const dailyLabel =
@@ -457,14 +470,7 @@ export function CollectorsClient(props: {
   const yTickFormat = metric === "revenue" ? "usd_compact" : metric === "streams" ? "k" : "int";
   const chartColor = metric === "tracks" ? "#3b82f6" : metric === "revenue" ? "#10b981" : "var(--sb-accent)";
 
-  const revenuePerStreamDaily =
-    latest?.daily_streams_net && latest.daily_streams_net !== 0
-      ? Number(latest.est_revenue_daily_net ?? 0) / Number(latest.daily_streams_net ?? 0)
-      : null;
-  const revenuePerStreamTotal =
-    latest?.total_streams_cumulative && latest.total_streams_cumulative !== 0
-      ? Number(latest.est_revenue_total ?? 0) / Number(latest.total_streams_cumulative ?? 0)
-      : null;
+  const payoutPerStreamUsd = streamPayoutPerStreamUsd;
 
   const [trackQuery, setTrackQuery] = useState("");
   const [trackSort, setTrackSort] = useState<TrackSort>("delta_desc");
@@ -567,24 +573,13 @@ export function CollectorsClient(props: {
 
               <div className="flex flex-col items-end gap-2">
                 {/* Mode toggle */}
-                <div className="sb-ring flex items-center gap-0.5 rounded-full bg-white/70 p-0.5 dark:bg-white/10">
+                <ChipGroup segmented>
                   {(["combined", "individual", "percentage"] as const).map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => setComparisonMode(m)}
-                      className={[
-                        "rounded-full px-2.5 py-1.5 text-[11px] font-medium transition",
-                        comparisonMode === m
-                          ? "bg-black text-white shadow-sm dark:bg-white dark:text-black"
-                          : "hover:bg-white/70 dark:hover:bg-white/10",
-                      ].join(" ")}
-                      style={comparisonMode === m ? undefined : { color: "var(--sb-muted)" }}
-                    >
+                    <Chip key={m} segmented selected={comparisonMode === m} onClick={() => setComparisonMode(m)}>
                       {m === "combined" ? "Combined" : m === "individual" ? "Individual" : "Percentage"}
-                    </button>
+                    </Chip>
                   ))}
-                </div>
+                </ChipGroup>
 
                 {/* Dropdowns */}
                 <div className="flex flex-wrap items-center" style={{ gap: "0.2rem" }}>
@@ -671,16 +666,20 @@ export function CollectorsClient(props: {
             >
               {ranked.map((r) => {
                 const value =
-                  metric === "revenue" ? r.est_revenue_daily_net : metric === "streams" ? r.daily_streams_net : r.track_count;
+                  metric === "revenue"
+                    ? Number(r.daily_streams_net ?? 0) * payoutPerStreamUsd
+                    : metric === "streams"
+                      ? Number(r.daily_streams_net ?? 0)
+                      : Number(r.track_count ?? 0);
                 const deltaYday =
                   metric === "revenue"
-                    ? r.est_revenue_daily_delta_yday
+                    ? (r.daily_streams_delta_yday == null ? null : Number(r.daily_streams_delta_yday) * payoutPerStreamUsd)
                     : metric === "streams"
                       ? r.daily_streams_delta_yday
                       : r.track_count_delta_yday;
                 const deltaMa7 =
                   metric === "revenue"
-                    ? r.est_revenue_daily_delta_ma7
+                    ? (r.daily_streams_delta_ma7 == null ? null : Number(r.daily_streams_delta_ma7) * payoutPerStreamUsd)
                     : metric === "streams"
                       ? r.daily_streams_delta_ma7
                       : r.track_count_delta_ma7;
@@ -691,7 +690,7 @@ export function CollectorsClient(props: {
 
                 const spark =
                   metric === "revenue"
-                    ? r.spark_rev_daily
+                    ? r.spark_streams_daily?.map((n) => Number(n ?? 0) * payoutPerStreamUsd)
                     : metric === "streams"
                       ? r.spark_streams_daily
                       : r.spark_tracks;
@@ -925,7 +924,9 @@ export function CollectorsClient(props: {
                     </div>
                     <div className="font-mono text-[11px] opacity-50">{p.playlist_key}</div>
                   </TableCell>
-                  <TableCell className="font-medium">{formatUsd2(p.est_revenue_daily_net)}</TableCell>
+                  <TableCell className="font-medium">
+                    {formatUsd2(Number(p.daily_streams_net ?? 0) * payoutPerStreamUsd)}
+                  </TableCell>
                   <TableCell className="text-lime-700 dark:text-lime-400 font-medium">
                     +{formatInt(p.daily_streams_net)}
                   </TableCell>
@@ -983,7 +984,7 @@ export function CollectorsClient(props: {
 
           <div className="mt-3 space-y-4">
             <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
-              Cumulative streams are totals from the DB on the data date. "Δ1d" is today minus yesterday.
+              Cumulative streams are totals from the DB on the data date. “Δ1d” is today minus yesterday.
             </div>
             {/* Quick summary */}
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -993,9 +994,7 @@ export function CollectorsClient(props: {
                 topTrackCards.bestDelta?.daily_streams_delta == null
                   ? "—"
                   : metric === "revenue"
-                    ? revenuePerStreamDaily == null
-                      ? "—"
-                      : formatUsd2(topTrackCards.bestDelta.daily_streams_delta * revenuePerStreamDaily)
+                    ? formatUsd2(topTrackCards.bestDelta.daily_streams_delta * payoutPerStreamUsd)
                     : `${topTrackCards.bestDelta.daily_streams_delta >= 0 ? "+" : ""}${formatInt(topTrackCards.bestDelta.daily_streams_delta)}`
               }
               subtitle={
@@ -1036,9 +1035,7 @@ export function CollectorsClient(props: {
                 topTrackCards.bestTotal?.total_streams_cumulative == null
                   ? "—"
                   : metric === "revenue"
-                    ? revenuePerStreamTotal == null
-                      ? "—"
-                      : formatUsd2(topTrackCards.bestTotal.total_streams_cumulative * revenuePerStreamTotal)
+                    ? formatUsd2(topTrackCards.bestTotal.total_streams_cumulative * payoutPerStreamUsd)
                     : formatInt(topTrackCards.bestTotal.total_streams_cumulative)
               }
               subtitle={
@@ -1082,23 +1079,23 @@ export function CollectorsClient(props: {
                 className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2"
                 style={{ color: "var(--sb-muted)" }}
               />
-              <input
+              <Input
                 type="text"
                 value={trackQuery}
                 onChange={(e) => setTrackQuery(e.target.value)}
                 placeholder="Search tracks / artists / ISRC…"
-                className="w-full rounded-xl border bg-white/70 pl-8 pr-8 py-1.5 text-xs outline-none transition dark:bg-white/5"
-                style={{ borderColor: "var(--sb-border)" }}
+                className="pl-8 pr-8 py-1.5 text-xs"
               />
               {trackQuery && (
-                <button
+                <IconButton
                   type="button"
                   onClick={() => setTrackQuery("")}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 transition hover:bg-black/5 dark:hover:bg-white/10"
                   aria-label="Clear search"
+                  title="Clear search"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 h-7 w-7 rounded-md"
                 >
                   <X className="h-3.5 w-3.5" style={{ color: "var(--sb-muted)" }} />
-                </button>
+                </IconButton>
               )}
             </div>
 

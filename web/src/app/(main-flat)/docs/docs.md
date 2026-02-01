@@ -513,7 +513,7 @@ Your DB may have additional columns; those are fine.
 | `total_streams_cumulative` | bigint/int | Sum of cumulative streams across tracks (catalog snapshot join) |
 | `daily_streams_net` | bigint/int/null | Day-over-day delta of total streams (derived) |
 | `missing_streams_track_count` | bigint/int | Tracks in playlist missing catalog snapshot that day |
-| `est_revenue_total` | numeric | Estimated total revenue (`streams * 0.002`) |
+| `est_revenue_total` | numeric | Estimated total revenue (derived from streams; UI rate is configurable) |
 | `est_revenue_daily_net` | numeric/null | Estimated daily revenue |
 | `source_run_id` | uuid/text | Link to ingestion run |
 
@@ -869,7 +869,7 @@ This section defines the “official meaning” of the most important metrics sh
 |---|---|---|
 | Track total streams | `track_daily_streams.streams_cumulative` for the selected run date | `track_daily_streams` |
 | Track daily streams | `today(streams_cumulative) - yesterday(streams_cumulative)` (when both exist); some views clamp at 0 | derived |
-| Track revenue (est.) | `streams * 0.002` | constant in ingestion/UI |
+| Track revenue (est.) | `streams * (rate_per_1k / 1000)` | UI uses the configured “Rate” setting (default 2.00 per 1,000) |
 
 ### Playlist-level (`playlist_daily_stats`)
 
@@ -879,7 +879,7 @@ This section defines the “official meaning” of the most important metrics sh
 | Total streams | `total_streams_cumulative` | sum of cumulative streams across tracks (using catalog snapshot) |
 | Daily streams (net) | `daily_streams_net` | day-over-day delta of `total_streams_cumulative` |
 | Missing streams tracks | `missing_streams_track_count` | membership tracks missing from catalog snapshot that day (after exclusions) |
-| Revenue (daily/total) | `est_revenue_daily_net` / `est_revenue_total` | estimated with payout constant |
+| Revenue (daily/total) | derived from `daily_streams_net` / `total_streams_cumulative` | UI uses the configured “Rate” setting (default 2.00 per 1,000) |
 
 ### Catalog (artist aggregates)
 
@@ -909,7 +909,7 @@ Use this when you (or SAI) want to map what you see on screen to the canonical d
 
 | UI label | Meaning |
 |---|---|
-| `Revenue (Daily)` | `est_revenue_daily_net` for the selected scope/playlist (or derived from daily streams × payout constant) |
+| `Revenue (Daily)` | derived from `daily_streams_net × (rate_per_1k / 1000)` (Rate is configurable in Settings) |
 | `Streams (7d)` | sum of last 7 days of `daily_streams_net` (requires ≥2 valid daily points to display) |
 | `Streams (30d)` | sum of last 30 days of `daily_streams_net` (requires ≥2 valid daily points) |
 | Recent History: `Tracks` | `track_count` |
@@ -922,8 +922,8 @@ Use this when you (or SAI) want to map what you see on screen to the canonical d
 |---|---|
 | `Total streams` | `playlist_daily_stats.total_streams_cumulative` |
 | `Daily streams` | `playlist_daily_stats.daily_streams_net` |
-| `Est. revenue (cumulative)` | `playlist_daily_stats.est_revenue_total` |
-| `Est. revenue (daily)` | `playlist_daily_stats.est_revenue_daily_net` |
+| `Est. revenue (cumulative)` | derived from `playlist_daily_stats.total_streams_cumulative × (rate_per_1k / 1000)` |
+| `Est. revenue (daily)` | derived from `playlist_daily_stats.daily_streams_net × (rate_per_1k / 1000)` |
 | `Track count` | `playlist_daily_stats.track_count` |
 | `Track change (daily)` | `today(track_count) - yesterday(track_count)` (can be negative) |
 | `Track count over time` | chart of `track_count` snapshots over the chosen range |
@@ -932,8 +932,8 @@ Use this when you (or SAI) want to map what you see on screen to the canonical d
 
 | UI label | Meaning |
 |---|---|
-| `Est. revenue (daily)` | `collector_daily_agg.est_revenue_daily_net` for selected collector/day |
-| `Est. revenue (total)` | `collector_daily_agg.est_revenue_total` |
+| `Est. revenue (daily)` | derived from `collector_daily_agg.daily_streams_net × (rate_per_1k / 1000)` |
+| `Est. revenue (total)` | derived from `collector_daily_agg.total_streams_cumulative × (rate_per_1k / 1000)` |
 | `Daily streams` | `collector_daily_agg.daily_streams_net` |
 | `Total streams` | `collector_daily_agg.total_streams_cumulative` |
 | Compare table: `Yesterday` | value minus `*_delta_yday` (yesterday reconstructed) |

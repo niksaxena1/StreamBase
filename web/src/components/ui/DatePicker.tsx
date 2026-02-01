@@ -45,7 +45,6 @@ function DatePickerInner({
   const minDate = useMemo(() => (min ? parseYmd(min) : undefined), [min]);
   const maxDate = useMemo(() => (max ? parseYmd(max) : undefined), [max]);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
-  const [portalReady, setPortalReady] = useState(false);
   const [popoverPos, setPopoverPos] = useState<{ top: number; left: number } | null>(null);
   const [displayMonth, setDisplayMonth] = useState<Date | undefined>(undefined);
   const disabledDays: Matcher[] | undefined = useMemo(() => {
@@ -64,17 +63,6 @@ function DatePickerInner({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [isOpen]);
-
-  useEffect(() => {
-    setPortalReady(true);
-  }, []);
-
-  // Set initial display month when opening
-  useEffect(() => {
-    if (isOpen && !displayMonth) {
-      setDisplayMonth(selected ?? maxDate ?? new Date());
-    }
-  }, [isOpen, selected, maxDate, displayMonth]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -158,7 +146,7 @@ function DatePickerInner({
         <span className="font-mono text-xs">{selected ? formatDisplay(selected) : value}</span>
       </button>
 
-      {portalReady && isOpen && popoverPos
+      {isOpen && popoverPos
         ? createPortal(
             <>
               <div
