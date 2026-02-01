@@ -15,6 +15,12 @@ import { SectionHeader } from "@/components/ui/SectionHeader";
 
 export const revalidate = 60; // Revalidate every 60 seconds for fresher health data
 
+type HealthPageProps = {
+  // Next.js 16 types `searchParams` as a Promise in generated PageProps.
+  // Accept that shape here and resolve it inside the component.
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
 function FilterToggle({
   active,
   href,
@@ -39,17 +45,13 @@ function FilterToggle({
   );
 }
 
-export default async function HealthPage({
-  searchParams,
-}: {
-  // See note in other pages: keep this as `any` to satisfy Next's generated PageProps typing
-  // while avoiding `await searchParams` (which breaks static generation in Next 16).
-  searchParams?: unknown;
-}) {
-  const sp = (searchParams ?? {}) as { severity?: string; playlist?: string; date?: string };
-  const severityFilter = sp.severity ?? "all";
-  const playlistFilter = sp.playlist ?? "all";
-  const dateFilter = sp.date;
+export default async function HealthPage({ searchParams }: HealthPageProps) {
+  const sp = (await searchParams) ?? {};
+  const getFirst = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+
+  const severityFilter = getFirst(sp.severity) ?? "all";
+  const playlistFilter = getFirst(sp.playlist) ?? "all";
+  const dateFilter = getFirst(sp.date);
 
   const sb = await supabaseServer();
   const { data: userData } = await sb.auth.getUser();
