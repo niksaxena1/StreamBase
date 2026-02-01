@@ -345,4 +345,3 @@ export function HomeDashboardClient(props: {
     </MetricProvider>
   );
 }
-

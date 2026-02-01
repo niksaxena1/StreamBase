@@ -96,7 +96,7 @@ export function AppShell(props: { children: ReactNode; mainSurface?: MainSurface
           </header>
 
           {/* Main surface */}
-          <main className={(mainSurface === "glass" ? "sb-glass " : "") + "flex-1 p-4 sm:p-5"}>
+          <main className={(mainSurface === "glass" ? "sb-glass " : "") + "flex-1 px-3 py-4 sm:py-5"}>
             <IngestionStatusBanner />
             {props.children}
           </main>

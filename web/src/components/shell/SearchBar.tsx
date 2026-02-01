@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { Search, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -30,20 +31,33 @@ export function SearchBar() {
   const [loadingStats, setLoadingStats] = useState<Record<string, boolean>>({});
   const searchRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
-  // Update dropdown position when it opens
+  // Update dropdown position when it opens, and while open (scroll/resize).
   useEffect(() => {
-    if (isOpen && inputRef.current) {
-      const rect = inputRef.current.getBoundingClientRect();
-      setDropdownRect(rect);
+    function updateRect() {
+      if (!inputRef.current) return;
+      setDropdownRect(inputRef.current.getBoundingClientRect());
     }
+    if (!isOpen) return;
+    updateRect();
+    window.addEventListener("scroll", updateRect, true);
+    window.addEventListener("resize", updateRect);
+    return () => {
+      window.removeEventListener("scroll", updateRect, true);
+      window.removeEventListener("resize", updateRect);
+    };
   }, [isOpen]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
+      const target = event.target as Node | null;
+      if (!target) return;
+      const inSearch = !!searchRef.current?.contains(target);
+      const inDropdown = !!dropdownRef.current?.contains(target);
+      if (!inSearch && !inDropdown) {
         setIsOpen(false);
       }
     }
@@ -156,98 +170,103 @@ export function SearchBar() {
           )}
         </div>
 
-        {/* Results dropdown - must be inside searchRef for click-outside logic */}
-        {isOpen && (
-          <div
-            className="absolute top-full z-[9999] mt-1 rounded-lg border bg-white shadow-lg dark:bg-neutral-900"
-            style={{
-              borderColor: "var(--sb-border)",
-              width: dropdownRect ? `${dropdownRect.width * 1.5}px` : "auto",
-              left: "50%",
-              transform: "translateX(-50%)",
-            }}
-          >
-            {isLoading ? (
-              <div className="px-3 py-2 text-sm text-black/50 dark:text-white/50">
-                Searching...
-              </div>
-            ) : results.length > 0 ? (
-              <div className="max-h-96 overflow-y-auto">
-                {results.map((result) => {
-                  const statsKey = `${result.type}-${result.id}`;
-                  const stats = hoveredResultStats[statsKey];
-                  const isLoadingStats = loadingStats[statsKey];
+        {/* Results dropdown: render in a portal so it can float above sticky/stacking contexts. */}
+        {isOpen && typeof document !== "undefined"
+          ? createPortal(
+              <div
+                ref={dropdownRef}
+                className="fixed z-[99999] rounded-lg border bg-white shadow-lg dark:bg-neutral-900"
+                style={{
+                  borderColor: "var(--sb-border)",
+                  top: dropdownRect ? dropdownRect.bottom + 4 : 0,
+                  left: dropdownRect ? dropdownRect.left + dropdownRect.width / 2 : 0,
+                  width: dropdownRect ? `${dropdownRect.width * 1.5}px` : "auto",
+                  transform: "translateX(-50%)",
+                }}
+              >
+                {isLoading ? (
+                  <div className="px-3 py-2 text-sm text-black/50 dark:text-white/50">
+                    Searching...
+                  </div>
+                ) : results.length > 0 ? (
+                  <div className="max-h-96 overflow-y-auto">
+                    {results.map((result) => {
+                      const statsKey = `${result.type}-${result.id}`;
+                      const stats = hoveredResultStats[statsKey];
+                      const isLoadingStats = loadingStats[statsKey];
 
-                  const formatStreams = (streams: number) => {
-                    if (streams >= 1_000_000) return `${(streams / 1_000_000).toFixed(1)}M`;
-                    if (streams >= 1_000) return `${(streams / 1_000).toFixed(1)}K`;
-                    return String(streams);
-                  };
+                      const formatStreams = (streams: number) => {
+                        if (streams >= 1_000_000) return `${(streams / 1_000_000).toFixed(1)}M`;
+                        if (streams >= 1_000) return `${(streams / 1_000).toFixed(1)}K`;
+                        return String(streams);
+                      };
 
-                  return (
-                    <button
-                      key={statsKey}
-                      type="button"
-                      onClick={() => handleResultClick(result)}
-                      onMouseEnter={() => handleResultHover(result)}
-                      className="flex w-full cursor-pointer items-center gap-3 border-b px-3 py-2 transition hover:bg-black/5 dark:hover:bg-white/5 last:border-b-0 relative"
-                      style={{ borderColor: "var(--sb-border)", pointerEvents: "auto" }}
-                    >
-                      {result.imageUrl && (
-                        <img
-                          src={result.imageUrl}
-                          alt={result.name}
-                          className={`h-10 w-10 object-cover ${result.type === "artist" ? "rounded-full" : "rounded"}`}
-                        />
-                      )}
-                      <div className="min-w-0 flex-1 text-left">
-                        <div className="truncate text-sm font-medium">{result.name}</div>
-                        <div className="truncate text-xs text-black/60 dark:text-white/60">
-                          {result.type === "artist" || result.type === "playlist"
-                            ? `${result.trackCount || 0} track${result.trackCount !== 1 ? "s" : ""}`
-                            : result.artistIds && result.artistNames && result.artistIds.length > 0 ? (
-                                <div className="flex flex-wrap gap-1">
-                                  {result.artistNames.map((name, idx) => (
-                                    <button
-                                      key={idx}
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        const artistId = result.artistIds?.[idx];
-                                        if (artistId) {
-                                          router.push(`/catalog?artist_id=${encodeURIComponent(artistId)}`);
-                                          setQuery("");
-                                          setIsOpen(false);
-                                        }
-                                      }}
-                                      className="cursor-pointer transition hover:text-lime-600 dark:hover:text-lime-400"
-                                      title={`Go to ${name}`}
-                                    >
-                                      {name}
-                                      {idx < (result.artistNames?.length || 0) - 1 && ","}
-                                    </button>
-                                  ))}
-                                </div>
-                              ) : (
-                                result.subtitle
-                              )}
-                        </div>
-                      </div>
-                      <div className="text-xs font-medium" style={{ color: "var(--sb-accent)" }}>
-                        {isLoadingStats ? "..." : stats ? formatStreams(stats.streams) : ""}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="px-3 py-2 text-sm text-black/50 dark:text-white/50">
-                No results found
-              </div>
-            )}
-          </div>
-        )}
+                      return (
+                        <button
+                          key={statsKey}
+                          type="button"
+                          onClick={() => handleResultClick(result)}
+                          onMouseEnter={() => handleResultHover(result)}
+                          className="flex w-full cursor-pointer items-center gap-3 border-b px-3 py-2 transition hover:bg-black/5 dark:hover:bg-white/5 last:border-b-0 relative"
+                          style={{ borderColor: "var(--sb-border)", pointerEvents: "auto" }}
+                        >
+                          {result.imageUrl && (
+                            <img
+                              src={result.imageUrl}
+                              alt={result.name}
+                              className={`h-10 w-10 object-cover ${result.type === "artist" ? "rounded-full" : "rounded"}`}
+                            />
+                          )}
+                          <div className="min-w-0 flex-1 text-left">
+                            <div className="truncate text-sm font-medium">{result.name}</div>
+                            <div className="truncate text-xs text-black/60 dark:text-white/60">
+                              {result.type === "artist" || result.type === "playlist"
+                                ? `${result.trackCount || 0} track${result.trackCount !== 1 ? "s" : ""}`
+                                : result.artistIds && result.artistNames && result.artistIds.length > 0 ? (
+                                    <div className="flex flex-wrap gap-1">
+                                      {result.artistNames.map((name, idx) => (
+                                        <button
+                                          key={idx}
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            const artistId = result.artistIds?.[idx];
+                                            if (artistId) {
+                                              router.push(`/catalog?artist_id=${encodeURIComponent(artistId)}`);
+                                              setQuery("");
+                                              setIsOpen(false);
+                                            }
+                                          }}
+                                          className="cursor-pointer transition hover:text-lime-600 dark:hover:text-lime-400"
+                                          title={`Go to ${name}`}
+                                        >
+                                          {name}
+                                          {idx < (result.artistNames?.length || 0) - 1 && ","}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    result.subtitle
+                                  )}
+                            </div>
+                          </div>
+                          <div className="text-xs font-medium" style={{ color: "var(--sb-accent)" }}>
+                            {isLoadingStats ? "..." : stats ? formatStreams(stats.streams) : ""}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="px-3 py-2 text-sm text-black/50 dark:text-white/50">
+                    No results found
+                  </div>
+                )}
+              </div>,
+              document.body,
+            )
+          : null}
       </div>
     </>
   );
