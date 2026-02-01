@@ -45,14 +45,16 @@ export async function generateStaticParams() {
   }));
 }
 
+type PlaylistDetailPageProps = {
+  params: Promise<{ playlist_key: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
 export default async function PlaylistDetailPage({
   params,
   searchParams,
-}: {
-  params: { playlist_key: string };
-  searchParams?: Promise<Record<string, string | string[] | undefined>>;
-}) {
-  const { playlist_key } = params;
+}: PlaylistDetailPageProps) {
+  const { playlist_key } = await params;
   const sp = (await searchParams) ?? {};
   const dateParam = typeof sp.date === "string" ? sp.date : undefined;
   const sb = await supabaseServer();
