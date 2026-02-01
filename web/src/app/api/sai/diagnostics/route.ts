@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
     const { count, error } = await svc
       .from("sai_doc_chunks")
       .select("id", { count: "exact", head: true })
-      .eq("doc_path", "web/src/app/(main)/docs/docs.md");
+      .eq("doc_path", "web/src/app/(main-flat)/docs/docs.md");
     out.checks.sai_doc_chunks = { ok: !error, count: count ?? null, error: error?.message ?? null };
     if (error) out.ok = false;
   }
@@ -76,7 +76,7 @@ export async function GET(req: NextRequest) {
   let sampleIsrc: string | null = null;
   if (latestRunDate) {
     const { data: row, error } = await svc
-      .from("track_daily_streams")
+      .from("track_daily_streams_effective_public")
       .select("isrc")
       .eq("date", latestRunDate)
       .limit(1)

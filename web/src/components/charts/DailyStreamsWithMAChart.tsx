@@ -5,6 +5,7 @@ import {
   CartesianGrid,
   ComposedChart,
   Line,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -18,6 +19,13 @@ type DataPoint = {
   date: string;
   daily: number;
   ma7?: number | null;
+};
+
+type ManualOverrideAnnotation = {
+  date: string;
+  note: string;
+  title?: string;
+  imageUrl?: string | null;
 };
 
 type ValueFormat = "int" | "usd";
@@ -92,6 +100,14 @@ function CustomTooltip({
 
   const mainValue = sorted[0];
   const mainValueFormatted = fmtValue(Number(mainValue.value ?? 0));
+  const overrideItems:
+    | Array<{ note: string; title?: string; imageUrl?: string | null }>
+    | null =
+    (((payload as unknown as any[])?.[0]?.payload?._overrideItems as Array<{
+      note: string;
+      title?: string;
+      imageUrl?: string | null;
+    }> | undefined) ?? null);
 
   const handleCopy = async () => {
     try {
@@ -153,6 +169,39 @@ function CustomTooltip({
           </div>
         );
       })}
+      {overrideItems?.length ? (
+        <div className="mt-2 border-t pt-2" style={{ borderColor: "var(--sb-border)" }}>
+          <div className="text-[11px] font-medium uppercase tracking-wide" style={{ color: "#f59e0b" }}>
+            Manual override
+          </div>
+          <div className="mt-1 space-y-1">
+            {overrideItems.map((it, idx) => (
+              <div key={idx} className="flex items-start gap-2">
+                {it.imageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={it.imageUrl}
+                    alt=""
+                    className="h-8 w-8 rounded-md object-cover sb-ring"
+                  />
+                ) : (
+                  <div className="h-8 w-8 rounded-md sb-ring bg-white/60 dark:bg-white/10" />
+                )}
+                <div className="min-w-0">
+                  {it.title ? (
+                    <div className="text-xs font-medium truncate" style={{ color: "var(--sb-text)" }}>
+                      {it.title}
+                    </div>
+                  ) : null}
+                  <div className="text-xs" style={{ color: "var(--sb-text)" }}>
+                    {it.note}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -165,6 +214,7 @@ export function DailyStreamsWithMAChart({
   dailyColor = "#c7f33c",
   maColor = "rgba(255,255,255,0.75)",
   heightPx = 220,
+  annotations,
 }: {
   data: DataPoint[];
   valueLabel?: string;
@@ -173,6 +223,7 @@ export function DailyStreamsWithMAChart({
   dailyColor?: string;
   maColor?: string;
   heightPx?: number;
+  annotations?: ManualOverrideAnnotation[];
 }) {
   const gid = useId();
   const [isDark, setIsDark] = useState(false);
@@ -210,7 +261,24 @@ export function DailyStreamsWithMAChart({
     : maColor;
   
   // Keep parity with DailyStreamsChart: accept newest-first and render oldest->newest
-  const chartData = [...data].reverse();
+  const annItemsByDate = new Map<string, ManualOverrideAnnotation[]>();
+  for (const a of annotations ?? []) {
+    if (!a?.date) continue;
+    const arr = annItemsByDate.get(a.date) ?? [];
+    arr.push(a);
+    annItemsByDate.set(a.date, arr);
+  }
+
+  const chartData = [...data].reverse().map((d) => ({
+    ...d,
+    _overrideItems: (annItemsByDate.get(d.date) ?? null)?.map((a) => ({
+      note: a.note,
+      title: a.title,
+      imageUrl: a.imageUrl ?? null,
+    })) ?? null,
+  }));
+  const chartDates = new Set(chartData.map((d) => d.date));
+  const annotationDates = [...annItemsByDate.keys()].filter((d) => chartDates.has(d));
   
   // Debug: Check if we have any ma7 values
   const hasMa7Data = chartData.some((d) => d.ma7 != null && !isNaN(Number(d.ma7)));
@@ -299,6 +367,17 @@ export function DailyStreamsWithMAChart({
               opacity: 0.8,
             }}
           />
+          {annotationDates.map((d) => (
+            <ReferenceLine
+              key={`override-${d}`}
+              x={d}
+              stroke="#f59e0b"
+              strokeOpacity={0.35}
+              strokeWidth={2}
+              strokeDasharray="4 4"
+              ifOverflow="hidden"
+            />
+          ))}
           <Area
             type="monotone"
             dataKey="daily"

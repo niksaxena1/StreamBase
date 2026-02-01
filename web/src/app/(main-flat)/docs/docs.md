@@ -1,17 +1,26 @@
 # SpotiBase `/docs`
 
-This is the canonical, **human + chatbot friendly** description of how SpotiBase works end-to-end.
-
-**Primary goals**
-
-- Be accurate to the code + database that exists today (avoid “hand-wavy docs”).
-- Be “AI-updatable”: clear sections, explicit file pointers, and a changelog at the bottom.
-- Make it easy to answer: “Where do I click for X?” and “Where is X implemented?”
-
 > **Where to edit this document**
 >
-> - `web/src/app/(main)/docs/docs.md`
-> - Renderer/UI: `web/src/app/(main)/docs/page.tsx` + `DocsClient.tsx`
+> - `web/src/app/(main-flat)/docs/docs.md`
+> - Renderer/UI: `web/src/app/(main-flat)/docs/page.tsx` + `DocsClient.tsx`
+
+This page is the canonical, **human-first** description of how SpotiBase works end-to-end (pipeline, UI, data model, operations).
+
+If you’re looking for “how do I use the app?” start with **Quick “How do I…?”** and **What each page does**.
+The **SAI / chatbot** sections are optional and live near the bottom.
+
+## Daily automation schedule (GitHub Actions)
+
+GitHub Actions scheduled workflows use **UTC**. Below is the same schedule shown in **UTC** and **GMT+4** (GST / Asia/Abu_Dhabi).
+
+| Workflow | When (UTC) | When (GMT+4) | What it does |
+|---|---:|---:|---|
+| Dashboard sync (`sot_daily_dashboard_sync.yml`) | 09:00 | 13:00 | Keeps SpotOnTrack dashboards in sync with `config/playlists.csv` |
+| Playlist refresh (`sot_daily_playlist_refresh.yml`) | 07:00 | 11:00 | Refreshes SpotOnTrack playlists |
+| Daily export (`sot_daily_export.yml`) | 10:00 (primary) + 11:00 (fallback) | 14:00 + 15:00 | Exports dashboards → uploads to Storage → ingests into Supabase (idempotent) |
+| Spotify enrichment (`spotify_enrich.yml`) | 12:00 | 16:00 | Enriches missing track metadata via Spotify |
+| Artist image cache refresh (`spotify_artist_image_refresh.yml`) | 17:00 (first Friday) | 21:00 (first Friday) | Refreshes cached Spotify artist images (monthly) |
 
 ---
 
@@ -80,6 +89,35 @@ What you’re seeing:
 - Health:
   - Export missing catalog tracks list as CSV (button in the “All Missing Catalog Tracks” section)
   - Download raw export CSV files via signed links
+
+---
+
+## FAQ (common questions)
+
+<!-- tags: faq, glossary -->
+
+### Is a track unique by ISRC?
+
+Yes. In SpotiBase, **ISRC is the primary track identity** (`tracks.isrc` and joins to `track_daily_streams.isrc`).
+
+### What is the difference between Spotify track id and ISRC?
+
+- Spotify track id: identifies a specific Spotify track object (can vary by territory/duplicate uploads).
+- ISRC: the industry recording identifier; more stable across releases and systems.
+
+SpotiBase uses ISRC because SpotOnTrack exports are ISRC-based and it’s the best stable join key.
+
+### Why do dates look “2 days behind”?
+
+SpotOnTrack has a known lag; UI displays “data date” by shifting run date by `SOT_DATA_LAG_DAYS=2`.
+
+### Why are some daily values zero or missing?
+
+Common causes:
+
+- First day of ingestion (no previous day to diff against)
+- Missing export / partial export (check Health)
+- Track not present in catalog snapshot for the day (non-catalog track warnings)
 
 ---
 
@@ -367,11 +405,18 @@ Implementation pointers:
 - Purpose: operational controls (e.g., excluding intentional “non-catalog” tracks from warnings).
 - What you can do:
   - Add/remove track exclusions for health calculations
+  - Add/remove **manual stream overrides** for specific (run date, ISRC) to repair missing/incorrect SpotOnTrack snapshots (with an audit note)
 
 Files:
 
 - `web/src/app/(main)/settings/page.tsx`
 - `web/src/app/(main)/settings/TrackExclusionForm.tsx`
+- `web/src/app/(main)/settings/ManualStreamOverrideForm.tsx`
+
+DB setup for manual overrides:
+
+- Apply `migrations/add_track_daily_stream_overrides.sql` (creates `track_daily_stream_overrides` + effective views + recompute RPC)
+- Apply `migrations/adopt_track_daily_streams_effective.sql` (updates key RPCs to read the effective stream snapshots)
 
 ---
 
@@ -547,6 +592,9 @@ These are the warning codes emitted by the ingestion script today:
 | `track_count_swing_hard_fail` | critical | Catalog playlist changed by ≥70% vs previous day; ingestion aborted | ingestion hard safety for catalog playlists | This usually means partial export; fix exporter/run again |
 | `track_count_swing` | warn/critical | Track count swing vs yesterday (warn), or catalog count dropped by > threshold (critical) | ingestion compares `playlist_daily_stats` day-over-day | Expand warning in UI to see changes; validate exports |
 | `high_zero_stream_rate` | warn | Catalog export has too many rows with 0 streams | ingestion computes zero-stream ratio for catalog playlists | Investigate SpotOnTrack data freshness; ensure correct dashboard/export format |
+| `catalog_streams_missing_prev_nonzero` | critical | SpotOnTrack export had missing/blank/non-numeric `spotify_streams_total` for track(s) that had non-zero cumulative streams yesterday. SpotiBase records these as “missing snapshots” for today (no `track_daily_streams` row) | ingestion detects missing stream values in catalog exports and checks yesterday’s `track_daily_streams` | Treat as source instability; inspect raw CSV; decide later whether to impute/carry-forward |
+| `catalog_missing_stream_snapshots` | critical | Explicit count of catalog tracks that appeared in catalog exports but did **not** get a valid `track_daily_streams` snapshot row today (missing/invalid stream totals) | ingestion compares “expected catalog ISRCs” vs today’s snapshot set | Treat as a data-quality break; inspect raw exports; consider re-ingest after fixing exporter |
+| `total_streams_decreased` | critical | A playlist’s `total_streams_cumulative` decreased vs yesterday (should not happen for cumulative snapshots) | ingestion computes `playlist_daily_stats` and checks monotonicity vs previous day | Investigate catalog snapshot integrity (missing/invalid stream totals) and source exports |
 | `non_catalog_tracks_present` | critical | Playlist contains tracks not present in catalog snapshot for that day | ingestion compares playlist ISRC set vs `track_daily_streams` ISRCs | If intentional: add exclusions in Settings; else fix catalog export/enrichment |
 | `tracks_missing_enrichment` | info | Tracks missing Spotify enrichment (no artist ids) | ingestion checks `tracks.spotify_artist_ids IS NULL` | Run Spotify enrichment to fill metadata |
 | `ingestion_exception` | critical | Script threw an exception (catch-all) | ingestion exception handler | Open run logs URL; fix root cause; rerun |
@@ -808,104 +856,6 @@ Checklist:
 
 ---
 
-## Chatbot notes (future integration)
-
-### Canonical facts the bot should learn
-
-- Track identity is ISRC.
-- Artist identity is Spotify artist id; artists are derived from track arrays (no artists table).
-- Snapshot tables store cumulative values; daily deltas are derived.
-- `all_catalog` is a union/virtual playlist used as the canonical “whole catalog” lens.
-- SpotOnTrack lag: `SOT_DATA_LAG_DAYS = 2` (UI shifts dates).
-
-### Question → where the answer lives
-
-- “How do I find a track?” → Search bar → `/api/search` → `search_all`
-- “Artist total streams today?” → `/api/search-stats` → `artist_total_streams_for_date`
-- “Top tracks for artist X?” → Catalog RPCs (`catalog_artist_top_tracks_daily/total`)
-- “Why is health warning present?” → `ingestion_warnings` + relevant health RPC for drilldown
-- “What changed in playlist Y?” → playlist/health membership RPCs (`playlist_added_tracks`, `playlist_removed_tracks`, `health_track_count_swing_tracks`)
-
----
-
-## FAQ (common questions)
-
-<!-- tags: faq, glossary -->
-
-### Is a track unique by ISRC?
-
-Yes. In SpotiBase, **ISRC is the primary track identity** (`tracks.isrc` and joins to `track_daily_streams.isrc`).
-
-### What is the difference between Spotify track id and ISRC?
-
-- Spotify track id: identifies a specific Spotify track object (can vary by territory/duplicate uploads).
-- ISRC: the industry recording identifier; more stable across releases and systems.
-
-SpotiBase uses ISRC because SpotOnTrack exports are ISRC-based and it’s the best stable join key.
-
-### Why do dates look “2 days behind”?
-
-SpotOnTrack has a known lag; UI displays “data date” by shifting run date by `SOT_DATA_LAG_DAYS=2`.
-
-### Why are some daily values zero or missing?
-
-Common causes:
-
-- First day of ingestion (no previous day to diff against)
-- Missing export / partial export (check Health)
-- Track not present in catalog snapshot for the day (non-catalog track warnings)
-
-### Can SAI (SpotiBase Artificial Intelligence) read these docs later?
-
-Yes—best practice is:
-
-- Treat `docs.md` as a source-of-truth corpus
-- Chunk by `##` sections (already how `/docs` UI is structured)
-- Index chunks (embeddings + metadata: tags/sources)
-- Retrieve relevant chunks at question time (RAG)
-
-This keeps SAI grounded in the actual system behavior and avoids hallucinating.
-
----
-
-## SAI ingestion spec (recommended format for RAG)
-
-<!-- tags: sai, chatbot, rag -->
-
-If you build “SAI” later, the easiest reliable approach is **RAG (retrieval augmented generation)**.
-
-### Recommended ingestion source(s)
-
-- Primary: `web/src/app/(main)/docs/docs.md`
-- Secondary:
-  - `scripts/ingest_exports_to_supabase.py` (warning meanings + ingestion logic)
-  - `migrations/*.sql` (RPC definitions + performance indexes)
-
-### Chunking rules
-
-- Chunk by `##` section boundaries (already how `/docs` UI splits content).
-- Keep each chunk:
-  - title
-  - body markdown
-  - tags (from `<!-- tags: ... -->`)
-  - sources (from `<!-- sources: ... -->`)
-
-### Retrieval rules (practical)
-
-- Always retrieve:
-  - at least 1 “page behavior” chunk (how to do X)
-  - at least 1 “data model/RPC” chunk (where the numbers come from)
-  - at least 1 “debugging/runbook” chunk when the user asks “why” or “error”
-
-### Answer policy
-
-- If a question is about numbers, SAI should:
-  - state which table/RPC defines the number
-  - state run date vs data date assumptions
-  - warn when the answer is an estimate (e.g. track_daily_streams reltuples estimate)
-
----
-
 ## KPI & metric definitions (exact meaning of numbers you see)
 
 <!-- tags: kpis, metrics, semantics -->
@@ -1021,6 +971,10 @@ These are “system rules” that future changes should preserve unless you inte
 
 - `track_daily_streams.streams_cumulative` is a **cumulative snapshot**, not a delta.
 - “Daily streams” are derived by difference of cumulative snapshots between adjacent days.
+- Cumulative snapshots should be **monotonic non-decreasing** per ISRC and (by summation) per playlist total. If totals decrease, SpotiBase emits critical health warnings (see `total_streams_decreased`).
+- If SpotOnTrack exports contain missing/invalid `spotify_streams_total` values:
+  - SpotiBase may record that day as a **missing snapshot** for affected ISRCs (no row in `track_daily_streams` for that date), because `streams_cumulative` is non-nullable in the current schema.
+  - The Health page surfaces this via `catalog_streams_missing_prev_nonzero` and `catalog_missing_stream_snapshots`.
 
 ### Membership semantics
 
@@ -1117,6 +1071,11 @@ Notes:
 - Ingestion is designed to be re-runnable for a run date:
   - it upserts config + stats
   - it clears stale warnings for an existing run id
+- When SpotOnTrack is unstable, you may see critical warnings like:
+  - `catalog_streams_missing_prev_nonzero`
+  - `catalog_missing_stream_snapshots`
+  - `total_streams_decreased`
+  These indicate “source data quality break”, not necessarily a bug in SpotiBase.
 
 ### If you need rollback
 
@@ -1179,47 +1138,6 @@ Changing what “whole catalog” means requires updating ingestion logic + any 
 
 ---
 
-## SAI answer templates (for consistent chatbot responses)
-
-<!-- tags: sai, chatbot, answers -->
-
-If you want SAI to be reliable, enforce answer structure.
-
-### Template: “What does metric X mean?”
-
-- **Definition** (1 sentence)
-- **Where it comes from** (table/RPC/column)
-- **Date semantics** (run date vs data date)
-- **Edge cases** (day 1, missing yesterday, missing snapshot, exclusions)
-- **How to verify in UI** (page + click path)
-
-### Template: “Why is number X wrong?”
-
-- **Most likely causes** (ordered)
-- **How to confirm** (tables/pages to check)
-- **Fix** (what to run/change)
-- **Prevent recurrence** (min_rows, indexes, guardrails)
-
-### Template: “How do I do X in the app?”
-
-- **Path** (URL / nav path)
-- **Steps** (3–6 bullets)
-- **Data impact** (tables/RPCs touched/read)
-
----
-
-## SAI security constraints (non-negotiable)
-
-<!-- tags: sai, security -->
-
-If/when SAI has access to your environment:
-
-- Never expose secrets (`SUPABASE_SERVICE_ROLE_KEY`, Spotify secrets, cookies).
-- Never allow writes unless explicitly authorized (avoid arbitrary SQL execution).
-- Prefer “read-only + explain + point to sources”.
-
----
-
 ## Query param & URL reference (quick lookup)
 
 <!-- tags: urls, reference -->
@@ -1253,6 +1171,102 @@ Suggested lightweight additions:
   - expected latest run date vs actual latest run date
   - alert when stale beyond lag tolerance
 
+## AI assistant (SAI)
+
+<!-- tags: sai, chatbot -->
+
+This section is only relevant if you enable the SAI chat button in `/settings`.
+
+### Can SAI (SpotiBase Artificial Intelligence) read these docs later?
+
+Yes — recommended approach is **RAG (retrieval augmented generation)**:
+
+- Treat `docs.md` as a source-of-truth corpus
+- Chunk by `##` sections (this page already follows that structure)
+- Index chunks (embeddings + metadata: tags/sources)
+- Retrieve relevant chunks at question time
+
+This keeps SAI grounded in the actual system behavior and avoids hallucinating.
+
+### Canonical facts SAI should learn
+
+- Track identity is ISRC.
+- Artist identity is Spotify artist id; artists are derived from track arrays (no artists table).
+- Snapshot tables store cumulative values; daily deltas are derived.
+- `all_catalog` is a union/virtual playlist used as the canonical “whole catalog” lens.
+- SpotOnTrack lag: `SOT_DATA_LAG_DAYS = 2` (UI shifts dates).
+
+### Question → where the answer lives
+
+- “How do I find a track?” → Search bar → `/api/search` → `search_all`
+- “Artist total streams today?” → `/api/search-stats` → `artist_total_streams_for_date`
+- “Top tracks for artist X?” → Catalog RPCs (`catalog_artist_top_tracks_daily/total`)
+- “Why is health warning present?” → `ingestion_warnings` + relevant health RPC for drilldown
+- “What changed in playlist Y?” → playlist/health membership RPCs (`playlist_added_tracks`, `playlist_removed_tracks`, `health_track_count_swing_tracks`)
+
+### SAI ingestion spec (recommended format for RAG)
+
+#### Recommended ingestion source(s)
+
+- Primary: `web/src/app/(main-flat)/docs/docs.md`
+- Secondary:
+  - `scripts/ingest_exports_to_supabase.py` (warning meanings + ingestion logic)
+  - `migrations/*.sql` (RPC definitions + performance indexes)
+
+#### Chunking rules
+
+- Chunk by `##` section boundaries.
+- Keep each chunk:
+  - title
+  - body markdown
+  - tags (from `<!-- tags: ... -->`)
+  - sources (from `<!-- sources: ... -->`)
+
+#### Retrieval rules (practical)
+
+- Always retrieve:
+  - at least 1 “page behavior” chunk (how to do X)
+  - at least 1 “data model/RPC” chunk (where the numbers come from)
+  - at least 1 “debugging/runbook” chunk when the user asks “why” or “error”
+
+#### Answer policy
+
+- If a question is about numbers, SAI should:
+  - state which table/RPC defines the number
+  - state run date vs data date assumptions
+  - warn when the answer is an estimate (e.g. track_daily_streams reltuples estimate)
+
+### SAI answer templates (for consistent chatbot responses)
+
+If you want SAI to be reliable, enforce answer structure.
+
+#### Template: “What does metric X mean?”
+
+- **Definition** (1 sentence)
+- **Where it comes from** (table/RPC/column)
+- **Date semantics** (run date vs data date)
+- **Edge cases** (day 1, missing yesterday, missing snapshot, exclusions)
+- **How to verify in UI** (page + click path)
+
+#### Template: “Why is number X wrong?”
+
+- **Most likely causes** (ordered)
+- **How to confirm** (tables/pages to check)
+- **Fix** (what to run/change)
+- **Prevent recurrence** (min_rows, indexes, guardrails)
+
+#### Template: “How do I do X in the app?”
+
+- **Path** (URL / nav path)
+- **Steps** (3–6 bullets)
+- **Data impact** (tables/RPCs touched/read)
+
+### SAI security constraints (non-negotiable)
+
+- Never expose secrets (`SUPABASE_SERVICE_ROLE_KEY`, Spotify secrets, cookies).
+- Never allow writes unless explicitly authorized (avoid arbitrary SQL execution).
+- Prefer “read-only + explain + point to sources”.
+
 ---
 
 ## Changelog
@@ -1261,4 +1275,5 @@ Suggested lightweight additions:
 - 2026-01-31: Added cookbook, per-page actions, collectors definition, scale guidance, and docs search/collapse UI.
  - 2026-01-31: Added security/access model, data dictionary, warning catalog, ops runbook, collectors admin guide, API batch lookup docs, and FAQ.
  - 2026-01-31: Added migrations checklist, SAI ingestion spec, optional system stats RPC, and per-section tags/sources UI.
+- 2026-02-01: Added ingestion health warnings for missing/invalid SpotOnTrack stream totals (`catalog_streams_missing_prev_nonzero`, `catalog_missing_stream_snapshots`) and a critical check for day-over-day decreases in playlist total streams (`total_streams_decreased`).
 

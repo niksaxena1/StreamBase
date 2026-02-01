@@ -19,6 +19,7 @@ export function PlaylistPageClient(props: {
   history: PlaylistDailyStatsRow[];
   removedTracksCount: number;
   playlistKey: string;
+  overrideAnnotations: Array<{ date: string; note: string }>;
 }) {
   const { metric, setMetric } = usePlaylistMetric();
 
@@ -30,6 +31,7 @@ export function PlaylistPageClient(props: {
       history={props.history}
       removedTracksCount={props.removedTracksCount}
       playlistKey={props.playlistKey}
+      overrideAnnotations={props.overrideAnnotations}
       metric={metric}
       setMetric={setMetric}
     />

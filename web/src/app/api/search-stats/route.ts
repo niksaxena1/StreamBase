@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
       async () => {
         if (type === "track") {
           // Track: use latest snapshot date when available; fallback to "latest row".
-          const q = sb.from("track_daily_streams").select("streams_cumulative");
+          const q = sb.from("track_daily_streams_effective_public").select("streams_cumulative");
           const { data: trackStats } = latestRunDate
             ? await q.eq("date", latestRunDate).eq("isrc", id).maybeSingle()
             : await q.eq("isrc", id).order("date", { ascending: false }).limit(1).maybeSingle();

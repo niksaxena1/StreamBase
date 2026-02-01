@@ -58,6 +58,11 @@ type TrackDailyRow = {
   streams_cumulative: number | null;
 };
 
+type TrackOverrideRow = {
+  date: string;
+  note: string | null;
+};
+
 type PlaylistDailyStatsRow = { date: string };
 type CatalogArtistSeriesRow = { date: string; streams_cumulative: number | null };
 type CatalogTopTrackRow = {
@@ -141,7 +146,7 @@ async function fetchAllTrackSeries(
   while (from < max) {
     const to = from + pageSize - 1;
     const { data } = await sb
-      .from("track_daily_streams")
+      .from("track_daily_streams_effective_public")
       .select("date,streams_cumulative")
       .eq("isrc", args.isrc)
       .gte("date", args.startDate)
@@ -416,6 +421,31 @@ export default async function CatalogPage({
       ? await fetchAllTrackSeries(svc, { isrc, startDate: startRunDate, endDate: latestRunDate, maxRows: 5000 })
       : ([] as Array<{ date: string; streams_cumulative: number | null }>);
 
+  const trackOverrideAnnotations =
+    isrc && latestRunDate && startRunDate
+      ? (
+          await cachedQuery(
+            async () =>
+              await svc
+                .from("track_daily_stream_overrides")
+                .select("date,note")
+                .eq("isrc", isrc)
+                .gte("date", startRunDate)
+                .lte("date", latestRunDate)
+                .order("date", { ascending: false }),
+            `track-overrides-${isrc}-${startRunDate}-${latestRunDate}`,
+            3600,
+          )
+        ).data
+      : [];
+
+  const trackOverrideAnnotationsDataDate = ((trackOverrideAnnotations ?? []) as TrackOverrideRow[])
+    .filter((r) => !!r?.date)
+    .map((r) => ({
+      date: dataDateFromRunDate(r.date),
+      note: (r.note ?? "").trim() || `Manual override (ISRC: ${isrc})`,
+    }));
+
   const trackCumDesc = (trackSeries ?? []).map((r) => ({
     date: r.date,
     value: Number(r.streams_cumulative ?? 0),
@@ -514,6 +544,7 @@ export default async function CatalogPage({
         selectedTrack={selectedTrack}
         trackCumDesc={trackCumDesc}
         trackDailyWithMaDesc={trackDailyWithMaDesc}
+        trackOverrideAnnotations={trackOverrideAnnotationsDataDate}
         track24h={track24h}
         track7d={track7d}
         track28d={track28d}

@@ -106,13 +106,13 @@ export function DocsClient(props: {
   const isSearching = q.trim().length > 0;
 
   return (
-    <div className="space-y-4">
+    <div className="-mx-4 space-y-4 sm:-mx-5">
       <div className="sb-card p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
               This page renders from{" "}
-              <span className="font-mono">web/src/app/(main)/docs/docs.md</span>.
+              <span className="font-mono">web/src/app/(main-flat)/docs/docs.md</span>.
             </div>
             <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
               Tip: use search, or collapse sections to avoid “wall of text”.
@@ -220,7 +220,7 @@ export function DocsClient(props: {
       </div>
 
       {props.systemStats ? (
-        <div className="sb-card p-4">
+        <section className="p-4">
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="text-sm font-semibold">System stats</div>
@@ -243,11 +243,11 @@ export function DocsClient(props: {
           <div className="mt-2 text-[11px]" style={{ color: "var(--sb-muted)" }}>
             Note: some stats require the optional DB function <span className="font-mono">spotibase_system_stats()</span>.
           </div>
-        </div>
+        </section>
       ) : null}
 
       {props.inventory ? (
-        <div className="sb-card p-4">
+        <section className="p-4">
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="text-sm font-semibold">Inventory</div>
@@ -294,10 +294,10 @@ export function DocsClient(props: {
               )}
             </div>
           </div>
-        </div>
+        </section>
       ) : null}
 
-      <article className="sb-card p-4 text-black/80 dark:text-white/75">
+      <article className="p-4 text-black/80 dark:text-white/75">
         <div className="space-y-3 text-sm leading-relaxed">
           <Markdown md={props.introMd} />
 
@@ -325,7 +325,10 @@ export function DocsClient(props: {
                   </summary>
                   <div className="mt-3 space-y-3">
                     {(sec.tags.length > 0 || sec.sources.length > 0) && (
-                      <div className="flex flex-col gap-2 rounded-lg border bg-white/60 p-2 text-xs dark:bg-white/[0.03]" style={{ borderColor: "var(--sb-border)" }}>
+                      <div
+                        className="flex flex-col gap-2 rounded-lg border bg-white/60 p-2 text-xs dark:bg-white/[0.03]"
+                        style={{ borderColor: "var(--sb-border)" }}
+                      >
                         {sec.tags.length > 0 && (
                           <div className="flex flex-wrap items-center gap-1.5">
                             <span className="font-medium opacity-60">Tags</span>

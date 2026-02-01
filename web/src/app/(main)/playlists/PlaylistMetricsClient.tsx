@@ -43,6 +43,7 @@ export function PlaylistMetricsClient(props: {
   history: PlaylistDailyStatsRow[];
   removedTracksCount: number;
   playlistKey: string;
+  overrideAnnotations: Array<{ date: string; note: string }>;
   metric: Metric;
   setMetric: (metric: Metric) => void;
 }) {
@@ -97,6 +98,7 @@ export function PlaylistMetricsClient(props: {
 
   // Use different colors based on metric: blue for tracks, emerald for revenue, lime for streams
   const chartColor = props.metric === "tracks" ? "#3b82f6" : props.metric === "revenue" ? "#10b981" : "#c7f33c";
+  const chartAnnotations = props.metric === "tracks" ? [] : props.overrideAnnotations;
 
   return (
     <div className="space-y-4">
@@ -127,6 +129,7 @@ export function PlaylistMetricsClient(props: {
               heightPx={220}
               isCumulative={true}
               color={chartColor}
+              annotations={chartAnnotations}
             />
           </div>
         </SpotlightCard>
@@ -155,6 +158,7 @@ export function PlaylistMetricsClient(props: {
               yTickFormat={yTickFormat}
               heightPx={220}
               dailyColor={chartColor}
+              annotations={chartAnnotations}
             />
           </div>
         </SpotlightCard>

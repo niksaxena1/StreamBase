@@ -2,6 +2,7 @@ import path from "node:path";
 import { readdir, readFile } from "node:fs/promises";
 
 import { DocsClient } from "./DocsClient";
+import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { cachedQuery } from "@/lib/supabase/cache";
 
@@ -12,7 +13,7 @@ export const dynamic = "force-dynamic";
 
 function filePath(): string {
   // `process.cwd()` is `web/` when running the Next app.
-  return path.join(process.cwd(), "src", "app", "(main)", "docs", "docs.md");
+  return path.join(process.cwd(), "src", "app", "(main-flat)", "docs", "docs.md");
 }
 
 type DocSection = {
@@ -85,19 +86,90 @@ export default async function DocsPage() {
       "",
       `\`${filePath()}\``,
       "",
-      "If you moved it, update `web/src/app/(main)/docs/page.tsx`.",
+      "If you moved it, update `web/src/app/(main-flat)/docs/page.tsx`.",
       "",
     ].join("\n");
   }
 
   const { introMd, sections } = splitIntoSections(md);
+  const saiEnabled = await getSaiEnabledBestEffort();
+  const { introMd: introMdFiltered, sections: sectionsFiltered } = filterDocsForUser(introMd, sections, {
+    saiEnabled,
+  });
 
   const stats = await getSystemStatsBestEffort();
   const inventory = await getInventoryBestEffort();
 
   return (
-    <DocsClient introMd={introMd} sections={sections} systemStats={stats} inventory={inventory} />
+    <DocsClient
+      introMd={introMdFiltered}
+      sections={sectionsFiltered}
+      systemStats={stats}
+      inventory={inventory}
+    />
   );
+}
+
+function filterDocsForUser(
+  introMd: string,
+  sections: DocSection[],
+  opts: { saiEnabled: boolean },
+): { introMd: string; sections: DocSection[] } {
+  // If SAI is disabled, hide SAI-tagged sections and remove SAI references in the intro.
+  if (opts.saiEnabled) return { introMd, sections };
+
+  const sectionsOut = sections.filter((s) => {
+    const meta = parseMetaBestEffort(s.md);
+    return !meta.tags.includes("sai");
+  });
+
+  // Keep the intro human-focused when SAI is disabled.
+  const introOut = introMd
+    .split("\n")
+    .filter((line) => !/\bSAI\b/i.test(line))
+    .join("\n")
+    .trimEnd();
+
+  return { introMd: introOut, sections: sectionsOut };
+}
+
+function parseMetaBestEffort(md: string): { tags: string[] } {
+  const tags: string[] = [];
+  const lines = md.replace(/\r\n/g, "\n").split("\n");
+
+  for (const line of lines) {
+    const tagMatch = /^\s*<!--\s*tags:\s*(.+?)\s*-->\s*$/.exec(line);
+    if (!tagMatch) continue;
+    for (const t of tagMatch[1].split(",").map((x) => x.trim()).filter(Boolean)) tags.push(t);
+  }
+
+  return { tags: Array.from(new Set(tags.map((t) => t.toLowerCase()))).sort() };
+}
+
+async function getSaiEnabledBestEffort(): Promise<boolean> {
+  try {
+    const sb = await supabaseServer();
+    const { data } = await sb.auth.getUser();
+    const user = data.user;
+    if (!user) return true;
+
+    const { data: settings, error } = await sb
+      .from("user_settings")
+      .select("sai_enabled")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (error) {
+      // Graceful fallback: if the table hasn't been migrated yet, default to enabled.
+      const msg = String(error.message ?? "");
+      if (msg.includes("Could not find the table") || msg.includes("schema cache")) return true;
+      return true;
+    }
+
+    return settings?.sai_enabled ?? true;
+  } catch {
+    return true;
+  }
 }
 
 async function getSystemStatsBestEffort(): Promise<SystemStats | null> {

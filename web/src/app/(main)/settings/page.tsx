@@ -1,12 +1,13 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { GlassTable, TableCell, TableRow } from "@/components/ui/GlassTable";
 import { TrackExclusionForm } from "./TrackExclusionForm";
 import { SAISettingsToggle } from "./SAISettingsToggle";
+import { ManualStreamOverrideForm } from "./ManualStreamOverrideForm";
 
 export const revalidate = 86400; // 24h ISR - admin config changes are infrequent
 
@@ -19,7 +20,7 @@ async function requireAdmin() {
   if (error) throw new Error(error.message);
   if (!isAdmin) redirect("/");
 
-  return { sb };
+  return { sb, userId: data.user.id };
 }
 
 export default async function SettingsPage() {
@@ -57,6 +58,69 @@ export default async function SettingsPage() {
       allTracks.push(...(data as any));
       if (data.length < pageSize) break;
       from += pageSize;
+    }
+  } catch {
+    // ignore
+  }
+
+  // Suggested manual overrides (best-effort; depends on ingestion_warnings).
+  // These come from Health warnings emitted when SpotOnTrack exports have missing/invalid stream totals.
+  type OverrideSuggestion = {
+    isrc: string;
+    code: "catalog_streams_missing_prev_nonzero" | "catalog_missing_stream_snapshots";
+    suggestedStreams: number | null;
+    prevStreams: number | null;
+  };
+
+  let overrideSuggestions: OverrideSuggestion[] = [];
+  try {
+    if (latestRunDate) {
+      const { data: warnRows, error } = await svc
+        .from("ingestion_warnings")
+        .select("code,details_json")
+        .eq("run_date", latestRunDate)
+        .in("code", ["catalog_streams_missing_prev_nonzero", "catalog_missing_stream_snapshots"])
+        .limit(50);
+      if (!error) {
+        const byIsrc = new Map<string, OverrideSuggestion>();
+
+        for (const w of (warnRows ?? []) as any[]) {
+          const code = String(w?.code ?? "") as OverrideSuggestion["code"];
+          const d = (w as any)?.details_json ?? {};
+
+          if (code === "catalog_streams_missing_prev_nonzero") {
+            const rows = Array.isArray(d?.affected_isrcs_with_prev_sample)
+              ? (d.affected_isrcs_with_prev_sample as any[])
+              : [];
+            for (const r of rows) {
+              const isrc = String(r?.isrc ?? "").trim().toUpperCase();
+              const prev = Number(r?.prev_streams_cumulative ?? NaN);
+              if (!/^[A-Z0-9]{12}$/.test(isrc)) continue;
+              const prevStreams = Number.isFinite(prev) ? prev : null;
+              // Suggest carrying forward yesterday's value as a starting point.
+              const s: OverrideSuggestion = {
+                isrc,
+                code,
+                prevStreams,
+                suggestedStreams: prevStreams,
+              };
+              byIsrc.set(isrc, s);
+            }
+          }
+
+          if (code === "catalog_missing_stream_snapshots") {
+            const isrcs = Array.isArray(d?.missing_isrcs_sample) ? (d.missing_isrcs_sample as any[]) : [];
+            for (const raw of isrcs) {
+              const isrc = String(raw ?? "").trim().toUpperCase();
+              if (!/^[A-Z0-9]{12}$/.test(isrc)) continue;
+              if (byIsrc.has(isrc)) continue;
+              byIsrc.set(isrc, { isrc, code, prevStreams: null, suggestedStreams: null });
+            }
+          }
+        }
+
+        overrideSuggestions = Array.from(byIsrc.values());
+      }
     }
   } catch {
     // ignore
@@ -137,6 +201,29 @@ export default async function SettingsPage() {
       .order("created_at", { ascending: false })
       .limit(500);
     if (!exErr) exclusions = (exRows ?? []) as any;
+  } catch {
+    // ignore
+  }
+
+  // Manual stream overrides (best-effort; table may not exist yet).
+  let streamOverrides: Array<{
+    id: number;
+    date: string;
+    isrc: string;
+    streams_cumulative_override: number;
+    note: string | null;
+    created_by: string | null;
+    created_at: string | null;
+  }> = [];
+
+  try {
+    const { data: rows, error } = await svc
+      .from("track_daily_stream_overrides")
+      .select("id,date,isrc,streams_cumulative_override,note,created_by,created_at")
+      .order("date", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(500);
+    if (!error) streamOverrides = (rows ?? []) as any;
   } catch {
     // ignore
   }
@@ -283,6 +370,79 @@ export default async function SettingsPage() {
 
     revalidatePath("/health");
     revalidatePath("/settings");
+  }
+
+  async function addStreamOverride(formData: FormData) {
+    "use server";
+
+    const { userId } = await requireAdmin();
+    const date = String(formData.get("date") ?? "").trim();
+    const isrc = String(formData.get("isrc") ?? "")
+      .trim()
+      .toUpperCase()
+      .replace(/\s+/g, "");
+    const streamsRaw = String(formData.get("streams_cumulative_override") ?? "").trim();
+    const note = String(formData.get("note") ?? "").trim() || null;
+    const recompute = String(formData.get("recompute") ?? "").trim() === "true";
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error("Invalid date. Expected YYYY-MM-DD.");
+    if (!/^[A-Z0-9]{12}$/.test(isrc)) throw new Error("Invalid ISRC. Expected 12 characters (A-Z/0-9).");
+    if (!/^\d+$/.test(streamsRaw)) throw new Error("Streams must be a whole number (digits only).");
+    if (!note) throw new Error("Please add a note (required for auditability).");
+
+    const streams = Number(streamsRaw);
+    if (!Number.isFinite(streams) || streams < 0) throw new Error("Streams must be a non-negative number.");
+
+    const svc = supabaseService();
+    const { error: upErr } = await svc
+      .from("track_daily_stream_overrides")
+      .upsert(
+        [{ date, isrc, streams_cumulative_override: streams, note, created_by: userId }],
+        { onConflict: "date,isrc" },
+      );
+    if (upErr) throw new Error(upErr.message);
+
+    if (recompute) {
+      // Best-effort: if RPC doesn't exist yet, still keep the override.
+      await svc.rpc("spotibase_recompute_playlist_daily_stats", { p_date: date });
+    }
+
+    // Invalidate all Supabase query caches (unstable_cache uses tags in `cachedQuery`).
+    // Without this, playlist tables may stay stale for up to 24h.
+    revalidateTag("supabase");
+
+    revalidatePath("/health");
+    revalidatePath("/settings");
+    revalidatePath("/");
+    revalidatePath("/playlists");
+    revalidatePath("/collectors");
+    revalidatePath("/catalog");
+  }
+
+  async function removeStreamOverride(formData: FormData) {
+    "use server";
+
+    await requireAdmin();
+    const id = Number(formData.get("id") ?? 0);
+    if (!id || Number.isNaN(id)) return;
+
+    const svc = supabaseService();
+    const { error: delErr } = await svc.from("track_daily_stream_overrides").delete().eq("id", id);
+    if (delErr) throw new Error(delErr.message);
+
+    const date = String(formData.get("date") ?? "").trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      await svc.rpc("spotibase_recompute_playlist_daily_stats", { p_date: date });
+    }
+
+    revalidateTag("supabase");
+
+    revalidatePath("/health");
+    revalidatePath("/settings");
+    revalidatePath("/");
+    revalidatePath("/playlists");
+    revalidatePath("/collectors");
+    revalidatePath("/catalog");
   }
 
   return (
@@ -446,6 +606,78 @@ export default async function SettingsPage() {
             <TableRow>
               <TableCell className="text-center opacity-50 py-8" colSpan={4}>
                 No enrichment exclusions yet.
+              </TableCell>
+            </TableRow>
+          )}
+        </GlassTable>
+      </div>
+
+      <div className="space-y-2">
+        <div className="px-1">
+          <h2 className="text-sm font-semibold">Manual stream fixes (overrides)</h2>
+          <p className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
+            Manually override a track’s cumulative stream snapshot for a specific{" "}
+            <span className="font-mono">run_date</span>. Overrides are stored separately for auditability, and the
+            app can read through an “effective” view.
+          </p>
+        </div>
+
+        <ManualStreamOverrideForm
+          addStreamOverride={addStreamOverride}
+          tracks={allTracks}
+          defaultRunDate={latestRunDate}
+          suggestions={overrideSuggestions}
+        />
+
+        <GlassTable headers={["Run date", "Track", "Streams", "Note", ""]}>
+          {streamOverrides.map((o) => {
+            const isrc = String(o.isrc ?? "").trim().toUpperCase();
+            const track = allTracks.find((t) => t.isrc === isrc);
+            const name = track?.name ?? isrc;
+            const imageUrl = track?.spotify_album_image_url ?? null;
+            return (
+              <TableRow key={`ov-${o.id}`}>
+                <TableCell mono className="text-xs">
+                  {String(o.date ?? "—")}
+                </TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-2">
+                    {imageUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={imageUrl}
+                        alt={name}
+                        className="h-8 w-8 rounded-lg object-cover sb-ring flex-shrink-0"
+                      />
+                    ) : (
+                      <div className="h-8 w-8 rounded-lg sb-ring bg-white/60 dark:bg-white/10 flex-shrink-0" />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium truncate">{name}</div>
+                      <div className="font-mono text-[10px] opacity-60 truncate">{isrc}</div>
+                    </div>
+                  </div>
+                </TableCell>
+                <TableCell className="font-mono text-xs">
+                  {Intl.NumberFormat().format(Number(o.streams_cumulative_override ?? 0))}
+                </TableCell>
+                <TableCell className="text-xs">{o.note ?? "—"}</TableCell>
+                <TableCell className="text-right">
+                  <form action={removeStreamOverride}>
+                    <input type="hidden" name="id" value={String(o.id)} />
+                    <input type="hidden" name="date" value={String(o.date)} />
+                    <button type="submit" className="text-xs underline opacity-70 hover:opacity-100">
+                      remove
+                    </button>
+                  </form>
+                </TableCell>
+              </TableRow>
+            );
+          })}
+          {!streamOverrides.length && (
+            <TableRow>
+              <TableCell className="text-center opacity-50 py-8" colSpan={5}>
+                No manual overrides yet.
               </TableCell>
             </TableRow>
           )}

@@ -132,7 +132,7 @@ export async function POST(req: NextRequest) {
   const chunks = splitIntoChunks(md);
 
   const svc = supabaseService();
-  const docPath = "web/src/app/(main)/docs/docs.md";
+  const docPath = "web/src/app/(main-flat)/docs/docs.md";
 
   // Embed in batches
   const BATCH = 32;

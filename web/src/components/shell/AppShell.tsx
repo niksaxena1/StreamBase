@@ -102,7 +102,24 @@ export function AppShell(props: { children: ReactNode; mainSurface?: MainSurface
           </main>
 
           <footer className="px-2 pb-2 text-xs" style={{ color: "var(--sb-muted)" }}>
-            Data source: SpotOnTrack exports • Updated daily via GitHub Actions
+            Data source:{" "}
+            <a
+              href="https://www.spotontrack.com/dashboard"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:underline"
+            >
+              SpotOnTrack
+            </a>
+            {" "}exports • Updated daily via{" "}
+            <a
+              href="https://github.com/niksaxena1/SpotiBase/actions"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:underline"
+            >
+              GitHub Actions
+            </a>
           </footer>
         </div>
       </div>

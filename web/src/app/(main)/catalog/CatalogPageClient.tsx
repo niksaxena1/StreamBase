@@ -72,6 +72,7 @@ export function CatalogPageClient(props: {
   selectedTrack: SelectedTrack | null;
   trackCumDesc: TrackSeriesPoint[];
   trackDailyWithMaDesc: TrackDailyPoint[];
+  trackOverrideAnnotations: Array<{ date: string; note: string }>;
   track24h: number;
   track7d: number;
   track28d: number;
@@ -471,6 +472,14 @@ export function CatalogPageClient(props: {
                 ma7: p.ma7,
               }));
 
+          const trackOverrideAnnotations =
+            trackMode === "revenue"
+              ? props.trackOverrideAnnotations.map((a) => ({
+                  ...a,
+                  note: `${a.note} (applies to revenue via payout model)`,
+                }))
+              : props.trackOverrideAnnotations;
+
           const stat24h = trackMode === "revenue" ? props.track24h * STREAM_PAYOUT_USD : props.track24h;
           const stat7d = trackMode === "revenue" ? props.track7d * STREAM_PAYOUT_USD : props.track7d;
           const stat28d = trackMode === "revenue" ? props.track28d * STREAM_PAYOUT_USD : props.track28d;
@@ -507,6 +516,7 @@ export function CatalogPageClient(props: {
                     heightPx={220}
                     isCumulative={true}
                     color={trackChartColor}
+                    annotations={trackOverrideAnnotations}
                   />
                 </div>
               </SpotlightCard>
@@ -530,6 +540,7 @@ export function CatalogPageClient(props: {
                     yTickFormat={yTickFormat}
                     heightPx={220}
                     dailyColor={trackChartColor}
+                    annotations={trackOverrideAnnotations}
                   />
                 </div>
               </SpotlightCard>
