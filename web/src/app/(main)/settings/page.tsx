@@ -409,7 +409,7 @@ export default async function SettingsPage() {
 
     // Invalidate all Supabase query caches (unstable_cache uses tags in `cachedQuery`).
     // Without this, playlist tables may stay stale for up to 24h.
-    revalidateTag("supabase");
+    revalidateTag("supabase", "max");
 
     revalidatePath("/health");
     revalidatePath("/settings");
@@ -435,7 +435,7 @@ export default async function SettingsPage() {
       await svc.rpc("spotibase_recompute_playlist_daily_stats", { p_date: date });
     }
 
-    revalidateTag("supabase");
+    revalidateTag("supabase", "max");
 
     revalidatePath("/health");
     revalidatePath("/settings");
