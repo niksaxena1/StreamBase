@@ -56,7 +56,6 @@ export async function GET(request: NextRequest) {
               data: {
                 latestRun: null,
                 criticalWarnings: 0,
-                // @ts-expect-error debug-only payload (omitted from public type)
                 debug: {
                   usedService,
                   supabaseUrlHost: safeUrlHost(process.env.NEXT_PUBLIC_SUPABASE_URL),
@@ -86,7 +85,6 @@ export async function GET(request: NextRequest) {
             data: {
               latestRun: { runDate, status },
               criticalWarnings: criticalWarnings ?? 0,
-              // @ts-expect-error debug-only payload (omitted from public type)
               debug: {
                 usedService,
                 supabaseUrlHost: safeUrlHost(process.env.NEXT_PUBLIC_SUPABASE_URL),
