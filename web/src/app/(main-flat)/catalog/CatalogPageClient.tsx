@@ -18,6 +18,7 @@ import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButt
 import { downloadCsv, slugifyForFilename, todayIsoDate } from "@/lib/csv";
 import { dataDateFromRunDate } from "@/lib/sotDates";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
+import { PageHeader } from "@/components/shell/PageHeader";
 
 type ChartDataPoint = {
   date: string;
@@ -107,31 +108,34 @@ export function CatalogPageClient(props: {
 
   return (
     <>
-      <div className="flex items-end justify-between gap-4">
-        <div>
-          <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
-            {props.latestDate ? (
-              <>
-                Latest data date:{" "}
-                <span className="font-mono">{formatDateISO(dataDateFromRunDate(props.latestDate))}</span>
-              </>
-            ) : (
-              "No ingestion date found yet."
-            )}
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <CatalogMetricSelector metric={metric} setMetric={setMetric} />
-          <Link
-            href="/catalog/config"
-            className="sb-ring grid h-8 w-8 place-items-center rounded-full bg-white/70 text-xs font-medium transition hover:bg-white dark:bg-white/10 dark:hover:bg-white/15"
-            aria-label="Catalog config"
-            title="Catalog config"
-          >
-            <List className="h-4 w-4" style={{ color: "var(--sb-text)" }} />
-          </Link>
-        </div>
-      </div>
+      <PageHeader
+        title="Catalog"
+        subtitle={
+          props.latestDate ? (
+            <>
+              Latest data date:{" "}
+              <span className="font-mono">
+                {formatDateISO(dataDateFromRunDate(props.latestDate))}
+              </span>
+            </>
+          ) : (
+            "No ingestion date found yet."
+          )
+        }
+        actions={
+          <>
+            <CatalogMetricSelector metric={metric} setMetric={setMetric} />
+            <Link
+              href="/catalog/config"
+              className="sb-ring grid h-8 w-8 place-items-center rounded-full bg-white/70 text-xs font-medium transition hover:bg-white dark:bg-white/10 dark:hover:bg-white/15"
+              aria-label="Catalog config"
+              title="Catalog config"
+            >
+              <List className="h-4 w-4" style={{ color: "var(--sb-text)" }} />
+            </Link>
+          </>
+        }
+      />
 
       <div className="sticky top-0 z-20 rounded-xl border border-lime-500/20 bg-lime-500/10 p-3 shadow-sm backdrop-blur-sm dark:bg-lime-400/10 dark:border-lime-400/20">
         <div className="flex items-start gap-2">

@@ -14,6 +14,7 @@ import { PlaylistHeaderWithSelector } from "./PlaylistHeaderWithSelector";
 import { PlaylistMetricProvider } from "./PlaylistMetricContext";
 import { dataDateFromRunDate } from "@/lib/sotDates";
 import { PlaylistTracksSection } from "./PlaylistTracksSection";
+import { PageHeader } from "@/components/shell/PageHeader";
 
 // Uses Supabase session cookies; this route must be dynamic in Next 16.
 export const dynamic = "force-dynamic";
@@ -344,9 +345,9 @@ export default async function PlaylistsPage({
   return (
     <PlaylistMetricProvider>
       <div className="space-y-4">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <div className="flex items-center gap-3">
-            {playlistKey === "all_catalog" ? (
+        <PageHeader
+          icon={
+            playlistKey === "all_catalog" ? (
               <div
                 className="sb-ring flex h-12 w-12 items-center justify-center rounded-lg"
                 style={{ background: "var(--sb-accent)" }}
@@ -362,48 +363,51 @@ export default async function PlaylistsPage({
               />
             ) : (
               <div className="h-12 w-12 rounded-lg sb-ring bg-white/60" />
-            )}
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="font-display text-2xl font-semibold tracking-tight">
-                  {title}
-                </h1>
-                {spotifyUrl && (
-                  <Link
-                    href={spotifyUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center justify-center rounded-full p-1.5 transition-colors hover:bg-black/5 dark:hover:bg-white/10"
-                    title="Open on Spotify"
-                    style={{ color: "var(--sb-muted)" }}
-                  >
-                    <ExternalLink className="h-4 w-4" />
-                  </Link>
-                )}
-              </div>
-              <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
-                {latestDate ? (
-                  <>
-                    Latest data date: <span className="font-mono">{formatDateISO(dataDateFromRunDate(latestDate))}</span>
-                  </>
-                ) : (
-                  "No stats found for this playlist yet."
-                )}
-              </div>
+            )
+          }
+          title={
+            <div className="flex items-center gap-2">
+              <span>{title}</span>
+              {spotifyUrl && (
+                <Link
+                  href={spotifyUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center rounded-full p-1.5 transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+                  title="Open on Spotify"
+                  style={{ color: "var(--sb-muted)" }}
+                >
+                  <ExternalLink className="h-4 w-4" />
+                </Link>
+              )}
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <PlaylistHeaderWithSelector />
-            <Link
-              href="/playlists/config"
-              className="sb-ring grid h-8 w-8 place-items-center rounded-full bg-white/70 text-xs font-medium transition hover:bg-white dark:bg-white/10 dark:hover:bg-white/15"
-              aria-label="Playlist config"
-              title="Playlist config"
-            >
-              <List className="h-4 w-4" style={{ color: "var(--sb-text)" }} />
-            </Link>
-          </div>
-        </div>
+          }
+          subtitle={
+            latestDate ? (
+              <>
+                Latest data date:{" "}
+                <span className="font-mono">
+                  {formatDateISO(dataDateFromRunDate(latestDate))}
+                </span>
+              </>
+            ) : (
+              "No stats found for this playlist yet."
+            )
+          }
+          actions={
+            <>
+              <PlaylistHeaderWithSelector />
+              <Link
+                href="/playlists/config"
+                className="sb-ring grid h-8 w-8 place-items-center rounded-full bg-white/70 text-xs font-medium transition hover:bg-white dark:bg-white/10 dark:hover:bg-white/15"
+                aria-label="Playlist config"
+                title="Playlist config"
+              >
+                <List className="h-4 w-4" style={{ color: "var(--sb-text)" }} />
+              </Link>
+            </>
+          }
+        />
 
         <PlaylistDashboardControls
           playlists={playlistOptions}

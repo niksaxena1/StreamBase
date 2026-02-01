@@ -8,6 +8,7 @@ import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
 import { WarningRow } from "@/components/health/WarningRow";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { ExportMissingTracksButton } from "@/components/health/ExportMissingTracksButton";
+import { PageHeader } from "@/components/shell/PageHeader";
 import { addDaysISO, dataDateFromRunDate, SOT_DATA_LAG_DAYS } from "@/lib/sotDates";
 
 export const revalidate = 60; // Revalidate every 60 seconds for fresher health data
@@ -424,14 +425,28 @@ export default async function HealthPage({
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="font-display text-xl font-semibold tracking-tight sm:text-2xl">
-          System Health
-        </h1>
-        <p className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
-          Recent ingestion runs and anomaly warnings.
-        </p>
-      </div>
+      <PageHeader
+        title="System Health"
+        subtitle="Recent ingestion runs and anomaly warnings."
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="sb-ring flex items-center gap-0.5 rounded-full bg-white/70 p-0.5 text-xs dark:bg-black/50">
+              <FilterToggle active={severityFilter === "all"} href={hrefWith({ severity: "all" })}>
+                All
+              </FilterToggle>
+              <FilterToggle active={severityFilter === "critical"} href={hrefWith({ severity: "critical" })}>
+                Critical
+              </FilterToggle>
+              <FilterToggle active={severityFilter === "warn"} href={hrefWith({ severity: "warn" })}>
+                Warn
+              </FilterToggle>
+              <FilterToggle active={severityFilter === "info"} href={hrefWith({ severity: "info" })}>
+                Info
+              </FilterToggle>
+            </div>
+          </div>
+        }
+      />
 
       {(runsErr || warnErr || exportsErr) && (
         <div className="rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-950 dark:border-red-900/30 dark:bg-red-900/10 dark:text-red-200">
@@ -442,24 +457,6 @@ export default async function HealthPage({
             "unknown error"}
         </div>
       )}
-
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="sb-ring flex items-center gap-0.5 rounded-full bg-white/70 p-0.5 text-xs dark:bg-black/50">
-          <FilterToggle active={severityFilter === "all"} href={hrefWith({ severity: "all" })}>
-            All
-          </FilterToggle>
-          <FilterToggle active={severityFilter === "critical"} href={hrefWith({ severity: "critical" })}>
-            Critical
-          </FilterToggle>
-          <FilterToggle active={severityFilter === "warn"} href={hrefWith({ severity: "warn" })}>
-            Warn
-          </FilterToggle>
-          <FilterToggle active={severityFilter === "info"} href={hrefWith({ severity: "info" })}>
-            Info
-          </FilterToggle>
-        </div>
-      </div>
 
       <div className="space-y-2">
         <div className="flex items-center justify-between px-1">

@@ -11,9 +11,10 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { useId, useEffect, useRef, useState } from "react";
+import { useId, useEffect, useMemo, useRef, useState } from "react";
 
 import { formatInt, formatUsd } from "@/lib/format";
+import { Modal } from "@/components/ui/Modal";
 
 type DataPoint = {
   date: string;
@@ -114,7 +115,7 @@ function CustomTooltip({
   fmtValue: (n: number) => string;
   isDark: boolean;
   chartColor: string;
-  onValuesFormatted?: (v: { main: string; ma7: string | null }) => void;
+  onValuesFormatted?: (v: { label: string | null; main: string; ma7: string | null }) => void;
 }) {
   if (!active || !payload || payload.length === 0) return null;
 
@@ -147,31 +148,21 @@ function CustomTooltip({
   useEffect(() => {
     if (!active) return;
     if (!mainValueFormatted) return;
-    const key = `${mainValueFormatted}||${ma7ValueFormatted ?? ""}`;
+    const key = `${label ?? ""}||${mainValueFormatted}||${ma7ValueFormatted ?? ""}`;
     if (key === lastSentKeyRef.current) return;
     lastSentKeyRef.current = key;
-    onValuesFormatted?.({ main: mainValueFormatted, ma7: ma7ValueFormatted });
-  }, [active, mainValueFormatted, ma7ValueFormatted, onValuesFormatted]);
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(mainValueFormatted);
-      showCopiedToast("Copied to clipboard!");
-    } catch (err) {
-      console.error("Failed to copy:", err);
-    }
-  };
+    onValuesFormatted?.({ label: label ?? null, main: mainValueFormatted, ma7: ma7ValueFormatted });
+  }, [active, label, mainValueFormatted, ma7ValueFormatted, onValuesFormatted]);
 
   return (
     <div
-      className="rounded-lg border p-3 cursor-pointer hover:opacity-80 transition-opacity"
+      className="rounded-lg border p-3"
       style={{
         backgroundColor: "var(--sb-card)",
         borderColor: "var(--sb-border)",
         boxShadow: "var(--sb-shadow-compact)",
         color: "var(--sb-text)",
       }}
-      onClick={handleCopy}
     >
       {label && (
         <div className="mb-2 text-xs font-medium">{formatTooltipDate(label)}</div>
@@ -255,7 +246,12 @@ export function DailyStreamsWithMAChart({
 }) {
   const gid = useId();
   const [isDark, setIsDark] = useState(false);
-  const lastTooltipValuesRef = useRef<{ main: string; ma7: string | null } | null>(null);
+  const [copyDialogOpen, setCopyDialogOpen] = useState(false);
+  const lastTooltipValuesRef = useRef<{ label: string | null; main: string; ma7: string | null } | null>(null);
+  const lastPointerTypeRef = useRef<string | null>(null);
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
+  const [isTouchUi, setIsTouchUi] = useState(false);
   
   useEffect(() => {
     const checkTheme = () => {
@@ -283,6 +279,57 @@ export function DailyStreamsWithMAChart({
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mqls = [
+      window.matchMedia?.("(pointer: coarse)"),
+      window.matchMedia?.("(hover: none)"),
+    ].filter(Boolean) as MediaQueryList[];
+
+    const recompute = () => {
+      const coarse = mqls.some((m) => m.matches);
+      const touchPoints = typeof navigator !== "undefined" && (navigator.maxTouchPoints ?? 0) > 0;
+      setIsTouchUi(coarse || touchPoints);
+    };
+
+    recompute();
+    for (const m of mqls) m.addEventListener?.("change", recompute);
+    return () => {
+      for (const m of mqls) m.removeEventListener?.("change", recompute);
+    };
+  }, []);
+
+  const clearLongPressTimer = () => {
+    if (longPressTimerRef.current != null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    longPressStartRef.current = null;
+  };
+
+  const openCopyDialogIfPossible = () => {
+    const v = lastTooltipValuesRef.current;
+    if (!v) return;
+    setCopyDialogOpen(true);
+  };
+
+  const hasMaInTooltip = !!lastTooltipValuesRef.current?.ma7;
+  const dialogTitle = useMemo(() => {
+    const v = lastTooltipValuesRef.current;
+    if (!v?.label) return "Copy value";
+    return formatTooltipDate(v.label);
+  }, [copyDialogOpen]);
+
+  const handleCopyValue = async (toCopy: string | null, message: string) => {
+    if (!toCopy) return;
+    try {
+      await navigator.clipboard.writeText(toCopy);
+      showCopiedToast(message);
+    } catch (err) {
+      console.error("Failed to copy:", err);
+    }
+  };
   
   // Use theme-aware maColor if using default - make it very visible for debugging
   const effectiveMaColor = maColor === "rgba(255,255,255,0.75)"
@@ -345,7 +392,37 @@ export function DailyStreamsWithMAChart({
         // Prevent focus outline box on click (the chart isn't keyboard-focusable anyway).
         e.preventDefault();
       }}
+      onPointerDown={(e) => {
+        lastPointerTypeRef.current = (e as any).pointerType ?? null;
+        if (!isTouchUi) return;
+        if ((e as any).pointerType !== "touch") return;
+
+        clearLongPressTimer();
+        longPressStartRef.current = { x: e.clientX, y: e.clientY };
+        longPressTimerRef.current = window.setTimeout(() => {
+          openCopyDialogIfPossible();
+        }, 550);
+      }}
+      onPointerMove={(e) => {
+        if (!isTouchUi) return;
+        if ((e as any).pointerType !== "touch") return;
+        const start = longPressStartRef.current;
+        if (!start) return;
+        const dx = e.clientX - start.x;
+        const dy = e.clientY - start.y;
+        if (Math.hypot(dx, dy) > 10) {
+          clearLongPressTimer();
+        }
+      }}
+      onPointerUp={() => {
+        clearLongPressTimer();
+      }}
+      onPointerCancel={() => {
+        clearLongPressTimer();
+      }}
       onClick={async (e) => {
+        // Mobile/touch: taps do nothing (copy is via long-press dialog).
+        if (isTouchUi || lastPointerTypeRef.current === "touch") return;
         const lastTooltipValues = lastTooltipValuesRef.current;
         if (!lastTooltipValues) return;
         const wantMA = (e.ctrlKey || e.metaKey) && !!lastTooltipValues.ma7;
@@ -455,6 +532,48 @@ export function DailyStreamsWithMAChart({
           )}
         </ComposedChart>
       </ResponsiveContainer>
+
+      <Modal
+        open={copyDialogOpen}
+        onClose={() => setCopyDialogOpen(false)}
+        title={dialogTitle}
+        subtitle={hasMaInTooltip ? "Choose which value to copy" : "Tap Copy to copy to clipboard"}
+        maxWidthClassName="max-w-md"
+      >
+        <div className="space-y-2">
+          <button
+            type="button"
+            className="w-full sb-ring rounded-md bg-white/60 px-3 py-2 text-left text-sm hover:bg-white/80 dark:bg-white/10 dark:hover:bg-white/15"
+            style={{ color: "var(--sb-text)" }}
+            onClick={async () => {
+              const v = lastTooltipValuesRef.current;
+              if (!v) return;
+              await handleCopyValue(v.main, "Copied to clipboard!");
+              setCopyDialogOpen(false);
+            }}
+          >
+            <div className="text-xs opacity-70">{valueLabel}</div>
+            <div className="font-semibold">{lastTooltipValuesRef.current?.main ?? ""}</div>
+          </button>
+
+          {lastTooltipValuesRef.current?.ma7 ? (
+            <button
+              type="button"
+              className="w-full sb-ring rounded-md bg-white/60 px-3 py-2 text-left text-sm hover:bg-white/80 dark:bg-white/10 dark:hover:bg-white/15"
+              style={{ color: "var(--sb-text)" }}
+              onClick={async () => {
+                const v = lastTooltipValuesRef.current;
+                if (!v?.ma7) return;
+                await handleCopyValue(v.ma7, "Copied MA to clipboard!");
+                setCopyDialogOpen(false);
+              }}
+            >
+              <div className="text-xs opacity-70">MA (7d)</div>
+              <div className="font-semibold">{lastTooltipValuesRef.current?.ma7 ?? ""}</div>
+            </button>
+          ) : null}
+        </div>
+      </Modal>
     </div>
   );
 }

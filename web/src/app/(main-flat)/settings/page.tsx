@@ -4,6 +4,7 @@ import { revalidatePath, revalidateTag } from "next/cache";
 
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
+import { PageHeader } from "@/components/shell/PageHeader";
 import { GlassTable, TableCell, TableRow } from "@/components/ui/GlassTable";
 import { TrackExclusionForm } from "./TrackExclusionForm";
 import { SAISettingsToggle } from "./SAISettingsToggle";
@@ -447,14 +448,10 @@ export default async function SettingsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <div className="flex items-end justify-between gap-4">
-          <div>
-            <h1 className="font-display text-xl font-semibold tracking-tight sm:text-2xl">Settings</h1>
-            <p className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
-              Admin settings for SpotiBase.
-            </p>
-          </div>
+      <PageHeader
+        title="Settings"
+        subtitle="Admin settings for SpotiBase."
+        actions={
           <Link
             href="/docs"
             className="sb-ring inline-flex items-center gap-2 rounded-full bg-white/70 px-3 py-2 text-xs font-medium transition hover:bg-white dark:bg-white/10 dark:hover:bg-white/15"
@@ -463,8 +460,8 @@ export default async function SettingsPage() {
           >
             Docs
           </Link>
-        </div>
-      </div>
+        }
+      />
 
       <div className="space-y-2">
         <div className="px-1">
