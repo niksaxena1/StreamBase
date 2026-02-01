@@ -4,6 +4,7 @@ import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { PlaylistSettingsTable } from "./PlaylistSettingsTable";
 import { RefreshSpotifyThumbnailsButton } from "./RefreshSpotifyThumbnailsButton";
+import { Alert } from "@/components/ui/Alert";
 
 export const revalidate = 86400; // 24h ISR - admin config changes are infrequent
 
@@ -148,9 +149,9 @@ export default async function PlaylistSettingsPage() {
       </div>
 
       {error && (
-        <div className="rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-950 dark:border-red-900/30 dark:bg-red-900/10 dark:text-red-200">
-          Query error: {error.message}
-        </div>
+        <Alert variant="error" title="Query error">
+          {error.message}
+        </Alert>
       )}
 
       <PlaylistSettingsTable

@@ -4,12 +4,14 @@ import { redirect } from "next/navigation";
 import { formatDateISO } from "@/lib/format";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
-import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
+import { GlassTable, TableRow, TableCell, EmptyState } from "@/components/ui/GlassTable";
 import { WarningRow } from "@/components/health/WarningRow";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { ExportMissingTracksButton } from "@/components/health/ExportMissingTracksButton";
 import { PageHeader } from "@/components/shell/PageHeader";
 import { addDaysISO, dataDateFromRunDate, SOT_DATA_LAG_DAYS } from "@/lib/sotDates";
+import { Alert } from "@/components/ui/Alert";
+import { SectionHeader } from "@/components/ui/SectionHeader";
 
 export const revalidate = 60; // Revalidate every 60 seconds for fresher health data
 
@@ -42,7 +44,7 @@ export default async function HealthPage({
 }: {
   // See note in other pages: keep this as `any` to satisfy Next's generated PageProps typing
   // while avoiding `await searchParams` (which breaks static generation in Next 16).
-  searchParams?: any;
+  searchParams?: unknown;
 }) {
   const sp = (searchParams ?? {}) as { severity?: string; playlist?: string; date?: string };
   const severityFilter = sp.severity ?? "all";
@@ -78,8 +80,9 @@ export default async function HealthPage({
 
     if (!exclusionErr) {
       for (const r of exclusionRows ?? []) {
-        const isrc = String((r as any).isrc ?? "").trim().toUpperCase();
-        const playlist_key = String((r as any).playlist_key ?? "").trim();
+        const row = (r ?? {}) as Record<string, unknown>;
+        const isrc = String(row.isrc ?? "").trim().toUpperCase();
+        const playlist_key = String(row.playlist_key ?? "").trim();
         if (!isrc) continue;
         if (!playlist_key) {
           excludedGlobal.add(isrc);
@@ -102,8 +105,9 @@ export default async function HealthPage({
 
     if (!exclusionErr) {
       for (const r of exclusionRows ?? []) {
-        const isrc = String((r as any).isrc ?? "").trim().toUpperCase();
-        const playlist_key = String((r as any).playlist_key ?? "").trim();
+        const row = (r ?? {}) as Record<string, unknown>;
+        const isrc = String(row.isrc ?? "").trim().toUpperCase();
+        const playlist_key = String(row.playlist_key ?? "").trim();
         if (!isrc) continue;
         if (!playlist_key) {
           excludedEnrichmentGlobal.add(isrc);
@@ -214,13 +218,18 @@ export default async function HealthPage({
 
       nonCatalogTracksMap.set(
         warning.playlist_key ?? "",
-        (rows ?? []).map((t: any) => ({
-          isrc: t.isrc,
-          name: t.name,
-          artist_names: t.artist_names,
-          artist_ids: t.artist_ids,
-          album_image_url: t.album_image_url,
-        })),
+        (rows ?? [])
+          .map((t) => {
+            const row = (t ?? {}) as Record<string, unknown>;
+            return {
+              isrc: String(row.isrc ?? "").trim().toUpperCase(),
+              name: (row.name ?? null) as string | null,
+              artist_names: (row.artist_names ?? null) as string[] | null,
+              artist_ids: (row.artist_ids ?? null) as string[] | null,
+              album_image_url: (row.album_image_url ?? null) as string | null,
+            };
+          })
+          .filter((t) => (exclusionsEnabled ? !isExcluded(warning.playlist_key!, t.isrc) : true)),
       );
     }
   }
@@ -263,20 +272,30 @@ export default async function HealthPage({
         continue;
       }
 
-      const added = (rows ?? []).filter((r: any) => r.change_type === "added").map((r: any) => ({
-        isrc: r.isrc,
-        name: r.name ?? null,
-        artist_names: r.artist_names ?? null,
-        artist_ids: r.artist_ids ?? null,
-        album_image_url: r.album_image_url ?? null,
-      }));
-      const removed = (rows ?? []).filter((r: any) => r.change_type === "removed").map((r: any) => ({
-        isrc: r.isrc,
-        name: r.name ?? null,
-        artist_names: r.artist_names ?? null,
-        artist_ids: r.artist_ids ?? null,
-        album_image_url: r.album_image_url ?? null,
-      }));
+      const added = (rows ?? [])
+        .filter((r) => String(((r ?? {}) as Record<string, unknown>).change_type ?? "") === "added")
+        .map((r) => {
+          const row = (r ?? {}) as Record<string, unknown>;
+          return {
+            isrc: String(row.isrc ?? "").trim().toUpperCase(),
+            name: (row.name ?? null) as string | null,
+            artist_names: (row.artist_names ?? null) as string[] | null,
+            artist_ids: (row.artist_ids ?? null) as string[] | null,
+            album_image_url: (row.album_image_url ?? null) as string | null,
+          };
+        });
+      const removed = (rows ?? [])
+        .filter((r) => String(((r ?? {}) as Record<string, unknown>).change_type ?? "") === "removed")
+        .map((r) => {
+          const row = (r ?? {}) as Record<string, unknown>;
+          return {
+            isrc: String(row.isrc ?? "").trim().toUpperCase(),
+            name: (row.name ?? null) as string | null,
+            artist_names: (row.artist_names ?? null) as string[] | null,
+            artist_ids: (row.artist_ids ?? null) as string[] | null,
+            album_image_url: (row.album_image_url ?? null) as string | null,
+          };
+        });
 
       trackCountSwingTracksMap.set(warning.playlist_key ?? "", { added, removed });
     }
@@ -306,7 +325,7 @@ export default async function HealthPage({
       // If we have ISRCs, fetch their details
       if (Array.isArray(isrcList) && isrcList.length > 0) {
         const filteredIsrcs = enrichmentExclusionsEnabled
-          ? (isrcList as any[])
+          ? (isrcList as unknown[])
               .map((x) => String(x ?? "").trim().toUpperCase().replace(/\s+/g, ""))
               .filter(Boolean)
               .filter((isrc) => !isExcludedEnrichment(warning.playlist_key!, isrc))
@@ -330,13 +349,16 @@ export default async function HealthPage({
           continue;
         }
 
-        const tracksRaw = (rows ?? []).map((t: any) => ({
-          isrc: t.isrc,
-          name: t.name,
-          artist_names: t.spotify_artist_names,
-          artist_ids: t.spotify_artist_ids,
-          album_image_url: t.spotify_album_image_url,
-        }));
+        const tracksRaw = (rows ?? []).map((t) => {
+          const row = (t ?? {}) as Record<string, unknown>;
+          return {
+            isrc: String(row.isrc ?? "").trim().toUpperCase(),
+            name: (row.name ?? null) as string | null,
+            artist_names: (row.spotify_artist_names ?? null) as string[] | null,
+            artist_ids: (row.spotify_artist_ids ?? null) as string[] | null,
+            album_image_url: (row.spotify_album_image_url ?? null) as string | null,
+          };
+        });
         const tracks = enrichmentExclusionsEnabled
           ? tracksRaw.filter((t) => !isExcludedEnrichment(warning.playlist_key!, String(t.isrc ?? "").trim().toUpperCase()))
           : tracksRaw;
@@ -361,13 +383,16 @@ export default async function HealthPage({
           artist_names: string[] | null;
           artist_ids: string[] | null;
           album_image_url: string | null;
-        }> = (rows ?? []).map((t: any) => ({
-          isrc: String(t?.isrc ?? "").trim().toUpperCase(),
-          name: (t?.name ?? null) as string | null,
-          artist_names: (t?.artist_names ?? null) as string[] | null,
-          artist_ids: (t?.artist_ids ?? null) as string[] | null,
-          album_image_url: (t?.album_image_url ?? null) as string | null,
-        }));
+        }> = (rows ?? []).map((t) => {
+          const row = (t ?? {}) as Record<string, unknown>;
+          return {
+            isrc: String(row.isrc ?? "").trim().toUpperCase(),
+            name: (row.name ?? null) as string | null,
+            artist_names: (row.artist_names ?? null) as string[] | null,
+            artist_ids: (row.artist_ids ?? null) as string[] | null,
+            album_image_url: (row.album_image_url ?? null) as string | null,
+          };
+        });
         const tracks = enrichmentExclusionsEnabled
           ? tracksRaw.filter((t) => !isExcludedEnrichment(warning.playlist_key!, String(t.isrc ?? "").trim().toUpperCase()))
           : tracksRaw;
@@ -394,14 +419,20 @@ export default async function HealthPage({
     if (error) {
       console.error("health_missing_catalog_tracks RPC failed:", error);
     } else {
-      allMissingTracks = (rows ?? []).map((t: any) => ({
-        isrc: t.isrc,
-        name: t.name,
-        artist_names: t.artist_names,
-        artist_ids: t.artist_ids,
-        album_image_url: t.album_image_url,
-        playlists: Array.isArray(t.playlist_keys) ? t.playlist_keys : [],
-      }));
+      allMissingTracks = (rows ?? [])
+        .map((t) => {
+          const row = (t ?? {}) as Record<string, unknown>;
+          const isrc = String(row.isrc ?? "").trim().toUpperCase();
+          return {
+            isrc,
+            name: (row.name ?? null) as string | null,
+            artist_names: (row.artist_names ?? null) as string[] | null,
+            artist_ids: (row.artist_ids ?? null) as string[] | null,
+            album_image_url: (row.album_image_url ?? null) as string | null,
+            playlists: Array.isArray(row.playlist_keys) ? (row.playlist_keys as string[]) : [],
+          };
+        })
+        .filter((t) => (exclusionsEnabled ? !t.playlists.some((pk) => isExcluded(pk, t.isrc)) : true));
     }
   }
 
@@ -418,60 +449,57 @@ export default async function HealthPage({
     return query ? `/health?${query}` : "/health";
   }
 
-  // Get date range for picker
-  const firstRunDate = runs?.[runs.length - 1]?.run_date ?? selectedRunDate ?? new Date().toISOString().split("T")[0];
-  const firstDate = dataDateFromRunDate(firstRunDate);
-  const today = dataDateFromRunDate(new Date().toISOString().split("T")[0]);
-
   return (
     <div className="space-y-4">
       <PageHeader
         title="System Health"
         subtitle="Recent ingestion runs and anomaly warnings."
+        actionsClassName="flex-wrap"
         actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="sb-ring flex items-center gap-0.5 rounded-full bg-white/70 p-0.5 text-xs dark:bg-black/50">
-              <FilterToggle active={severityFilter === "all"} href={hrefWith({ severity: "all" })}>
-                All
-              </FilterToggle>
-              <FilterToggle active={severityFilter === "critical"} href={hrefWith({ severity: "critical" })}>
-                Critical
-              </FilterToggle>
-              <FilterToggle active={severityFilter === "warn"} href={hrefWith({ severity: "warn" })}>
-                Warn
-              </FilterToggle>
-              <FilterToggle active={severityFilter === "info"} href={hrefWith({ severity: "info" })}>
-                Info
-              </FilterToggle>
-            </div>
+          <div className="sb-ring flex items-center gap-0.5 rounded-full bg-white/70 p-0.5 text-xs dark:bg-black/50">
+            <FilterToggle active={severityFilter === "all"} href={hrefWith({ severity: "all" })}>
+              All
+            </FilterToggle>
+            <FilterToggle active={severityFilter === "critical"} href={hrefWith({ severity: "critical" })}>
+              Critical
+            </FilterToggle>
+            <FilterToggle active={severityFilter === "warn"} href={hrefWith({ severity: "warn" })}>
+              Warn
+            </FilterToggle>
+            <FilterToggle active={severityFilter === "info"} href={hrefWith({ severity: "info" })}>
+              Info
+            </FilterToggle>
           </div>
         }
       />
 
       {(runsErr || warnErr || exportsErr) && (
-        <div className="rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-950 dark:border-red-900/30 dark:bg-red-900/10 dark:text-red-200">
-          Query error:{" "}
-          {runsErr?.message ??
-            exportsErr?.message ??
-            warnErr?.message ??
-            "unknown error"}
-        </div>
+        <Alert
+          variant="error"
+          title="Query error"
+        >
+          {runsErr?.message ?? exportsErr?.message ?? warnErr?.message ?? "unknown error"}
+        </Alert>
       )}
 
       <div className="space-y-2">
-        <div className="flex items-center justify-between px-1">
-          <h2 className="text-sm font-semibold">
-            Warnings{" "}
-            {selectedDataDate ? (
-              <span className="text-xs font-normal opacity-60">
-                (Data: {selectedDataDate}, Run: {selectedRunDate})
-              </span>
-            ) : null}
-          </h2>
-          <Link className="text-xs underline opacity-60" href="/playlists">
-            View playlists
-          </Link>
-        </div>
+        <SectionHeader
+          title={
+            <>
+              Warnings{" "}
+              {selectedDataDate ? (
+                <span className="text-xs font-normal opacity-60">
+                  (Data: {selectedDataDate}, Run: {selectedRunDate})
+                </span>
+              ) : null}
+            </>
+          }
+          actions={
+            <Link className="text-xs underline opacity-60" href="/playlists">
+              View playlists
+            </Link>
+          }
+        />
         <GlassTable headers={["Severity", "Code", "Playlist", "Message"]}>
           {(warnings ?? [])
             .filter((w) => {
@@ -527,35 +555,29 @@ export default async function HealthPage({
               }
 
               return true;
-            }).length) && (
-            <TableRow>
-              <TableCell className="text-center opacity-50 py-8" colSpan={4}>
-                No warnings found for the selected filters.
-              </TableCell>
-            </TableRow>
-          )}
+            }).length) && <EmptyState colSpan={4} message="No warnings found for the selected filters." />}
         </GlassTable>
       </div>
 
       {selectedRunDate && (
         <div className="space-y-2">
-          <div className="flex items-center justify-between px-1">
-            <div>
-              <h2 className="text-sm font-semibold">
+          <SectionHeader
+            title={
+              <>
                 All Missing Catalog Tracks{" "}
                 <span className="text-xs font-normal opacity-60">({selectedDataDate})</span>
-              </h2>
-              <p className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
-                Tracks in playlists that don't have stream data in the catalog snapshot for this day
-              </p>
-            </div>
-            {allMissingTracks.length > 0 && (
-              <div className="flex items-center gap-2">
-                <span className="text-xs opacity-60">{allMissingTracks.length} tracks</span>
-                <ExportMissingTracksButton tracks={allMissingTracks} date={selectedDataDate ?? "—"} />
-              </div>
-            )}
-          </div>
+              </>
+            }
+            subtitle="Tracks in playlists that don't have stream data in the catalog snapshot for this day"
+            actions={
+              allMissingTracks.length > 0 ? (
+                <>
+                  <span className="text-xs opacity-60">{allMissingTracks.length} tracks</span>
+                  <ExportMissingTracksButton tracks={allMissingTracks} date={selectedDataDate ?? "—"} />
+                </>
+              ) : null
+            }
+          />
           <GlassTable headers={["Track", "Artists", "Playlists"]}>
             {allMissingTracks.length > 0 ? (
               allMissingTracks.map((track) => (
@@ -613,21 +635,13 @@ export default async function HealthPage({
                   </TableCell>
                 </TableRow>
               ))
-            ) : (
-              <TableRow>
-                <TableCell className="text-center opacity-50 py-8" colSpan={3}>
-                  No missing catalog tracks found for {selectedDataDate}.
-                </TableCell>
-              </TableRow>
-            )}
+            ) : <EmptyState colSpan={3} message={`No missing catalog tracks found for ${selectedDataDate}.`} />}
           </GlassTable>
         </div>
       )}
 
       <div className="space-y-2">
-        <div className="flex items-center gap-2 px-1">
-          <h2 className="text-sm font-semibold">Ingestion Runs (30d)</h2>
-        </div>
+        <SectionHeader title="Ingestion Runs (30d)" />
         <GlassTable headers={["Run Date", "Status", "Logs"]}>
           {(runs ?? []).map((r) => (
             <TableRow key={r.run_date}>
@@ -660,26 +674,20 @@ export default async function HealthPage({
               </TableCell>
             </TableRow>
           ))}
-          {!runs?.length && (
-            <TableRow>
-              <TableCell className="text-center opacity-50 py-8" colSpan={3}>
-                No ingestion runs yet.
-              </TableCell>
-            </TableRow>
-          )}
+          {!runs?.length && <EmptyState colSpan={3} message="No ingestion runs yet." />}
         </GlassTable>
       </div>
 
       <div className="space-y-2">
-        <div className="flex items-center justify-between px-1">
-          <h2 className="text-sm font-semibold">
-            Raw Exports{" "}
-            {selectedDataDate ? (
-              <span className="text-xs font-normal opacity-60">({selectedDataDate})</span>
-            ) : null}
-          </h2>
-          <span className="text-xs opacity-50">Signed links (60s)</span>
-        </div>
+        <SectionHeader
+          title={
+            <>
+              Raw Exports{" "}
+              {selectedDataDate ? <span className="text-xs font-normal opacity-60">({selectedDataDate})</span> : null}
+            </>
+          }
+          actions={<span className="text-xs opacity-50">Signed links (60s)</span>}
+        />
         <GlassTable headers={["Playlist", "Rows", "Exported", "Download"]}>
           {(exportsForLatest ?? []).map((r) => (
             <TableRow key={r.playlist_key}>
@@ -704,13 +712,7 @@ export default async function HealthPage({
               </TableCell>
             </TableRow>
           ))}
-          {!exportsForLatest?.length && (
-            <TableRow>
-              <TableCell className="text-center opacity-50 py-8" colSpan={4}>
-                No raw exports found for this run.
-              </TableCell>
-            </TableRow>
-          )}
+          {!exportsForLatest?.length && <EmptyState colSpan={4} message="No raw exports found for this run." />}
         </GlassTable>
       </div>
     </div>

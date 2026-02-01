@@ -10,8 +10,9 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { useEffect, useId, useMemo, useState } from "react";
+import { useId, useMemo } from "react";
 import { formatInt, formatUsd2 } from "@/lib/format";
+import { formatUsdCompact } from "@/components/charts/chartUtils";
 
 export const COLLECTOR_COLORS: Record<string, string> = {
   // Individuals (softer)
@@ -41,19 +42,6 @@ type ChartDataPoint = {
   date: string;
   [key: string]: number | string; // collector names or "combined" as keys
 };
-
-function formatUsdCompact(n: number): string {
-  try {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      notation: "compact",
-      maximumFractionDigits: 1,
-    }).format(n);
-  } catch {
-    return formatUsd2(n);
-  }
-}
 
 function formatTooltipDate(dateString: string, granularity: Granularity = "daily"): string {
   // For non-daily granularities, the dateString is a bucket key, not a date
@@ -103,7 +91,6 @@ function CustomTooltip({
   payload,
   mode,
   metric,
-  selectedCollectors,
   granularity = "daily",
 }: {
   active?: boolean;
@@ -111,7 +98,6 @@ function CustomTooltip({
   payload?: Array<{ name: string; value: number; dataKey: string; color: string }>;
   mode: ComparisonMode;
   metric: ComparisonMetric;
-  selectedCollectors: string[];
   granularity?: Granularity;
 }) {
   if (!active || !payload || payload.length === 0) return null;
@@ -175,36 +161,7 @@ export function CollectorComparisonChart({
   heightPx?: number;
   granularity?: Granularity;
 }) {
-  const [isDark, setIsDark] = useState(false);
   const gid = useId();
-
-  useEffect(() => {
-    const checkTheme = () => {
-      if (typeof window === "undefined") return;
-      const html = document.documentElement;
-      const theme =
-        html.dataset.theme ||
-        (window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-      setIsDark(theme === "dark");
-    };
-
-    checkTheme();
-    const observer = new MutationObserver(checkTheme);
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["data-theme"],
-    });
-    const mediaQuery = window.matchMedia?.("(prefers-color-scheme: dark)");
-    if (mediaQuery) {
-      mediaQuery.addEventListener("change", checkTheme);
-    }
-    return () => {
-      observer.disconnect();
-      if (mediaQuery) {
-        mediaQuery.removeEventListener("change", checkTheme);
-      }
-    };
-  }, []);
 
   // Process data into chart format
   const chartData = useMemo(() => {
@@ -297,7 +254,7 @@ export function CollectorComparisonChart({
 
   const formatYTick = (n: number) => {
     if (mode === "percentage") return `${n.toFixed(0)}%`;
-    if (metric === "revenue") return formatUsdCompact(n);
+    if (metric === "revenue") return formatUsdCompact(n, formatUsd2);
     // Streams/tracks with K/M/B
     const abs = Math.abs(n);
     if (abs >= 1000000000) {
@@ -402,10 +359,9 @@ export function CollectorComparisonChart({
               <CustomTooltip
                 active={active}
                 label={label as string}
-                payload={payload as any}
+                payload={payload as Array<{ name: string; value: number; dataKey: string; color: string }>}
                 mode={mode}
                 metric={metric}
-                selectedCollectors={selectedCollectors}
                 granularity={granularity}
               />
             )}

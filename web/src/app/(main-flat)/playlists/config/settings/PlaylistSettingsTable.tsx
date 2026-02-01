@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { GripVertical, Music } from "lucide-react";
-import { GlassTable, TableCell, TableRow } from "@/components/ui/GlassTable";
+import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/GlassTable";
 
 type Playlist = {
   playlist_key: string;
@@ -353,11 +353,7 @@ export function PlaylistSettingsTable({
         );
       })}
       {!playlists.length && (
-        <TableRow>
-          <TableCell className="text-center opacity-50 py-8" colSpan={6}>
-            No playlists found.
-          </TableCell>
-        </TableRow>
+        <EmptyState colSpan={6} message="No playlists found." />
       )}
     </GlassTable>
   );

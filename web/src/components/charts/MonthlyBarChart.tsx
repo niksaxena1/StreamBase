@@ -8,10 +8,10 @@ import {
   YAxis,
   Tooltip,
   ResponsiveContainer,
-  Cell,
 } from "recharts";
-import { useId, useEffect, useState } from "react";
+import { useId } from "react";
 import { formatInt, formatUsd } from "@/lib/format";
+import { formatUsdCompact } from "@/components/charts/chartUtils";
 
 type MonthlyDataPoint = {
   month: string; // yyyy-mm
@@ -20,19 +20,6 @@ type MonthlyDataPoint = {
 
 type ValueFormat = "int" | "usd";
 type YTickFormat = "k" | "int" | "usd_compact";
-
-function formatUsdCompact(n: number): string {
-  try {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      notation: "compact",
-      maximumFractionDigits: 1,
-    }).format(n);
-  } catch {
-    return formatUsd(n);
-  }
-}
 
 function formatMonthLabel(monthString: string): string {
   const date = new Date(`${monthString}-01`);
@@ -60,41 +47,13 @@ export function MonthlyBarChart({
   heightPx?: number;
 }) {
   const gid = useId();
-  const [isDark, setIsDark] = useState(false);
-
-  useEffect(() => {
-    const checkTheme = () => {
-      if (typeof window === "undefined") return;
-      const html = document.documentElement;
-      const theme = html.dataset.theme ||
-        (window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-      setIsDark(theme === "dark");
-    };
-
-    checkTheme();
-    const observer = new MutationObserver(checkTheme);
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["data-theme"],
-    });
-    const mediaQuery = window.matchMedia?.("(prefers-color-scheme: dark)");
-    if (mediaQuery) {
-      mediaQuery.addEventListener("change", checkTheme);
-    }
-    return () => {
-      observer.disconnect();
-      if (mediaQuery) {
-        mediaQuery.removeEventListener("change", checkTheme);
-      }
-    };
-  }, []);
 
   const fmtValue = (n: number) =>
     valueFormat === "usd" ? formatUsd(n) : formatInt(n);
 
   const fmtYTick = (n: number) => {
     if (yTickFormat === "int") return formatInt(n);
-    if (yTickFormat === "usd_compact") return formatUsdCompact(n);
+    if (yTickFormat === "usd_compact") return formatUsdCompact(n, formatUsd);
     // default: "k" - format with K/M/B suffixes and commas
     const abs = Math.abs(n);
     if (abs >= 1000000000) {

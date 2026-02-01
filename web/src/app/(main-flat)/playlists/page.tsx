@@ -15,6 +15,7 @@ import { PlaylistMetricProvider } from "./PlaylistMetricContext";
 import { dataDateFromRunDate } from "@/lib/sotDates";
 import { PlaylistTracksSection } from "./PlaylistTracksSection";
 import { PageHeader } from "@/components/shell/PageHeader";
+import { Skeleton } from "@/components/ui/Skeleton";
 
 // Uses Supabase session cookies; this route must be dynamic in Next 16.
 export const dynamic = "force-dynamic";
@@ -428,11 +429,37 @@ export default async function PlaylistsPage({
         <Suspense
           fallback={
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-              <div className="rounded-2xl border p-4 text-sm opacity-70" style={{ borderColor: "var(--sb-border)" }}>
-                Loading playlist tracks…
+              <div className="sb-card p-4">
+                <div className="flex items-center justify-between">
+                  <Skeleton className="h-3 w-28" />
+                  <Skeleton className="h-3 w-20" />
+                </div>
+                <div className="mt-3 space-y-2">
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <Skeleton className="h-8 w-8 rounded-lg" />
+                      <div className="min-w-0 flex-1">
+                        <Skeleton className="h-3 w-2/3" />
+                        <Skeleton className="mt-1 h-3 w-1/3" />
+                      </div>
+                      <Skeleton className="h-3 w-10" />
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div className="rounded-2xl border p-4 text-sm opacity-70" style={{ borderColor: "var(--sb-border)" }}>
-                Loading recent changes…
+              <div className="sb-card p-4">
+                <div className="flex items-center justify-between">
+                  <Skeleton className="h-3 w-28" />
+                  <Skeleton className="h-3 w-20" />
+                </div>
+                <div className="mt-3 space-y-2">
+                  {Array.from({ length: 8 }).map((_, i) => (
+                    <div key={i} className="flex items-center justify-between gap-3">
+                      <Skeleton className="h-3 w-2/3" />
+                      <Skeleton className="h-3 w-16" />
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           }

@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect } from "react";
 
 import { Combobox } from "@/components/ui/Combobox";
+import { hrefWithPatchedSearchParams } from "@/lib/searchParams";
 
 type PlaylistOption = {
   playlist_key: string;
@@ -15,15 +16,6 @@ type PlaylistOption = {
 };
 
 const RANGE_CHOICES = [30, 90, 365] as const;
-
-function hrefWith(existing: URLSearchParams, patch: Record<string, string | null | undefined>) {
-  const u = new URLSearchParams(existing.toString());
-  for (const [k, v] of Object.entries(patch)) {
-    if (v === null || v === undefined || v === "") u.delete(k);
-    else u.set(k, v);
-  }
-  return `?${u.toString()}`;
-}
 
 export function PlaylistDashboardControls(props: {
   playlists: PlaylistOption[];
@@ -81,7 +73,7 @@ export function PlaylistDashboardControls(props: {
             {RANGE_CHOICES.map((d) => (
               <Link
                 key={d}
-                href={hrefWith(sp, { range: String(d) })}
+                href={hrefWithPatchedSearchParams(sp, { range: String(d) })}
                 className={[
                   "rounded-full px-2.5 py-1.5 text-[11px] font-medium transition",
                   props.rangeDays === d

@@ -19,6 +19,7 @@ import { DailyStreamsWithMAChart } from "@/components/charts/DailyStreamsWithMAC
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { CatalogPageClient } from "./CatalogPageClient";
 import { dataDateFromRunDate } from "@/lib/sotDates";
+import { Alert } from "@/components/ui/Alert";
 
 const STREAM_PAYOUT_USD = 0.002;
 const CATALOG_ARTIST_DROPDOWN_MAX_TRACKS = 10_000;
@@ -288,9 +289,9 @@ export default async function CatalogPage({
     // Return error state instead of crashing
     return (
       <div className="space-y-4">
-        <div className="rounded-2xl border border-red-300 bg-red-50 p-4 text-sm text-red-950 dark:border-red-900/30 dark:bg-red-900/10 dark:text-red-200">
-          Error loading artist data: {tracksError.message}
-        </div>
+        <Alert variant="error" title="Error loading artist data">
+          {tracksError.message}
+        </Alert>
       </div>
     );
   }
@@ -573,10 +574,9 @@ export default async function CatalogPage({
     const errorMessage = error instanceof Error ? error.message : String(error);
     return (
       <div className="space-y-4">
-        <div className="rounded-2xl border border-red-300 bg-red-50 p-4 text-sm text-red-950 dark:border-red-900/30 dark:bg-red-900/10 dark:text-red-200">
-          <h2 className="font-semibold">Error loading catalog page</h2>
-          <p className="mt-1">{errorMessage}</p>
-        </div>
+        <Alert variant="error" title="Error loading catalog page">
+          {errorMessage}
+        </Alert>
       </div>
     );
   }

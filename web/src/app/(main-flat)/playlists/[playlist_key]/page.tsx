@@ -3,12 +3,14 @@ import { ListMusic } from "lucide-react";
 
 import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
 import { supabaseServer } from "@/lib/supabase/server";
-import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
+import { GlassTable, TableRow, TableCell, EmptyState } from "@/components/ui/GlassTable";
 import { DatePicker } from "@/components/ui/DatePicker";
 import { supabaseService } from "@/lib/supabase/service";
 import { getPlaylist } from "@/lib/spotify";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { dataDateFromRunDate, addDaysISO, SOT_DATA_LAG_DAYS } from "@/lib/sotDates";
+import { Alert } from "@/components/ui/Alert";
+import { SectionHeader } from "@/components/ui/SectionHeader";
 
 export const revalidate = 86400; // 24h ISR - playlist snapshots update daily
 
@@ -193,31 +195,35 @@ export default async function PlaylistDetailPage({
 
 
       {isAdmin && !playlistRow?.spotify_playlist_id ? (
-        <div className="rounded-2xl border border-blue-300 bg-blue-50 p-4 text-sm text-blue-950 dark:border-blue-900/30 dark:bg-blue-900/10 dark:text-blue-200">
+        <Alert
+          variant="info"
+          title="Enable Spotify playlist thumbnail"
+        >
           To enable the Spotify playlist thumbnail, set a Spotify playlist URL/URI/ID in{" "}
           <Link className="underline" href="/playlists/config/settings">Playlist Settings</Link>.
-        </div>
+        </Alert>
       ) : null}
 
       {(playlistErr || statsErr || tracksErr) && (
-        <div className="rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-950 dark:border-red-900/30 dark:bg-red-900/10 dark:text-red-200">
-          Query error:{" "}
+        <Alert variant="error" title="Query error">
           {playlistErr?.message ?? statsErr?.message ?? tracksErr?.message ?? "unknown error"}
-        </div>
+        </Alert>
       )}
 
       {/* Tracks on Date Section */}
       <div className="space-y-2">
-        <div className="flex items-center justify-between px-1">
-          <h2 className="text-sm font-semibold">Tracks on Date</h2>
-          <DatePicker
-            value={selectedDataDate ?? dataDateFromRunDate(selectedDate)}
-            min={firstDate}
-            max={todayDataDate}
-            label="View date"
-            path={`/playlists/${playlist_key}`}
-          />
-        </div>
+        <SectionHeader
+          title="Tracks on Date"
+          actions={
+            <DatePicker
+              value={selectedDataDate ?? dataDateFromRunDate(selectedDate)}
+              min={firstDate}
+              max={todayDataDate}
+              label="View date"
+              path={`/playlists/${playlist_key}`}
+            />
+          }
+        />
 
         <GlassTable headers={["", "Track", "ISRC", "Added", "Removed"]}>
           {tracks.map((t) => (
@@ -261,23 +267,19 @@ export default async function PlaylistDetailPage({
               </TableCell>
             </TableRow>
           ))}
-          {!tracks.length && (
-            <TableRow>
-              <TableCell className="text-center opacity-50 py-8" colSpan={5}>
-                No tracks found for this date.
-              </TableCell>
-            </TableRow>
-          )}
+          {!tracks.length && <EmptyState colSpan={5} message="No tracks found for this date." />}
         </GlassTable>
       </div>
 
       <div className="space-y-2">
-        <div className="flex items-center justify-between px-1">
-          <h2 className="text-sm font-semibold">History (30d)</h2>
-          <span className="text-xs opacity-50">
-            Missing streams = tracks not present in catalog snapshot today
-          </span>
-        </div>
+        <SectionHeader
+          title="History (30d)"
+          actions={
+            <span className="text-xs opacity-50">
+              Missing streams = tracks not present in catalog snapshot today
+            </span>
+          }
+        />
         
         <GlassTable headers={["Date", "Tracks", "Total Streams", "Daily", "Est. Rev", "Missing"]}>
           {(stats ?? []).map((r) => (
@@ -300,13 +302,7 @@ export default async function PlaylistDetailPage({
               </TableCell>
             </TableRow>
           ))}
-          {!stats?.length && (
-            <TableRow>
-              <TableCell className="text-center opacity-50 py-8" colSpan={6}>
-                No stats yet for this playlist.
-              </TableCell>
-            </TableRow>
-          )}
+          {!stats?.length && <EmptyState colSpan={6} message="No stats yet for this playlist." />}
         </GlassTable>
       </div>
     </div>

@@ -5,10 +5,11 @@ import { revalidatePath, revalidateTag } from "next/cache";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { PageHeader } from "@/components/shell/PageHeader";
-import { GlassTable, TableCell, TableRow } from "@/components/ui/GlassTable";
+import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/GlassTable";
 import { TrackExclusionForm } from "./TrackExclusionForm";
 import { SAISettingsToggle } from "./SAISettingsToggle";
 import { ManualStreamOverrideForm } from "./ManualStreamOverrideForm";
+import { SectionHeader } from "@/components/ui/SectionHeader";
 
 export const revalidate = 86400; // 24h ISR - admin config changes are infrequent
 
@@ -464,20 +465,20 @@ export default async function SettingsPage() {
       />
 
       <div className="space-y-2">
-        <div className="px-1">
-          <h2 className="text-sm font-semibold">AI Assistant</h2>
-        </div>
+        <SectionHeader title="AI Assistant" />
         <SAISettingsToggle />
       </div>
 
       <div className="space-y-2">
-        <div className="px-1">
-          <h2 className="text-sm font-semibold">Health warning exclusions</h2>
-          <p className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
-            Exclude intentional non-catalog tracks from the Health warning{" "}
-            <span className="font-mono">non_catalog_tracks_present</span> and from the “All Missing Catalog Tracks” list.
-          </p>
-        </div>
+        <SectionHeader
+          title="Health warning exclusions"
+          subtitle={
+            <>
+              Exclude intentional non-catalog tracks from the Health warning{" "}
+              <span className="font-mono">non_catalog_tracks_present</span> and from the “All Missing Catalog Tracks” list.
+            </>
+          }
+        />
 
         <TrackExclusionForm
           addHealthExclusion={addHealthExclusion}
@@ -527,27 +528,25 @@ export default async function SettingsPage() {
               </TableRow>
             );
           })}
-          {!exclusions.length && (
-            <TableRow>
-              <TableCell className="text-center opacity-50 py-8" colSpan={4}>
-                No exclusions yet.
-              </TableCell>
-            </TableRow>
-          )}
+          {!exclusions.length && <EmptyState colSpan={4} message="No exclusions yet." />}
         </GlassTable>
       </div>
 
       <div className="space-y-2">
-        <div className="px-1">
-          <h2 className="text-sm font-semibold">Enrichment warning exclusions</h2>
-          <p className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
-            Suppress the Health warning{" "}
-            <span className="font-mono">tracks_missing_enrichment</span> for specific tracks (tracks where enrichment has been intentionally skipped).
-          </p>
-          <p className="mt-1 text-xs opacity-70" style={{ color: "var(--sb-muted)" }}>
-            The Track combobox only lists tracks currently detected as missing enrichment (no Spotify artist IDs).
-          </p>
-        </div>
+        <SectionHeader
+          title="Enrichment warning exclusions"
+          subtitle={
+            <div className="space-y-1">
+              <div>
+                Suppress the Health warning{" "}
+                <span className="font-mono">tracks_missing_enrichment</span> for specific tracks (tracks where enrichment has been intentionally skipped).
+              </div>
+              <div className="opacity-70">
+                The Track combobox only lists tracks currently detected as missing enrichment (no Spotify artist IDs).
+              </div>
+            </div>
+          }
+        />
 
         <TrackExclusionForm
           addHealthExclusion={addEnrichmentExclusion}
@@ -599,25 +598,20 @@ export default async function SettingsPage() {
               </TableRow>
             );
           })}
-          {!enrichmentExclusions.length && (
-            <TableRow>
-              <TableCell className="text-center opacity-50 py-8" colSpan={4}>
-                No enrichment exclusions yet.
-              </TableCell>
-            </TableRow>
-          )}
+          {!enrichmentExclusions.length && <EmptyState colSpan={4} message="No enrichment exclusions yet." />}
         </GlassTable>
       </div>
 
       <div className="space-y-2">
-        <div className="px-1">
-          <h2 className="text-sm font-semibold">Manual stream fixes (overrides)</h2>
-          <p className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
-            Manually override a track’s cumulative stream snapshot for a specific{" "}
-            <span className="font-mono">run_date</span>. Overrides are stored separately for auditability, and the
-            app can read through an “effective” view.
-          </p>
-        </div>
+        <SectionHeader
+          title="Manual stream fixes (overrides)"
+          subtitle={
+            <>
+              Manually override a track’s cumulative stream snapshot for a specific{" "}
+              <span className="font-mono">run_date</span>. Overrides are stored separately for auditability, and the app can read through an “effective” view.
+            </>
+          }
+        />
 
         <ManualStreamOverrideForm
           addStreamOverride={addStreamOverride}
@@ -671,13 +665,7 @@ export default async function SettingsPage() {
               </TableRow>
             );
           })}
-          {!streamOverrides.length && (
-            <TableRow>
-              <TableCell className="text-center opacity-50 py-8" colSpan={5}>
-                No manual overrides yet.
-              </TableCell>
-            </TableRow>
-          )}
+          {!streamOverrides.length && <EmptyState colSpan={5} message="No manual overrides yet." />}
         </GlassTable>
       </div>
     </div>

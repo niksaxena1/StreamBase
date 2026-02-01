@@ -6,6 +6,7 @@ import { useState, useEffect } from "react";
 import { PageHeader } from "@/components/shell/PageHeader";
 import { DateRangePicker } from "@/components/ui/DateRangePicker";
 import { formatDateISO } from "@/lib/format";
+import { hrefWithPatchedSearchParams } from "@/lib/searchParams";
 
 const RANGE_CHOICES = [30, 90, 365] as const;
 const METRICS = ["streams", "revenue", "tracks"] as const;
@@ -56,7 +57,7 @@ export function CollectorsPageHeader({
         </>
       }
       actions={
-        <div className="flex items-center gap-2">
+        <>
           {/* Metric selector */}
           <div className="sb-ring flex items-center gap-0.5 rounded-full bg-white/70 p-0.5 dark:bg-white/10">
             {METRICS.map((m) => (
@@ -82,7 +83,12 @@ export function CollectorsPageHeader({
             {RANGE_CHOICES.map((d) => (
               <Link
                 key={d}
-                href={`?collector=${encodeURIComponent(selectedCollector)}&range=${d}`}
+                href={hrefWithPatchedSearchParams(searchParams, {
+                  collector: selectedCollector,
+                  range: String(d),
+                  start: null,
+                  end: null,
+                })}
                 className={[
                   "rounded-full px-2.5 py-1.5 font-medium transition",
                   rangeDays === d && !sp.start && !sp.end
@@ -98,7 +104,7 @@ export function CollectorsPageHeader({
 
           {/* Date picker */}
           <DateRangePicker latestDate={latestDataDate ?? null} currentRangeDays={rangeDays} />
-        </div>
+        </>
       }
     />
   );

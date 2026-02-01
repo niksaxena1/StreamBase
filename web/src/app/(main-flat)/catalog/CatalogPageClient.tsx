@@ -12,13 +12,12 @@ import { Combobox } from "@/components/ui/Combobox";
 import { SpotlightCard } from "@/components/ui/SpotlightCard";
 import { DailyStreamsChart } from "@/components/charts/DailyStreamsChart";
 import { DailyStreamsWithMAChart } from "@/components/charts/DailyStreamsWithMAChart";
-import { StatCard } from "@/components/StatCard";
-import { AnimatedCounter } from "@/components/ui/AnimatedCounter";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
 import { downloadCsv, slugifyForFilename, todayIsoDate } from "@/lib/csv";
 import { dataDateFromRunDate } from "@/lib/sotDates";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { PageHeader } from "@/components/shell/PageHeader";
+import { hrefWithPatchedSearchParams } from "@/lib/searchParams";
 
 type ChartDataPoint = {
   date: string;
@@ -83,15 +82,6 @@ export function CatalogPageClient(props: {
   const [isArtistExpanded, setIsArtistExpanded] = useState(true);
   const router = useRouter();
   const sp = useSearchParams();
-
-  function hrefWith(patch: Record<string, string | null | undefined>) {
-    const u = new URLSearchParams(sp.toString());
-    for (const [k, v] of Object.entries(patch)) {
-      if (v === null || v === undefined || v === "") u.delete(k);
-      else u.set(k, v);
-    }
-    return `?${u.toString()}`;
-  }
 
   function downloadTopTracksAsCsv(data: TopTrack[], filename: string, isDaily: boolean) {
     downloadCsv({
@@ -164,7 +154,7 @@ export function CatalogPageClient(props: {
                       options={props.artists.map((a) => ({ value: a.id, label: a.name, imageUrl: a.imageUrl }))}
                       placeholder="Type an artist…"
                       onChange={(id) => {
-                        router.push(hrefWith({ artist_id: id, isrc: null }));
+                        router.push(hrefWithPatchedSearchParams(sp, { artist_id: id, isrc: null }));
                       }}
                     />
                   </div>
@@ -182,7 +172,7 @@ export function CatalogPageClient(props: {
                       ]}
                       placeholder="Type a track…"
                       onChange={(isrc) => {
-                        router.push(hrefWith({ isrc: isrc || null }));
+                        router.push(hrefWithPatchedSearchParams(sp, { isrc: isrc || null }));
                       }}
                       imageShape="square"
                     />
@@ -195,7 +185,7 @@ export function CatalogPageClient(props: {
                   {[30, 90, 365].map((d) => (
                     <Link
                       key={d}
-                      href={hrefWith({ range: String(d) })}
+                      href={hrefWithPatchedSearchParams(sp, { range: String(d) })}
                       className={[
                         "rounded-full px-2.5 py-1.5 text-[11px] font-medium transition",
                         props.rangeDays === d
@@ -484,16 +474,10 @@ export function CatalogPageClient(props: {
                 }))
               : props.trackOverrideAnnotations;
 
-          const stat24h = trackMode === "revenue" ? props.track24h * STREAM_PAYOUT_USD : props.track24h;
-          const stat7d = trackMode === "revenue" ? props.track7d * STREAM_PAYOUT_USD : props.track7d;
-          const stat28d = trackMode === "revenue" ? props.track28d * STREAM_PAYOUT_USD : props.track28d;
-          const stat30d = trackMode === "revenue" ? props.track30d * STREAM_PAYOUT_USD : props.track30d;
-
           const cumulativeTitle = trackMode === "revenue" ? "Track cumulative revenue" : "Track cumulative streams";
           const dailyTitle = trackMode === "revenue" ? "Track daily revenue" : "Track daily streams";
           const dailyLabel = trackMode === "revenue" ? "Daily revenue" : "Daily streams";
           const totalLabel = trackMode === "revenue" ? "Total revenue" : "Total streams";
-          const statSubtitle = trackMode === "revenue" ? "Est. revenue" : "Net streams";
 
           // Use emerald for revenue, lime for streams (tracks don't have a separate mode like artist/playlist)
           const trackChartColor = trackMode === "revenue" ? "#10b981" : "#c7f33c";

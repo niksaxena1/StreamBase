@@ -12,6 +12,7 @@ import { AnimatedCounter } from "@/components/ui/AnimatedCounter";
 import { GlassTable, TableRow, TableCell, EmptyState } from "@/components/ui/GlassTable";
 import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
 import { dataDateFromRunDate } from "@/lib/sotDates";
+import { Alert } from "@/components/ui/Alert";
 
 type PlaylistDailyStatsRow = {
   date: string;
@@ -160,6 +161,18 @@ function HomeDashboardInner(props: {
   const chartDataDaily: ChartPoint[] = series.daily;
   const chartDataTotal: ChartPoint[] = series.total;
 
+  const allCatalogMa7 = useMemo(() => {
+    if (props.playlistKey !== "all_catalog") return null;
+    const slice = (props.history ?? []).slice(0, 7);
+    if (!slice.length) return null;
+    const sum = slice.reduce((acc, r) => acc + Number(r.daily_streams_net ?? 0), 0);
+    return sum / slice.length;
+  }, [props.history, props.playlistKey]);
+
+  const allCatalogAsOf = props.latest?.date
+    ? formatDateISO(dataDateFromRunDate(props.latest.date))
+    : null;
+
   return (
     <div className="space-y-4">
       {/* Header Section */}
@@ -257,6 +270,25 @@ function HomeDashboardInner(props: {
         </div>
       </div>
 
+      {props.playlistKey === "all_catalog" && allCatalogMa7 !== null ? (
+        <blockquote
+          className="rounded-lg border-l-4 bg-black/[0.02] p-3 text-sm dark:bg-white/[0.04]"
+          style={{ borderColor: "var(--sb-accent)" }}
+        >
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+              <span className="font-semibold" style={{ color: "var(--sb-text)" }}>
+              </span>
+            <span className="font-mono" style={{ color: "var(--sb-text)" }}>
+              {formatInt(Math.round(allCatalogMa7))}
+            </span>
+            <span className="text-xs" style={{ color: "var(--sb-muted)" }}>
+              MA7 daily streams
+              {allCatalogAsOf ? ` (as of ${allCatalogAsOf})` : ""}
+            </span>
+          </div>
+        </blockquote>
+      ) : null}
+
       <LazyInteractiveChartSection
         dailyStreamsData={chartDataDaily}
         totalStreamsData={chartDataTotal}
@@ -289,9 +321,9 @@ function HomeDashboardInner(props: {
       </div>
 
       {props.historyErrorMessage ? (
-        <div className="rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-950 dark:border-red-900/30 dark:bg-red-900/10 dark:text-red-200">
-          Query error: {props.historyErrorMessage}
-        </div>
+        <Alert variant="error" title="Query error">
+          {props.historyErrorMessage}
+        </Alert>
       ) : null}
 
       {/* Recent History Table */}

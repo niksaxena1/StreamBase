@@ -5,6 +5,7 @@ interface PageHeaderProps {
   subtitle?: ReactNode;
   icon?: ReactNode;
   actions?: ReactNode;
+  actionsClassName?: string;
   className?: string;
 }
 
@@ -13,10 +14,18 @@ export function PageHeader({
   subtitle,
   icon,
   actions,
+  actionsClassName,
   className,
 }: PageHeaderProps) {
+  const rootClassName = ["flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between", className]
+    .filter((x): x is string => Boolean(x))
+    .join(" ");
+  const actionsWrapperClassName = ["flex items-center gap-2 flex-shrink-0", actionsClassName]
+    .filter((x): x is string => Boolean(x))
+    .join(" ");
+
   return (
-    <div className={["flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between", className].filter(Boolean).join(" ")}>
+    <div className={rootClassName}>
       <div className="flex items-center gap-4 min-w-0">
         {icon && (
           <div className="flex-shrink-0">
@@ -36,7 +45,7 @@ export function PageHeader({
       </div>
       
       {actions && (
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className={actionsWrapperClassName}>
           {actions}
         </div>
       )}
