@@ -122,6 +122,9 @@ export async function PlaylistTracksSection(props: {
   const currentRows = results.top.data ?? [];
   const addedLast7Days = results.added.data ?? [];
   const removed = results.removed.data ?? [];
+  const topErr = results.top.error;
+  const addedErr = results.added.error;
+  const removedErr = results.removed.error;
 
   return (
     <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
@@ -130,6 +133,12 @@ export async function PlaylistTracksSection(props: {
           <h2 className="text-sm font-semibold">Tracks currently in playlist</h2>
         </div>
         <GlassTable headers={["", "Track", "ISRC", "Daily", "Total", "Added"]}>
+          {topErr ? (
+            <EmptyState
+              colSpan={6}
+              message={`Error loading current tracks: ${String((topErr as any)?.message ?? topErr)}`}
+            />
+          ) : null}
           {currentRows.map((t) => (
             <TableRow key={t.isrc}>
               <TableCell>
@@ -169,7 +178,7 @@ export async function PlaylistTracksSection(props: {
               </TableCell>
             </TableRow>
           ))}
-          {!currentRows.length && <EmptyState colSpan={6} message="No active tracks found" />}
+          {!topErr && !currentRows.length && <EmptyState colSpan={6} message="No active tracks found" />}
         </GlassTable>
       </div>
 
@@ -182,6 +191,12 @@ export async function PlaylistTracksSection(props: {
             </div>
           </div>
           <GlassTable headers={["", "Track", "ISRC", "Added"]} maxBodyHeightClassName="max-h-[260px]">
+            {addedErr ? (
+              <EmptyState
+                colSpan={4}
+                message={`Error loading added tracks: ${String((addedErr as any)?.message ?? addedErr)}`}
+              />
+            ) : null}
             {addedLast7Days.map((m, idx) => (
               <TableRow key={`${m.isrc}-${m.valid_from}-${idx}`}>
                 <TableCell>
@@ -217,7 +232,9 @@ export async function PlaylistTracksSection(props: {
                 </TableCell>
               </TableRow>
             ))}
-            {!addedLast7Days.length && <EmptyState colSpan={4} message="No tracks added in the last 7 days" />}
+            {!addedErr && !addedLast7Days.length && (
+              <EmptyState colSpan={4} message="No tracks added in the last 7 days" />
+            )}
           </GlassTable>
         </div>
 
@@ -234,6 +251,12 @@ export async function PlaylistTracksSection(props: {
             maxBodyHeightClassName="flex-1"
             headers={["", "Track", "ISRC", "Removed", "Added"]}
           >
+            {removedErr ? (
+              <EmptyState
+                colSpan={5}
+                message={`Error loading removed tracks: ${String((removedErr as any)?.message ?? removedErr)}`}
+              />
+            ) : null}
             {removed.map((m, idx) => (
               <TableRow key={`${m.isrc}-${m.valid_from}-${idx}`}>
                 <TableCell>
@@ -272,7 +295,7 @@ export async function PlaylistTracksSection(props: {
                 </TableCell>
               </TableRow>
             ))}
-            {!removed.length && <EmptyState colSpan={5} message="No removed tracks found" />}
+            {!removedErr && !removed.length && <EmptyState colSpan={5} message="No removed tracks found" />}
           </GlassTable>
         </div>
       </div>

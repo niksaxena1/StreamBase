@@ -409,7 +409,7 @@ export default async function SettingsPage() {
 
     // Invalidate all Supabase query caches (unstable_cache uses tags in `cachedQuery`).
     // Without this, playlist tables may stay stale for up to 24h.
-    revalidateTag("supabase");
+    revalidateTag("supabase", { status: "success" });
 
     revalidatePath("/health");
     revalidatePath("/settings");
