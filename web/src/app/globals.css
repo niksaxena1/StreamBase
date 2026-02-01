@@ -129,7 +129,8 @@ body {
 .sb-glass-nav {
   /* Keep this "boring" for maximum browser compatibility (prod vs dev parity):
      avoid color-mix(), calc() multiplication, and tricky compositing. */
-  background: var(--sb-surface);
+  /* Slightly less transparent than --sb-surface for readability */
+  background: var(--sb-card);
 
   /* Premium glass: blur + saturation + contrast (no palette change; affects backdrop only) */
   backdrop-filter: blur(18px) saturate(165%) contrast(115%);
