@@ -7,7 +7,7 @@ p_total,P Total,false,Entity,https://www.spotontrack.com/dashboard/42,16033458,P
 tg_total,TG Total,false,Entity,https://www.spotontrack.com/dashboard/43,16033459,TG Total,
 final_haus_releases,Final Haus Releases,false,Label,https://www.spotontrack.com/dashboard/80,9340661,Final Haus Releases,
 p_routenote,P RouteNote,false,Distro,https://www.spotontrack.com/dashboard/81,16042188,P RouteNote,
-p_release,P Release,false,Distro,https://www.spotontrack.com/dashboard/82,16042189,P Release,
+p_release,P Releese,false,Distro,https://www.spotontrack.com/dashboard/82,16042189,P Releese,
 tg_amuse,TG Amuse,false,Distro,https://www.spotontrack.com/dashboard/83,16042190,TG Amuse,
 tg_emubands,TG EmuBands,false,Distro,https://www.spotontrack.com/dashboard/84,16042191,TG EmuBands,
 tg_imusician,TG iMusician,false,Distro,https://www.spotontrack.com/dashboard/85,16042192,TG iMusician,

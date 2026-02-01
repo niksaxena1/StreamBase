@@ -341,6 +341,8 @@ def main():
         track_meta: Dict[str, dict] = {}
         raw_export_rows: List[dict] = []
         catalog_zero_stream_ratio: Dict[str, float] = {}
+        # ISRCs whose catalog stream total was missing/blank/unparseable in today's export.
+        missing_catalog_stream_value_isrcs: Set[str] = set()
         hard_fail_warnings: List[dict] = []
 
         for pl_key in export_keys:
@@ -437,14 +439,24 @@ def main():
 
                 if is_catalog:
                     s = (row.get("spotify_streams_total") or "").strip()
-                    try:
-                        streams_total = int(float(s)) if s else 0
-                    except Exception:
-                        streams_total = 0
-                    catalog_streams_today[isrc] = max(catalog_streams_today.get(isrc, 0), streams_total)
-                    seen_stream_rows += 1
-                    if streams_total == 0:
-                        zero_streams += 1
+                    streams_total: Optional[int] = None
+                    if s:
+                        # Best-effort parse: handle "1,234" and "1234.0".
+                        try:
+                            streams_total = int(float(s.replace(",", "")))
+                        except Exception:
+                            streams_total = None
+
+                    if streams_total is None:
+                        # SpotOnTrack sometimes exports blank / non-numeric values for certain rows.
+                        # Treat as "missing".
+                        missing_catalog_stream_value_isrcs.add(isrc)
+                    else:
+                        missing_catalog_stream_value_isrcs.discard(isrc)
+                        catalog_streams_today[isrc] = max(catalog_streams_today.get(isrc, 0), streams_total)
+                        seen_stream_rows += 1
+                        if streams_total == 0:
+                            zero_streams += 1
 
             playlist_to_isrcs[pl_key] = isrcs
             if is_catalog and seen_stream_rows > 0:
@@ -452,6 +464,126 @@ def main():
 
         # Persist raw export metadata early (useful even if we abort later).
         pg.upsert("raw_exports", raw_export_rows, on_conflict="run_id,playlist_key")
+
+        # Missing catalog stream handling:
+        # - If a value is missing today, count it as 0 UNLESS yesterday had a non-zero value.
+        # - If yesterday had a non-zero value, do NOT carry-forward; record it as "missing" by
+        #   omitting today's snapshot row for that ISRC (streams_cumulative is NOT NULL in DB).
+        #   We also emit a critical health warning listing affected ISRCs.
+        prev_streams_rows = pg.select_all(
+            "track_daily_streams",
+            "isrc,streams_cumulative",
+            f"date=eq.{prev_date.isoformat()}",
+            page_size=1000,
+        )
+        prev_streams: Dict[str, int] = {}
+        for r in prev_streams_rows:
+            isrc = norm_isrc(r.get("isrc") or "")
+            if not isrc:
+                continue
+            try:
+                prev_streams[isrc] = int(r.get("streams_cumulative") or 0)
+            except Exception:
+                pass
+
+        missing_prev_nonzero: List[dict] = []
+        missing_prev_zero_or_unknown: List[str] = []
+        for isrc in sorted(missing_catalog_stream_value_isrcs):
+            pv = int(prev_streams.get(isrc, 0) or 0)
+            if pv > 0:
+                # Record as missing (omit from today's snapshots; do not carry-forward).
+                missing_prev_nonzero.append({"isrc": isrc, "prev_streams_cumulative": pv})
+                # Ensure we don't accidentally insert a 0 snapshot for this ISRC.
+                catalog_streams_today.pop(isrc, None)
+            else:
+                # Count as 0 for today.
+                catalog_streams_today[isrc] = 0
+                missing_prev_zero_or_unknown.append(isrc)
+
+        if missing_prev_nonzero:
+            # Map affected ISRCs to the playlists they appear in today.
+            affected_isrcs = [d["isrc"] for d in missing_prev_nonzero]
+            affected_by_playlist: Dict[str, int] = {}
+            sample_by_playlist: Dict[str, List[str]] = {}
+            for pl_key, isrcs in playlist_to_isrcs.items():
+                hits = [i for i in affected_isrcs if i in isrcs]
+                if hits:
+                    affected_by_playlist[pl_key] = len(hits)
+                    sample_by_playlist[pl_key] = hits[:25]
+
+            pg.insert(
+                "ingestion_warnings",
+                [
+                    {
+                        "run_id": run_id,
+                        "run_date": run_date.isoformat(),
+                        "playlist_key": "all_catalog",
+                        "severity": "critical",
+                        "code": "catalog_streams_missing_prev_nonzero",
+                        "message": (
+                            "SpotOnTrack export missing/blank stream totals for tracks that had non-zero "
+                            "cumulative streams yesterday. These tracks are recorded as missing today."
+                        ),
+                        "details_json": {
+                            "affected_count": len(missing_prev_nonzero),
+                            "affected_isrcs_with_prev_sample": missing_prev_nonzero[:100],
+                            "affected_by_playlist": affected_by_playlist,
+                            "affected_isrcs_sample_by_playlist": sample_by_playlist,
+                            "missing_prev_zero_or_unknown_count": len(missing_prev_zero_or_unknown),
+                            "missing_prev_zero_or_unknown_sample": missing_prev_zero_or_unknown[:100],
+                            "note": "Decision on how to impute/repair missing values is pending.",
+                        },
+                    }
+                ],
+            )
+
+        # Explicit missing snapshot counts (catalog stream snapshots).
+        # A "missing snapshot" here means: the track appeared in a *catalog* export today,
+        # but we do not have a valid numeric `streams_cumulative` to store in `track_daily_streams`.
+        # (This includes the "prev non-zero → record as missing" policy above.)
+        expected_catalog_isrcs: Set[str] = set()
+        for pl_key, isrcs in playlist_to_isrcs.items():
+            pl_cfg = playlist_lookup.get(pl_key)
+            if pl_cfg and pl_cfg.is_catalog:
+                expected_catalog_isrcs |= set(isrcs)
+
+        present_snapshot_isrcs = set(catalog_streams_today.keys())
+        missing_snapshot_isrcs = sorted(expected_catalog_isrcs - present_snapshot_isrcs)
+
+        if missing_snapshot_isrcs:
+            missing_by_playlist: Dict[str, int] = {}
+            sample_by_playlist: Dict[str, List[str]] = {}
+            for pl_key, isrcs in playlist_to_isrcs.items():
+                pl_cfg = playlist_lookup.get(pl_key)
+                if not (pl_cfg and pl_cfg.is_catalog):
+                    continue
+                missing_here = [i for i in missing_snapshot_isrcs if i in isrcs]
+                if missing_here:
+                    missing_by_playlist[pl_key] = len(missing_here)
+                    sample_by_playlist[pl_key] = missing_here[:25]
+
+            pg.insert(
+                "ingestion_warnings",
+                [
+                    {
+                        "run_id": run_id,
+                        "run_date": run_date.isoformat(),
+                        "playlist_key": "all_catalog",
+                        "severity": "critical",
+                        "code": "catalog_missing_stream_snapshots",
+                        "message": f"Missing catalog stream snapshots for {len(missing_snapshot_isrcs)} track(s) today",
+                        "details_json": {
+                            "expected_catalog_tracks_count": len(expected_catalog_isrcs),
+                            "present_stream_snapshots_count": len(present_snapshot_isrcs),
+                            "missing_stream_snapshots_count": len(missing_snapshot_isrcs),
+                            "missing_isrcs_sample": missing_snapshot_isrcs[:200],
+                            "missing_by_playlist": missing_by_playlist,
+                            "missing_isrcs_sample_by_playlist": sample_by_playlist,
+                            "note": "These tracks appeared in a catalog export but had missing/invalid stream totals and were not written to track_daily_streams.",
+                        },
+                    }
+                ],
+            )
 
         # If any configured minimum row thresholds fail, abort BEFORE mutating memberships/stats.
         if hard_fail_warnings:
@@ -572,6 +704,27 @@ def main():
                     "source_run_id": run_id,
                 }
             )
+
+            # Critical health check: cumulative total streams should not decrease day-over-day.
+            # If it does, something is wrong with today's export (missing/blank values, parsing, or source bug).
+            if prev_total is not None and total < prev_total:
+                warn_rows.append(
+                    {
+                        "run_id": run_id,
+                        "run_date": run_date.isoformat(),
+                        "playlist_key": pl_key,
+                        "severity": "critical",
+                        "code": "total_streams_decreased",
+                        "message": f"Total cumulative streams decreased day-over-day ({prev_total} -> {total})",
+                        "details_json": {
+                            "prev_total_streams_cumulative": prev_total,
+                            "today_total_streams_cumulative": total,
+                            "delta": int(total - prev_total),
+                            "missing_streams_track_count": missing,
+                            "note": "Totals should be monotonic; investigate missing/invalid stream totals in source export.",
+                        },
+                    }
+                )
 
             if missing > 0 and not pl.is_catalog:
                 warn_rows.append(
