@@ -9,12 +9,14 @@ export function Modal({
   title,
   subtitle,
   children,
+  maxWidthClassName,
 }: {
   open: boolean;
   onClose: () => void;
   title?: ReactNode;
   subtitle?: ReactNode;
   children: ReactNode;
+  maxWidthClassName?: string;
 }) {
   useEffect(() => {
     if (!open) return;
@@ -50,7 +52,10 @@ export function Modal({
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
 
       <div
-        className="relative w-full max-w-5xl overflow-hidden sb-glass shadow-2xl"
+        className={[
+          "relative w-full overflow-hidden sb-glass shadow-2xl",
+          maxWidthClassName ?? "max-w-5xl",
+        ].join(" ")}
         onMouseDown={(e) => e.stopPropagation()}
       >
         {(title || subtitle) && (
