@@ -12,6 +12,31 @@ export type ComboboxOption = {
   trackCount?: number | null;
 };
 
+function foldForSearch(input: string): string {
+  // Make client-side search forgiving:
+  // - case-insensitive
+  // - ignores diacritics (e.g. é -> e)
+  // - folds some common "special letters" that don't decompose (e.g. ø -> o)
+  // - ignores a few punctuation marks commonly typed/omitted
+  const s = (input ?? "").toLowerCase();
+
+  // NFD removes most accents into combining marks which we then strip.
+  // Note: some letters (e.g. ø, ß, æ) don't decompose; handle via explicit folds below.
+  const noDiacritics = s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+  return noDiacritics
+    .replace(/[’'"]/g, "") // quotes/apostrophes
+    .replace(/ø/g, "o")
+    .replace(/ß/g, "ss")
+    .replace(/æ/g, "ae")
+    .replace(/œ/g, "oe")
+    .replace(/đ/g, "d")
+    .replace(/ð/g, "d")
+    .replace(/þ/g, "th")
+    .replace(/ł/g, "l")
+    .trim();
+}
+
 export function Combobox(props: {
   value: string | null;
   options: ComboboxOption[];
@@ -49,15 +74,15 @@ export function Combobox(props: {
     // UX: when focusing a selected value, show full list (not just the exact match)
     const effectiveQuery =
       open && query.trim() === selectedLabel.trim() ? "" : query;
-    const q = effectiveQuery.trim().toLowerCase();
+    const q = foldForSearch(effectiveQuery);
     if (!q) return props.options; // Show all options when no search query
-    return props.options.filter((o) => o.label.toLowerCase().includes(q));
+    return props.options.filter((o) => foldForSearch(o.label).includes(q));
   }, [open, props.options, query, selectedLabel]);
 
   function commitIfExact() {
-    const q = query.trim().toLowerCase();
+    const q = foldForSearch(query);
     if (!q) return;
-    const exact = props.options.find((o) => o.label.toLowerCase() === q);
+    const exact = props.options.find((o) => foldForSearch(o.label) === q);
     if (exact) props.onChange(exact.value);
   }
 

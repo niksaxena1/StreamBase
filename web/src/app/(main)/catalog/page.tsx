@@ -7,7 +7,7 @@ import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { cachedQuery } from "@/lib/supabase/cache";
 import { formatInt, formatDateISO } from "@/lib/format";
-import { getArtists } from "@/lib/spotify";
+import { getArtistsCached } from "@/lib/spotify";
 import { RememberParamRedirect } from "@/components/dashboard/RememberParamRedirect";
 import { ArtistDashboardControls } from "@/components/dashboard/ArtistDashboardControls";
 import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/GlassTable";
@@ -21,6 +21,8 @@ import { CatalogPageClient } from "./CatalogPageClient";
 import { dataDateFromRunDate } from "@/lib/sotDates";
 
 const STREAM_PAYOUT_USD = 0.002;
+const CATALOG_ARTIST_DROPDOWN_MAX_TRACKS = 10_000;
+const CATALOG_ARTIST_THUMBNAILS_MAX = 800;
 
 function computeRollingAvg7(desc: Array<{ date: string; daily: number }>) {
   const asc = [...desc].reverse();
@@ -256,14 +258,14 @@ export default async function CatalogPage({
       );
     }
 
-    // We don't have an artists table; derive a bounded "recent artists" list for the dropdown.
-    // For long-tail discovery, use the global search bar.
+    // We don't have an artists table; derive a bounded list of artists from tracks.
+    // Note: This is intentionally capped for performance. For long-tail discovery, use the global search bar.
     const trackMetaRows = await cachedQuery(
       async () => ({
-        data: await fetchRecentTracksMetaForArtists(svc, 2000),
+        data: await fetchAllTracksMeta(svc, CATALOG_ARTIST_DROPDOWN_MAX_TRACKS),
         error: null as any,
       }),
-      "catalog-recent-tracks-meta-v1",
+      `catalog-artists-from-tracks-v2-${CATALOG_ARTIST_DROPDOWN_MAX_TRACKS}`,
       3600,
     );
     const artists = deriveArtists((trackMetaRows.data ?? []) as TrackRow[]);
@@ -478,10 +480,17 @@ export default async function CatalogPage({
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  // Fetch only the *selected* artist image from Spotify (fast + avoids rate limits).
-  const selectedArtistData = await getArtists([artistId]);
-  const selectedArtistImageUrl = selectedArtistData.get(artistId)?.imageUrl ?? null;
-  const artistsWithImages = artists.map((a) => ({ ...a, imageUrl: null as string | null }));
+  // Artist images for dropdown + header. Use the cached path to avoid hammering Spotify on every request.
+  // We cap thumbnails to avoid very large, cold-cache Spotify fetches.
+  const selectedAndSomeArtistIds = Array.from(
+    new Set([artistId, ...artists.slice(0, CATALOG_ARTIST_THUMBNAILS_MAX).map((a) => a.id)].filter(Boolean)),
+  );
+  const artistDataMap = await getArtistsCached(svc, selectedAndSomeArtistIds, { maxAgeDays: 31 });
+  const selectedArtistImageUrl = artistDataMap.get(artistId)?.imageUrl ?? null;
+  const artistsWithImages = artists.map((a) => ({
+    ...a,
+    imageUrl: artistDataMap.get(a.id)?.imageUrl ?? null,
+  }));
 
   // Fetch selected track details if isrc is available
   let selectedTrack: { 

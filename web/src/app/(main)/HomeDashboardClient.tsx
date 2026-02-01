@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { Music } from "lucide-react";
+import { Download, Music } from "lucide-react";
 
 import { MetricProvider, useMetric } from "@/components/metrics/MetricContext";
 import { MetricSelector } from "@/components/metrics/MetricSelector";
@@ -187,6 +187,19 @@ function HomeDashboardInner(props: {
               <h1 className="font-display text-xl font-semibold tracking-tight sm:text-2xl">
                 {props.title}
               </h1>
+              <a
+                href="/api/reports/playlist-streams-7d"
+                className={[
+                  "inline-flex items-center justify-center rounded p-1 transition-colors",
+                  "hover:bg-black/5 dark:hover:bg-white/10",
+                  "opacity-30 hover:opacity-100",
+                ].join(" ")}
+                style={{ color: "var(--sb-muted)" }}
+                title="Download 7-day playlist streams report (XLSX)"
+                aria-label="Download 7-day playlist streams report (XLSX)"
+              >
+                <Download className="h-4 w-4" />
+              </a>
               {props.latest?.track_count !== null && props.latest?.track_count !== undefined && (
                 <span
                   className="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium tracking-wide"

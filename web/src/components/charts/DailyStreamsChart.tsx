@@ -12,7 +12,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { useId, useEffect, useState } from "react";
+import { useId, useEffect, useRef, useState } from "react";
 import { formatInt, formatUsd } from "@/lib/format";
 
 type DataPoint = {
@@ -70,6 +70,33 @@ type TooltipPayload = {
   dataKey: string;
 };
 
+function showCopiedToast(message: string) {
+  try {
+    const existing = document.getElementById("sb-copied-toast");
+    if (existing) existing.remove();
+
+    const notification = document.createElement("div");
+    notification.id = "sb-copied-toast";
+    notification.textContent = message;
+    notification.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background-color: #22c55e;
+      color: white;
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      z-index: 9999;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.25);
+    `;
+    document.body.appendChild(notification);
+    setTimeout(() => notification.remove(), 2000);
+  } catch {
+    // ignore toast failures
+  }
+}
+
 function CustomTooltip({
   active,
   label,
@@ -78,6 +105,7 @@ function CustomTooltip({
   fmtValue,
   isDark,
   chartColor,
+  onValuesFormatted,
 }: {
   active?: boolean;
   label?: string;
@@ -86,6 +114,7 @@ function CustomTooltip({
   fmtValue: (n: number) => string;
   isDark: boolean;
   chartColor: string;
+  onValuesFormatted?: (v: { main: string; ma7: string | null }) => void;
 }) {
   if (!active || !payload || payload.length === 0) return null;
 
@@ -100,6 +129,10 @@ function CustomTooltip({
 
   const mainValue = sorted[0];
   const mainValueFormatted = fmtValue(Number(mainValue.value ?? 0));
+  const maEntry = sorted.find((e) => e.dataKey === "ma7");
+  const ma7ValueFormatted = maEntry
+    ? fmtValue(Math.round(Number(maEntry.value ?? 0)))
+    : null;
   const overrideItems:
     | Array<{ note: string; title?: string; imageUrl?: string | null }>
     | null =
@@ -109,26 +142,21 @@ function CustomTooltip({
       imageUrl?: string | null;
     }> | undefined) ?? null);
 
+  // Avoid update loops by only notifying when values change.
+  const lastSentKeyRef = useRef<string>("");
+  useEffect(() => {
+    if (!active) return;
+    if (!mainValueFormatted) return;
+    const key = `${mainValueFormatted}||${ma7ValueFormatted ?? ""}`;
+    if (key === lastSentKeyRef.current) return;
+    lastSentKeyRef.current = key;
+    onValuesFormatted?.({ main: mainValueFormatted, ma7: ma7ValueFormatted });
+  }, [active, mainValueFormatted, ma7ValueFormatted, onValuesFormatted]);
+
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(mainValueFormatted);
-      // Show notification
-      const notification = document.createElement("div");
-      notification.textContent = "Copied to clipboard!";
-      notification.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        background-color: #22c55e;
-        color: white;
-        padding: 12px 16px;
-        border-radius: 8px;
-        font-size: 14px;
-        z-index: 9999;
-        animation: slideIn 0.3s ease-out;
-      `;
-      document.body.appendChild(notification);
-      setTimeout(() => notification.remove(), 2000);
+      showCopiedToast("Copied to clipboard!");
     } catch (err) {
       console.error("Failed to copy:", err);
     }
@@ -193,7 +221,7 @@ function CustomTooltip({
                       {it.title}
                     </div>
                   ) : null}
-                  <div className="text-xs" style={{ color: "var(--sb-text)" }}>
+                  <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
                     {it.note}
                   </div>
                 </div>
@@ -231,6 +259,7 @@ export function DailyStreamsChart({
 }) {
   const gid = useId();
   const [isDark, setIsDark] = useState(false);
+  const lastTooltipValuesRef = useRef<{ main: string; ma7: string | null } | null>(null);
   
   useEffect(() => {
     const checkTheme = () => {
@@ -327,11 +356,31 @@ export function DailyStreamsChart({
   const ChartComponent = hasMA7 ? ComposedChart : AreaChart;
 
   return (
-    <div className="w-full">
+    <div
+      className="w-full"
+      onMouseDown={(e) => {
+        // Prevent focus outline box on click (the chart isn't keyboard-focusable anyway).
+        e.preventDefault();
+      }}
+      onClick={async (e) => {
+        const lastTooltipValues = lastTooltipValuesRef.current;
+        if (!lastTooltipValues) return;
+        const wantMA = (e.ctrlKey || e.metaKey) && !!lastTooltipValues.ma7;
+        const toCopy = wantMA ? lastTooltipValues.ma7 : lastTooltipValues.main;
+        if (!toCopy) return;
+        try {
+          await navigator.clipboard.writeText(toCopy);
+          showCopiedToast(wantMA ? "Copied MA to clipboard!" : "Copied to clipboard!");
+        } catch (err) {
+          console.error("Failed to copy:", err);
+        }
+      }}
+    >
       <ResponsiveContainer width="100%" height={heightPx} minWidth={0}>
         <ChartComponent
           data={chartData}
           margin={{ top: 6, right: 6, left: 0, bottom: 0 }}
+          style={{ outline: "none" }}
         >
           <defs>
             <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
@@ -376,6 +425,9 @@ export function DailyStreamsChart({
                 fmtValue={fmtValue}
                 isDark={isDark}
                 chartColor={color}
+                onValuesFormatted={(v) => {
+                  lastTooltipValuesRef.current = v;
+                }}
               />
             )}
             cursor={{
