@@ -123,9 +123,12 @@ export async function GET() {
   XLSX.utils.book_append_sheet(wb, ws, "Last 7 days");
 
   const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+  // NextResponse expects a web-compatible BodyInit (ArrayBuffer/Uint8Array/Blob/etc).
+  // Convert Node's Buffer into an ArrayBuffer view for type-safe response bodies.
+  const body = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
 
   const filename = "playlist_streams_last_7_days.xlsx";
-  return new NextResponse(buf, {
+  return new NextResponse(body, {
     headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       "Content-Disposition": `attachment; filename="${filename}"`,
