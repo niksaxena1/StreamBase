@@ -204,20 +204,28 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
         continue;
       }
 
+      const nonCatalogTracks: Array<{
+        isrc: string;
+        name: string | null;
+        artist_names: string[] | null;
+        artist_ids: string[] | null;
+        album_image_url: string | null;
+      }> = (rows ?? []).map((t: unknown) => {
+        const row = (t ?? {}) as Record<string, unknown>;
+        return {
+          isrc: String(row.isrc ?? "").trim().toUpperCase(),
+          name: (row.name ?? null) as string | null,
+          artist_names: (row.artist_names ?? null) as string[] | null,
+          artist_ids: (row.artist_ids ?? null) as string[] | null,
+          album_image_url: (row.album_image_url ?? null) as string | null,
+        };
+      });
+
       nonCatalogTracksMap.set(
         warning.playlist_key ?? "",
-        (rows ?? [])
-          .map((t: unknown) => {
-            const row = (t ?? {}) as Record<string, unknown>;
-            return {
-              isrc: String(row.isrc ?? "").trim().toUpperCase(),
-              name: (row.name ?? null) as string | null,
-              artist_names: (row.artist_names ?? null) as string[] | null,
-              artist_ids: (row.artist_ids ?? null) as string[] | null,
-              album_image_url: (row.album_image_url ?? null) as string | null,
-            };
-          })
-          .filter((t) => (exclusionsEnabled ? !isExcluded(warning.playlist_key!, t.isrc) : true)),
+        exclusionsEnabled
+          ? nonCatalogTracks.filter((t) => !isExcluded(warning.playlist_key!, t.isrc))
+          : nonCatalogTracks,
       );
     }
   }
@@ -337,7 +345,13 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
           continue;
         }
 
-        const tracksRaw = (rows ?? []).map((t: unknown) => {
+        const tracksRaw: Array<{
+          isrc: string;
+          name: string | null;
+          artist_names?: string[] | null;
+          artist_ids?: string[] | null;
+          album_image_url?: string | null;
+        }> = (rows ?? []).map((t: unknown) => {
           const row = (t ?? {}) as Record<string, unknown>;
           return {
             isrc: String(row.isrc ?? "").trim().toUpperCase(),
@@ -348,7 +362,7 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
           };
         });
         const tracks = enrichmentExclusionsEnabled
-          ? tracksRaw.filter((t) => !isExcludedEnrichment(warning.playlist_key!, String(t.isrc ?? "").trim().toUpperCase()))
+          ? tracksRaw.filter((t) => !isExcludedEnrichment(warning.playlist_key!, t.isrc))
           : tracksRaw;
         missingEnrichmentTracksMap.set(warning.playlist_key ?? "", tracks);
       } else {
@@ -382,7 +396,7 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
           };
         });
         const tracks = enrichmentExclusionsEnabled
-          ? tracksRaw.filter((t) => !isExcludedEnrichment(warning.playlist_key!, String(t.isrc ?? "").trim().toUpperCase()))
+          ? tracksRaw.filter((t) => !isExcludedEnrichment(warning.playlist_key!, t.isrc))
           : tracksRaw;
         missingEnrichmentTracksMap.set(warning.playlist_key ?? "", tracks);
       }
@@ -407,20 +421,22 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
     if (error) {
       console.error("health_missing_catalog_tracks RPC failed:", error);
     } else {
-      allMissingTracks = (rows ?? [])
-        .map((t: unknown) => {
-          const row = (t ?? {}) as Record<string, unknown>;
-          const isrc = String(row.isrc ?? "").trim().toUpperCase();
-          return {
-            isrc,
-            name: (row.name ?? null) as string | null,
-            artist_names: (row.artist_names ?? null) as string[] | null,
-            artist_ids: (row.artist_ids ?? null) as string[] | null,
-            album_image_url: (row.album_image_url ?? null) as string | null,
-            playlists: Array.isArray(row.playlist_keys) ? (row.playlist_keys as string[]) : [],
-          };
-        })
-        .filter((t) => (exclusionsEnabled ? !t.playlists.some((pk) => isExcluded(pk, t.isrc)) : true));
+      const missingTracksRaw: typeof allMissingTracks = (rows ?? []).map((t: unknown) => {
+        const row = (t ?? {}) as Record<string, unknown>;
+        const isrc = String(row.isrc ?? "").trim().toUpperCase();
+        return {
+          isrc,
+          name: (row.name ?? null) as string | null,
+          artist_names: (row.artist_names ?? null) as string[] | null,
+          artist_ids: (row.artist_ids ?? null) as string[] | null,
+          album_image_url: (row.album_image_url ?? null) as string | null,
+          playlists: Array.isArray(row.playlist_keys) ? (row.playlist_keys as string[]) : [],
+        };
+      });
+
+      allMissingTracks = exclusionsEnabled
+        ? missingTracksRaw.filter((t) => !t.playlists.some((pk) => isExcluded(pk, t.isrc)))
+        : missingTracksRaw;
     }
   }
 
