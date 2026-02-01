@@ -1,14 +1,29 @@
 import { ReactNode, ComponentProps } from "react";
 import { Music } from "lucide-react";
 
+type HeaderCell =
+  | string
+  | ReactNode
+  | {
+      label: ReactNode;
+      align?: "left" | "right" | "center";
+      className?: string;
+    };
+
 interface GlassTableProps {
-  headers: (string | ReactNode)[];
+  headers: HeaderCell[];
   children: ReactNode;
   className?: string;
   bodyClassName?: string;
   maxBodyHeightClassName?: string;
   emptyMessage?: string;
   emptyIcon?: ReactNode;
+}
+
+function headerAlignClass(align?: "left" | "right" | "center") {
+  if (align === "right") return "text-right";
+  if (align === "center") return "text-center";
+  return "text-left";
 }
 
 export function GlassTable({ 
@@ -38,11 +53,35 @@ export function GlassTable({
             }}
           >
             <tr>
-              {headers.map((h, i) => (
-                <th key={i} className="px-3 py-2 font-medium">
-                  {h}
-                </th>
-              ))}
+              {headers.map((h, i) => {
+                const obj =
+                  typeof h === "object" && h !== null && Object.prototype.hasOwnProperty.call(h, "label")
+                    ? (h as { label: ReactNode; align?: unknown; className?: unknown })
+                    : null;
+
+                const label = obj ? obj.label : (h as ReactNode);
+
+                const alignRaw = obj?.align;
+                const align =
+                  alignRaw === "left" || alignRaw === "right" || alignRaw === "center"
+                    ? alignRaw
+                    : undefined;
+
+                const extra = typeof obj?.className === "string" ? obj.className : "";
+
+                return (
+                  <th
+                    key={i}
+                    className={[
+                      "px-3 py-2 font-medium",
+                      headerAlignClass(align),
+                      extra,
+                    ].filter(Boolean).join(" ")}
+                  >
+                    {label}
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody className="">
@@ -101,22 +140,51 @@ export function TableCell({
   children,
   className,
   mono,
+  numeric,
+  align,
+  empty,
+  emptyFallback,
   ...props
 }: {
   children: ReactNode;
   className?: string;
   mono?: boolean;
+  numeric?: boolean;
+  align?: "left" | "right" | "center";
+  empty?: boolean;
+  emptyFallback?: ReactNode;
 } & ComponentProps<"td">) {
+  const isEmpty =
+    empty ||
+    children === null ||
+    children === undefined ||
+    (typeof children === "string" && children.trim() === "");
+
+  const alignClass =
+    align === "center"
+      ? "text-center"
+      : align === "right" || numeric
+      ? "text-right"
+      : "text-left";
+
   return (
     <td
       className={[
         "px-3 py-2 align-middle",
         mono ? "font-mono text-[11px]" : "",
+        numeric ? "tabular-nums whitespace-nowrap" : "",
+        alignClass,
         className,
       ].filter(Boolean).join(" ")}
       {...props}
     >
-      {children}
+      {isEmpty ? (
+        <span className="opacity-40" style={{ color: "var(--sb-muted)" }}>
+          {emptyFallback ?? "—"}
+        </span>
+      ) : (
+        children
+      )}
     </td>
   );
 }

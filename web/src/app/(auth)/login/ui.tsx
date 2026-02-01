@@ -4,6 +4,7 @@ import { useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 
 import { supabaseBrowser } from "@/lib/supabase/client";
+import { Alert } from "@/components/ui/Alert";
 
 export default function LoginForm() {
   const sp = useSearchParams();
@@ -35,9 +36,9 @@ export default function LoginForm() {
   return (
     <form className="space-y-4" onSubmit={onSubmit}>
       {error ? (
-        <div className="rounded-2xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-950 dark:border-red-900/30 dark:bg-red-900/10 dark:text-red-200">
+        <Alert variant="error" title="Login failed">
           {error}
-        </div>
+        </Alert>
       ) : null}
 
       <div className="space-y-1.5">

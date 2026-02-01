@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { IconButton } from "@/components/ui/Button";
 
 type Theme = "light" | "dark";
 
@@ -33,20 +34,18 @@ export function ThemeToggle() {
   const isDark = theme === "dark";
 
   return (
-    <button
+    <IconButton
       type="button"
       onClick={() => {
         const next: Theme = isDark ? "light" : "dark";
         setTheme(next);
       }}
       aria-label="Toggle light and dark theme"
-      className="sb-ring inline-flex h-8 w-8 items-center justify-center rounded-full bg-transparent text-xs font-medium transition hover:bg-black/5 dark:hover:bg-white/10"
-      style={{ color: "var(--sb-text)" }}
     >
       <span className="text-xs leading-none" suppressHydrationWarning>
         {isDark ? "☾" : "☼"}
       </span>
-    </button>
+    </IconButton>
   );
 }
 

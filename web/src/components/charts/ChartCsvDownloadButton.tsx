@@ -2,6 +2,7 @@
 
 import { Download } from "lucide-react";
 import { downloadCsv } from "@/lib/csv";
+import { IconButton } from "@/components/ui/Button";
 
 export function ChartCsvDownloadButton(props: {
   filename: string;
@@ -14,7 +15,7 @@ export function ChartCsvDownloadButton(props: {
   const isDisabled = props.disabled || !props.rows || props.rows.length === 0;
 
   return (
-    <button
+    <IconButton
       type="button"
       onClick={() => {
         if (isDisabled) return;
@@ -24,18 +25,12 @@ export function ChartCsvDownloadButton(props: {
           headers: props.headers,
         });
       }}
-      className={[
-        "inline-flex items-center justify-center rounded p-1 transition-colors",
-        "hover:bg-black/5 dark:hover:bg-white/10",
-        isDisabled ? "cursor-not-allowed opacity-40" : "cursor-pointer",
-        props.className ?? "",
-      ].join(" ")}
       title={props.title ?? "Download CSV"}
       aria-label={props.title ?? "Download CSV"}
-      style={{ color: "var(--sb-muted)" }}
       disabled={isDisabled}
+      className={props.className}
     >
       <Download className="h-3.5 w-3.5" />
-    </button>
+    </IconButton>
   );
 }

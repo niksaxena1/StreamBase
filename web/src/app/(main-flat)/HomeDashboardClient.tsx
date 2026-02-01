@@ -13,6 +13,7 @@ import { GlassTable, TableRow, TableCell, EmptyState } from "@/components/ui/Gla
 import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
 import { dataDateFromRunDate } from "@/lib/sotDates";
 import { Alert } from "@/components/ui/Alert";
+import { hrefWithPatchedSearchParams } from "@/lib/searchParams";
 
 type PlaylistDailyStatsRow = {
   date: string;
@@ -41,12 +42,9 @@ function hrefWith(
   existing: { scope?: string; range?: string; daily?: string },
   patch: { scope?: string; range?: string; daily?: string },
 ) {
-  const params = new URLSearchParams();
   const scope = (patch.scope ?? existing.scope ?? "all_catalog").toString();
   const range = (patch.range ?? existing.range ?? "30").toString();
-  params.set("scope", scope);
-  params.set("range", range);
-  return `/?${params.toString()}`;
+  return hrefWithPatchedSearchParams("", { scope, range }, { prefix: "/?" });
 }
 
 function ToggleLink(props: { href: string; active: boolean; children: React.ReactNode }) {
@@ -330,16 +328,21 @@ function HomeDashboardInner(props: {
       <div className="space-y-2">
         <h2 className="text-sm font-semibold tracking-tight">Recent History</h2>
         <GlassTable 
-          headers={["Date", "Tracks", "Total Streams", "Daily"]}
+          headers={[
+            { label: "Date" },
+            { label: "Tracks", align: "right" },
+            { label: "Total Streams", align: "right" },
+            { label: "Daily", align: "right" },
+          ]}
           // Constrain height so ~7 rows are visible; scroll for more.
           maxBodyHeightClassName="max-h-[228px] overflow-auto"
         >
           {(props.history ?? []).map((r) => (
             <TableRow key={r.date}>
               <TableCell mono>{formatDateISO(dataDateFromRunDate(r.date))}</TableCell>
-              <TableCell>{formatInt(r.track_count)}</TableCell>
-              <TableCell>{formatInt(r.total_streams_cumulative)}</TableCell>
-              <TableCell className="text-lime-700 dark:text-lime-400 font-medium">
+              <TableCell numeric>{formatInt(r.track_count)}</TableCell>
+              <TableCell numeric>{formatInt(r.total_streams_cumulative)}</TableCell>
+              <TableCell numeric className="text-lime-700 dark:text-lime-400 font-medium">
                 +{formatInt(r.daily_streams_net)}
               </TableCell>
             </TableRow>

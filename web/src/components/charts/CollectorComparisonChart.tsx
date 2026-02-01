@@ -12,7 +12,7 @@ import {
 } from "recharts";
 import { useId, useMemo } from "react";
 import { formatInt, formatUsd2 } from "@/lib/format";
-import { formatUsdCompact } from "@/components/charts/chartUtils";
+import { formatKmbTick, formatUsdCompact } from "@/components/charts/chartUtils";
 
 export const COLLECTOR_COLORS: Record<string, string> = {
   // Individuals (softer)
@@ -255,16 +255,7 @@ export function CollectorComparisonChart({
   const formatYTick = (n: number) => {
     if (mode === "percentage") return `${n.toFixed(0)}%`;
     if (metric === "revenue") return formatUsdCompact(n, formatUsd2);
-    // Streams/tracks with K/M/B
-    const abs = Math.abs(n);
-    if (abs >= 1000000000) {
-      return `${(n / 1000000000).toFixed(1)}B`;
-    } else if (abs >= 1000000) {
-      return `${(n / 1000000).toFixed(1)}M`;
-    } else if (abs >= 1000) {
-      return `${(n / 1000).toFixed(1)}k`;
-    }
-    return formatInt(n);
+    return formatKmbTick(n);
   };
 
   const yDomain = mode === "percentage" ? [0, 100] : undefined;

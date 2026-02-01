@@ -6,6 +6,14 @@ import { cachedQueries } from "@/lib/supabase/cache";
 import { formatDateISO, formatInt } from "@/lib/format";
 import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/GlassTable";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
+import { SectionHeader } from "@/components/ui/SectionHeader";
+
+function errorMessage(err: unknown): string {
+  if (!err) return "unknown error";
+  if (err instanceof Error) return err.message;
+  const msg = (err as { message?: unknown }).message;
+  return typeof msg === "string" ? msg : String(err);
+}
 
 type PlaylistTopTrackRow = {
   isrc: string;
@@ -84,9 +92,7 @@ export async function PlaylistTracksSection(props: {
     return (
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         <div className="space-y-3">
-          <div className="flex items-end justify-between px-1">
-            <h2 className="text-sm font-semibold">Tracks currently in playlist</h2>
-          </div>
+          <SectionHeader title="Tracks currently in playlist" />
           <GlassTable headers={["", "Track", "ISRC", "Daily", "Total", "Added"]}>
             <EmptyState colSpan={6} message="No stats date available yet" />
           </GlassTable>
@@ -179,17 +185,21 @@ export async function PlaylistTracksSection(props: {
       totalRows: total.count ?? null,
       nullValidToRows: nullValidTo.count ?? null,
       activeAtRunDateRows: active.count ?? null,
-      minValidFrom: (minRow as any)?.valid_from ?? null,
-      maxValidFrom: (maxRow as any)?.valid_from ?? null,
+      minValidFrom:
+        typeof (minRow as Record<string, unknown> | null)?.valid_from === "string"
+          ? ((minRow as Record<string, unknown>).valid_from as string)
+          : null,
+      maxValidFrom:
+        typeof (maxRow as Record<string, unknown> | null)?.valid_from === "string"
+          ? ((maxRow as Record<string, unknown>).valid_from as string)
+          : null,
     };
   })();
 
   return (
     <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
       <div className="space-y-3">
-        <div className="flex items-end justify-between px-1">
-          <h2 className="text-sm font-semibold">Tracks currently in playlist</h2>
-        </div>
+        <SectionHeader title="Tracks currently in playlist" />
         {debug ? (
           <details
             className="rounded-xl border px-3 py-2 text-xs"
@@ -211,7 +221,7 @@ export async function PlaylistTracksSection(props: {
           {topErr ? (
             <EmptyState
               colSpan={6}
-              message={`Error loading current tracks: ${String((topErr as any)?.message ?? topErr)}`}
+              message={`Error loading current tracks: ${errorMessage(topErr)}`}
             />
           ) : null}
           {currentRows.map((t) => (
@@ -259,17 +269,15 @@ export async function PlaylistTracksSection(props: {
 
       <div className="flex h-full flex-col gap-3">
         <div className="space-y-3">
-          <div className="flex items-end justify-between px-1">
-            <h2 className="text-sm font-semibold">Tracks added (last 7 days)</h2>
-            <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
-              Based on membership added date.
-            </div>
-          </div>
+          <SectionHeader
+            title="Tracks added (last 7 days)"
+            subtitle="Based on membership added date."
+          />
           <GlassTable headers={["", "Track", "ISRC", "Added"]} maxBodyHeightClassName="max-h-[260px]">
             {addedErr ? (
               <EmptyState
                 colSpan={4}
-                message={`Error loading added tracks: ${String((addedErr as any)?.message ?? addedErr)}`}
+                message={`Error loading added tracks: ${errorMessage(addedErr)}`}
               />
             ) : null}
             {addedLast7Days.map((m, idx) => (
@@ -314,12 +322,10 @@ export async function PlaylistTracksSection(props: {
         </div>
 
         <div className="flex flex-1 flex-col gap-3">
-          <div className="flex items-end justify-between px-1">
-            <h2 className="text-sm font-semibold">Tracks removed</h2>
-            <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
-              Most recent removals first.
-            </div>
-          </div>
+          <SectionHeader
+            title="Tracks removed"
+            subtitle="Most recent removals first."
+          />
           <GlassTable
             className="flex-1"
             bodyClassName="flex-1"
@@ -329,7 +335,7 @@ export async function PlaylistTracksSection(props: {
             {removedErr ? (
               <EmptyState
                 colSpan={5}
-                message={`Error loading removed tracks: ${String((removedErr as any)?.message ?? removedErr)}`}
+                message={`Error loading removed tracks: ${errorMessage(removedErr)}`}
               />
             ) : null}
             {removed.map((m, idx) => (

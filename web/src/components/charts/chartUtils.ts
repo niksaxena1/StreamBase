@@ -45,6 +45,21 @@ export function formatUsdCompact(n: number, fallback: (n: number) => string): st
   }
 }
 
+export function formatKmbTick(n: number): string {
+  const abs = Math.abs(n);
+  if (abs >= 1000000000) {
+    const billions = n / 1000000000;
+    return `${billions % 1 === 0 ? billions.toFixed(0) : billions.toFixed(1)}B`;
+  } else if (abs >= 1000000) {
+    const millions = n / 1000000;
+    return `${millions % 1 === 0 ? millions.toFixed(0) : millions.toFixed(1)}M`;
+  } else if (abs >= 1000) {
+    const thousands = n / 1000;
+    return `${thousands % 1 === 0 ? thousands.toFixed(0) : thousands.toFixed(1)}k`;
+  }
+  return new Intl.NumberFormat("en-US").format(n);
+}
+
 export function showCopiedToast(message: string) {
   try {
     const existing = document.getElementById("sb-copied-toast");

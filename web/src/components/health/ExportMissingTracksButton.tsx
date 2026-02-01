@@ -1,5 +1,8 @@
 "use client";
 
+import { Download } from "lucide-react";
+import { Button } from "@/components/ui/Button";
+
 interface Track {
   isrc: string;
   name: string | null;
@@ -60,28 +63,14 @@ export function ExportMissingTracksButton({ tracks, date }: ExportMissingTracksB
   if (tracks.length === 0) return null;
 
   return (
-    <button
+    <Button
       onClick={handleExport}
-      className="flex items-center gap-1.5 rounded-full bg-white/70 px-2.5 py-1.5 text-[11px] font-medium transition hover:bg-white dark:bg-white/10 dark:hover:bg-white/20"
       title="Export as CSV"
+      variant="secondary"
+      size="sm"
+      leftIcon={<Download className="h-3.5 w-3.5" />}
     >
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="12"
-        height="12"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className="opacity-70"
-      >
-        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-        <polyline points="7 10 12 15 17 10" />
-        <line x1="12" y1="15" x2="12" y2="3" />
-      </svg>
       CSV
-    </button>
+    </Button>
   );
 }

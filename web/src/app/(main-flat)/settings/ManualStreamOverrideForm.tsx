@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Combobox, type ComboboxOption } from "@/components/ui/Combobox";
+import { Alert } from "@/components/ui/Alert";
 
 type Track = {
   isrc: string;
@@ -270,9 +271,9 @@ export function ManualStreamOverrideForm({
       </form>
 
       {error && (
-        <div className="mt-3 rounded-xl bg-red-50 p-2 text-xs text-red-900 dark:bg-red-900/20 dark:text-red-200">
+        <Alert variant="error" title="Could not save override" className="mt-3">
           {error}
-        </div>
+        </Alert>
       )}
     </div>
   );

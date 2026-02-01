@@ -12,6 +12,7 @@ import { PageHeader } from "@/components/shell/PageHeader";
 import { addDaysISO, dataDateFromRunDate, SOT_DATA_LAG_DAYS } from "@/lib/sotDates";
 import { Alert } from "@/components/ui/Alert";
 import { SectionHeader } from "@/components/ui/SectionHeader";
+import { ChipGroup } from "@/components/ui/Chip";
 
 export const revalidate = 60; // Revalidate every 60 seconds for fresher health data
 
@@ -21,28 +22,13 @@ type HealthPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
-function FilterToggle({
-  active,
-  href,
-  children,
-}: {
-  active: boolean;
-  href: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <Link
-      href={href}
-      className={[
-        "rounded-full px-2.5 py-1.5 text-[11px] font-medium transition",
-        active
-          ? "bg-black text-white shadow-sm dark:bg-white dark:text-black"
-          : "bg-white/70 text-black/70 hover:bg-white dark:bg-white/10 dark:text-white/70 dark:hover:bg-white/20",
-      ].join(" ")}
-    >
-      {children}
-    </Link>
-  );
+function chipLinkClass(active: boolean) {
+  return [
+    "rounded-full px-2.5 py-1.5 text-[11px] font-medium transition",
+    active
+      ? "bg-black text-white shadow-sm dark:bg-white dark:text-black"
+      : "text-black/70 hover:bg-white/70 dark:text-white/70 dark:hover:bg-white/20",
+  ].join(" ");
 }
 
 export default async function HealthPage({ searchParams }: HealthPageProps) {
@@ -221,7 +207,7 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
       nonCatalogTracksMap.set(
         warning.playlist_key ?? "",
         (rows ?? [])
-          .map((t) => {
+          .map((t: unknown) => {
             const row = (t ?? {}) as Record<string, unknown>;
             return {
               isrc: String(row.isrc ?? "").trim().toUpperCase(),
@@ -351,7 +337,7 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
           continue;
         }
 
-        const tracksRaw = (rows ?? []).map((t) => {
+        const tracksRaw = (rows ?? []).map((t: unknown) => {
           const row = (t ?? {}) as Record<string, unknown>;
           return {
             isrc: String(row.isrc ?? "").trim().toUpperCase(),
@@ -385,7 +371,7 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
           artist_names: string[] | null;
           artist_ids: string[] | null;
           album_image_url: string | null;
-        }> = (rows ?? []).map((t) => {
+        }> = (rows ?? []).map((t: unknown) => {
           const row = (t ?? {}) as Record<string, unknown>;
           return {
             isrc: String(row.isrc ?? "").trim().toUpperCase(),
@@ -422,7 +408,7 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
       console.error("health_missing_catalog_tracks RPC failed:", error);
     } else {
       allMissingTracks = (rows ?? [])
-        .map((t) => {
+        .map((t: unknown) => {
           const row = (t ?? {}) as Record<string, unknown>;
           const isrc = String(row.isrc ?? "").trim().toUpperCase();
           return {
@@ -458,20 +444,20 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
         subtitle="Recent ingestion runs and anomaly warnings."
         actionsClassName="flex-wrap"
         actions={
-          <div className="sb-ring flex items-center gap-0.5 rounded-full bg-white/70 p-0.5 text-xs dark:bg-black/50">
-            <FilterToggle active={severityFilter === "all"} href={hrefWith({ severity: "all" })}>
+          <ChipGroup className="text-xs dark:bg-black/50">
+            <Link className={chipLinkClass(severityFilter === "all")} href={hrefWith({ severity: "all" })}>
               All
-            </FilterToggle>
-            <FilterToggle active={severityFilter === "critical"} href={hrefWith({ severity: "critical" })}>
+            </Link>
+            <Link className={chipLinkClass(severityFilter === "critical")} href={hrefWith({ severity: "critical" })}>
               Critical
-            </FilterToggle>
-            <FilterToggle active={severityFilter === "warn"} href={hrefWith({ severity: "warn" })}>
+            </Link>
+            <Link className={chipLinkClass(severityFilter === "warn")} href={hrefWith({ severity: "warn" })}>
               Warn
-            </FilterToggle>
-            <FilterToggle active={severityFilter === "info"} href={hrefWith({ severity: "info" })}>
+            </Link>
+            <Link className={chipLinkClass(severityFilter === "info")} href={hrefWith({ severity: "info" })}>
               Info
-            </FilterToggle>
-          </div>
+            </Link>
+          </ChipGroup>
         }
       />
 
@@ -690,15 +676,22 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
           }
           actions={<span className="text-xs opacity-50">Signed links (60s)</span>}
         />
-        <GlassTable headers={["Playlist", "Rows", "Exported", "Download"]}>
+        <GlassTable
+          headers={[
+            { label: "Playlist" },
+            { label: "Rows", align: "right" },
+            { label: "Exported", align: "right" },
+            { label: "Download" },
+          ]}
+        >
           {(exportsForLatest ?? []).map((r) => (
             <TableRow key={r.playlist_key}>
               <TableCell mono className="text-xs">
                 {r.playlist_key}
               </TableCell>
-              <TableCell>{r.rows_count ?? "—"}</TableCell>
-              <TableCell mono className="text-xs">
-                {r.exported_at ? new Date(r.exported_at).toLocaleString() : "—"}
+              <TableCell numeric>{r.rows_count ?? null}</TableCell>
+              <TableCell numeric mono className="text-xs">
+                {r.exported_at ? new Date(r.exported_at).toLocaleString() : null}
               </TableCell>
               <TableCell>
                 {r.storage_bucket && r.object_key ? (
@@ -709,7 +702,7 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
                     csv
                   </a>
                 ) : (
-                  "—"
+                  null
                 )}
               </TableCell>
             </TableRow>

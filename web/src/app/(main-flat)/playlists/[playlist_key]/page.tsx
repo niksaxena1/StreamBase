@@ -49,11 +49,12 @@ export default async function PlaylistDetailPage({
   params,
   searchParams,
 }: {
-  params: any;
-  searchParams?: any;
+  params: { playlist_key: string };
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { playlist_key } = params as { playlist_key: string };
-  const sp = (searchParams ?? {}) as { date?: string };
+  const { playlist_key } = params;
+  const sp = (await searchParams) ?? {};
+  const dateParam = typeof sp.date === "string" ? sp.date : undefined;
   const sb = await supabaseServer();
   const { data: isAdmin } = await sb.rpc("is_admin");
 
@@ -100,7 +101,7 @@ export default async function PlaylistDetailPage({
   // Determine selected date (from query param or latest stats date)
   const latestDate = stats?.[0]?.date ?? null;
   // UI shows "data date" (run_date - lag). Map back to stored run_date for querying.
-  const selectedDataDate = sp.date ?? (latestDate ? dataDateFromRunDate(latestDate) : null);
+  const selectedDataDate = dateParam ?? (latestDate ? dataDateFromRunDate(latestDate) : null);
   const selectedDate =
     selectedDataDate
       ? addDaysISO(selectedDataDate, SOT_DATA_LAG_DAYS)
@@ -281,23 +282,32 @@ export default async function PlaylistDetailPage({
           }
         />
         
-        <GlassTable headers={["Date", "Tracks", "Total Streams", "Daily", "Est. Rev", "Missing"]}>
+        <GlassTable
+          headers={[
+            { label: "Date" },
+            { label: "Tracks", align: "right" },
+            { label: "Total Streams", align: "right" },
+            { label: "Daily", align: "right" },
+            { label: "Est. Rev", align: "right" },
+            { label: "Missing", align: "right" },
+          ]}
+        >
           {(stats ?? []).map((r) => (
             <TableRow key={r.date}>
               <TableCell mono>{formatDateISO(dataDateFromRunDate(r.date))}</TableCell>
-              <TableCell>{formatInt(r.track_count)}</TableCell>
-              <TableCell>{formatInt(r.total_streams_cumulative)}</TableCell>
-              <TableCell className="text-lime-700 dark:text-lime-400 font-medium">
+              <TableCell numeric>{formatInt(r.track_count)}</TableCell>
+              <TableCell numeric>{formatInt(r.total_streams_cumulative)}</TableCell>
+              <TableCell numeric className="text-lime-700 dark:text-lime-400 font-medium">
                 +{formatInt(r.daily_streams_net)}
               </TableCell>
-              <TableCell>{formatUsd(r.est_revenue_total)}</TableCell>
-              <TableCell>
+              <TableCell numeric>{formatUsd(r.est_revenue_total)}</TableCell>
+              <TableCell numeric>
                 {r.missing_streams_track_count ? (
                   <span className="text-red-600 dark:text-red-400 font-medium">
                     {formatInt(r.missing_streams_track_count)}
                   </span>
                 ) : (
-                  <span className="opacity-30">-</span>
+                  null
                 )}
               </TableCell>
             </TableRow>
