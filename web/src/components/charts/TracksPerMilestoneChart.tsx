@@ -26,6 +26,44 @@ type MilestoneDataPoint = {
   unique_tracks: number;
 };
 
+type MilestoneTooltipProps = {
+  active?: boolean;
+  label?: string | number;
+  payload?: Array<{ value?: unknown }>;
+};
+
+function MilestoneTooltip({
+  active,
+  payload,
+  label,
+}: MilestoneTooltipProps) {
+  if (!active || !payload?.length) return null;
+
+  const raw = payload[0]?.value;
+  const n = typeof raw === "number" ? raw : Number(raw);
+  const count = Number.isFinite(n) ? n : 0;
+
+  return (
+    <div
+      className="rounded-lg border px-3 py-2 text-xs shadow-lg backdrop-blur"
+      style={{
+        backgroundColor: "var(--sb-card)",
+        borderColor: "var(--sb-border)",
+        color: "var(--sb-text)",
+        boxShadow: "var(--sb-shadow-compact)",
+      }}
+    >
+      <div className="mb-1 font-medium">Milestone: {label ?? "—"}</div>
+      <div>
+        Tracks:{" "}
+        <span style={{ color: "var(--sb-accent)", fontWeight: 700 }}>
+          {formatInt(count)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Generate nice round milestone thresholds based on the data.
  * Returns milestones in descending order (highest first).
@@ -231,23 +269,7 @@ export function TracksPerMilestoneChart({
             tickFormatter={(value) => formatKmbTick(Number(value ?? 0))}
           />
           <Tooltip
-            contentStyle={{
-              backgroundColor: "var(--sb-card)",
-              borderColor: "var(--sb-border)",
-              borderRadius: "10px",
-              boxShadow: "var(--sb-shadow-compact)",
-              color: "var(--sb-text)",
-            }}
-            itemStyle={{ color: "var(--sb-text)" }}
-            formatter={(value: number, _name: string, _props: { payload?: MilestoneDataPoint }) => {
-              return [
-                <span style={{ color: "var(--sb-accent)", fontWeight: "bold" }}>
-                  {formatInt(value)}
-                </span>,
-                `Tracks: ${formatInt(value)}`,
-              ];
-            }}
-            labelFormatter={(label) => `Milestone: ${label}`}
+            content={<MilestoneTooltip />}
             cursor={{
               fill: "rgba(0,0,0,0.1)",
             }}
@@ -263,10 +285,12 @@ export function TracksPerMilestoneChart({
           <Bar
             dataKey="unique_tracks"
             radius={[4, 4, 0, 0]}
-            onClick={(data) => {
-              if (onMilestoneClick && data?.milestone) {
-                onMilestoneClick(data.milestone, data.unique_tracks);
-              }
+            onClick={(barData) => {
+              if (!onMilestoneClick) return;
+              const p = (barData && typeof barData === "object" ? (barData as any).payload : null) as
+                | MilestoneDataPoint
+                | null;
+              if (p?.milestone) onMilestoneClick(p.milestone, p.unique_tracks);
             }}
             style={{ cursor: onMilestoneClick ? "pointer" : "default" }}
           >
