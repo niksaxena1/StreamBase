@@ -32,12 +32,14 @@ function DatePickerInner({
   max,
   label,
   path,
+  param,
 }: {
   value: string;
   min?: string;
   max?: string;
   label?: string;
   path: string;
+  param?: string;
 }) {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
@@ -96,8 +98,8 @@ function DatePickerInner({
     const newDate = formatYmd(d);
 
     const params = new URLSearchParams(window.location.search);
-    params.set("date", newDate);
-    router.push(`${path}?${params.toString()}`);
+    params.set(param ?? "date", newDate);
+    router.push(`${path}?${params.toString()}`, { scroll: false });
     setIsOpen(false);
   }
 
@@ -232,16 +234,18 @@ export function DatePicker({
   max,
   label,
   path,
+  param,
 }: {
   value: string;
   min?: string;
   max?: string;
   label?: string;
   path: string;
+  param?: string;
 }) {
   return (
     <Suspense fallback={<div className="h-10 w-32 animate-pulse rounded-2xl bg-white/30 dark:bg-white/10" />}>
-      <DatePickerInner value={value} min={min} max={max} label={label} path={path} />
+      <DatePickerInner value={value} min={min} max={max} label={label} path={path} param={param} />
     </Suspense>
   );
 }

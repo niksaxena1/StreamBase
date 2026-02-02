@@ -13,6 +13,28 @@ const RANGE_CHOICES = [30, 90, 365] as const;
 const METRICS = ["streams", "revenue", "tracks"] as const;
 type Metric = (typeof METRICS)[number];
 
+const COLLECTORS_HEADER_STORAGE = {
+  metric: "sb:collectors:header:metric",
+} as const;
+
+function readStoredString(key: string): string | null {
+  // NOTE: Client components can still render on the server, so guard `window`.
+  if (typeof window === "undefined") return null;
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredString(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // ignore (private mode, disabled storage, etc.)
+  }
+}
+
 export function CollectorsPageHeader({
   selectedCollector,
   rangeDays,
@@ -30,6 +52,10 @@ export function CollectorsPageHeader({
     if (urlMetric === "revenue" || urlMetric === "streams" || urlMetric === "tracks") {
       return urlMetric;
     }
+    const storedMetric = readStoredString(COLLECTORS_HEADER_STORAGE.metric);
+    if (storedMetric === "revenue" || storedMetric === "streams" || storedMetric === "tracks") {
+      return storedMetric;
+    }
     return "revenue"; // Default to revenue
   });
 
@@ -42,6 +68,7 @@ export function CollectorsPageHeader({
     if (newUrl !== `?${searchParams.toString()}`) {
       router.replace(newUrl, { scroll: false });
     }
+    writeStoredString(COLLECTORS_HEADER_STORAGE.metric, metric);
   }, [metric, searchParams, router]);
 
   const sp = searchParams ? Object.fromEntries(searchParams) : {};

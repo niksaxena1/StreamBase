@@ -15,6 +15,8 @@ import { dataDateFromRunDate } from "@/lib/sotDates";
 import { Alert } from "@/components/ui/Alert";
 import { hrefWithPatchedSearchParams } from "@/lib/searchParams";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
+import { TrackStreamsXYChart, type TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChart";
+import { DatePicker } from "@/components/ui/DatePicker";
 
 type PlaylistDailyStatsRow = {
   date: string;
@@ -40,12 +42,15 @@ function computeRollingAvg7(desc: Array<{ date: string; value: number }>) {
 }
 
 function hrefWith(
-  existing: { scope?: string; range?: string; daily?: string },
-  patch: { scope?: string; range?: string; daily?: string },
+  existing: { scope?: string; range?: string; daily?: string; xy_date?: string },
+  patch: { scope?: string; range?: string; daily?: string; xy_date?: string | null },
 ) {
   const scope = (patch.scope ?? existing.scope ?? "all_catalog").toString();
   const range = (patch.range ?? existing.range ?? "30").toString();
-  return hrefWithPatchedSearchParams("", { scope, range }, { prefix: "/?" });
+  const daily = (patch.daily ?? existing.daily ?? "").toString();
+  const xy_date =
+    patch.xy_date === null ? null : (patch.xy_date ?? existing.xy_date ?? null);
+  return hrefWithPatchedSearchParams("", { scope, range, daily, xy_date }, { prefix: "/?" });
 }
 
 function ToggleLink(props: { href: string; active: boolean; children: React.ReactNode }) {
@@ -65,7 +70,7 @@ function ToggleLink(props: { href: string; active: boolean; children: React.Reac
 }
 
 function HomeDashboardInner(props: {
-  sp: { scope?: string; range?: string; daily?: string };
+  sp: { scope?: string; range?: string; daily?: string; xy_date?: string };
   playlistKey: "all_catalog" | "releases" | "ext";
   title: string;
   rangeDays: number;
@@ -73,10 +78,19 @@ function HomeDashboardInner(props: {
   history: PlaylistDailyStatsRow[];
   playlistImageUrl: string | null;
   historyErrorMessage?: string | null;
+  trackScatterPoints: TrackStreamsXYPoint[];
+  trackScatterErrorMessage?: string | null;
+  trackScatterDataDate: string | null;
+  latestRunDate: string | null;
+  latestDataDate: string | null;
 }) {
   const { metric, setMetric } = useMetric();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
   const [selectedChart, setSelectedChart] = useState<"daily" | "total">("daily");
+
+  const scatterMode = metric === "revenue" ? "revenue" : "streams";
+  const scatterTitle =
+    scatterMode === "revenue" ? "Tracks: Δ1d vs Total Revenue" : "Tracks: Δ1d vs Total Streams";
 
   const series = useMemo(() => {
     const desc = props.history ?? [];
@@ -326,6 +340,70 @@ function HomeDashboardInner(props: {
         </Alert>
       ) : null}
 
+      {/* Track XY scatter */}
+      <div className="space-y-2">
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 className="text-sm font-semibold tracking-tight">{scatterTitle}</h2>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <div
+              className="text-[11px] opacity-60"
+              title="Y = data date minus previous day (when available), X = cumulative streams on that data date."
+            >
+              {scatterMode === "revenue" ? "Y: Δ1d revenue • X: total revenue" : "Y: Δ1d streams • X: total streams"}
+            </div>
+            <div className="flex items-center gap-2">
+              <DatePicker
+                value={props.trackScatterDataDate ?? props.latestDataDate ?? ""}
+                min={
+                  props.history?.length
+                    ? dataDateFromRunDate((props.history ?? [])[props.history.length - 1]?.date ?? "")
+                    : undefined
+                }
+                max={props.latestDataDate ?? undefined}
+                path="/"
+                param="xy_date"
+              />
+              {props.latestDataDate ? (
+                <Link
+                  href={hrefWith(props.sp, { xy_date: null })}
+                  scroll={false}
+                  className="rounded-full px-2 py-1 text-[11px] font-medium transition hover:bg-black/5 dark:hover:bg-white/10"
+                  style={{ color: "var(--sb-muted)" }}
+                  title="Jump back to latest available date"
+                >
+                  Latest
+                </Link>
+              ) : null}
+            </div>
+          </div>
+        </div>
+        {props.trackScatterErrorMessage ? (
+          <Alert variant="error" title="Track scatter query error">
+            {props.trackScatterErrorMessage}
+          </Alert>
+        ) : null}
+        <div
+          className="rounded-xl border bg-white/50 p-3 dark:bg-white/[0.03]"
+          style={{ borderColor: "var(--sb-border)" }}
+        >
+          {props.trackScatterPoints?.length ? (
+            <TrackStreamsXYChart
+              points={props.trackScatterPoints}
+              mode={scatterMode}
+              payoutPerStreamUsd={streamPayoutPerStreamUsd}
+            />
+          ) : (
+            <div className="py-10 text-center text-xs" style={{ color: "var(--sb-muted)" }}>
+              No track points available yet.
+            </div>
+          )}
+          <div className="mt-2 text-[11px] opacity-60" style={{ color: "var(--sb-muted)" }}>
+            Hover a dot for track details. Δ1d is “—” when yesterday’s snapshot is missing. Data date is{" "}
+            {props.trackScatterDataDate ?? props.latestDataDate ?? "—"}.
+          </div>
+        </div>
+      </div>
+
       {/* Recent History Table */}
       <div className="space-y-2">
         <h2 className="text-sm font-semibold tracking-tight">Recent History</h2>
@@ -372,7 +450,7 @@ function rollSum(
 }
 
 export function HomeDashboardClient(props: {
-  sp: { scope?: string; range?: string; daily?: string };
+  sp: { scope?: string; range?: string; daily?: string; xy_date?: string };
   playlistKey: "all_catalog" | "releases" | "ext";
   title: string;
   rangeDays: number;
@@ -380,6 +458,11 @@ export function HomeDashboardClient(props: {
   history: PlaylistDailyStatsRow[];
   playlistImageUrl: string | null;
   historyErrorMessage?: string | null;
+  trackScatterPoints: TrackStreamsXYPoint[];
+  trackScatterErrorMessage?: string | null;
+  trackScatterDataDate: string | null;
+  latestRunDate: string | null;
+  latestDataDate: string | null;
 }) {
   return (
     <MetricProvider defaultMetric="streams">

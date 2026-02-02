@@ -43,6 +43,12 @@ const COLLECTORS_DETAILS_STORAGE = {
   tracksOpen: "sb:collectors:details:tracks_open",
 } as const;
 
+const COLLECTORS_COMPARISON_STORAGE = {
+  collectors: "sb:collectors:comparison:collectors",
+  mode: "sb:collectors:comparison:mode",
+  granularity: "sb:collectors:comparison:granularity",
+} as const;
+
 function readStoredBool(key: string, fallback: boolean): boolean {
   // NOTE: Client components can still render on the server, so guard `window`.
   if (typeof window === "undefined") return fallback;
@@ -60,6 +66,24 @@ function readStoredBool(key: string, fallback: boolean): boolean {
 function writeStoredBool(key: string, value: boolean) {
   try {
     localStorage.setItem(key, value ? "1" : "0");
+  } catch {
+    // ignore (private mode, disabled storage, etc.)
+  }
+}
+
+function readStoredString(key: string): string | null {
+  // NOTE: Client components can still render on the server, so guard `window`.
+  if (typeof window === "undefined") return null;
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredString(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
   } catch {
     // ignore (private mode, disabled storage, etc.)
   }
@@ -314,6 +338,7 @@ export function CollectorsClient(props: {
 
   const [openPlaylists, setOpenPlaylists] = useState(true);
   const [openTracks, setOpenTracks] = useState(true);
+  const [comparisonBaseline, setComparisonBaseline] = useState<"ma7" | "yday">("ma7");
 
   // Metric is controlled by the page header; read it from the URL so it updates immediately.
   const metric: Metric = (() => {
@@ -327,7 +352,13 @@ export function CollectorsClient(props: {
   const [comparisonCollectors, setComparisonCollectors] = useState<string[]>(() => {
     const urlCollectors = searchParams.get("collectors");
     if (urlCollectors) {
-      return urlCollectors.split(",").filter((c) => COLLECTOR_ORDER.includes(c as any));
+      const fromUrl = urlCollectors.split(",").filter((c) => COLLECTOR_ORDER.includes(c as any));
+      if (fromUrl.length) return fromUrl;
+    }
+    const stored = readStoredString(COLLECTORS_COMPARISON_STORAGE.collectors);
+    if (stored) {
+      const fromStored = stored.split(",").filter((c) => COLLECTOR_ORDER.includes(c as any));
+      if (fromStored.length) return fromStored;
     }
     return ["PL", "TG"]; // Default to PL and TG
   });
@@ -337,6 +368,10 @@ export function CollectorsClient(props: {
     if (urlMode === "combined" || urlMode === "individual" || urlMode === "percentage") {
       return urlMode;
     }
+    const storedMode = readStoredString(COLLECTORS_COMPARISON_STORAGE.mode);
+    if (storedMode === "combined" || storedMode === "individual" || storedMode === "percentage") {
+      return storedMode;
+    }
     return "individual"; // Default to individual
   });
 
@@ -344,6 +379,10 @@ export function CollectorsClient(props: {
     const urlGranularity = searchParams.get("granularity");
     if (GRANULARITIES.includes(urlGranularity as Granularity)) {
       return urlGranularity as Granularity;
+    }
+    const storedGranularity = readStoredString(COLLECTORS_COMPARISON_STORAGE.granularity);
+    if (GRANULARITIES.includes(storedGranularity as Granularity)) {
+      return storedGranularity as Granularity;
     }
     return "daily"; // Default to daily
   });
@@ -376,6 +415,9 @@ export function CollectorsClient(props: {
     if (newUrl !== `?${searchParams.toString()}`) {
       router.replace(newUrl, { scroll: false });
     }
+    writeStoredString(COLLECTORS_COMPARISON_STORAGE.collectors, comparisonCollectors.join(","));
+    writeStoredString(COLLECTORS_COMPARISON_STORAGE.mode, comparisonMode);
+    writeStoredString(COLLECTORS_COMPARISON_STORAGE.granularity, granularity);
   }, [comparisonCollectors, comparisonMode, granularity, searchParams, router]);
 
   // Compute aggregated data based on granularity
@@ -408,6 +450,62 @@ export function CollectorsClient(props: {
     });
     return rows;
   }, [props.summary]);
+
+  function computeComparisonRow(r: CollectorSummaryRow) {
+    const value =
+      metric === "revenue"
+        ? Number(r.daily_streams_net ?? 0) * payoutPerStreamUsd
+        : metric === "streams"
+          ? Number(r.daily_streams_net ?? 0)
+          : Number(r.track_count ?? 0);
+
+    const deltaYday =
+      metric === "revenue"
+        ? (r.daily_streams_delta_yday == null ? null : Number(r.daily_streams_delta_yday) * payoutPerStreamUsd)
+        : metric === "streams"
+          ? r.daily_streams_delta_yday
+          : r.track_count_delta_yday;
+
+    const deltaMa7 =
+      metric === "revenue"
+        ? (r.daily_streams_delta_ma7 == null ? null : Number(r.daily_streams_delta_ma7) * payoutPerStreamUsd)
+        : metric === "streams"
+          ? r.daily_streams_delta_ma7
+          : r.track_count_delta_ma7;
+
+    // Calculate actual values from deltas
+    const ydayValue = deltaYday != null ? value - deltaYday : null;
+    const ma7Value = deltaMa7 != null ? value - deltaMa7 : null;
+
+    const spark =
+      metric === "revenue"
+        ? r.spark_streams_daily?.map((n) => Number(n ?? 0) * payoutPerStreamUsd)
+        : metric === "streams"
+          ? r.spark_streams_daily
+          : r.spark_tracks;
+
+    const fmtValue = metric === "revenue" ? formatUsd2(value) : formatInt(value);
+
+    const fmtYdayOrMa7 =
+      metric === "revenue"
+        ? (n: number | null | undefined) => (n == null ? "—" : formatUsd2(n))
+        : (n: number | null | undefined) => (n == null ? "—" : formatInt(n));
+
+    const href = `?collector=${encodeURIComponent(r.collector)}&range=${props.rangeDays}`;
+    const isSelectedCollector = r.collector === props.selectedCollector;
+
+    return {
+      value,
+      ydayValue,
+      ma7Value,
+      spark,
+      fmtValue,
+      fmtYday: fmtYdayOrMa7(ydayValue),
+      fmtMa7: fmtYdayOrMa7(ma7Value),
+      href,
+      isSelectedCollector,
+    } as const;
+  }
 
   const latest = props.seriesDesc[0] ?? null;
 
@@ -469,6 +567,8 @@ export function CollectorsClient(props: {
   const valueFormat = metric === "revenue" ? "usd" : "int";
   const yTickFormat = metric === "revenue" ? "usd_compact" : metric === "streams" ? "k" : "int";
   const chartColor = metric === "tracks" ? "#3b82f6" : metric === "revenue" ? "#10b981" : "var(--sb-accent)";
+  const valueCellColor =
+    metric === "revenue" ? "#10b981" : metric === "streams" ? "var(--sb-accent)" : "var(--sb-text)";
 
   const payoutPerStreamUsd = streamPayoutPerStreamUsd;
 
@@ -644,90 +744,71 @@ export function CollectorsClient(props: {
             </div>
           </div>
 
+          {/* Table (mobile-friendly): horizontal scroll + sticky first column */}
           <GlassTable
+            tableLayout="fixed"
+            className="relative"
+            bodyClassName="overflow-x-auto"
               headers={[
-                "Collector",
-                "Playlists",
-                "Value",
-                <span
-                  key="yday"
-                  title="Yesterday's value for this metric"
-                >
-                  Yesterday
-                </span>,
-                <span
-                  key="ma7"
-                  title="7-day moving average of the previous 7 days (excluding today)"
-                >
-                  7d avg
-                </span>,
-                "Trend (14d)",
+                {
+                  label: "Collector",
+                  className: "sticky left-0 z-20 min-w-[110px]",
+                },
+                { label: "Pl", className: "w-[70px] text-right" },
+                { label: "Tracks", className: "w-[84px] text-right" },
+                { label: "Value", className: "w-[110px] text-right font-medium" },
+                {
+                  label: (
+                    <button
+                      type="button"
+                      onClick={() => setComparisonBaseline((v) => (v === "ma7" ? "yday" : "ma7"))}
+                      className="w-full text-right"
+                      title={
+                        comparisonBaseline === "ma7"
+                          ? "Showing 7d avg (click to toggle to Yesterday)"
+                          : "Showing Yesterday (click to toggle to 7d avg)"
+                      }
+                    >
+                      {comparisonBaseline === "ma7" ? "7D AVG" : "YESTERDAY"}
+                    </button>
+                  ),
+                  className: "w-[110px]",
+                },
+                { label: "Trend", className: "hidden md:table-cell w-[110px]" },
               ]}
             >
               {ranked.map((r) => {
-                const value =
-                  metric === "revenue"
-                    ? Number(r.daily_streams_net ?? 0) * payoutPerStreamUsd
-                    : metric === "streams"
-                      ? Number(r.daily_streams_net ?? 0)
-                      : Number(r.track_count ?? 0);
-                const deltaYday =
-                  metric === "revenue"
-                    ? (r.daily_streams_delta_yday == null ? null : Number(r.daily_streams_delta_yday) * payoutPerStreamUsd)
-                    : metric === "streams"
-                      ? r.daily_streams_delta_yday
-                      : r.track_count_delta_yday;
-                const deltaMa7 =
-                  metric === "revenue"
-                    ? (r.daily_streams_delta_ma7 == null ? null : Number(r.daily_streams_delta_ma7) * payoutPerStreamUsd)
-                    : metric === "streams"
-                      ? r.daily_streams_delta_ma7
-                      : r.track_count_delta_ma7;
+                const row = computeComparisonRow(r);
 
-                // Calculate actual values from deltas
-                const ydayValue = deltaYday != null ? value - deltaYday : null;
-                const ma7Value = deltaMa7 != null ? value - deltaMa7 : null;
-
-                const spark =
-                  metric === "revenue"
-                    ? r.spark_streams_daily?.map((n) => Number(n ?? 0) * payoutPerStreamUsd)
-                    : metric === "streams"
-                      ? r.spark_streams_daily
-                      : r.spark_tracks;
-
-                const fmtValue =
-                  metric === "revenue"
-                    ? formatUsd2(value)
-                    : formatInt(value);
-
-                const fmtYdayOrMa7 =
-                  metric === "revenue"
-                    ? (n: number | null | undefined) => (n == null ? "—" : formatUsd2(n))
-                    : (n: number | null | undefined) => (n == null ? "—" : formatInt(n));
-
-                const isSelectedCollector = r.collector === props.selectedCollector;
+                const stickyBg = row.isSelectedCollector
+                  ? "color-mix(in srgb, var(--sb-accent) 28%, var(--sb-surface))"
+                  : "var(--sb-surface)";
 
                 return (
                   <TableRow
                     key={r.collector}
                     className={
-                      isSelectedCollector
+                      row.isSelectedCollector
                         ? "hover:bg-transparent dark:hover:bg-transparent odd:bg-transparent dark:odd:bg-transparent"
                         : undefined
                     }
                     style={
-                      isSelectedCollector
+                      row.isSelectedCollector
                         ? {
                             background: "color-mix(in srgb, var(--sb-accent) 28%, var(--sb-surface))",
                           }
                         : undefined
                     }
                   >
-                    <TableCell>
+                    <TableCell
+                      className="sticky left-0 z-10 px-0 py-0"
+                      style={{ background: stickyBg }}
+                    >
                       <Link
-                        href={`?collector=${encodeURIComponent(r.collector)}&range=${props.rangeDays}`}
+                        href={row.href}
                         className={[
-                          "inline-flex items-center gap-2 font-medium transition-colors hover:text-lime-600 dark:hover:text-lime-400",
+                          "flex h-full w-full items-center gap-2 px-3 py-2 font-medium transition-colors",
+                          "hover:text-lime-600 dark:hover:text-lime-400",
                           r.collector === props.selectedCollector ? "opacity-100" : "opacity-70",
                         ].join(" ")}
                       >
@@ -739,13 +820,21 @@ export function CollectorsClient(props: {
                         {r.collector}
                       </Link>
                     </TableCell>
-                    <TableCell>{formatInt(r.playlists)}</TableCell>
-                    <TableCell className="font-medium">{fmtValue}</TableCell>
-                    <TableCell>{fmtYdayOrMa7(ydayValue)}</TableCell>
-                    <TableCell>{fmtYdayOrMa7(ma7Value)}</TableCell>
-                    <TableCell>
+                    <TableCell numeric>{formatInt(r.playlists)}</TableCell>
+                    <TableCell numeric>{formatInt(r.track_count)}</TableCell>
+                    <TableCell
+                      numeric
+                      className="font-medium"
+                      style={metric === "tracks" ? undefined : { color: valueCellColor }}
+                    >
+                      {row.fmtValue}
+                    </TableCell>
+                    <TableCell numeric>
+                      {comparisonBaseline === "ma7" ? row.fmtMa7 : row.fmtYday}
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell">
                       <div className="h-5 w-20 opacity-60">
-                        <Sparkline data={spark?.slice().reverse()} trend="neutral" />
+                        <Sparkline data={row.spark?.slice().reverse()} trend="neutral" />
                       </div>
                     </TableCell>
                   </TableRow>

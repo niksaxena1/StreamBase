@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { cachedQuery } from "@/lib/supabase/cache";
+import { SOT_DATA_LAG_DAYS, addDaysISO, dataDateFromRunDate } from "@/lib/sotDates";
 import { HomeDashboardClient } from "./HomeDashboardClient";
 
 type PlaylistDailyStatsRow = {
@@ -14,13 +15,95 @@ type PlaylistDailyStatsRow = {
   est_revenue_daily_net?: number | null;
 };
 
+type TrackSnapshotRow = {
+  isrc: string;
+  streams_cumulative: number | null;
+};
+
+type TrackMetaRow = {
+  isrc: string;
+  name: string | null;
+  spotify_album_image_url: string | null;
+  spotify_artist_names: string[] | null;
+  spotify_artist_ids: string[] | null;
+};
+
+function addDaysIso(dateIso: string, deltaDays: number): string {
+  const d = new Date(`${dateIso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + deltaDays);
+  return d.toISOString().slice(0, 10);
+}
+
+function isIsoDateString(s: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(s);
+}
+
+function sanitizeIsoDate(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const s = v.trim();
+  if (!s) return null;
+  if (!isIsoDateString(s)) return null;
+  const d = new Date(`${s}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return null;
+  return s;
+}
+
+async function fetchAllTrackSnapshotsForDate(
+  svc: ReturnType<typeof supabaseService>,
+  args: { date: string; maxRows?: number },
+) {
+  // Supabase/PostgREST commonly caps responses at 1000 rows -> page explicitly.
+  const pageSize = 1000;
+  const hardCap = args.maxRows ?? 25_000;
+  const out: TrackSnapshotRow[] = [];
+
+  for (let from = 0; from < hardCap; from += pageSize) {
+    const to = from + pageSize - 1;
+    const { data, error } = await svc
+      .from("track_daily_streams_effective_public")
+      .select("isrc,streams_cumulative")
+      .eq("date", args.date)
+      .order("streams_cumulative", { ascending: false })
+      .range(from, to);
+
+    if (error) throw error;
+    const rows = (data ?? []) as TrackSnapshotRow[];
+    if (!rows.length) break;
+    out.push(...rows);
+    if (rows.length < pageSize) break;
+  }
+
+  return out;
+}
+
+async function fetchTrackMetaByIsrc(
+  svc: ReturnType<typeof supabaseService>,
+  isrcs: string[],
+) {
+  if (!isrcs.length) return new Map<string, TrackMetaRow>();
+
+  // Keep IN() batches reasonably small to avoid URL length issues.
+  const batchSize = 250;
+  const out = new Map<string, TrackMetaRow>();
+  for (let i = 0; i < isrcs.length; i += batchSize) {
+    const batch = isrcs.slice(i, i + batchSize);
+    const { data, error } = await svc
+      .from("tracks")
+      .select("isrc,name,spotify_album_image_url,spotify_artist_names,spotify_artist_ids")
+      .in("isrc", batch);
+    if (error) throw error;
+    for (const r of (data ?? []) as TrackMetaRow[]) out.set(r.isrc, r);
+  }
+  return out;
+}
+
 // Uses Supabase session cookies; this route must be dynamic in Next 16.
 export const dynamic = "force-dynamic";
 
 export default async function Home({
   searchParams,
 }: {
-  searchParams?: Promise<{ scope?: string; range?: string; daily?: string }>;
+  searchParams?: Promise<{ scope?: string; range?: string; daily?: string; xy_date?: string }>;
 }) {
   const sp = (await searchParams) ?? {};
   const scope = (sp.scope ?? "all_catalog").toLowerCase();
@@ -78,6 +161,7 @@ export default async function Home({
 
   // Derive latest from first row of history (newest date)
   const latest = history && history.length > 0 ? history[0] : null;
+  const latestRunDate = (latest as PlaylistDailyStatsRow | null)?.date ?? null;
 
   const title =
     playlistKey === "releases"
@@ -85,6 +169,65 @@ export default async function Home({
       : playlistKey === "ext"
         ? "ext"
         : "All Catalog";
+
+  // xy_date is a DATA date (not run date). Convert to run date for querying.
+  const latestDataDate = latestRunDate ? dataDateFromRunDate(latestRunDate) : null;
+  const selectedDataDate = sanitizeIsoDate(sp.xy_date) ?? latestDataDate;
+  const selectedRunDate = selectedDataDate
+    ? addDaysISO(selectedDataDate, SOT_DATA_LAG_DAYS)
+    : latestRunDate;
+
+  const scatterCacheKey = `home-track-scatter-v3-${selectedRunDate ?? "none"}`;
+  const { data: trackScatterPoints, error: trackScatterErr } = await cachedQuery(
+    async () => {
+      if (!selectedRunDate) return { data: [] as any[], error: null as any };
+
+      const prevRunDate = addDaysIso(selectedRunDate, -1);
+
+      const [todayRows, prevRows] = await Promise.all([
+        fetchAllTrackSnapshotsForDate(svc, { date: selectedRunDate, maxRows: 25_000 }),
+        fetchAllTrackSnapshotsForDate(svc, { date: prevRunDate, maxRows: 25_000 }),
+      ]);
+
+      const prevByIsrc = new Map<string, number>();
+      for (const r of prevRows) {
+        if (!r?.isrc) continue;
+        const n = Number(r.streams_cumulative ?? 0);
+        if (!isFinite(n)) continue;
+        prevByIsrc.set(r.isrc, n);
+      }
+
+      const isrcs = todayRows.map((r) => r.isrc).filter(Boolean);
+      const metaByIsrc = await fetchTrackMetaByIsrc(svc, isrcs);
+
+      const points = todayRows
+        .map((r) => {
+          const total = Number(r.streams_cumulative ?? 0);
+          if (!isFinite(total)) return null;
+
+          const prev = prevByIsrc.get(r.isrc);
+          const hasPrev = prev !== undefined && isFinite(prev);
+          const daily = hasPrev ? Math.max(0, total - (prev as number)) : 0;
+
+          const meta = metaByIsrc.get(r.isrc) ?? null;
+          return {
+            isrc: r.isrc,
+            name: meta?.name ?? null,
+            artist_names: meta?.spotify_artist_names ?? null,
+            artist_ids: meta?.spotify_artist_ids ?? null,
+            album_image_url: meta?.spotify_album_image_url ?? null,
+            total_streams_cumulative: total,
+            daily_streams_delta: daily,
+            has_prev_day: hasPrev,
+          };
+        })
+        .filter(Boolean);
+
+      return { data: points as any[], error: null as any };
+    },
+    scatterCacheKey,
+    3600,
+  );
 
   return (
     <HomeDashboardClient
@@ -96,6 +239,11 @@ export default async function Home({
       history={(history as PlaylistDailyStatsRow[] | null) ?? []}
       playlistImageUrl={playlistImageUrl}
       historyErrorMessage={historyErr?.message ?? null}
+      trackScatterPoints={(trackScatterPoints as any[]) ?? []}
+      trackScatterErrorMessage={trackScatterErr?.message ?? null}
+      trackScatterDataDate={selectedDataDate}
+      latestRunDate={latestRunDate}
+      latestDataDate={latestDataDate}
     />
   );
 }
