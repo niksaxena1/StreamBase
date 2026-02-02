@@ -29,19 +29,27 @@ type MilestoneDataPoint = {
 type MilestoneTooltipProps = {
   active?: boolean;
   label?: string | number;
-  payload?: Array<{ value?: unknown }>;
+  payload?: Array<{ value?: unknown; payload?: MilestoneDataPoint }>;
+  totalTracks: number;
+  mode: "streams" | "revenue";
 };
 
 function MilestoneTooltip({
   active,
   payload,
   label,
+  totalTracks,
+  mode,
 }: MilestoneTooltipProps) {
   if (!active || !payload?.length) return null;
 
   const raw = payload[0]?.value;
   const n = typeof raw === "number" ? raw : Number(raw);
   const count = Number.isFinite(n) ? n : 0;
+  const accentColor = mode === "revenue" ? "#10b981" : "var(--sb-accent)";
+  const pct =
+    totalTracks > 0 ? Math.max(0, Math.min(100, (count / totalTracks) * 100)) : 0;
+  const pctLabel = pct >= 10 ? pct.toFixed(0) : pct.toFixed(1);
 
   return (
     <div
@@ -53,11 +61,16 @@ function MilestoneTooltip({
         boxShadow: "var(--sb-shadow-compact)",
       }}
     >
-      <div className="mb-1 font-medium">Milestone: {label ?? "—"}</div>
+      <div className="mb-1 font-medium">
+        {mode === "revenue" ? "Revenue milestone" : "Milestone"}: {label ?? "—"}
+      </div>
       <div>
         Tracks:{" "}
-        <span style={{ color: "var(--sb-accent)", fontWeight: 700 }}>
+        <span style={{ color: accentColor, fontWeight: 700 }}>
           {formatInt(count)}
+        </span>
+        <span className="ml-1 opacity-70" style={{ color: "var(--sb-muted)" }}>
+          ({pctLabel}%)
         </span>
       </div>
     </div>
@@ -134,13 +147,33 @@ function formatMilestoneLabel(n: number): string {
   return formatInt(n);
 }
 
+function formatUsdCompact(n: number): string {
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      notation: "compact",
+      maximumFractionDigits: n < 1000 ? 0 : 1,
+    }).format(n);
+  } catch {
+    return `$${Math.round(n).toLocaleString("en-US")}`;
+  }
+}
+
+function formatRevenueMilestoneLabel(streamsMilestone: number, payoutPerStreamUsd: number): string {
+  const usd = Math.max(0, Number(streamsMilestone) * Math.max(0, payoutPerStreamUsd));
+  return formatUsdCompact(usd);
+}
+
 /**
  * Compute how many tracks have reached each milestone threshold.
  * A track "reaches" a milestone if its total streams >= milestone.
  */
 function computeMilestoneData(
   tracks: TrackPoint[],
-  milestones: number[]
+  milestones: number[],
+  mode: "streams" | "revenue",
+  payoutPerStreamUsd: number,
 ): MilestoneDataPoint[] {
   // Sort milestones descending (highest first for display)
   const sorted = [...milestones].sort((a, b) => b - a);
@@ -151,7 +184,10 @@ function computeMilestoneData(
     ).length;
     return {
       milestone,
-      milestoneLabel: formatMilestoneLabel(milestone),
+      milestoneLabel:
+        mode === "revenue"
+          ? formatRevenueMilestoneLabel(milestone, payoutPerStreamUsd)
+          : formatMilestoneLabel(milestone),
       unique_tracks: count,
     };
   });
@@ -163,6 +199,10 @@ export type TracksPerMilestoneChartProps = {
   tracks: TrackPoint[];
   /** Optional custom milestones (if not provided, auto-generated) */
   customMilestones?: number[];
+  /** Display mode */
+  mode?: "streams" | "revenue";
+  /** USD payout per stream (required for revenue mode) */
+  payoutPerStreamUsd?: number;
   /** Chart height in pixels */
   heightPx?: number;
   /** Highlight a specific milestone */
@@ -174,11 +214,16 @@ export type TracksPerMilestoneChartProps = {
 export function TracksPerMilestoneChart({
   tracks,
   customMilestones,
+  mode = "streams",
+  payoutPerStreamUsd = 0,
   heightPx = 280,
   highlightMilestone,
   onMilestoneClick,
 }: TracksPerMilestoneChartProps) {
   const gid = useId();
+
+  const totalTracks = tracks.length;
+  const accentColor = mode === "revenue" ? "#10b981" : "var(--sb-accent)";
 
   const chartData = useMemo(() => {
     if (!tracks.length) return [];
@@ -191,8 +236,8 @@ export function TracksPerMilestoneChart({
       ? customMilestones
       : generateMilestones(maxStreams);
 
-    return computeMilestoneData(tracks, milestones);
-  }, [tracks, customMilestones]);
+    return computeMilestoneData(tracks, milestones, mode, payoutPerStreamUsd);
+  }, [tracks, customMilestones, mode, payoutPerStreamUsd]);
 
   const maxMilestone = chartData.length
     ? Math.max(...chartData.map((d) => d.milestone))
@@ -229,15 +274,15 @@ export function TracksPerMilestoneChart({
                   x2="0"
                   y2="1"
                 >
-                  {/* Brand accent lime green with dynamic opacity based on milestone */}
+                  {/* Theme-aware color with dynamic opacity */}
                   <stop
                     offset="5%"
-                    stopColor="var(--sb-accent)"
+                    stopColor={accentColor}
                     stopOpacity={Math.min(opacity + 0.2, 0.95)}
                   />
                   <stop
                     offset="95%"
-                    stopColor="var(--sb-accent)"
+                    stopColor={accentColor}
                     stopOpacity={Math.max(opacity - 0.2, 0.3)}
                   />
                 </linearGradient>
@@ -269,15 +314,19 @@ export function TracksPerMilestoneChart({
             tickFormatter={(value) => formatKmbTick(Number(value ?? 0))}
           />
           <Tooltip
-            content={<MilestoneTooltip />}
+            content={<MilestoneTooltip totalTracks={totalTracks} mode={mode} />}
             cursor={{
               fill: "rgba(0,0,0,0.1)",
             }}
           />
           {highlightMilestone && (
             <ReferenceLine
-              x={formatMilestoneLabel(highlightMilestone)}
-              stroke="var(--sb-accent)"
+              x={
+                mode === "revenue"
+                  ? formatRevenueMilestoneLabel(highlightMilestone, payoutPerStreamUsd)
+                  : formatMilestoneLabel(highlightMilestone)
+              }
+              stroke={accentColor}
               strokeWidth={2}
               strokeDasharray="4 4"
             />

@@ -5,6 +5,7 @@ import {
   CartesianGrid,
   ComposedChart,
   Line,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -261,6 +262,7 @@ export function CollectorComparisonChart({
   };
 
   const yDomain = mode === "percentage" ? [0, 100] : undefined;
+  const yTicks = mode === "percentage" ? [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100] : undefined;
 
   // Determine which lines to render
   const lineKeys = mode === "combined" ? ["combined"] : selectedCollectors;
@@ -346,7 +348,17 @@ export function CollectorComparisonChart({
             axisLine={false}
             tickFormatter={formatYTick}
             domain={yDomain}
+            ticks={yTicks}
           />
+          {mode === "percentage" ? (
+            <ReferenceLine
+              y={50}
+              stroke="var(--sb-border)"
+              strokeWidth={1.5}
+              strokeDasharray="0"
+              ifOverflow="extendDomain"
+            />
+          ) : null}
           <Tooltip
             content={({ active, label, payload }) => (
               <CustomTooltip

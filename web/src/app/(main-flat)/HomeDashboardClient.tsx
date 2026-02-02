@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
-import { Download, Music, Search, X } from "lucide-react";
+import { Download, Music, Search, Settings, X } from "lucide-react";
 
 import { MetricProvider, useMetric } from "@/components/metrics/MetricContext";
 import { MetricSelector } from "@/components/metrics/MetricSelector";
 import { LazyInteractiveChartSection } from "@/components/dashboard/LazyInteractiveChartSection";
 import { StatCard } from "@/components/StatCard";
+import { Button, IconButton } from "@/components/ui/Button";
 import { AnimatedCounter } from "@/components/ui/AnimatedCounter";
 import { GlassTable, TableRow, TableCell, EmptyState } from "@/components/ui/GlassTable";
 import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
@@ -20,6 +21,7 @@ import { ArtistStreamsXYChart, aggregateTracksToArtists } from "@/components/cha
 import { TracksPerMilestoneChart } from "@/components/charts/TracksPerMilestoneChart";
 import { DatePicker } from "@/components/ui/DatePicker";
 import { foldForSearch } from "@/lib/searchFold";
+import { Modal } from "@/components/ui/Modal";
 
 type PlaylistDailyStatsRow = {
   date: string;
@@ -100,6 +102,171 @@ function writeStoredBool(key: string, value: boolean) {
   }
 }
 
+const HOME_MILESTONE_SETTINGS_STORAGE = {
+  customMilestones: "sb:home:milestones:custom_v1",
+} as const;
+
+function readStoredString(key: string): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const v = localStorage.getItem(key);
+    return v == null ? null : String(v);
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredString(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // ignore
+  }
+}
+
+function removeStoredItem(key: string) {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // ignore
+  }
+}
+
+function parseMilestonesText(
+  input: string,
+  args: { mode: "streams" | "revenue"; payoutPerStreamUsd: number },
+): { milestones: number[]; error: string | null } {
+  const raw = String(input ?? "").trim();
+  if (!raw) return { milestones: [], error: null };
+
+  const parts = raw
+    .split(/[\s,]+/g)
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  const out: number[] = [];
+  for (const p0 of parts) {
+    const cleaned = p0.toLowerCase().trim().replace(/_/g, "").replace(/,/g, "");
+    const isUsd = args.mode === "revenue" || cleaned.startsWith("$");
+    const p = cleaned.startsWith("$") ? cleaned.slice(1) : cleaned;
+
+    const m = p.match(/^(\d+(?:\.\d+)?)([kmb])?$/i);
+    if (!m) return { milestones: [], error: `Invalid milestone: "${p0}"` };
+
+    const n = Number(m[1]);
+    if (!Number.isFinite(n)) return { milestones: [], error: `Invalid milestone: "${p0}"` };
+
+    const suffix = (m[2] ?? "").toLowerCase();
+    const mult = suffix === "k" ? 1_000 : suffix === "m" ? 1_000_000 : suffix === "b" ? 1_000_000_000 : 1;
+    const scaled = n * mult;
+    if (!Number.isFinite(scaled) || scaled <= 0) return { milestones: [], error: `Invalid milestone: "${p0}"` };
+
+    // Always store milestones in *streams* internally.
+    const valueStreams = isUsd
+      ? (() => {
+          const rate = Number(args.payoutPerStreamUsd ?? 0);
+          if (!Number.isFinite(rate) || rate <= 0) return NaN;
+          return Math.round(scaled / rate);
+        })()
+      : Math.round(scaled);
+
+    if (!Number.isFinite(valueStreams) || valueStreams <= 0) {
+      return {
+        milestones: [],
+        error: isUsd
+          ? "Revenue milestones require a valid payout rate."
+          : `Invalid milestone: "${p0}"`,
+      };
+    }
+    if (valueStreams < 100_000) return { milestones: [], error: `Minimum milestone is 100K (got ${p0})` };
+
+    out.push(valueStreams);
+  }
+
+  const uniq = Array.from(new Set(out)).sort((a, b) => b - a);
+  return { milestones: uniq, error: uniq.length ? null : "Please enter at least one milestone." };
+}
+
+function formatMilestoneForInput(n: number): string {
+  const abs = Math.abs(n);
+  if (abs >= 1_000_000_000) {
+    const b = n / 1_000_000_000;
+    const s = Number.isInteger(b) ? String(b) : b.toFixed(1).replace(/\.0$/, "");
+    return `${s}b`;
+  }
+  if (abs >= 1_000_000) {
+    const m = n / 1_000_000;
+    // Prefer nice decimals (e.g. 4.5m) instead of 4500k.
+    const s = Number.isInteger(m) ? String(m) : m.toFixed(1).replace(/\.0$/, "");
+    return `${s}m`;
+  }
+  if (abs >= 1_000) {
+    const k = n / 1_000;
+    const s = Number.isInteger(k) ? String(k) : k.toFixed(1).replace(/\.0$/, "");
+    return `${s}k`;
+  }
+  return String(n);
+}
+
+function formatUsdCompact(n: number): string {
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      notation: "compact",
+      maximumFractionDigits: n < 1000 ? 0 : 1,
+    }).format(n);
+  } catch {
+    return `$${Math.round(n).toLocaleString("en-US")}`;
+  }
+}
+
+function formatMilestoneHeaderLabel(
+  streamsMilestone: number,
+  mode: "streams" | "revenue",
+  payoutPerStreamUsd: number,
+): string {
+  if (mode !== "revenue") return formatMilestoneForInput(streamsMilestone).toUpperCase();
+  const usd = Math.max(0, streamsMilestone * Math.max(0, payoutPerStreamUsd));
+  return formatUsdCompact(usd);
+}
+
+function generateAutoMilestonesFromMax(maxStreams: number): number[] {
+  if (!Number.isFinite(maxStreams) || maxStreams <= 0) return [];
+
+  // Keep in sync with `TracksPerMilestoneChart`: minimum is 100K.
+  const possibleMilestones = [
+    // Billions
+    10_000_000_000, 5_000_000_000, 2_000_000_000, 1_000_000_000,
+    // Hundreds of millions
+    500_000_000, 400_000_000, 300_000_000, 200_000_000, 100_000_000,
+    // Tens of millions
+    50_000_000, 45_000_000, 40_000_000, 35_000_000, 30_000_000,
+    25_000_000, 20_000_000, 19_000_000, 18_000_000, 17_000_000,
+    16_000_000, 15_000_000, 14_000_000, 13_000_000, 12_000_000,
+    11_000_000, 10_000_000, 9_000_000, 8_000_000, 7_000_000,
+    6_000_000, 5_000_000, 4_500_000, 4_000_000, 3_500_000,
+    3_000_000, 2_500_000, 2_000_000, 1_500_000, 1_000_000,
+    // Hundreds of thousands
+    900_000, 800_000, 750_000, 700_000, 600_000, 500_000,
+    400_000, 300_000, 250_000, 200_000, 150_000, 100_000,
+  ];
+
+  const relevant = possibleMilestones.filter((m) => m <= maxStreams);
+  if (!relevant.length) return [];
+
+  const targetCount = 30;
+  if (relevant.length <= targetCount) return relevant;
+
+  const step = Math.ceil(relevant.length / targetCount);
+  const thinned: number[] = [];
+  for (let i = 0; i < relevant.length; i += step) thinned.push(relevant[i]);
+
+  const smallest = relevant[relevant.length - 1];
+  if (smallest && !thinned.includes(smallest)) thinned.push(smallest);
+  return thinned;
+}
+
 function HomeDashboardInner(props: {
   sp: { scope?: string; range?: string; daily?: string; xy_date?: string };
   playlistKey: "all_catalog" | "releases" | "ext";
@@ -128,12 +295,70 @@ function HomeDashboardInner(props: {
   const [openScatter, setOpenScatter] = useState(false);
   const [openMilestones, setOpenMilestones] = useState(false);
   const [openHistory, setOpenHistory] = useState(false);
+  const [milestoneSettingsOpen, setMilestoneSettingsOpen] = useState(false);
+  const [milestoneSettingsText, setMilestoneSettingsText] = useState("");
+  const [milestoneSettingsError, setMilestoneSettingsError] = useState<string | null>(null);
+  const [customMilestones, setCustomMilestones] = useState<number[] | null>(null);
+  const autoMilestonesForCurrentData = useMemo(() => {
+    const maxStreams = Math.max(
+      0,
+      ...(props.trackScatterPoints ?? []).map((p) => Number(p?.total_streams_cumulative ?? 0)),
+    );
+    return generateAutoMilestonesFromMax(maxStreams);
+  }, [props.trackScatterPoints]);
+  const activeMilestonesForEditing = (customMilestones?.length ? customMilestones : autoMilestonesForCurrentData) ?? [];
+  const minActiveMilestone = useMemo(() => {
+    if (!activeMilestonesForEditing.length) return 100_000;
+    return Math.max(100_000, Math.min(...activeMilestonesForEditing));
+  }, [activeMilestonesForEditing]);
+  const tracksBelowAnyMilestoneCount = useMemo(() => {
+    const threshold = minActiveMilestone;
+    let count = 0;
+    for (const p of props.trackScatterPoints ?? []) {
+      const n = Number(p?.total_streams_cumulative ?? 0);
+      if (Number.isFinite(n) && n < threshold) count += 1;
+    }
+    return count;
+  }, [minActiveMilestone, props.trackScatterPoints]);
+  const tracksBelowAnyMilestonePctLabel = useMemo(() => {
+    const total = (props.trackScatterPoints ?? []).length;
+    if (total <= 0) return "0%";
+    const pct = Math.max(0, Math.min(100, (tracksBelowAnyMilestoneCount / total) * 100));
+    const s = pct >= 10 ? pct.toFixed(0) : pct.toFixed(1);
+    return `${s}%`;
+  }, [props.trackScatterPoints, tracksBelowAnyMilestoneCount]);
+
+  const milestoneMode: "streams" | "revenue" = metric === "revenue" ? "revenue" : "streams";
 
   // Restore persisted collapsible state after mount.
   useEffect(() => {
     setOpenScatter(readStoredBool(HOME_DETAILS_STORAGE.scatterOpen, false));
     setOpenMilestones(readStoredBool(HOME_DETAILS_STORAGE.milestoneOpen, false));
     setOpenHistory(readStoredBool(HOME_DETAILS_STORAGE.historyOpen, false));
+
+    const saved = readStoredString(HOME_MILESTONE_SETTINGS_STORAGE.customMilestones);
+    if (saved) {
+      // Prefer new format: comma-separated stream milestone integers.
+      const asNums = saved
+        .split(/[\s,]+/g)
+        .map((x) => x.trim())
+        .filter(Boolean)
+        .map((x) => Number(x))
+        .filter((x) => Number.isFinite(x) && x >= 100_000)
+        .map((x) => Math.round(x));
+
+      if (asNums.length) {
+        setCustomMilestones(Array.from(new Set(asNums)).sort((a, b) => b - a));
+      } else {
+        // Back-compat: older saved strings like "50m, 10m, 100k" (streams) or "$200, $500".
+        const looksUsd = /\$/.test(saved);
+        const parsed = parseMilestonesText(saved, {
+          mode: looksUsd ? "revenue" : "streams",
+          payoutPerStreamUsd: streamPayoutPerStreamUsd,
+        });
+        if (!parsed.error && parsed.milestones.length) setCustomMilestones(parsed.milestones);
+      }
+    }
   }, []);
 
   // Persist collapsible state.
@@ -462,19 +687,6 @@ function HomeDashboardInner(props: {
         onSelectChart={setSelectedChart}
       />
 
-      {/* Additional Stat Cards (keep existing ones) */}
-      <div className="grid grid-cols-2 gap-2 lg:grid-cols-6">
-        <StatCard
-          title="Streams (7d)"
-          value={<AnimatedCounter value={rollSum(props.history ?? [], 7, "streams", streamPayoutPerStreamUsd)} />}
-          subtitle={formatUsd(rollSum(props.history ?? [], 7, "revenue", streamPayoutPerStreamUsd))}
-        />
-        <StatCard
-          title="Streams (30d)"
-          value={<AnimatedCounter value={rollSum(props.history ?? [], 30, "streams", streamPayoutPerStreamUsd)} />}
-          subtitle={formatUsd(rollSum(props.history ?? [], 30, "revenue", streamPayoutPerStreamUsd))}
-        />
-      </div>
 
       {props.historyErrorMessage ? (
         <Alert variant="error" title="Query error">
@@ -804,25 +1016,158 @@ function HomeDashboardInner(props: {
           style={{ borderColor: "var(--sb-border)" }}
         >
           <summary className="cursor-pointer select-none">
-            <div className="flex items-start gap-2">
-              <span className="mt-0.5 flex-shrink-0 text-xs opacity-60">▸</span>
-              <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
-                Tracks Per Milestone
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-2">
+                <span className="mt-0.5 flex-shrink-0 text-xs opacity-60">▸</span>
+                <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
+                  Tracks Per Milestone
+                </div>
+              </div>
+
+              <div
+                className="flex items-center gap-2"
+                onMouseDown={(ev) => {
+                  ev.preventDefault();
+                  ev.stopPropagation();
+                }}
+                onClick={(ev) => {
+                  ev.preventDefault();
+                  ev.stopPropagation();
+                }}
+              >
+                {openMilestones ? (
+                  <div className="text-[11px] opacity-70" style={{ color: "var(--sb-muted)" }}>
+                    {formatInt(tracksBelowAnyMilestoneCount)} ({tracksBelowAnyMilestonePctLabel}) below{" "}
+                    {formatMilestoneHeaderLabel(minActiveMilestone, milestoneMode, streamPayoutPerStreamUsd)}
+                  </div>
+                ) : null}
+                {openMilestones ? (
+                  <IconButton
+                    aria-label="Configure milestones"
+                    variant="ghost"
+                    size="sm"
+                    title="Configure milestones"
+                    onClick={() => {
+                      setMilestoneSettingsError(null);
+                      // Pre-fill with the currently active milestones (custom, otherwise auto-generated).
+                      setMilestoneSettingsText(
+                        activeMilestonesForEditing
+                          .map((n) => formatMilestoneHeaderLabel(n, milestoneMode, streamPayoutPerStreamUsd))
+                          .join(", "),
+                      );
+                      setMilestoneSettingsOpen(true);
+                    }}
+                  >
+                    <Settings className="h-4 w-4 opacity-70" />
+                  </IconButton>
+                ) : null}
               </div>
             </div>
           </summary>
 
-          <div className="mt-3">
+          <div className="mt-2">
             <TracksPerMilestoneChart
               tracks={props.trackScatterPoints.map((p) => ({
                 isrc: p.isrc,
                 total_streams_cumulative: p.total_streams_cumulative,
               }))}
               heightPx={320}
+              customMilestones={customMilestones ?? undefined}
+              mode={milestoneMode}
+              payoutPerStreamUsd={streamPayoutPerStreamUsd}
             />
           </div>
         </details>
       )}
+
+      <Modal
+        open={milestoneSettingsOpen}
+        onClose={() => {
+          setMilestoneSettingsOpen(false);
+          setMilestoneSettingsError(null);
+        }}
+        title="Milestone settings"
+        subtitle="Enter milestones separated by commas/spaces (supports 100k, 250k, 1m, 10m). Minimum is 100k."
+        maxWidthClassName="max-w-xl"
+        showCloseButton={false}
+      >
+        <div className="space-y-3">
+          <label className="block text-xs font-medium" style={{ color: "var(--sb-text)" }}>
+            Milestones
+          </label>
+          <textarea
+            value={milestoneSettingsText}
+            onChange={(e) => {
+              setMilestoneSettingsText(e.target.value);
+              setMilestoneSettingsError(null);
+            }}
+            placeholder="Example: 50m, 25m, 10m, 5m, 1m, 500k, 250k, 100k"
+            rows={4}
+            className={[
+              "sb-ring w-full rounded-xl bg-white/70 px-3 py-2 text-sm outline-none",
+              "placeholder:text-black/40 dark:bg-white/5 dark:placeholder:text-white/40",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
+            ].join(" ")}
+            style={{ color: "var(--sb-text)" }}
+          />
+
+          {milestoneSettingsError ? (
+            <div className="text-xs text-red-600 dark:text-red-400">{milestoneSettingsError}</div>
+          ) : null}
+
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setCustomMilestones(null);
+                setMilestoneSettingsText("");
+                setMilestoneSettingsError(null);
+                removeStoredItem(HOME_MILESTONE_SETTINGS_STORAGE.customMilestones);
+              }}
+            >
+              Reset to auto
+            </Button>
+
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => {
+                  setMilestoneSettingsOpen(false);
+                  setMilestoneSettingsError(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                onClick={() => {
+                  const parsed = parseMilestonesText(milestoneSettingsText, {
+                    mode: milestoneMode,
+                    payoutPerStreamUsd: streamPayoutPerStreamUsd,
+                  });
+                  if (parsed.error) {
+                    setMilestoneSettingsError(parsed.error);
+                    return;
+                  }
+                  setCustomMilestones(parsed.milestones);
+                  // Persist as raw stream milestones for stability across modes.
+                  writeStoredString(
+                    HOME_MILESTONE_SETTINGS_STORAGE.customMilestones,
+                    parsed.milestones.join(","),
+                  );
+                  setMilestoneSettingsOpen(false);
+                  setMilestoneSettingsError(null);
+                }}
+              >
+                Save
+              </Button>
+            </div>
+          </div>
+        </div>
+      </Modal>
 
       {/* Recent History Table (collapsible) */}
       <details

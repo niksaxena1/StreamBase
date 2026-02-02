@@ -10,6 +10,7 @@ export function Modal({
   subtitle,
   children,
   maxWidthClassName,
+  showCloseButton = true,
 }: {
   open: boolean;
   onClose: () => void;
@@ -17,6 +18,7 @@ export function Modal({
   subtitle?: ReactNode;
   children: ReactNode;
   maxWidthClassName?: string;
+  showCloseButton?: boolean;
 }) {
   useEffect(() => {
     if (!open) return;
@@ -72,14 +74,16 @@ export function Modal({
                 </div>
               ) : null}
             </div>
-            <button
-              type="button"
-              className="sb-ring rounded-full bg-white/60 px-2.5 py-1.5 text-xs font-medium hover:bg-white/80 dark:bg-white/10 dark:hover:bg-white/15"
-              style={{ color: "var(--sb-text)" }}
-              onClick={onClose}
-            >
-              Close
-            </button>
+            {showCloseButton ? (
+              <button
+                type="button"
+                className="sb-ring rounded-full bg-white/60 px-2.5 py-1.5 text-xs font-medium hover:bg-white/80 dark:bg-white/10 dark:hover:bg-white/15"
+                style={{ color: "var(--sb-text)" }}
+                onClick={onClose}
+              >
+                Close
+              </button>
+            ) : null}
           </div>
         )}
 
