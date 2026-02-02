@@ -176,6 +176,7 @@ export function TrackStreamsXYChart({
 }) {
   const [hovered, setHovered] = useState<{ point: ChartDatum; x: number; y: number } | null>(null);
   const [frozen, setFrozen] = useState(false);
+  const LONG_PRESS_MS = 650;
 
   // For mobile long-press detection
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -290,9 +291,9 @@ export function TrackStreamsXYChart({
           suppressNextClickRef.current = true;
         }
         longPressTimerRef.current = null;
-      }, 500);
+      }, LONG_PRESS_MS);
     },
-    [frozen, clearLongPressTimer, isFocusMode]
+    [frozen, clearLongPressTimer, isFocusMode, LONG_PRESS_MS]
   );
 
   const handleTouchEnd = useCallback(() => {
@@ -311,6 +312,16 @@ export function TrackStreamsXYChart({
       }}
       onPointerDown={(e) => {
         pointerTypeRef.current = (e.pointerType as any) || "unknown";
+      }}
+      onTouchEndCapture={() => {
+        // Some mobile browsers don't reliably dispatch touchend on the SVG node.
+        // Cancel long-press globally so a tap doesn't accidentally pin.
+        clearLongPressTimer();
+        pendingTouchRef.current = null;
+      }}
+      onTouchCancelCapture={() => {
+        clearLongPressTimer();
+        pendingTouchRef.current = null;
       }}
       onClick={() => {
         if (isFocusMode) return;
@@ -426,6 +437,7 @@ export function TrackStreamsXYChart({
               onTouchStart={handleTouchStart}
               onTouchEnd={handleTouchEnd}
               onTouchCancel={handleTouchEnd}
+              onTouchMove={handleTouchEnd}
             />
           ) : null}
           {/* Focus point (always rendered on top when present) */}
