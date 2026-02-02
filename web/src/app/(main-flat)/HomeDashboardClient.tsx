@@ -91,10 +91,11 @@ function HomeDashboardInner(props: {
   const [scatterQuery, setScatterQuery] = useState("");
   const deferredScatterQuery = useDeferredValue(scatterQuery);
   const [scatterFocusIsrc, setScatterFocusIsrc] = useState<string | null>(null);
+  const [scatterSearchFocused, setScatterSearchFocused] = useState(false);
 
   const scatterMode = metric === "revenue" ? "revenue" : "streams";
   const scatterTitle =
-    scatterMode === "revenue" ? "Tracks: Δ1d vs Total Revenue" : "Tracks: Δ1d vs Total Streams";
+    scatterMode === "revenue" ? "Tracks: Δ1d vs Total Revenue" : "Tracks: Total vs Daily Streams";
 
   const scatterMatches = useMemo(() => {
     const q = foldForSearch(deferredScatterQuery ?? "");
@@ -134,7 +135,10 @@ function HomeDashboardInner(props: {
   }, [deferredScatterQuery, props.trackScatterPoints]);
 
   const showScatterDropdown =
-    !scatterFocusIsrc && (scatterQuery ?? "").trim().length > 0 && scatterMatches.length > 0;
+    scatterSearchFocused &&
+    !scatterFocusIsrc &&
+    (scatterQuery ?? "").trim().length > 0 &&
+    scatterMatches.length > 0;
 
   const series = useMemo(() => {
     const desc = props.history ?? [];
@@ -393,7 +397,7 @@ function HomeDashboardInner(props: {
               className="text-[11px] opacity-60"
               title="Y = data date minus previous day (when available), X = cumulative streams on that data date."
             >
-              {scatterMode === "revenue" ? "Y: Δ1d revenue • X: total revenue" : "Y: Δ1d streams • X: total streams"}
+              {scatterMode === "revenue" ? "Y: Δ1d revenue • X: total revenue" : "X: total streams • Y: daily streams"}
             </div>
             <div className="flex items-center gap-2">
               <DatePicker
@@ -407,17 +411,6 @@ function HomeDashboardInner(props: {
                 path="/"
                 param="xy_date"
               />
-              {props.latestDataDate ? (
-                <Link
-                  href={hrefWith(props.sp, { xy_date: null })}
-                  scroll={false}
-                  className="rounded-full px-2 py-1 text-[11px] font-medium transition hover:bg-black/5 dark:hover:bg-white/10"
-                  style={{ color: "var(--sb-muted)" }}
-                  title="Jump back to latest available date"
-                >
-                  Latest
-                </Link>
-              ) : null}
             </div>
           </div>
         </div>
@@ -442,24 +435,28 @@ function HomeDashboardInner(props: {
                   value={scatterQuery}
                   onChange={(e) => setScatterQuery(e.target.value)}
                   onFocus={() => {
+                    setScatterSearchFocused(true);
                     // If a track is selected, focusing the input should immediately
-                    // put you back into “search another track” mode.
+                    // put you back into "search another track" mode.
                     if (scatterFocusIsrc) {
                       setScatterFocusIsrc(null);
                       setScatterQuery("");
                     }
                   }}
+                  onBlur={() => setScatterSearchFocused(false)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
                       const first = scatterMatches[0];
                       if (first?.isrc) {
                         setScatterFocusIsrc(first.isrc);
                         setScatterQuery(first.name || first.isrc);
+                        setScatterSearchFocused(false);
                       }
                     }
                     if (e.key === "Escape") {
                       setScatterFocusIsrc(null);
                       setScatterQuery("");
+                      setScatterSearchFocused(false);
                     }
                   }}
                   placeholder="Search track (title, artist, ISRC)…"
@@ -492,9 +489,14 @@ function HomeDashboardInner(props: {
                       key={m.isrc}
                       type="button"
                       className="flex w-full items-start gap-2 px-3 py-2 text-left text-xs transition hover:bg-black/5 dark:hover:bg-white/10"
+                      onMouseDown={(e) => {
+                        // Keep the input focused so the click registers and we can close cleanly.
+                        e.preventDefault();
+                      }}
                       onClick={() => {
                         setScatterFocusIsrc(m.isrc);
                         setScatterQuery(m.name || m.isrc);
+                        setScatterSearchFocused(false);
                       }}
                     >
                       {m.imageUrl ? (
@@ -539,16 +541,18 @@ function HomeDashboardInner(props: {
               mode={scatterMode}
               payoutPerStreamUsd={streamPayoutPerStreamUsd}
               focusIsrc={scatterFocusIsrc}
+              onClearFocus={() => {
+                setScatterFocusIsrc(null);
+                setScatterQuery("");
+                // Don't reopen the dropdown immediately.
+                setScatterSearchFocused(false);
+              }}
             />
           ) : (
             <div className="py-10 text-center text-xs" style={{ color: "var(--sb-muted)" }}>
               No track points available yet.
             </div>
           )}
-          <div className="mt-2 text-[11px] opacity-60" style={{ color: "var(--sb-muted)" }}>
-            Hover a dot for track details. Δ1d is “—” when yesterday’s snapshot is missing. Data date is{" "}
-            {props.trackScatterDataDate ?? props.latestDataDate ?? "—"}.
-          </div>
         </div>
       </div>
 

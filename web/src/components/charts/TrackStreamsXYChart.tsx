@@ -163,6 +163,7 @@ export function TrackStreamsXYChart({
   topNCumulative = 100,
   sampleN = 80,
   focusIsrc = null,
+  onClearFocus,
 }: {
   points: TrackStreamsXYPoint[];
   mode?: Mode;
@@ -173,6 +174,7 @@ export function TrackStreamsXYChart({
   topNCumulative?: number;
   sampleN?: number;
   focusIsrc?: string | null;
+  onClearFocus?: () => void;
 }) {
   const [hovered, setHovered] = useState<{ point: ChartDatum; x: number; y: number } | null>(null);
   const [frozen, setFrozen] = useState(false);
@@ -313,6 +315,11 @@ export function TrackStreamsXYChart({
       onPointerDown={(e) => {
         pointerTypeRef.current = (e.pointerType as any) || "unknown";
       }}
+      onTouchStartCapture={() => {
+        // iOS/Safari sometimes doesn't give us reliable pointer events here.
+        // Make sure the subsequent synthetic click is treated as touch (never pins).
+        pointerTypeRef.current = "touch";
+      }}
       onTouchEndCapture={() => {
         // Some mobile browsers don't reliably dispatch touchend on the SVG node.
         // Cancel long-press globally so a tap doesn't accidentally pin.
@@ -324,7 +331,16 @@ export function TrackStreamsXYChart({
         pendingTouchRef.current = null;
       }}
       onClick={() => {
-        if (isFocusMode) return;
+        if (isFocusMode) {
+          const pt = pointerTypeRef.current;
+          // Desktop: click anywhere to exit focus mode.
+          if (pt !== "touch") {
+            setFrozen(false);
+            setHovered(null);
+            onClearFocus?.();
+          }
+          return;
+        }
         if (suppressNextClickRef.current) {
           suppressNextClickRef.current = false;
           return;
