@@ -536,8 +536,7 @@ function HomeDashboardInner(props: {
     setOpenMilestones(readStoredBool(HOME_DETAILS_STORAGE.milestoneOpen, false));
     setOpenHistory(readStoredBool(HOME_DETAILS_STORAGE.historyOpen, false));
 
-    const saved = readStoredString(HOME_MILESTONE_SETTINGS_STORAGE.customMilestones);
-    if (saved) {
+    function applySavedMilestones(saved: string) {
       // Prefer new format: comma-separated stream milestone integers.
       const asNums = saved
         .split(/[\s,]+/g)
@@ -549,16 +548,41 @@ function HomeDashboardInner(props: {
 
       if (asNums.length) {
         setCustomMilestones(Array.from(new Set(asNums)).sort((a, b) => b - a));
-      } else {
-        // Back-compat: older saved strings like "50m, 10m, 100k" (streams) or "$200, $500".
-        const looksUsd = /\$/.test(saved);
-        const parsed = parseMilestonesText(saved, {
-          mode: looksUsd ? "revenue" : "streams",
-          payoutPerStreamUsd: streamPayoutPerStreamUsd,
-        });
-        if (!parsed.error && parsed.milestones.length) setCustomMilestones(parsed.milestones);
+        return;
       }
+
+      // Back-compat: older saved strings like "50m, 10m, 100k" (streams) or "$200, $500".
+      const looksUsd = /\$/.test(saved);
+      const parsed = parseMilestonesText(saved, {
+        mode: looksUsd ? "revenue" : "streams",
+        payoutPerStreamUsd: streamPayoutPerStreamUsd,
+      });
+      if (!parsed.error && parsed.milestones.length) setCustomMilestones(parsed.milestones);
     }
+
+    // Load from DB first (per-user, persists across devices). Fallback to localStorage.
+    void fetch("/api/user-settings/home-milestones")
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) return null;
+        return data as any;
+      })
+      .then((data) => {
+        const csv = String(data?.home_custom_milestones_streams ?? "").trim();
+        if (csv) {
+          applySavedMilestones(csv);
+          // Keep local cache in sync (best-effort).
+          writeStoredString(HOME_MILESTONE_SETTINGS_STORAGE.customMilestones, csv);
+          return;
+        }
+
+        const savedLocal = readStoredString(HOME_MILESTONE_SETTINGS_STORAGE.customMilestones);
+        if (savedLocal) applySavedMilestones(savedLocal);
+      })
+      .catch(() => {
+        const savedLocal = readStoredString(HOME_MILESTONE_SETTINGS_STORAGE.customMilestones);
+        if (savedLocal) applySavedMilestones(savedLocal);
+      });
   }, []);
 
   // Fetch Home Filters setting (best-effort; defaults to enabled).
@@ -1359,6 +1383,12 @@ function HomeDashboardInner(props: {
                 setMilestoneSettingsText("");
                 setMilestoneSettingsError(null);
                 removeStoredItem(HOME_MILESTONE_SETTINGS_STORAGE.customMilestones);
+                  // Persist clear to DB (best-effort).
+                  void fetch("/api/user-settings/home-milestones", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ home_custom_milestones_streams: null }),
+                  }).catch(() => {});
               }}
             >
               Reset to auto
@@ -1393,6 +1423,12 @@ function HomeDashboardInner(props: {
                     HOME_MILESTONE_SETTINGS_STORAGE.customMilestones,
                     parsed.milestones.join(","),
                   );
+                  // Persist to DB (best-effort).
+                  void fetch("/api/user-settings/home-milestones", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ home_custom_milestones_streams: parsed.milestones.join(",") }),
+                  }).catch(() => {});
                   setMilestoneSettingsOpen(false);
                   setMilestoneSettingsError(null);
                 }}
