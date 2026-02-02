@@ -5,11 +5,11 @@ import { LogoMark } from "@/components/LogoMark";
 import { SideRailWithBadge } from "@/components/shell/SideRailWithBadge";
 import { MobileNavWithBadge } from "@/components/shell/MobileNavWithBadge";
 import { Breadcrumbs } from "@/components/shell/Breadcrumbs";
-import { ThemeToggle } from "@/components/shell/ThemeToggle";
 import { SearchBar } from "@/components/shell/SearchBar";
 import { IngestionStatusBanner } from "@/components/health/IngestionStatusBanner";
 import { SAIWidget } from "@/components/sai/SAIWidget";
 import { UserMenu } from "@/components/shell/UserMenu";
+import { GlobalMetricToggle } from "@/components/shell/GlobalMetricToggle";
 
 type MainSurface = "glass" | "plain";
 
@@ -59,7 +59,7 @@ export function AppShell(props: { children: ReactNode; mainSurface?: MainSurface
               </div>
 
               <div className="flex items-center gap-2">
-                <ThemeToggle />
+                <GlobalMetricToggle />
                 <UserMenu />
               </div>
             </div>

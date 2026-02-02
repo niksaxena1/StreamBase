@@ -42,9 +42,8 @@ export function StatCard(props: {
         borderColor: "transparent",
         // Strong, clear selection stroke + glow (works in light/dark).
         boxShadow: [
-          `0 0 0 2px ${getRgba(accentColor, 0.75)}`,
-          `0 0 0 1px ${getRgba(accentColor, 0.35)}`,
-          `0 0 20px ${getRgba(accentColor, 0.20)}`,
+          `0 0 0 1px ${getRgba(accentColor, 0.75)}`,
+          `0 0 18px ${getRgba(accentColor, 0.20)}`,
           "var(--sb-shadow-compact)",
         ].join(", "),
       } as CSSProperties)

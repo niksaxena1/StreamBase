@@ -2,10 +2,31 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { LogOut, Settings, User } from "lucide-react";
+import { BookOpen, LogOut, Settings, User, Moon, Sun } from "lucide-react";
 
 import { IconButton } from "@/components/ui/Button";
 import { supabaseBrowser } from "@/lib/supabase/client";
+
+type Theme = "light" | "dark";
+
+const STORAGE_KEY = "sb-theme";
+
+function readTheme(): Theme {
+  if (typeof window === "undefined") return "dark";
+  const stored = window.localStorage.getItem(STORAGE_KEY);
+  if (stored === "light" || stored === "dark") return stored;
+  return "dark";
+}
+
+function applyTheme(t: Theme) {
+  if (typeof document === "undefined") return;
+  document.documentElement.dataset.theme = t;
+  try {
+    window.localStorage.setItem(STORAGE_KEY, t);
+  } catch {
+    // ignore
+  }
+}
 
 function cx(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
@@ -13,7 +34,12 @@ function cx(...parts: Array<string | false | null | undefined>) {
 
 export function UserMenu() {
   const [open, setOpen] = useState(false);
+  const [theme, setTheme] = useState<Theme>(() => readTheme());
   const wrapRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    applyTheme(theme);
+  }, [theme]);
 
   useEffect(() => {
     if (!open) return;
@@ -43,6 +69,9 @@ export function UserMenu() {
     }
   }
 
+  const isDark = theme === "dark";
+  const nextTheme: Theme = isDark ? "light" : "dark";
+
   return (
     <div ref={wrapRef} className="relative">
       <IconButton
@@ -70,6 +99,30 @@ export function UserMenu() {
           >
             <Settings className="h-4 w-4 opacity-70" />
             <span>Settings</span>
+          </Link>
+
+          <button
+            type="button"
+            onClick={() => {
+              setTheme(nextTheme);
+            }}
+            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-black/5 dark:hover:bg-white/10"
+            title={isDark ? "Switch to light theme" : "Switch to dark theme"}
+          >
+            <span className="inline-flex" suppressHydrationWarning>
+              {isDark ? <Sun className="h-4 w-4 opacity-70" /> : <Moon className="h-4 w-4 opacity-70" />}
+            </span>
+            <span>{isDark ? "Light Mode" : "Dark Mode"}</span>
+          </button>
+
+          <Link
+            href="/docs"
+            className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs transition hover:bg-black/5 dark:hover:bg-white/10"
+            onClick={() => setOpen(false)}
+            title="Docs"
+          >
+            <BookOpen className="h-4 w-4 opacity-70" />
+            <span>Docs</span>
           </Link>
 
           <button

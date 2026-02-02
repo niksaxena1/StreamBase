@@ -11,8 +11,8 @@ export type TrackSort =
   | "name_desc";
 
 const SORTS: Array<{ value: TrackSort; label: string }> = [
-  { value: "delta_desc", label: "Δ1d ↓" },
-  { value: "delta_asc", label: "Δ1d ↑" },
+  { value: "delta_desc", label: "Daily ↓" },
+  { value: "delta_asc", label: "Daily ↑" },
   { value: "total_desc", label: "Total ↓" },
   { value: "total_asc", label: "Total ↑" },
   { value: "name_asc", label: "Name ↑" },
@@ -48,7 +48,7 @@ export function TrackSortSelect({
   }, []);
 
   const selectedLabel = useMemo(
-    () => SORTS.find((s) => s.value === value)?.label ?? "Δ1d ↓",
+    () => SORTS.find((s) => s.value === value)?.label ?? "Daily ↓",
     [value],
   );
 

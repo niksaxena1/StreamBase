@@ -30,6 +30,7 @@ import { Chip, ChipGroup } from "@/components/ui/Chip";
 import { Input } from "@/components/ui/Input";
 import { IconButton } from "@/components/ui/Button";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
+import { useMetric } from "@/components/metrics/MetricContext";
 
 const METRICS = ["streams", "revenue", "tracks"] as const;
 type Metric = (typeof METRICS)[number];
@@ -335,18 +336,13 @@ export function CollectorsClient(props: {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
+  const { metric } = useMetric();
 
   const [openPlaylists, setOpenPlaylists] = useState(true);
   const [openTracks, setOpenTracks] = useState(true);
   const [comparisonBaseline, setComparisonBaseline] = useState<"ma7" | "yday">("ma7");
 
-  // Metric is controlled by the page header; read it from the URL so it updates immediately.
-  const metric: Metric = (() => {
-    const urlMetric = searchParams.get("metric");
-    return urlMetric === "streams" || urlMetric === "revenue" || urlMetric === "tracks"
-      ? (urlMetric as Metric)
-      : "revenue";
-  })();
+  // Metric is global now (top bar toggle); legacy `metric` query param is ignored.
   
   // Comparison chart state - initialize from URL or defaults
   const [comparisonCollectors, setComparisonCollectors] = useState<string[]>(() => {
@@ -1073,12 +1069,12 @@ export function CollectorsClient(props: {
 
           <div className="mt-3 space-y-4">
             <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
-              Cumulative streams are totals from the DB on the data date. “Δ1d” is today minus yesterday.
+              Cumulative streams are totals from the DB on the data date. “Daily” is today minus yesterday.
             </div>
             {/* Quick summary */}
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <StatCard
-              title="Top Δ1d track"
+              title="Top daily track"
               value={
                 topTrackCards.bestDelta?.daily_streams_delta == null
                   ? "—"
@@ -1203,7 +1199,7 @@ export function CollectorsClient(props: {
                   "ISRC",
                   "Streams (total)",
                   <span key="d1" title="Today minus yesterday (based on cumulative streams).">
-                    Streams (Δ1d)
+                    Streams (daily)
                   </span>,
                   "Distro",
                 ]}

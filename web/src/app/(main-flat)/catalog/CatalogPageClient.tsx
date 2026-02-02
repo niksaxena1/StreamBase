@@ -6,7 +6,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ExternalLink, User, ChevronRight, Download, List } from "lucide-react";
 import { formatDateISO, formatInt } from "@/lib/format";
 import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/GlassTable";
-import { CatalogMetricSelector, type Metric } from "./CatalogMetricSelector";
 import { CatalogMetricsClient } from "./CatalogMetricsClient";
 import { Combobox } from "@/components/ui/Combobox";
 import { SpotlightCard } from "@/components/ui/SpotlightCard";
@@ -22,6 +21,7 @@ import { FilterBar } from "@/components/ui/FilterBar";
 import { ChipGroup } from "@/components/ui/Chip";
 import { IconButton } from "@/components/ui/Button";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
+import { useMetric } from "@/components/metrics/MetricContext";
 
 type ChartDataPoint = {
   date: string;
@@ -80,7 +80,7 @@ export function CatalogPageClient(props: {
   track28d: number;
   track30d: number;
 }) {
-  const [metric, setMetric] = useState<Metric>("streams");
+  const { metric } = useMetric();
   const [isArtistExpanded, setIsArtistExpanded] = useState(true);
   const router = useRouter();
   const sp = useSearchParams();
@@ -117,7 +117,6 @@ export function CatalogPageClient(props: {
         }
         actions={
           <>
-            <CatalogMetricSelector metric={metric} setMetric={setMetric} />
             <ChipGroup segmented className="text-[11px]">
               {[30, 90, 365].map((d) => (
                 <Link
@@ -257,8 +256,6 @@ export function CatalogPageClient(props: {
             artist28d={props.artist28d}
             artist30d={props.artist30d}
             trackCount={props.trackCount}
-            metric={metric}
-            setMetric={setMetric}
           />
 
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">

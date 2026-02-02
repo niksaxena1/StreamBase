@@ -453,16 +453,6 @@ export default async function SettingsPage() {
       <PageHeader
         title="Settings"
         subtitle="Admin settings for SpotiBase."
-        actions={
-          <Link
-            href="/docs"
-            className="sb-ring inline-flex items-center gap-2 rounded-full bg-white/70 px-3 py-2 text-xs font-medium transition hover:bg-white dark:bg-white/10 dark:hover:bg-white/15"
-            style={{ color: "var(--sb-text)" }}
-            title="Open SpotiBase docs"
-          >
-            Docs
-          </Link>
-        }
       />
 
       <div className="space-y-2">

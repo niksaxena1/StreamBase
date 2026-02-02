@@ -4,8 +4,7 @@ import Link from "next/link";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { Download, Music, Search, Settings, X } from "lucide-react";
 
-import { MetricProvider, useMetric } from "@/components/metrics/MetricContext";
-import { MetricSelector } from "@/components/metrics/MetricSelector";
+import { useMetric } from "@/components/metrics/MetricContext";
 import { LazyInteractiveChartSection } from "@/components/dashboard/LazyInteractiveChartSection";
 import { StatCard } from "@/components/StatCard";
 import { Button, IconButton } from "@/components/ui/Button";
@@ -282,7 +281,7 @@ function HomeDashboardInner(props: {
   latestRunDate: string | null;
   latestDataDate: string | null;
 }) {
-  const { metric, setMetric } = useMetric();
+  const { metric } = useMetric();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
   const [selectedChart, setSelectedChart] = useState<"daily" | "total">("daily");
   const [scatterQuery, setScatterQuery] = useState("");
@@ -299,6 +298,11 @@ function HomeDashboardInner(props: {
   const [milestoneSettingsText, setMilestoneSettingsText] = useState("");
   const [milestoneSettingsError, setMilestoneSettingsError] = useState<string | null>(null);
   const [customMilestones, setCustomMilestones] = useState<number[] | null>(null);
+  const [milestoneDrillOpen, setMilestoneDrillOpen] = useState(false);
+  const [milestoneDrillMilestone, setMilestoneDrillMilestone] = useState<number | null>(null);
+  const [milestoneDrillQuery, setMilestoneDrillQuery] = useState("");
+  const deferredMilestoneDrillQuery = useDeferredValue(milestoneDrillQuery);
+  const [milestoneDrillPage, setMilestoneDrillPage] = useState(1);
   const autoMilestonesForCurrentData = useMemo(() => {
     const maxStreams = Math.max(
       0,
@@ -329,6 +333,51 @@ function HomeDashboardInner(props: {
   }, [props.trackScatterPoints, tracksBelowAnyMilestoneCount]);
 
   const milestoneMode: "streams" | "revenue" = metric === "revenue" ? "revenue" : "streams";
+
+  const milestoneDrillTracks = useMemo(() => {
+    const milestone = milestoneDrillMilestone;
+    if (!milestone || milestone <= 0) return [];
+
+    const q = foldForSearch(deferredMilestoneDrillQuery ?? "");
+    const out: TrackStreamsXYPoint[] = [];
+    for (const p of props.trackScatterPoints ?? []) {
+      const total = Number(p?.total_streams_cumulative ?? 0);
+      if (!Number.isFinite(total) || total < milestone) continue;
+
+      if (q) {
+        const isrc = String(p?.isrc ?? "");
+        const title = String(p?.name ?? "").trim();
+        const artists = (p?.artist_names ?? []).filter(Boolean).join(", ");
+
+        const isrcL = foldForSearch(isrc);
+        const titleL = foldForSearch(title);
+        const artistsL = foldForSearch(artists);
+        if (!isrcL.includes(q) && !titleL.includes(q) && !artistsL.includes(q)) continue;
+      }
+
+      out.push(p);
+    }
+
+    out.sort((a, b) => {
+      const ta = Number(a?.total_streams_cumulative ?? 0);
+      const tb = Number(b?.total_streams_cumulative ?? 0);
+      if (tb !== ta) return tb - ta;
+      const na = String(a?.name ?? "").trim();
+      const nb = String(b?.name ?? "").trim();
+      return na.localeCompare(nb);
+    });
+
+    return out;
+  }, [deferredMilestoneDrillQuery, milestoneDrillMilestone, props.trackScatterPoints]);
+
+  const milestoneDrillPageSize = 50;
+  const milestoneDrillTotalPages = Math.max(1, Math.ceil(milestoneDrillTracks.length / milestoneDrillPageSize));
+  const milestoneDrillSafePage = Math.min(Math.max(1, milestoneDrillPage), milestoneDrillTotalPages);
+  const milestoneDrillPageStart = (milestoneDrillSafePage - 1) * milestoneDrillPageSize;
+  const milestoneDrillPageItems = milestoneDrillTracks.slice(
+    milestoneDrillPageStart,
+    milestoneDrillPageStart + milestoneDrillPageSize,
+  );
 
   // Restore persisted collapsible state after mount.
   useEffect(() => {
@@ -634,8 +683,6 @@ function HomeDashboardInner(props: {
               Ext
             </ToggleLink>
           </div>
-
-          <MetricSelector metric={metric} setMetric={setMetric} />
 
           <div className="sb-ring flex items-center gap-0.5 rounded-full bg-white/60 p-0.5 dark:bg-white/10">
             <ToggleLink active={props.rangeDays === 30} href={hrefWith(props.sp, { range: "30" })}>
@@ -1076,6 +1123,13 @@ function HomeDashboardInner(props: {
               customMilestones={customMilestones ?? undefined}
               mode={milestoneMode}
               payoutPerStreamUsd={streamPayoutPerStreamUsd}
+              highlightMilestone={milestoneDrillOpen ? milestoneDrillMilestone : null}
+              onMilestoneClick={(milestone) => {
+                setMilestoneDrillMilestone(milestone);
+                setMilestoneDrillQuery("");
+                setMilestoneDrillPage(1);
+                setMilestoneDrillOpen(true);
+              }}
             />
           </div>
         </details>
@@ -1167,6 +1221,225 @@ function HomeDashboardInner(props: {
               </Button>
             </div>
           </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={milestoneDrillOpen}
+        onClose={() => {
+          setMilestoneDrillOpen(false);
+          setMilestoneDrillQuery("");
+          setMilestoneDrillPage(1);
+        }}
+        title={
+          milestoneDrillMilestone ? (
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span>Tracks at</span>
+              <span className="font-mono">
+                {formatMilestoneHeaderLabel(milestoneDrillMilestone, milestoneMode, streamPayoutPerStreamUsd)}
+              </span>
+              <span className="opacity-70" style={{ color: "var(--sb-muted)" }}>
+                +
+              </span>
+            </div>
+          ) : (
+            "Milestone tracks"
+          )
+        }
+        subtitle={
+          milestoneDrillMilestone ? (
+            <span>
+              Total streams ≥ <span className="font-mono">{formatInt(milestoneDrillMilestone)}</span>{" "}
+              <span className="opacity-70" style={{ color: "var(--sb-muted)" }}>
+                •
+              </span>{" "}
+              {formatInt(milestoneDrillTracks.length)} tracks
+            </span>
+          ) : null
+        }
+        maxWidthClassName="max-w-6xl"
+      >
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex min-w-[240px] flex-1 items-center gap-2">
+              <div className="relative w-full">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 opacity-60" />
+                <input
+                  value={milestoneDrillQuery}
+                  onChange={(e) => {
+                    setMilestoneDrillQuery(e.target.value);
+                    setMilestoneDrillPage(1);
+                  }}
+                  placeholder="Filter by track, artist, or ISRC…"
+                  className={[
+                    "sb-ring w-full rounded-xl bg-white/70 py-2 pl-10 pr-9 text-sm outline-none",
+                    "placeholder:text-black/40 dark:bg-white/5 dark:placeholder:text-white/40",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
+                  ].join(" ")}
+                  style={{ color: "var(--sb-text)" }}
+                />
+                {milestoneDrillQuery.trim() ? (
+                  <button
+                    type="button"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 opacity-70 hover:opacity-100"
+                    style={{ color: "var(--sb-text)" }}
+                    onClick={() => {
+                      setMilestoneDrillQuery("");
+                      setMilestoneDrillPage(1);
+                    }}
+                    aria-label="Clear filter"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="text-xs opacity-70" style={{ color: "var(--sb-muted)" }}>
+                Showing{" "}
+                <span className="font-mono">
+                  {milestoneDrillTracks.length ? milestoneDrillPageStart + 1 : 0}-
+                  {Math.min(milestoneDrillPageStart + milestoneDrillPageItems.length, milestoneDrillTracks.length)}
+                </span>{" "}
+                of <span className="font-mono">{formatInt(milestoneDrillTracks.length)}</span>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={milestoneDrillSafePage <= 1}
+                onClick={() => setMilestoneDrillPage((p) => Math.max(1, p - 1))}
+              >
+                Prev
+              </Button>
+              <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
+                <span className="font-mono">{milestoneDrillSafePage}</span> /{" "}
+                <span className="font-mono">{milestoneDrillTotalPages}</span>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={milestoneDrillSafePage >= milestoneDrillTotalPages}
+                onClick={() => setMilestoneDrillPage((p) => Math.min(milestoneDrillTotalPages, p + 1))}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+
+          <GlassTable
+            headers={[
+              { label: "Track" },
+              { label: "Artists" },
+              {
+                label: metric === "revenue" ? "Total Revenue" : "Total Streams",
+                align: "right",
+              },
+              {
+                label: metric === "revenue" ? "Daily Revenue" : "Daily Streams",
+                align: "right",
+              },
+            ]}
+            maxBodyHeightClassName="max-h-[60vh] overflow-auto"
+          >
+            {milestoneDrillPageItems.map((p) => {
+              const title = String(p?.name ?? "").trim() || String(p?.isrc ?? "");
+              const artists = (p?.artist_names ?? []).filter(Boolean);
+              const totalStreams = Number(p?.total_streams_cumulative ?? 0);
+              const dailyStreams = Number(p?.daily_streams_delta ?? 0);
+              const totalValue =
+                metric === "revenue" ? totalStreams * streamPayoutPerStreamUsd : totalStreams;
+              const dailyValue =
+                metric === "revenue" ? dailyStreams * streamPayoutPerStreamUsd : dailyStreams;
+              const metricNumberClass =
+                metric === "revenue"
+                  ? "text-green-600 dark:text-green-400 font-medium"
+                  : "text-lime-700 dark:text-lime-400 font-medium";
+
+              return (
+                <TableRow key={p.isrc}>
+                  <TableCell className="min-w-[260px]">
+                    <div className="flex items-center gap-2">
+                      {p.album_image_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={p.album_image_url}
+                          alt=""
+                          className="h-9 w-9 rounded-md object-cover sb-ring"
+                          loading="lazy"
+                          decoding="async"
+                        />
+                      ) : (
+                        <div className="h-9 w-9 rounded-md sb-ring bg-white/60 dark:bg-white/10" />
+                      )}
+                      <div className="min-w-0">
+                        <Link
+                          href={`/catalog?isrc=${encodeURIComponent(p.isrc)}`}
+                          className="block truncate text-sm font-medium hover:underline"
+                          style={{ color: "var(--sb-text)" }}
+                          title={p.isrc}
+                        >
+                          {title}
+                        </Link>
+                        <div className="truncate text-[11px] opacity-70" style={{ color: "var(--sb-muted)" }}>
+                          <span className="font-mono">{p.isrc}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell className="min-w-[240px]">
+                    {artists.length ? (
+                      <div className="truncate text-sm" style={{ color: "var(--sb-text)" }}>
+                        {artists.map((name, idx) => {
+                          const id = (p.artist_ids ?? [])[idx] ?? null;
+                          const label = String(name ?? "").trim();
+                          if (!label) return null;
+                          const sep = idx > 0 ? (
+                            <span key={`sep-${p.isrc}-${idx}`} style={{ color: "var(--sb-muted)" }}>
+                              ,{" "}
+                            </span>
+                          ) : null;
+                          return (
+                            <span key={`${p.isrc}-${idx}`}>
+                              {sep}
+                              {id ? (
+                                <Link
+                                  href={`/catalog?artist_id=${encodeURIComponent(id)}`}
+                                  className="hover:underline"
+                                  style={{ color: "var(--sb-text)" }}
+                                  title={id}
+                                >
+                                  {label}
+                                </Link>
+                              ) : (
+                                <span>{label}</span>
+                              )}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <span className="text-sm opacity-60" style={{ color: "var(--sb-muted)" }}>
+                        —
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell numeric className={metricNumberClass}>
+                    {metric === "revenue" ? formatUsd(totalValue) : formatInt(totalValue)}
+                  </TableCell>
+                  <TableCell numeric className={metricNumberClass}>
+                    {metric === "revenue" ? formatUsd(dailyValue) : formatInt(dailyValue)}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+            {!milestoneDrillPageItems.length && (
+              <EmptyState
+                colSpan={4}
+                message={milestoneDrillTracks.length ? "No tracks match your filter." : "No tracks found for this milestone."}
+              />
+            )}
+          </GlassTable>
         </div>
       </Modal>
 
@@ -1265,9 +1538,5 @@ export function HomeDashboardClient(props: {
   latestRunDate: string | null;
   latestDataDate: string | null;
 }) {
-  return (
-    <MetricProvider defaultMetric="streams">
-      <HomeDashboardInner {...props} />
-    </MetricProvider>
-  );
+  return <HomeDashboardInner {...props} />;
 }

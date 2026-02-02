@@ -46,7 +46,6 @@ export function PlaylistMetricsClient(props: {
   playlistKey: string;
   overrideAnnotations: Array<{ date: string; note: string }>;
   metric: Metric;
-  setMetric: (metric: Metric) => void;
 }) {
   const { streamPayoutPerStreamUsd } = usePayoutRate();
 

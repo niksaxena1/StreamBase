@@ -53,20 +53,24 @@ const PRESETS: Preset[] = [
 export function DateRangePicker({
   latestDate,
   currentRangeDays,
+  tone = "default",
 }: {
   latestDate: string | null;
   currentRangeDays: number;
+  tone?: "default" | "opaque";
 }) {
   if (!latestDate) return null;
-  return <DateRangePickerInner latestDate={latestDate} currentRangeDays={currentRangeDays} />;
+  return <DateRangePickerInner latestDate={latestDate} currentRangeDays={currentRangeDays} tone={tone} />;
 }
 
 function DateRangePickerInner({
   latestDate,
   currentRangeDays,
+  tone,
 }: {
   latestDate: string;
   currentRangeDays: number;
+  tone: "default" | "opaque";
 }) {
   const router = useRouter();
   const sp = useSearchParams();
@@ -300,7 +304,9 @@ function DateRangePickerInner({
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
           isOpen || hasCustomRange
             ? "bg-black text-white shadow-sm dark:bg-white dark:text-black"
-            : "bg-white/70 hover:bg-white/70 dark:bg-white/10 dark:hover:bg-white/10",
+            : tone === "opaque"
+              ? "bg-white/90 hover:bg-white/90 dark:bg-white/20 dark:hover:bg-white/20"
+              : "bg-white/70 hover:bg-white/70 dark:bg-white/10 dark:hover:bg-white/10",
         ].join(" ")}
         style={isOpen || hasCustomRange ? undefined : { color: "var(--sb-muted)" }}
         title={hasCustomRange ? `${formatDisplay(parseYmd(customStart!))} to ${formatDisplay(parseYmd(customEnd!))}` : "Custom date range"}

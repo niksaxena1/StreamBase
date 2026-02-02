@@ -9,11 +9,11 @@ type Theme = "light" | "dark";
 const STORAGE_KEY = "sb-theme";
 
 function readTheme(): Theme {
-  if (typeof window === "undefined") return "light"; // SSR safe default
+  if (typeof window === "undefined") return "dark"; // SSR safe default
   const stored = window.localStorage.getItem(STORAGE_KEY);
   if (stored === "light" || stored === "dark") return stored;
   const mq = window.matchMedia?.("(prefers-color-scheme: dark)");
-  return mq?.matches ? "dark" : "light";
+  return mq?.matches ? "dark" : "dark"; // Default to dark
 }
 
 function applyTheme(t: Theme) {

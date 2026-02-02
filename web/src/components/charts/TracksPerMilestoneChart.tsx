@@ -255,11 +255,19 @@ export function TracksPerMilestoneChart({
   }
 
   return (
-    <div className="w-full overflow-visible">
+    <div
+      className="w-full overflow-visible outline-none"
+      style={{ outline: "none" }}
+      onMouseDown={(e) => {
+        // Prevent browser focus outline box on click (chart isn't keyboard-focusable anyway).
+        e.preventDefault();
+      }}
+    >
       <ResponsiveContainer width="100%" height={heightPx} minWidth={0} style={{ overflow: "visible" }}>
         <BarChart
           data={chartData}
           margin={{ top: 6, right: 6, left: 0, bottom: 0 }}
+          style={{ outline: "none" }}
         >
           <defs>
             {chartData.map((d) => {
@@ -315,9 +323,7 @@ export function TracksPerMilestoneChart({
           />
           <Tooltip
             content={<MilestoneTooltip totalTracks={totalTracks} mode={mode} />}
-            cursor={{
-              fill: "rgba(0,0,0,0.1)",
-            }}
+            cursor={false}
           />
           {highlightMilestone && (
             <ReferenceLine
@@ -334,6 +340,7 @@ export function TracksPerMilestoneChart({
           <Bar
             dataKey="unique_tracks"
             radius={[4, 4, 0, 0]}
+            activeBar={false}
             onClick={(barData) => {
               if (!onMilestoneClick) return;
               const p = (barData && typeof barData === "object" ? (barData as any).payload : null) as

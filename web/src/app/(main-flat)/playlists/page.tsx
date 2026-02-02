@@ -10,8 +10,6 @@ import { PlaylistDashboardControls } from "@/components/dashboard/PlaylistDashbo
 import { RememberParamRedirect } from "@/components/dashboard/RememberParamRedirect";
 import { supabaseService } from "@/lib/supabase/service";
 import { PlaylistPageClient } from "./PlaylistPageClient";
-import { PlaylistHeaderWithSelector } from "./PlaylistHeaderWithSelector";
-import { PlaylistMetricProvider } from "./PlaylistMetricContext";
 import { dataDateFromRunDate } from "@/lib/sotDates";
 import { PlaylistTracksSection } from "./PlaylistTracksSection";
 import { PageHeader } from "@/components/shell/PageHeader";
@@ -356,82 +354,78 @@ export default async function PlaylistsPage({
   const removedTracksCount = Array.isArray(removedRows) ? removedRows.length : 0;
 
   return (
-    <PlaylistMetricProvider>
-      <div className="space-y-4">
-        <PageHeader
-          icon={
-            playlistKey === "all_catalog" ? (
-              <div
-                className="sb-ring flex h-12 w-12 items-center justify-center rounded-lg"
-                style={{ background: "var(--sb-accent)" }}
-              >
-                <Music className="h-6 w-6" style={{ color: "black" }} />
-              </div>
-            ) : playlistImageUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={playlistImageUrl}
-                alt="Playlist cover"
-                className="h-12 w-12 rounded-lg object-cover sb-ring"
-              />
-            ) : (
-              <div className="h-12 w-12 rounded-lg sb-ring bg-white/60" />
-            )
-          }
-          title={
-            <div className="flex items-center gap-2">
-              <span>{title}</span>
-              {spotifyUrl && (
-                <Link
-                  href={spotifyUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center rounded-full p-1.5 transition-colors hover:bg-black/5 dark:hover:bg-white/10"
-                  title="Open on Spotify"
-                  style={{ color: "var(--sb-muted)" }}
-                >
-                  <ExternalLink className="h-4 w-4" />
-                </Link>
-              )}
+    <div className="space-y-4">
+      <PageHeader
+        icon={
+          playlistKey === "all_catalog" ? (
+            <div
+              className="sb-ring flex h-12 w-12 items-center justify-center rounded-lg"
+              style={{ background: "var(--sb-accent)" }}
+            >
+              <Music className="h-6 w-6" style={{ color: "black" }} />
             </div>
-          }
-          subtitle={
-            latestDate ? (
-              <>
-                Latest data date:{" "}
-                <span className="font-mono">
-                  {formatDateISO(dataDateFromRunDate(latestDate))}
-                </span>
-              </>
-            ) : (
-              "No stats found for this playlist yet."
-            )
-          }
-          actions={
-            <>
-              <PlaylistHeaderWithSelector />
-              <ChipGroup segmented className="text-[11px]">
-                {[30, 90, 365].map((d) => (
-                  <Link
-                    key={d}
-                    href={hrefWithPatchedSearchParams(spString, { range: String(d) })}
-                    className={rangeChipClass(rangeDays === d)}
-                  >
-                    {d}d
-                  </Link>
-                ))}
-              </ChipGroup>
+          ) : playlistImageUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={playlistImageUrl}
+              alt="Playlist cover"
+              className="h-12 w-12 rounded-lg object-cover sb-ring"
+            />
+          ) : (
+            <div className="h-12 w-12 rounded-lg sb-ring bg-white/60" />
+          )
+        }
+        title={
+          <div className="flex items-center gap-2">
+            <span>{title}</span>
+            {spotifyUrl && (
               <Link
-                href="/playlists/config"
-                className="sb-ring grid h-8 w-8 place-items-center rounded-full bg-white/70 text-xs font-medium transition hover:bg-white dark:bg-white/10 dark:hover:bg-white/15"
-                aria-label="Playlist config"
-                title="Playlist config"
+                href={spotifyUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center rounded-full p-1.5 transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+                title="Open on Spotify"
+                style={{ color: "var(--sb-muted)" }}
               >
-                <List className="h-4 w-4" style={{ color: "var(--sb-text)" }} />
+                <ExternalLink className="h-4 w-4" />
               </Link>
+            )}
+          </div>
+        }
+        subtitle={
+          latestDate ? (
+            <>
+              Latest data date:{" "}
+              <span className="font-mono">{formatDateISO(dataDateFromRunDate(latestDate))}</span>
             </>
-          }
-        />
+          ) : (
+            "No stats found for this playlist yet."
+          )
+        }
+        actions={
+          <>
+            <ChipGroup segmented className="text-[11px]">
+              {[30, 90, 365].map((d) => (
+                <Link
+                  key={d}
+                  href={hrefWithPatchedSearchParams(spString, { range: String(d) })}
+                  className={rangeChipClass(rangeDays === d)}
+                >
+                  {d}d
+                </Link>
+              ))}
+            </ChipGroup>
+            <Link
+              href="/playlists/config"
+              className="sb-ring grid h-8 w-8 place-items-center rounded-full bg-white/70 text-xs font-medium transition hover:bg-white dark:bg-white/10 dark:hover:bg-white/15"
+              aria-label="Playlist config"
+              title="Playlist config"
+            >
+              <List className="h-4 w-4" style={{ color: "var(--sb-text)" }} />
+            </Link>
+          </>
+        }
+      />
 
         <PlaylistDashboardControls
           playlists={playlistOptions}
@@ -488,7 +482,6 @@ export default async function PlaylistsPage({
         >
           <PlaylistTracksSection playlistKey={playlistKey} latestRunDate={latestDate} prevRunDate={prevDate} />
         </Suspense>
-      </div>
-    </PlaylistMetricProvider>
+    </div>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { COLLECTOR_COLORS } from "@/components/charts/CollectorComparisonChart";
+import { useMetric } from "@/components/metrics/MetricContext";
 
 const COLLECTORS = ["A", "K", "N", "PL", "TG", "NL"] as const;
 
@@ -12,10 +13,19 @@ export function CollectorMultiSelect({
   selected: string[];
   onChange: (collectors: string[]) => void;
 }) {
+  const { metric } = useMetric();
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const [buttonWidth, setButtonWidth] = useState<number | undefined>();
+
+  const accentBg =
+    metric === "revenue"
+      ? "#10b981"
+      : metric === "tracks"
+        ? "#3b82f6"
+        : "var(--sb-accent)";
+  const accentText = metric === "streams" ? "#000" : "#fff";
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -88,8 +98,8 @@ export function CollectorMultiSelect({
         <span>Collectors</span>
         {selected.length > 0 && (
           <span
-            className="flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold text-black"
-            style={{ backgroundColor: "var(--sb-accent)" }}
+            className="flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold"
+            style={{ backgroundColor: accentBg, color: accentText }}
           >
             {selected.length}
           </span>
@@ -124,8 +134,8 @@ export function CollectorMultiSelect({
               color: "var(--sb-text)",
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = "var(--sb-accent)";
-              e.currentTarget.style.color = "#000";
+              e.currentTarget.style.backgroundColor = accentBg;
+              e.currentTarget.style.color = accentText;
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.backgroundColor = "transparent";
@@ -148,8 +158,8 @@ export function CollectorMultiSelect({
                 onClick={() => toggleCollector(collector)}
                 className="flex w-full items-center gap-2 rounded-[calc(var(--sb-radius)-8px)] px-2 py-1.5 text-left text-xs transition"
                 style={{ 
-                  color: isSelected ? "#000" : "var(--sb-text)",
-                  backgroundColor: isSelected ? "var(--sb-accent)" : "transparent",
+                  color: isSelected ? accentText : "var(--sb-text)",
+                  backgroundColor: isSelected ? accentBg : "transparent",
                 }}
                 onMouseEnter={(e) => {
                   if (!isSelected) {

@@ -5,11 +5,11 @@ import { DailyStreamsChart } from "@/components/charts/DailyStreamsChart";
 import { DailyStreamsWithMAChart } from "@/components/charts/DailyStreamsWithMAChart";
 import { SpotlightCard } from "@/components/ui/SpotlightCard";
 import { AnimatedCounter } from "@/components/ui/AnimatedCounter";
-import type { Metric } from "./CatalogMetricSelector";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
 import { slugifyForFilename, todayIsoDate } from "@/lib/csv";
 import { dataDateFromRunDate } from "@/lib/sotDates";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
+import { useMetric } from "@/components/metrics/MetricContext";
 
 function computeRollingAvg7(desc: Array<{ date: string; daily: number }>) {
   const asc = [...desc].reverse();
@@ -46,18 +46,17 @@ export function CatalogMetricsClient(props: {
   artist28d: number;
   artist30d: number;
   trackCount: number;
-  metric: Metric;
-  setMetric: (metric: Metric) => void;
 }) {
   const { streamPayoutPerStreamUsd } = usePayoutRate();
+  const { metric } = useMetric();
 
   const cumulativeSeries = useMemo(() => {
-    if (props.metric === "revenue") {
+    if (metric === "revenue") {
       return props.cumSeriesAsc.map((p) => ({
         date: dataDateFromRunDate(p.date),
         value: p.value * streamPayoutPerStreamUsd,
       }));
-    } else if (props.metric === "tracks") {
+    } else if (metric === "tracks") {
       // For tracks, we don't have historical track count per artist
       // So we'll just show a flat line or return empty
       return props.cumSeriesAsc.map((p) => ({
@@ -70,15 +69,15 @@ export function CatalogMetricsClient(props: {
         value: p.value,
       }));
     }
-  }, [props.metric, props.cumSeriesAsc, props.trackCount, streamPayoutPerStreamUsd]);
+  }, [metric, props.cumSeriesAsc, props.trackCount, streamPayoutPerStreamUsd]);
 
   const dailyDesc = useMemo(() => {
-    if (props.metric === "revenue") {
+    if (metric === "revenue") {
       return props.dailyArtistDesc.map((p) => ({
         date: dataDateFromRunDate(p.date),
         daily: p.daily * streamPayoutPerStreamUsd,
       }));
-    } else if (props.metric === "tracks") {
+    } else if (metric === "tracks") {
       // Track count doesn't change daily for an artist's catalog
       return props.dailyArtistDesc.map((p) => ({
         date: dataDateFromRunDate(p.date),
@@ -90,30 +89,30 @@ export function CatalogMetricsClient(props: {
         daily: p.daily,
       }));
     }
-  }, [props.metric, props.dailyArtistDesc, streamPayoutPerStreamUsd]);
+  }, [metric, props.dailyArtistDesc, streamPayoutPerStreamUsd]);
 
   const dailyWithMaDesc = useMemo(() => computeRollingAvg7(dailyDesc), [dailyDesc]);
 
-  const cumulativeLabel = props.metric === "revenue" ? "Est. revenue (cumulative)" : props.metric === "streams" ? "Total streams" : "Track count";
-  const dailyLabel = props.metric === "revenue" ? "Est. revenue (daily)" : props.metric === "streams" ? "Daily streams" : "Track change (daily)";
+  const cumulativeLabel = metric === "revenue" ? "Est. revenue (cumulative)" : metric === "streams" ? "Total streams" : "Track count";
+  const dailyLabel = metric === "revenue" ? "Est. revenue (daily)" : metric === "streams" ? "Daily streams" : "Track change (daily)";
   
-  const valueFormat = props.metric === "revenue" ? "usd" : "int";
-  const yTickFormat = props.metric === "revenue" ? "usd_compact" : props.metric === "streams" ? "k" : "int";
+  const valueFormat = metric === "revenue" ? "usd" : "int";
+  const yTickFormat = metric === "revenue" ? "usd_compact" : metric === "streams" ? "k" : "int";
 
-  const latestValue = props.metric === "revenue" 
+  const latestValue = metric === "revenue" 
     ? props.latestCum * streamPayoutPerStreamUsd
-    : props.metric === "tracks"
+    : metric === "tracks"
     ? props.trackCount
     : props.latestCum;
 
-  const latestDaily = props.metric === "revenue"
+  const latestDaily = metric === "revenue"
     ? props.artist24h * streamPayoutPerStreamUsd
-    : props.metric === "tracks"
+    : metric === "tracks"
     ? 0
     : props.artist24h;
 
   // Use different colors based on metric: blue for tracks, emerald for revenue, lime for streams
-  const chartColor = props.metric === "tracks" ? "#3b82f6" : props.metric === "revenue" ? "#10b981" : "#c7f33c";
+  const chartColor = metric === "tracks" ? "#3b82f6" : metric === "revenue" ? "#10b981" : "#c7f33c";
 
   return (
     <div className="space-y-4">

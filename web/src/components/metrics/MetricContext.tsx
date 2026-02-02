@@ -1,7 +1,13 @@
 "use client";
 
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import type { Metric } from "./MetricSelector";
+
+const STORAGE_KEY = "sb:metric";
+
+function isMetric(v: unknown): v is Metric {
+  return v === "streams" || v === "revenue" || v === "tracks";
+}
 
 const MetricContext = createContext<{
   metric: Metric;
@@ -16,6 +22,29 @@ export function MetricProvider({
   defaultMetric?: Metric;
 }) {
   const [metric, setMetric] = useState<Metric>(defaultMetric);
+
+  // Restore persisted metric after mount (client-only).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const v = window.localStorage.getItem(STORAGE_KEY);
+      if (isMetric(v) && v !== metric) setMetric(v);
+    } catch {
+      // ignore (private mode, disabled storage, etc.)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Persist metric changes.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(STORAGE_KEY, metric);
+    } catch {
+      // ignore
+    }
+  }, [metric]);
+
   return (
     <MetricContext.Provider value={{ metric, setMetric }}>
       {children}

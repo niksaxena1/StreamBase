@@ -1,7 +1,7 @@
 "use client";
 
 import { PlaylistMetricsClient } from "./PlaylistMetricsClient";
-import { usePlaylistMetric } from "./PlaylistMetricContext";
+import { useMetric } from "@/components/metrics/MetricContext";
 
 type PlaylistDailyStatsRow = {
   date: string;
@@ -21,7 +21,7 @@ export function PlaylistPageClient(props: {
   playlistKey: string;
   overrideAnnotations: Array<{ date: string; note: string }>;
 }) {
-  const { metric, setMetric } = usePlaylistMetric();
+  const { metric } = useMetric();
 
   return (
     <PlaylistMetricsClient
@@ -33,7 +33,6 @@ export function PlaylistPageClient(props: {
       playlistKey={props.playlistKey}
       overrideAnnotations={props.overrideAnnotations}
       metric={metric}
-      setMetric={setMetric}
     />
   );
 }

@@ -2,6 +2,7 @@ import { AppShell } from "@/components/shell/AppShell";
 import { supabaseServer } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { PayoutRateProvider } from "@/components/payout/PayoutRateContext";
+import { MetricProvider } from "@/components/metrics/MetricContext";
 
 export default async function MainFlatLayout({
   children,
@@ -20,7 +21,9 @@ export default async function MainFlatLayout({
 
   return (
     <PayoutRateProvider>
-      <AppShell mainSurface="plain">{children}</AppShell>
+      <MetricProvider defaultMetric="streams">
+        <AppShell mainSurface="plain">{children}</AppShell>
+      </MetricProvider>
     </PayoutRateProvider>
   );
 }
