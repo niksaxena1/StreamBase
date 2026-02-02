@@ -17,6 +17,7 @@ import { hrefWithPatchedSearchParams } from "@/lib/searchParams";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { TrackStreamsXYChart, type TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChart";
 import { DatePicker } from "@/components/ui/DatePicker";
+import { foldForSearch } from "@/lib/searchFold";
 
 type PlaylistDailyStatsRow = {
   date: string;
@@ -96,7 +97,7 @@ function HomeDashboardInner(props: {
     scatterMode === "revenue" ? "Tracks: Δ1d vs Total Revenue" : "Tracks: Δ1d vs Total Streams";
 
   const scatterMatches = useMemo(() => {
-    const q = (deferredScatterQuery ?? "").trim().toLowerCase();
+    const q = foldForSearch(deferredScatterQuery ?? "");
     if (!q) return [];
 
     // Keep it snappy: only compute suggestions for >= 2 chars unless it looks like an ISRC.
@@ -107,12 +108,12 @@ function HomeDashboardInner(props: {
     for (const p of props.trackScatterPoints ?? []) {
       if (!p?.isrc) continue;
       const isrc = String(p.isrc);
-      const isrcL = isrc.toLowerCase();
+      const isrcL = foldForSearch(isrc);
       const title = String(p.name ?? "").trim();
-      const titleL = title.toLowerCase();
+      const titleL = foldForSearch(title);
       const artistsArr = p.artist_names ?? [];
       const artists = (artistsArr ?? []).filter(Boolean).join(", ");
-      const artistsL = artists.toLowerCase();
+      const artistsL = foldForSearch(artists);
       const imageUrl = p.album_image_url ?? null;
 
       let score = Infinity;

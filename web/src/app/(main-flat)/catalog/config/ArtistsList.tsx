@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ExternalLink, User } from "lucide-react";
 
 import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
+import { foldForSearch } from "@/lib/searchFold";
 
 type Artist = {
   id: string;
@@ -18,28 +19,13 @@ type ArtistsListProps = {
   searchQuery: string;
 };
 
-// Normalize text for fuzzy matching: remove accents, quotes, convert to lowercase
-function normalizeText(text: string): string {
-  return text
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "") // Remove diacritics
-    .replace(/["'"]/g, "") // Remove quotes
-    .toLowerCase()
-    .trim();
-}
-
-function fuzzyMatch(query: string, text: string): boolean {
-  const normalizedQuery = normalizeText(query);
-  const normalizedText = normalizeText(text);
-  return normalizedText.includes(normalizedQuery);
-}
-
 export function ArtistsList({ artists, searchQuery }: ArtistsListProps) {
   const filteredArtists = useMemo(() => {
     if (!searchQuery.trim()) {
       return artists;
     }
-    return artists.filter((artist) => fuzzyMatch(searchQuery, artist.name));
+    const q = foldForSearch(searchQuery);
+    return artists.filter((artist) => foldForSearch(artist.name).includes(q));
   }, [artists, searchQuery]);
 
   return (

@@ -182,15 +182,18 @@ export function TrackStreamsXYChart({
   const pendingTouchRef = useRef<{ point: ChartDatum; x: number; y: number } | null>(null);
   const pointerTypeRef = useRef<"mouse" | "touch" | "pen" | "unknown">("unknown");
   const suppressNextClickRef = useRef(false);
-  const suppressNextTouchUnfreezeRef = useRef(false);
 
-  const clearLongPress = useCallback(() => {
+  const clearLongPressTimer = useCallback(() => {
     if (longPressTimerRef.current) {
       clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
     }
-    pendingTouchRef.current = null;
   }, []);
+
+  const clearLongPress = useCallback(() => {
+    clearLongPressTimer();
+    pendingTouchRef.current = null;
+  }, [clearLongPressTimer]);
 
   // Clean up on unmount
   useEffect(() => {
@@ -272,30 +275,31 @@ export function TrackStreamsXYChart({
       const y = Number(o?.cy ?? NaN);
       if (!p || !isFinite(x) || !isFinite(y)) return;
 
+      // Cancel any in-flight long-press from a previous touch.
+      clearLongPressTimer();
+
       // Show tooltip immediately on tap (hover equivalent)
       setHovered({ point: p, x, y });
       pendingTouchRef.current = { point: p, x, y };
 
       // Start long-press timer (500ms)
-      clearLongPress();
       longPressTimerRef.current = setTimeout(() => {
         if (pendingTouchRef.current) {
           setFrozen(true);
           // Prevent the synthetic click after long-press from toggling/unpinning.
           suppressNextClickRef.current = true;
-          // Also prevent the touch event from immediately unfreezing.
-          suppressNextTouchUnfreezeRef.current = true;
         }
         longPressTimerRef.current = null;
       }, 500);
     },
-    [frozen, clearLongPress, isFocusMode]
+    [frozen, clearLongPressTimer, isFocusMode]
   );
 
   const handleTouchEnd = useCallback(() => {
-    clearLongPress();
-    suppressNextTouchUnfreezeRef.current = false;
-  }, [clearLongPress]);
+    // Always stop the timer; keep the hovered tooltip visible.
+    clearLongPressTimer();
+    pendingTouchRef.current = null;
+  }, [clearLongPressTimer]);
 
   return (
     <div
@@ -321,11 +325,6 @@ export function TrackStreamsXYChart({
         // If frozen, allow tap anywhere to unpin.
         if (pt === "touch") {
           if (frozen) {
-            // Don't unfreeze if we just froze via long-press (prevents immediate unfreeze)
-            if (suppressNextTouchUnfreezeRef.current) {
-              suppressNextTouchUnfreezeRef.current = false;
-              return;
-            }
             setFrozen(false);
             setHovered(null);
           }
@@ -426,6 +425,7 @@ export function TrackStreamsXYChart({
               // Mobile touch support
               onTouchStart={handleTouchStart}
               onTouchEnd={handleTouchEnd}
+              onTouchCancel={handleTouchEnd}
             />
           ) : null}
           {/* Focus point (always rendered on top when present) */}

@@ -4,6 +4,7 @@ import { useState, useMemo } from "react";
 import { Search, X, Music } from "lucide-react";
 import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
 import { formatInt } from "@/lib/format";
+import { foldForSearch } from "@/lib/searchFold";
 
 type PlaylistRow = {
   playlist_key: string;
@@ -41,10 +42,10 @@ export function PlaylistFilters({ playlists, statsMap }: PlaylistFiltersProps) {
 
     // Filter by search query
     if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase().trim();
+      const query = foldForSearch(searchQuery);
       result = result.filter((p) =>
-        p.display_name.toLowerCase().includes(query) ||
-        p.playlist_key.toLowerCase().includes(query)
+        foldForSearch(p.display_name).includes(query) ||
+        foldForSearch(p.playlist_key).includes(query)
       );
     }
 

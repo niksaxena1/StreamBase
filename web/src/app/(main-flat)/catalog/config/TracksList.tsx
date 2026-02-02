@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import Link from "next/link";
 
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
+import { foldForSearch } from "@/lib/searchFold";
 
 type Track = {
   isrc: string;
@@ -20,22 +21,6 @@ type TracksListProps = {
   searchQuery: string;
 };
 
-// Normalize text for fuzzy matching: remove accents, quotes, convert to lowercase
-function normalizeText(text: string): string {
-  return text
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "") // Remove diacritics
-    .replace(/["'"]/g, "") // Remove quotes
-    .toLowerCase()
-    .trim();
-}
-
-function fuzzyMatch(query: string, text: string): boolean {
-  const normalizedQuery = normalizeText(query);
-  const normalizedText = normalizeText(text);
-  return normalizedText.includes(normalizedQuery);
-}
-
 export function TracksList({ tracks, searchQuery }: TracksListProps) {
   const filteredTracks = useMemo(() => {
     if (!searchQuery.trim()) {
@@ -47,13 +32,13 @@ export function TracksList({ tracks, searchQuery }: TracksListProps) {
     
     return tracks.filter((track) => {
       const trackName = track.name ?? track.isrc;
-      const normalizedTrackName = normalizeText(trackName);
+      const normalizedTrackName = foldForSearch(trackName);
       const artistNamesText = (track.artistNames ?? []).join(" ");
-      const normalizedArtistNames = normalizeText(artistNamesText);
+      const normalizedArtistNames = foldForSearch(artistNamesText);
       
       // Check if all query parts match either the track name or artist names
       return queryParts.every((part) => {
-        const normalizedPart = normalizeText(part);
+        const normalizedPart = foldForSearch(part);
         return normalizedTrackName.includes(normalizedPart) || 
                normalizedArtistNames.includes(normalizedPart);
       });
