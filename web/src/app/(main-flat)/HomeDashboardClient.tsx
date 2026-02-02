@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
-import { Download, Music } from "lucide-react";
+import { useDeferredValue, useMemo, useState } from "react";
+import { Download, Music, Search, X } from "lucide-react";
 
 import { MetricProvider, useMetric } from "@/components/metrics/MetricContext";
 import { MetricSelector } from "@/components/metrics/MetricSelector";
@@ -87,10 +87,53 @@ function HomeDashboardInner(props: {
   const { metric, setMetric } = useMetric();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
   const [selectedChart, setSelectedChart] = useState<"daily" | "total">("daily");
+  const [scatterQuery, setScatterQuery] = useState("");
+  const deferredScatterQuery = useDeferredValue(scatterQuery);
+  const [scatterFocusIsrc, setScatterFocusIsrc] = useState<string | null>(null);
 
   const scatterMode = metric === "revenue" ? "revenue" : "streams";
   const scatterTitle =
     scatterMode === "revenue" ? "Tracks: Δ1d vs Total Revenue" : "Tracks: Δ1d vs Total Streams";
+
+  const scatterMatches = useMemo(() => {
+    const q = (deferredScatterQuery ?? "").trim().toLowerCase();
+    if (!q) return [];
+
+    // Keep it snappy: only compute suggestions for >= 2 chars unless it looks like an ISRC.
+    const looksLikeIsrc = /^[a-z0-9]{6,}$/.test(q);
+    if (!looksLikeIsrc && q.length < 2) return [];
+
+    const out: Array<{ isrc: string; name: string; artists: string; imageUrl: string | null; score: number }> = [];
+    for (const p of props.trackScatterPoints ?? []) {
+      if (!p?.isrc) continue;
+      const isrc = String(p.isrc);
+      const isrcL = isrc.toLowerCase();
+      const title = String(p.name ?? "").trim();
+      const titleL = title.toLowerCase();
+      const artistsArr = p.artist_names ?? [];
+      const artists = (artistsArr ?? []).filter(Boolean).join(", ");
+      const artistsL = artists.toLowerCase();
+      const imageUrl = p.album_image_url ?? null;
+
+      let score = Infinity;
+      if (isrcL === q) score = 0;
+      else if (isrcL.startsWith(q)) score = 1;
+      else if (titleL === q) score = 2;
+      else if (titleL.startsWith(q)) score = 3;
+      else if (titleL.includes(q)) score = 4;
+      else if (artistsL.includes(q)) score = 5;
+      else continue;
+
+      out.push({ isrc, name: title || isrc, artists, imageUrl, score });
+      if (out.length > 50) break;
+    }
+
+    out.sort((a, b) => a.score - b.score || a.name.localeCompare(b.name));
+    return out.slice(0, 8);
+  }, [deferredScatterQuery, props.trackScatterPoints]);
+
+  const showScatterDropdown =
+    !scatterFocusIsrc && (scatterQuery ?? "").trim().length > 0 && scatterMatches.length > 0;
 
   const series = useMemo(() => {
     const desc = props.history ?? [];
@@ -386,11 +429,115 @@ function HomeDashboardInner(props: {
           className="rounded-xl border bg-white/50 p-3 dark:bg-white/[0.03]"
           style={{ borderColor: "var(--sb-border)" }}
         >
+          {/* Track search (focus mode) */}
+          <div className="mb-3">
+            <div className="relative">
+              <div
+                className="sb-ring flex items-center gap-2 rounded-lg bg-white/60 px-3 py-2 dark:bg-white/10"
+                style={{ borderColor: "var(--sb-border)" }}
+              >
+                <Search className="h-4 w-4 opacity-60" style={{ color: "var(--sb-muted)" }} />
+                <input
+                  value={scatterQuery}
+                  onChange={(e) => setScatterQuery(e.target.value)}
+                  onFocus={() => {
+                    // If a track is selected, focusing the input should immediately
+                    // put you back into “search another track” mode.
+                    if (scatterFocusIsrc) {
+                      setScatterFocusIsrc(null);
+                      setScatterQuery("");
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      const first = scatterMatches[0];
+                      if (first?.isrc) {
+                        setScatterFocusIsrc(first.isrc);
+                        setScatterQuery(first.name || first.isrc);
+                      }
+                    }
+                    if (e.key === "Escape") {
+                      setScatterFocusIsrc(null);
+                      setScatterQuery("");
+                    }
+                  }}
+                  placeholder="Search track (title, artist, ISRC)…"
+                  className="w-full bg-transparent text-xs outline-none placeholder:opacity-60"
+                  style={{ color: "var(--sb-text)" }}
+                />
+                {(scatterQuery || scatterFocusIsrc) ? (
+                  <button
+                    type="button"
+                    className="rounded p-1 transition hover:bg-black/5 dark:hover:bg-white/10"
+                    onClick={() => {
+                      setScatterFocusIsrc(null);
+                      setScatterQuery("");
+                    }}
+                    title="Clear"
+                    aria-label="Clear"
+                  >
+                    <X className="h-4 w-4" style={{ color: "var(--sb-muted)" }} />
+                  </button>
+                ) : null}
+              </div>
+
+              {showScatterDropdown ? (
+                <div
+                  className="absolute left-0 right-0 top-[calc(100%+6px)] z-20 overflow-hidden rounded-lg border bg-white/90 shadow-lg backdrop-blur dark:bg-black/60"
+                  style={{ borderColor: "var(--sb-border)" }}
+                >
+                  {scatterMatches.map((m) => (
+                    <button
+                      key={m.isrc}
+                      type="button"
+                      className="flex w-full items-start gap-2 px-3 py-2 text-left text-xs transition hover:bg-black/5 dark:hover:bg-white/10"
+                      onClick={() => {
+                        setScatterFocusIsrc(m.isrc);
+                        setScatterQuery(m.name || m.isrc);
+                      }}
+                    >
+                      {m.imageUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={m.imageUrl}
+                          alt=""
+                          className="mt-0.5 h-8 w-8 rounded-md object-cover sb-ring"
+                        />
+                      ) : (
+                        <div className="mt-0.5 h-8 w-8 rounded-md sb-ring bg-white/60 dark:bg-white/10" />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate font-medium" style={{ color: "var(--sb-text)" }}>
+                          {m.name}
+                        </div>
+                        {m.artists ? (
+                          <div className="truncate text-[11px] opacity-70" style={{ color: "var(--sb-muted)" }}>
+                            {m.artists}
+                          </div>
+                        ) : null}
+                      </div>
+                      <div className="shrink-0 font-mono text-[11px] opacity-60" style={{ color: "var(--sb-muted)" }}>
+                        {m.isrc}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+
+            {scatterFocusIsrc ? (
+              <div className="mt-2 text-[11px] opacity-70" style={{ color: "var(--sb-muted)" }}>
+                Focus mode: showing <span className="font-mono">{scatterFocusIsrc}</span>
+              </div>
+            ) : null}
+          </div>
+
           {props.trackScatterPoints?.length ? (
             <TrackStreamsXYChart
               points={props.trackScatterPoints}
               mode={scatterMode}
               payoutPerStreamUsd={streamPayoutPerStreamUsd}
+              focusIsrc={scatterFocusIsrc}
             />
           ) : (
             <div className="py-10 text-center text-xs" style={{ color: "var(--sb-muted)" }}>

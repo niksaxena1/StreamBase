@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type MouseEvent as ReactMouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { CartesianGrid, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis } from "recharts";
 
 import { formatInt, formatUsd, formatUsd2 } from "@/lib/format";
@@ -24,6 +24,15 @@ type ChartDatum = TrackStreamsXYPoint & {
   x_value: number;
   y_value: number;
 };
+
+function hexToRgba(hex: string, alpha: number): string {
+  const h = (hex ?? "").trim().replace("#", "");
+  if (h.length !== 6) return `rgba(0,0,0,${alpha})`;
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
 
 function CustomTooltip({
   point,
@@ -91,11 +100,11 @@ function CustomTooltip({
       style={{
         backgroundColor: "var(--sb-card)",
         backgroundImage: frozen
-          ? `radial-gradient(80% 70% at 25% 20%, ${accentColor}26 0%, transparent 55%), radial-gradient(70% 60% at 85% 85%, ${accentColor}18 0%, transparent 60%)`
+          ? `radial-gradient(80% 70% at 25% 20%, ${hexToRgba(accentColor, 0.18)} 0%, transparent 55%), radial-gradient(70% 60% at 85% 85%, ${hexToRgba(accentColor, 0.12)} 0%, transparent 60%)`
           : undefined,
-        borderColor: frozen ? `${accentColor}AA` : "var(--sb-border)",
+        borderColor: frozen ? hexToRgba(accentColor, 0.7) : "var(--sb-border)",
         boxShadow: frozen
-          ? `0 0 0 1px ${accentColor}AA, 0 10px 30px ${accentColor}26, var(--sb-shadow-compact)`
+          ? `0 0 0 1px ${hexToRgba(accentColor, 0.7)}, 0 10px 30px ${hexToRgba(accentColor, 0.18)}, var(--sb-shadow-compact)`
           : "var(--sb-shadow-compact)",
         color: "var(--sb-text)",
       }}
@@ -451,6 +460,9 @@ export function TrackStreamsXYChart({
           style={{ pointerEvents: "auto" }}
           onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+          onPointerUp={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
           onTouchEnd={(e) => e.stopPropagation()}
         >
           <CustomTooltip
@@ -473,6 +485,9 @@ export function TrackStreamsXYChart({
           }}
           onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+          onPointerUp={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
           onTouchEnd={(e) => e.stopPropagation()}
         >
           <CustomTooltip
