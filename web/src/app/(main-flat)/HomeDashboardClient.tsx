@@ -16,6 +16,7 @@ import { Alert } from "@/components/ui/Alert";
 import { hrefWithPatchedSearchParams } from "@/lib/searchParams";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { TrackStreamsXYChart, type TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChart";
+import { ArtistStreamsXYChart, aggregateTracksToArtists } from "@/components/charts/ArtistStreamsXYChart";
 import { DatePicker } from "@/components/ui/DatePicker";
 import { foldForSearch } from "@/lib/searchFold";
 
@@ -91,18 +92,33 @@ function HomeDashboardInner(props: {
   const [scatterQuery, setScatterQuery] = useState("");
   const deferredScatterQuery = useDeferredValue(scatterQuery);
   const [scatterFocusIsrc, setScatterFocusIsrc] = useState<string | null>(null);
+  const [scatterFocusArtistId, setScatterFocusArtistId] = useState<string | null>(null);
   const [scatterSearchFocused, setScatterSearchFocused] = useState(false);
   const [scatterLogScale, setScatterLogScale] = useState(false);
+  const [scatterView, setScatterView] = useState<"tracks" | "artists">("tracks");
 
   const scatterMode = metric === "revenue" ? "revenue" : "streams";
   const scatterTitle =
-    scatterMode === "revenue" ? "Tracks: Total vs Daily Revenue" : "Tracks: Total vs Daily Streams";
+    scatterView === "artists"
+      ? scatterMode === "revenue"
+        ? "Artists: Total vs Daily Revenue"
+        : "Artists: Total vs Daily Streams"
+      : scatterMode === "revenue"
+        ? "Tracks: Total vs Daily Revenue"
+        : "Tracks: Total vs Daily Streams";
 
-  const scatterMatches = useMemo(() => {
+  // Aggregate tracks to artists for artist view
+  const artistScatterPoints = useMemo(() => {
+    if (scatterView !== "artists") return [];
+    return aggregateTracksToArtists(props.trackScatterPoints ?? []);
+  }, [props.trackScatterPoints, scatterView]);
+
+  // Track search matches
+  const scatterTrackMatches = useMemo(() => {
+    if (scatterView !== "tracks") return [];
     const q = foldForSearch(deferredScatterQuery ?? "");
     if (!q) return [];
 
-    // Keep it snappy: only compute suggestions for >= 2 chars unless it looks like an ISRC.
     const looksLikeIsrc = /^[a-z0-9]{6,}$/.test(q);
     if (!looksLikeIsrc && q.length < 2) return [];
 
@@ -133,13 +149,38 @@ function HomeDashboardInner(props: {
 
     out.sort((a, b) => a.score - b.score || a.name.localeCompare(b.name));
     return out.slice(0, 8);
-  }, [deferredScatterQuery, props.trackScatterPoints]);
+  }, [deferredScatterQuery, props.trackScatterPoints, scatterView]);
+
+  // Artist search matches
+  const scatterArtistMatches = useMemo(() => {
+    if (scatterView !== "artists") return [];
+    const q = foldForSearch(deferredScatterQuery ?? "");
+    if (!q || q.length < 2) return [];
+
+    const out: Array<{ artistId: string; name: string; trackCount: number; score: number }> = [];
+    for (const a of artistScatterPoints) {
+      const nameL = foldForSearch(a.artist_name);
+
+      let score = Infinity;
+      if (nameL === q) score = 0;
+      else if (nameL.startsWith(q)) score = 1;
+      else if (nameL.includes(q)) score = 2;
+      else continue;
+
+      out.push({ artistId: a.artist_id, name: a.artist_name, trackCount: a.track_count, score });
+      if (out.length > 50) break;
+    }
+
+    out.sort((a, b) => a.score - b.score || a.name.localeCompare(b.name));
+    return out.slice(0, 8);
+  }, [deferredScatterQuery, artistScatterPoints, scatterView]);
 
   const showScatterDropdown =
     scatterSearchFocused &&
     !scatterFocusIsrc &&
+    !scatterFocusArtistId &&
     (scatterQuery ?? "").trim().length > 0 &&
-    scatterMatches.length > 0;
+    (scatterTrackMatches.length > 0 || scatterArtistMatches.length > 0);
 
   const series = useMemo(() => {
     const desc = props.history ?? [];
@@ -389,7 +430,7 @@ function HomeDashboardInner(props: {
         </Alert>
       ) : null}
 
-      {/* Track XY scatter */}
+      {/* Track/Artist XY scatter */}
       <div className="space-y-2">
         <div className="flex items-baseline justify-between gap-3">
           <h2 className="text-sm font-semibold tracking-tight">{scatterTitle}</h2>
@@ -401,6 +442,43 @@ function HomeDashboardInner(props: {
               {scatterMode === "revenue" ? "X: total revenue • Y: daily revenue" : "X: total streams • Y: daily streams"}
             </div>
             <div className="flex items-center gap-2">
+              {/* Tracks / Artists toggle */}
+              <div className="flex items-center rounded-full bg-black/5 p-0.5 dark:bg-white/10">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScatterView("tracks");
+                    setScatterFocusIsrc(null);
+                    setScatterFocusArtistId(null);
+                    setScatterQuery("");
+                  }}
+                  className={[
+                    "rounded-full px-2 py-1 text-[11px] font-medium transition",
+                    scatterView === "tracks"
+                      ? "bg-black text-white dark:bg-white dark:text-black"
+                      : "text-black/70 hover:bg-white/50 dark:text-white/70 dark:hover:bg-white/20",
+                  ].join(" ")}
+                >
+                  Tracks
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScatterView("artists");
+                    setScatterFocusIsrc(null);
+                    setScatterFocusArtistId(null);
+                    setScatterQuery("");
+                  }}
+                  className={[
+                    "rounded-full px-2 py-1 text-[11px] font-medium transition",
+                    scatterView === "artists"
+                      ? "bg-black text-white dark:bg-white dark:text-black"
+                      : "text-black/70 hover:bg-white/50 dark:text-white/70 dark:hover:bg-white/20",
+                  ].join(" ")}
+                >
+                  Artists
+                </button>
+              </div>
               <button
                 type="button"
                 onClick={() => setScatterLogScale((v) => !v)}
@@ -437,7 +515,7 @@ function HomeDashboardInner(props: {
           className="rounded-xl border bg-white/50 p-3 dark:bg-white/[0.03]"
           style={{ borderColor: "var(--sb-border)" }}
         >
-          {/* Track search (focus mode) */}
+          {/* Search (focus mode) */}
           <div className="mb-3">
             <div className="relative">
               <div
@@ -450,39 +528,50 @@ function HomeDashboardInner(props: {
                   onChange={(e) => setScatterQuery(e.target.value)}
                   onFocus={() => {
                     setScatterSearchFocused(true);
-                    // If a track is selected, focusing the input should immediately
-                    // put you back into "search another track" mode.
-                    if (scatterFocusIsrc) {
+                    // If something is selected, focusing the input should clear it.
+                    if (scatterFocusIsrc || scatterFocusArtistId) {
                       setScatterFocusIsrc(null);
+                      setScatterFocusArtistId(null);
                       setScatterQuery("");
                     }
                   }}
                   onBlur={() => setScatterSearchFocused(false)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
-                      const first = scatterMatches[0];
-                      if (first?.isrc) {
-                        setScatterFocusIsrc(first.isrc);
-                        setScatterQuery(first.name || first.isrc);
-                        setScatterSearchFocused(false);
+                      if (scatterView === "tracks") {
+                        const first = scatterTrackMatches[0];
+                        if (first?.isrc) {
+                          setScatterFocusIsrc(first.isrc);
+                          setScatterQuery(first.name || first.isrc);
+                          setScatterSearchFocused(false);
+                        }
+                      } else {
+                        const first = scatterArtistMatches[0];
+                        if (first?.artistId) {
+                          setScatterFocusArtistId(first.artistId);
+                          setScatterQuery(first.name);
+                          setScatterSearchFocused(false);
+                        }
                       }
                     }
                     if (e.key === "Escape") {
                       setScatterFocusIsrc(null);
+                      setScatterFocusArtistId(null);
                       setScatterQuery("");
                       setScatterSearchFocused(false);
                     }
                   }}
-                  placeholder="Search track (title, artist, ISRC)…"
+                  placeholder={scatterView === "tracks" ? "Search track (title, artist, ISRC)…" : "Search artist…"}
                   className="w-full bg-transparent text-xs outline-none placeholder:opacity-60"
                   style={{ color: "var(--sb-text)" }}
                 />
-                {(scatterQuery || scatterFocusIsrc) ? (
+                {(scatterQuery || scatterFocusIsrc || scatterFocusArtistId) ? (
                   <button
                     type="button"
                     className="rounded p-1 transition hover:bg-black/5 dark:hover:bg-white/10"
                     onClick={() => {
                       setScatterFocusIsrc(null);
+                      setScatterFocusArtistId(null);
                       setScatterQuery("");
                     }}
                     title="Clear"
@@ -498,46 +587,68 @@ function HomeDashboardInner(props: {
                   className="absolute left-0 right-0 top-[calc(100%+6px)] z-20 overflow-hidden rounded-lg border bg-white/90 shadow-lg backdrop-blur dark:bg-black/60"
                   style={{ borderColor: "var(--sb-border)" }}
                 >
-                  {scatterMatches.map((m) => (
-                    <button
-                      key={m.isrc}
-                      type="button"
-                      className="flex w-full items-start gap-2 px-3 py-2 text-left text-xs transition hover:bg-black/5 dark:hover:bg-white/10"
-                      onMouseDown={(e) => {
-                        // Keep the input focused so the click registers and we can close cleanly.
-                        e.preventDefault();
-                      }}
-                      onClick={() => {
-                        setScatterFocusIsrc(m.isrc);
-                        setScatterQuery(m.name || m.isrc);
-                        setScatterSearchFocused(false);
-                      }}
-                    >
-                      {m.imageUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={m.imageUrl}
-                          alt=""
-                          className="mt-0.5 h-8 w-8 rounded-md object-cover sb-ring"
-                        />
-                      ) : (
-                        <div className="mt-0.5 h-8 w-8 rounded-md sb-ring bg-white/60 dark:bg-white/10" />
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate font-medium" style={{ color: "var(--sb-text)" }}>
-                          {m.name}
-                        </div>
-                        {m.artists ? (
-                          <div className="truncate text-[11px] opacity-70" style={{ color: "var(--sb-muted)" }}>
-                            {m.artists}
+                  {scatterView === "tracks" ? (
+                    scatterTrackMatches.map((m) => (
+                      <button
+                        key={m.isrc}
+                        type="button"
+                        className="flex w-full items-start gap-2 px-3 py-2 text-left text-xs transition hover:bg-black/5 dark:hover:bg-white/10"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          setScatterFocusIsrc(m.isrc);
+                          setScatterQuery(m.name || m.isrc);
+                          setScatterSearchFocused(false);
+                        }}
+                      >
+                        {m.imageUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={m.imageUrl}
+                            alt=""
+                            className="mt-0.5 h-8 w-8 rounded-md object-cover sb-ring"
+                          />
+                        ) : (
+                          <div className="mt-0.5 h-8 w-8 rounded-md sb-ring bg-white/60 dark:bg-white/10" />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate font-medium" style={{ color: "var(--sb-text)" }}>
+                            {m.name}
                           </div>
-                        ) : null}
-                      </div>
-                      <div className="shrink-0 font-mono text-[11px] opacity-60" style={{ color: "var(--sb-muted)" }}>
-                        {m.isrc}
-                      </div>
-                    </button>
-                  ))}
+                          {m.artists ? (
+                            <div className="truncate text-[11px] opacity-70" style={{ color: "var(--sb-muted)" }}>
+                              {m.artists}
+                            </div>
+                          ) : null}
+                        </div>
+                        <div className="shrink-0 font-mono text-[11px] opacity-60" style={{ color: "var(--sb-muted)" }}>
+                          {m.isrc}
+                        </div>
+                      </button>
+                    ))
+                  ) : (
+                    scatterArtistMatches.map((m) => (
+                      <button
+                        key={m.artistId}
+                        type="button"
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition hover:bg-black/5 dark:hover:bg-white/10"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          setScatterFocusArtistId(m.artistId);
+                          setScatterQuery(m.name);
+                          setScatterSearchFocused(false);
+                        }}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate font-medium" style={{ color: "var(--sb-text)" }}>
+                            {m.name}
+                          </div>
+                          <div className="truncate text-[11px] opacity-70" style={{ color: "var(--sb-muted)" }}>
+                            {m.trackCount} track{m.trackCount !== 1 ? "s" : ""}
+                          </div>
+                        </div>
+                      </button>
+                    ))
+                  )}
                 </div>
               ) : null}
             </div>
@@ -547,30 +658,62 @@ function HomeDashboardInner(props: {
                 Focus mode: showing <span className="font-mono">{scatterFocusIsrc}</span>
               </div>
             ) : null}
+            {scatterFocusArtistId ? (
+              <div className="mt-2 text-[11px] opacity-70" style={{ color: "var(--sb-muted)" }}>
+                Focus mode: showing artist
+              </div>
+            ) : null}
           </div>
 
-          {props.trackScatterPoints?.length ? (
-            <TrackStreamsXYChart
-              points={props.trackScatterPoints}
-              mode={scatterMode}
-              payoutPerStreamUsd={streamPayoutPerStreamUsd}
-              focusIsrc={scatterFocusIsrc}
-              logScale={scatterLogScale}
-              topNDelta={scatterLogScale ? 750 : 100}
-              topNCumulative={scatterLogScale ? 750 : 100}
-              sampleN={scatterLogScale ? 0 : 80}
-              onClearFocus={() => {
-                setScatterFocusIsrc(null);
-                setScatterQuery("");
-                // Don't reopen the dropdown immediately.
-                setScatterSearchFocused(false);
-              }}
-            />
-          ) : (
-            <div className="py-10 text-center text-xs" style={{ color: "var(--sb-muted)" }}>
-              No track points available yet.
-            </div>
-          )}
+          {/* Tracks chart */}
+          {scatterView === "tracks" ? (
+            props.trackScatterPoints?.length ? (
+              <TrackStreamsXYChart
+                points={props.trackScatterPoints}
+                mode={scatterMode}
+                payoutPerStreamUsd={streamPayoutPerStreamUsd}
+                focusIsrc={scatterFocusIsrc}
+                logScale={scatterLogScale}
+                topNDelta={scatterLogScale ? 750 : 100}
+                topNCumulative={scatterLogScale ? 750 : 100}
+                sampleN={scatterLogScale ? 0 : 80}
+                onClearFocus={() => {
+                  setScatterFocusIsrc(null);
+                  setScatterQuery("");
+                  setScatterSearchFocused(false);
+                }}
+              />
+            ) : (
+              <div className="py-10 text-center text-xs" style={{ color: "var(--sb-muted)" }}>
+                No track points available yet.
+              </div>
+            )
+          ) : null}
+
+          {/* Artists chart */}
+          {scatterView === "artists" ? (
+            artistScatterPoints.length ? (
+              <ArtistStreamsXYChart
+                points={artistScatterPoints}
+                mode={scatterMode}
+                payoutPerStreamUsd={streamPayoutPerStreamUsd}
+                focusArtistId={scatterFocusArtistId}
+                logScale={scatterLogScale}
+                topNDelta={scatterLogScale ? 300 : 100}
+                topNCumulative={scatterLogScale ? 300 : 100}
+                sampleN={scatterLogScale ? 0 : 80}
+                onClearFocus={() => {
+                  setScatterFocusArtistId(null);
+                  setScatterQuery("");
+                  setScatterSearchFocused(false);
+                }}
+              />
+            ) : (
+              <div className="py-10 text-center text-xs" style={{ color: "var(--sb-muted)" }}>
+                No artist points available yet.
+              </div>
+            )
+          ) : null}
         </div>
       </div>
 
