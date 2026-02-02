@@ -182,6 +182,7 @@ export function TrackStreamsXYChart({
   const pendingTouchRef = useRef<{ point: ChartDatum; x: number; y: number } | null>(null);
   const pointerTypeRef = useRef<"mouse" | "touch" | "pen" | "unknown">("unknown");
   const suppressNextClickRef = useRef(false);
+  const suppressNextTouchUnfreezeRef = useRef(false);
 
   const clearLongPress = useCallback(() => {
     if (longPressTimerRef.current) {
@@ -282,6 +283,8 @@ export function TrackStreamsXYChart({
           setFrozen(true);
           // Prevent the synthetic click after long-press from toggling/unpinning.
           suppressNextClickRef.current = true;
+          // Also prevent the touch event from immediately unfreezing.
+          suppressNextTouchUnfreezeRef.current = true;
         }
         longPressTimerRef.current = null;
       }, 500);
@@ -291,6 +294,7 @@ export function TrackStreamsXYChart({
 
   const handleTouchEnd = useCallback(() => {
     clearLongPress();
+    suppressNextTouchUnfreezeRef.current = false;
   }, [clearLongPress]);
 
   return (
@@ -317,6 +321,11 @@ export function TrackStreamsXYChart({
         // If frozen, allow tap anywhere to unpin.
         if (pt === "touch") {
           if (frozen) {
+            // Don't unfreeze if we just froze via long-press (prevents immediate unfreeze)
+            if (suppressNextTouchUnfreezeRef.current) {
+              suppressNextTouchUnfreezeRef.current = false;
+              return;
+            }
             setFrozen(false);
             setHovered(null);
           }
