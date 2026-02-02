@@ -153,6 +153,7 @@ export function TrackStreamsXYChart({
   topNDelta = 100,
   topNCumulative = 100,
   sampleN = 80,
+  focusIsrc = null,
 }: {
   points: TrackStreamsXYPoint[];
   mode?: Mode;
@@ -162,6 +163,7 @@ export function TrackStreamsXYChart({
   topNDelta?: number;
   topNCumulative?: number;
   sampleN?: number;
+  focusIsrc?: string | null;
 }) {
   const [hovered, setHovered] = useState<{ point: ChartDatum; x: number; y: number } | null>(null);
   const [frozen, setFrozen] = useState(false);
@@ -185,7 +187,7 @@ export function TrackStreamsXYChart({
     return () => clearLongPress();
   }, [clearLongPress]);
 
-  const { topData, sampledData, hiddenCount } = useMemo(() => {
+  const { allData, topData, sampledData, hiddenCount } = useMemo(() => {
     // Filter out obviously bad points (keeps chart stable)
     const base = (points ?? []).filter(
       (p) =>
@@ -233,18 +235,27 @@ export function TrackStreamsXYChart({
       }
     }
 
-    return { topData: top, sampledData: sampled, hiddenCount: rest.length };
+    return { allData: all, topData: top, sampledData: sampled, hiddenCount: rest.length };
   }, [mode, payoutPerStreamUsd, points, topNDelta, topNCumulative, sampleN]);
 
   const dotColor = color ?? (mode === "revenue" ? "#10b981" : "#c7f33c");
+  const mutedDotColor = "rgba(148, 163, 184, 0.7)"; // slate-ish
   const fmtAxisTick = (n: number) => {
     if (mode === "revenue") return formatUsdCompact(n, formatUsd);
     return formatKmbTick(n);
   };
 
+  const focusPoint = useMemo(() => {
+    const isrc = (focusIsrc ?? "").trim();
+    if (!isrc) return null;
+    return allData.find((d) => d.isrc === isrc) ?? null;
+  }, [allData, focusIsrc]);
+  const isFocusMode = Boolean(focusPoint);
+
   // Handle touch start for long-press detection
   const handleTouchStart = useCallback(
     (o: any) => {
+      if (isFocusMode) return;
       if (frozen) return;
       const p = (o?.payload ?? null) as ChartDatum | null;
       const x = Number(o?.cx ?? NaN);
@@ -266,7 +277,7 @@ export function TrackStreamsXYChart({
         longPressTimerRef.current = null;
       }, 500);
     },
-    [frozen, clearLongPress]
+    [frozen, clearLongPress, isFocusMode]
   );
 
   const handleTouchEnd = useCallback(() => {
@@ -285,6 +296,7 @@ export function TrackStreamsXYChart({
         pointerTypeRef.current = (e.pointerType as any) || "unknown";
       }}
       onClick={() => {
+        if (isFocusMode) return;
         if (suppressNextClickRef.current) {
           suppressNextClickRef.current = false;
           return;
@@ -345,42 +357,81 @@ export function TrackStreamsXYChart({
           {sampledData.length > 0 ? (
             <Scatter
               data={sampledData}
-              fill={dotColor}
+              fill={isFocusMode ? mutedDotColor : dotColor}
               stroke="none"
               strokeWidth={0}
-              opacity={0.25}
+              opacity={isFocusMode ? 0.18 : 0.25}
               isAnimationActive={false}
               shape={(props: any) => {
                 const { cx, cy } = props;
-                return <circle cx={cx} cy={cy} r={3} fill={dotColor} fillOpacity={0.25} />;
+                const c = isFocusMode ? mutedDotColor : dotColor;
+                const o = isFocusMode ? 0.18 : 0.25;
+                return <circle cx={cx} cy={cy} r={3} fill={c} fillOpacity={o} />;
+              }}
+            />
+          ) : null}
+          {/* In focus mode: also render the top set as muted (non-interactive). */}
+          {isFocusMode && topData.length > 0 ? (
+            <Scatter
+              data={topData.filter((d) => d.isrc !== focusPoint?.isrc)}
+              fill={mutedDotColor}
+              stroke="none"
+              strokeWidth={0}
+              opacity={0.22}
+              isAnimationActive={false}
+              shape={(props: any) => {
+                const { cx, cy } = props;
+                return <circle cx={cx} cy={cy} r={4} fill={mutedDotColor} fillOpacity={0.22} />;
               }}
             />
           ) : null}
           {/* Top-N interactive dots */}
-          <Scatter
-            data={topData}
-            fill={dotColor}
-            stroke="var(--sb-bg)"
-            strokeWidth={1}
-            opacity={0.85}
-            onMouseEnter={(o: any) => {
-              if (frozen) return;
-              const p = (o?.payload ?? null) as ChartDatum | null;
-              const x = Number(o?.cx ?? NaN);
-              const y = Number(o?.cy ?? NaN);
-              if (!p || !isFinite(x) || !isFinite(y)) return;
-              setHovered({ point: p, x, y });
-            }}
-            onMouseLeave={() => {
-              if (frozen) return;
-              setHovered(null);
-            }}
-            // Mobile touch support
-            // @ts-expect-error Recharts doesn't type onTouchStart but it works
-            onTouchStart={handleTouchStart}
-            // @ts-expect-error Recharts doesn't type onTouchEnd but it works
-            onTouchEnd={handleTouchEnd}
-          />
+          {!isFocusMode ? (
+            <Scatter
+              data={topData}
+              fill={dotColor}
+              stroke="var(--sb-bg)"
+              strokeWidth={1}
+              opacity={0.85}
+              onMouseEnter={(o: any) => {
+                if (frozen) return;
+                const p = (o?.payload ?? null) as ChartDatum | null;
+                const x = Number(o?.cx ?? NaN);
+                const y = Number(o?.cy ?? NaN);
+                if (!p || !isFinite(x) || !isFinite(y)) return;
+                setHovered({ point: p, x, y });
+              }}
+              onMouseLeave={() => {
+                if (frozen) return;
+                setHovered(null);
+              }}
+              // Mobile touch support
+              onTouchStart={handleTouchStart}
+              onTouchEnd={handleTouchEnd}
+            />
+          ) : null}
+          {/* Focus point (always rendered on top when present) */}
+          {focusPoint ? (
+            <Scatter
+              data={[focusPoint]}
+              fill={dotColor}
+              stroke="var(--sb-bg)"
+              strokeWidth={1}
+              opacity={1}
+              isAnimationActive={false}
+              shape={(props: any) => {
+                const { cx, cy } = props;
+                // Premium-ish glow: a soft outer circle + crisp inner dot.
+                return (
+                  <g>
+                    <circle cx={cx} cy={cy} r={10} fill={dotColor} fillOpacity={0.18} />
+                    <circle cx={cx} cy={cy} r={6} fill={dotColor} fillOpacity={0.95} />
+                    <circle cx={cx} cy={cy} r={6} fill="none" stroke="var(--sb-bg)" strokeWidth={1} />
+                  </g>
+                );
+              }}
+            />
+          ) : null}
         </ScatterChart>
       </ResponsiveContainer>
 
@@ -393,7 +444,26 @@ export function TrackStreamsXYChart({
         </div>
       ) : null}
 
-      {hovered ? (
+      {/* Focus mode: keep the selected tooltip visible & clickable */}
+      {focusPoint ? (
+        <div
+          className="absolute right-3 top-3 z-10 max-w-[320px]"
+          style={{ pointerEvents: "auto" }}
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+          onTouchEnd={(e) => e.stopPropagation()}
+        >
+          <CustomTooltip
+            point={focusPoint}
+            mode={mode}
+            payoutPerStreamUsd={payoutPerStreamUsd}
+            accentColor={dotColor}
+            frozen={true}
+          />
+        </div>
+      ) : null}
+
+      {hovered && !focusPoint ? (
         <div
           className="absolute z-10"
           style={{
