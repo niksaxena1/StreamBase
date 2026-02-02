@@ -683,6 +683,7 @@ function HomeDashboardInner(props: {
         valueFormat={series.valueFormat}
         yTickFormat={series.yTickFormat}
         color={series.color}
+        accentColor={series.color}
         selectedChart={selectedChart}
         onSelectChart={setSelectedChart}
       />

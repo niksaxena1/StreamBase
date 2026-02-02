@@ -28,6 +28,7 @@ type InteractiveChartSectionProps = {
   valueFormat?: "int" | "usd";
   yTickFormat?: "k" | "int" | "usd_compact";
   color?: string;
+  accentColor?: string; // Accent color for stat cards
   /**
    * Optional controlled mode for which chart is selected.
    * If omitted, the component manages its own state.
@@ -51,6 +52,7 @@ export function InteractiveChartSection({
   valueFormat = "int",
   yTickFormat = "k",
   color = "#c7f33c",
+  accentColor,
   selectedChart: selectedChartProp,
   onSelectChart,
 }: InteractiveChartSectionProps) {
@@ -88,6 +90,7 @@ export function InteractiveChartSection({
             value={<AnimatedCounter value={totalStreamsValue} format={valueFormat} />}
             subtitle="Lifetime"
             accent={selectedChart === "total"}
+            accentColor={accentColor}
             trendData={totalStreamsData.map((d) => d.value).slice(0, 30).reverse()}
           />
         </button>
@@ -101,6 +104,7 @@ export function InteractiveChartSection({
             value={<AnimatedCounter value={dailyStreamsValue} format={valueFormat} />}
             subtitle={`${rangeDays}d view`}
             accent={selectedChart === "daily"}
+            accentColor={accentColor}
             trend="up"
             trendData={dailyStreamsData.map((d) => d.value).slice(0, 30).reverse()}
           />

@@ -6,10 +6,12 @@ export function Sparkline({
   data,
   trend = "neutral",
   className,
+  color,
 }: {
   data?: number[];
   trend?: "up" | "down" | "neutral";
   className?: string;
+  color?: string; // Custom color for the sparkline
 }) {
   const gid = useId();
 
@@ -32,11 +34,11 @@ export function Sparkline({
     const pathD = `M ${points.join(" L ")}`;
     const areaPath = `${pathD} L ${width - padding},${height - padding} L ${padding},${height - padding} Z`;
 
-    // Determine color based on trend direction
+    // Determine color based on trend direction or custom color
     const first = data[0];
     const last = data[data.length - 1];
     const isUp = last > first;
-    const color = isUp ? "#c7f33c" : trend === "down" ? "#ff4d4d" : "currentColor";
+    const lineColor = color || (isUp ? "#c7f33c" : trend === "down" ? "#ff4d4d" : "currentColor");
 
     return (
       <svg
@@ -57,7 +59,7 @@ export function Sparkline({
         <path
           d={pathD}
           fill="none"
-          stroke={color}
+          stroke={lineColor}
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -65,8 +67,8 @@ export function Sparkline({
         />
         <defs>
           <linearGradient id={`${gid}-up`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#c7f33c" />
-            <stop offset="100%" stopColor="#c7f33c" stopOpacity="0" />
+            <stop offset="0%" stopColor={lineColor} />
+            <stop offset="100%" stopColor={lineColor} stopOpacity="0" />
           </linearGradient>
         </defs>
       </svg>
@@ -80,7 +82,7 @@ export function Sparkline({
     neutral: "M0 15 C20 15 20 10 40 15 C60 20 60 10 80 15",
   } as const;
 
-  const color = trend === "up" ? "#c7f33c" : trend === "down" ? "#ff4d4d" : "currentColor";
+  const lineColor = color || (trend === "up" ? "#c7f33c" : trend === "down" ? "#ff4d4d" : "currentColor");
 
   return (
     <svg
@@ -93,7 +95,7 @@ export function Sparkline({
       <path
         d={paths[trend]}
         fill="none"
-        stroke={color}
+        stroke={lineColor}
         strokeWidth="2"
         strokeLinecap="round"
         vectorEffect="non-scaling-stroke"
@@ -108,8 +110,8 @@ export function Sparkline({
       )}
       <defs>
         <linearGradient id={`${gid}-up`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#c7f33c" />
-          <stop offset="100%" stopColor="#c7f33c" stopOpacity="0" />
+          <stop offset="0%" stopColor={lineColor} />
+          <stop offset="100%" stopColor={lineColor} stopOpacity="0" />
         </linearGradient>
       </defs>
     </svg>

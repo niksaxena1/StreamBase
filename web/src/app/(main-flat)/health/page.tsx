@@ -12,7 +12,6 @@ import { PageHeader } from "@/components/shell/PageHeader";
 import { addDaysISO, dataDateFromRunDate, SOT_DATA_LAG_DAYS } from "@/lib/sotDates";
 import { Alert } from "@/components/ui/Alert";
 import { SectionHeader } from "@/components/ui/SectionHeader";
-import { ChipGroup } from "@/components/ui/Chip";
 
 export const revalidate = 60; // Revalidate every 60 seconds for fresher health data
 
@@ -22,21 +21,10 @@ type HealthPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
-function chipLinkClass(active: boolean) {
-  return [
-    "rounded-full px-2.5 py-1.5 text-[11px] font-medium transition",
-    active
-      ? "bg-black text-white shadow-sm dark:bg-white dark:text-black"
-      : "text-black/70 hover:bg-black/5 dark:text-white/70 dark:hover:bg-white/10",
-  ].join(" ");
-}
-
 export default async function HealthPage({ searchParams }: HealthPageProps) {
   const sp = (await searchParams) ?? {};
   const getFirst = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
-  const severityFilter = getFirst(sp.severity) ?? "all";
-  const playlistFilter = getFirst(sp.playlist) ?? "all";
   const dateFilter = getFirst(sp.date);
 
   const sb = await supabaseServer();
@@ -158,22 +146,26 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
   let warningsQuery = svc
     .from("ingestion_warnings")
     .select("severity,code,playlist_key,message,run_date,details_json")
-    .order("severity", { ascending: false })
     .order("playlist_key", { ascending: true });
 
   if (selectedRunDate) {
     warningsQuery = warningsQuery.eq("run_date", selectedRunDate);
   }
 
-  if (severityFilter !== "all") {
-    warningsQuery = warningsQuery.eq("severity", severityFilter);
-  }
-
-  if (playlistFilter !== "all") {
-    warningsQuery = warningsQuery.eq("playlist_key", playlistFilter);
-  }
-
   const { data: warnings, error: warnErr } = await warningsQuery.limit(200);
+
+  function severityRank(severity: string) {
+    switch ((severity ?? "").trim()) {
+      case "critical":
+        return 0;
+      case "warn":
+        return 1;
+      case "info":
+        return 2;
+      default:
+        return 99;
+    }
+  }
 
   // Playlist metadata (for name + thumbnail display).
   const playlistMetaByKey = new Map<string, { name: string; imageUrl: string | null }>();
@@ -445,6 +437,167 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
     }
   }
 
+  // Fetch missing catalog stream snapshot tracks for warning `catalog_missing_stream_snapshots`
+  // This warning is global (playlist_key = "all_catalog") and contains an ISRC sample list in details_json.
+  const catalogMissingStreamSnapshotTracksByKey = new Map<
+    string,
+    Array<{
+      isrc: string;
+      name: string | null;
+      artist_names?: string[] | null;
+      artist_ids?: string[] | null;
+      album_image_url?: string | null;
+    }> | null
+  >();
+
+  const catalogMissingSnapshotWarnings = (warnings ?? []).filter(
+    (w) => w.code === "catalog_missing_stream_snapshots" && selectedRunDate
+  );
+
+  if (catalogMissingSnapshotWarnings.length > 0) {
+    for (const w of catalogMissingSnapshotWarnings) {
+      const key = String(w.playlist_key ?? "global");
+      const raw = (w as any)?.details_json?.missing_isrcs_sample;
+      const isrcs = Array.isArray(raw)
+        ? (raw as unknown[])
+            .map((x) => String(x ?? "").trim().toUpperCase().replace(/\s+/g, ""))
+            .filter(Boolean)
+            .slice(0, 200)
+        : [];
+
+      if (isrcs.length === 0) {
+        // Still allow expansion to show the note.
+        catalogMissingStreamSnapshotTracksByKey.set(key, null);
+        continue;
+      }
+
+      const { data: rows, error } = await svc
+        .from("tracks")
+        .select("isrc,name,spotify_artist_names,spotify_artist_ids,spotify_album_image_url")
+        .in("isrc", isrcs);
+
+      if (error) {
+        console.error("Failed to fetch catalog_missing_stream_snapshots tracks:", error);
+        catalogMissingStreamSnapshotTracksByKey.set(key, null);
+        continue;
+      }
+
+      const tracks: Array<{
+        isrc: string;
+        name: string | null;
+        artist_names?: string[] | null;
+        artist_ids?: string[] | null;
+        album_image_url?: string | null;
+      }> = (rows ?? []).map((t: unknown) => {
+        const row = (t ?? {}) as Record<string, unknown>;
+        return {
+          isrc: String(row.isrc ?? "").trim().toUpperCase(),
+          name: (row.name ?? null) as string | null,
+          artist_names: (row.spotify_artist_names ?? null) as string[] | null,
+          artist_ids: (row.spotify_artist_ids ?? null) as string[] | null,
+          album_image_url: (row.spotify_album_image_url ?? null) as string | null,
+        };
+      });
+
+      // Preserve the ordering of the sample ISRC list
+      const idx = new Map(isrcs.map((isrc, i) => [isrc, i]));
+      tracks.sort((a, b) => (idx.get(a.isrc) ?? 999999) - (idx.get(b.isrc) ?? 999999));
+
+      catalogMissingStreamSnapshotTracksByKey.set(key, tracks);
+    }
+  }
+
+  // Fetch tracks for warning `catalog_streams_missing_prev_nonzero`
+  // This warning is global (playlist_key = "all_catalog") and contains objects in details_json:
+  // { isrc, prev_streams_cumulative } under `affected_isrcs_with_prev_sample`.
+  const catalogStreamsMissingPrevNonzeroTracksByKey = new Map<
+    string,
+    Array<{
+      isrc: string;
+      name: string | null;
+      artist_names?: string[] | null;
+      artist_ids?: string[] | null;
+      album_image_url?: string | null;
+      prev_streams_cumulative?: number | null;
+    }> | null
+  >();
+
+  const catalogStreamsMissingPrevNonzeroWarnings = (warnings ?? []).filter(
+    (w) => w.code === "catalog_streams_missing_prev_nonzero" && selectedRunDate
+  );
+
+  if (catalogStreamsMissingPrevNonzeroWarnings.length > 0) {
+    for (const w of catalogStreamsMissingPrevNonzeroWarnings) {
+      const key = String(w.playlist_key ?? "global");
+      const raw = (w as any)?.details_json?.affected_isrcs_with_prev_sample;
+      const rows = Array.isArray(raw) ? (raw as unknown[]) : [];
+
+      const sample = rows
+        .map((r) => {
+          const row = (r ?? {}) as Record<string, unknown>;
+          const isrc = String(row.isrc ?? "").trim().toUpperCase().replace(/\s+/g, "");
+          const prev = Number(row.prev_streams_cumulative ?? NaN);
+          const prev_streams_cumulative = Number.isFinite(prev) ? prev : null;
+          return { isrc, prev_streams_cumulative };
+        })
+        .filter((r) => Boolean(r.isrc))
+        .slice(0, 200);
+
+      const isrcs = sample.map((s) => s.isrc);
+      if (isrcs.length === 0) {
+        catalogStreamsMissingPrevNonzeroTracksByKey.set(key, null);
+        continue;
+      }
+
+      const { data: trackRows, error } = await svc
+        .from("tracks")
+        .select("isrc,name,spotify_artist_names,spotify_artist_ids,spotify_album_image_url")
+        .in("isrc", isrcs);
+
+      if (error) {
+        console.error("Failed to fetch catalog_streams_missing_prev_nonzero tracks:", error);
+        catalogStreamsMissingPrevNonzeroTracksByKey.set(key, null);
+        continue;
+      }
+
+      const metaByIsrc = new Map<
+        string,
+        {
+          isrc: string;
+          name: string | null;
+          artist_names: string[] | null;
+          artist_ids: string[] | null;
+          album_image_url: string | null;
+        }
+      >(
+        (trackRows ?? []).map((t: any) => [
+          String(t?.isrc ?? "").trim().toUpperCase(),
+          {
+            isrc: String(t?.isrc ?? "").trim().toUpperCase(),
+            name: (t?.name ?? null) as string | null,
+            artist_names: (t?.spotify_artist_names ?? null) as string[] | null,
+            artist_ids: (t?.spotify_artist_ids ?? null) as string[] | null,
+            album_image_url: (t?.spotify_album_image_url ?? null) as string | null,
+          },
+        ]),
+      );
+
+      const tracks = sample.map((s) => {
+        const meta = metaByIsrc.get(s.isrc) ?? null;
+        return {
+          isrc: s.isrc,
+          name: meta?.name ?? null,
+          artist_names: meta?.artist_names ?? null,
+          artist_ids: meta?.artist_ids ?? null,
+          album_image_url: meta?.album_image_url ?? null,
+          prev_streams_cumulative: s.prev_streams_cumulative ?? null,
+        };
+      });
+
+      catalogStreamsMissingPrevNonzeroTracksByKey.set(key, tracks);
+    }
+  }
+
   // Fetch ALL tracks missing from catalog across all playlists for the selected date
   let allMissingTracks: Array<{
     isrc: string;
@@ -482,41 +635,43 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
     }
   }
 
-  // Build filter URLs
-  function hrefWith(patch: { severity?: string; playlist?: string; date?: string }) {
-    const params = new URLSearchParams();
-    const severity = patch.severity ?? severityFilter;
-    const playlist = patch.playlist ?? playlistFilter;
-    const date = patch.date ?? dateFilter;
-    if (severity !== "all") params.set("severity", severity);
-    if (playlist !== "all") params.set("playlist", playlist);
-    if (date) params.set("date", date);
-    const query = params.toString();
-    return query ? `/health?${query}` : "/health";
-  }
+  const displayedWarnings = (warnings ?? [])
+    .filter((w) => {
+      // If exclusions are configured and *all* non-catalog tracks for a warning are excluded,
+      // hide that warning row in the UI (the next ingestion run will also stop generating it).
+      if (w.code === "non_catalog_tracks_present" && w.playlist_key) {
+        if (!exclusionsEnabled) return true;
+        const tracks = nonCatalogTracksMap.get(w.playlist_key) ?? [];
+        return tracks.length > 0;
+      }
+
+      if (w.code === "tracks_missing_enrichment" && w.playlist_key) {
+        if (!enrichmentExclusionsEnabled) return true;
+        const tracks = missingEnrichmentTracksMap.get(w.playlist_key);
+        // If we successfully computed the list and it's empty, suppress the row.
+        if (Array.isArray(tracks)) return tracks.length > 0;
+        return true;
+      }
+
+      return true;
+    })
+    .sort((a, b) => {
+      const r = severityRank(a.severity) - severityRank(b.severity);
+      if (r !== 0) return r;
+      const ap = (a.playlist_key ?? "").trim();
+      const bp = (b.playlist_key ?? "").trim();
+      if (ap !== bp) return ap.localeCompare(bp);
+      const ac = (a.code ?? "").trim();
+      const bc = (b.code ?? "").trim();
+      if (ac !== bc) return ac.localeCompare(bc);
+      return (a.message ?? "").localeCompare(b.message ?? "");
+    });
 
   return (
     <div className="space-y-4">
       <PageHeader
         title="System Health"
         subtitle="Recent ingestion runs and anomaly warnings."
-        actionsClassName="flex-wrap"
-        actions={
-          <ChipGroup segmented className="text-xs dark:bg-black/50">
-            <Link className={chipLinkClass(severityFilter === "all")} href={hrefWith({ severity: "all" })}>
-              All
-            </Link>
-            <Link className={chipLinkClass(severityFilter === "critical")} href={hrefWith({ severity: "critical" })}>
-              Critical
-            </Link>
-            <Link className={chipLinkClass(severityFilter === "warn")} href={hrefWith({ severity: "warn" })}>
-              Warn
-            </Link>
-            <Link className={chipLinkClass(severityFilter === "info")} href={hrefWith({ severity: "info" })}>
-              Info
-            </Link>
-          </ChipGroup>
-        }
       />
 
       {(runsErr || warnErr || exportsErr) && (
@@ -551,62 +706,42 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
             { label: "Message" },
           ]}
         >
-          {(warnings ?? [])
-            .filter((w) => {
-              // If exclusions are configured and *all* non-catalog tracks for a warning are excluded,
-              // hide that warning row in the UI (the next ingestion run will also stop generating it).
-              if (w.code === "non_catalog_tracks_present" && w.playlist_key) {
-                if (!exclusionsEnabled) return true;
-                const tracks = nonCatalogTracksMap.get(w.playlist_key) ?? [];
-                return tracks.length > 0;
-              }
-
-              if (w.code === "tracks_missing_enrichment" && w.playlist_key) {
-                if (!enrichmentExclusionsEnabled) return true;
-                const tracks = missingEnrichmentTracksMap.get(w.playlist_key);
-                // If we successfully computed the list and it's empty, suppress the row.
-                if (Array.isArray(tracks)) return tracks.length > 0;
-                return true;
-              }
-
-              return true;
-            })
-            .map((w, i) => (
+          {displayedWarnings.map((w, i) => (
             <WarningRow
               key={`${w.code}-${w.playlist_key ?? "global"}-${i}`}
               warning={w}
               playlistMeta={w.playlist_key ? playlistMetaByKey.get(w.playlist_key) ?? null : null}
-              nonCatalogTracks={w.code === "non_catalog_tracks_present" && w.playlist_key
-                ? nonCatalogTracksMap.get(w.playlist_key)
-                : undefined}
-              trackCountSwingTracks={w.code === "track_count_swing" && w.playlist_key
-                ? trackCountSwingTracksMap.get(w.playlist_key)
-                : undefined}
-              missingEnrichmentTracks={w.code === "tracks_missing_enrichment" && w.playlist_key
-                ? missingEnrichmentTracksMap.get(w.playlist_key)
-                : undefined}
-              enrichmentWarning={w.code === "tracks_missing_enrichment"
-                ? w.details_json
-                : undefined}
+              nonCatalogTracks={
+                w.code === "non_catalog_tracks_present" && w.playlist_key
+                  ? nonCatalogTracksMap.get(w.playlist_key)
+                  : undefined
+              }
+              catalogMissingStreamSnapshotTracks={
+                w.code === "catalog_missing_stream_snapshots"
+                  ? catalogMissingStreamSnapshotTracksByKey.get(String(w.playlist_key ?? "global"))
+                  : undefined
+              }
+              catalogStreamsMissingPrevNonzeroTracks={
+                w.code === "catalog_streams_missing_prev_nonzero"
+                  ? catalogStreamsMissingPrevNonzeroTracksByKey.get(String(w.playlist_key ?? "global"))
+                  : undefined
+              }
+              trackCountSwingTracks={
+                w.code === "track_count_swing" && w.playlist_key
+                  ? trackCountSwingTracksMap.get(w.playlist_key)
+                  : undefined
+              }
+              missingEnrichmentTracks={
+                w.code === "tracks_missing_enrichment" && w.playlist_key
+                  ? missingEnrichmentTracksMap.get(w.playlist_key)
+                  : undefined
+              }
+              enrichmentWarning={w.code === "tracks_missing_enrichment" ? w.details_json : undefined}
             />
           ))}
-          {!((warnings ?? [])
-            .filter((w) => {
-              if (w.code === "non_catalog_tracks_present" && w.playlist_key) {
-                if (!exclusionsEnabled) return true;
-                const tracks = nonCatalogTracksMap.get(w.playlist_key) ?? [];
-                return tracks.length > 0;
-              }
-
-              if (w.code === "tracks_missing_enrichment" && w.playlist_key) {
-                if (!enrichmentExclusionsEnabled) return true;
-                const tracks = missingEnrichmentTracksMap.get(w.playlist_key);
-                if (Array.isArray(tracks)) return tracks.length > 0;
-                return true;
-              }
-
-              return true;
-            }).length) && <EmptyState colSpan={4} message="No warnings found for the selected filters." />}
+          {!displayedWarnings.length && (
+            <EmptyState colSpan={4} message="No warnings found for the selected filters." />
+          )}
         </GlassTable>
       </div>
 

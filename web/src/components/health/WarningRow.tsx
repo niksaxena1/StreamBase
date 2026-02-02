@@ -22,6 +22,21 @@ type WarningRowProps = {
     artist_ids?: string[] | null;
     album_image_url?: string | null;
   }>;
+  catalogMissingStreamSnapshotTracks?: Array<{
+    isrc: string;
+    name: string | null;
+    artist_names?: string[] | null;
+    artist_ids?: string[] | null;
+    album_image_url?: string | null;
+  }> | null;
+  catalogStreamsMissingPrevNonzeroTracks?: Array<{
+    isrc: string;
+    name: string | null;
+    artist_names?: string[] | null;
+    artist_ids?: string[] | null;
+    album_image_url?: string | null;
+    prev_streams_cumulative?: number | null;
+  }> | null;
   trackCountSwingTracks?: {
     added: Array<{
       isrc: string;
@@ -65,6 +80,8 @@ export function WarningRow({
   warning,
   playlistMeta,
   nonCatalogTracks,
+  catalogMissingStreamSnapshotTracks,
+  catalogStreamsMissingPrevNonzeroTracks,
   trackCountSwingTracks,
   missingEnrichmentTracks,
   enrichmentWarning,
@@ -72,6 +89,15 @@ export function WarningRow({
   const [expanded, setExpanded] = useState(false);
   const [thumbByIsrc, setThumbByIsrc] = useState<Record<string, string | null>>({});
   const hasTracks = nonCatalogTracks && nonCatalogTracks.length > 0;
+  const hasCatalogMissingSnapshotTracks =
+    catalogMissingStreamSnapshotTracks !== undefined &&
+    ((Array.isArray(catalogMissingStreamSnapshotTracks) && catalogMissingStreamSnapshotTracks.length > 0) ||
+      catalogMissingStreamSnapshotTracks === null);
+  const hasCatalogStreamsMissingPrevNonzeroTracks =
+    catalogStreamsMissingPrevNonzeroTracks !== undefined &&
+    ((Array.isArray(catalogStreamsMissingPrevNonzeroTracks) &&
+      catalogStreamsMissingPrevNonzeroTracks.length > 0) ||
+      catalogStreamsMissingPrevNonzeroTracks === null);
   const hasSwingTracks = trackCountSwingTracks && 
     (trackCountSwingTracks.added.length > 0 || trackCountSwingTracks.removed.length > 0);
   const hasMissingEnrichmentTracks = missingEnrichmentTracks !== undefined && (
@@ -80,19 +106,40 @@ export function WarningRow({
   );
   const canExpand = (warning.code === "non_catalog_tracks_present" && hasTracks) ||
                    (warning.code === "track_count_swing" && hasSwingTracks) ||
-                   (warning.code === "tracks_missing_enrichment" && hasMissingEnrichmentTracks);
+                   (warning.code === "tracks_missing_enrichment" && hasMissingEnrichmentTracks) ||
+                   (warning.code === "catalog_missing_stream_snapshots" && hasCatalogMissingSnapshotTracks) ||
+                   (warning.code === "catalog_streams_missing_prev_nonzero" &&
+                     hasCatalogStreamsMissingPrevNonzeroTracks);
 
   const missingThumbIsrcs = useMemo(() => {
     if (!expanded) return [];
-    if (warning.code !== "tracks_missing_enrichment") return [];
-    if (!Array.isArray(missingEnrichmentTracks)) return [];
-    const need = missingEnrichmentTracks
+    const wantsThumbsForCode =
+      warning.code === "tracks_missing_enrichment" ||
+      warning.code === "catalog_missing_stream_snapshots" ||
+      warning.code === "catalog_streams_missing_prev_nonzero";
+    if (!wantsThumbsForCode) return [];
+
+    const src =
+      warning.code === "tracks_missing_enrichment"
+        ? missingEnrichmentTracks
+        : warning.code === "catalog_missing_stream_snapshots"
+          ? catalogMissingStreamSnapshotTracks
+          : catalogStreamsMissingPrevNonzeroTracks;
+
+    if (!Array.isArray(src)) return [];
+    const need = src
       .filter((t) => !t.album_image_url)
       .map((t) => (t.isrc ?? "").trim().toUpperCase())
       .filter(Boolean);
     // Limit per expand to keep UI snappy / avoid rate limits
     return need.slice(0, 50);
-  }, [expanded, warning.code, missingEnrichmentTracks]);
+  }, [
+    expanded,
+    warning.code,
+    missingEnrichmentTracks,
+    catalogMissingStreamSnapshotTracks,
+    catalogStreamsMissingPrevNonzeroTracks,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -495,6 +542,168 @@ export function WarningRow({
                 )}
               </div>
             )}
+
+            {warning.code === "catalog_missing_stream_snapshots" && hasCatalogMissingSnapshotTracks && (
+              <div className="space-y-2">
+                {Array.isArray(catalogMissingStreamSnapshotTracks) &&
+                catalogMissingStreamSnapshotTracks.length > 0 ? (
+                  <>
+                    <div className="text-xs font-medium opacity-70 mb-2">
+                      Missing catalog stream snapshots ({catalogMissingStreamSnapshotTracks.length}):
+                    </div>
+                    <div className="space-y-2">
+                      {catalogMissingStreamSnapshotTracks.map((track) => {
+                        const isrc = (track.isrc ?? "").trim().toUpperCase();
+                        const fetchedUrl = thumbByIsrc[isrc];
+                        const hasThumb =
+                          fetchedUrl !== undefined ? fetchedUrl !== null : !!track.album_image_url;
+                        const imageUrl =
+                          fetchedUrl !== undefined ? fetchedUrl : track.album_image_url;
+
+                        return (
+                          <div key={track.isrc} className="flex items-center gap-3 text-xs">
+                            {hasThumb && imageUrl ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={imageUrl}
+                                alt="Album cover"
+                                className="h-10 w-10 rounded object-cover sb-ring flex-shrink-0"
+                              />
+                            ) : (
+                              <div className="h-10 w-10 rounded sb-ring bg-white/60 flex-shrink-0" />
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <Link
+                                  href={`/tracks/${track.isrc}`}
+                                  className="font-medium hover:underline"
+                                  style={{ color: "var(--sb-text)" }}
+                                >
+                                  {track.name || track.isrc}
+                                </Link>
+                                {track.artist_names && track.artist_names.length > 0 && (
+                                  <span className="opacity-60">
+                                    by{" "}
+                                    <ArtistLinks
+                                      artistNames={track.artist_names}
+                                      artistIds={track.artist_ids ?? undefined}
+                                    />
+                                  </span>
+                                )}
+                              </div>
+                              <div className="mt-0.5">
+                                <Link
+                                  href={`/tracks/${track.isrc}`}
+                                  className="font-mono text-[10px] text-lime-600 dark:text-lime-400 underline hover:opacity-80"
+                                >
+                                  {track.isrc}
+                                </Link>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-xs opacity-60">
+                    <p className="mb-2">Track details not available in current warning record.</p>
+                    <p>
+                      {warning.details_json?.note ??
+                        "These tracks appeared in a catalog export but had missing/invalid stream totals and were not written to track_daily_streams."}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {warning.code === "catalog_streams_missing_prev_nonzero" &&
+              hasCatalogStreamsMissingPrevNonzeroTracks && (
+                <div className="space-y-2">
+                  {Array.isArray(catalogStreamsMissingPrevNonzeroTracks) &&
+                  catalogStreamsMissingPrevNonzeroTracks.length > 0 ? (
+                    <>
+                      <div className="text-xs font-medium opacity-70 mb-2">
+                        Missing stream totals with prior non-zero (
+                        {catalogStreamsMissingPrevNonzeroTracks.length}):
+                      </div>
+                      <div className="space-y-2">
+                        {catalogStreamsMissingPrevNonzeroTracks.map((track) => {
+                          const isrc = (track.isrc ?? "").trim().toUpperCase();
+                          const fetchedUrl = thumbByIsrc[isrc];
+                          const hasThumb =
+                            fetchedUrl !== undefined
+                              ? fetchedUrl !== null
+                              : !!track.album_image_url;
+                          const imageUrl =
+                            fetchedUrl !== undefined ? fetchedUrl : track.album_image_url;
+                          const prev =
+                            typeof track.prev_streams_cumulative === "number" &&
+                            Number.isFinite(track.prev_streams_cumulative)
+                              ? track.prev_streams_cumulative
+                              : null;
+
+                          return (
+                            <div key={track.isrc} className="flex items-center gap-3 text-xs">
+                              {hasThumb && imageUrl ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={imageUrl}
+                                  alt="Album cover"
+                                  className="h-10 w-10 rounded object-cover sb-ring flex-shrink-0"
+                                />
+                              ) : (
+                                <div className="h-10 w-10 rounded sb-ring bg-white/60 flex-shrink-0" />
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <Link
+                                    href={`/tracks/${track.isrc}`}
+                                    className="font-medium hover:underline"
+                                    style={{ color: "var(--sb-text)" }}
+                                  >
+                                    {track.name || track.isrc}
+                                  </Link>
+                                  {track.artist_names && track.artist_names.length > 0 && (
+                                    <span className="opacity-60">
+                                      by{" "}
+                                      <ArtistLinks
+                                        artistNames={track.artist_names}
+                                        artistIds={track.artist_ids ?? undefined}
+                                      />
+                                    </span>
+                                  )}
+                                  {prev !== null && (
+                                    <span className="opacity-60">
+                                      · prev: <span className="font-mono">{prev.toLocaleString()}</span>
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="mt-0.5">
+                                  <Link
+                                    href={`/tracks/${track.isrc}`}
+                                    className="font-mono text-[10px] text-lime-600 dark:text-lime-400 underline hover:opacity-80"
+                                  >
+                                    {track.isrc}
+                                  </Link>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-xs opacity-60">
+                      <p className="mb-2">Track details not available in current warning record.</p>
+                      <p>
+                        {warning.details_json?.note ??
+                          "SpotOnTrack export had missing/blank stream totals for tracks that had non-zero cumulative streams yesterday."}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
           </TableCell>
         </TableRow>
       )}
