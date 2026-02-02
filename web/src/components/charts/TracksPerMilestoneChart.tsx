@@ -176,7 +176,7 @@ export function TracksPerMilestoneChart({
       <ResponsiveContainer width="100%" height={heightPx} minWidth={0} style={{ overflow: "visible" }}>
         <BarChart
           data={chartData}
-          margin={{ top: 6, right: 6, left: 0, bottom: 50 }}
+          margin={{ top: 6, right: 6, left: 0, bottom: 0 }}
         >
           <defs>
             {chartData.map((d) => {
@@ -239,11 +239,12 @@ export function TracksPerMilestoneChart({
               color: "var(--sb-text)",
             }}
             itemStyle={{ color: "var(--sb-text)" }}
-            formatter={(value: number, _name: string, props: { payload?: MilestoneDataPoint }) => {
-              const milestone = props.payload?.milestone;
+            formatter={(value: number, _name: string, _props: { payload?: MilestoneDataPoint }) => {
               return [
-                formatInt(value),
-                `tracks ≥ ${milestone ? formatInt(milestone) : "?"} streams`,
+                <span style={{ color: "var(--sb-accent)", fontWeight: "bold" }}>
+                  {formatInt(value)}
+                </span>,
+                `Tracks: ${formatInt(value)}`,
               ];
             }}
             labelFormatter={(label) => `Milestone: ${label}`}

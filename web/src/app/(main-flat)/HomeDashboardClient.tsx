@@ -482,40 +482,6 @@ function HomeDashboardInner(props: {
         </Alert>
       ) : null}
 
-      {/* Tracks Per Milestone Chart (collapsible) */}
-      {props.trackScatterPoints?.length > 0 && (
-        <details
-          open={openMilestones}
-          onToggle={(ev) => setOpenMilestones(ev.currentTarget.open)}
-          className="rounded-xl border bg-white/50 p-3 dark:bg-white/[0.03]"
-          style={{ borderColor: "var(--sb-border)" }}
-        >
-          <summary className="cursor-pointer select-none">
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-start gap-2">
-                <span className="mt-0.5 flex-shrink-0 text-xs opacity-60">▸</span>
-                <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
-                  Tracks Per Milestone
-                </div>
-              </div>
-              <div className="text-[11px] opacity-60" style={{ color: "var(--sb-muted)" }}>
-                Number of tracks that have reached each stream threshold
-              </div>
-            </div>
-          </summary>
-
-          <div className="mt-3">
-            <TracksPerMilestoneChart
-              tracks={props.trackScatterPoints.map((p) => ({
-                isrc: p.isrc,
-                total_streams_cumulative: p.total_streams_cumulative,
-              }))}
-              heightPx={320}
-            />
-          </div>
-        </details>
-      )}
-
       {/* Track/Artist XY scatter (collapsible) */}
       <details
         open={openScatter}
@@ -826,6 +792,35 @@ function HomeDashboardInner(props: {
           ) : null}
         </div>
       </details>
+
+      {/* Tracks Per Milestone Chart (collapsible) */}
+      {props.trackScatterPoints?.length > 0 && (
+        <details
+          open={openMilestones}
+          onToggle={(ev) => setOpenMilestones(ev.currentTarget.open)}
+          className="rounded-xl border bg-white/50 p-3 dark:bg-white/[0.03]"
+          style={{ borderColor: "var(--sb-border)" }}
+        >
+          <summary className="cursor-pointer select-none">
+            <div className="flex items-start gap-2">
+              <span className="mt-0.5 flex-shrink-0 text-xs opacity-60">▸</span>
+              <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
+                Tracks Per Milestone
+              </div>
+            </div>
+          </summary>
+
+          <div className="mt-3">
+            <TracksPerMilestoneChart
+              tracks={props.trackScatterPoints.map((p) => ({
+                isrc: p.isrc,
+                total_streams_cumulative: p.total_streams_cumulative,
+              }))}
+              heightPx={320}
+            />
+          </div>
+        </details>
+      )}
 
       {/* Recent History Table (collapsible) */}
       <details
