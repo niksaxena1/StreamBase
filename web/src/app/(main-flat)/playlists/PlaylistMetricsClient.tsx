@@ -9,10 +9,10 @@ import { Activity } from "lucide-react";
 import { formatInt } from "@/lib/format";
 import type { Metric } from "./PlaylistMetricSelector";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
+import { computeDailyRollingAvg7 } from "@/components/charts/chartUtils";
 import { slugifyForFilename, todayIsoDate } from "@/lib/csv";
 import { dataDateFromRunDate } from "@/lib/sotDates";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
-
 
 type PlaylistDailyStatsRow = {
   date: string;
@@ -22,20 +22,6 @@ type PlaylistDailyStatsRow = {
   est_revenue_total: number | null;
   est_revenue_daily_net: number | null;
 };
-
-function rollingAvg7(desc: Array<{ date: string; daily: number }>) {
-  const asc = [...desc].reverse();
-  const outAsc: Array<{ date: string; daily: number; ma7: number | null }> = [];
-
-  for (let i = 0; i < asc.length; i++) {
-    const start = Math.max(0, i - 6);
-    const window = asc.slice(start, i + 1).map((p) => Number(p.daily ?? 0));
-    const avg = window.reduce((a, b) => a + b, 0) / window.length;
-    outAsc.push({ date: asc[i].date, daily: asc[i].daily, ma7: avg });
-  }
-
-  return outAsc.reverse();
-}
 
 export function PlaylistMetricsClient(props: {
   latest: PlaylistDailyStatsRow | null;
@@ -72,7 +58,7 @@ export function PlaylistMetricsClient(props: {
       return { date: dataDateFromRunDate(r.date), daily: Number(r.daily_streams_net ?? 0) };
     }
   });
-  const dailyWithMaDesc = rollingAvg7(dailyDesc);
+  const dailyWithMaDesc = computeDailyRollingAvg7(dailyDesc);
 
   const cumulativeLabel = props.metric === "revenue" ? "Est. revenue (cumulative)" : props.metric === "streams" ? "Total streams" : "Track count";
   const dailyLabel = props.metric === "revenue" ? "Est. revenue (daily)" : props.metric === "streams" ? "Daily streams" : "Track change (daily)";

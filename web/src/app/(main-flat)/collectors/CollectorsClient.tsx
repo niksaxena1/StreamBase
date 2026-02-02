@@ -50,45 +50,12 @@ const COLLECTORS_COMPARISON_STORAGE = {
   granularity: "sb:collectors:comparison:granularity",
 } as const;
 
-function readStoredBool(key: string, fallback: boolean): boolean {
-  // NOTE: Client components can still render on the server, so guard `window`.
-  if (typeof window === "undefined") return fallback;
-  try {
-    const v = localStorage.getItem(key);
-    if (v == null) return fallback;
-    if (v === "1" || v === "true") return true;
-    if (v === "0" || v === "false") return false;
-    return fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function writeStoredBool(key: string, value: boolean) {
-  try {
-    localStorage.setItem(key, value ? "1" : "0");
-  } catch {
-    // ignore (private mode, disabled storage, etc.)
-  }
-}
-
-function readStoredString(key: string): string | null {
-  // NOTE: Client components can still render on the server, so guard `window`.
-  if (typeof window === "undefined") return null;
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
-function writeStoredString(key: string, value: string) {
-  try {
-    localStorage.setItem(key, value);
-  } catch {
-    // ignore (private mode, disabled storage, etc.)
-  }
-}
+import {
+  readStoredBool,
+  writeStoredBool,
+  readStoredString,
+  writeStoredString,
+} from "@/lib/storage";
 
 // Helper to get ISO week number (weeks start Monday)
 function getISOWeek(date: Date): { year: number; week: number } {
@@ -193,32 +160,7 @@ function aggregateByGranularity(
   return result;
 }
 
-function rollingAvg7(desc: Array<{ date: string; daily: number }>) {
-  // Input: newest-first. Output: newest-first with ma7.
-  const asc = [...desc].reverse();
-  const outAsc: Array<{ date: string; daily: number; ma7: number | null }> = [];
-
-  for (let i = 0; i < asc.length; i++) {
-    const start = Math.max(0, i - 6);
-    const window = asc.slice(start, i + 1).map((p) => Number(p.daily ?? 0));
-    const avg = window.reduce((a, b) => a + b, 0) / window.length;
-    outAsc.push({ date: asc[i].date, daily: asc[i].daily, ma7: avg });
-  }
-
-  return outAsc.reverse();
-}
-
-function ma7ForValueDesc(desc: Array<{ date: string; value: number }>) {
-  const asc = [...desc].reverse();
-  const outAsc: Array<{ date: string; value: number; ma7: number | null }> = [];
-  for (let i = 0; i < asc.length; i++) {
-    const start = Math.max(0, i - 6);
-    const window = asc.slice(start, i + 1).map((p) => Number(p.value ?? 0));
-    const avg = window.reduce((a, b) => a + b, 0) / window.length;
-    outAsc.push({ date: asc[i].date, value: asc[i].value, ma7: avg });
-  }
-  return outAsc.reverse();
-}
+import { computeDailyRollingAvg7, computeRollingAvg7 } from "@/components/charts/chartUtils";
 
 function aggregateMonthlyDelta(
   seriesDesc: CollectorSeriesPoint[],
@@ -530,16 +472,16 @@ export function CollectorsClient(props: {
 
     return {
       revenue: {
-        cumulative: ma7ForValueDesc(revenueTotalDesc),
-        daily: rollingAvg7(revenueDailyDesc),
+        cumulative: computeRollingAvg7(revenueTotalDesc),
+        daily: computeDailyRollingAvg7(revenueDailyDesc),
       },
       streams: {
-        cumulative: ma7ForValueDesc(streamsTotalDesc),
-        daily: rollingAvg7(streamsDailyDesc),
+        cumulative: computeRollingAvg7(streamsTotalDesc),
+        daily: computeDailyRollingAvg7(streamsDailyDesc),
       },
       tracks: {
-        cumulative: ma7ForValueDesc(tracksTotalDesc),
-        daily: rollingAvg7(tracksDailyDeltaDesc),
+        cumulative: computeRollingAvg7(tracksTotalDesc),
+        daily: computeDailyRollingAvg7(tracksDailyDeltaDesc),
       },
     } as const;
   }, [props.seriesDesc, streamPayoutPerStreamUsd]);

@@ -32,19 +32,9 @@ type PlaylistDailyStatsRow = {
   est_revenue_daily_net?: number | null;
 };
 
-type ChartPoint = { date: string; value: number; ma7?: number | null };
+import { computeRollingAvg7 } from "@/components/charts/chartUtils";
 
-function computeRollingAvg7(desc: Array<{ date: string; value: number }>) {
-  const asc = [...desc].reverse();
-  const outAsc: Array<{ date: string; value: number; ma7: number | null }> = [];
-  for (let i = 0; i < asc.length; i++) {
-    const start = Math.max(0, i - 6);
-    const window = asc.slice(start, i + 1).map((p) => Number(p.value ?? 0));
-    const avg = window.reduce((a, b) => a + b, 0) / window.length;
-    outAsc.push({ date: asc[i].date, value: asc[i].value, ma7: avg });
-  }
-  return outAsc.reverse();
-}
+type ChartPoint = { date: string; value: number; ma7?: number | null };
 
 function hrefWith(
   existing: { scope?: string; range?: string; daily?: string; xy_date?: string },
@@ -80,57 +70,17 @@ const HOME_DETAILS_STORAGE = {
   historyOpen: "sb:home:details:history_open",
 } as const;
 
-function readStoredBool(key: string, fallback: boolean): boolean {
-  // NOTE: Client components can still render on the server, so guard `window`.
-  if (typeof window === "undefined") return fallback;
-  try {
-    const v = localStorage.getItem(key);
-    if (v == null) return fallback;
-    if (v === "1" || v === "true") return true;
-    if (v === "0" || v === "false") return false;
-    return fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function writeStoredBool(key: string, value: boolean) {
-  try {
-    localStorage.setItem(key, value ? "1" : "0");
-  } catch {
-    // ignore (private mode, disabled storage, etc.)
-  }
-}
+import {
+  readStoredBool,
+  writeStoredBool,
+  readStoredString,
+  writeStoredString,
+  removeStoredItem,
+} from "@/lib/storage";
 
 const HOME_MILESTONE_SETTINGS_STORAGE = {
   customMilestones: "sb:home:milestones:custom_v1",
 } as const;
-
-function readStoredString(key: string): string | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const v = localStorage.getItem(key);
-    return v == null ? null : String(v);
-  } catch {
-    return null;
-  }
-}
-
-function writeStoredString(key: string, value: string) {
-  try {
-    localStorage.setItem(key, value);
-  } catch {
-    // ignore
-  }
-}
-
-function removeStoredItem(key: string) {
-  try {
-    localStorage.removeItem(key);
-  } catch {
-    // ignore
-  }
-}
 
 function parseMilestonesText(
   input: string,

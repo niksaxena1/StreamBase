@@ -7,26 +7,12 @@ import { cachedQuery } from "@/lib/supabase/cache";
 import { getArtistsCached } from "@/lib/spotify";
 import { RememberParamRedirect } from "@/components/dashboard/RememberParamRedirect";
 import { CatalogPageClient } from "./CatalogPageClient";
+import { computeDailyRollingAvg7 } from "@/components/charts/chartUtils";
 import { dataDateFromRunDate } from "@/lib/sotDates";
 import { Alert } from "@/components/ui/Alert";
 
 const CATALOG_ARTIST_DROPDOWN_MAX_TRACKS = 10_000;
 const CATALOG_ARTIST_THUMBNAILS_MAX = 800;
-
-function computeRollingAvg7(desc: Array<{ date: string; daily: number }>) {
-  const asc = [...desc].reverse();
-  const outAsc: Array<{ date: string; daily: number; ma7: number | null }> = [];
-
-  for (let i = 0; i < asc.length; i++) {
-    const start = Math.max(0, i - 6);
-    const window = asc.slice(start, i + 1).map((p) => Number(p.daily ?? 0));
-    // Always compute average if we have at least 1 data point, but prefer 7+ for accuracy
-    const avg = window.length > 0 ? window.reduce((a, b) => a + b, 0) / window.length : null;
-    outAsc.push({ date: asc[i].date, daily: asc[i].daily, ma7: avg });
-  }
-
-  return outAsc.reverse();
-}
 
 function sumLastNDays(desc: Array<{ date: string; daily: number }>, days: number) {
   return desc.slice(0, days).reduce((acc, r) => acc + Number(r.daily ?? 0), 0);
@@ -383,7 +369,7 @@ export default async function CatalogPage({
     return { date: p.date, daily: Math.max(0, p.value - prev) };
   });
   const dailyArtistDesc = [...dailyArtistAscRun].reverse();
-  const dailyArtistWithMaDesc = computeRollingAvg7(dailyArtistDesc);
+  const dailyArtistWithMaDesc = computeDailyRollingAvg7(dailyArtistDesc);
 
   const artist24h = dailyArtistDesc[0]?.daily ?? 0;
   const artist7d = sumLastNDays(dailyArtistDesc, 7);
@@ -455,7 +441,7 @@ export default async function CatalogPage({
   const trackDailyDesc = [...trackDailyAsc]
     .reverse()
     .map((p) => ({ ...p }));
-  const trackDailyWithMaDesc = computeRollingAvg7(trackDailyDesc);
+  const trackDailyWithMaDesc = computeDailyRollingAvg7(trackDailyDesc);
   const track24h = trackDailyDesc[0]?.daily ?? 0;
   const track7d = sumLastNDays(trackDailyDesc, 7);
   const track28d = sumLastNDays(trackDailyDesc, 28);

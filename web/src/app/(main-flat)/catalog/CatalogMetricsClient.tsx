@@ -6,24 +6,11 @@ import { DailyStreamsWithMAChart } from "@/components/charts/DailyStreamsWithMAC
 import { SpotlightCard } from "@/components/ui/SpotlightCard";
 import { AnimatedCounter } from "@/components/ui/AnimatedCounter";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
+import { computeDailyRollingAvg7 } from "@/components/charts/chartUtils";
 import { slugifyForFilename, todayIsoDate } from "@/lib/csv";
 import { dataDateFromRunDate } from "@/lib/sotDates";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { useMetric } from "@/components/metrics/MetricContext";
-
-function computeRollingAvg7(desc: Array<{ date: string; daily: number }>) {
-  const asc = [...desc].reverse();
-  const outAsc: Array<{ date: string; daily: number; ma7: number | null }> = [];
-
-  for (let i = 0; i < asc.length; i++) {
-    const start = Math.max(0, i - 6);
-    const window = asc.slice(start, i + 1).map((p) => Number(p.daily ?? 0));
-    const avg = window.reduce((a, b) => a + b, 0) / window.length;
-    outAsc.push({ date: asc[i].date, daily: asc[i].daily, ma7: avg });
-  }
-
-  return outAsc.reverse();
-}
 
 type ChartDataPoint = {
   date: string;
@@ -91,7 +78,7 @@ export function CatalogMetricsClient(props: {
     }
   }, [metric, props.dailyArtistDesc, streamPayoutPerStreamUsd]);
 
-  const dailyWithMaDesc = useMemo(() => computeRollingAvg7(dailyDesc), [dailyDesc]);
+  const dailyWithMaDesc = useMemo(() => computeDailyRollingAvg7(dailyDesc), [dailyDesc]);
 
   const cumulativeLabel = metric === "revenue" ? "Est. revenue (total)" : metric === "streams" ? "Total streams" : "Track count";
   const dailyLabel = metric === "revenue" ? "Est. revenue (daily)" : metric === "streams" ? "Daily streams" : "Track change (daily)";

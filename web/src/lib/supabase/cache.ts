@@ -1,5 +1,5 @@
 import { unstable_cache } from "next/cache";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { logDebug } from "@/lib/logger";
 
 const DEFAULT_REVALIDATE_SECONDS = 86400; // 24 hours - data updates daily
 
@@ -13,6 +13,12 @@ function slowMsThreshold(): number {
   return Math.max(0, n);
 }
 
+/** Supabase query error type */
+export type SupabaseQueryError = { message: string; code?: string } | null;
+
+/** Supabase query result */
+export type SupabaseQueryResult<T> = { data: T | null; error: SupabaseQueryError };
+
 /**
  * Cache Supabase query results for faster page loads.
  * Since data updates daily, we cache for 24 hours by default.
@@ -22,10 +28,10 @@ function slowMsThreshold(): number {
  * @param revalidateSeconds - How long to cache (default: 24 hours)
  */
 export async function cachedQuery<T>(
-  queryFn: () => Promise<{ data: T | null; error: any }>,
+  queryFn: () => Promise<SupabaseQueryResult<T>>,
   key: string,
-  revalidateSeconds: number | false = DEFAULT_REVALIDATE_SECONDS, // 24h default, or false to disable
-): Promise<{ data: T | null; error: any }> {
+  revalidateSeconds: number | false = DEFAULT_REVALIDATE_SECONDS,
+): Promise<SupabaseQueryResult<T>> {
   return unstable_cache(
     async () => {
       const timingOn = isTimingEnabled();
@@ -36,16 +42,17 @@ export async function cachedQuery<T>(
           const ms = performance.now() - t0;
           if (ms >= slowMsThreshold()) {
             // Only logs on cache miss/revalidate (unstable_cache does not call this on cache hits).
-            console.log(`[cachedQuery] key=${key} ms=${ms.toFixed(1)} error=${res.error ? "yes" : "no"}`);
+            logDebug(`cachedQuery key=${key} ms=${ms.toFixed(1)} error=${res.error ? "yes" : "no"}`);
           }
         }
         return res;
       } catch (error) {
         if (timingOn) {
           const ms = performance.now() - t0;
-          console.log(`[cachedQuery] key=${key} ms=${ms.toFixed(1)} error=throw`);
+          logDebug(`cachedQuery key=${key} ms=${ms.toFixed(1)} error=throw`);
         }
-        return { data: null, error };
+        const errorObj = error instanceof Error ? { message: error.message } : { message: String(error) };
+        return { data: null, error: errorObj };
       }
     },
     [key],
@@ -61,17 +68,17 @@ export async function cachedQuery<T>(
 /**
  * Cache multiple queries in parallel with the same revalidation time.
  */
-export async function cachedQueries<T extends Record<string, any>>(
+export async function cachedQueries<T extends Record<string, unknown>>(
   queries: {
-    [K in keyof T]: () => Promise<{ data: T[K] | null; error: any }>;
+    [K in keyof T]: () => Promise<SupabaseQueryResult<T[K]>>;
   },
   baseKey: string,
   revalidateSeconds: number | false = DEFAULT_REVALIDATE_SECONDS,
-): Promise<{ [K in keyof T]: { data: T[K] | null; error: any } }> {
+): Promise<{ [K in keyof T]: SupabaseQueryResult<T[K]> }> {
   const results = await Promise.all(
     Object.entries(queries).map(async ([name, queryFn]) => {
       const result = await cachedQuery(
-        queryFn as () => Promise<{ data: any; error: any }>,
+        queryFn as () => Promise<SupabaseQueryResult<unknown>>,
         `${baseKey}-${name}`,
         revalidateSeconds,
       );
@@ -80,6 +87,6 @@ export async function cachedQueries<T extends Record<string, any>>(
   );
 
   return Object.fromEntries(results) as {
-    [K in keyof T]: { data: T[K] | null; error: any };
+    [K in keyof T]: SupabaseQueryResult<T[K]>;
   };
 }

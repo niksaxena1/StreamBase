@@ -113,3 +113,63 @@ export function extractOverrideItemsFromRechartsPayload(payload: unknown): Manua
     });
 }
 
+// ============================================================================
+// Rolling Average Utilities
+// ============================================================================
+
+/**
+ * Compute 7-day rolling average for time series data.
+ * Input: array in descending order (newest first) with { date, value }.
+ * Output: array in descending order with { date, value, ma7 }.
+ */
+export function computeRollingAvg7<T extends { date: string; value: number }>(
+  desc: T[]
+): Array<T & { ma7: number | null }> {
+  const asc = [...desc].reverse();
+  const outAsc: Array<T & { ma7: number | null }> = [];
+  
+  for (let i = 0; i < asc.length; i++) {
+    const windowStart = Math.max(0, i - 6);
+    const windowSize = i - windowStart + 1;
+    if (windowSize < 7) {
+      outAsc.push({ ...asc[i], ma7: null });
+    } else {
+      let sum = 0;
+      for (let j = windowStart; j <= i; j++) {
+        sum += asc[j].value;
+      }
+      outAsc.push({ ...asc[i], ma7: sum / 7 });
+    }
+  }
+  
+  return outAsc.reverse();
+}
+
+/**
+ * Compute 7-day rolling average for daily data (using 'daily' field).
+ * Input: array in descending order (newest first) with { date, daily }.
+ * Output: array in descending order with { date, daily, ma7 }.
+ */
+export function computeDailyRollingAvg7<T extends { date: string; daily: number }>(
+  desc: T[]
+): Array<T & { ma7: number | null }> {
+  const asc = [...desc].reverse();
+  const outAsc: Array<T & { ma7: number | null }> = [];
+  
+  for (let i = 0; i < asc.length; i++) {
+    const windowStart = Math.max(0, i - 6);
+    const windowSize = i - windowStart + 1;
+    if (windowSize < 7) {
+      outAsc.push({ ...asc[i], ma7: null });
+    } else {
+      let sum = 0;
+      for (let j = windowStart; j <= i; j++) {
+        sum += asc[j].daily;
+      }
+      outAsc.push({ ...asc[i], ma7: sum / 7 });
+    }
+  }
+  
+  return outAsc.reverse();
+}
+
