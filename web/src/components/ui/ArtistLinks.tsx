@@ -19,7 +19,7 @@ export function ArtistLinks(props: {
             {artistId ? (
               <Link
                 href={`/catalog?artist_id=${encodeURIComponent(artistId)}`}
-                className="font-medium transition-colors hover:text-lime-600 dark:hover:text-lime-400"
+                className="font-medium transition-colors sb-link-hover"
               >
                 {name}
               </Link>

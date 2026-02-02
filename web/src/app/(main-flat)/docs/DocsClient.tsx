@@ -225,7 +225,7 @@ export function DocsClient(props: {
           </div>
 
           <div className="mt-3 grid grid-cols-1 gap-2 lg:grid-cols-2">
-            <div className="rounded-xl border bg-white/60 p-3 dark:bg-white/[0.03]" style={{ borderColor: "var(--sb-border)" }}>
+            <div className="rounded-xl border sb-panel p-3" style={{ borderColor: "var(--sb-border)" }}>
               <div className="flex items-center justify-between gap-2">
                 <div className="text-[11px] opacity-60">Repo migrations</div>
                 <CopyChip value={(props.inventory.repoMigrations ?? []).join("\n")} label="Copy list" />
@@ -238,7 +238,7 @@ export function DocsClient(props: {
               </div>
             </div>
 
-            <div className="rounded-xl border bg-white/60 p-3 dark:bg-white/[0.03]" style={{ borderColor: "var(--sb-border)" }}>
+            <div className="rounded-xl border sb-panel p-3" style={{ borderColor: "var(--sb-border)" }}>
               <div className="flex items-center justify-between gap-2">
                 <div className="text-[11px] opacity-60">DB inventory (optional)</div>
                 {props.inventory.dbInventoryJson ? (
@@ -284,7 +284,7 @@ export function DocsClient(props: {
                   key={sec.id}
                   id={sec.id}
                   open={open}
-                  className="rounded-xl border bg-white/50 p-3 dark:bg-white/[0.03]"
+                  className="rounded-xl border sb-panel p-3"
                   style={{ borderColor: "var(--sb-border)" }}
                 >
                   <summary className="cursor-pointer select-none text-sm font-semibold">
@@ -293,7 +293,7 @@ export function DocsClient(props: {
                   <div className="mt-3 space-y-3">
                     {(sec.tags.length > 0 || sec.sources.length > 0) && (
                       <div
-                        className="flex flex-col gap-2 rounded-lg border bg-white/60 p-2 text-xs dark:bg-white/[0.03]"
+                        className="flex flex-col gap-2 rounded-lg border sb-panel p-2 text-xs"
                         style={{ borderColor: "var(--sb-border)" }}
                       >
                         {sec.tags.length > 0 && (
@@ -341,7 +341,7 @@ function Stat(props: { label: string; value: number | null | undefined }) {
   const v = props.value;
   const text = v == null ? "—" : Intl.NumberFormat().format(v);
   return (
-    <div className="rounded-xl border bg-white/60 p-3 dark:bg-white/[0.03]" style={{ borderColor: "var(--sb-border)" }}>
+    <div className="rounded-xl border sb-panel p-3" style={{ borderColor: "var(--sb-border)" }}>
       <div className="text-[11px] opacity-60">{props.label}</div>
       <div className="mt-1 font-mono text-sm">{text}</div>
     </div>
@@ -420,7 +420,7 @@ function Markdown(props: { md: string }) {
         pre: ({ children, ...p }) => (
           <pre
             {...p}
-            className="overflow-x-auto rounded-lg border bg-black/[0.03] p-3 font-mono text-[12px] leading-relaxed dark:bg-white/[0.06]"
+            className="overflow-x-auto rounded-lg border sb-code-bg p-3 font-mono text-[12px] leading-relaxed"
             style={{ borderColor: "var(--sb-border)" }}
           >
             {children}
@@ -444,7 +444,7 @@ function Markdown(props: { md: string }) {
         blockquote: ({ children, ...p }) => (
           <blockquote
             {...p}
-            className="rounded-lg border-l-4 bg-black/[0.02] p-3 text-sm dark:bg-white/[0.04]"
+            className="rounded-lg border-l-4 sb-blockquote-bg p-3 text-sm"
             style={{ borderColor: "var(--sb-accent)" }}
           >
             {children}

@@ -81,7 +81,7 @@ export function PlaylistSettingsTable({
     const s = status[fieldKey] ?? "idle";
     if (s === "idle") return null;
     if (s === "saving") return <span className="text-[11px] opacity-60">Saving…</span>;
-    if (s === "saved") return <span className="text-[11px] text-lime-700 dark:text-lime-400">Saved</span>;
+    if (s === "saved") return <span className="text-[11px] sb-positive">Saved</span>;
     return <span className="text-[11px] text-red-600 dark:text-red-400">Error</span>;
   }
 

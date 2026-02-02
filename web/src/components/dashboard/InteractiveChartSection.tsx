@@ -8,6 +8,7 @@ import { DailyStreamsChart } from "@/components/charts/DailyStreamsChart";
 import { AnimatedCounter } from "@/components/ui/AnimatedCounter";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
 import { slugifyForFilename, todayIsoDate } from "@/lib/csv";
+import { useThemeColors, getChartColor } from "@/components/charts/useThemeColors";
 
 type ChartData = {
   date: string;
@@ -51,7 +52,7 @@ export function InteractiveChartSection({
   totalValueLabel = "Total Streams",
   valueFormat = "int",
   yTickFormat = "k",
-  color = "#c7f33c",
+  color,
   accentColor,
   selectedChart: selectedChartProp,
   onSelectChart,
@@ -60,6 +61,10 @@ export function InteractiveChartSection({
     useState<ChartType>("daily");
   const selectedChart = selectedChartProp ?? selectedChartState;
   const setSelectedChart = onSelectChart ?? setSelectedChartState;
+  
+  // Use theme-aware chart color if none specified
+  const themeColors = useThemeColors();
+  const effectiveColor = color ?? themeColors.accentStroke;
 
   const chartConfigs = {
     daily: {
@@ -133,7 +138,7 @@ export function InteractiveChartSection({
             valueLabel={currentChart.valueLabel}
             valueFormat={valueFormat}
             yTickFormat={yTickFormat}
-            color={color}
+            color={effectiveColor}
             heightPx={220}
             showMA7={selectedChart === "daily"}
             isCumulative={selectedChart === "total"}

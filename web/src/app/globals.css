@@ -17,6 +17,20 @@
   --sb-accent: #c7f33c; /* lime green */
   --sb-accent-soft: #e1f2ae; /* pale lime */
 
+  /* Chart/stroke accent - slightly darker for better light-mode contrast */
+  --sb-accent-stroke: #a8d62e;
+  /* Positive values (daily streams, revenue) */
+  --sb-positive: #4d7c0f; /* lime-700 equivalent - readable on light bg */
+  --sb-positive-muted: #65a30d; /* lime-600 for hover states */
+
+  /* Subtle surface overlays (zebra striping, hover, panels) */
+  --sb-row-odd: rgba(0, 0, 0, 0.035);
+  --sb-row-hover: rgba(0, 0, 0, 0.06);
+  --sb-panel: rgba(255, 255, 255, 0.6);
+  --sb-panel-hover: rgba(255, 255, 255, 0.8);
+  --sb-code-bg: rgba(0, 0, 0, 0.04);
+  --sb-blockquote-bg: rgba(0, 0, 0, 0.025);
+
   /* Density tokens (compact dashboard baseline) */
   --sb-radius: 12px;
   --sb-radius-lg: 16px;
@@ -49,6 +63,17 @@
     
     /* Make accent pop more in dark mode */
     --sb-accent: #d4ff4d;
+    --sb-accent-stroke: #d4ff4d; /* Same as accent in dark mode - already high contrast */
+    --sb-positive: #a3e635; /* lime-400 - bright on dark bg */
+    --sb-positive-muted: #84cc16; /* lime-500 for hover */
+
+    /* Subtle surfaces - use white alpha on dark */
+    --sb-row-odd: rgba(255, 255, 255, 0.02);
+    --sb-row-hover: rgba(255, 255, 255, 0.04);
+    --sb-panel: rgba(255, 255, 255, 0.03);
+    --sb-panel-hover: rgba(255, 255, 255, 0.05);
+    --sb-code-bg: rgba(255, 255, 255, 0.06);
+    --sb-blockquote-bg: rgba(255, 255, 255, 0.04);
   }
 }
 
@@ -62,6 +87,15 @@ html[data-theme="light"] {
   --sb-text: #0b0b0c;
   --sb-muted: rgba(0, 0, 0, 0.55);
   --sb-accent: #c7f33c;
+  --sb-accent-stroke: #a8d62e;
+  --sb-positive: #4d7c0f;
+  --sb-positive-muted: #65a30d;
+  --sb-row-odd: rgba(0, 0, 0, 0.035);
+  --sb-row-hover: rgba(0, 0, 0, 0.06);
+  --sb-panel: rgba(255, 255, 255, 0.6);
+  --sb-panel-hover: rgba(255, 255, 255, 0.8);
+  --sb-code-bg: rgba(0, 0, 0, 0.04);
+  --sb-blockquote-bg: rgba(0, 0, 0, 0.025);
 }
 
 html[data-theme="dark"] {
@@ -73,6 +107,15 @@ html[data-theme="dark"] {
   --sb-text: #ededed;
   --sb-muted: rgba(255, 255, 255, 0.5);
   --sb-accent: #d4ff4d;
+  --sb-accent-stroke: #d4ff4d;
+  --sb-positive: #a3e635;
+  --sb-positive-muted: #84cc16;
+  --sb-row-odd: rgba(255, 255, 255, 0.02);
+  --sb-row-hover: rgba(255, 255, 255, 0.04);
+  --sb-panel: rgba(255, 255, 255, 0.03);
+  --sb-panel-hover: rgba(255, 255, 255, 0.05);
+  --sb-code-bg: rgba(255, 255, 255, 0.06);
+  --sb-blockquote-bg: rgba(255, 255, 255, 0.04);
 }
 
 /* Enable View Transitions (Opt-in) */
@@ -223,6 +266,51 @@ body {
 
 .sb-ring {
   box-shadow: 0 0 0 1px var(--sb-border);
+}
+
+/* Semantic surface utilities - use these instead of hard-coded black/white alphas */
+.sb-row-odd:nth-child(odd) {
+  background: var(--sb-row-odd);
+}
+
+.sb-row-hover:hover {
+  background: var(--sb-row-hover);
+}
+
+.sb-panel {
+  background: var(--sb-panel);
+}
+
+.sb-panel-hover:hover {
+  background: var(--sb-panel-hover);
+}
+
+.sb-code-bg {
+  background: var(--sb-code-bg);
+}
+
+.sb-blockquote-bg {
+  background: var(--sb-blockquote-bg);
+}
+
+/* Positive value color (for daily streams, gains, etc.) */
+.sb-positive {
+  color: var(--sb-positive);
+}
+
+.sb-positive-hover:hover {
+  color: var(--sb-positive-muted);
+}
+
+/* Link hover accent - for clickable links that should stand out */
+.sb-link-hover {
+  transition-property: color;
+  transition-timing-function: ease;
+  transition-duration: 150ms;
+}
+
+.sb-link-hover:hover {
+  color: var(--sb-positive-muted);
 }
 
 /* Enhanced Living Backgrounds */

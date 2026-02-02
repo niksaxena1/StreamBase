@@ -91,7 +91,7 @@ export function TracksList({ tracks, searchQuery }: TracksListProps) {
                 <td className="px-3 py-2">
                   <Link
                     href={`/tracks/${track.isrc}`}
-                    className="font-medium transition-colors hover:text-lime-600 dark:hover:text-lime-400"
+                    className="font-medium transition-colors sb-link-hover"
                   >
                     {track.name ?? track.isrc}
                   </Link>

@@ -195,7 +195,7 @@ export default async function PlaylistDetailPage({
             <h1 className="font-display text-xl font-semibold tracking-tight sm:text-2xl">
               <Link
                 href={`/playlists/${playlist_key}`}
-                className="transition-colors hover:text-lime-600 dark:hover:text-lime-400"
+                className="transition-colors sb-link-hover"
               >
                 {playlistRow?.display_name ?? playlist_key}
               </Link>
@@ -268,7 +268,7 @@ export default async function PlaylistDetailPage({
               <TableCell>
                 <Link
                   href={`/tracks/${t.isrc}`}
-                  className="font-medium transition-colors hover:text-lime-600 dark:hover:text-lime-400"
+                  className="font-medium transition-colors sb-link-hover"
                 >
                   {t.name ?? t.isrc}
                 </Link>
@@ -321,7 +321,7 @@ export default async function PlaylistDetailPage({
               <TableCell mono>{formatDateISO(dataDateFromRunDate(r.date))}</TableCell>
               <TableCell numeric>{formatInt(r.track_count)}</TableCell>
               <TableCell numeric>{formatInt(r.total_streams_cumulative)}</TableCell>
-              <TableCell numeric className="text-lime-700 dark:text-lime-400 font-medium">
+              <TableCell numeric className="sb-positive font-medium">
                 +{formatInt(r.daily_streams_net)}
               </TableCell>
               <TableCell numeric>{formatUsd(Number(r.total_streams_cumulative ?? 0) * payoutPerStreamUsd)}</TableCell>

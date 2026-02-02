@@ -69,7 +69,7 @@ export function TracksList({ tracks, searchQuery }: TracksListProps) {
           </TableCell>
           <TableCell>
             <Link
-              className="transition-colors hover:text-lime-600 dark:hover:text-lime-400 font-medium"
+              className="transition-colors sb-link-hover font-medium"
               href={`/tracks/${track.isrc}`}
             >
               {track.name ?? track.isrc}

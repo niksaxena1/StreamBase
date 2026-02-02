@@ -93,7 +93,7 @@ export function CatalogMetricsClient(props: {
 
   const dailyWithMaDesc = useMemo(() => computeRollingAvg7(dailyDesc), [dailyDesc]);
 
-  const cumulativeLabel = metric === "revenue" ? "Est. revenue (cumulative)" : metric === "streams" ? "Total streams" : "Track count";
+  const cumulativeLabel = metric === "revenue" ? "Est. revenue (total)" : metric === "streams" ? "Total streams" : "Track count";
   const dailyLabel = metric === "revenue" ? "Est. revenue (daily)" : metric === "streams" ? "Daily streams" : "Track change (daily)";
   
   const valueFormat = metric === "revenue" ? "usd" : "int";
@@ -111,8 +111,9 @@ export function CatalogMetricsClient(props: {
     ? 0
     : props.artist24h;
 
-  // Use different colors based on metric: blue for tracks, emerald for revenue, lime for streams
-  const chartColor = metric === "tracks" ? "#3b82f6" : metric === "revenue" ? "#10b981" : "#c7f33c";
+  // Use different colors based on metric: blue for tracks, emerald for revenue, accent stroke for streams
+  // Note: streams color is left undefined to let the chart component use theme-aware accentStroke
+  const chartColor = metric === "tracks" ? "#3b82f6" : metric === "revenue" ? "#10b981" : undefined;
 
   return (
     <div className="space-y-4">

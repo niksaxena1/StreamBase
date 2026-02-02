@@ -219,7 +219,7 @@ export function PlaylistFilters({ playlists, statsMap }: PlaylistFiltersProps) {
               </TableCell>
               <TableCell>
                 {stats?.daily_streams_net !== null && stats?.daily_streams_net !== undefined ? (
-                  <span className="text-lime-700 dark:text-lime-400 font-medium">
+                  <span className="sb-positive font-medium">
                     +{formatInt(stats.daily_streams_net)}
                   </span>
                 ) : (

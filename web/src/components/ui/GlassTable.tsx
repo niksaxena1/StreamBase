@@ -109,7 +109,7 @@ export function EmptyState({
       <TableCell className="py-12 text-center" colSpan={colSpan}>
         <div className="flex flex-col items-center justify-center gap-3">
           {icon || (
-            <div className="rounded-full bg-black/5 p-4 dark:bg-white/5">
+            <div className="rounded-full p-4" style={{ background: "var(--sb-row-hover)" }}>
               <Music className="h-6 w-6" style={{ color: "var(--sb-muted)" }} />
             </div>
           )}
@@ -122,15 +122,16 @@ export function EmptyState({
   );
 }
 
-export function TableRow({ children, className, ...props }: { children: ReactNode; className?: string } & ComponentProps<"tr">) {
+export function TableRow({ children, className, style, ...props }: { children: ReactNode; className?: string; style?: React.CSSProperties } & ComponentProps<"tr">) {
   return (
     <tr
       className={[
         "group transition-colors",
-        "odd:bg-black/[0.02] dark:odd:bg-white/[0.02]", // Zebra striping
-        "hover:bg-black/[0.04] dark:hover:bg-white/[0.04]", // Slightly darker hover to be visible on zebra rows
+        // Zebra striping and hover now use CSS variables for theme-aware contrast
+        "odd:sb-row-odd hover:sb-row-hover",
         className,
       ].filter(Boolean).join(" ")}
+      style={style}
       {...props}
     >
       {children}

@@ -337,7 +337,7 @@ export function FilterBuilder({
     <details
       open={isOpen}
       onToggle={(ev) => setIsOpen(ev.currentTarget.open)}
-      className="rounded-xl border bg-white/50 p-3 dark:bg-white/[0.03]"
+      className="rounded-xl border sb-panel p-3"
       style={{ borderColor: "var(--sb-border)" }}
     >
       <summary className="cursor-pointer select-none">
@@ -478,7 +478,7 @@ export function FilterBuilder({
           
           {/* Collapsed summary */}
           {!isExpanded && activeConditionCount > 0 && (
-            <div className="p-3 rounded-xl bg-white/50 dark:bg-white/[0.03]">
+            <div className="p-3 rounded-xl sb-panel">
               <div className="flex items-center gap-2 mb-2">
                 <Sparkles className="h-4 w-4" style={{ color: "var(--sb-accent)" }} />
                 <span className="text-sm font-medium" style={{ color: "var(--sb-text)" }}>

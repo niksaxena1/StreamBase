@@ -1,6 +1,7 @@
 "use client";
 
 import { useId } from "react";
+import { useThemeColors } from "@/components/charts/useThemeColors";
 
 export function Sparkline({
   data,
@@ -14,6 +15,7 @@ export function Sparkline({
   color?: string; // Custom color for the sparkline
 }) {
   const gid = useId();
+  const themeColors = useThemeColors();
 
   // If we have real data, use it
   if (data && data.length >= 2) {
@@ -38,7 +40,7 @@ export function Sparkline({
     const first = data[0];
     const last = data[data.length - 1];
     const isUp = last > first;
-    const lineColor = color || (isUp ? "#c7f33c" : trend === "down" ? "#ff4d4d" : "currentColor");
+    const lineColor = color || (isUp ? themeColors.accentStroke : trend === "down" ? "#ff4d4d" : "currentColor");
 
     return (
       <svg
@@ -82,7 +84,7 @@ export function Sparkline({
     neutral: "M0 15 C20 15 20 10 40 15 C60 20 60 10 80 15",
   } as const;
 
-  const lineColor = color || (trend === "up" ? "#c7f33c" : trend === "down" ? "#ff4d4d" : "currentColor");
+  const lineColor = color || (trend === "up" ? themeColors.accentStroke : trend === "down" ? "#ff4d4d" : "currentColor");
 
   return (
     <svg

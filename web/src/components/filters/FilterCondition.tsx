@@ -101,8 +101,7 @@ export function FilterCondition({
     <div
       className={cx(
         "group flex items-center gap-2 p-2 rounded-xl transition",
-        "bg-white/50 dark:bg-white/[0.03]",
-        "hover:bg-white/70 dark:hover:bg-white/[0.05]",
+        "sb-panel sb-panel-hover",
         !condition.enabled && "opacity-50"
       )}
     >

@@ -36,7 +36,7 @@ export function MonthlyBarChart({
   valueLabel = "Value",
   valueFormat = "int",
   yTickFormat = "k",
-  color = "#c7f33c",
+  color,
   heightPx = 220,
 }: {
   data: MonthlyDataPoint[];
@@ -47,6 +47,9 @@ export function MonthlyBarChart({
   heightPx?: number;
 }) {
   const gid = useId();
+  // Default to accent stroke color from CSS variable (read at runtime in useThemeColors if needed)
+  // For now, use a reasonable default that works in both themes
+  const effectiveColor = color ?? "#a8d62e"; // Matches --sb-accent-stroke light mode
 
   const fmtValue = (n: number) =>
     valueFormat === "usd" ? formatUsd(n) : formatInt(n);
@@ -69,8 +72,8 @@ export function MonthlyBarChart({
         >
           <defs>
             <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor={color} stopOpacity={0.8} />
-              <stop offset="95%" stopColor={color} stopOpacity={0.4} />
+              <stop offset="5%" stopColor={effectiveColor} stopOpacity={0.8} />
+              <stop offset="95%" stopColor={effectiveColor} stopOpacity={0.4} />
             </linearGradient>
           </defs>
           <CartesianGrid

@@ -241,7 +241,7 @@ export async function PlaylistTracksSection(props: {
               <TableCell>
                 <Link
                   href={`/tracks/${t.isrc}`}
-                  className="font-medium transition-colors hover:text-lime-600 dark:hover:text-lime-400"
+                  className="font-medium transition-colors sb-link-hover"
                 >
                   {t.name ?? t.isrc}
                 </Link>
@@ -254,7 +254,7 @@ export async function PlaylistTracksSection(props: {
               <TableCell mono className="text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>
                 {t.isrc}
               </TableCell>
-              <TableCell className="font-medium text-lime-700 dark:text-lime-400">
+              <TableCell className="font-medium sb-positive">
                 {t.daily === null ? "—" : `+${formatInt(t.daily)}`}
               </TableCell>
               <TableCell>{t.total === null ? "—" : formatInt(t.total)}</TableCell>
@@ -297,7 +297,7 @@ export async function PlaylistTracksSection(props: {
                 <TableCell>
                   <Link
                     href={`/tracks/${m.isrc}`}
-                    className="font-medium transition-colors hover:text-lime-600 dark:hover:text-lime-400"
+                    className="font-medium transition-colors sb-link-hover"
                   >
                     {m.name ?? m.isrc}
                   </Link>
@@ -355,7 +355,7 @@ export async function PlaylistTracksSection(props: {
                 <TableCell>
                   <Link
                     href={`/tracks/${m.isrc}`}
-                    className="font-medium transition-colors hover:text-lime-600 dark:hover:text-lime-400"
+                    className="font-medium transition-colors sb-link-hover"
                   >
                     {m.name ?? m.isrc}
                   </Link>

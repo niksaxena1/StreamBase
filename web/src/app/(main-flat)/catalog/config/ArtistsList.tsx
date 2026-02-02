@@ -48,7 +48,7 @@ export function ArtistsList({ artists, searchQuery }: ArtistsListProps) {
             </TableCell>
             <TableCell>
               <Link
-                className="transition-colors hover:text-lime-600 dark:hover:text-lime-400 font-medium"
+                className="transition-colors sb-link-hover font-medium"
                 href={`/catalog?artist_id=${encodeURIComponent(artist.id)}`}
               >
                 {artist.name}

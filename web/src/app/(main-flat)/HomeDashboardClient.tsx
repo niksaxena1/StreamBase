@@ -789,7 +789,7 @@ function HomeDashboardInner(props: {
       totalValueLabel: "Total Streams",
       valueFormat: "int" as const,
       yTickFormat: "k" as const,
-      color: "#c7f33c",
+      color: undefined, // Let chart component use theme-aware accentStroke
     };
   }, [metric, props.history, props.latest, streamPayoutPerStreamUsd]);
 
@@ -905,7 +905,7 @@ function HomeDashboardInner(props: {
 
       {props.playlistKey === "all_catalog" && allCatalogMa7 !== null ? (
         <blockquote
-          className="rounded-lg border-l-4 bg-black/[0.02] p-3 text-sm dark:bg-white/[0.04]"
+          className="rounded-lg border-l-4 sb-blockquote-bg p-3 text-sm"
           style={{ borderColor: "var(--sb-accent)" }}
         >
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
@@ -950,7 +950,7 @@ function HomeDashboardInner(props: {
       <details
         open={openScatter}
         onToggle={(ev) => setOpenScatter(ev.currentTarget.open)}
-        className="rounded-xl border bg-white/50 p-3 dark:bg-white/[0.03]"
+        className="rounded-xl border sb-panel p-3"
         style={{ borderColor: "var(--sb-border)" }}
       >
         <summary className="cursor-pointer select-none">
@@ -1264,7 +1264,7 @@ function HomeDashboardInner(props: {
         <details
           open={openMilestones}
           onToggle={(ev) => setOpenMilestones(ev.currentTarget.open)}
-          className="rounded-xl border bg-white/50 p-3 dark:bg-white/[0.03]"
+          className="rounded-xl border sb-panel p-3"
           style={{ borderColor: "var(--sb-border)" }}
         >
           <summary className="cursor-pointer select-none">
@@ -1569,8 +1569,8 @@ function HomeDashboardInner(props: {
                 metric === "revenue" ? dailyStreams * streamPayoutPerStreamUsd : dailyStreams;
               const metricNumberClass =
                 metric === "revenue"
-                  ? "text-green-600 dark:text-green-400 font-medium"
-                  : "text-lime-700 dark:text-lime-400 font-medium";
+                  ? "font-medium" // revenue uses emerald via inline style
+                  : "sb-positive font-medium";
 
               return (
                 <TableRow key={p.isrc}>
@@ -1640,10 +1640,10 @@ function HomeDashboardInner(props: {
                       </span>
                     )}
                   </TableCell>
-                  <TableCell numeric className={metricNumberClass}>
+                  <TableCell numeric className={metricNumberClass} style={metric === "revenue" ? { color: "#10b981" } : undefined}>
                     {metric === "revenue" ? formatUsd(totalValue) : formatInt(totalValue)}
                   </TableCell>
-                  <TableCell numeric className={metricNumberClass}>
+                  <TableCell numeric className={metricNumberClass} style={metric === "revenue" ? { color: "#10b981" } : undefined}>
                     {metric === "revenue" ? formatUsd(dailyValue) : formatInt(dailyValue)}
                   </TableCell>
                 </TableRow>
@@ -1663,7 +1663,7 @@ function HomeDashboardInner(props: {
       <details
         open={openHistory}
         onToggle={(ev) => setOpenHistory(ev.currentTarget.open)}
-        className="rounded-xl border bg-white/50 p-3 dark:bg-white/[0.03]"
+        className="rounded-xl border sb-panel p-3"
         style={{ borderColor: "var(--sb-border)" }}
       >
         <summary className="cursor-pointer select-none">
@@ -1708,7 +1708,7 @@ function HomeDashboardInner(props: {
                   ? formatUsd(Number(r.total_streams_cumulative ?? 0) * streamPayoutPerStreamUsd)
                   : formatInt(r.total_streams_cumulative)}
               </TableCell>
-              <TableCell numeric className={metric === "revenue" ? "text-green-600 dark:text-green-400 font-medium" : "text-lime-700 dark:text-lime-400 font-medium"}>
+              <TableCell numeric className={metric === "revenue" ? "font-medium" : "sb-positive font-medium"} style={metric === "revenue" ? { color: "#10b981" } : undefined}>
                 {metric === "revenue"
                   ? formatUsd(Number(r.daily_streams_net ?? 0) * streamPayoutPerStreamUsd)
                   : formatInt(r.daily_streams_net)}

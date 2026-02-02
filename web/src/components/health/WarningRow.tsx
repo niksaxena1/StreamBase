@@ -220,7 +220,7 @@ export function WarningRow({
           {warning.playlist_key ? (
             <Link
               href={`/playlists/${warning.playlist_key}`}
-              className="flex items-center gap-2 min-w-0 transition-colors hover:text-lime-600 dark:hover:text-lime-400"
+              className="flex items-center gap-2 min-w-0 transition-colors sb-link-hover"
               onClick={(e) => e.stopPropagation()}
               title={`${playlistMeta?.name ?? warning.playlist_key} (${warning.playlist_key})`}
             >
@@ -325,7 +325,7 @@ export function WarningRow({
         </TableCell>
       </TableRow>
       {expanded && (
-        <TableRow className="bg-black/[0.01] dark:bg-white/[0.01]">
+        <TableRow style={{ background: "var(--sb-row-odd)" }}>
           <TableCell colSpan={4} className="py-4">
             {warning.code === "non_catalog_tracks_present" && hasTracks && (
               <div className="space-y-2">
@@ -363,7 +363,7 @@ export function WarningRow({
                         <div className="mt-0.5">
                           <Link
                             href={`/tracks/${track.isrc}`}
-                            className="font-mono text-[10px] text-lime-600 dark:text-lime-400 underline hover:opacity-80"
+                            className="font-mono text-[10px] sb-positive underline hover:opacity-80"
                           >
                             {track.isrc}
                           </Link>
@@ -413,7 +413,7 @@ export function WarningRow({
                             <div className="mt-0.5">
                               <Link
                                 href={`/tracks/${track.isrc}`}
-                                className="font-mono text-[10px] text-lime-600 dark:text-lime-400 underline hover:opacity-80"
+                                className="font-mono text-[10px] sb-positive underline hover:opacity-80"
                               >
                                 {track.isrc}
                               </Link>
@@ -461,7 +461,7 @@ export function WarningRow({
                             <div className="mt-0.5">
                               <Link
                                 href={`/tracks/${track.isrc}`}
-                                className="font-mono text-[10px] text-lime-600 dark:text-lime-400 underline hover:opacity-80"
+                                className="font-mono text-[10px] sb-positive underline hover:opacity-80"
                               >
                                 {track.isrc}
                               </Link>
@@ -523,7 +523,7 @@ export function WarningRow({
                               <div className="mt-0.5">
                                 <Link
                                   href={`/tracks/${track.isrc}`}
-                                  className="font-mono text-[10px] text-lime-600 dark:text-lime-400 underline hover:opacity-80"
+                                  className="font-mono text-[10px] sb-positive underline hover:opacity-80"
                                 >
                                   {track.isrc}
                                 </Link>
@@ -594,7 +594,7 @@ export function WarningRow({
                               <div className="mt-0.5">
                                 <Link
                                   href={`/tracks/${track.isrc}`}
-                                  className="font-mono text-[10px] text-lime-600 dark:text-lime-400 underline hover:opacity-80"
+                                  className="font-mono text-[10px] sb-positive underline hover:opacity-80"
                                 >
                                   {track.isrc}
                                 </Link>
@@ -682,7 +682,7 @@ export function WarningRow({
                                 <div className="mt-0.5">
                                   <Link
                                     href={`/tracks/${track.isrc}`}
-                                    className="font-mono text-[10px] text-lime-600 dark:text-lime-400 underline hover:opacity-80"
+                                    className="font-mono text-[10px] sb-positive underline hover:opacity-80"
                                   >
                                     {track.isrc}
                                   </Link>

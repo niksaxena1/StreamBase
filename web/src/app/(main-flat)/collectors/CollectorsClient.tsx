@@ -804,7 +804,7 @@ export function CollectorsClient(props: {
                         href={row.href}
                         className={[
                           "flex h-full w-full items-center gap-2 px-3 py-2 font-medium transition-colors",
-                          "hover:text-lime-600 dark:hover:text-lime-400",
+                          "sb-link-hover",
                           r.collector === props.selectedCollector ? "opacity-100" : "opacity-70",
                         ].join(" ")}
                       >
@@ -941,7 +941,7 @@ export function CollectorsClient(props: {
         <details
           open={openPlaylists}
           onToggle={(ev) => setOpenPlaylists(ev.currentTarget.open)}
-          className="rounded-xl border bg-white/50 p-3 dark:bg-white/[0.03]"
+          className="rounded-xl border sb-panel p-3"
           style={{ borderColor: "var(--sb-border)" }}
         >
           <summary className="cursor-pointer select-none">
@@ -1002,7 +1002,7 @@ export function CollectorsClient(props: {
                       })()}
                       <Link
                         href={`/playlists/${p.playlist_key}`}
-                        className="font-medium transition-colors hover:text-lime-600 dark:hover:text-lime-400"
+                        className="font-medium transition-colors sb-link-hover"
                       >
                         {p.display_name}
                       </Link>
@@ -1012,7 +1012,7 @@ export function CollectorsClient(props: {
                   <TableCell className="font-medium">
                     {formatUsd2(Number(p.daily_streams_net ?? 0) * payoutPerStreamUsd)}
                   </TableCell>
-                  <TableCell className="text-lime-700 dark:text-lime-400 font-medium">
+                  <TableCell className="sb-positive font-medium">
                     +{formatInt(p.daily_streams_net)}
                   </TableCell>
                   <TableCell title={p.missing_streams_track_count ? "Missing catalog tracks for this date." : undefined}>
@@ -1041,7 +1041,7 @@ export function CollectorsClient(props: {
         <details
           open={openTracks}
           onToggle={(ev) => setOpenTracks(ev.currentTarget.open)}
-          className="rounded-xl border bg-white/50 p-3 dark:bg-white/[0.03]"
+          className="rounded-xl border sb-panel p-3"
           style={{ borderColor: "var(--sb-border)" }}
         >
           <summary className="cursor-pointer select-none">
@@ -1098,7 +1098,7 @@ export function CollectorsClient(props: {
                     <div className="min-w-0 flex-1">
                       <Link
                         href={`/tracks/${topTrackCards.bestDelta.isrc}`}
-                        className="block truncate transition-colors hover:text-lime-600 dark:hover:text-lime-400 font-medium text-xs"
+                        className="block truncate transition-colors sb-link-hover font-medium text-xs"
                       >
                         {topTrackCards.bestDelta.name ?? topTrackCards.bestDelta.isrc}
                       </Link>
@@ -1139,7 +1139,7 @@ export function CollectorsClient(props: {
                     <div className="min-w-0 flex-1">
                       <Link
                         href={`/tracks/${topTrackCards.bestTotal.isrc}`}
-                        className="block truncate transition-colors hover:text-lime-600 dark:hover:text-lime-400 font-medium text-xs"
+                        className="block truncate transition-colors sb-link-hover font-medium text-xs"
                       >
                         {topTrackCards.bestTotal.name ?? topTrackCards.bestTotal.isrc}
                       </Link>
@@ -1227,7 +1227,7 @@ export function CollectorsClient(props: {
                     <TableCell>
                       <Link
                         href={`/tracks/${t.isrc}`}
-                        className="font-medium transition-colors hover:text-lime-600 dark:hover:text-lime-400"
+                        className="font-medium transition-colors sb-link-hover"
                       >
                         {t.name ?? t.isrc}
                       </Link>
@@ -1247,7 +1247,7 @@ export function CollectorsClient(props: {
                       className={
                         t.daily_streams_delta != null && t.daily_streams_delta < 0
                           ? "text-red-600 dark:text-red-400 font-medium"
-                          : "text-lime-700 dark:text-lime-400 font-medium"
+                          : "sb-positive font-medium"
                       }
                     >
                       {t.daily_streams_delta == null

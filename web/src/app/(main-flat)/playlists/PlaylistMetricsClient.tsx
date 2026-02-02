@@ -97,8 +97,8 @@ export function PlaylistMetricsClient(props: {
     ? 0 // Track count daily is calculated differently
     : (effectiveLatest?.daily_streams_net ?? 0);
 
-  // Use different colors based on metric: blue for tracks, emerald for revenue, lime for streams
-  const chartColor = props.metric === "tracks" ? "#3b82f6" : props.metric === "revenue" ? "#10b981" : "#c7f33c";
+  // Use different colors based on metric: blue for tracks, emerald for revenue, accent stroke for streams
+  const chartColor = props.metric === "tracks" ? "#3b82f6" : props.metric === "revenue" ? "#10b981" : undefined;
   const chartAnnotations = props.metric === "tracks" ? [] : props.overrideAnnotations;
 
   return (

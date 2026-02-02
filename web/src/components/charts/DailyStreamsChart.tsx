@@ -21,7 +21,7 @@ import {
   formatUsdCompact,
 } from "@/components/charts/chartUtils";
 import { useChartCopyToClipboard, type TooltipCopyValues } from "@/components/charts/useChartCopyToClipboard";
-import { useIsDarkTheme } from "@/components/charts/useIsDarkTheme";
+import { useThemeColors } from "@/components/charts/useThemeColors";
 
 type DataPoint = {
   date: string;
@@ -174,8 +174,8 @@ export function DailyStreamsChart({
   valueLabel = "Streams",
   valueFormat = "int",
   yTickFormat = "k",
-  color = "#c7f33c",
-  maColor = "rgba(255,255,255,0.75)",
+  color,
+  maColor,
   heightPx = 220,
   showMA7 = false,
   isCumulative = false,
@@ -193,13 +193,12 @@ export function DailyStreamsChart({
   annotations?: ManualOverrideAnnotation[];
 }) {
   const gid = useId();
-  const isDark = useIsDarkTheme();
+  const themeColors = useThemeColors();
   const { containerProps, setTooltipValues, copyModal } = useChartCopyToClipboard({ valueLabel });
   
-  // Use theme-aware maColor if using default - make it very visible for debugging
-  const effectiveMaColor = maColor === "rgba(255,255,255,0.75)"
-    ? (isDark ? "#ffffff" : "#000000")
-    : maColor;
+  // Use theme-aware colors from CSS variables
+  const effectiveColor = color ?? themeColors.accentStroke;
+  const effectiveMaColor = maColor ?? (themeColors.isDark ? "#ffffff" : "#000000");
 
   const annItemsByDate = new Map<string, ManualOverrideAnnotation[]>();
   for (const a of annotations ?? []) {
@@ -258,8 +257,8 @@ export function DailyStreamsChart({
         >
           <defs>
             <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor={color} stopOpacity={0.3} />
-              <stop offset="95%" stopColor={color} stopOpacity={0} />
+              <stop offset="5%" stopColor={effectiveColor} stopOpacity={0.3} />
+              <stop offset="95%" stopColor={effectiveColor} stopOpacity={0} />
             </linearGradient>
           </defs>
           <CartesianGrid
@@ -297,15 +296,15 @@ export function DailyStreamsChart({
                 payload={payload as TooltipPayload[]}
                 valueLabel={valueLabel}
                 fmtValue={fmtValue}
-                isDark={isDark}
-                chartColor={color}
+                isDark={themeColors.isDark}
+                chartColor={effectiveColor}
                 onValuesFormatted={(v) => {
                   setTooltipValues(v);
                 }}
               />
             )}
             cursor={{
-              stroke: color,
+              stroke: effectiveColor,
               strokeWidth: 1.5,
               strokeDasharray: "5 5",
               opacity: 0.8
@@ -325,12 +324,12 @@ export function DailyStreamsChart({
           <Area
             type="monotone"
             dataKey="value"
-            stroke={color}
+            stroke={effectiveColor}
             strokeWidth={2}
             fillOpacity={1}
             fill={`url(#${gid})`}
-            dot={{ r: 3, fill: color, stroke: "var(--sb-bg)", strokeWidth: 1.5 }}
-            activeDot={{ r: 4, fill: color, stroke: "var(--sb-bg)", strokeWidth: 1.5 }}
+            dot={{ r: 3, fill: effectiveColor, stroke: "var(--sb-bg)", strokeWidth: 1.5 }}
+            activeDot={{ r: 4, fill: effectiveColor, stroke: "var(--sb-bg)", strokeWidth: 1.5 }}
           />
           {hasMA7 && (
             <Line

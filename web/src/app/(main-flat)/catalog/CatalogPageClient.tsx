@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ExternalLink, User, ChevronRight, Download, List } from "lucide-react";
-import { formatDateISO, formatInt } from "@/lib/format";
+import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
 import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/GlassTable";
 import { CatalogMetricsClient } from "./CatalogMetricsClient";
 import { Combobox } from "@/components/ui/Combobox";
@@ -86,13 +86,27 @@ export function CatalogPageClient(props: {
   const sp = useSearchParams();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
 
+  // Top-track tables only make sense for streams/revenue; treat "tracks" as streams.
+  const topTracksMode: "streams" | "revenue" = metric === "revenue" ? "revenue" : "streams";
+  const topTracksNumberStyle =
+    topTracksMode === "revenue"
+      ? ({ color: "#10b981" } as const) // emerald-500
+      : ({ color: "var(--sb-accent-stroke)" } as const);
+
   function downloadTopTracksAsCsv(data: TopTrack[], filename: string, isDaily: boolean) {
     downloadCsv({
       filename,
       rows: data.map((t) => ({
         track: t.name ?? t.isrc,
         isrc: t.isrc,
-        value: isDaily ? t.daily : t.total,
+        value:
+          topTracksMode === "revenue"
+            ? (isDaily ? t.daily : t.total) == null
+              ? null
+              : (Number(isDaily ? t.daily : t.total) * streamPayoutPerStreamUsd)
+            : isDaily
+            ? t.daily
+            : t.total,
       })) as Array<Record<string, unknown>>,
       headers: ["track", "isrc", "value"],
       sortForExport: false,
@@ -262,12 +276,12 @@ export function CatalogPageClient(props: {
             <div className="space-y-3">
               <div className="flex items-end justify-between px-1">
                 <div className="flex items-center gap-2">
-                  <h2 className="text-sm font-semibold">Top tracks (cumulative)</h2>
+                  <h2 className="text-sm font-semibold">Top tracks (total)</h2>
                   <button
                     type="button"
                     onClick={() => downloadTopTracksAsCsv(
                       props.topByCumulative,
-                      `top-tracks-cumulative-${slugifyForFilename(props.artistName)}-${todayIsoDate()}.csv`,
+                      `top-tracks-total-${slugifyForFilename(props.artistName)}-${todayIsoDate()}.csv`,
                       false
                     )}
                     className="inline-flex items-center justify-center p-0 transition-colors hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
@@ -283,7 +297,10 @@ export function CatalogPageClient(props: {
                   "",
                   "Track",
                   "ISRC",
-                  { label: "Total", align: "right" },
+                  {
+                    label: topTracksMode === "revenue" ? "Total revenue" : "Total streams",
+                    align: "right",
+                  },
                 ]}
                 maxBodyHeightClassName="max-h-56"
                 bodyClassName="overflow-x-hidden"
@@ -305,7 +322,7 @@ export function CatalogPageClient(props: {
                     <TableCell>
                       <Link
                         href={`/tracks/${t.isrc}`}
-                        className="font-medium transition-colors hover:text-lime-600 dark:hover:text-lime-400"
+                        className="font-medium transition-colors sb-link-hover"
                       >
                         {t.name ?? t.isrc}
                       </Link>
@@ -313,7 +330,13 @@ export function CatalogPageClient(props: {
                     <TableCell mono className="text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>
                       {t.isrc}
                     </TableCell>
-                    <TableCell numeric>{t.total === null ? null : formatInt(t.total)}</TableCell>
+                    <TableCell numeric className="font-medium" style={topTracksNumberStyle}>
+                      {t.total === null
+                        ? null
+                        : topTracksMode === "revenue"
+                          ? formatUsd(t.total * streamPayoutPerStreamUsd)
+                          : formatInt(t.total)}
+                    </TableCell>
                   </TableRow>
                 ))}
                 {!props.topByCumulative.length && (
@@ -346,7 +369,10 @@ export function CatalogPageClient(props: {
                   "",
                   "Track",
                   "ISRC",
-                  { label: "Daily", align: "right" },
+                  {
+                    label: topTracksMode === "revenue" ? "Daily revenue" : "Daily streams",
+                    align: "right",
+                  },
                 ]}
                 maxBodyHeightClassName="max-h-56"
                 bodyClassName="overflow-x-hidden"
@@ -368,7 +394,7 @@ export function CatalogPageClient(props: {
                     <TableCell>
                       <Link
                         href={`/tracks/${t.isrc}`}
-                        className="font-medium transition-colors hover:text-lime-600 dark:hover:text-lime-400"
+                        className="font-medium transition-colors sb-link-hover"
                       >
                         {t.name ?? t.isrc}
                       </Link>
@@ -376,8 +402,12 @@ export function CatalogPageClient(props: {
                     <TableCell mono className="text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>
                       {t.isrc}
                     </TableCell>
-                    <TableCell numeric className="font-medium text-lime-700 dark:text-lime-400">
-                      {t.daily === null ? null : `+${formatInt(t.daily)}`}
+                    <TableCell numeric className="font-medium" style={topTracksNumberStyle}>
+                      {t.daily === null
+                        ? null
+                        : topTracksMode === "revenue"
+                          ? `+${formatUsd(t.daily * streamPayoutPerStreamUsd)}`
+                          : `+${formatInt(t.daily)}`}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -478,13 +508,13 @@ export function CatalogPageClient(props: {
                 }))
               : props.trackOverrideAnnotations;
 
-          const cumulativeTitle = trackMode === "revenue" ? "Track cumulative revenue" : "Track cumulative streams";
+          const cumulativeTitle = trackMode === "revenue" ? "Track total revenue" : "Track total streams";
           const dailyTitle = trackMode === "revenue" ? "Track daily revenue" : "Track daily streams";
           const dailyLabel = trackMode === "revenue" ? "Daily revenue" : "Daily streams";
           const totalLabel = trackMode === "revenue" ? "Total revenue" : "Total streams";
 
-          // Use emerald for revenue, lime for streams (tracks don't have a separate mode like artist/playlist)
-          const trackChartColor = trackMode === "revenue" ? "#10b981" : "#c7f33c";
+          // Use emerald for revenue, accent stroke for streams (tracks don't have a separate mode like artist/playlist)
+          const trackChartColor = trackMode === "revenue" ? "#10b981" : undefined;
 
           return (
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">

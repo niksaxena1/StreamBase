@@ -6,6 +6,7 @@ import { CartesianGrid, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAx
 
 import { formatInt, formatUsd, formatUsd2 } from "@/lib/format";
 import { formatKmbTick, formatUsdCompact } from "@/components/charts/chartUtils";
+import { useThemeColors } from "@/components/charts/useThemeColors";
 import type { TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChart";
 
 export type ArtistStreamsXYPoint = {
@@ -281,7 +282,8 @@ export function ArtistStreamsXYChart({
     return { allData: all, topData: top, sampledData: sampled, hiddenCount: rest.length };
   }, [mode, payoutPerStreamUsd, points, topNDelta, topNCumulative, sampleN]);
 
-  const dotColor = color ?? (mode === "revenue" ? "#10b981" : "#c7f33c");
+  const themeColors = useThemeColors();
+  const dotColor = color ?? (mode === "revenue" ? "#10b981" : themeColors.accentStroke);
   const mutedDotColor = "rgba(148, 163, 184, 0.7)";
 
   const { logDomainX, logDomainY, logTicksX, logTicksY } = useMemo(() => {

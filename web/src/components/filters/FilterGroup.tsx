@@ -72,8 +72,7 @@ export function FilterGroup({
   return (
     <div
       className={cx(
-        "relative rounded-2xl border p-4 transition",
-        "bg-white/30 dark:bg-white/[0.02]"
+        "relative rounded-2xl border p-4 transition sb-panel"
       )}
       style={{ borderColor: "var(--sb-border)" }}
     >

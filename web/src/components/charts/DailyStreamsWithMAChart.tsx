@@ -21,7 +21,7 @@ import {
   formatUsdCompact,
 } from "@/components/charts/chartUtils";
 import { useChartCopyToClipboard, type TooltipCopyValues } from "@/components/charts/useChartCopyToClipboard";
-import { useIsDarkTheme } from "@/components/charts/useIsDarkTheme";
+import { useThemeColors } from "@/components/charts/useThemeColors";
 
 type DataPoint = {
   date: string;
@@ -174,8 +174,8 @@ export function DailyStreamsWithMAChart({
   valueLabel = "Streams",
   valueFormat = "int",
   yTickFormat = "k",
-  dailyColor = "#c7f33c",
-  maColor = "rgba(255,255,255,0.75)",
+  dailyColor,
+  maColor,
   heightPx = 220,
   annotations,
 }: {
@@ -189,13 +189,12 @@ export function DailyStreamsWithMAChart({
   annotations?: ManualOverrideAnnotation[];
 }) {
   const gid = useId();
-  const isDark = useIsDarkTheme();
+  const themeColors = useThemeColors();
   const { containerProps, setTooltipValues, copyModal } = useChartCopyToClipboard({ valueLabel });
   
-  // Use theme-aware maColor if using default - make it very visible for debugging
-  const effectiveMaColor = maColor === "rgba(255,255,255,0.75)"
-    ? (isDark ? "#ffffff" : "#000000")
-    : maColor;
+  // Use theme-aware colors from CSS variables
+  const effectiveDailyColor = dailyColor ?? themeColors.accentStroke;
+  const effectiveMaColor = maColor ?? (themeColors.isDark ? "#ffffff" : "#000000");
   
   // Keep parity with DailyStreamsChart: accept newest-first and render oldest->newest
   const annItemsByDate = new Map<string, ManualOverrideAnnotation[]>();
@@ -242,8 +241,8 @@ export function DailyStreamsWithMAChart({
         >
           <defs>
             <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor={dailyColor} stopOpacity={0.28} />
-              <stop offset="95%" stopColor={dailyColor} stopOpacity={0} />
+              <stop offset="5%" stopColor={effectiveDailyColor} stopOpacity={0.28} />
+              <stop offset="95%" stopColor={effectiveDailyColor} stopOpacity={0} />
             </linearGradient>
           </defs>
           <CartesianGrid
@@ -280,15 +279,15 @@ export function DailyStreamsWithMAChart({
                 payload={payload as TooltipPayload[]}
                 valueLabel={valueLabel}
                 fmtValue={fmtValue}
-                isDark={isDark}
-                chartColor={dailyColor}
+                isDark={themeColors.isDark}
+                chartColor={effectiveDailyColor}
                 onValuesFormatted={(v) => {
                   setTooltipValues(v);
                 }}
               />
             )}
             cursor={{
-              stroke: dailyColor,
+              stroke: effectiveDailyColor,
               strokeWidth: 1.5,
               strokeDasharray: "5 5",
               opacity: 0.8,
@@ -308,12 +307,12 @@ export function DailyStreamsWithMAChart({
           <Area
             type="monotone"
             dataKey="daily"
-            stroke={dailyColor}
+            stroke={effectiveDailyColor}
             strokeWidth={2}
             fillOpacity={1}
             fill={`url(#${gid})`}
-            dot={{ r: 3, fill: dailyColor, stroke: "var(--sb-bg)", strokeWidth: 1.5 }}
-            activeDot={{ r: 4, fill: dailyColor, stroke: "var(--sb-bg)", strokeWidth: 1.5 }}
+            dot={{ r: 3, fill: effectiveDailyColor, stroke: "var(--sb-bg)", strokeWidth: 1.5 }}
+            activeDot={{ r: 4, fill: effectiveDailyColor, stroke: "var(--sb-bg)", strokeWidth: 1.5 }}
           />
           {hasMa7Data && (
             <Line
