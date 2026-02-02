@@ -12,6 +12,7 @@ import {
 import { useId } from "react";
 import { formatInt, formatUsd } from "@/lib/format";
 import { formatKmbTick, formatUsdCompact } from "@/components/charts/chartUtils";
+import { useThemeColors } from "@/components/charts/useThemeColors";
 
 type MonthlyDataPoint = {
   month: string; // yyyy-mm
@@ -47,9 +48,9 @@ export function MonthlyBarChart({
   heightPx?: number;
 }) {
   const gid = useId();
-  // Default to accent stroke color from CSS variable (read at runtime in useThemeColors if needed)
-  // For now, use a reasonable default that works in both themes
-  const effectiveColor = color ?? "#a8d62e"; // Matches --sb-accent-stroke light mode
+  const themeColors = useThemeColors();
+  // Use theme-aware colors from CSS variables
+  const effectiveColor = color ?? themeColors.accentStroke;
 
   const fmtValue = (n: number) =>
     valueFormat === "usd" ? formatUsd(n) : formatInt(n);

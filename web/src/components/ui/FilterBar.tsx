@@ -4,12 +4,18 @@ export function FilterBar(props: {
   left?: ReactNode;
   right?: ReactNode;
   className?: string;
+  /** Use "accent" for lime-tinted, "neutral" for plain glass */
+  variant?: "accent" | "neutral";
 }) {
+  const { variant = "accent" } = props;
+  
   return (
     <div
       className={[
-        "sb-ring sticky top-0 z-20 rounded-xl border border-lime-500/20 bg-lime-500/10 p-3 shadow-sm backdrop-blur-sm",
-        "dark:bg-lime-400/10 dark:border-lime-400/20",
+        "sb-ring sticky top-0 z-20 rounded-xl p-3 shadow-sm",
+        variant === "accent" 
+          ? "sb-filter-bar" 
+          : "sb-glass",
         props.className ?? "",
       ].filter(Boolean).join(" ")}
     >

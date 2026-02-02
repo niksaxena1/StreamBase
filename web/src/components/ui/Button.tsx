@@ -7,8 +7,8 @@ import {
   ReactNode,
 } from "react";
 
-type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
-type ButtonSize = "sm" | "md";
+type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "accent";
+type ButtonSize = "xs" | "sm" | "md" | "lg";
 
 function cx(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
@@ -21,11 +21,15 @@ const VARIANT: Record<ButtonVariant, string> = {
   ghost: "bg-transparent text-black/70 hover:bg-black/5 dark:text-white/70 dark:hover:bg-white/10",
   danger:
     "bg-red-600 text-white hover:bg-red-600/90 dark:bg-red-500 dark:text-white dark:hover:bg-red-500/90",
+  accent:
+    "bg-[var(--sb-accent)] text-black hover:brightness-105 dark:bg-[var(--sb-accent)] dark:text-black dark:hover:brightness-110",
 };
 
 const SIZE: Record<ButtonSize, string> = {
+  xs: "h-6 px-2 text-[11px]",
   sm: "h-8 px-3 text-xs",
   md: "h-9 px-4 text-sm",
+  lg: "h-11 px-6 text-base",
 };
 
 export const Button = forwardRef<
@@ -82,16 +86,18 @@ export const Button = forwardRef<
 export const IconButton = forwardRef<
   HTMLButtonElement,
   ButtonHTMLAttributes<HTMLButtonElement> & {
-    variant?: Exclude<ButtonVariant, "primary" | "danger"> | "primary";
-    size?: "sm" | "md";
+    variant?: Exclude<ButtonVariant, "danger"> | "primary" | "accent";
+    size?: "xs" | "sm" | "md" | "lg";
     "aria-label": string;
     asChild?: boolean;
   }
 >(function IconButton({ className, variant = "ghost", size = "sm", asChild, children, ...props }, ref) {
-  const dim = size === "md" ? "h-9 w-9" : "h-8 w-8";
+  const dim = size === "lg" ? "h-11 w-11" : size === "md" ? "h-9 w-9" : size === "xs" ? "h-6 w-6" : "h-8 w-8";
   const v =
     variant === "primary"
       ? "bg-black text-white hover:bg-black/90 dark:bg-white dark:text-black dark:hover:bg-white/90"
+      : variant === "accent"
+      ? VARIANT.accent
       : variant === "secondary"
       ? VARIANT.secondary
       : VARIANT.ghost;

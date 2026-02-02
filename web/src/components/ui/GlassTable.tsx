@@ -98,11 +98,17 @@ export function GlassTable({
 export function EmptyState({ 
   colSpan, 
   message = "No data found",
-  icon
+  description,
+  icon,
+  action,
 }: { 
   colSpan: number; 
   message?: string;
+  /** Optional secondary description text */
+  description?: string;
   icon?: ReactNode;
+  /** Optional action button/link */
+  action?: ReactNode;
 }) {
   return (
     <TableRow>
@@ -113,12 +119,61 @@ export function EmptyState({
               <Music className="h-6 w-6" style={{ color: "var(--sb-muted)" }} />
             </div>
           )}
-          <div className="text-sm font-medium" style={{ color: "var(--sb-muted)" }}>
-            {message}
+          <div className="space-y-1">
+            <div className="text-sm font-medium" style={{ color: "var(--sb-muted)" }}>
+              {message}
+            </div>
+            {description && (
+              <div className="text-xs" style={{ color: "var(--sb-muted)", opacity: 0.7 }}>
+                {description}
+              </div>
+            )}
           </div>
+          {action && <div className="mt-2">{action}</div>}
         </div>
       </TableCell>
     </TableRow>
+  );
+}
+
+/**
+ * Standalone empty state component (not for tables).
+ * Use this for full-page or section empty states.
+ */
+export function EmptyStateCard({
+  title = "No data found",
+  description,
+  icon,
+  action,
+  className,
+}: {
+  title?: string;
+  description?: string;
+  icon?: ReactNode;
+  action?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={["sb-card p-8 text-center", className].filter(Boolean).join(" ")}>
+      <div className="flex flex-col items-center justify-center gap-4">
+        {icon || (
+          <div className="rounded-full p-4" style={{ background: "var(--sb-row-hover)" }}>
+            <Music className="h-8 w-8" style={{ color: "var(--sb-muted)" }} />
+          </div>
+        )}
+        <div className="space-y-2">
+          <h3 className="text-base font-semibold" style={{ color: "var(--sb-text)" }}>
+            {title}
+          </h3>
+          {description && (
+            <p className="text-sm max-w-sm mx-auto" style={{ color: "var(--sb-muted)" }}>
+              {description}
+            </p>
+          )}
+        </div>
+        {action && <div className="mt-2">{action}</div>}
+      </div>
+    </div>
   );
 }
 

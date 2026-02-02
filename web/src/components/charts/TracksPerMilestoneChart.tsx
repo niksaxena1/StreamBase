@@ -14,6 +14,7 @@ import {
 import { useId, useMemo } from "react";
 import { formatInt } from "@/lib/format";
 import { formatKmbTick } from "@/components/charts/chartUtils";
+import { useThemeColors } from "@/components/charts/useThemeColors";
 
 type TrackPoint = {
   isrc: string;
@@ -40,13 +41,14 @@ function MilestoneTooltip({
   label,
   totalTracks,
   mode,
-}: MilestoneTooltipProps) {
+  accentColor,
+}: MilestoneTooltipProps & { accentColor?: string }) {
   if (!active || !payload?.length) return null;
 
   const raw = payload[0]?.value;
   const n = typeof raw === "number" ? raw : Number(raw);
   const count = Number.isFinite(n) ? n : 0;
-  const accentColor = mode === "revenue" ? "#10b981" : "var(--sb-accent)";
+  const color = accentColor ?? (mode === "revenue" ? "var(--sb-revenue)" : "var(--sb-accent)");
   const pct =
     totalTracks > 0 ? Math.max(0, Math.min(100, (count / totalTracks) * 100)) : 0;
   const pctLabel = pct >= 10 ? pct.toFixed(0) : pct.toFixed(1);
@@ -66,7 +68,7 @@ function MilestoneTooltip({
       </div>
       <div>
         Tracks:{" "}
-        <span style={{ color: accentColor, fontWeight: 700 }}>
+        <span style={{ color, fontWeight: 700 }}>
           {formatInt(count)}
         </span>
         <span className="ml-1 opacity-70" style={{ color: "var(--sb-muted)" }}>
@@ -221,9 +223,10 @@ export function TracksPerMilestoneChart({
   onMilestoneClick,
 }: TracksPerMilestoneChartProps) {
   const gid = useId();
+  const themeColors = useThemeColors();
 
   const totalTracks = tracks.length;
-  const accentColor = mode === "revenue" ? "#10b981" : "var(--sb-accent)";
+  const accentColor = mode === "revenue" ? themeColors.revenue : themeColors.accent;
 
   const chartData = useMemo(() => {
     if (!tracks.length) return [];
@@ -322,7 +325,7 @@ export function TracksPerMilestoneChart({
             tickFormatter={(value) => formatKmbTick(Number(value ?? 0))}
           />
           <Tooltip
-            content={<MilestoneTooltip totalTracks={totalTracks} mode={mode} />}
+            content={<MilestoneTooltip totalTracks={totalTracks} mode={mode} accentColor={accentColor} />}
             cursor={false}
           />
           {highlightMilestone && (

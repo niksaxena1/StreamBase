@@ -16,12 +16,21 @@
   /* Accent (from reference) */
   --sb-accent: #c7f33c; /* lime green */
   --sb-accent-soft: #e1f2ae; /* pale lime */
+  --sb-accent-10: rgba(199, 243, 60, 0.1); /* 10% opacity accent for backgrounds */
+  --sb-accent-20: rgba(199, 243, 60, 0.2); /* 20% opacity accent for borders */
 
   /* Chart/stroke accent - slightly darker for better light-mode contrast */
   --sb-accent-stroke: #a8d62e;
   /* Positive values (daily streams, revenue) */
   --sb-positive: #4d7c0f; /* lime-700 equivalent - readable on light bg */
   --sb-positive-muted: #65a30d; /* lime-600 for hover states */
+
+  /* Semantic colors - use these for consistent data visualization */
+  --sb-revenue: #10b981; /* emerald-500 - financial/revenue data */
+  --sb-tracks: #3b82f6; /* blue-500 - track count/catalog data */
+  --sb-warning: #f59e0b; /* amber-500 - warnings/overrides */
+  --sb-error: #ef4444; /* red-500 - errors/negative trends */
+  --sb-info: #6366f1; /* indigo-500 - informational */
 
   /* Subtle surface overlays (zebra striping, hover, panels) */
   --sb-row-odd: rgba(0, 0, 0, 0.035);
@@ -31,15 +40,45 @@
   --sb-code-bg: rgba(0, 0, 0, 0.04);
   --sb-blockquote-bg: rgba(0, 0, 0, 0.025);
 
+  /* Spacing scale (consistent throughout app) */
+  --sb-space-xs: 0.25rem; /* 4px */
+  --sb-space-sm: 0.5rem; /* 8px */
+  --sb-space-md: 0.75rem; /* 12px */
+  --sb-space-lg: 1rem; /* 16px */
+  --sb-space-xl: 1.5rem; /* 24px */
+  --sb-space-2xl: 2rem; /* 32px */
+  --sb-space-3xl: 3rem; /* 48px */
+
   /* Density tokens (compact dashboard baseline) */
   --sb-radius: 12px;
+  --sb-radius-sm: 8px;
   --sb-radius-lg: 16px;
+  --sb-radius-xl: 20px;
+  --sb-radius-full: 9999px;
   --sb-blur: 10px;
 
   /* Shadows (compact) */
   --sb-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
   --sb-shadow-soft: 0 4px 12px rgba(0, 0, 0, 0.06);
   --sb-shadow-compact: 0 2px 10px rgba(0, 0, 0, 0.06);
+  --sb-shadow-elevated: 0 12px 32px rgba(0, 0, 0, 0.1);
+
+  /* Transitions (consistent timing) */
+  --sb-transition-fast: 100ms;
+  --sb-transition-base: 150ms;
+  --sb-transition-slow: 250ms;
+  --sb-transition-slower: 350ms;
+  --sb-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --sb-ease-in-out: cubic-bezier(0.45, 0, 0.55, 1);
+
+  /* Typography scale */
+  --sb-text-xs: 0.75rem; /* 12px */
+  --sb-text-sm: 0.875rem; /* 14px - base */
+  --sb-text-base: 1rem; /* 16px */
+  --sb-text-lg: 1.125rem; /* 18px */
+  --sb-text-xl: 1.25rem; /* 20px */
+  --sb-text-2xl: 1.5rem; /* 24px */
+  --sb-text-3xl: 1.875rem; /* 30px */
 }
 
 @theme inline {
@@ -63,9 +102,19 @@
     
     /* Make accent pop more in dark mode */
     --sb-accent: #d4ff4d;
+    --sb-accent-soft: #e1f2ae;
+    --sb-accent-10: rgba(212, 255, 77, 0.1);
+    --sb-accent-20: rgba(212, 255, 77, 0.2);
     --sb-accent-stroke: #d4ff4d; /* Same as accent in dark mode - already high contrast */
     --sb-positive: #a3e635; /* lime-400 - bright on dark bg */
     --sb-positive-muted: #84cc16; /* lime-500 for hover */
+
+    /* Semantic colors stay consistent but adjusted for dark mode visibility */
+    --sb-revenue: #34d399; /* emerald-400 */
+    --sb-tracks: #60a5fa; /* blue-400 */
+    --sb-warning: #fbbf24; /* amber-400 */
+    --sb-error: #f87171; /* red-400 */
+    --sb-info: #818cf8; /* indigo-400 */
 
     /* Subtle surfaces - use white alpha on dark */
     --sb-row-odd: rgba(255, 255, 255, 0.02);
@@ -74,6 +123,12 @@
     --sb-panel-hover: rgba(255, 255, 255, 0.05);
     --sb-code-bg: rgba(255, 255, 255, 0.06);
     --sb-blockquote-bg: rgba(255, 255, 255, 0.04);
+
+    /* Adjusted shadows for dark mode */
+    --sb-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+    --sb-shadow-soft: 0 4px 12px rgba(0, 0, 0, 0.25);
+    --sb-shadow-compact: 0 2px 10px rgba(0, 0, 0, 0.2);
+    --sb-shadow-elevated: 0 12px 32px rgba(0, 0, 0, 0.4);
   }
 }
 
@@ -87,15 +142,27 @@ html[data-theme="light"] {
   --sb-text: #0b0b0c;
   --sb-muted: rgba(0, 0, 0, 0.55);
   --sb-accent: #c7f33c;
+  --sb-accent-soft: #e1f2ae;
+  --sb-accent-10: rgba(199, 243, 60, 0.1);
+  --sb-accent-20: rgba(199, 243, 60, 0.2);
   --sb-accent-stroke: #a8d62e;
   --sb-positive: #4d7c0f;
   --sb-positive-muted: #65a30d;
+  --sb-revenue: #10b981;
+  --sb-tracks: #3b82f6;
+  --sb-warning: #f59e0b;
+  --sb-error: #ef4444;
+  --sb-info: #6366f1;
   --sb-row-odd: rgba(0, 0, 0, 0.035);
   --sb-row-hover: rgba(0, 0, 0, 0.06);
   --sb-panel: rgba(255, 255, 255, 0.6);
   --sb-panel-hover: rgba(255, 255, 255, 0.8);
   --sb-code-bg: rgba(0, 0, 0, 0.04);
   --sb-blockquote-bg: rgba(0, 0, 0, 0.025);
+  --sb-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+  --sb-shadow-soft: 0 4px 12px rgba(0, 0, 0, 0.06);
+  --sb-shadow-compact: 0 2px 10px rgba(0, 0, 0, 0.06);
+  --sb-shadow-elevated: 0 12px 32px rgba(0, 0, 0, 0.1);
 }
 
 html[data-theme="dark"] {
@@ -107,15 +174,27 @@ html[data-theme="dark"] {
   --sb-text: #ededed;
   --sb-muted: rgba(255, 255, 255, 0.5);
   --sb-accent: #d4ff4d;
+  --sb-accent-soft: #e1f2ae;
+  --sb-accent-10: rgba(212, 255, 77, 0.1);
+  --sb-accent-20: rgba(212, 255, 77, 0.2);
   --sb-accent-stroke: #d4ff4d;
   --sb-positive: #a3e635;
   --sb-positive-muted: #84cc16;
+  --sb-revenue: #34d399;
+  --sb-tracks: #60a5fa;
+  --sb-warning: #fbbf24;
+  --sb-error: #f87171;
+  --sb-info: #818cf8;
   --sb-row-odd: rgba(255, 255, 255, 0.02);
   --sb-row-hover: rgba(255, 255, 255, 0.04);
   --sb-panel: rgba(255, 255, 255, 0.03);
   --sb-panel-hover: rgba(255, 255, 255, 0.05);
   --sb-code-bg: rgba(255, 255, 255, 0.06);
   --sb-blockquote-bg: rgba(255, 255, 255, 0.04);
+  --sb-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  --sb-shadow-soft: 0 4px 12px rgba(0, 0, 0, 0.25);
+  --sb-shadow-compact: 0 2px 10px rgba(0, 0, 0, 0.2);
+  --sb-shadow-elevated: 0 12px 32px rgba(0, 0, 0, 0.4);
 }
 
 /* Enable View Transitions (Opt-in) */
@@ -387,4 +466,295 @@ details > summary::-webkit-details-marker {
 
 html[data-theme="dark"] .sb-native-select {
   color-scheme: dark;
+}
+
+/* ============================================================================
+   Card Variants
+   ============================================================================ */
+
+/* Elevated card - more prominent shadow for floating elements */
+.sb-card-elevated {
+  background: var(--sb-card);
+  border: 1px solid var(--sb-border);
+  box-shadow: var(--sb-shadow-elevated);
+  border-radius: var(--sb-radius);
+}
+
+/* Flat card - no shadow, just border */
+.sb-card-flat {
+  background: var(--sb-card);
+  border: 1px solid var(--sb-border);
+  border-radius: var(--sb-radius);
+}
+
+/* Bordered card - stronger border, no shadow */
+.sb-card-bordered {
+  background: var(--sb-card);
+  border: 2px solid var(--sb-border-2);
+  border-radius: var(--sb-radius);
+}
+
+/* Interactive card - with hover states */
+.sb-card-interactive {
+  background: var(--sb-card);
+  border: 1px solid var(--sb-border);
+  box-shadow: var(--sb-shadow-compact);
+  border-radius: var(--sb-radius);
+  transition: all var(--sb-transition-base) var(--sb-ease-out);
+  cursor: pointer;
+}
+
+.sb-card-interactive:hover {
+  box-shadow: var(--sb-shadow);
+  border-color: var(--sb-border-2);
+  transform: translateY(-1px);
+}
+
+.sb-card-interactive:active {
+  transform: translateY(0);
+  box-shadow: var(--sb-shadow-compact);
+}
+
+/* ============================================================================
+   Focus & Hover Utilities
+   ============================================================================ */
+
+/* Standard focus ring - use on all interactive elements */
+.sb-focus {
+  outline: none;
+}
+
+.sb-focus:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--sb-bg), 0 0 0 4px var(--sb-accent);
+}
+
+/* Hover surface - subtle background change */
+.sb-hover-surface {
+  transition: background-color var(--sb-transition-fast) ease;
+}
+
+.sb-hover-surface:hover {
+  background-color: var(--sb-row-hover);
+}
+
+/* Hover accent - for text/icons that should highlight on hover */
+.sb-hover-accent {
+  transition: color var(--sb-transition-fast) ease;
+}
+
+.sb-hover-accent:hover {
+  color: var(--sb-accent);
+}
+
+/* ============================================================================
+   Semantic Color Utilities
+   ============================================================================ */
+
+.sb-revenue {
+  color: var(--sb-revenue);
+}
+
+.sb-tracks {
+  color: var(--sb-tracks);
+}
+
+.sb-warning {
+  color: var(--sb-warning);
+}
+
+.sb-error {
+  color: var(--sb-error);
+}
+
+.sb-info {
+  color: var(--sb-info);
+}
+
+/* Background variants */
+.sb-revenue-bg {
+  background-color: var(--sb-revenue);
+}
+
+.sb-tracks-bg {
+  background-color: var(--sb-tracks);
+}
+
+.sb-warning-bg {
+  background-color: var(--sb-warning);
+}
+
+.sb-error-bg {
+  background-color: var(--sb-error);
+}
+
+.sb-info-bg {
+  background-color: var(--sb-info);
+}
+
+/* ============================================================================
+   Typography Utilities
+   ============================================================================ */
+
+.sb-heading-1 {
+  font-size: var(--sb-text-3xl);
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.sb-heading-2 {
+  font-size: var(--sb-text-2xl);
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.sb-heading-3 {
+  font-size: var(--sb-text-xl);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.sb-heading-4 {
+  font-size: var(--sb-text-lg);
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.sb-body {
+  font-size: var(--sb-text-sm);
+  line-height: 1.5;
+}
+
+.sb-body-small {
+  font-size: var(--sb-text-xs);
+  line-height: 1.5;
+}
+
+.sb-label {
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--sb-muted);
+}
+
+/* ============================================================================
+   Table Cell Variants
+   ============================================================================ */
+
+.sb-cell-currency {
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+  text-align: right;
+  white-space: nowrap;
+  color: var(--sb-revenue);
+}
+
+.sb-cell-percentage {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.sb-cell-percentage.positive {
+  color: var(--sb-positive);
+}
+
+.sb-cell-percentage.negative {
+  color: var(--sb-error);
+}
+
+.sb-cell-date {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--sb-muted);
+}
+
+.sb-cell-number {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* ============================================================================
+   Loading Spinner
+   ============================================================================ */
+
+@keyframes sb-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.sb-spinner {
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 2px solid var(--sb-border-2);
+  border-top-color: var(--sb-accent);
+  border-radius: 50%;
+  animation: sb-spin 0.7s linear infinite;
+}
+
+.sb-spinner-sm {
+  width: 1rem;
+  height: 1rem;
+  border-width: 1.5px;
+}
+
+.sb-spinner-lg {
+  width: 2rem;
+  height: 2rem;
+  border-width: 3px;
+}
+
+/* ============================================================================
+   Accent-tinted FilterBar (replaces hardcoded lime colors)
+   ============================================================================ */
+
+.sb-filter-bar {
+  background: var(--sb-accent-10);
+  border: 1px solid var(--sb-accent-20);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* ============================================================================
+   Transition Utilities
+   ============================================================================ */
+
+.sb-transition-fast {
+  transition-duration: var(--sb-transition-fast);
+  transition-timing-function: var(--sb-ease-out);
+}
+
+.sb-transition-base {
+  transition-duration: var(--sb-transition-base);
+  transition-timing-function: var(--sb-ease-out);
+}
+
+.sb-transition-slow {
+  transition-duration: var(--sb-transition-slow);
+  transition-timing-function: var(--sb-ease-out);
+}
+
+/* ============================================================================
+   Mobile Touch Target Utilities
+   ============================================================================ */
+
+/* Ensure minimum touch target size on mobile (44x44px per Apple HIG) */
+.sb-touch-target {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+@media (min-width: 768px) {
+  .sb-touch-target {
+    min-height: unset;
+    min-width: unset;
+  }
 }

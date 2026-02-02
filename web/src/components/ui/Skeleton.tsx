@@ -14,6 +14,47 @@ export function Skeleton({ className, ...props }: ComponentProps<"div">) {
   );
 }
 
+/**
+ * Loading spinner component with consistent styling.
+ * Uses CSS-based animation for smooth performance.
+ */
+export function Spinner({ 
+  size = "md", 
+  className 
+}: { 
+  size?: "sm" | "md" | "lg"; 
+  className?: string;
+}) {
+  const sizeClass = size === "sm" ? "sb-spinner-sm" : size === "lg" ? "sb-spinner-lg" : "";
+  return (
+    <div
+      className={["sb-spinner", sizeClass, className].filter(Boolean).join(" ")}
+      role="status"
+      aria-label="Loading"
+    />
+  );
+}
+
+/**
+ * Full-page or section loading state with spinner and optional message.
+ */
+export function LoadingState({ 
+  message = "Loading...",
+  size = "md",
+  className,
+}: { 
+  message?: string;
+  size?: "sm" | "md" | "lg";
+  className?: string;
+}) {
+  return (
+    <div className={["flex flex-col items-center justify-center gap-3 py-12", className].filter(Boolean).join(" ")}>
+      <Spinner size={size} />
+      <p className="text-sm" style={{ color: "var(--sb-muted)" }}>{message}</p>
+    </div>
+  );
+}
+
 export function StatCardSkeleton() {
   return (
     <div className="sb-card p-3">

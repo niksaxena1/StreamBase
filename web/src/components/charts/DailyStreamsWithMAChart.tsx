@@ -134,7 +134,7 @@ function CustomTooltip({
       })}
       {overrideItems?.length ? (
         <div className="mt-2 border-t pt-2" style={{ borderColor: "var(--sb-border)" }}>
-          <div className="text-[11px] font-medium uppercase tracking-wide" style={{ color: "#f59e0b" }}>
+          <div className="text-[11px] font-medium uppercase tracking-wide" style={{ color: "var(--sb-warning)" }}>
             Manual override
           </div>
           <div className="mt-1 space-y-1">
@@ -297,7 +297,7 @@ export function DailyStreamsWithMAChart({
             <ReferenceLine
               key={`override-${d}`}
               x={d}
-              stroke="#f59e0b"
+              stroke={themeColors.warning}
               strokeOpacity={0.35}
               strokeWidth={2}
               strokeDasharray="4 4"
