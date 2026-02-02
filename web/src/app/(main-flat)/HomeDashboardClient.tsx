@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useDeferredValue, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { Download, Music, Search, X } from "lucide-react";
 
 import { MetricProvider, useMetric } from "@/components/metrics/MetricContext";
@@ -17,6 +17,7 @@ import { hrefWithPatchedSearchParams } from "@/lib/searchParams";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { TrackStreamsXYChart, type TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChart";
 import { ArtistStreamsXYChart, aggregateTracksToArtists } from "@/components/charts/ArtistStreamsXYChart";
+import { TracksPerMilestoneChart } from "@/components/charts/TracksPerMilestoneChart";
 import { DatePicker } from "@/components/ui/DatePicker";
 import { foldForSearch } from "@/lib/searchFold";
 
@@ -71,6 +72,34 @@ function ToggleLink(props: { href: string; active: boolean; children: React.Reac
   );
 }
 
+const HOME_DETAILS_STORAGE = {
+  scatterOpen: "sb:home:details:scatter_open",
+  milestoneOpen: "sb:home:details:milestones_open",
+  historyOpen: "sb:home:details:history_open",
+} as const;
+
+function readStoredBool(key: string, fallback: boolean): boolean {
+  // NOTE: Client components can still render on the server, so guard `window`.
+  if (typeof window === "undefined") return fallback;
+  try {
+    const v = localStorage.getItem(key);
+    if (v == null) return fallback;
+    if (v === "1" || v === "true") return true;
+    if (v === "0" || v === "false") return false;
+    return fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeStoredBool(key: string, value: boolean) {
+  try {
+    localStorage.setItem(key, value ? "1" : "0");
+  } catch {
+    // ignore (private mode, disabled storage, etc.)
+  }
+}
+
 function HomeDashboardInner(props: {
   sp: { scope?: string; range?: string; daily?: string; xy_date?: string };
   playlistKey: "all_catalog" | "releases" | "ext";
@@ -96,6 +125,29 @@ function HomeDashboardInner(props: {
   const [scatterSearchFocused, setScatterSearchFocused] = useState(false);
   const [scatterLogScale, setScatterLogScale] = useState(false);
   const [scatterView, setScatterView] = useState<"tracks" | "artists">("tracks");
+  const [openScatter, setOpenScatter] = useState(false);
+  const [openMilestones, setOpenMilestones] = useState(false);
+  const [openHistory, setOpenHistory] = useState(false);
+
+  // Restore persisted collapsible state after mount.
+  useEffect(() => {
+    setOpenScatter(readStoredBool(HOME_DETAILS_STORAGE.scatterOpen, false));
+    setOpenMilestones(readStoredBool(HOME_DETAILS_STORAGE.milestoneOpen, false));
+    setOpenHistory(readStoredBool(HOME_DETAILS_STORAGE.historyOpen, false));
+  }, []);
+
+  // Persist collapsible state.
+  useEffect(() => {
+    writeStoredBool(HOME_DETAILS_STORAGE.scatterOpen, openScatter);
+  }, [openScatter]);
+
+  useEffect(() => {
+    writeStoredBool(HOME_DETAILS_STORAGE.milestoneOpen, openMilestones);
+  }, [openMilestones]);
+
+  useEffect(() => {
+    writeStoredBool(HOME_DETAILS_STORAGE.historyOpen, openHistory);
+  }, [openHistory]);
 
   const scatterMode = metric === "revenue" ? "revenue" : "streams";
   const scatterTitle =
@@ -430,18 +482,78 @@ function HomeDashboardInner(props: {
         </Alert>
       ) : null}
 
-      {/* Track/Artist XY scatter */}
-      <div className="space-y-2">
-        <div className="flex items-baseline justify-between gap-3">
-          <h2 className="text-sm font-semibold tracking-tight">{scatterTitle}</h2>
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <div
-              className="text-[11px] opacity-60"
-              title={scatterMode === "revenue" ? "X = cumulative revenue, Y = daily revenue change" : "X = cumulative streams, Y = daily streams change"}
-            >
-              {scatterMode === "revenue" ? "X: total revenue • Y: daily revenue" : "X: total streams • Y: daily streams"}
+      {/* Tracks Per Milestone Chart (collapsible) */}
+      {props.trackScatterPoints?.length > 0 && (
+        <details
+          open={openMilestones}
+          onToggle={(ev) => setOpenMilestones(ev.currentTarget.open)}
+          className="rounded-xl border bg-white/50 p-3 dark:bg-white/[0.03]"
+          style={{ borderColor: "var(--sb-border)" }}
+        >
+          <summary className="cursor-pointer select-none">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-2">
+                <span className="mt-0.5 flex-shrink-0 text-xs opacity-60">▸</span>
+                <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
+                  Tracks Per Milestone
+                </div>
+              </div>
+              <div className="text-[11px] opacity-60" style={{ color: "var(--sb-muted)" }}>
+                Number of tracks that have reached each stream threshold
+              </div>
             </div>
-            <div className="flex items-center gap-2">
+          </summary>
+
+          <div className="mt-3">
+            <TracksPerMilestoneChart
+              tracks={props.trackScatterPoints.map((p) => ({
+                isrc: p.isrc,
+                total_streams_cumulative: p.total_streams_cumulative,
+              }))}
+              heightPx={320}
+            />
+          </div>
+        </details>
+      )}
+
+      {/* Track/Artist XY scatter (collapsible) */}
+      <details
+        open={openScatter}
+        onToggle={(ev) => setOpenScatter(ev.currentTarget.open)}
+        className="rounded-xl border bg-white/50 p-3 dark:bg-white/[0.03]"
+        style={{ borderColor: "var(--sb-border)" }}
+      >
+        <summary className="cursor-pointer select-none">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-2">
+              <span className="mt-0.5 flex-shrink-0 text-xs opacity-60">▸</span>
+              <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
+                {scatterTitle}
+              </div>
+            </div>
+            <div
+              className="flex flex-wrap items-center justify-end gap-2"
+              onMouseDown={(ev) => {
+                ev.preventDefault();
+                ev.stopPropagation();
+              }}
+              onClick={(ev) => {
+                ev.preventDefault();
+                ev.stopPropagation();
+              }}
+            >
+              <div
+                className="text-[11px] opacity-60"
+                title={
+                  scatterMode === "revenue"
+                    ? "X = cumulative revenue, Y = daily revenue change"
+                    : "X = cumulative streams, Y = daily streams change"
+                }
+              >
+                {scatterMode === "revenue"
+                  ? "X: total revenue • Y: daily revenue"
+                  : "X: total streams • Y: daily streams"}
+              </div>
               {/* Tracks / Artists toggle */}
               <div className="flex items-center rounded-full bg-black/5 p-0.5 dark:bg-white/10">
                 <button
@@ -505,16 +617,14 @@ function HomeDashboardInner(props: {
               />
             </div>
           </div>
-        </div>
-        {props.trackScatterErrorMessage ? (
-          <Alert variant="error" title="Track scatter query error">
-            {props.trackScatterErrorMessage}
-          </Alert>
-        ) : null}
-        <div
-          className="rounded-xl border bg-white/50 p-3 dark:bg-white/[0.03]"
-          style={{ borderColor: "var(--sb-border)" }}
-        >
+        </summary>
+
+        <div className="mt-3">
+          {props.trackScatterErrorMessage ? (
+            <Alert variant="error" title="Track scatter query error">
+              {props.trackScatterErrorMessage}
+            </Alert>
+          ) : null}
           {/* Search (focus mode) */}
           <div className="mb-3">
             <div className="relative">
@@ -715,11 +825,27 @@ function HomeDashboardInner(props: {
             )
           ) : null}
         </div>
-      </div>
+      </details>
 
-      {/* Recent History Table */}
-      <div className="space-y-2">
-        <h2 className="text-sm font-semibold tracking-tight">Recent History</h2>
+      {/* Recent History Table (collapsible) */}
+      <details
+        open={openHistory}
+        onToggle={(ev) => setOpenHistory(ev.currentTarget.open)}
+        className="rounded-xl border bg-white/50 p-3 dark:bg-white/[0.03]"
+        style={{ borderColor: "var(--sb-border)" }}
+      >
+        <summary className="cursor-pointer select-none">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-2">
+              <span className="mt-0.5 flex-shrink-0 text-xs opacity-60">▸</span>
+              <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
+                Recent History
+              </div>
+            </div>
+          </div>
+        </summary>
+
+        <div className="mt-3">
         <GlassTable 
           headers={[
             { label: "Date" },
@@ -760,7 +886,8 @@ function HomeDashboardInner(props: {
           })}
           {!props.history?.length && <EmptyState colSpan={5} message="No stats found yet" />}
         </GlassTable>
-      </div>
+        </div>
+      </details>
     </div>
   );
 }
