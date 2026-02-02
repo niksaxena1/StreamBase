@@ -21,6 +21,7 @@ import { TracksPerMilestoneChart } from "@/components/charts/TracksPerMilestoneC
 import { DatePicker } from "@/components/ui/DatePicker";
 import { foldForSearch } from "@/lib/searchFold";
 import { Modal } from "@/components/ui/Modal";
+import { FilterBuilder, type TrackDataPoint, type PlaylistDataPoint } from "@/components/filters";
 
 type PlaylistDailyStatsRow = {
   date: string;
@@ -266,6 +267,141 @@ function generateAutoMilestonesFromMax(maxStreams: number): number[] {
   return thinned;
 }
 
+// ============================================================================
+// Filter Builder Section
+// ============================================================================
+
+function FilterBuilderSection({ trackScatterPoints }: { trackScatterPoints: TrackStreamsXYPoint[] }) {
+  const [playlistOptions, setPlaylistOptions] = useState<
+    Array<{ value: string; label: string; imageUrl?: string | null }>
+  >([]);
+  const [artistImagesById, setArtistImagesById] = useState<Map<string, string | null>>(new Map());
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const res = await fetch("/api/playlists/options");
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) return;
+        const rows = Array.isArray((json as any)?.playlists) ? ((json as any).playlists as any[]) : [];
+        const opts = rows
+          .map((p) => ({
+            value: String(p?.playlist_key ?? ""),
+            label: String(p?.display_name ?? p?.playlist_key ?? "").trim(),
+            imageUrl: (p?.spotify_playlist_image_url ?? null) as string | null,
+          }))
+          .filter((o) => o.value && o.label);
+        if (!cancelled) setPlaylistOptions(opts);
+      } catch {
+        // ignore
+      }
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const res = await fetch("/api/artists/options");
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) return;
+        const rows = Array.isArray((json as any)?.artists) ? ((json as any).artists as any[]) : [];
+        const map = new Map<string, string | null>();
+        for (const r of rows) {
+          const id = String(r?.artist_id ?? "");
+          if (!id) continue;
+          map.set(id, (r?.image_url ?? null) as string | null);
+        }
+        if (!cancelled) setArtistImagesById(map);
+      } catch {
+        // ignore
+      }
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Transform trackScatterPoints to TrackDataPoint format for FilterBuilder
+  const trackData: TrackDataPoint[] = useMemo(() => {
+    return (trackScatterPoints ?? []).map((p) => ({
+      isrc: p.isrc,
+      name: p.name ?? "",
+      release_date: (p as any)?.release_date ?? null,
+      first_seen: null,
+      spotify_artist_names: p.artist_names ?? [],
+      spotify_artist_ids: p.artist_ids ?? [],
+      total_streams_cumulative: p.total_streams_cumulative,
+      daily_streams: p.daily_streams_delta,
+      spotify_track_id: null, // Not available in scatter points
+      spotify_album_image_url: p.album_image_url,
+      playlist_keys: [], // Would need playlist membership data
+    }));
+  }, [trackScatterPoints]);
+
+  // Extract unique artists from tracks for the artist selector
+  const artistOptions = useMemo(() => {
+    const artistMap = new Map<string, { name: string; imageUrl: string | null; trackCount: number }>();
+    
+    for (const track of trackScatterPoints ?? []) {
+      const ids = track.artist_ids ?? [];
+      const names = track.artist_names ?? [];
+      
+      for (let i = 0; i < ids.length; i++) {
+        const id = ids[i];
+        const name = names[i] ?? "Unknown";
+        if (!id) continue;
+        
+        const existing = artistMap.get(id);
+        if (existing) {
+          existing.trackCount++;
+        } else {
+          artistMap.set(id, { name, imageUrl: null, trackCount: 1 });
+        }
+      }
+    }
+    
+    // Convert to options array and sort by track count (most tracks first)
+    return Array.from(artistMap.entries())
+      .map(([value, data]) => ({
+        value,
+        label: data.name,
+        imageUrl: artistImagesById.get(value) ?? data.imageUrl,
+        trackCount: data.trackCount,
+      }))
+      .sort((a, b) => b.trackCount - a.trackCount);
+  }, [trackScatterPoints, artistImagesById]);
+
+  // Build artist images map for aggregation
+  const artistImages = useMemo(() => {
+    const map = new Map<string, { name: string; image_url: string | null }>();
+    for (const opt of artistOptions) {
+      map.set(opt.value, { name: opt.label, image_url: opt.imageUrl });
+    }
+    return map;
+  }, [artistOptions]);
+
+  // Empty playlist data for now (would need to fetch from server)
+  const playlistData: PlaylistDataPoint[] = useMemo(() => [], []);
+
+  return (
+    <FilterBuilder
+      trackData={trackData}
+      playlistData={playlistData}
+      artistImages={artistImages}
+      artistOptions={artistOptions}
+      playlistOptions={playlistOptions}
+      collectorOptions={[]}
+    />
+  );
+}
+
 function HomeDashboardInner(props: {
   sp: { scope?: string; range?: string; daily?: string; xy_date?: string };
   playlistKey: "all_catalog" | "releases" | "ext";
@@ -294,6 +430,10 @@ function HomeDashboardInner(props: {
   const [openScatter, setOpenScatter] = useState(false);
   const [openMilestones, setOpenMilestones] = useState(false);
   const [openHistory, setOpenHistory] = useState(false);
+
+  // User setting: show/hide Filters section on Home
+  const [homeFiltersEnabled, setHomeFiltersEnabled] = useState(true);
+  const [homeFiltersConfigured, setHomeFiltersConfigured] = useState(true);
   const [milestoneSettingsOpen, setMilestoneSettingsOpen] = useState(false);
   const [milestoneSettingsText, setMilestoneSettingsText] = useState("");
   const [milestoneSettingsError, setMilestoneSettingsError] = useState<string | null>(null);
@@ -408,6 +548,36 @@ function HomeDashboardInner(props: {
         if (!parsed.error && parsed.milestones.length) setCustomMilestones(parsed.milestones);
       }
     }
+  }, []);
+
+  // Fetch Home Filters setting (best-effort; defaults to enabled).
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      try {
+        const res = await fetch("/api/user-settings/home-filters");
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) return;
+        if (cancelled) return;
+        setHomeFiltersEnabled((data as any)?.home_filters_enabled ?? true);
+        setHomeFiltersConfigured((data as any)?.configured !== false);
+      } catch {
+        // ignore
+      }
+    }
+
+    void load();
+
+    function onUpdated() {
+      void load();
+    }
+
+    window.addEventListener("sb:home-filters-setting-updated", onUpdated as any);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("sb:home-filters-setting-updated", onUpdated as any);
+    };
   }, []);
 
   // Persist collapsible state.
@@ -734,7 +904,6 @@ function HomeDashboardInner(props: {
         selectedChart={selectedChart}
         onSelectChart={setSelectedChart}
       />
-
 
       {props.historyErrorMessage ? (
         <Alert variant="error" title="Query error">
@@ -1504,6 +1673,11 @@ function HomeDashboardInner(props: {
         </GlassTable>
         </div>
       </details>
+
+      {/* Dynamic Filter Builder (bottom-most, under Recent History) */}
+      {homeFiltersConfigured && homeFiltersEnabled ? (
+        <FilterBuilderSection trackScatterPoints={props.trackScatterPoints} />
+      ) : null}
     </div>
   );
 }

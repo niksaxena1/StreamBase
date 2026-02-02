@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/shell/PageHeader";
 import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/GlassTable";
 import { TrackExclusionForm } from "./TrackExclusionForm";
 import { SAISettingsToggle } from "./SAISettingsToggle";
+import { HomeFiltersToggle } from "./HomeFiltersToggle";
 import { PayoutRateSetting } from "./PayoutRateSetting";
 import { ManualStreamOverrideForm } from "./ManualStreamOverrideForm";
 import { SectionHeader } from "@/components/ui/SectionHeader";
@@ -458,6 +459,11 @@ export default async function SettingsPage() {
       <div className="space-y-2">
         <SectionHeader title="AI Assistant" />
         <SAISettingsToggle />
+      </div>
+
+      <div className="space-y-2">
+        <SectionHeader title="Home" subtitle="Customize what appears on the Home dashboard." />
+        <HomeFiltersToggle />
       </div>
 
       <div className="space-y-2">

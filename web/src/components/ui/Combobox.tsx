@@ -21,6 +21,7 @@ export function Combobox(props: {
   onChange: (nextValue: string) => void;
   className?: string;
   imageShape?: "circle" | "square";
+  showThumbnails?: boolean;
 }) {
   const listId = useId();
   const selectedLabel =
@@ -113,6 +114,7 @@ export function Combobox(props: {
         >
           {filtered.map((o) => {
             const active = o.value === props.value;
+            const showThumb = props.showThumbnails !== false;
             return (
               <button
                 key={o.value}
@@ -137,25 +139,27 @@ export function Combobox(props: {
                 }}
               >
                 <div className="flex items-center gap-2 min-w-0 flex-1">
-                  {o.isAllCatalog ? (
-                    <div
-                      className={`h-5 w-5 ${props.imageShape === "square" ? "rounded-lg" : "rounded-full"} bg-black/10 dark:bg-white/20 flex items-center justify-center flex-shrink-0`}
-                      style={{ background: "var(--sb-accent)" }}
-                    >
-                      <Music className="h-3 w-3" style={{ color: "black" }} />
-                    </div>
-                  ) : o.imageUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={o.imageUrl}
-                      alt={o.label}
-                      className={`h-5 w-5 ${props.imageShape === "square" ? "rounded-lg" : "rounded-full"} object-cover flex-shrink-0`}
-                    />
-                  ) : (
-                    <div className={`h-5 w-5 ${props.imageShape === "square" ? "rounded-lg" : "rounded-full"} bg-white/60 dark:bg-white/10 flex items-center justify-center flex-shrink-0`}>
-                      <User className="h-3 w-3 opacity-40" />
-                    </div>
-                  )}
+                  {showThumb ? (
+                    o.isAllCatalog ? (
+                      <div
+                        className={`h-5 w-5 ${props.imageShape === "square" ? "rounded-lg" : "rounded-full"} bg-black/10 dark:bg-white/20 flex items-center justify-center flex-shrink-0`}
+                        style={{ background: "var(--sb-accent)" }}
+                      >
+                        <Music className="h-3 w-3" style={{ color: "black" }} />
+                      </div>
+                    ) : o.imageUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={o.imageUrl}
+                        alt={o.label}
+                        className={`h-5 w-5 ${props.imageShape === "square" ? "rounded-lg" : "rounded-full"} object-cover flex-shrink-0`}
+                      />
+                    ) : (
+                      <div className={`h-5 w-5 ${props.imageShape === "square" ? "rounded-lg" : "rounded-full"} bg-white/60 dark:bg-white/10 flex items-center justify-center flex-shrink-0`}>
+                        <User className="h-3 w-3 opacity-40" />
+                      </div>
+                    )
+                  ) : null}
                   <span className="truncate">{o.label}</span>
                 </div>
                 <div className="flex items-center gap-3 flex-shrink-0">

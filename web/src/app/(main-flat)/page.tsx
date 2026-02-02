@@ -23,6 +23,7 @@ type TrackSnapshotRow = {
 type TrackMetaRow = {
   isrc: string;
   name: string | null;
+  release_date: string | null;
   spotify_album_image_url: string | null;
   spotify_artist_names: string[] | null;
   spotify_artist_ids: string[] | null;
@@ -89,7 +90,7 @@ async function fetchTrackMetaByIsrc(
     const batch = isrcs.slice(i, i + batchSize);
     const { data, error } = await svc
       .from("tracks")
-      .select("isrc,name,spotify_album_image_url,spotify_artist_names,spotify_artist_ids")
+      .select("isrc,name,release_date,spotify_album_image_url,spotify_artist_names,spotify_artist_ids")
       .in("isrc", batch);
     if (error) throw error;
     for (const r of (data ?? []) as TrackMetaRow[]) out.set(r.isrc, r);
@@ -177,7 +178,8 @@ export default async function Home({
     ? addDaysISO(selectedDataDate, SOT_DATA_LAG_DAYS)
     : latestRunDate;
 
-  const scatterCacheKey = `home-track-scatter-v3-${selectedRunDate ?? "none"}`;
+  // Bump cache key when scatter point shape changes.
+  const scatterCacheKey = `home-track-scatter-v4-${selectedRunDate ?? "none"}`;
   const { data: trackScatterPoints, error: trackScatterErr } = await cachedQuery(
     async () => {
       if (!selectedRunDate) return { data: [] as any[], error: null as any };
@@ -213,6 +215,7 @@ export default async function Home({
           return {
             isrc: r.isrc,
             name: meta?.name ?? null,
+            release_date: meta?.release_date ?? null,
             artist_names: meta?.spotify_artist_names ?? null,
             artist_ids: meta?.spotify_artist_ids ?? null,
             album_image_url: meta?.spotify_album_image_url ?? null,

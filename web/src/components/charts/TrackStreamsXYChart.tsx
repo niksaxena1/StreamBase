@@ -10,6 +10,7 @@ import { formatKmbTick, formatUsdCompact } from "@/components/charts/chartUtils"
 export type TrackStreamsXYPoint = {
   isrc: string;
   name: string | null;
+  release_date?: string | null;
   artist_names: string[] | null;
   artist_ids: string[] | null;
   album_image_url: string | null;

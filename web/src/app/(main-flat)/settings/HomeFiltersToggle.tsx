@@ -1,0 +1,101 @@
+"use client";
+
+import { useEffect, useState } from "react";
+
+export function HomeFiltersToggle() {
+  const [enabled, setEnabled] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [configured, setConfigured] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    setError(null);
+    void fetch("/api/user-settings/home-filters")
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error((data as any)?.error ?? "Failed to load setting");
+        return data;
+      })
+      .then((data) => {
+        setEnabled((data as any)?.home_filters_enabled ?? true);
+        setConfigured((data as any)?.configured !== false);
+        setLoading(false);
+      })
+      .catch((e) => {
+        setError(e instanceof Error ? e.message : "Failed to load setting");
+        setLoading(false);
+      });
+  }, []);
+
+  async function handleToggle(next: boolean) {
+    setError(null);
+    setSaved(false);
+    setEnabled(next);
+
+    try {
+      const res = await fetch("/api/user-settings/home-filters", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ home_filters_enabled: next }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((data as any)?.error ?? "Failed to update setting");
+
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+
+      // Let the home page react without a full reload (best-effort).
+      window.dispatchEvent(new Event("sb:home-filters-setting-updated"));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to update setting");
+      setEnabled(!next);
+    }
+  }
+
+  return (
+    <div className="sb-ring rounded-2xl bg-white/70 p-3 dark:bg-white/5">
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex-1">
+          <h3 className="text-sm font-medium">Home Filters</h3>
+          <p className="mt-1 text-xs opacity-70">
+            Show or hide the Filters section on the Home page.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-3">
+          {loading ? (
+            <div className="text-xs opacity-60">Loading…</div>
+          ) : !configured ? (
+            <div className="text-xs opacity-60">DB not migrated yet</div>
+          ) : error ? (
+            <div className="text-xs text-red-600 dark:text-red-400">{error}</div>
+          ) : saved ? (
+            <div className="text-xs text-green-600 dark:text-green-400">Saved</div>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={() => handleToggle(!enabled)}
+            disabled={loading || !configured}
+            className={[
+              "sb-ring relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
+              enabled ? "bg-black dark:bg-white" : "bg-black/20 dark:bg-white/20",
+            ].join(" ")}
+            aria-label={enabled ? "Hide Filters on Home" : "Show Filters on Home"}
+            title={enabled ? "Hide Filters on Home" : "Show Filters on Home"}
+          >
+            <span
+              className={[
+                "inline-block h-4 w-4 transform rounded-full bg-white dark:bg-black transition-transform",
+                enabled ? "translate-x-6" : "translate-x-1",
+              ].join(" ")}
+            />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
