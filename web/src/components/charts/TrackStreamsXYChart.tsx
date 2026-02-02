@@ -34,7 +34,7 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-function CustomTooltip({
+const CustomTooltip = ({
   point,
   mode,
   payoutPerStreamUsd,
@@ -46,7 +46,7 @@ function CustomTooltip({
   payoutPerStreamUsd: number;
   accentColor: string;
   frozen: boolean;
-}) {
+}) => {
   const p = point;
 
   const title = (p.name ?? "").trim() || p.isrc;
@@ -66,33 +66,47 @@ function CustomTooltip({
       : `+${formatInt(dailyValue)}`
     : "—";
 
-  // Build artist links with comma separators
-  const artistElements: ReactNode[] = [];
-  artistNames.forEach((name, idx) => {
-    const id = artistIds[idx] ?? null;
-    const label = String(name ?? "").trim();
-    if (!label) return;
-    if (artistElements.length > 0) {
-      artistElements.push(
-        <span key={`sep-${idx}`} style={{ color: "var(--sb-muted)" }}>, </span>
-      );
+  const artistsText = useMemo(() => {
+    const parts: string[] = [];
+    for (const n of artistNames) {
+      const s = String(n ?? "").trim();
+      if (s) parts.push(s);
     }
-    artistElements.push(
-      id ? (
-        <Link
-          key={`${id}-${idx}`}
-          href={`/catalog?artist_id=${encodeURIComponent(id)}`}
-          className="hover:underline"
-          style={{ color: "var(--sb-muted)" }}
-          title={id}
-        >
-          {label}
-        </Link>
-      ) : (
-        <span key={`${label}-${idx}`}>{label}</span>
-      )
-    );
-  });
+    return parts.join(", ");
+  }, [artistNames]);
+
+  // Hover tooltip should be extremely cheap to mount/update.
+  // Only show the rich (image + clickable links) tooltip when pinned/focused.
+  const showRich = frozen;
+
+  const artistElements: ReactNode[] | null = useMemo(() => {
+    if (!showRich) return null;
+    const out: ReactNode[] = [];
+    artistNames.forEach((name, idx) => {
+      const id = artistIds[idx] ?? null;
+      const label = String(name ?? "").trim();
+      if (!label) return;
+      if (out.length > 0) {
+        out.push(<span key={`sep-${idx}`} style={{ color: "var(--sb-muted)" }}>, </span>);
+      }
+      out.push(
+        id ? (
+          <Link
+            key={`${id}-${idx}`}
+            href={`/catalog?artist_id=${encodeURIComponent(id)}`}
+            className="hover:underline"
+            style={{ color: "var(--sb-muted)" }}
+            title={id}
+          >
+            {label}
+          </Link>
+        ) : (
+          <span key={`${label}-${idx}`}>{label}</span>
+        ),
+      );
+    });
+    return out;
+  }, [artistIds, artistNames, showRich]);
 
   return (
     <div
@@ -110,48 +124,72 @@ function CustomTooltip({
       }}
     >
       <div className="flex items-start gap-3">
-        {p.album_image_url ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={p.album_image_url} alt="" className="h-12 w-12 rounded-md object-cover sb-ring" />
-        ) : (
-          <div className="h-12 w-12 rounded-md sb-ring bg-white/60 dark:bg-white/10" />
-        )}
+        {showRich ? (
+          p.album_image_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={p.album_image_url}
+              alt=""
+              className="h-12 w-12 rounded-md object-cover sb-ring"
+              loading="lazy"
+              decoding="async"
+            />
+          ) : (
+            <div className="h-12 w-12 rounded-md sb-ring bg-white/60 dark:bg-white/10" />
+          )
+        ) : null}
         <div className="min-w-0">
-          <Link
-            href={`/catalog?isrc=${encodeURIComponent(p.isrc)}`}
-            className="block truncate text-xs font-semibold hover:underline"
-            style={{ color: "#fff" }}
-            title={p.isrc}
-          >
-            {title}
-          </Link>
-          {artistElements.length > 0 ? (
-            <div className="mt-0.5 text-xs" style={{ color: "var(--sb-muted)" }}>
-              {artistElements}
+          {showRich ? (
+            <Link
+              href={`/catalog?isrc=${encodeURIComponent(p.isrc)}`}
+              className="block truncate text-xs font-semibold hover:underline"
+              style={{ color: "#fff" }}
+              title={p.isrc}
+            >
+              {title}
+            </Link>
+          ) : (
+            <div className="truncate text-xs font-semibold" style={{ color: "#fff" }} title={p.isrc}>
+              {title}
+            </div>
+          )}
+
+          {showRich ? (
+            artistElements && artistElements.length > 0 ? (
+              <div className="mt-0.5 text-xs" style={{ color: "var(--sb-muted)" }}>
+                {artistElements}
+              </div>
+            ) : null
+          ) : artistsText ? (
+            <div className="mt-0.5 truncate text-xs" style={{ color: "var(--sb-muted)" }}>
+              {artistsText}
             </div>
           ) : null}
+
           <div className="mt-2 space-y-0.5 text-[11px]">
             <div>
-              Δ1d {mode === "revenue" ? "revenue" : "streams"}:{" "}
+              {mode === "revenue" ? "Daily revenue" : "Daily streams"}:{" "}
               <span className="font-mono font-semibold" style={{ color: accentColor }}>
                 {dailyLabel}
               </span>
             </div>
             <div>
-              Total {mode === "revenue" ? "revenue" : "streams"}:{" "}
+              {mode === "revenue" ? "Total revenue" : "Total streams"}:{" "}
               <span className="font-mono font-semibold" style={{ color: accentColor }}>
                 {mode === "revenue" ? formatUsd(totalValue) : formatInt(totalValue)}
               </span>
             </div>
-            <div className="opacity-60">
-              ISRC: <span className="font-mono">{p.isrc}</span>
-            </div>
+            {showRich ? (
+              <div className="opacity-60">
+                ISRC: <span className="font-mono">{p.isrc}</span>
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
     </div>
   );
-}
+};
 
 export function TrackStreamsXYChart({
   points,
@@ -256,10 +294,13 @@ export function TrackStreamsXYChart({
 
   const dotColor = color ?? (mode === "revenue" ? "#10b981" : "#c7f33c");
   const mutedDotColor = "rgba(148, 163, 184, 0.7)"; // slate-ish
-  const fmtAxisTick = (n: number) => {
-    if (mode === "revenue") return formatUsdCompact(n, formatUsd);
-    return formatKmbTick(n);
-  };
+  const fmtAxisTick = useCallback(
+    (n: number) => {
+      if (mode === "revenue") return formatUsdCompact(n, formatUsd);
+      return formatKmbTick(n);
+    },
+    [mode],
+  );
 
   const focusPoint = useMemo(() => {
     const isrc = (focusIsrc ?? "").trim();
@@ -304,74 +345,11 @@ export function TrackStreamsXYChart({
     pendingTouchRef.current = null;
   }, [clearLongPressTimer]);
 
-  return (
-    <div
-      className="relative w-full outline-none"
-      style={{ outline: "none" }}
-      onMouseDown={(e) => {
-        // Prevent the chart wrapper/SVG from receiving focus outline on click.
-        e.preventDefault();
-      }}
-      onPointerDown={(e) => {
-        pointerTypeRef.current = (e.pointerType as any) || "unknown";
-      }}
-      onTouchStartCapture={() => {
-        // iOS/Safari sometimes doesn't give us reliable pointer events here.
-        // Make sure the subsequent synthetic click is treated as touch (never pins).
-        pointerTypeRef.current = "touch";
-      }}
-      onTouchEndCapture={() => {
-        // Some mobile browsers don't reliably dispatch touchend on the SVG node.
-        // Cancel long-press globally so a tap doesn't accidentally pin.
-        clearLongPressTimer();
-        pendingTouchRef.current = null;
-      }}
-      onTouchCancelCapture={() => {
-        clearLongPressTimer();
-        pendingTouchRef.current = null;
-      }}
-      onClick={() => {
-        if (isFocusMode) {
-          const pt = pointerTypeRef.current;
-          // Desktop: click anywhere to exit focus mode.
-          if (pt !== "touch") {
-            setFrozen(false);
-            setHovered(null);
-            onClearFocus?.();
-          }
-          return;
-        }
-        if (suppressNextClickRef.current) {
-          suppressNextClickRef.current = false;
-          return;
-        }
-
-        const pt = pointerTypeRef.current;
-
-        // Touch: tap = hover only (handled by onTouchStart on the point).
-        // If frozen, allow tap anywhere to unpin.
-        if (pt === "touch") {
-          if (frozen) {
-            setFrozen(false);
-            setHovered(null);
-          }
-          return;
-        }
-
-        // Mouse/pen: click anywhere pins the currently-open tooltip, click again unpins.
-        if (frozen) {
-          setFrozen(false);
-          setHovered(null);
-          return;
-        }
-        if (hovered) setFrozen(true);
-      }}
-    >
+  // Memoize the expensive chart subtree so hover only rerenders the tooltip overlay.
+  const chartEl = useMemo(() => {
+    return (
       <ResponsiveContainer width="100%" height={heightPx} minWidth={0}>
-        <ScatterChart
-          margin={{ top: 8, right: 14, left: 4, bottom: 12 }}
-          style={{ outline: "none" }}
-        >
+        <ScatterChart margin={{ top: 8, right: 14, left: 4, bottom: 12 }} style={{ outline: "none" }}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--sb-border)" />
           <XAxis
             type="number"
@@ -387,7 +365,7 @@ export function TrackStreamsXYChart({
           <YAxis
             type="number"
             dataKey="y_value"
-            name={mode === "revenue" ? "Δ1d revenue" : "Δ1d streams"}
+            name={mode === "revenue" ? "Daily revenue" : "Daily streams"}
             tickFormatter={(n) => fmtAxisTick(Number(n ?? 0))}
             stroke="var(--sb-muted)"
             fontSize={10}
@@ -480,6 +458,76 @@ export function TrackStreamsXYChart({
           ) : null}
         </ScatterChart>
       </ResponsiveContainer>
+    );
+  }, [
+    dotColor,
+    focusPoint,
+    frozen,
+    fmtAxisTick,
+    handleTouchEnd,
+    handleTouchStart,
+    heightPx,
+    isFocusMode,
+    mode,
+    mutedDotColor,
+    sampledData,
+    topData,
+  ]);
+
+  return (
+    <div
+      className="relative w-full outline-none"
+      style={{ outline: "none" }}
+      onMouseDown={(e) => {
+        // Prevent the chart wrapper/SVG from receiving focus outline on click.
+        e.preventDefault();
+      }}
+      onPointerDown={(e) => {
+        pointerTypeRef.current = (e.pointerType as any) || "unknown";
+      }}
+      onTouchStartCapture={() => {
+        // iOS/Safari sometimes doesn't give us reliable pointer events here.
+        // Make sure the subsequent synthetic click is treated as touch (never pins).
+        pointerTypeRef.current = "touch";
+      }}
+      onClick={() => {
+        if (isFocusMode) {
+          const pt = pointerTypeRef.current;
+          // Desktop: click anywhere to exit focus mode.
+          if (pt !== "touch") {
+            setFrozen(false);
+            setHovered(null);
+            onClearFocus?.();
+          }
+          return;
+        }
+        if (suppressNextClickRef.current) {
+          suppressNextClickRef.current = false;
+          return;
+        }
+
+        const pt = pointerTypeRef.current;
+
+        // Touch: tap = hover only (handled by onTouchStart on the point).
+        // If frozen, allow tap anywhere to unpin.
+        if (pt === "touch") {
+          if (frozen) {
+            setFrozen(false);
+            setHovered(null);
+          }
+          return;
+        }
+
+        // Mouse/pen: click anywhere pins the currently-open tooltip, click again unpins.
+        if (frozen) {
+          setFrozen(false);
+          setHovered(null);
+          return;
+        }
+        if (hovered) setFrozen(true);
+      }}
+    >
+      {chartEl}
 
       {hiddenCount > 0 ? (
         <div
@@ -493,7 +541,7 @@ export function TrackStreamsXYChart({
       {/* Focus mode: keep the selected tooltip visible & clickable */}
       {focusPoint ? (
         <div
-          className="absolute right-3 top-3 z-10 max-w-[320px]"
+          className="absolute right-3 top-3 z-50 max-w-[320px]"
           style={{ pointerEvents: "auto" }}
           onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
@@ -514,10 +562,12 @@ export function TrackStreamsXYChart({
 
       {hovered && !focusPoint ? (
         <div
-          className="absolute z-10"
+          className="absolute z-50"
           style={{
-            left: Math.max(8, hovered.x + 12),
-            top: Math.max(8, hovered.y + 12),
+            left: 0,
+            top: 0,
+            transform: `translate3d(${Math.max(8, hovered.x + 12)}px, ${Math.max(8, hovered.y + 12)}px, 0)`,
+            willChange: "transform",
             pointerEvents: frozen ? "auto" : "none",
           }}
           onMouseDown={(e) => e.stopPropagation()}
