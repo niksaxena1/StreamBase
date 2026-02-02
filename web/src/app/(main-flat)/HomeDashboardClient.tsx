@@ -497,91 +497,93 @@ function HomeDashboardInner(props: {
                 {scatterTitle}
               </div>
             </div>
-            <div
-              className="flex flex-wrap items-center justify-end gap-2"
-              onMouseDown={(ev) => {
-                ev.preventDefault();
-                ev.stopPropagation();
-              }}
-              onClick={(ev) => {
-                ev.preventDefault();
-                ev.stopPropagation();
-              }}
-            >
+            {openScatter ? (
               <div
-                className="text-[11px] opacity-60"
-                title={
-                  scatterMode === "revenue"
-                    ? "X = cumulative revenue, Y = daily revenue change"
-                    : "X = cumulative streams, Y = daily streams change"
-                }
+                className="flex flex-wrap items-center justify-end gap-2"
+                onMouseDown={(ev) => {
+                  ev.preventDefault();
+                  ev.stopPropagation();
+                }}
+                onClick={(ev) => {
+                  ev.preventDefault();
+                  ev.stopPropagation();
+                }}
               >
-                {scatterMode === "revenue"
-                  ? "X: total revenue • Y: daily revenue"
-                  : "X: total streams • Y: daily streams"}
-              </div>
-              {/* Tracks / Artists toggle */}
-              <div className="flex items-center rounded-full bg-black/5 p-0.5 dark:bg-white/10">
+                <div
+                  className="text-[11px] opacity-60"
+                  title={
+                    scatterMode === "revenue"
+                      ? "X = cumulative revenue, Y = daily revenue change"
+                      : "X = cumulative streams, Y = daily streams change"
+                  }
+                >
+                  {scatterMode === "revenue"
+                    ? "X: total revenue • Y: daily revenue"
+                    : "X: total streams • Y: daily streams"}
+                </div>
+                {/* Tracks / Artists toggle */}
+                <div className="flex items-center rounded-full bg-black/5 p-0.5 dark:bg-white/10">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setScatterView("tracks");
+                      setScatterFocusIsrc(null);
+                      setScatterFocusArtistId(null);
+                      setScatterQuery("");
+                    }}
+                    className={[
+                      "rounded-full px-2 py-1 text-[11px] font-medium transition",
+                      scatterView === "tracks"
+                        ? "bg-black text-white dark:bg-white dark:text-black"
+                        : "text-black/70 hover:bg-white/50 dark:text-white/70 dark:hover:bg-white/20",
+                    ].join(" ")}
+                  >
+                    Tracks
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setScatterView("artists");
+                      setScatterFocusIsrc(null);
+                      setScatterFocusArtistId(null);
+                      setScatterQuery("");
+                    }}
+                    className={[
+                      "rounded-full px-2 py-1 text-[11px] font-medium transition",
+                      scatterView === "artists"
+                        ? "bg-black text-white dark:bg-white dark:text-black"
+                        : "text-black/70 hover:bg-white/50 dark:text-white/70 dark:hover:bg-white/20",
+                    ].join(" ")}
+                  >
+                    Artists
+                  </button>
+                </div>
                 <button
                   type="button"
-                  onClick={() => {
-                    setScatterView("tracks");
-                    setScatterFocusIsrc(null);
-                    setScatterFocusArtistId(null);
-                    setScatterQuery("");
-                  }}
+                  onClick={() => setScatterLogScale((v) => !v)}
                   className={[
                     "rounded-full px-2 py-1 text-[11px] font-medium transition",
-                    scatterView === "tracks"
+                    scatterLogScale
                       ? "bg-black text-white dark:bg-white dark:text-black"
-                      : "text-black/70 hover:bg-white/50 dark:text-white/70 dark:hover:bg-white/20",
+                      : "text-black/70 hover:bg-white/70 dark:text-white/70 dark:hover:bg-white/20",
                   ].join(" ")}
+                  title={scatterLogScale ? "Switch to linear scale" : "Switch to log scale"}
                 >
-                  Tracks
+                  {scatterLogScale ? "Log" : "Linear"}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setScatterView("artists");
-                    setScatterFocusIsrc(null);
-                    setScatterFocusArtistId(null);
-                    setScatterQuery("");
-                  }}
-                  className={[
-                    "rounded-full px-2 py-1 text-[11px] font-medium transition",
-                    scatterView === "artists"
-                      ? "bg-black text-white dark:bg-white dark:text-black"
-                      : "text-black/70 hover:bg-white/50 dark:text-white/70 dark:hover:bg-white/20",
-                  ].join(" ")}
-                >
-                  Artists
-                </button>
+                <DatePicker
+                  value={props.trackScatterDataDate ?? props.latestDataDate ?? ""}
+                  min={
+                    props.history?.length
+                      ? dataDateFromRunDate((props.history ?? [])[props.history.length - 1]?.date ?? "")
+                      : undefined
+                  }
+                  max={props.latestDataDate ?? undefined}
+                  path="/"
+                  param="xy_date"
+                />
               </div>
-              <button
-                type="button"
-                onClick={() => setScatterLogScale((v) => !v)}
-                className={[
-                  "rounded-full px-2 py-1 text-[11px] font-medium transition",
-                  scatterLogScale
-                    ? "bg-black text-white dark:bg-white dark:text-black"
-                    : "text-black/70 hover:bg-white/70 dark:text-white/70 dark:hover:bg-white/20",
-                ].join(" ")}
-                title={scatterLogScale ? "Switch to linear scale" : "Switch to log scale"}
-              >
-                {scatterLogScale ? "Log" : "Linear"}
-              </button>
-              <DatePicker
-                value={props.trackScatterDataDate ?? props.latestDataDate ?? ""}
-                min={
-                  props.history?.length
-                    ? dataDateFromRunDate((props.history ?? [])[props.history.length - 1]?.date ?? "")
-                    : undefined
-                }
-                max={props.latestDataDate ?? undefined}
-                path="/"
-                param="xy_date"
-              />
-            </div>
+            ) : null}
           </div>
         </summary>
 
