@@ -204,6 +204,16 @@ const ARTIST_FIELDS: FilterFieldDefinition[] = [
     min: 0,
     placeholder: "e.g., 50000",
   },
+  {
+    key: "playlist",
+    label: "In Playlist",
+    type: "multi-select",
+    operators: ["in", "not_in"],
+    description: "Filter artists by whether they have tracks in selected playlists",
+    optionsSource: "playlists",
+    placeholder: "Select playlists...",
+    helpText: "Matches artists if any of their tracks are (or are not) in these playlists",
+  },
 ];
 
 // ============================================================================

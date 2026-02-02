@@ -58,6 +58,7 @@ type FilterBuilderProps = {
   artistOptions: Array<{ value: string; label: string; imageUrl?: string | null }>;
   playlistOptions: Array<{ value: string; label: string; imageUrl?: string | null }>;
   collectorOptions?: Array<{ value: string; label: string }>;
+  asOfRunDate?: string | null;
 };
 
 export function FilterBuilder({
@@ -67,6 +68,7 @@ export function FilterBuilder({
   artistOptions,
   playlistOptions,
   collectorOptions = [],
+  asOfRunDate = null,
 }: FilterBuilderProps) {
   // Section open/closed state (persisted)
   const [isOpen, setIsOpen] = useState(false);
@@ -110,9 +112,66 @@ export function FilterBuilder({
   }, [isOpen, currentFilter]);
   
   // Aggregate artist data from tracks
-  const artistData = useMemo(() => {
+  const baseArtistData = useMemo(() => {
     return aggregateTracksToArtistData(trackData, artistImages);
   }, [trackData, artistImages]);
+
+  // Playlist memberships cache (playlist_key -> Set<isrc>) for current date
+  const [membershipByPlaylistKey, setMembershipByPlaylistKey] = useState<Map<string, Set<string>>>(new Map());
+  const [membershipDate, setMembershipDate] = useState<string | null>(asOfRunDate);
+
+  useEffect(() => {
+    // Reset membership cache when date changes
+    if (asOfRunDate && asOfRunDate !== membershipDate) {
+      setMembershipByPlaylistKey(new Map());
+      setMembershipDate(asOfRunDate);
+    }
+  }, [asOfRunDate, membershipDate]);
+
+  function extractPlaylistKeysFromFilter(f: FilterConfig | null): string[] {
+    if (!f) return [];
+    const out = new Set<string>();
+    for (const g of f.groups ?? []) {
+      for (const c of g.conditions ?? []) {
+        if (!c?.enabled) continue;
+        if (c.field !== "playlist") continue;
+        if (Array.isArray(c.value)) {
+          for (const v of c.value) {
+            const s = String(v ?? "").trim();
+            if (s) out.add(s);
+          }
+        }
+      }
+    }
+    return Array.from(out);
+  }
+
+  async function ensurePlaylistMemberships(playlistKeys: string[]) {
+    const date = asOfRunDate;
+    if (!date) return;
+    const missing = playlistKeys.filter((k) => !membershipByPlaylistKey.has(k));
+    if (missing.length === 0) return;
+
+    const res = await fetch("/api/playlists/memberships", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ date, playlist_keys: missing }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error((json as any)?.error ?? "Failed to load playlist memberships");
+
+    const rows = Array.isArray((json as any)?.rows) ? ((json as any).rows as any[]) : [];
+    const next = new Map(membershipByPlaylistKey);
+    for (const k of missing) next.set(k, new Set<string>());
+    for (const r of rows) {
+      const pk = String(r?.playlist_key ?? "").trim();
+      const isrc = String(r?.isrc ?? "").trim().toUpperCase();
+      if (!pk || !isrc) continue;
+      const set = next.get(pk);
+      if (set) set.add(isrc);
+    }
+    setMembershipByPlaylistKey(next);
+  }
   
   // Dynamic options map for FilterCondition
   const dynamicOptions = useMemo(() => ({
@@ -176,37 +235,67 @@ export function FilterBuilder({
     // Use setTimeout to allow UI to update before potentially heavy filtering
     setTimeout(() => {
       try {
-        let filteredResults: FilterResult[];
+        (async () => {
+          const playlistKeys = extractPlaylistKeysFromFilter(currentFilter);
+          if (playlistKeys.length && asOfRunDate) {
+            await ensurePlaylistMemberships(playlistKeys);
+          }
+
+          // Annotate trackData with playlist_keys for selected playlists
+          const trackDataWithPlaylists: TrackDataPoint[] = playlistKeys.length
+            ? trackData.map((t) => {
+                const keys: string[] = [];
+                for (const pk of playlistKeys) {
+                  const set = membershipByPlaylistKey.get(pk);
+                  if (set && set.has(t.isrc)) keys.push(pk);
+                }
+                return { ...t, playlist_keys: keys };
+              })
+            : trackData;
+
+          // Derive artist data from annotated tracks (so playlist filter works for artists too)
+          const artistData = playlistKeys.length
+            ? aggregateTracksToArtistData(trackDataWithPlaylists, artistImages)
+            : baseArtistData;
+
+          let filteredResults: FilterResult[];
         
-        switch (currentFilter.entityType) {
-          case "tracks":
-            filteredResults = filterTracksClientSide(trackData, currentFilter);
-            break;
-          case "artists":
-            filteredResults = filterArtistsClientSide(artistData, currentFilter);
-            break;
-          case "playlists":
-            filteredResults = filterPlaylistsClientSide(playlistData, currentFilter);
-            break;
-          default:
-            filteredResults = [];
-        }
+          switch (currentFilter.entityType) {
+            case "tracks":
+              filteredResults = filterTracksClientSide(trackDataWithPlaylists, currentFilter);
+              break;
+            case "artists":
+              filteredResults = filterArtistsClientSide(artistData, currentFilter);
+              break;
+            case "playlists":
+              filteredResults = filterPlaylistsClientSide(playlistData, currentFilter);
+              break;
+            default:
+              filteredResults = [];
+          }
         
-        setResults(filteredResults);
-        setHasApplied(true);
+          setResults(filteredResults);
+          setHasApplied(true);
         
-        // Mark as recent if filter has a name
-        if (currentFilter.name) {
-          markFilterAsRecent(currentFilter.id);
-        }
+          // Mark as recent if filter has a name
+          if (currentFilter.name) {
+            markFilterAsRecent(currentFilter.id);
+          }
+        })()
+          .catch((err) => {
+            setError(err instanceof Error ? err.message : "An error occurred while filtering");
+            setResults([]);
+          })
+          .finally(() => {
+            setIsLoading(false);
+          });
       } catch (err) {
         setError(err instanceof Error ? err.message : "An error occurred while filtering");
         setResults([]);
-      } finally {
         setIsLoading(false);
       }
     }, 10);
-  }, [currentFilter, trackData, artistData, playlistData]);
+  }, [currentFilter, trackData, playlistData, asOfRunDate, membershipByPlaylistKey, artistImages, baseArtistData]);
   
   // Load a saved filter
   function handleLoadFilter(filter: FilterConfig) {
@@ -233,7 +322,7 @@ export function FilterBuilder({
   const dataCount = currentFilter?.entityType === "tracks" 
     ? trackData.length 
     : currentFilter?.entityType === "artists"
-    ? artistData.length
+    ? baseArtistData.length
     : playlistData.length;
 
   const entityOptions: ComboboxOption[] = useMemo(

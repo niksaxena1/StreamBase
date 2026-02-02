@@ -42,6 +42,7 @@ export type ArtistDataPoint = {
   track_count: number;
   daily_streams?: number;
   image_url: string | null;
+  playlist_keys?: string[];
 };
 
 export type PlaylistDataPoint = {
@@ -135,11 +136,13 @@ export function aggregateTracksToArtistData(
     daily_streams: number;
     track_count: number;
     image_url: string | null;
+    playlist_keys: Set<string>;
   }>();
   
   for (const track of tracks) {
     const ids = track.spotify_artist_ids ?? [];
     const names = track.spotify_artist_names ?? [];
+    const pkeys = Array.isArray(track.playlist_keys) ? track.playlist_keys : [];
     
     for (let i = 0; i < ids.length; i++) {
       const id = ids[i];
@@ -154,6 +157,7 @@ export function aggregateTracksToArtistData(
           daily_streams: 0,
           track_count: 0,
           image_url: imageInfo?.image_url ?? null,
+          playlist_keys: new Set<string>(),
         });
       }
       
@@ -161,10 +165,19 @@ export function aggregateTracksToArtistData(
       entry.total_streams += track.total_streams_cumulative;
       entry.daily_streams += track.daily_streams ?? 0;
       entry.track_count += 1;
+      for (const pk of pkeys) entry.playlist_keys.add(pk);
     }
   }
   
-  return Array.from(artistMap.values());
+  return Array.from(artistMap.values()).map((a) => ({
+    artist_id: a.artist_id,
+    artist_name: a.artist_name,
+    total_streams: a.total_streams,
+    daily_streams: a.daily_streams,
+    track_count: a.track_count,
+    image_url: a.image_url,
+    playlist_keys: Array.from(a.playlist_keys),
+  }));
 }
 
 // ============================================================================

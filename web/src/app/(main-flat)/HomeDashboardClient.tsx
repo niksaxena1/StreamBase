@@ -11,7 +11,7 @@ import { Button, IconButton } from "@/components/ui/Button";
 import { AnimatedCounter } from "@/components/ui/AnimatedCounter";
 import { GlassTable, TableRow, TableCell, EmptyState } from "@/components/ui/GlassTable";
 import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
-import { dataDateFromRunDate } from "@/lib/sotDates";
+import { addDaysISO, dataDateFromRunDate, SOT_DATA_LAG_DAYS } from "@/lib/sotDates";
 import { Alert } from "@/components/ui/Alert";
 import { hrefWithPatchedSearchParams } from "@/lib/searchParams";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
@@ -271,7 +271,13 @@ function generateAutoMilestonesFromMax(maxStreams: number): number[] {
 // Filter Builder Section
 // ============================================================================
 
-function FilterBuilderSection({ trackScatterPoints }: { trackScatterPoints: TrackStreamsXYPoint[] }) {
+function FilterBuilderSection({
+  trackScatterPoints,
+  trackScatterDataDate,
+}: {
+  trackScatterPoints: TrackStreamsXYPoint[];
+  trackScatterDataDate: string | null;
+}) {
   const [playlistOptions, setPlaylistOptions] = useState<
     Array<{ value: string; label: string; imageUrl?: string | null }>
   >([]);
@@ -389,6 +395,10 @@ function FilterBuilderSection({ trackScatterPoints }: { trackScatterPoints: Trac
 
   // Empty playlist data for now (would need to fetch from server)
   const playlistData: PlaylistDataPoint[] = useMemo(() => [], []);
+  const asOfRunDate = useMemo(() => {
+    if (!trackScatterDataDate) return null;
+    return addDaysISO(trackScatterDataDate, SOT_DATA_LAG_DAYS);
+  }, [trackScatterDataDate]);
 
   return (
     <FilterBuilder
@@ -398,6 +408,7 @@ function FilterBuilderSection({ trackScatterPoints }: { trackScatterPoints: Trac
       artistOptions={artistOptions}
       playlistOptions={playlistOptions}
       collectorOptions={[]}
+      asOfRunDate={asOfRunDate}
     />
   );
 }
@@ -1676,7 +1687,10 @@ function HomeDashboardInner(props: {
 
       {/* Dynamic Filter Builder (bottom-most, under Recent History) */}
       {homeFiltersConfigured && homeFiltersEnabled ? (
-        <FilterBuilderSection trackScatterPoints={props.trackScatterPoints} />
+        <FilterBuilderSection
+          trackScatterPoints={props.trackScatterPoints}
+          trackScatterDataDate={props.trackScatterDataDate}
+        />
       ) : null}
     </div>
   );
