@@ -8,7 +8,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { 
-  ChevronDown, 
   Filter, 
   Play, 
   Plus, 
@@ -335,54 +334,35 @@ export function FilterBuilder({
   );
   
   return (
-    <section className="sb-card p-4 mb-6">
-      {/* Section header (always visible) */}
-      <button
-        type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between gap-4"
-      >
-        <div className="flex items-center gap-3">
-          <div
-            className="h-9 w-9 rounded-xl flex items-center justify-center"
-            style={{ background: "linear-gradient(135deg, var(--sb-accent), #8B5CF6)" }}
-          >
-            <Filter className="h-5 w-5 text-black" />
+    <details
+      open={isOpen}
+      onToggle={(ev) => setIsOpen(ev.currentTarget.open)}
+      className="rounded-xl border bg-white/50 p-3 dark:bg-white/[0.03]"
+      style={{ borderColor: "var(--sb-border)" }}
+    >
+      <summary className="cursor-pointer select-none">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-2">
+            <span className="mt-0.5 flex-shrink-0 text-xs opacity-60">▸</span>
+            <div>
+              <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
+                Filters
+              </div>
+            </div>
           </div>
-          <div className="text-left">
-            <h2 className="text-base font-semibold" style={{ color: "var(--sb-text)" }}>
-              Filters
-            </h2>
-            <p className="text-xs" style={{ color: "var(--sb-muted)" }}>
-              Build custom views of your data
-            </p>
+
+          <div className="flex items-center gap-2">
           </div>
         </div>
-        
-        <div className="flex items-center gap-3">
-          {/* Show active filter badge when collapsed */}
-          {!isOpen && activeConditionCount > 0 && (
-            <span
-              className="text-xs px-2 py-1 rounded-lg"
-              style={{ background: "var(--sb-accent)", color: "black" }}
-            >
-              {activeConditionCount} condition{activeConditionCount !== 1 ? "s" : ""} active
-            </span>
-          )}
-          
-          <ChevronDown
-            className={cx(
-              "h-5 w-5 transition-transform duration-200",
-              isOpen && "rotate-180"
-            )}
-            style={{ color: "var(--sb-muted)" }}
-          />
-        </div>
-      </button>
-      
+      </summary>
+
       {/* Expanded content */}
-      {isOpen && currentFilter && (
-        <div className="mt-4 pt-4 border-t" style={{ borderColor: "var(--sb-border)" }}>
+      {currentFilter && (
+        <div className="mt-3">
+          <div className="mb-3 text-xs opacity-70" style={{ color: "var(--sb-muted)" }}>
+            Build custom views of your data
+          </div>
+
           {/* Toolbar */}
           <div className="flex flex-wrap items-center gap-3 mb-4">
             {/* Saved filters dropdown */}
@@ -546,7 +526,7 @@ export function FilterBuilder({
           )}
         </div>
       )}
-    </section>
+    </details>
   );
 }
 
