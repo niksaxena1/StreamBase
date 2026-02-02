@@ -62,8 +62,8 @@ const CustomTooltip = ({
 
   const dailyLabel = p.has_prev_day
     ? mode === "revenue"
-      ? `+${formatUsd2(dailyValue)}`
-      : `+${formatInt(dailyValue)}`
+      ? formatUsd2(dailyValue)
+      : formatInt(dailyValue)
     : "—";
 
   const artistsText = useMemo(() => {
@@ -201,6 +201,7 @@ export function TrackStreamsXYChart({
   topNCumulative = 100,
   sampleN = 80,
   focusIsrc = null,
+  logScale = false,
   onClearFocus,
 }: {
   points: TrackStreamsXYPoint[];
@@ -212,6 +213,7 @@ export function TrackStreamsXYChart({
   topNCumulative?: number;
   sampleN?: number;
   focusIsrc?: string | null;
+  logScale?: boolean;
   onClearFocus?: () => void;
 }) {
   const [hovered, setHovered] = useState<{ point: ChartDatum; x: number; y: number } | null>(null);
@@ -294,6 +296,75 @@ export function TrackStreamsXYChart({
 
   const dotColor = color ?? (mode === "revenue" ? "#10b981" : "#c7f33c");
   const mutedDotColor = "rgba(148, 163, 184, 0.7)"; // slate-ish
+
+  // Compute log-scale domains + clean ticks based on TOP data only
+  // (not sampledData which has lower values and would waste chart space).
+  const { logDomainX, logDomainY, logTicksX, logTicksY } = useMemo(() => {
+    // Use only topData for domain calculation — sampledData are faded background
+    // dots from lower-value tracks that shouldn't dictate the axis range.
+    const displayedData = topData;
+
+    if (!logScale || displayedData.length === 0) {
+      return {
+        logDomainX: [1, "auto"] as [number, "auto"],
+        logDomainY: [1, "auto"] as [number, "auto"],
+        logTicksX: undefined as number[] | undefined,
+        logTicksY: undefined as number[] | undefined,
+      };
+    }
+
+    const clampMin = (n: number) => (isFinite(n) && n > 0 ? n : 1);
+
+    // Build "nice" log ticks (1/2/5 per decade) and fall back if too many.
+    const buildLogTicks = (min: number, max: number) => {
+      const mn = clampMin(min);
+      const mx = clampMin(max);
+      const minExp = Math.floor(Math.log10(mn));
+      const maxExp = Math.ceil(Math.log10(mx));
+      const ticks: number[] = [];
+      const mults = [1, 2, 5];
+      for (let e = minExp; e <= maxExp; e++) {
+        const base = Math.pow(10, e);
+        for (const m of mults) {
+          const v = m * base;
+          if (v >= mn && v <= mx) ticks.push(v);
+        }
+      }
+      // De-dupe + sort
+      const uniq = Array.from(new Set(ticks)).sort((a, b) => a - b);
+      if (uniq.length <= 10) return uniq;
+      // Too many ticks: show powers of 10 only
+      const p10: number[] = [];
+      for (let e = minExp; e <= maxExp; e++) {
+        const v = Math.pow(10, e);
+        if (v >= mn && v <= mx) p10.push(v);
+      }
+      return p10.length ? p10 : undefined;
+    };
+
+    // Get min/max from DISPLAYED data only (positive values for log)
+    const xVals = displayedData.map((d) => d.x_value).filter((v) => v > 0);
+    const yVals = displayedData.map((d) => d.y_value).filter((v) => v > 0);
+
+    const minX = xVals.length > 0 ? Math.min(...xVals) : 1;
+    const maxX = xVals.length > 0 ? Math.max(...xVals) : 100;
+    const minY = yVals.length > 0 ? Math.min(...yVals) : 1;
+    const maxY = yVals.length > 0 ? Math.max(...yVals) : 100;
+
+    // Tighten the log domains around displayed data to reduce empty decades.
+    const domainXMin = clampMin(minX / 1.15);
+    const domainXMax = clampMin(maxX * 1.05);
+    const domainYMin = clampMin(minY / 1.15);
+    const domainYMax = clampMin(maxY * 1.05);
+
+    return {
+      logDomainX: [Math.max(1, domainXMin), domainXMax] as [number, number],
+      logDomainY: [Math.max(1, domainYMin), domainYMax] as [number, number],
+      logTicksX: buildLogTicks(Math.max(1, domainXMin), domainXMax),
+      logTicksY: buildLogTicks(Math.max(1, domainYMin), domainYMax),
+    };
+  }, [topData, logScale]);
+
   const fmtAxisTick = useCallback(
     (n: number) => {
       if (mode === "revenue") return formatUsdCompact(n, formatUsd);
@@ -355,23 +426,31 @@ export function TrackStreamsXYChart({
             type="number"
             dataKey="x_value"
             name={mode === "revenue" ? "Total revenue" : "Total streams"}
+            scale={logScale ? "log" : "auto"}
+            domain={logScale ? logDomainX : ["auto", "auto"]}
+            ticks={logScale ? logTicksX : undefined}
             tickFormatter={(n) => fmtAxisTick(Number(n ?? 0))}
             stroke="var(--sb-muted)"
             fontSize={10}
             tickLine={false}
             axisLine={false}
             tickMargin={6}
+            allowDataOverflow={logScale}
           />
           <YAxis
             type="number"
             dataKey="y_value"
             name={mode === "revenue" ? "Daily revenue" : "Daily streams"}
+            scale={logScale ? "log" : "auto"}
+            domain={logScale ? logDomainY : ["auto", "auto"]}
+            ticks={logScale ? logTicksY : undefined}
             tickFormatter={(n) => fmtAxisTick(Number(n ?? 0))}
             stroke="var(--sb-muted)"
             fontSize={10}
             tickLine={false}
             axisLine={false}
             tickMargin={6}
+            allowDataOverflow={logScale}
           />
           {/* Keep Recharts' hover hit-testing, but don't render its tooltip/cursor. */}
           <Tooltip cursor={false} content={() => null} />
@@ -468,6 +547,9 @@ export function TrackStreamsXYChart({
     handleTouchStart,
     heightPx,
     isFocusMode,
+    logDomainX,
+    logDomainY,
+    logScale,
     mode,
     mutedDotColor,
     sampledData,

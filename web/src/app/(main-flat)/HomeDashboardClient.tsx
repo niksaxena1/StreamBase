@@ -92,10 +92,11 @@ function HomeDashboardInner(props: {
   const deferredScatterQuery = useDeferredValue(scatterQuery);
   const [scatterFocusIsrc, setScatterFocusIsrc] = useState<string | null>(null);
   const [scatterSearchFocused, setScatterSearchFocused] = useState(false);
+  const [scatterLogScale, setScatterLogScale] = useState(false);
 
   const scatterMode = metric === "revenue" ? "revenue" : "streams";
   const scatterTitle =
-    scatterMode === "revenue" ? "Tracks: Δ1d vs Total Revenue" : "Tracks: Total vs Daily Streams";
+    scatterMode === "revenue" ? "Tracks: Total vs Daily Revenue" : "Tracks: Total vs Daily Streams";
 
   const scatterMatches = useMemo(() => {
     const q = foldForSearch(deferredScatterQuery ?? "");
@@ -395,11 +396,24 @@ function HomeDashboardInner(props: {
           <div className="flex flex-wrap items-center justify-end gap-2">
             <div
               className="text-[11px] opacity-60"
-              title="Y = data date minus previous day (when available), X = cumulative streams on that data date."
+              title={scatterMode === "revenue" ? "X = cumulative revenue, Y = daily revenue change" : "X = cumulative streams, Y = daily streams change"}
             >
-              {scatterMode === "revenue" ? "Y: Δ1d revenue • X: total revenue" : "X: total streams • Y: daily streams"}
+              {scatterMode === "revenue" ? "X: total revenue • Y: daily revenue" : "X: total streams • Y: daily streams"}
             </div>
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setScatterLogScale((v) => !v)}
+                className={[
+                  "rounded-full px-2 py-1 text-[11px] font-medium transition",
+                  scatterLogScale
+                    ? "bg-black text-white dark:bg-white dark:text-black"
+                    : "text-black/70 hover:bg-white/70 dark:text-white/70 dark:hover:bg-white/20",
+                ].join(" ")}
+                title={scatterLogScale ? "Switch to linear scale" : "Switch to log scale"}
+              >
+                {scatterLogScale ? "Log" : "Linear"}
+              </button>
               <DatePicker
                 value={props.trackScatterDataDate ?? props.latestDataDate ?? ""}
                 min={
@@ -541,6 +555,10 @@ function HomeDashboardInner(props: {
               mode={scatterMode}
               payoutPerStreamUsd={streamPayoutPerStreamUsd}
               focusIsrc={scatterFocusIsrc}
+              logScale={scatterLogScale}
+              topNDelta={scatterLogScale ? 750 : 100}
+              topNCumulative={scatterLogScale ? 750 : 100}
+              sampleN={scatterLogScale ? 0 : 80}
               onClearFocus={() => {
                 setScatterFocusIsrc(null);
                 setScatterQuery("");
@@ -563,23 +581,41 @@ function HomeDashboardInner(props: {
           headers={[
             { label: "Date" },
             { label: "Tracks", align: "right" },
-            { label: "Total Streams", align: "right" },
-            { label: "Daily", align: "right" },
+            { label: "" }, // Invisible column for track delta
+            { label: metric === "revenue" ? "Total Revenue" : "Total Streams", align: "right" },
+            { label: metric === "revenue" ? "Daily Revenue" : "Daily Streams", align: "right" },
           ]}
           // Constrain height so ~7 rows are visible; scroll for more.
           maxBodyHeightClassName="max-h-[228px] overflow-auto"
         >
-          {(props.history ?? []).map((r) => (
+          {(props.history ?? []).map((r, idx) => {
+            const prev = idx < (props.history ?? []).length - 1 ? (props.history ?? [])[idx + 1] : null;
+            const trackDelta = prev ? Number(r.track_count ?? 0) - Number(prev.track_count ?? 0) : 0;
+            return (
             <TableRow key={r.date}>
               <TableCell mono>{formatDateISO(dataDateFromRunDate(r.date))}</TableCell>
               <TableCell numeric>{formatInt(r.track_count)}</TableCell>
-              <TableCell numeric>{formatInt(r.total_streams_cumulative)}</TableCell>
-              <TableCell numeric className="text-lime-700 dark:text-lime-400 font-medium">
-                +{formatInt(r.daily_streams_net)}
+              <TableCell className="w-12 pl-1 pr-0 text-xs">
+                {trackDelta !== 0 && (
+                  <span className={trackDelta > 0 ? "text-blue-600 dark:text-blue-400" : "text-red-600 dark:text-red-400"}>
+                    {trackDelta > 0 ? "+" : ""}{formatInt(trackDelta)}
+                  </span>
+                )}
+              </TableCell>
+              <TableCell numeric>
+                {metric === "revenue"
+                  ? formatUsd(Number(r.total_streams_cumulative ?? 0) * streamPayoutPerStreamUsd)
+                  : formatInt(r.total_streams_cumulative)}
+              </TableCell>
+              <TableCell numeric className={metric === "revenue" ? "text-green-600 dark:text-green-400 font-medium" : "text-lime-700 dark:text-lime-400 font-medium"}>
+                {metric === "revenue"
+                  ? formatUsd(Number(r.daily_streams_net ?? 0) * streamPayoutPerStreamUsd)
+                  : formatInt(r.daily_streams_net)}
               </TableCell>
             </TableRow>
-          ))}
-          {!props.history?.length && <EmptyState colSpan={4} message="No stats found yet" />}
+            );
+          })}
+          {!props.history?.length && <EmptyState colSpan={5} message="No stats found yet" />}
         </GlassTable>
       </div>
     </div>
