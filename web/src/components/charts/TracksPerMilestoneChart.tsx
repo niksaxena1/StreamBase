@@ -353,7 +353,12 @@ export function TracksPerMilestoneChart({
   return (
     <div
       className="w-full overflow-visible outline-none"
-      style={{ outline: "none" }}
+      style={{
+        outline: "none",
+        WebkitUserSelect: "none",
+        userSelect: "none",
+        WebkitTapHighlightColor: "transparent",
+      }}
       onMouseDown={handleMouseDown}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}

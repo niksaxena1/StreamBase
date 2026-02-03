@@ -589,7 +589,13 @@ export function ArtistStreamsXYChart({
   return (
     <div
       className="relative w-full outline-none"
-      style={{ outline: "none", touchAction: "pan-y" }}
+      style={{
+        outline: "none",
+        touchAction: "pan-y",
+        WebkitUserSelect: "none",
+        userSelect: "none",
+        WebkitTapHighlightColor: "transparent",
+      }}
       onMouseDown={handleMouseDown}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
