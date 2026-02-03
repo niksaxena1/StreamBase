@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { PointerEvent, MouseEvent } from "react";
 import { CartesianGrid, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis } from "recharts";
 
 import { formatInt, formatUsd, formatUsd2 } from "@/lib/format";
@@ -215,28 +216,24 @@ export function ArtistStreamsXYChart({
 }) {
   const [hovered, setHovered] = useState<{ point: ChartDatum; x: number; y: number } | null>(null);
   const [frozen, setFrozen] = useState(false);
-  const LONG_PRESS_MS = 650;
+  const LONG_PRESS_MS = 550;
 
-  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingTouchRef = useRef<{ point: ChartDatum; x: number; y: number } | null>(null);
-  const pointerTypeRef = useRef<"mouse" | "touch" | "pen" | "unknown">("unknown");
-  const suppressNextClickRef = useRef(false);
+  // Pointer event based long-press detection (works reliably on Chrome/Firefox/Safari)
+  const lastPointerTypeRef = useRef<string | null>(null);
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
 
   const clearLongPressTimer = useCallback(() => {
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
+    if (longPressTimerRef.current != null) {
+      window.clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
     }
+    longPressStartRef.current = null;
   }, []);
 
-  const clearLongPress = useCallback(() => {
-    clearLongPressTimer();
-    pendingTouchRef.current = null;
-  }, [clearLongPressTimer]);
-
   useEffect(() => {
-    return () => clearLongPress();
-  }, [clearLongPress]);
+    return () => clearLongPressTimer();
+  }, [clearLongPressTimer]);
 
   const { allData, topData, sampledData, hiddenCount } = useMemo(() => {
     const base = (points ?? []).filter(
@@ -360,34 +357,84 @@ export function ArtistStreamsXYChart({
   }, [allData, focusArtistId]);
   const isFocusMode = Boolean(focusPoint);
 
-  const handleTouchStart = useCallback(
-    (o: any) => {
-      if (isFocusMode) return;
-      if (frozen) return;
-      const p = (o?.payload ?? null) as ChartDatum | null;
-      const x = Number(o?.cx ?? NaN);
-      const y = Number(o?.cy ?? NaN);
-      if (!p || !isFinite(x) || !isFinite(y)) return;
+  // Container event handlers using pointer events (same pattern as useChartCopyToClipboard)
+  const handleMouseDown = (e: MouseEvent) => {
+    // Prevent focus outline box on click
+    e.preventDefault();
+  };
 
-      clearLongPressTimer();
-      setHovered({ point: p, x, y });
-      pendingTouchRef.current = { point: p, x, y };
+  const handlePointerDown = (e: PointerEvent) => {
+    lastPointerTypeRef.current = e.pointerType ?? null;
+    const pt = e.pointerType ?? null;
 
-      longPressTimerRef.current = setTimeout(() => {
-        if (pendingTouchRef.current) {
-          setFrozen(true);
-          suppressNextClickRef.current = true;
-        }
-        longPressTimerRef.current = null;
-      }, LONG_PRESS_MS);
-    },
-    [frozen, clearLongPressTimer, isFocusMode, LONG_PRESS_MS],
-  );
+    // Only start long-press timer for touch/pen
+    if (pt !== "touch" && pt !== "pen") return;
+    if (isFocusMode) return;
+    if (frozen) return;
 
-  const handleTouchEnd = useCallback(() => {
     clearLongPressTimer();
-    pendingTouchRef.current = null;
-  }, [clearLongPressTimer]);
+    longPressStartRef.current = { x: e.clientX, y: e.clientY };
+    longPressTimerRef.current = window.setTimeout(() => {
+      // Long-press completed: freeze the tooltip
+      if (hovered) {
+        setFrozen(true);
+      }
+      longPressTimerRef.current = null;
+    }, LONG_PRESS_MS);
+  };
+
+  const handlePointerMove = (e: PointerEvent) => {
+    const pt = e.pointerType ?? null;
+    if (pt !== "touch" && pt !== "pen") return;
+    const start = longPressStartRef.current;
+    if (!start) return;
+    // Cancel long-press if finger moved too far (user is scrolling)
+    const dx = e.clientX - start.x;
+    const dy = e.clientY - start.y;
+    if (Math.hypot(dx, dy) > 10) {
+      clearLongPressTimer();
+    }
+  };
+
+  const handlePointerUp = () => {
+    clearLongPressTimer();
+  };
+
+  const handlePointerCancel = () => {
+    clearLongPressTimer();
+  };
+
+  const handleClick = () => {
+    const pt = lastPointerTypeRef.current;
+
+    if (isFocusMode) {
+      // Desktop: click anywhere to exit focus mode.
+      if (pt !== "touch" && pt !== "pen") {
+        setFrozen(false);
+        setHovered(null);
+        onClearFocus?.();
+      }
+      return;
+    }
+
+    // Touch/pen: taps only show tooltip (freeze is via long-press)
+    if (pt === "touch" || pt === "pen") {
+      // If already frozen, tap anywhere to unfreeze
+      if (frozen) {
+        setFrozen(false);
+        setHovered(null);
+      }
+      return;
+    }
+
+    // Mouse: click pins the currently-open tooltip, click again unpins.
+    if (frozen) {
+      setFrozen(false);
+      setHovered(null);
+      return;
+    }
+    if (hovered) setFrozen(true);
+  };
 
   const chartEl = useMemo(() => {
     return (
@@ -452,19 +499,32 @@ export function ArtistStreamsXYChart({
               stroke="none"
               strokeWidth={0}
               isAnimationActive={false}
-              onMouseEnter={(o) => {
+              onMouseEnter={(o: any) => {
                 if (frozen) return;
+                // Don't show hover on touch (handled separately)
+                if (lastPointerTypeRef.current === "touch" || lastPointerTypeRef.current === "pen") return;
                 const p = (o?.payload ?? null) as ChartDatum | null;
                 const x = Number(o?.cx ?? NaN);
                 const y = Number(o?.cy ?? NaN);
                 if (p && isFinite(x) && isFinite(y)) setHovered({ point: p, x, y });
               }}
               onMouseLeave={() => {
-                if (!frozen) setHovered(null);
+                if (frozen) return;
+                if (lastPointerTypeRef.current === "touch" || lastPointerTypeRef.current === "pen") return;
+                setHovered(null);
               }}
-              onTouchStart={handleTouchStart}
-              onTouchEnd={handleTouchEnd}
-              onTouchMove={handleTouchEnd}
+              // For touch: use Recharts' built-in touch detection to show tooltip
+              onMouseDown={(o: any) => {
+                // This fires on touch too - show tooltip immediately
+                const pt = lastPointerTypeRef.current;
+                if (pt !== "touch" && pt !== "pen") return;
+                if (frozen) return;
+                const p = (o?.payload ?? null) as ChartDatum | null;
+                const x = Number(o?.cx ?? NaN);
+                const y = Number(o?.cy ?? NaN);
+                if (!p || !isFinite(x) || !isFinite(y)) return;
+                setHovered({ point: p, x, y });
+              }}
               shape={(props: any) => {
                 const { cx, cy, payload } = props;
                 const isHov = hovered?.point?.artist_id === payload?.artist_id;
@@ -512,8 +572,6 @@ export function ArtistStreamsXYChart({
     fmtAxisTick,
     focusPoint,
     frozen,
-    handleTouchEnd,
-    handleTouchStart,
     heightPx,
     hovered?.point?.artist_id,
     isFocusMode,
@@ -531,46 +589,13 @@ export function ArtistStreamsXYChart({
   return (
     <div
       className="relative w-full outline-none"
-      style={{ outline: "none" }}
-      onMouseDown={(e) => e.preventDefault()}
-      onPointerDown={(e) => {
-        pointerTypeRef.current = (e.pointerType as any) || "unknown";
-      }}
-      onTouchStartCapture={() => {
-        pointerTypeRef.current = "touch";
-      }}
-      onClick={() => {
-        if (isFocusMode) {
-          const pt = pointerTypeRef.current;
-          if (pt !== "touch") {
-            setFrozen(false);
-            setHovered(null);
-            onClearFocus?.();
-          }
-          return;
-        }
-        if (suppressNextClickRef.current) {
-          suppressNextClickRef.current = false;
-          return;
-        }
-
-        const pt = pointerTypeRef.current;
-
-        if (pt === "touch") {
-          if (frozen) {
-            setFrozen(false);
-            setHovered(null);
-          }
-          return;
-        }
-
-        if (frozen) {
-          setFrozen(false);
-          setHovered(null);
-          return;
-        }
-        if (hovered) setFrozen(true);
-      }}
+      style={{ outline: "none", touchAction: "pan-y" }}
+      onMouseDown={handleMouseDown}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
+      onClick={handleClick}
     >
       {chartEl}
 
@@ -592,8 +617,6 @@ export function ArtistStreamsXYChart({
           onClick={(e) => e.stopPropagation()}
           onPointerDown={(e) => e.stopPropagation()}
           onPointerUp={(e) => e.stopPropagation()}
-          onTouchStart={(e) => e.stopPropagation()}
-          onTouchEnd={(e) => e.stopPropagation()}
         >
           <CustomTooltip
             point={focusPoint}
@@ -620,8 +643,6 @@ export function ArtistStreamsXYChart({
           onClick={(e) => e.stopPropagation()}
           onPointerDown={(e) => e.stopPropagation()}
           onPointerUp={(e) => e.stopPropagation()}
-          onTouchStart={(e) => e.stopPropagation()}
-          onTouchEnd={(e) => e.stopPropagation()}
         >
           <CustomTooltip
             point={hovered.point}

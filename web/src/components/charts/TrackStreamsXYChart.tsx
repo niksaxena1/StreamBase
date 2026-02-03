@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import type { PointerEvent, MouseEvent } from "react";
 import { CartesianGrid, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis } from "recharts";
 
 import { formatInt, formatUsd, formatUsd2 } from "@/lib/format";
@@ -220,30 +221,25 @@ export function TrackStreamsXYChart({
 }) {
   const [hovered, setHovered] = useState<{ point: ChartDatum; x: number; y: number } | null>(null);
   const [frozen, setFrozen] = useState(false);
-  const LONG_PRESS_MS = 650;
+  const LONG_PRESS_MS = 550;
 
-  // For mobile long-press detection
-  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingTouchRef = useRef<{ point: ChartDatum; x: number; y: number } | null>(null);
-  const pointerTypeRef = useRef<"mouse" | "touch" | "pen" | "unknown">("unknown");
-  const suppressNextClickRef = useRef(false);
+  // Pointer event based long-press detection (works reliably on Chrome/Firefox/Safari)
+  const lastPointerTypeRef = useRef<string | null>(null);
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
 
   const clearLongPressTimer = useCallback(() => {
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
+    if (longPressTimerRef.current != null) {
+      window.clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
     }
+    longPressStartRef.current = null;
   }, []);
-
-  const clearLongPress = useCallback(() => {
-    clearLongPressTimer();
-    pendingTouchRef.current = null;
-  }, [clearLongPressTimer]);
 
   // Clean up on unmount
   useEffect(() => {
-    return () => clearLongPress();
-  }, [clearLongPress]);
+    return () => clearLongPressTimer();
+  }, [clearLongPressTimer]);
 
   const { allData, topData, sampledData, hiddenCount } = useMemo(() => {
     // Filter out obviously bad points (keeps chart stable)
@@ -383,41 +379,84 @@ export function TrackStreamsXYChart({
   }, [allData, focusIsrc]);
   const isFocusMode = Boolean(focusPoint);
 
-  // Handle touch start for long-press detection
-  const handleTouchStart = useCallback(
-    (o: any) => {
-      if (isFocusMode) return;
-      if (frozen) return;
-      const p = (o?.payload ?? null) as ChartDatum | null;
-      const x = Number(o?.cx ?? NaN);
-      const y = Number(o?.cy ?? NaN);
-      if (!p || !isFinite(x) || !isFinite(y)) return;
+  // Container event handlers using pointer events (same pattern as useChartCopyToClipboard)
+  const handleMouseDown = (e: MouseEvent) => {
+    // Prevent focus outline box on click
+    e.preventDefault();
+  };
 
-      // Cancel any in-flight long-press from a previous touch.
-      clearLongPressTimer();
+  const handlePointerDown = (e: PointerEvent) => {
+    lastPointerTypeRef.current = e.pointerType ?? null;
+    const pt = e.pointerType ?? null;
 
-      // Show tooltip immediately on tap (hover equivalent)
-      setHovered({ point: p, x, y });
-      pendingTouchRef.current = { point: p, x, y };
+    // Only start long-press timer for touch/pen
+    if (pt !== "touch" && pt !== "pen") return;
+    if (isFocusMode) return;
+    if (frozen) return;
 
-      // Start long-press timer (500ms)
-      longPressTimerRef.current = setTimeout(() => {
-        if (pendingTouchRef.current) {
-          setFrozen(true);
-          // Prevent the synthetic click after long-press from toggling/unpinning.
-          suppressNextClickRef.current = true;
-        }
-        longPressTimerRef.current = null;
-      }, LONG_PRESS_MS);
-    },
-    [frozen, clearLongPressTimer, isFocusMode, LONG_PRESS_MS]
-  );
-
-  const handleTouchEnd = useCallback(() => {
-    // Always stop the timer; keep the hovered tooltip visible.
     clearLongPressTimer();
-    pendingTouchRef.current = null;
-  }, [clearLongPressTimer]);
+    longPressStartRef.current = { x: e.clientX, y: e.clientY };
+    longPressTimerRef.current = window.setTimeout(() => {
+      // Long-press completed: freeze the tooltip
+      if (hovered) {
+        setFrozen(true);
+      }
+      longPressTimerRef.current = null;
+    }, LONG_PRESS_MS);
+  };
+
+  const handlePointerMove = (e: PointerEvent) => {
+    const pt = e.pointerType ?? null;
+    if (pt !== "touch" && pt !== "pen") return;
+    const start = longPressStartRef.current;
+    if (!start) return;
+    // Cancel long-press if finger moved too far (user is scrolling)
+    const dx = e.clientX - start.x;
+    const dy = e.clientY - start.y;
+    if (Math.hypot(dx, dy) > 10) {
+      clearLongPressTimer();
+    }
+  };
+
+  const handlePointerUp = () => {
+    clearLongPressTimer();
+  };
+
+  const handlePointerCancel = () => {
+    clearLongPressTimer();
+  };
+
+  const handleClick = () => {
+    const pt = lastPointerTypeRef.current;
+
+    if (isFocusMode) {
+      // Desktop: click anywhere to exit focus mode.
+      if (pt !== "touch" && pt !== "pen") {
+        setFrozen(false);
+        setHovered(null);
+        onClearFocus?.();
+      }
+      return;
+    }
+
+    // Touch/pen: taps only show tooltip (freeze is via long-press)
+    if (pt === "touch" || pt === "pen") {
+      // If already frozen, tap anywhere to unfreeze
+      if (frozen) {
+        setFrozen(false);
+        setHovered(null);
+      }
+      return;
+    }
+
+    // Mouse: click pins the currently-open tooltip, click again unpins.
+    if (frozen) {
+      setFrozen(false);
+      setHovered(null);
+      return;
+    }
+    if (hovered) setFrozen(true);
+  };
 
   // Memoize the expensive chart subtree so hover only rerenders the tooltip overlay.
   const chartEl = useMemo(() => {
@@ -499,6 +538,8 @@ export function TrackStreamsXYChart({
               opacity={0.85}
               onMouseEnter={(o: any) => {
                 if (frozen) return;
+                // Don't show hover on touch (handled separately)
+                if (lastPointerTypeRef.current === "touch" || lastPointerTypeRef.current === "pen") return;
                 const p = (o?.payload ?? null) as ChartDatum | null;
                 const x = Number(o?.cx ?? NaN);
                 const y = Number(o?.cy ?? NaN);
@@ -507,13 +548,21 @@ export function TrackStreamsXYChart({
               }}
               onMouseLeave={() => {
                 if (frozen) return;
+                if (lastPointerTypeRef.current === "touch" || lastPointerTypeRef.current === "pen") return;
                 setHovered(null);
               }}
-              // Mobile touch support
-              onTouchStart={handleTouchStart}
-              onTouchEnd={handleTouchEnd}
-              onTouchCancel={handleTouchEnd}
-              onTouchMove={handleTouchEnd}
+              // For touch: use Recharts' built-in touch detection to show tooltip
+              onMouseDown={(o: any) => {
+                // This fires on touch too - show tooltip immediately
+                const pt = lastPointerTypeRef.current;
+                if (pt !== "touch" && pt !== "pen") return;
+                if (frozen) return;
+                const p = (o?.payload ?? null) as ChartDatum | null;
+                const x = Number(o?.cx ?? NaN);
+                const y = Number(o?.cy ?? NaN);
+                if (!p || !isFinite(x) || !isFinite(y)) return;
+                setHovered({ point: p, x, y });
+              }}
             />
           ) : null}
           {/* Focus point (always rendered on top when present) */}
@@ -546,13 +595,13 @@ export function TrackStreamsXYChart({
     focusPoint,
     frozen,
     fmtAxisTick,
-    handleTouchEnd,
-    handleTouchStart,
     heightPx,
     isFocusMode,
     logDomainX,
     logDomainY,
     logScale,
+    logTicksX,
+    logTicksY,
     mode,
     mutedDotColor,
     sampledData,
@@ -562,55 +611,13 @@ export function TrackStreamsXYChart({
   return (
     <div
       className="relative w-full outline-none"
-      style={{ outline: "none" }}
-      onMouseDown={(e) => {
-        // Prevent the chart wrapper/SVG from receiving focus outline on click.
-        e.preventDefault();
-      }}
-      onPointerDown={(e) => {
-        pointerTypeRef.current = (e.pointerType as any) || "unknown";
-      }}
-      onTouchStartCapture={() => {
-        // iOS/Safari sometimes doesn't give us reliable pointer events here.
-        // Make sure the subsequent synthetic click is treated as touch (never pins).
-        pointerTypeRef.current = "touch";
-      }}
-      onClick={() => {
-        if (isFocusMode) {
-          const pt = pointerTypeRef.current;
-          // Desktop: click anywhere to exit focus mode.
-          if (pt !== "touch") {
-            setFrozen(false);
-            setHovered(null);
-            onClearFocus?.();
-          }
-          return;
-        }
-        if (suppressNextClickRef.current) {
-          suppressNextClickRef.current = false;
-          return;
-        }
-
-        const pt = pointerTypeRef.current;
-
-        // Touch: tap = hover only (handled by onTouchStart on the point).
-        // If frozen, allow tap anywhere to unpin.
-        if (pt === "touch") {
-          if (frozen) {
-            setFrozen(false);
-            setHovered(null);
-          }
-          return;
-        }
-
-        // Mouse/pen: click anywhere pins the currently-open tooltip, click again unpins.
-        if (frozen) {
-          setFrozen(false);
-          setHovered(null);
-          return;
-        }
-        if (hovered) setFrozen(true);
-      }}
+      style={{ outline: "none", touchAction: "pan-y" }}
+      onMouseDown={handleMouseDown}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
+      onClick={handleClick}
     >
       {chartEl}
 
@@ -632,8 +639,6 @@ export function TrackStreamsXYChart({
           onClick={(e) => e.stopPropagation()}
           onPointerDown={(e) => e.stopPropagation()}
           onPointerUp={(e) => e.stopPropagation()}
-          onTouchStart={(e) => e.stopPropagation()}
-          onTouchEnd={(e) => e.stopPropagation()}
         >
           <CustomTooltip
             point={focusPoint}
@@ -659,8 +664,6 @@ export function TrackStreamsXYChart({
           onClick={(e) => e.stopPropagation()}
           onPointerDown={(e) => e.stopPropagation()}
           onPointerUp={(e) => e.stopPropagation()}
-          onTouchStart={(e) => e.stopPropagation()}
-          onTouchEnd={(e) => e.stopPropagation()}
         >
           <CustomTooltip
             point={hovered.point}
