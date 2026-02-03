@@ -331,20 +331,28 @@ function DateRangePickerInner({
         ? createPortal(
             <>
               <div
-                className="fixed inset-0 z-40"
+                className={["fixed z-40", isSmallScreen ? "inset-0 bg-black/50" : "inset-0"].join(" ")}
                 onMouseDown={() => {
                   setRange(openedRangeRef.current);
                   setIsOpen(false);
                 }}
               />
               <div
-                className={["fixed z-50 sb-card shadow-lg overflow-hidden", isSmallScreen ? "w-[320px]" : "w-[580px]"].join(" ")}
-                style={{ top: popoverPos.top, left: popoverPos.left }}
+                className={[
+                  "fixed z-50 sb-card shadow-lg overflow-hidden",
+                  isSmallScreen
+                    ? "inset-0 flex flex-col"
+                    : "w-[580px]",
+                ].join(" ")}
+                style={isSmallScreen ? { backgroundColor: "var(--sb-bg)" } : { top: popoverPos.top, left: popoverPos.left }}
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => e.stopPropagation()}
               >
                 {/* Header with inputs and close */}
-                <div className="flex items-center justify-between gap-2 border-b px-3 py-2" style={{ borderColor: "var(--sb-border)" }}>
+                <div className={[
+                  "flex items-center justify-between gap-2 border-b px-3 flex-shrink-0",
+                  isSmallScreen ? "py-3" : "py-2",
+                ].join(" ")} style={{ borderColor: "var(--sb-border)" }}>
                   <div className="flex items-center gap-2 flex-wrap">
                     <DateInput
                       key={range?.from ? formatYmd(range.from) : "from-none"}
@@ -376,179 +384,310 @@ function DateRangePickerInner({
                       setIsOpen(false);
                     }}
                     className={[
-                      "sb-ring grid h-6 w-6 flex-shrink-0 place-items-center rounded-full hover:bg-black/5 dark:hover:bg-white/10",
+                      "sb-ring grid h-8 w-8 flex-shrink-0 place-items-center rounded-full hover:bg-black/5 dark:hover:bg-white/10",
                       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
                     ].join(" ")}
                     style={{ color: "var(--sb-muted)" }}
                     aria-label="Close"
                   >
-                    <X className="h-3.5 w-3.5" />
+                    <X className={isSmallScreen ? "h-5 w-5" : "h-3.5 w-3.5"} />
                   </button>
                 </div>
 
-                <div className={["flex", isSmallScreen ? "flex-col" : "flex-row"].join(" ")}>
-                  {/* Presets sidebar */}
-                  <div
-                    className={[
-                      "flex gap-1 border-r p-2",
-                      isSmallScreen ? "flex-row flex-wrap border-r-0 border-b" : "flex-col w-[120px]",
-                    ].join(" ")}
-                    style={{ borderColor: "var(--sb-border)" }}
-                  >
-                    {PRESETS.map((p) => {
-                      const isSel = selectedPreset === p.name;
-                      return (
-                        <button
-                          key={p.name}
-                          type="button"
-                          onClick={() => setPreset(p.name)}
-                          className={[
-                            "sb-ring flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium transition whitespace-nowrap",
-                            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
-                            isSel
-                              ? "text-black dark:text-black"
-                              : "hover:bg-black/5 dark:hover:bg-white/10",
-                          ].join(" ")}
-                          style={isSel ? { backgroundColor: "var(--sb-accent)" } : { color: "var(--sb-text)" }}
-                        >
-                          {isSel && <Check className="h-3 w-3" />}
-                          <span>{p.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* Calendar area */}
-                  <div className="flex-1 p-2">
-                    {/* Navigation row */}
-                    <div className="flex items-center justify-between mb-2">
-                      <button
-                        type="button"
-                        onClick={goToPrevMonth}
-                        disabled={!canGoPrev}
-                        className={[
-                          "sb-ring grid h-7 w-7 place-items-center rounded-md hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed",
-                          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
-                        ].join(" ")}
-                        style={{ color: "var(--sb-text)" }}
-                        aria-label="Previous month"
-                      >
-                        <ChevronLeft className="h-4 w-4" />
-                      </button>
-                      <div className="text-xs font-medium" style={{ color: "var(--sb-text)" }}>
-                        {displayMonth?.toLocaleString("en-US", { month: "long", year: "numeric" })}
-                        {!isSmallScreen && displayMonth && (
-                          <> – {new Date(displayMonth.getFullYear(), displayMonth.getMonth() + 1, 1).toLocaleString("en-US", { month: "long", year: "numeric" })}</>
-                        )}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={goToNextMonth}
-                        disabled={!canGoNext}
-                        className={[
-                          "sb-ring grid h-7 w-7 place-items-center rounded-md hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed",
-                          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
-                        ].join(" ")}
-                        style={{ color: "var(--sb-text)" }}
-                        aria-label="Next month"
-                      >
-                        <ChevronRight className="h-4 w-4" />
-                      </button>
+                {isSmallScreen ? (
+                  /* Mobile: Full-screen layout with scrollable calendars */
+                  <>
+                    {/* Presets row */}
+                    <div
+                      className="flex gap-1.5 p-3 border-b overflow-x-auto flex-shrink-0"
+                      style={{ borderColor: "var(--sb-border)" }}
+                    >
+                      {PRESETS.map((p) => {
+                        const isSel = selectedPreset === p.name;
+                        return (
+                          <button
+                            key={p.name}
+                            type="button"
+                            onClick={() => setPreset(p.name)}
+                            className={[
+                              "sb-ring flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-medium transition whitespace-nowrap",
+                              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
+                              isSel
+                                ? "text-black dark:text-black"
+                                : "hover:bg-black/5 dark:hover:bg-white/10",
+                            ].join(" ")}
+                            style={isSel ? { backgroundColor: "var(--sb-accent)" } : { color: "var(--sb-text)", backgroundColor: "var(--sb-border)" }}
+                          >
+                            {isSel && <Check className="h-3.5 w-3.5" />}
+                            <span>{p.label}</span>
+                          </button>
+                        );
+                      })}
                     </div>
 
-                    {/* DayPicker */}
-                    <DayPicker
-                      mode="range"
-                      selected={range}
-                      onSelect={(v) => {
-                        if (!v?.from) return;
-                        const from = clampToBounds(v.from);
-                        const to = v.to ? clampToBounds(v.to) : undefined;
-                        setRange({ from, to });
-                      }}
-                      disabled={[{ before: minDate }, { after: maxDate }]}
-                      weekStartsOn={1}
-                      showOutsideDays
-                      numberOfMonths={isSmallScreen ? 1 : 2}
-                      month={displayMonth}
-                      onMonthChange={setDisplayMonth}
-                      hideNavigation
-                      classNames={{
-                        months: "flex gap-4",
-                        month: "flex flex-col gap-1",
-                        month_caption: "hidden",
-                        month_grid: "border-collapse",
-                        weekdays: "flex",
-                        weekday: "w-8 h-6 text-center text-[10px] font-medium opacity-50",
-                        week: "flex",
-                        day: "w-8 h-8 p-0 text-center",
-                        day_button: [
-                          "w-full h-full rounded-md text-[11px] font-medium cursor-pointer transition-colors",
-                          "hover:bg-black/5 dark:hover:bg-white/10",
-                          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--sb-bg)]",
-                        ].join(" "),
-                        today: "ring-1 ring-inset ring-[color:var(--sb-accent)]",
-                        selected: "!bg-[color:var(--sb-accent)] !text-black hover:!bg-[color:var(--sb-accent)]",
-                        range_start: "!bg-[color:var(--sb-accent)] !text-black !rounded-r-none hover:!bg-[color:var(--sb-accent)]",
-                        range_middle: "!bg-[color:var(--sb-accent)]/30 !rounded-none",
-                        range_end: "!bg-[color:var(--sb-accent)] !text-black !rounded-l-none hover:!bg-[color:var(--sb-accent)]",
-                        outside: "opacity-30",
-                        disabled: "opacity-20 cursor-not-allowed hover:bg-transparent dark:hover:bg-transparent",
-                        hidden: "invisible",
-                      }}
-                    />
-                  </div>
-                </div>
+                    {/* Scrollable calendar area showing all months */}
+                    <div className="flex-1 overflow-y-auto p-4">
+                      <div className="flex flex-col gap-6">
+                        {(() => {
+                          // Generate array of months from minDate to maxDate
+                          const months: Date[] = [];
+                          const current = new Date(minDate.getFullYear(), minDate.getMonth(), 1);
+                          const end = new Date(maxDate.getFullYear(), maxDate.getMonth(), 1);
+                          while (current <= end) {
+                            months.push(new Date(current));
+                            current.setMonth(current.getMonth() + 1);
+                          }
+                          return months.map((month) => (
+                            <div key={`${month.getFullYear()}-${month.getMonth()}`} className="flex flex-col items-center">
+                              <div className="text-sm font-semibold mb-3" style={{ color: "var(--sb-text)" }}>
+                                {month.toLocaleString("en-US", { month: "long", year: "numeric" })}
+                              </div>
+                              <DayPicker
+                                mode="range"
+                                selected={range}
+                                onSelect={(v) => {
+                                  if (!v?.from) return;
+                                  const from = clampToBounds(v.from);
+                                  const to = v.to ? clampToBounds(v.to) : undefined;
+                                  setRange({ from, to });
+                                }}
+                                disabled={[{ before: minDate }, { after: maxDate }]}
+                                weekStartsOn={1}
+                                showOutsideDays={false}
+                                numberOfMonths={1}
+                                month={month}
+                                hideNavigation
+                                classNames={{
+                                  months: "flex",
+                                  month: "flex flex-col gap-1",
+                                  month_caption: "hidden",
+                                  month_grid: "border-collapse",
+                                  weekdays: "flex",
+                                  weekday: "w-10 h-8 text-center text-xs font-medium opacity-50",
+                                  week: "flex",
+                                  day: "w-10 h-10 p-0 text-center",
+                                  day_button: [
+                                    "w-full h-full rounded-md text-sm font-medium cursor-pointer transition-colors",
+                                    "hover:bg-black/5 dark:hover:bg-white/10",
+                                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--sb-bg)]",
+                                  ].join(" "),
+                                  today: "ring-1 ring-inset ring-[color:var(--sb-accent)]",
+                                  selected: "!bg-[color:var(--sb-accent)] !text-black hover:!bg-[color:var(--sb-accent)]",
+                                  range_start: "!bg-[color:var(--sb-accent)] !text-black !rounded-r-none hover:!bg-[color:var(--sb-accent)]",
+                                  range_middle: "!bg-[color:var(--sb-accent)]/30 !rounded-none",
+                                  range_end: "!bg-[color:var(--sb-accent)] !text-black !rounded-l-none hover:!bg-[color:var(--sb-accent)]",
+                                  outside: "opacity-30",
+                                  disabled: "opacity-20 cursor-not-allowed hover:bg-transparent dark:hover:bg-transparent",
+                                  hidden: "invisible",
+                                }}
+                              />
+                            </div>
+                          ));
+                        })()}
+                      </div>
+                    </div>
 
-                {/* Footer with actions */}
-                <div className="flex items-center justify-between gap-2 border-t px-3 py-2" style={{ borderColor: "var(--sb-border)" }}>
-                  <div className="text-[10px] font-medium" style={{ color: "var(--sb-muted)" }}>
-                    {range?.from && range.to
-                      ? `${formatDisplay(range.from)} → ${formatDisplay(range.to)}`
-                      : "Select a date range"}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setRange(openedRangeRef.current);
-                        setIsOpen(false);
-                      }}
-                      className={[
-                        "sb-ring rounded-md px-2.5 py-1.5 text-[10px] font-medium transition hover:bg-black/5 dark:hover:bg-white/10",
-                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
-                      ].join(" ")}
-                      style={{ color: "var(--sb-text)" }}
-                    >
-                      Cancel
-                    </button>
-                    {hasCustomRange && (
-                      <button
-                        type="button"
-                        onClick={handleClear}
-                        className={[
-                          "sb-ring rounded-md px-2.5 py-1.5 text-[10px] font-medium transition hover:bg-black/5 dark:hover:bg-white/10",
-                          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
-                        ].join(" ")}
-                        style={{ color: "var(--sb-text)" }}
+                    {/* Footer with selection summary and actions */}
+                    <div className="flex items-center justify-between gap-3 border-t px-4 py-3 flex-shrink-0" style={{ borderColor: "var(--sb-border)" }}>
+                      <div className="text-xs font-medium" style={{ color: "var(--sb-muted)" }}>
+                        {range?.from && range.to
+                          ? `${formatDisplay(range.from)} → ${formatDisplay(range.to)}`
+                          : "Select a date range"}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {hasCustomRange && (
+                          <button
+                            type="button"
+                            onClick={handleClear}
+                            className={[
+                              "sb-ring rounded-full px-4 py-2 text-xs font-medium transition hover:bg-black/5 dark:hover:bg-white/10",
+                              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
+                            ].join(" ")}
+                            style={{ color: "var(--sb-text)" }}
+                          >
+                            Clear
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={handleApply}
+                          disabled={!range?.from || !range.to}
+                          className={[
+                            "rounded-full px-5 py-2 text-xs font-semibold text-black transition disabled:cursor-not-allowed disabled:opacity-50",
+                            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
+                          ].join(" ")}
+                          style={{ backgroundColor: "var(--sb-accent)" }}
+                        >
+                          Apply
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  /* Desktop: Original popover layout */
+                  <>
+                    <div className="flex flex-row">
+                      {/* Presets sidebar */}
+                      <div
+                        className="flex gap-1 border-r p-2 flex-col w-[120px]"
+                        style={{ borderColor: "var(--sb-border)" }}
                       >
-                        Clear
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={handleApply}
-                      disabled={!range?.from || !range.to}
-                      className={[
-                        "rounded-md px-2.5 py-1.5 text-[10px] font-medium text-black transition disabled:cursor-not-allowed disabled:opacity-50",
-                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
-                      ].join(" ")}
-                      style={{ backgroundColor: "var(--sb-accent)" }}
-                    >
-                      Apply
-                    </button>
-                  </div>
-                </div>
+                        {PRESETS.map((p) => {
+                          const isSel = selectedPreset === p.name;
+                          return (
+                            <button
+                              key={p.name}
+                              type="button"
+                              onClick={() => setPreset(p.name)}
+                              className={[
+                                "sb-ring flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium transition whitespace-nowrap",
+                                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
+                                isSel
+                                  ? "text-black dark:text-black"
+                                  : "hover:bg-black/5 dark:hover:bg-white/10",
+                              ].join(" ")}
+                              style={isSel ? { backgroundColor: "var(--sb-accent)" } : { color: "var(--sb-text)" }}
+                            >
+                              {isSel && <Check className="h-3 w-3" />}
+                              <span>{p.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Calendar area */}
+                      <div className="flex-1 p-2">
+                        {/* Navigation row */}
+                        <div className="flex items-center justify-between mb-2">
+                          <button
+                            type="button"
+                            onClick={goToPrevMonth}
+                            disabled={!canGoPrev}
+                            className={[
+                              "sb-ring grid h-7 w-7 place-items-center rounded-md hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed",
+                              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
+                            ].join(" ")}
+                            style={{ color: "var(--sb-text)" }}
+                            aria-label="Previous month"
+                          >
+                            <ChevronLeft className="h-4 w-4" />
+                          </button>
+                          <div className="text-xs font-medium" style={{ color: "var(--sb-text)" }}>
+                            {displayMonth?.toLocaleString("en-US", { month: "long", year: "numeric" })}
+                            {displayMonth && (
+                              <> – {new Date(displayMonth.getFullYear(), displayMonth.getMonth() + 1, 1).toLocaleString("en-US", { month: "long", year: "numeric" })}</>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={goToNextMonth}
+                            disabled={!canGoNext}
+                            className={[
+                              "sb-ring grid h-7 w-7 place-items-center rounded-md hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed",
+                              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
+                            ].join(" ")}
+                            style={{ color: "var(--sb-text)" }}
+                            aria-label="Next month"
+                          >
+                            <ChevronRight className="h-4 w-4" />
+                          </button>
+                        </div>
+
+                        {/* DayPicker */}
+                        <DayPicker
+                          mode="range"
+                          selected={range}
+                          onSelect={(v) => {
+                            if (!v?.from) return;
+                            const from = clampToBounds(v.from);
+                            const to = v.to ? clampToBounds(v.to) : undefined;
+                            setRange({ from, to });
+                          }}
+                          disabled={[{ before: minDate }, { after: maxDate }]}
+                          weekStartsOn={1}
+                          showOutsideDays
+                          numberOfMonths={2}
+                          month={displayMonth}
+                          onMonthChange={setDisplayMonth}
+                          hideNavigation
+                          classNames={{
+                            months: "flex gap-4",
+                            month: "flex flex-col gap-1",
+                            month_caption: "hidden",
+                            month_grid: "border-collapse",
+                            weekdays: "flex",
+                            weekday: "w-8 h-6 text-center text-[10px] font-medium opacity-50",
+                            week: "flex",
+                            day: "w-8 h-8 p-0 text-center",
+                            day_button: [
+                              "w-full h-full rounded-md text-[11px] font-medium cursor-pointer transition-colors",
+                              "hover:bg-black/5 dark:hover:bg-white/10",
+                              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--sb-bg)]",
+                            ].join(" "),
+                            today: "ring-1 ring-inset ring-[color:var(--sb-accent)]",
+                            selected: "!bg-[color:var(--sb-accent)] !text-black hover:!bg-[color:var(--sb-accent)]",
+                            range_start: "!bg-[color:var(--sb-accent)] !text-black !rounded-r-none hover:!bg-[color:var(--sb-accent)]",
+                            range_middle: "!bg-[color:var(--sb-accent)]/30 !rounded-none",
+                            range_end: "!bg-[color:var(--sb-accent)] !text-black !rounded-l-none hover:!bg-[color:var(--sb-accent)]",
+                            outside: "opacity-30",
+                            disabled: "opacity-20 cursor-not-allowed hover:bg-transparent dark:hover:bg-transparent",
+                            hidden: "invisible",
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Footer with actions */}
+                    <div className="flex items-center justify-between gap-2 border-t px-3 py-2" style={{ borderColor: "var(--sb-border)" }}>
+                      <div className="text-[10px] font-medium" style={{ color: "var(--sb-muted)" }}>
+                        {range?.from && range.to
+                          ? `${formatDisplay(range.from)} → ${formatDisplay(range.to)}`
+                          : "Select a date range"}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRange(openedRangeRef.current);
+                            setIsOpen(false);
+                          }}
+                          className={[
+                            "sb-ring rounded-md px-2.5 py-1.5 text-[10px] font-medium transition hover:bg-black/5 dark:hover:bg-white/10",
+                            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
+                          ].join(" ")}
+                          style={{ color: "var(--sb-text)" }}
+                        >
+                          Cancel
+                        </button>
+                        {hasCustomRange && (
+                          <button
+                            type="button"
+                            onClick={handleClear}
+                            className={[
+                              "sb-ring rounded-md px-2.5 py-1.5 text-[10px] font-medium transition hover:bg-black/5 dark:hover:bg-white/10",
+                              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
+                            ].join(" ")}
+                            style={{ color: "var(--sb-text)" }}
+                          >
+                            Clear
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={handleApply}
+                          disabled={!range?.from || !range.to}
+                          className={[
+                            "rounded-md px-2.5 py-1.5 text-[10px] font-medium text-black transition disabled:cursor-not-allowed disabled:opacity-50",
+                            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
+                          ].join(" ")}
+                          style={{ backgroundColor: "var(--sb-accent)" }}
+                        >
+                          Apply
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             </>,
             document.body,

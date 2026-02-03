@@ -6,12 +6,11 @@ import {
   CartesianGrid,
   XAxis,
   YAxis,
-  Tooltip,
   ResponsiveContainer,
   Cell,
   ReferenceLine,
 } from "recharts";
-import { useId, useMemo } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { formatInt } from "@/lib/format";
 import { formatKmbTick } from "@/components/charts/chartUtils";
 import { useThemeColors } from "@/components/charts/useThemeColors";
@@ -28,26 +27,22 @@ type MilestoneDataPoint = {
 };
 
 type MilestoneTooltipProps = {
-  active?: boolean;
-  label?: string | number;
-  payload?: Array<{ value?: unknown; payload?: MilestoneDataPoint }>;
   totalTracks: number;
   mode: "streams" | "revenue";
 };
 
-function MilestoneTooltip({
-  active,
-  payload,
-  label,
+function MilestoneTooltipCard({
+  milestoneLabel,
+  trackCount,
   totalTracks,
   mode,
   accentColor,
-}: MilestoneTooltipProps & { accentColor?: string }) {
-  if (!active || !payload?.length) return null;
-
-  const raw = payload[0]?.value;
-  const n = typeof raw === "number" ? raw : Number(raw);
-  const count = Number.isFinite(n) ? n : 0;
+}: MilestoneTooltipProps & {
+  milestoneLabel: string | number;
+  trackCount: number;
+  accentColor?: string;
+}) {
+  const count = Number.isFinite(trackCount) ? trackCount : 0;
   const color = accentColor ?? (mode === "revenue" ? "var(--sb-revenue)" : "var(--sb-accent)");
   const pct =
     totalTracks > 0 ? Math.max(0, Math.min(100, (count / totalTracks) * 100)) : 0;
@@ -64,7 +59,7 @@ function MilestoneTooltip({
       }}
     >
       <div className="mb-1 font-medium">
-        {mode === "revenue" ? "Revenue milestone" : "Milestone"}: {label ?? "—"}
+        {mode === "revenue" ? "Revenue milestone" : "Milestone"}: {milestoneLabel ?? "—"}
       </div>
       <div>
         Tracks:{" "}
@@ -228,6 +223,29 @@ export function TracksPerMilestoneChart({
   const totalTracks = tracks.length;
   const accentColor = mode === "revenue" ? themeColors.revenue : themeColors.accent;
 
+  const [hovered, setHovered] = useState<{ point: MilestoneDataPoint; x: number; y: number } | null>(null);
+  const LONG_PRESS_MS = 650;
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingTouchRef = useRef<{ point: MilestoneDataPoint; x: number; y: number } | null>(null);
+  const pointerTypeRef = useRef<"mouse" | "touch" | "pen" | "unknown">("unknown");
+  const suppressNextClickRef = useRef(false);
+
+  const clearLongPressTimer = useCallback(() => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  }, []);
+
+  const clearLongPress = useCallback(() => {
+    clearLongPressTimer();
+    pendingTouchRef.current = null;
+  }, [clearLongPressTimer]);
+
+  useEffect(() => {
+    return () => clearLongPress();
+  }, [clearLongPress]);
+
   const chartData = useMemo(() => {
     if (!tracks.length) return [];
 
@@ -259,11 +277,28 @@ export function TracksPerMilestoneChart({
 
   return (
     <div
-      className="w-full overflow-visible outline-none"
+      className="relative w-full overflow-visible outline-none"
       style={{ outline: "none" }}
       onMouseDown={(e) => {
         // Prevent browser focus outline box on click (chart isn't keyboard-focusable anyway).
         e.preventDefault();
+      }}
+      onPointerDown={(e) => {
+        pointerTypeRef.current = ((e as any).pointerType as any) || "unknown";
+      }}
+      onTouchStartCapture={() => {
+        // Safari/iOS can be flaky with pointer events; ensure touch is detected.
+        pointerTypeRef.current = "touch";
+      }}
+      onClick={() => {
+        const pt = pointerTypeRef.current;
+        if (pt !== "touch") return;
+        if (suppressNextClickRef.current) {
+          suppressNextClickRef.current = false;
+          return;
+        }
+        // Touch: tapping outside clears the tooltip.
+        if (hovered) setHovered(null);
       }}
     >
       <ResponsiveContainer width="100%" height={heightPx} minWidth={0} style={{ overflow: "visible" }}>
@@ -324,10 +359,6 @@ export function TracksPerMilestoneChart({
             axisLine={false}
             tickFormatter={(value) => formatKmbTick(Number(value ?? 0))}
           />
-          <Tooltip
-            content={<MilestoneTooltip totalTracks={totalTracks} mode={mode} accentColor={accentColor} />}
-            cursor={false}
-          />
           {highlightMilestone && (
             <ReferenceLine
               x={
@@ -344,14 +375,102 @@ export function TracksPerMilestoneChart({
             dataKey="unique_tracks"
             radius={[4, 4, 0, 0]}
             activeBar={false}
-            onClick={(barData) => {
-              if (!onMilestoneClick) return;
-              const p = (barData && typeof barData === "object" ? (barData as any).payload : null) as
-                | MilestoneDataPoint
-                | null;
-              if (p?.milestone) onMilestoneClick(p.milestone, p.unique_tracks);
+            // Custom shape so we can implement:
+            // - desktop click => open modal
+            // - mobile tap => show tooltip
+            // - mobile long-press => open modal (and suppress synthetic click)
+            shape={(shapeProps: any) => {
+              const { x, y, width, height, fill, payload } = shapeProps ?? {};
+              const p = (payload ?? null) as MilestoneDataPoint | null;
+
+              const px = Number(x ?? NaN);
+              const py = Number(y ?? NaN);
+              const pw = Number(width ?? NaN);
+              const ph = Number(height ?? NaN);
+
+              const cx = isFinite(px) && isFinite(pw) ? px + pw / 2 : NaN;
+              const cy = isFinite(py) ? py : NaN;
+
+              const isInteractive = Boolean(onMilestoneClick);
+              const r = Math.max(0, Math.min(4, isFinite(pw) ? pw / 2 : 0, isFinite(ph) ? ph : 0));
+
+              // Preserve the original Bar radius=[4,4,0,0] (rounded top only).
+              const pathD =
+                isFinite(px) && isFinite(py) && isFinite(pw) && isFinite(ph) && pw > 0 && ph > 0
+                  ? `M ${px} ${py + r} A ${r} ${r} 0 0 1 ${px + r} ${py} L ${px + pw - r} ${py} A ${r} ${r} 0 0 1 ${px + pw} ${py + r} L ${px + pw} ${py + ph} L ${px} ${py + ph} Z`
+                  : undefined;
+
+              const handleTouchStart = () => {
+                if (!p || !isFinite(cx) || !isFinite(cy)) return;
+                pointerTypeRef.current = "touch";
+                // Tap => show tooltip immediately.
+                setHovered((prev) => {
+                  // Toggle if tapping same milestone.
+                  if (prev?.point?.milestone === p.milestone) return null;
+                  return { point: p, x: cx, y: cy };
+                });
+
+                if (!isInteractive) return;
+
+                // Start long-press timer.
+                clearLongPressTimer();
+                pendingTouchRef.current = { point: p, x: cx, y: cy };
+                longPressTimerRef.current = setTimeout(() => {
+                  if (!pendingTouchRef.current) return;
+                  suppressNextClickRef.current = true;
+                  pendingTouchRef.current = null;
+                  longPressTimerRef.current = null;
+                  setHovered(null);
+                  onMilestoneClick?.(p.milestone, p.unique_tracks);
+                }, LONG_PRESS_MS);
+              };
+
+              const handleTouchEnd = () => {
+                clearLongPressTimer();
+                pendingTouchRef.current = null;
+              };
+
+              return (
+                <path
+                  d={pathD}
+                  fill={fill}
+                  style={{ cursor: isInteractive ? "pointer" : "default" }}
+                  onMouseEnter={() => {
+                    if (!p || !isFinite(cx) || !isFinite(cy)) return;
+                    if (pointerTypeRef.current === "touch") return;
+                    setHovered({ point: p, x: cx, y: cy });
+                  }}
+                  onMouseLeave={() => {
+                    if (pointerTypeRef.current === "touch") return;
+                    setHovered(null);
+                  }}
+                  onClick={() => {
+                    const pt = pointerTypeRef.current;
+                    if (pt === "touch") return; // touch click is for tooltip only
+                    if (!isInteractive || !p) return;
+                    onMilestoneClick?.(p.milestone, p.unique_tracks);
+                  }}
+                  onTouchStart={(e) => {
+                    e.stopPropagation();
+                    handleTouchStart();
+                  }}
+                  onTouchEnd={(e) => {
+                    e.stopPropagation();
+                    handleTouchEnd();
+                  }}
+                  onTouchCancel={(e) => {
+                    e.stopPropagation();
+                    handleTouchEnd();
+                  }}
+                  onTouchMove={(e) => {
+                    // If the user scrolls, cancel long-press.
+                    e.stopPropagation();
+                    handleTouchEnd();
+                    setHovered(null);
+                  }}
+                />
+              );
             }}
-            style={{ cursor: onMilestoneClick ? "pointer" : "default" }}
           >
             {chartData.map((entry) => (
               <Cell
@@ -362,6 +481,27 @@ export function TracksPerMilestoneChart({
           </Bar>
         </BarChart>
       </ResponsiveContainer>
+
+      {hovered ? (
+        <div
+          className="absolute z-50"
+          style={{
+            left: 0,
+            top: 0,
+            transform: `translate3d(${Math.max(8, hovered.x + 12)}px, ${Math.max(8, hovered.y + 12)}px, 0)`,
+            willChange: "transform",
+            pointerEvents: "none",
+          }}
+        >
+          <MilestoneTooltipCard
+            milestoneLabel={hovered.point.milestoneLabel}
+            trackCount={hovered.point.unique_tracks}
+            totalTracks={totalTracks}
+            mode={mode}
+            accentColor={accentColor}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

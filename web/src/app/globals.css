@@ -725,8 +725,8 @@ html[data-theme="dark"] .sb-native-select {
 .sb-filter-bar {
   background: var(--sb-accent-10);
   border: 1px solid var(--sb-accent-20);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
 }
 
 /* ============================================================================

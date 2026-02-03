@@ -106,20 +106,13 @@ export function DocsClient(props: {
   const filtered = useMemo(() => parsed.filter((s) => matchSection(s, q, selectedTags)), [parsed, q, selectedTags]);
 
   const isSearching = q.trim().length > 0;
+  const nonDocSectionOpen = openMode === "all" ? true : openMode === "none" ? false : false;
 
   return (
     <div className="-mx-4 space-y-4 sm:-mx-5">
       <div className="sb-card p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0">
-            <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
-              This page renders from{" "}
-              <span className="font-mono">web/src/app/(main-flat)/docs/docs.md</span>.
-            </div>
-            <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
-              Tip: use search, or collapse sections to avoid “wall of text”.
-            </div>
-          </div>
+          <div className="min-w-0 text-sm font-semibold">Docs</div>
 
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <Input
@@ -187,18 +180,24 @@ export function DocsClient(props: {
       </div>
 
       {props.systemStats ? (
-        <section className="p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <div className="text-sm font-semibold">System stats</div>
-              <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
-                Best-effort snapshot for scale/health checks.
+        <details
+          open={nonDocSectionOpen}
+          className="rounded-xl border sb-panel p-4"
+          style={{ borderColor: "var(--sb-border)" }}
+        >
+          <summary className="cursor-pointer select-none">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold">System stats</div>
+                <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
+                  Best-effort snapshot for scale/health checks.
+                </div>
+              </div>
+              <div className="text-[11px] font-mono opacity-60">
+                as_of_run_date={props.systemStats.asOfRunDate ?? "—"}
               </div>
             </div>
-            <div className="text-[11px] font-mono opacity-60">
-              as_of_run_date={props.systemStats.asOfRunDate ?? "—"}
-            </div>
-          </div>
+          </summary>
 
           <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
             <Stat label="Ingestion days" value={props.systemStats.ingestionDays} />
@@ -210,19 +209,25 @@ export function DocsClient(props: {
           <div className="mt-2 text-[11px]" style={{ color: "var(--sb-muted)" }}>
             Note: some stats require the optional DB function <span className="font-mono">spotibase_system_stats()</span>.
           </div>
-        </section>
+        </details>
       ) : null}
 
       {props.inventory ? (
-        <section className="p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="text-sm font-semibold">Inventory</div>
-              <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
-                Repo migrations list + optional DB schema/RPC inventory.
+        <details
+          open={nonDocSectionOpen}
+          className="rounded-xl border sb-panel p-4"
+          style={{ borderColor: "var(--sb-border)" }}
+        >
+          <summary className="cursor-pointer select-none">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold">Inventory</div>
+                <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
+                  Repo migrations list + optional DB schema/RPC inventory.
+                </div>
               </div>
             </div>
-          </div>
+          </summary>
 
           <div className="mt-3 grid grid-cols-1 gap-2 lg:grid-cols-2">
             <div className="rounded-xl border sb-panel p-3" style={{ borderColor: "var(--sb-border)" }}>
@@ -261,7 +266,7 @@ export function DocsClient(props: {
               )}
             </div>
           </div>
-        </section>
+        </details>
       ) : null}
 
       <article className="p-4 text-black/80 dark:text-white/75">

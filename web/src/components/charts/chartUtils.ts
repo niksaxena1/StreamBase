@@ -131,15 +131,12 @@ export function computeRollingAvg7<T extends { date: string; value: number }>(
   for (let i = 0; i < asc.length; i++) {
     const windowStart = Math.max(0, i - 6);
     const windowSize = i - windowStart + 1;
-    if (windowSize < 7) {
-      outAsc.push({ ...asc[i], ma7: null });
-    } else {
-      let sum = 0;
-      for (let j = windowStart; j <= i; j++) {
-        sum += asc[j].value;
-      }
-      outAsc.push({ ...asc[i], ma7: sum / 7 });
+    let sum = 0;
+    for (let j = windowStart; j <= i; j++) {
+      sum += asc[j].value;
     }
+    // Show MA from the beginning by averaging over the available window (1..7 points).
+    outAsc.push({ ...asc[i], ma7: sum / windowSize });
   }
   
   return outAsc.reverse();
@@ -159,15 +156,12 @@ export function computeDailyRollingAvg7<T extends { date: string; daily: number 
   for (let i = 0; i < asc.length; i++) {
     const windowStart = Math.max(0, i - 6);
     const windowSize = i - windowStart + 1;
-    if (windowSize < 7) {
-      outAsc.push({ ...asc[i], ma7: null });
-    } else {
-      let sum = 0;
-      for (let j = windowStart; j <= i; j++) {
-        sum += asc[j].daily;
-      }
-      outAsc.push({ ...asc[i], ma7: sum / 7 });
+    let sum = 0;
+    for (let j = windowStart; j <= i; j++) {
+      sum += asc[j].daily;
     }
+    // Show MA from the beginning by averaging over the available window (1..7 points).
+    outAsc.push({ ...asc[i], ma7: sum / windowSize });
   }
   
   return outAsc.reverse();
