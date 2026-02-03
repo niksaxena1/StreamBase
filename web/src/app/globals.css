@@ -249,14 +249,16 @@ body {
 
 /* Variant: premium "glass" for bottom-fixed nav bars */
 .sb-glass-nav {
-  /* Keep this "boring" for maximum browser compatibility (prod vs dev parity):
-     avoid color-mix(), calc() multiplication, and tricky compositing. */
-  /* Slightly less transparent than --sb-surface for readability */
-  background: var(--sb-card);
+  /* Semi-transparent background to allow backdrop blur to show through */
+  background: rgba(255, 255, 255, 0.72);
 
   /* Premium glass: blur + saturation + contrast (no palette change; affects backdrop only) */
-  backdrop-filter: blur(18px) saturate(165%) contrast(115%);
-  -webkit-backdrop-filter: blur(18px) saturate(165%) contrast(115%);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+
+  /* Force GPU layer for iOS Safari backdrop-filter support */
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
 
   /* Cleaner "attached" bottom bar shape */
   border-left: 0;
@@ -273,6 +275,17 @@ body {
   /* Enable layered highlight/noise without affecting children */
   overflow: hidden;
   isolation: isolate;
+}
+
+/* Dark mode: darker semi-transparent background */
+html[data-theme="dark"] .sb-glass-nav {
+  background: rgba(20, 20, 25, 0.72);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .sb-glass-nav {
+    background: rgba(20, 20, 25, 0.72);
+  }
 }
 
 /* Subtle top "sheen" highlight (glass edge glare) */
@@ -339,6 +352,9 @@ body {
   .sb-glass-nav::before,
   .sb-glass-nav::after {
     display: none;
+  }
+  .sb-filter-bar {
+    background: var(--sb-accent-soft);
   }
 }
 
@@ -727,6 +743,9 @@ html[data-theme="dark"] .sb-native-select {
   border: 1px solid var(--sb-accent-20);
   backdrop-filter: blur(16px) saturate(140%);
   -webkit-backdrop-filter: blur(16px) saturate(140%);
+  /* Force GPU layer for iOS Safari backdrop-filter support */
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
 }
 
 /* ============================================================================
