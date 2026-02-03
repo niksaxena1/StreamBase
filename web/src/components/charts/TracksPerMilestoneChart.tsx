@@ -227,8 +227,10 @@ export function TracksPerMilestoneChart({
   const LONG_PRESS_MS = 650;
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingTouchRef = useRef<{ point: MilestoneDataPoint; x: number; y: number } | null>(null);
-  const pointerTypeRef = useRef<"mouse" | "touch" | "pen" | "unknown">("unknown");
-  const suppressNextClickRef = useRef(false);
+  // Track if we're currently in a touch interaction (to block click events on touch devices)
+  const isTouchActiveRef = useRef(false);
+  // Timestamp of last touch start - used to detect if a click is from a recent touch
+  const lastTouchStartTimeRef = useRef(0);
 
   const clearLongPressTimer = useCallback(() => {
     if (longPressTimerRef.current) {
@@ -283,22 +285,29 @@ export function TracksPerMilestoneChart({
         // Prevent browser focus outline box on click (chart isn't keyboard-focusable anyway).
         e.preventDefault();
       }}
-      onPointerDown={(e) => {
-        pointerTypeRef.current = ((e as any).pointerType as any) || "unknown";
-      }}
       onTouchStartCapture={() => {
-        // Safari/iOS can be flaky with pointer events; ensure touch is detected.
-        pointerTypeRef.current = "touch";
+        // Mark that we're in a touch interaction
+        isTouchActiveRef.current = true;
+        lastTouchStartTimeRef.current = Date.now();
+      }}
+      onTouchEndCapture={() => {
+        // Keep touch active flag for a short window to catch the synthetic click
+        setTimeout(() => {
+          isTouchActiveRef.current = false;
+        }, 400);
       }}
       onClick={() => {
-        const pt = pointerTypeRef.current;
-        if (pt !== "touch") return;
-        if (suppressNextClickRef.current) {
-          suppressNextClickRef.current = false;
+        // On touch devices, the click fires after touchend.
+        // If we recently had a touch, this click is synthetic - ignore it for modal purposes.
+        const timeSinceTouch = Date.now() - lastTouchStartTimeRef.current;
+        const isFromTouch = isTouchActiveRef.current || timeSinceTouch < 500;
+        
+        if (isFromTouch) {
+          // Touch: tapping outside clears the tooltip (but doesn't open modal).
+          if (hovered) setHovered(null);
           return;
         }
-        // Touch: tapping outside clears the tooltip.
-        if (hovered) setHovered(null);
+        // Desktop click outside - no action needed
       }}
     >
       <ResponsiveContainer width="100%" height={heightPx} minWidth={0} style={{ overflow: "visible" }}>
@@ -402,7 +411,7 @@ export function TracksPerMilestoneChart({
 
               const handleTouchStart = () => {
                 if (!p || !isFinite(cx) || !isFinite(cy)) return;
-                pointerTypeRef.current = "touch";
+                
                 // Tap => show tooltip immediately.
                 setHovered((prev) => {
                   // Toggle if tapping same milestone.
@@ -412,12 +421,11 @@ export function TracksPerMilestoneChart({
 
                 if (!isInteractive) return;
 
-                // Start long-press timer.
+                // Start long-press timer for opening modal.
                 clearLongPressTimer();
                 pendingTouchRef.current = { point: p, x: cx, y: cy };
                 longPressTimerRef.current = setTimeout(() => {
                   if (!pendingTouchRef.current) return;
-                  suppressNextClickRef.current = true;
                   pendingTouchRef.current = null;
                   longPressTimerRef.current = null;
                   setHovered(null);
@@ -437,16 +445,21 @@ export function TracksPerMilestoneChart({
                   style={{ cursor: isInteractive ? "pointer" : "default" }}
                   onMouseEnter={() => {
                     if (!p || !isFinite(cx) || !isFinite(cy)) return;
-                    if (pointerTypeRef.current === "touch") return;
+                    // Don't show hover tooltip if we recently had touch interaction
+                    if (isTouchActiveRef.current) return;
                     setHovered({ point: p, x: cx, y: cy });
                   }}
                   onMouseLeave={() => {
-                    if (pointerTypeRef.current === "touch") return;
+                    if (isTouchActiveRef.current) return;
                     setHovered(null);
                   }}
                   onClick={() => {
-                    const pt = pointerTypeRef.current;
-                    if (pt === "touch") return; // touch click is for tooltip only
+                    // Block click if this came from a touch (detected via timing)
+                    const timeSinceTouch = Date.now() - lastTouchStartTimeRef.current;
+                    const isFromTouch = isTouchActiveRef.current || timeSinceTouch < 500;
+                    if (isFromTouch) return; // Touch tap only shows tooltip, not modal
+                    
+                    // Desktop click => open modal
                     if (!isInteractive || !p) return;
                     onMilestoneClick?.(p.milestone, p.unique_tracks);
                   }}
@@ -463,7 +476,7 @@ export function TracksPerMilestoneChart({
                     handleTouchEnd();
                   }}
                   onTouchMove={(e) => {
-                    // If the user scrolls, cancel long-press.
+                    // If the user scrolls, cancel long-press and hide tooltip.
                     e.stopPropagation();
                     handleTouchEnd();
                     setHovered(null);
