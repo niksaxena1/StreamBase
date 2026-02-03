@@ -32,6 +32,13 @@ type PlaylistDailyStatsRow = {
   est_revenue_daily_net?: number | null;
 };
 
+type ManualOverrideAnnotation = {
+  date: string;
+  note: string;
+  title?: string;
+  imageUrl?: string | null;
+};
+
 import { computeRollingAvg7 } from "@/components/charts/chartUtils";
 
 type ChartPoint = { date: string; value: number; ma7?: number | null };
@@ -377,6 +384,7 @@ function HomeDashboardInner(props: {
   trackScatterDataDate: string | null;
   latestRunDate: string | null;
   latestDataDate: string | null;
+  overrideAnnotations?: ManualOverrideAnnotation[];
 }) {
   const { metric } = useMetric();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
@@ -886,6 +894,7 @@ function HomeDashboardInner(props: {
         yTickFormat={series.yTickFormat}
         color={series.color}
         accentColor={series.color}
+        annotations={metric === "tracks" ? [] : (props.overrideAnnotations ?? [])}
         selectedChart={selectedChart}
         onSelectChart={setSelectedChart}
       />
@@ -1711,6 +1720,7 @@ export function HomeDashboardClient(props: {
   trackScatterDataDate: string | null;
   latestRunDate: string | null;
   latestDataDate: string | null;
+  overrideAnnotations?: ManualOverrideAnnotation[];
 }) {
   return <HomeDashboardInner {...props} />;
 }

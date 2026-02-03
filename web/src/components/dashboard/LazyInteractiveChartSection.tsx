@@ -13,7 +13,7 @@ const InteractiveChartSectionLazy = dynamic(
   {
     ssr: false,
     loading: () => (
-      <SpotlightCard className="relative p-3">
+      <SpotlightCard className="relative p-3 overflow-visible">
         <div className="flex items-center justify-between gap-2">
           <div className="h-3 w-40 animate-pulse rounded bg-white/30 dark:bg-white/10" />
           <div className="h-3 w-24 animate-pulse rounded bg-white/30 dark:bg-white/10" />

@@ -13,6 +13,7 @@ import { useId } from "react";
 import { formatInt, formatUsd } from "@/lib/format";
 import { formatKmbTick, formatUsdCompact } from "@/components/charts/chartUtils";
 import { useThemeColors } from "@/components/charts/useThemeColors";
+import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
 
 type MonthlyDataPoint = {
   month: string; // yyyy-mm
@@ -21,6 +22,45 @@ type MonthlyDataPoint = {
 
 type ValueFormat = "int" | "usd";
 type YTickFormat = "k" | "int" | "usd_compact";
+
+function MonthlyTooltip({
+  active,
+  label,
+  payload,
+  valueLabel,
+  fmtValue,
+}: {
+  active?: boolean;
+  label?: string;
+  payload?: Array<{ value?: unknown }>;
+  valueLabel: string;
+  fmtValue: (n: number) => string;
+}) {
+  if (!active || !payload?.length) return null;
+  const raw = payload[0]?.value;
+  const n = typeof raw === "number" ? raw : Number(raw);
+  const value = Number.isFinite(n) ? fmtValue(n) : fmtValue(0);
+
+  return (
+    <ViewportAwareTooltip>
+      <div
+        className="rounded-lg border px-3 py-2 text-xs"
+        style={{
+          backgroundColor: "var(--sb-card)",
+          borderColor: "var(--sb-border)",
+          borderRadius: "10px",
+          boxShadow: "var(--sb-shadow-compact)",
+          color: "var(--sb-text)",
+        }}
+      >
+        <div className="mb-1 font-medium">{label ? formatTooltipMonth(label) : "—"}</div>
+        <div>
+          {valueLabel}: <span className="font-semibold">{value}</span>
+        </div>
+      </div>
+    </ViewportAwareTooltip>
+  );
+}
 
 function formatMonthLabel(monthString: string): string {
   const date = new Date(`${monthString}-01`);
@@ -99,16 +139,15 @@ export function MonthlyBarChart({
             tickFormatter={(value) => fmtYTick(Number(value ?? 0))}
           />
           <Tooltip
-            contentStyle={{
-              backgroundColor: "var(--sb-card)",
-              borderColor: "var(--sb-border)",
-              borderRadius: "10px",
-              boxShadow: "var(--sb-shadow-compact)",
-              color: "var(--sb-text)",
-            }}
-            itemStyle={{ color: "var(--sb-text)" }}
-            formatter={(value) => [fmtValue(Number(value ?? 0)), valueLabel]}
-            labelFormatter={(label) => formatTooltipMonth(label)}
+            content={({ active, label, payload }) => (
+              <MonthlyTooltip
+                active={active}
+                label={label as string}
+                payload={payload as Array<{ value?: unknown }>}
+                valueLabel={valueLabel}
+                fmtValue={fmtValue}
+              />
+            )}
             cursor={{
               fill: "rgba(0,0,0,0.1)",
             }}

@@ -22,6 +22,7 @@ import {
 } from "@/components/charts/chartUtils";
 import { useChartCopyToClipboard, type TooltipCopyValues } from "@/components/charts/useChartCopyToClipboard";
 import { useThemeColors } from "@/components/charts/useThemeColors";
+import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
 
 type DataPoint = {
   date: string;
@@ -99,73 +100,75 @@ function CustomTooltip({
   if (!active || sorted.length === 0) return null;
 
   return (
-    <div
-      className="rounded-lg border p-3"
-      style={{
-        backgroundColor: "var(--sb-card)",
-        borderColor: "var(--sb-border)",
-        boxShadow: "var(--sb-shadow-compact)",
-        color: "var(--sb-text)",
-      }}
-    >
-      {label && (
-        <div className="mb-2 text-xs font-medium">{formatTooltipDateDaily(label)}</div>
-      )}
-      {sorted.map((entry, index) => {
-        const isMA = entry.dataKey === "ma7";
-        const label = isMA ? "MA (7d)" : valueLabel;
-        let value = fmtValue(Number(entry.value ?? 0));
-        
-        // Round MA7 to nearest whole number
-        if (isMA) {
-          const numValue = Math.round(Number(entry.value ?? 0));
-          value = fmtValue(numValue);
-        }
+    <ViewportAwareTooltip>
+      <div
+        className="rounded-lg border p-3 max-h-[60vh] overflow-auto"
+        style={{
+          backgroundColor: "var(--sb-card)",
+          borderColor: "var(--sb-border)",
+          boxShadow: "var(--sb-shadow-compact)",
+          color: "var(--sb-text)",
+        }}
+      >
+        {label && (
+          <div className="mb-2 text-xs font-medium">{formatTooltipDateDaily(label)}</div>
+        )}
+        {sorted.map((entry, index) => {
+          const isMA = entry.dataKey === "ma7";
+          const label = isMA ? "MA (7d)" : valueLabel;
+          let value = fmtValue(Number(entry.value ?? 0));
+          
+          // Round MA7 to nearest whole number
+          if (isMA) {
+            const numValue = Math.round(Number(entry.value ?? 0));
+            value = fmtValue(numValue);
+          }
 
-        const valueColor = isDark ? chartColor : "var(--sb-text)";
+          const valueColor = isDark ? chartColor : "var(--sb-text)";
 
-        return (
-          <div key={index} className="text-xs">
-            <span style={{ color: "var(--sb-text)" }}>
-              {label}: <span className="font-bold" style={{ color: valueColor }}>{value}</span>
-            </span>
-          </div>
-        );
-      })}
-      {overrideItems?.length ? (
-        <div className="mt-2 border-t pt-2" style={{ borderColor: "var(--sb-border)" }}>
-          <div className="text-[11px] font-medium uppercase tracking-wide" style={{ color: "var(--sb-warning)" }}>
-            Manual override
-          </div>
-          <div className="mt-1 space-y-1">
-            {overrideItems.map((it, idx) => (
-              <div key={idx} className="flex items-start gap-2">
-                {it.imageUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={it.imageUrl}
-                    alt=""
-                    className="h-8 w-8 rounded-md object-cover sb-ring"
-                  />
-                ) : (
-                  <div className="h-8 w-8 rounded-md sb-ring bg-white/60 dark:bg-white/10" />
-                )}
-                <div className="min-w-0">
-                  {it.title ? (
-                    <div className="text-xs font-medium truncate" style={{ color: "var(--sb-text)" }}>
-                      {it.title}
+          return (
+            <div key={index} className="text-xs">
+              <span style={{ color: "var(--sb-text)" }}>
+                {label}: <span className="font-bold" style={{ color: valueColor }}>{value}</span>
+              </span>
+            </div>
+          );
+        })}
+        {overrideItems?.length ? (
+          <div className="mt-2 border-t pt-2" style={{ borderColor: "var(--sb-border)" }}>
+            <div className="text-[11px] font-medium uppercase tracking-wide" style={{ color: "var(--sb-warning)" }}>
+              Manual override
+            </div>
+            <div className="mt-1 space-y-1">
+              {overrideItems.map((it, idx) => (
+                <div key={idx} className="flex items-start gap-2">
+                  {it.imageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={it.imageUrl}
+                      alt=""
+                      className="h-8 w-8 rounded-md object-cover sb-ring"
+                    />
+                  ) : (
+                    <div className="h-8 w-8 rounded-md sb-ring bg-white/60 dark:bg-white/10" />
+                  )}
+                  <div className="min-w-0">
+                    {it.title ? (
+                      <div className="text-xs font-medium truncate" style={{ color: "var(--sb-text)" }}>
+                        {it.title}
+                      </div>
+                    ) : null}
+                    <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
+                      {it.note}
                     </div>
-                  ) : null}
-                  <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
-                    {it.note}
                   </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
-      ) : null}
-    </div>
+        ) : null}
+      </div>
+    </ViewportAwareTooltip>
   );
 }
 
@@ -246,10 +249,10 @@ export function DailyStreamsChart({
 
   return (
     <div
-      className="w-full"
+      className="w-full overflow-visible outline-none"
       {...containerProps}
     >
-      <ResponsiveContainer width="100%" height={heightPx} minWidth={0}>
+      <ResponsiveContainer width="100%" height={heightPx} minWidth={0} style={{ overflow: "visible" }}>
         <ChartComponent
           data={chartData}
           margin={{ top: 6, right: 6, left: 0, bottom: 0 }}
@@ -289,6 +292,8 @@ export function DailyStreamsChart({
             domain={yAxisDomain}
           />
           <Tooltip
+            allowEscapeViewBox={{ x: true, y: true }}
+            wrapperStyle={{ zIndex: 1000 }}
             content={({ active, label, payload }) => (
               <CustomTooltip
                 active={active}

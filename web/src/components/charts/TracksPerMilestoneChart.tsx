@@ -16,6 +16,7 @@ import type { PointerEvent, MouseEvent } from "react";
 import { formatInt } from "@/lib/format";
 import { formatKmbTick } from "@/components/charts/chartUtils";
 import { useThemeColors } from "@/components/charts/useThemeColors";
+import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
 
 type TrackPoint = {
   isrc: string;
@@ -65,28 +66,30 @@ function MilestoneTooltip({
   const pctLabel = pct >= 10 ? pct.toFixed(0) : pct.toFixed(1);
 
   return (
-    <div
-      className="rounded-lg border px-3 py-2 text-xs shadow-lg backdrop-blur"
-      style={{
-        backgroundColor: "var(--sb-card)",
-        borderColor: "var(--sb-border)",
-        color: "var(--sb-text)",
-        boxShadow: "var(--sb-shadow-compact)",
-      }}
-    >
-      <div className="mb-1 font-medium">
-        {mode === "revenue" ? "Revenue milestone" : "Milestone"}: {label ?? "—"}
+    <ViewportAwareTooltip>
+      <div
+        className="rounded-lg border px-3 py-2 text-xs shadow-lg backdrop-blur"
+        style={{
+          backgroundColor: "var(--sb-card)",
+          borderColor: "var(--sb-border)",
+          color: "var(--sb-text)",
+          boxShadow: "var(--sb-shadow-compact)",
+        }}
+      >
+        <div className="mb-1 font-medium">
+          {mode === "revenue" ? "Revenue milestone" : "Milestone"}: {label ?? "—"}
+        </div>
+        <div>
+          Tracks:{" "}
+          <span style={{ color, fontWeight: 700 }}>
+            {formatInt(count)}
+          </span>
+          <span className="ml-1 opacity-70" style={{ color: "var(--sb-muted)" }}>
+            ({pctLabel}%)
+          </span>
+        </div>
       </div>
-      <div>
-        Tracks:{" "}
-        <span style={{ color, fontWeight: 700 }}>
-          {formatInt(count)}
-        </span>
-        <span className="ml-1 opacity-70" style={{ color: "var(--sb-muted)" }}>
-          ({pctLabel}%)
-        </span>
-      </div>
-    </div>
+    </ViewportAwareTooltip>
   );
 }
 

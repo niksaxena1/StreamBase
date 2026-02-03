@@ -29,10 +29,42 @@ type TrackMetaRow = {
   spotify_artist_ids: string[] | null;
 };
 
+type TrackOverrideRow = {
+  date: string;
+  isrc: string;
+  note: string | null;
+};
+
+type PlaylistMembershipRow = {
+  playlist_key: string;
+  isrc: string;
+  valid_from: string;
+  valid_to: string | null;
+};
+
+type ManualOverrideAnnotation = {
+  date: string;
+  note: string;
+  title?: string;
+  imageUrl?: string | null;
+};
+
 function addDaysIso(dateIso: string, deltaDays: number): string {
   const d = new Date(`${dateIso}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + deltaDays);
   return d.toISOString().slice(0, 10);
+}
+
+function isIsoDateInRange(args: { d: string; start: string; end: string }) {
+  // ISO date format YYYY-MM-DD can be compared lexicographically.
+  return args.d >= args.start && args.d <= args.end;
+}
+
+function isMembershipActiveAtDate(m: PlaylistMembershipRow, runDate: string) {
+  if (!m.valid_from) return false;
+  if (m.valid_from > runDate) return false;
+  if (m.valid_to && m.valid_to < runDate) return false;
+  return true;
 }
 
 function isIsoDateString(s: string): boolean {
@@ -232,6 +264,97 @@ export default async function Home({
     3600,
   );
 
+  // Manual stream override annotations for charts (run-date scoped; UI shows data-date).
+  // Keep logic consistent with `/playlists`.
+  const overrideAnnotations: ManualOverrideAnnotation[] = await (async () => {
+    const hist = ((history as PlaylistDailyStatsRow[] | null) ?? []) as PlaylistDailyStatsRow[];
+    if (!hist.length) return [];
+    const endRunDate = (hist[0]?.date ?? "").trim();
+    const startRunDate = (hist[hist.length - 1]?.date ?? "").trim();
+    if (!startRunDate || !endRunDate) return [];
+
+    const { data: overrideRowsRaw } = await cachedQuery(
+      async () =>
+        await svc
+          .from("track_daily_stream_overrides")
+          .select("date,isrc,note")
+          .gte("date", startRunDate)
+          .lte("date", endRunDate)
+          .order("date", { ascending: false })
+          .limit(500),
+      `home-overrides-range-${playlistKey}-${startRunDate}-${endRunDate}`,
+      3600,
+    );
+
+    const overrideRows = (overrideRowsRaw ?? []) as TrackOverrideRow[];
+    const isrcs = Array.from(
+      new Set(overrideRows.map((r) => (r?.isrc ?? "").trim()).filter(Boolean)),
+    );
+    if (!isrcs.length) return [];
+
+    const metaByIsrc = await fetchTrackMetaByIsrc(svc, isrcs);
+
+    const membershipPlaylistKeys =
+      playlistKey === "all_catalog" ? (["releases", "ext"] as const) : ([playlistKey] as const);
+
+    const { data: membershipRowsRaw } = await cachedQuery(
+      async () =>
+        await svc
+          .from("playlist_memberships")
+          .select("playlist_key,isrc,valid_from,valid_to")
+          .in("playlist_key", [...membershipPlaylistKeys])
+          .in("isrc", isrcs)
+          .lte("valid_from", endRunDate)
+          .or(`valid_to.is.null,valid_to.gte.${startRunDate}`)
+          .limit(5000),
+      `home-memberships-for-overrides-${playlistKey}-${startRunDate}-${endRunDate}-${isrcs.length}`,
+      3600,
+    );
+
+    const membershipRows = (membershipRowsRaw ?? []) as PlaylistMembershipRow[];
+    const membershipsByIsrc = new Map<string, PlaylistMembershipRow[]>();
+    for (const m of membershipRows) {
+      const key = (m?.isrc ?? "").trim();
+      if (!key) continue;
+      const arr = membershipsByIsrc.get(key) ?? [];
+      arr.push(m);
+      membershipsByIsrc.set(key, arr);
+    }
+
+    const out: ManualOverrideAnnotation[] = [];
+    for (const o of overrideRows) {
+      const d = (o?.date ?? "").trim();
+      const isrc = (o?.isrc ?? "").trim();
+      if (!d || !isrc) continue;
+      if (!isIsoDateInRange({ d, start: startRunDate, end: endRunDate })) continue;
+
+      const memberships = membershipsByIsrc.get(isrc) ?? [];
+      const isActive = memberships.some((m) => isMembershipActiveAtDate(m, d));
+      if (!isActive) continue;
+
+      const meta = metaByIsrc.get(isrc) ?? null;
+      const artist = meta?.spotify_artist_names?.[0] ?? null;
+      const trackName = meta?.name ?? null;
+      const title =
+        artist && trackName
+          ? `${artist} - ${trackName}`
+          : trackName
+            ? trackName
+            : artist
+              ? artist
+              : isrc;
+
+      out.push({
+        date: dataDateFromRunDate(d),
+        title,
+        imageUrl: meta?.spotify_album_image_url ?? null,
+        note: (o.note ?? "").trim() || `Manual override (ISRC: ${isrc})`,
+      });
+    }
+
+    return out;
+  })();
+
   return (
     <HomeDashboardClient
       sp={sp}
@@ -247,6 +370,7 @@ export default async function Home({
       trackScatterDataDate={selectedDataDate}
       latestRunDate={latestRunDate}
       latestDataDate={latestDataDate}
+      overrideAnnotations={overrideAnnotations}
     />
   );
 }

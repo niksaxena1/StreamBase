@@ -594,7 +594,7 @@ export function CollectorsClient(props: {
     <div className="space-y-6">
       {/* Middle card: comparison chart + table */}
       <div className="sb-card p-4 space-y-4">
-        <SpotlightCard className="relative p-3">
+        <SpotlightCard className="relative p-3 overflow-visible">
           <div className="flex flex-col gap-3">
             <div className="flex items-start justify-between gap-2">
               <div>
@@ -804,7 +804,7 @@ export function CollectorsClient(props: {
         </div>
 
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
-          <SpotlightCard className="lg:col-span-6 p-3">
+          <SpotlightCard className="lg:col-span-6 p-3 overflow-visible">
             <div className="flex items-center justify-between gap-3">
               <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
                 {cumulativeLabel}
@@ -829,7 +829,7 @@ export function CollectorsClient(props: {
             </div>
           </SpotlightCard>
 
-          <SpotlightCard className="lg:col-span-6 p-3">
+          <SpotlightCard className="lg:col-span-6 p-3 overflow-visible">
             <div className="flex items-center justify-between gap-3">
               <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
                 {dailyLabel}
@@ -853,7 +853,7 @@ export function CollectorsClient(props: {
           </SpotlightCard>
         </div>
 
-        <SpotlightCard className="p-3">
+        <SpotlightCard className="p-3 overflow-visible">
           <div className="flex items-center justify-between gap-3">
             <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
               Monthly {metric === "revenue" ? "Est. Revenue" : metric === "streams" ? "Streams" : "Track"}

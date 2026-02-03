@@ -15,6 +15,7 @@ import { useId, useMemo } from "react";
 import { formatInt, formatUsd2 } from "@/lib/format";
 import { formatKmbTick, formatUsdCompact } from "@/components/charts/chartUtils";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
+import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
 
 export const COLLECTOR_COLORS: Record<string, string> = {
   // Individuals (softer)
@@ -111,38 +112,40 @@ function CustomTooltip({
   };
 
   return (
-    <div
-      className="rounded-lg border p-3"
-      style={{
-        backgroundColor: "var(--sb-card)",
-        borderColor: "var(--sb-border)",
-        boxShadow: "var(--sb-shadow-compact)",
-        color: "var(--sb-text)",
-      }}
-    >
-      {label && (
-        <div className="mb-2 text-xs font-medium">{formatTooltipDate(label, granularity)}</div>
-      )}
-      {payload.map((entry, index) => {
-        const collectorName = entry.dataKey === "combined" ? "Combined Total" : entry.dataKey;
-        const color = entry.color || COLLECTOR_COLORS[entry.dataKey] || "#888";
+    <ViewportAwareTooltip>
+      <div
+        className="rounded-lg border p-3"
+        style={{
+          backgroundColor: "var(--sb-card)",
+          borderColor: "var(--sb-border)",
+          boxShadow: "var(--sb-shadow-compact)",
+          color: "var(--sb-text)",
+        }}
+      >
+        {label && (
+          <div className="mb-2 text-xs font-medium">{formatTooltipDate(label, granularity)}</div>
+        )}
+        {payload.map((entry, index) => {
+          const collectorName = entry.dataKey === "combined" ? "Combined Total" : entry.dataKey;
+          const color = entry.color || COLLECTOR_COLORS[entry.dataKey] || "#888";
 
-        return (
-          <div key={index} className="text-xs flex items-center gap-2">
-            <span
-              className="inline-block w-2 h-2 rounded-full"
-              style={{ backgroundColor: color }}
-            />
-            <span style={{ color: "var(--sb-text)" }}>
-              {collectorName}:{" "}
-              <span className="font-bold" style={{ color }}>
-                {formatValue(Number(entry.value ?? 0))}
+          return (
+            <div key={index} className="text-xs flex items-center gap-2">
+              <span
+                className="inline-block w-2 h-2 rounded-full"
+                style={{ backgroundColor: color }}
+              />
+              <span style={{ color: "var(--sb-text)" }}>
+                {collectorName}:{" "}
+                <span className="font-bold" style={{ color }}>
+                  {formatValue(Number(entry.value ?? 0))}
+                </span>
               </span>
-            </span>
-          </div>
-        );
-      })}
-    </div>
+            </div>
+          );
+        })}
+      </div>
+    </ViewportAwareTooltip>
   );
 }
 

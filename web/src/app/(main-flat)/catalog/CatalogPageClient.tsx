@@ -518,7 +518,7 @@ export function CatalogPageClient(props: {
 
           return (
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
-              <SpotlightCard className="lg:col-span-6 p-3">
+              <SpotlightCard className="lg:col-span-6 p-3 overflow-visible">
                 <div className="flex items-center justify-between gap-3">
                   <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
                     {cumulativeTitle}
@@ -543,7 +543,7 @@ export function CatalogPageClient(props: {
                 </div>
               </SpotlightCard>
 
-              <SpotlightCard className="lg:col-span-6 p-3">
+              <SpotlightCard className="lg:col-span-6 p-3 overflow-visible">
                 <div className="flex items-center justify-between gap-3">
                   <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
                     {dailyTitle}

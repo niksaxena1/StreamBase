@@ -9,6 +9,7 @@ import { formatInt, formatUsd, formatUsd2 } from "@/lib/format";
 import { formatKmbTick, formatUsdCompact } from "@/components/charts/chartUtils";
 import { useThemeColors } from "@/components/charts/useThemeColors";
 import type { TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChart";
+import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
 
 export type ArtistStreamsXYPoint = {
   artist_id: string;
@@ -624,13 +625,15 @@ export function ArtistStreamsXYChart({
           onPointerDown={(e) => e.stopPropagation()}
           onPointerUp={(e) => e.stopPropagation()}
         >
-          <CustomTooltip
-            point={focusPoint}
-            mode={mode}
-            payoutPerStreamUsd={payoutPerStreamUsd}
-            accentColor={dotColor}
-            frozen={true}
-          />
+          <ViewportAwareTooltip>
+            <CustomTooltip
+              point={focusPoint}
+              mode={mode}
+              payoutPerStreamUsd={payoutPerStreamUsd}
+              accentColor={dotColor}
+              frozen={true}
+            />
+          </ViewportAwareTooltip>
         </div>
       ) : null}
 
@@ -650,13 +653,15 @@ export function ArtistStreamsXYChart({
           onPointerDown={(e) => e.stopPropagation()}
           onPointerUp={(e) => e.stopPropagation()}
         >
-          <CustomTooltip
-            point={hovered.point}
-            mode={mode}
-            payoutPerStreamUsd={payoutPerStreamUsd}
-            accentColor={dotColor}
-            frozen={frozen}
-          />
+          <ViewportAwareTooltip>
+            <CustomTooltip
+              point={hovered.point}
+              mode={mode}
+              payoutPerStreamUsd={payoutPerStreamUsd}
+              accentColor={dotColor}
+              frozen={frozen}
+            />
+          </ViewportAwareTooltip>
         </div>
       ) : null}
     </div>

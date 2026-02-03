@@ -90,7 +90,7 @@ export function PlaylistMetricsClient(props: {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
-        <SpotlightCard className="lg:col-span-6 p-3">
+        <SpotlightCard className="lg:col-span-6 p-3 overflow-visible">
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wider opacity-60">
@@ -121,7 +121,7 @@ export function PlaylistMetricsClient(props: {
           </div>
         </SpotlightCard>
 
-        <SpotlightCard className="lg:col-span-6 p-3">
+        <SpotlightCard className="lg:col-span-6 p-3 overflow-visible">
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
@@ -151,7 +151,7 @@ export function PlaylistMetricsClient(props: {
         </SpotlightCard>
 
         {props.metric === "tracks" && (
-          <SpotlightCard className="lg:col-span-12 p-3">
+          <SpotlightCard className="lg:col-span-12 p-3 overflow-visible">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">

@@ -16,6 +16,13 @@ type ChartData = {
   ma7?: number | null;
 };
 
+type ManualOverrideAnnotation = {
+  date: string;
+  note: string;
+  title?: string;
+  imageUrl?: string | null;
+};
+
 type InteractiveChartSectionProps = {
   dailyStreamsData: ChartData[];
   totalStreamsData: ChartData[];
@@ -30,6 +37,7 @@ type InteractiveChartSectionProps = {
   yTickFormat?: "k" | "int" | "usd_compact";
   color?: string;
   accentColor?: string; // Accent color for stat cards
+  annotations?: ManualOverrideAnnotation[];
   /**
    * Optional controlled mode for which chart is selected.
    * If omitted, the component manages its own state.
@@ -54,6 +62,7 @@ export function InteractiveChartSection({
   yTickFormat = "k",
   color,
   accentColor,
+  annotations,
   selectedChart: selectedChartProp,
   onSelectChart,
 }: InteractiveChartSectionProps) {
@@ -117,7 +126,7 @@ export function InteractiveChartSection({
       </div>
 
       {/* Chart */}
-      <SpotlightCard className="relative p-3">
+      <SpotlightCard className="relative p-3 overflow-visible">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <Activity className="h-3.5 w-3.5 opacity-60" />
@@ -142,6 +151,7 @@ export function InteractiveChartSection({
             heightPx={220}
             showMA7={selectedChart === "daily"}
             isCumulative={selectedChart === "total"}
+            annotations={annotations}
           />
         </div>
 
