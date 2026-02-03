@@ -241,8 +241,16 @@ body {
 .sb-glass {
   background: var(--sb-surface);
   border: 1px solid var(--sb-border);
-  backdrop-filter: blur(var(--sb-blur));
   -webkit-backdrop-filter: blur(var(--sb-blur));
+  backdrop-filter: blur(var(--sb-blur));
+  box-shadow: var(--sb-shadow-compact);
+  border-radius: var(--sb-radius-lg);
+}
+
+/* Glass variant without backdrop-filter - use when children need their own blur */
+.sb-glass-solid {
+  background: var(--sb-card);
+  border: 1px solid var(--sb-border);
   box-shadow: var(--sb-shadow-compact);
   border-radius: var(--sb-radius-lg);
 }
@@ -280,60 +288,28 @@ html[data-theme="dark"] .sb-glass-nav {
   }
 }
 
-/* Subtle top "sheen" highlight (glass edge glare) */
-.sb-glass-nav::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
-  height: 20px;
-  background: linear-gradient(
-    to bottom,
-    rgba(255, 255, 255, 0.22),
-    rgba(255, 255, 255, 0.06),
-    rgba(255, 255, 255, 0)
-  );
-  opacity: 0.6;
-  pointer-events: none;
-  z-index: 0;
-}
+/* Subtle top "sheen" highlight (glass edge glare) - disabled for mobile backdrop-filter compat */
+/* .sb-glass-nav::before { ... } */
 
-/* Ultra-subtle noise to avoid "flat" glass/banding */
-.sb-glass-nav::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background-image: url("/noise.svg");
-  background-repeat: repeat;
-  background-size: 140px 140px;
-  opacity: 0.035;
-  pointer-events: none;
-  z-index: 0;
-}
-
-/* Ensure nav contents sit above highlight/noise layers */
-.sb-glass-nav > * {
-  position: relative;
-  z-index: 1;
-}
+/* Ultra-subtle noise - disabled for mobile backdrop-filter compat */
+/* .sb-glass-nav::after { ... } */
 
 /* When content has scrolled under the bar, make it a touch "deeper" */
 .sb-glass-nav--scrolled {
-  backdrop-filter: blur(22px) saturate(170%) contrast(118%);
-  -webkit-backdrop-filter: blur(22px) saturate(170%) contrast(118%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(180%);
 }
 
 /* While actively scrolling, push the frosted effect a bit more */
 .sb-glass-nav--scrolling {
-  backdrop-filter: blur(28px) saturate(175%) contrast(120%);
-  -webkit-backdrop-filter: blur(28px) saturate(175%) contrast(120%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  backdrop-filter: blur(28px) saturate(180%);
 }
 
 /* When keyboard is open, intensify the glass effect (#10) */
 .sb-glass-nav--keyboard {
-  backdrop-filter: blur(32px) saturate(180%) contrast(125%);
-  -webkit-backdrop-filter: blur(32px) saturate(180%) contrast(125%);
+  -webkit-backdrop-filter: blur(32px) saturate(180%);
+  backdrop-filter: blur(32px) saturate(180%);
 }
 
 /* Fallback when backdrop-filter isn’t supported */
@@ -734,11 +710,8 @@ html[data-theme="dark"] .sb-native-select {
   /* More opaque background for readability; blur is enhancement only */
   background: rgba(199, 243, 60, 0.25);
   border: 1px solid var(--sb-accent-20);
-  backdrop-filter: blur(16px) saturate(140%);
   -webkit-backdrop-filter: blur(16px) saturate(140%);
-  /* Force GPU layer for iOS Safari backdrop-filter support */
-  transform: translateZ(0);
-  -webkit-transform: translateZ(0);
+  backdrop-filter: blur(16px) saturate(140%);
 }
 
 html[data-theme="dark"] .sb-filter-bar {

@@ -65,8 +65,8 @@ export function AppShell(props: { children: ReactNode; mainSurface?: MainSurface
             </div>
           </header>
 
-          {/* Main surface */}
-          <main className={(mainSurface === "glass" ? "sb-glass " : "") + "flex-1 px-3 py-3"}>
+          {/* Main surface - use sb-glass-solid so child FilterBars can have working backdrop-filter */}
+          <main className={(mainSurface === "glass" ? "sb-glass-solid " : "") + "flex-1 px-3 py-3"}>
             <IngestionStatusBanner />
             {props.children}
           </main>
