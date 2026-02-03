@@ -11,6 +11,7 @@ import { SAISettingsToggle } from "./SAISettingsToggle";
 import { HomeFiltersToggle } from "./HomeFiltersToggle";
 import { PayoutRateSetting } from "./PayoutRateSetting";
 import { ManualStreamOverrideForm } from "./ManualStreamOverrideForm";
+import { StreamOverridesTable, StreamOverridesTableDownloadButton } from "./StreamOverridesTable";
 import { SectionHeader } from "@/components/ui/SectionHeader";
 
 export const revalidate = 86400; // 24h ISR - admin config changes are infrequent
@@ -477,7 +478,7 @@ export default async function SettingsPage() {
           subtitle={
             <>
               Exclude intentional non-catalog tracks from the Health warning{" "}
-              <span className="font-mono">non_catalog_tracks_present</span> and from the “All Missing Catalog Tracks” list.
+              <span className="font-mono">non_catalog_tracks_present</span> and from the "All Missing Catalog Tracks" list.
             </>
           }
         />
@@ -609,10 +610,11 @@ export default async function SettingsPage() {
           title="Manual stream fixes (overrides)"
           subtitle={
             <>
-              Manually override a track’s cumulative stream snapshot for a specific{" "}
-              <span className="font-mono">run_date</span>. Overrides are stored separately for auditability, and the app can read through an “effective” view.
+              Manually override a track's cumulative stream snapshot for a specific{" "}
+              <span className="font-mono">run_date</span>. Overrides are stored separately for auditability, and the app can read through an "effective" view.
             </>
           }
+          actions={<StreamOverridesTableDownloadButton overrides={streamOverrides} tracks={allTracks} />}
         />
 
         <ManualStreamOverrideForm
@@ -622,55 +624,12 @@ export default async function SettingsPage() {
           suggestions={overrideSuggestions}
         />
 
-        <GlassTable headers={["Run date", "Track", "Streams", "Note", ""]}>
-          {streamOverrides.map((o) => {
-            const isrc = String(o.isrc ?? "").trim().toUpperCase();
-            const track = allTracks.find((t) => t.isrc === isrc);
-            const name = track?.name ?? isrc;
-            const imageUrl = track?.spotify_album_image_url ?? null;
-            return (
-              <TableRow key={`ov-${o.id}`}>
-                <TableCell mono className="text-xs">
-                  {String(o.date ?? "—")}
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    {imageUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={imageUrl}
-                        alt={name}
-                        className="h-8 w-8 rounded-lg object-cover sb-ring flex-shrink-0"
-                      />
-                    ) : (
-                      <div className="h-8 w-8 rounded-lg sb-ring bg-white/60 dark:bg-white/10 flex-shrink-0" />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium truncate">{name}</div>
-                      <div className="font-mono text-[10px] opacity-60 truncate">{isrc}</div>
-                    </div>
-                  </div>
-                </TableCell>
-                <TableCell className="font-mono text-xs">
-                  {Intl.NumberFormat().format(Number(o.streams_cumulative_override ?? 0))}
-                </TableCell>
-                <TableCell className="text-xs">{o.note ?? "—"}</TableCell>
-                <TableCell className="text-right">
-                  <form action={removeStreamOverride}>
-                    <input type="hidden" name="id" value={String(o.id)} />
-                    <input type="hidden" name="date" value={String(o.date)} />
-                    <button type="submit" className="text-xs underline opacity-70 hover:opacity-100">
-                      remove
-                    </button>
-                  </form>
-                </TableCell>
-              </TableRow>
-            );
-          })}
-          {!streamOverrides.length && <EmptyState colSpan={5} message="No manual overrides yet." />}
-        </GlassTable>
+        <StreamOverridesTable
+          overrides={streamOverrides}
+          tracks={allTracks}
+          removeStreamOverride={removeStreamOverride}
+        />
       </div>
     </div>
   );
 }
-

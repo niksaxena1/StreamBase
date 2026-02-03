@@ -674,20 +674,40 @@ function HomeDashboardInner(props: {
   const series = useMemo(() => {
     const desc = props.history ?? [];
 
+    const safeNum = (n: unknown) => {
+      const v = Number(n ?? 0);
+      return Number.isFinite(v) ? v : 0;
+    };
+
+    // Derive daily delta from cumulative totals to avoid single-day outliers
+    // (e.g. when the stored daily field is accidentally cumulative).
+    const dailyDeltaFromTotalsDesc = (rowsDesc: PlaylistDailyStatsRow[]) =>
+      rowsDesc.map((r, idx) => {
+        const cur = safeNum(r?.total_streams_cumulative);
+        const prev = idx < rowsDesc.length - 1 ? safeNum(rowsDesc[idx + 1]?.total_streams_cumulative) : cur;
+        return Math.max(0, cur - prev);
+      });
+
     if (metric === "revenue") {
-      const dailyDesc = desc.map((r) => ({
+      const dailyDeltas = dailyDeltaFromTotalsDesc(desc);
+      const dailyDesc = desc.map((r, idx) => ({
         date: dataDateFromRunDate(r.date),
-        value: Number(r.daily_streams_net ?? 0) * streamPayoutPerStreamUsd,
+        value: dailyDeltas[idx] * streamPayoutPerStreamUsd,
       }));
       const totalDesc = desc.map((r) => ({
         date: dataDateFromRunDate(r.date),
-        value: Number(r.total_streams_cumulative ?? 0) * streamPayoutPerStreamUsd,
+        value: safeNum(r.total_streams_cumulative) * streamPayoutPerStreamUsd,
       }));
+      const dailyValue =
+        desc.length >= 2
+          ? Math.max(0, safeNum(desc[0]?.total_streams_cumulative) - safeNum(desc[1]?.total_streams_cumulative)) *
+            streamPayoutPerStreamUsd
+          : 0;
       return {
         daily: computeRollingAvg7(dailyDesc),
         total: totalDesc,
-        dailyValue: Number(props.latest?.daily_streams_net ?? 0) * streamPayoutPerStreamUsd,
-        totalValue: Number(props.latest?.total_streams_cumulative ?? 0) * streamPayoutPerStreamUsd,
+        dailyValue,
+        totalValue: safeNum(props.latest?.total_streams_cumulative) * streamPayoutPerStreamUsd,
         dailyTitle: "Revenue (Daily)",
         totalTitle: "Revenue (Total)",
         dailyValueLabel: "Revenue",
@@ -728,19 +748,24 @@ function HomeDashboardInner(props: {
     }
 
     // streams (default)
-    const dailyDesc = desc.map((r) => ({
+    const dailyDeltas = dailyDeltaFromTotalsDesc(desc);
+    const dailyDesc = desc.map((r, idx) => ({
       date: dataDateFromRunDate(r.date),
-      value: Number(r.daily_streams_net ?? 0),
+      value: dailyDeltas[idx],
     }));
     const totalDesc = desc.map((r) => ({
       date: dataDateFromRunDate(r.date),
-      value: Number(r.total_streams_cumulative ?? 0),
+      value: safeNum(r.total_streams_cumulative),
     }));
+    const dailyValue =
+      desc.length >= 2
+        ? Math.max(0, safeNum(desc[0]?.total_streams_cumulative) - safeNum(desc[1]?.total_streams_cumulative))
+        : 0;
     return {
       daily: computeRollingAvg7(dailyDesc),
       total: totalDesc,
-      dailyValue: Number(props.latest?.daily_streams_net ?? 0),
-      totalValue: Number(props.latest?.total_streams_cumulative ?? 0),
+      dailyValue,
+      totalValue: safeNum(props.latest?.total_streams_cumulative),
       dailyTitle: "Daily Streams",
       totalTitle: "Total Streams",
       dailyValueLabel: "Streams",

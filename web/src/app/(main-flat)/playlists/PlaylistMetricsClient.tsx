@@ -35,6 +35,11 @@ export function PlaylistMetricsClient(props: {
 }) {
   const { streamPayoutPerStreamUsd } = usePayoutRate();
 
+  const safeNum = (n: unknown) => {
+    const v = Number(n ?? 0);
+    return Number.isFinite(v) ? v : 0;
+  };
+
   const cumulativeSeries = props.history.map((r) => {
     if (props.metric === "revenue") {
       return { date: dataDateFromRunDate(r.date), value: Number(r.total_streams_cumulative ?? 0) * streamPayoutPerStreamUsd };
@@ -47,7 +52,12 @@ export function PlaylistMetricsClient(props: {
 
   const dailyDesc = props.history.map((r) => {
     if (props.metric === "revenue") {
-      return { date: dataDateFromRunDate(r.date), daily: Number(r.daily_streams_net ?? 0) * streamPayoutPerStreamUsd };
+      const idx = props.history.findIndex((h) => h.date === r.date);
+      const prev = idx < props.history.length - 1 ? props.history[idx + 1] : null;
+      const curTotal = safeNum(r.total_streams_cumulative);
+      const prevTotal = prev ? safeNum(prev.total_streams_cumulative) : curTotal;
+      const dailyStreams = Math.max(0, curTotal - prevTotal);
+      return { date: dataDateFromRunDate(r.date), daily: dailyStreams * streamPayoutPerStreamUsd };
     } else if (props.metric === "tracks") {
       // Track count doesn't have daily, so calculate delta (can be negative for removals)
       const idx = props.history.findIndex((h) => h.date === r.date);
@@ -55,7 +65,12 @@ export function PlaylistMetricsClient(props: {
       const daily = prev ? Number(r.track_count ?? 0) - Number(prev.track_count ?? 0) : 0;
       return { date: dataDateFromRunDate(r.date), daily };
     } else {
-      return { date: dataDateFromRunDate(r.date), daily: Number(r.daily_streams_net ?? 0) };
+      const idx = props.history.findIndex((h) => h.date === r.date);
+      const prev = idx < props.history.length - 1 ? props.history[idx + 1] : null;
+      const curTotal = safeNum(r.total_streams_cumulative);
+      const prevTotal = prev ? safeNum(prev.total_streams_cumulative) : curTotal;
+      const daily = Math.max(0, curTotal - prevTotal);
+      return { date: dataDateFromRunDate(r.date), daily };
     }
   });
   const dailyWithMaDesc = computeDailyRollingAvg7(dailyDesc);
@@ -77,11 +92,13 @@ export function PlaylistMetricsClient(props: {
     ? (effectiveLatest?.track_count ?? 0)
     : (effectiveLatest?.total_streams_cumulative ?? 0);
 
-  const latestDaily = props.metric === "revenue"
-    ? Number(effectiveLatest?.daily_streams_net ?? 0) * streamPayoutPerStreamUsd
-    : props.metric === "tracks"
-    ? 0 // Track count daily is calculated differently
-    : (effectiveLatest?.daily_streams_net ?? 0);
+  const latestDaily = (() => {
+    if (props.metric === "tracks") return 0; // shown via chart; daily is computed per-point above
+    const cur = safeNum(props.history?.[0]?.total_streams_cumulative);
+    const prev = safeNum(props.history?.[1]?.total_streams_cumulative);
+    const dailyStreams = props.history?.length >= 2 ? Math.max(0, cur - prev) : 0;
+    return props.metric === "revenue" ? dailyStreams * streamPayoutPerStreamUsd : dailyStreams;
+  })();
 
   // Use different colors based on metric: blue for tracks, emerald for revenue, accent stroke for streams
   const chartColor = props.metric === "tracks" ? "#3b82f6" : props.metric === "revenue" ? "#10b981" : undefined;
