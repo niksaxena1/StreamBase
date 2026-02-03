@@ -250,15 +250,11 @@ body {
 /* Variant: premium "glass" for bottom-fixed nav bars */
 .sb-glass-nav {
   /* Semi-transparent background to allow backdrop blur to show through */
-  background: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.6);
 
-  /* Premium glass: blur + saturation + contrast (no palette change; affects backdrop only) */
-  backdrop-filter: blur(20px) saturate(180%);
+  /* Premium glass: blur + saturation (no palette change; affects backdrop only) */
   -webkit-backdrop-filter: blur(20px) saturate(180%);
-
-  /* Force GPU layer for iOS Safari backdrop-filter support */
-  transform: translateZ(0);
-  -webkit-transform: translateZ(0);
+  backdrop-filter: blur(20px) saturate(180%);
 
   /* Cleaner "attached" bottom bar shape */
   border-left: 0;
@@ -271,20 +267,16 @@ body {
   box-shadow:
     0 -10px 30px rgba(0, 0, 0, 0.08),
     0 -1px 0 rgba(255, 255, 255, 0.10) inset;
-
-  /* Enable layered highlight/noise without affecting children */
-  overflow: hidden;
-  isolation: isolate;
 }
 
 /* Dark mode: darker semi-transparent background */
 html[data-theme="dark"] .sb-glass-nav {
-  background: rgba(20, 20, 25, 0.72);
+  background: rgba(20, 20, 25, 0.65);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .sb-glass-nav {
-    background: rgba(20, 20, 25, 0.72);
+    background: rgba(20, 20, 25, 0.65);
   }
 }
 
@@ -739,13 +731,24 @@ html[data-theme="dark"] .sb-native-select {
    ============================================================================ */
 
 .sb-filter-bar {
-  background: var(--sb-accent-10);
+  /* More opaque background for readability; blur is enhancement only */
+  background: rgba(199, 243, 60, 0.25);
   border: 1px solid var(--sb-accent-20);
   backdrop-filter: blur(16px) saturate(140%);
   -webkit-backdrop-filter: blur(16px) saturate(140%);
   /* Force GPU layer for iOS Safari backdrop-filter support */
   transform: translateZ(0);
   -webkit-transform: translateZ(0);
+}
+
+html[data-theme="dark"] .sb-filter-bar {
+  background: rgba(212, 255, 77, 0.18);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .sb-filter-bar {
+    background: rgba(212, 255, 77, 0.18);
+  }
 }
 
 /* ============================================================================

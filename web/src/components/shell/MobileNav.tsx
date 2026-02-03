@@ -84,7 +84,7 @@ export function MobileNav({
   return (
     <nav
       className={[
-        "fixed bottom-0 left-0 right-0 z-50 block sb-glass sb-glass-nav sm:hidden",
+        "fixed bottom-0 left-0 right-0 z-50 block sb-glass-nav sm:hidden",
         hasScrolled ? "sb-glass-nav--scrolled" : "",
         isScrolling ? "sb-glass-nav--scrolling" : "",
         isKeyboardOpen ? "sb-glass-nav--keyboard" : "",
