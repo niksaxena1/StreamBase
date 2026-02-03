@@ -148,13 +148,13 @@ const CustomTooltip = ({
             <Link
               href={`/catalog?artist_id=${encodeURIComponent(p.artist_id)}`}
               className="block truncate text-xs font-semibold hover:underline"
-              style={{ color: "#fff" }}
+              style={{ color: "var(--sb-text)" }}
               title={p.artist_id}
             >
               {title}
             </Link>
           ) : (
-            <div className="truncate text-xs font-semibold" style={{ color: "#fff" }} title={p.artist_id}>
+            <div className="truncate text-xs font-semibold" style={{ color: "var(--sb-text)" }} title={p.artist_id}>
               {title}
             </div>
           )}
