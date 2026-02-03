@@ -6,11 +6,13 @@ import {
   CartesianGrid,
   XAxis,
   YAxis,
+  Tooltip,
   ResponsiveContainer,
   Cell,
   ReferenceLine,
 } from "recharts";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import type { PointerEvent, MouseEvent } from "react";
 import { formatInt } from "@/lib/format";
 import { formatKmbTick } from "@/components/charts/chartUtils";
 import { useThemeColors } from "@/components/charts/useThemeColors";
@@ -27,22 +29,36 @@ type MilestoneDataPoint = {
 };
 
 type MilestoneTooltipProps = {
+  active?: boolean;
+  payload?: Array<{ value?: unknown; payload?: MilestoneDataPoint }>;
+  label?: string | number;
   totalTracks: number;
   mode: "streams" | "revenue";
+  accentColor?: string;
+  onActivePayload?: (p: MilestoneDataPoint | null) => void;
 };
 
-function MilestoneTooltipCard({
-  milestoneLabel,
-  trackCount,
+function MilestoneTooltip({
+  active,
+  payload,
+  label,
   totalTracks,
   mode,
   accentColor,
-}: MilestoneTooltipProps & {
-  milestoneLabel: string | number;
-  trackCount: number;
-  accentColor?: string;
-}) {
-  const count = Number.isFinite(trackCount) ? trackCount : 0;
+  onActivePayload,
+}: MilestoneTooltipProps) {
+  const p = payload?.[0]?.payload ?? null;
+
+  // Notify parent of the currently active payload (for long-press action).
+  useEffect(() => {
+    onActivePayload?.(active ? p : null);
+  }, [active, p, onActivePayload]);
+
+  if (!active || !payload?.length) return null;
+
+  const raw = payload[0]?.value;
+  const n = typeof raw === "number" ? raw : Number(raw);
+  const count = Number.isFinite(n) ? n : 0;
   const color = accentColor ?? (mode === "revenue" ? "var(--sb-revenue)" : "var(--sb-accent)");
   const pct =
     totalTracks > 0 ? Math.max(0, Math.min(100, (count / totalTracks) * 100)) : 0;
@@ -59,7 +75,7 @@ function MilestoneTooltipCard({
       }}
     >
       <div className="mb-1 font-medium">
-        {mode === "revenue" ? "Revenue milestone" : "Milestone"}: {milestoneLabel ?? "—"}
+        {mode === "revenue" ? "Revenue milestone" : "Milestone"}: {label ?? "—"}
       </div>
       <div>
         Tracks:{" "}
@@ -223,30 +239,33 @@ export function TracksPerMilestoneChart({
   const totalTracks = tracks.length;
   const accentColor = mode === "revenue" ? themeColors.revenue : themeColors.accent;
 
-  const [hovered, setHovered] = useState<{ point: MilestoneDataPoint; x: number; y: number } | null>(null);
-  const LONG_PRESS_MS = 650;
-  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingTouchRef = useRef<{ point: MilestoneDataPoint; x: number; y: number } | null>(null);
-  // Track if we're currently in a touch interaction (to block click events on touch devices)
-  const isTouchActiveRef = useRef(false);
-  // Timestamp of last touch start - used to detect if a click is from a recent touch
-  const lastTouchStartTimeRef = useRef(0);
+  // Track the currently hovered/active milestone from the tooltip
+  const activePayloadRef = useRef<MilestoneDataPoint | null>(null);
+  // Track pointer type to distinguish touch from mouse
+  const lastPointerTypeRef = useRef<string | null>(null);
+  // Long-press timer and start position
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  const LONG_PRESS_MS = 550;
 
   const clearLongPressTimer = useCallback(() => {
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
+    if (longPressTimerRef.current != null) {
+      window.clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
     }
+    longPressStartRef.current = null;
   }, []);
 
-  const clearLongPress = useCallback(() => {
-    clearLongPressTimer();
-    pendingTouchRef.current = null;
+  useEffect(() => {
+    return () => {
+      clearLongPressTimer();
+    };
   }, [clearLongPressTimer]);
 
-  useEffect(() => {
-    return () => clearLongPress();
-  }, [clearLongPress]);
+  const handleActivePayload = useCallback((p: MilestoneDataPoint | null) => {
+    activePayloadRef.current = p;
+  }, []);
 
   const chartData = useMemo(() => {
     if (!tracks.length) return [];
@@ -277,38 +296,70 @@ export function TracksPerMilestoneChart({
     );
   }
 
+  // Container event handlers (same pattern as useChartCopyToClipboard)
+  const handleMouseDown = (e: MouseEvent) => {
+    // Prevent focus outline box on click
+    e.preventDefault();
+  };
+
+  const handlePointerDown = (e: PointerEvent) => {
+    lastPointerTypeRef.current = e.pointerType ?? null;
+    const pt = e.pointerType ?? null;
+    
+    // Only start long-press timer for touch/pen
+    if (pt !== "touch" && pt !== "pen") return;
+    if (!onMilestoneClick) return;
+
+    clearLongPressTimer();
+    longPressStartRef.current = { x: e.clientX, y: e.clientY };
+    longPressTimerRef.current = window.setTimeout(() => {
+      const p = activePayloadRef.current;
+      if (!p) return;
+      onMilestoneClick(p.milestone, p.unique_tracks);
+    }, LONG_PRESS_MS);
+  };
+
+  const handlePointerMove = (e: PointerEvent) => {
+    const pt = e.pointerType ?? null;
+    if (pt !== "touch" && pt !== "pen") return;
+    const start = longPressStartRef.current;
+    if (!start) return;
+    // Cancel long-press if finger moved too far (user is scrolling)
+    const dx = e.clientX - start.x;
+    const dy = e.clientY - start.y;
+    if (Math.hypot(dx, dy) > 10) {
+      clearLongPressTimer();
+    }
+  };
+
+  const handlePointerUp = () => {
+    clearLongPressTimer();
+  };
+
+  const handlePointerCancel = () => {
+    clearLongPressTimer();
+  };
+
+  const handleClick = () => {
+    // Touch/pen: taps only show tooltip (modal is via long-press)
+    if (lastPointerTypeRef.current === "touch" || lastPointerTypeRef.current === "pen") return;
+    
+    // Desktop click: open modal if we have an active bar
+    const p = activePayloadRef.current;
+    if (!p || !onMilestoneClick) return;
+    onMilestoneClick(p.milestone, p.unique_tracks);
+  };
+
   return (
     <div
-      className="relative w-full overflow-visible outline-none"
+      className="w-full overflow-visible outline-none"
       style={{ outline: "none" }}
-      onMouseDown={(e) => {
-        // Prevent browser focus outline box on click (chart isn't keyboard-focusable anyway).
-        e.preventDefault();
-      }}
-      onTouchStartCapture={() => {
-        // Mark that we're in a touch interaction
-        isTouchActiveRef.current = true;
-        lastTouchStartTimeRef.current = Date.now();
-      }}
-      onTouchEndCapture={() => {
-        // Keep touch active flag for a short window to catch the synthetic click
-        setTimeout(() => {
-          isTouchActiveRef.current = false;
-        }, 400);
-      }}
-      onClick={() => {
-        // On touch devices, the click fires after touchend.
-        // If we recently had a touch, this click is synthetic - ignore it for modal purposes.
-        const timeSinceTouch = Date.now() - lastTouchStartTimeRef.current;
-        const isFromTouch = isTouchActiveRef.current || timeSinceTouch < 500;
-        
-        if (isFromTouch) {
-          // Touch: tapping outside clears the tooltip (but doesn't open modal).
-          if (hovered) setHovered(null);
-          return;
-        }
-        // Desktop click outside - no action needed
-      }}
+      onMouseDown={handleMouseDown}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
+      onClick={handleClick}
     >
       <ResponsiveContainer width="100%" height={heightPx} minWidth={0} style={{ overflow: "visible" }}>
         <BarChart
@@ -368,6 +419,17 @@ export function TracksPerMilestoneChart({
             axisLine={false}
             tickFormatter={(value) => formatKmbTick(Number(value ?? 0))}
           />
+          <Tooltip
+            content={
+              <MilestoneTooltip
+                totalTracks={totalTracks}
+                mode={mode}
+                accentColor={accentColor}
+                onActivePayload={handleActivePayload}
+              />
+            }
+            cursor={false}
+          />
           {highlightMilestone && (
             <ReferenceLine
               x={
@@ -384,106 +446,7 @@ export function TracksPerMilestoneChart({
             dataKey="unique_tracks"
             radius={[4, 4, 0, 0]}
             activeBar={false}
-            // Custom shape so we can implement:
-            // - desktop click => open modal
-            // - mobile tap => show tooltip
-            // - mobile long-press => open modal (and suppress synthetic click)
-            shape={(shapeProps: any) => {
-              const { x, y, width, height, fill, payload } = shapeProps ?? {};
-              const p = (payload ?? null) as MilestoneDataPoint | null;
-
-              const px = Number(x ?? NaN);
-              const py = Number(y ?? NaN);
-              const pw = Number(width ?? NaN);
-              const ph = Number(height ?? NaN);
-
-              const cx = isFinite(px) && isFinite(pw) ? px + pw / 2 : NaN;
-              const cy = isFinite(py) ? py : NaN;
-
-              const isInteractive = Boolean(onMilestoneClick);
-              const r = Math.max(0, Math.min(4, isFinite(pw) ? pw / 2 : 0, isFinite(ph) ? ph : 0));
-
-              // Preserve the original Bar radius=[4,4,0,0] (rounded top only).
-              const pathD =
-                isFinite(px) && isFinite(py) && isFinite(pw) && isFinite(ph) && pw > 0 && ph > 0
-                  ? `M ${px} ${py + r} A ${r} ${r} 0 0 1 ${px + r} ${py} L ${px + pw - r} ${py} A ${r} ${r} 0 0 1 ${px + pw} ${py + r} L ${px + pw} ${py + ph} L ${px} ${py + ph} Z`
-                  : undefined;
-
-              const handleTouchStart = () => {
-                if (!p || !isFinite(cx) || !isFinite(cy)) return;
-                
-                // Tap => show tooltip immediately.
-                setHovered((prev) => {
-                  // Toggle if tapping same milestone.
-                  if (prev?.point?.milestone === p.milestone) return null;
-                  return { point: p, x: cx, y: cy };
-                });
-
-                if (!isInteractive) return;
-
-                // Start long-press timer for opening modal.
-                clearLongPressTimer();
-                pendingTouchRef.current = { point: p, x: cx, y: cy };
-                longPressTimerRef.current = setTimeout(() => {
-                  if (!pendingTouchRef.current) return;
-                  pendingTouchRef.current = null;
-                  longPressTimerRef.current = null;
-                  setHovered(null);
-                  onMilestoneClick?.(p.milestone, p.unique_tracks);
-                }, LONG_PRESS_MS);
-              };
-
-              const handleTouchEnd = () => {
-                clearLongPressTimer();
-                pendingTouchRef.current = null;
-              };
-
-              return (
-                <path
-                  d={pathD}
-                  fill={fill}
-                  style={{ cursor: isInteractive ? "pointer" : "default" }}
-                  onMouseEnter={() => {
-                    if (!p || !isFinite(cx) || !isFinite(cy)) return;
-                    // Don't show hover tooltip if we recently had touch interaction
-                    if (isTouchActiveRef.current) return;
-                    setHovered({ point: p, x: cx, y: cy });
-                  }}
-                  onMouseLeave={() => {
-                    if (isTouchActiveRef.current) return;
-                    setHovered(null);
-                  }}
-                  onClick={() => {
-                    // Block click if this came from a touch (detected via timing)
-                    const timeSinceTouch = Date.now() - lastTouchStartTimeRef.current;
-                    const isFromTouch = isTouchActiveRef.current || timeSinceTouch < 500;
-                    if (isFromTouch) return; // Touch tap only shows tooltip, not modal
-                    
-                    // Desktop click => open modal
-                    if (!isInteractive || !p) return;
-                    onMilestoneClick?.(p.milestone, p.unique_tracks);
-                  }}
-                  onTouchStart={(e) => {
-                    e.stopPropagation();
-                    handleTouchStart();
-                  }}
-                  onTouchEnd={(e) => {
-                    e.stopPropagation();
-                    handleTouchEnd();
-                  }}
-                  onTouchCancel={(e) => {
-                    e.stopPropagation();
-                    handleTouchEnd();
-                  }}
-                  onTouchMove={(e) => {
-                    // If the user scrolls, cancel long-press and hide tooltip.
-                    e.stopPropagation();
-                    handleTouchEnd();
-                    setHovered(null);
-                  }}
-                />
-              );
-            }}
+            style={{ cursor: onMilestoneClick ? "pointer" : "default" }}
           >
             {chartData.map((entry) => (
               <Cell
@@ -494,27 +457,6 @@ export function TracksPerMilestoneChart({
           </Bar>
         </BarChart>
       </ResponsiveContainer>
-
-      {hovered ? (
-        <div
-          className="absolute z-50"
-          style={{
-            left: 0,
-            top: 0,
-            transform: `translate3d(${Math.max(8, hovered.x + 12)}px, ${Math.max(8, hovered.y + 12)}px, 0)`,
-            willChange: "transform",
-            pointerEvents: "none",
-          }}
-        >
-          <MilestoneTooltipCard
-            milestoneLabel={hovered.point.milestoneLabel}
-            trackCount={hovered.point.unique_tracks}
-            totalTracks={totalTracks}
-            mode={mode}
-            accentColor={accentColor}
-          />
-        </div>
-      ) : null}
     </div>
   );
 }
