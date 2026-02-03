@@ -500,7 +500,7 @@ export function CollectorsClient(props: {
   const dailyLabel =
     metric === "revenue" ? "Est. revenue (daily)" : metric === "streams" ? "Streams (daily)" : "Track change (daily)";
   const cumulativeLabel =
-    metric === "revenue" ? "Est. revenue (cumulative)" : metric === "streams" ? "Streams (cumulative)" : "Tracks";
+    metric === "revenue" ? "Est. revenue (cumulative)" : metric === "streams" ? "Streams (total)" : "Tracks";
 
   const valueFormat = metric === "revenue" ? "usd" : "int";
   const yTickFormat = metric === "revenue" ? "usd_compact" : metric === "streams" ? "k" : "int";
