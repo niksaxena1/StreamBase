@@ -14,7 +14,7 @@ import { Alert } from "@/components/ui/Alert";
 const CATALOG_ARTIST_DROPDOWN_MAX_TRACKS = 10_000;
 const CATALOG_ARTIST_THUMBNAILS_MAX = 800;
 
-function sumLastNDays(desc: Array<{ date: string; daily: number }>, days: number) {
+function sumLastNDays(desc: Array<{ date: string; daily: number | null }>, days: number) {
   return desc.slice(0, days).reduce((acc, r) => acc + Number(r.daily ?? 0), 0);
 }
 
@@ -423,7 +423,7 @@ export default async function CatalogPage({
   const latestCum = cumSeriesAscRun.length ? cumSeriesAscRun[cumSeriesAscRun.length - 1].value : 0;
 
   const dailyArtistAscRun = cumSeriesAscRun.map((p, idx) => {
-    if (idx === 0) return { date: p.date, daily: 0 };
+    if (idx === 0) return { date: p.date, daily: null };
     const prev = cumSeriesAscRun[idx - 1].value;
     return { date: p.date, daily: Math.max(0, p.value - prev) };
   });
@@ -536,7 +536,7 @@ export default async function CatalogPage({
   }));
   const trackCumAscRun = [...trackCumDescRun].reverse();
   const trackDailyAsc = trackCumAscRun.map((p, idx) => {
-    if (idx === 0) return { date: p.date, daily: 0 };
+    if (idx === 0) return { date: p.date, daily: null };
     const prev = trackCumAscRun[idx - 1].value;
     return { date: p.date, daily: Math.max(0, p.value - prev) };
   });

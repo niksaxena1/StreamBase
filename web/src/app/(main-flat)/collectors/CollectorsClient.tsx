@@ -31,6 +31,7 @@ import { Input } from "@/components/ui/Input";
 import { IconButton } from "@/components/ui/Button";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { useMetric } from "@/components/metrics/MetricContext";
+import { ArtistLinks } from "@/components/ui/ArtistLinks";
 
 const METRICS = ["streams", "revenue", "tracks"] as const;
 type Metric = (typeof METRICS)[number];
@@ -184,9 +185,14 @@ function aggregateMonthlyDelta(
     // Get the delta for this day
     let delta = 0;
     if (metric === "revenue") {
-      delta = Number(cur.daily_streams_net ?? 0) * payoutPerStreamUsd;
+      const curTotal = Number(cur.total_streams_cumulative ?? 0);
+      const prevTotal = prev ? Number(prev.total_streams_cumulative ?? 0) : curTotal;
+      const dailyStreams = i > 0 ? Math.max(0, curTotal - prevTotal) : 0;
+      delta = dailyStreams * payoutPerStreamUsd;
     } else if (metric === "streams") {
-      delta = Number(cur.daily_streams_net ?? 0);
+      const curTotal = Number(cur.total_streams_cumulative ?? 0);
+      const prevTotal = prev ? Number(prev.total_streams_cumulative ?? 0) : curTotal;
+      delta = i > 0 ? Math.max(0, curTotal - prevTotal) : 0;
     } else if (metric === "tracks") {
       // For tracks, calculate the delta from previous day
       const curTracks = Number(cur.track_count ?? 0);
@@ -454,13 +460,28 @@ export function CollectorsClient(props: {
       date: dataDateFromRunDate(d),
       value: Number(props.seriesDesc[i]?.total_streams_cumulative ?? 0) * streamPayoutPerStreamUsd,
     }));
-    const revenueDailyDesc = datesDesc.map((d, i) => ({
-      date: dataDateFromRunDate(d),
-      daily: Number(props.seriesDesc[i]?.daily_streams_net ?? 0) * streamPayoutPerStreamUsd,
-    }));
+    const revenueDailyDesc = datesDesc.map((d, i) => {
+      const curTotal = Number(props.seriesDesc[i]?.total_streams_cumulative ?? 0);
+      const prevTotal =
+        i + 1 < props.seriesDesc.length
+          ? Number(props.seriesDesc[i + 1]?.total_streams_cumulative ?? 0)
+          : curTotal;
+      if (i + 1 >= props.seriesDesc.length) return { date: dataDateFromRunDate(d), daily: null };
+      const dailyStreams = Math.max(0, curTotal - prevTotal);
+      return { date: dataDateFromRunDate(d), daily: dailyStreams * streamPayoutPerStreamUsd };
+    });
 
     const streamsTotalDesc = datesDesc.map((d, i) => ({ date: dataDateFromRunDate(d), value: Number(props.seriesDesc[i]?.total_streams_cumulative ?? 0) }));
-    const streamsDailyDesc = datesDesc.map((d, i) => ({ date: dataDateFromRunDate(d), daily: Number(props.seriesDesc[i]?.daily_streams_net ?? 0) }));
+    const streamsDailyDesc = datesDesc.map((d, i) => {
+      const curTotal = Number(props.seriesDesc[i]?.total_streams_cumulative ?? 0);
+      const prevTotal =
+        i + 1 < props.seriesDesc.length
+          ? Number(props.seriesDesc[i + 1]?.total_streams_cumulative ?? 0)
+          : curTotal;
+      if (i + 1 >= props.seriesDesc.length) return { date: dataDateFromRunDate(d), daily: null };
+      const daily = Math.max(0, curTotal - prevTotal);
+      return { date: dataDateFromRunDate(d), daily };
+    });
 
     const tracksTotalDesc = datesDesc.map((d, i) => ({ date: dataDateFromRunDate(d), value: Number(props.seriesDesc[i]?.track_count ?? 0) }));
     const tracksDailyDeltaDesc = datesDesc.map((d, i) => {
@@ -1045,8 +1066,11 @@ export function CollectorsClient(props: {
                         {topTrackCards.bestDelta.name ?? topTrackCards.bestDelta.isrc}
                       </Link>
                       {topTrackCards.bestDelta.artist_names?.length ? (
-                        <div className="truncate text-xs opacity-60">
-                          {topTrackCards.bestDelta.artist_names.join(", ")}
+                        <div className="text-xs opacity-60">
+                          <ArtistLinks
+                            artistNames={topTrackCards.bestDelta.artist_names}
+                            artistIds={topTrackCards.bestDelta.artist_ids}
+                          />
                         </div>
                       ) : null}
                     </div>
@@ -1086,8 +1110,11 @@ export function CollectorsClient(props: {
                         {topTrackCards.bestTotal.name ?? topTrackCards.bestTotal.isrc}
                       </Link>
                       {topTrackCards.bestTotal.artist_names?.length ? (
-                        <div className="truncate text-xs opacity-60">
-                          {topTrackCards.bestTotal.artist_names.join(", ")}
+                        <div className="text-xs opacity-60">
+                          <ArtistLinks
+                            artistNames={topTrackCards.bestTotal.artist_names}
+                            artistIds={topTrackCards.bestTotal.artist_ids}
+                          />
                         </div>
                       ) : null}
                     </div>
@@ -1175,7 +1202,10 @@ export function CollectorsClient(props: {
                       </Link>
                       {t.artist_names?.length ? (
                         <div className="mt-0.5 text-xs opacity-60">
-                          {t.artist_names.join(", ")}
+                          <ArtistLinks
+                            artistNames={t.artist_names}
+                            artistIds={t.artist_ids}
+                          />
                         </div>
                       ) : null}
                     </TableCell>

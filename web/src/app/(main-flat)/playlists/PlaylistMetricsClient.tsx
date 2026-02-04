@@ -55,7 +55,8 @@ export function PlaylistMetricsClient(props: {
       const idx = props.history.findIndex((h) => h.date === r.date);
       const prev = idx < props.history.length - 1 ? props.history[idx + 1] : null;
       const curTotal = safeNum(r.total_streams_cumulative);
-      const prevTotal = prev ? safeNum(prev.total_streams_cumulative) : curTotal;
+      if (!prev) return { date: dataDateFromRunDate(r.date), daily: null };
+      const prevTotal = safeNum(prev.total_streams_cumulative);
       const dailyStreams = Math.max(0, curTotal - prevTotal);
       return { date: dataDateFromRunDate(r.date), daily: dailyStreams * streamPayoutPerStreamUsd };
     } else if (props.metric === "tracks") {
@@ -68,7 +69,8 @@ export function PlaylistMetricsClient(props: {
       const idx = props.history.findIndex((h) => h.date === r.date);
       const prev = idx < props.history.length - 1 ? props.history[idx + 1] : null;
       const curTotal = safeNum(r.total_streams_cumulative);
-      const prevTotal = prev ? safeNum(prev.total_streams_cumulative) : curTotal;
+      if (!prev) return { date: dataDateFromRunDate(r.date), daily: null };
+      const prevTotal = safeNum(prev.total_streams_cumulative);
       const daily = Math.max(0, curTotal - prevTotal);
       return { date: dataDateFromRunDate(r.date), daily };
     }

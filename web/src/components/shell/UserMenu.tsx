@@ -121,19 +121,6 @@ export function UserMenu() {
       style={useHighZPortal ? { top: portalPos?.top ?? 0, right: portalPos?.right ?? 0 } : undefined}
       onMouseDown={(e) => e.stopPropagation()}
     >
-      {/* Mobile-only: settings is otherwise available in the desktop side rail */}
-      <Link
-        href="/settings"
-        className={cx(
-          "sm:hidden",
-          "flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs transition hover:bg-black/5 dark:hover:bg-white/10",
-        )}
-        onClick={() => setOpen(false)}
-      >
-        <Settings className="h-4 w-4 opacity-70" />
-        <span>Settings</span>
-      </Link>
-
       <button
         type="button"
         onClick={() => {
@@ -147,6 +134,19 @@ export function UserMenu() {
         </span>
         <span>{isDark ? "Light Mode" : "Dark Mode"}</span>
       </button>
+
+      {/* Mobile-only: settings is otherwise available in the desktop side rail */}
+      <Link
+        href="/settings"
+        className={cx(
+          "sm:hidden",
+          "flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs transition hover:bg-black/5 dark:hover:bg-white/10",
+        )}
+        onClick={() => setOpen(false)}
+      >
+        <Settings className="h-4 w-4 opacity-70" />
+        <span>Settings</span>
+      </Link>
 
       <Link
         href="/docs"

@@ -17,6 +17,8 @@ import { formatInt, formatUsd } from "@/lib/format";
 import {
   extractOverrideItemsFromRechartsPayload,
   formatTooltipDateDaily,
+  getSundayAccentColor,
+  isSundayDate,
   formatKmbTick,
   formatUsdCompact,
 } from "@/components/charts/chartUtils";
@@ -26,7 +28,7 @@ import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
 
 type DataPoint = {
   date: string;
-  daily: number;
+  daily: number | null;
   ma7?: number | null;
 };
 
@@ -69,6 +71,10 @@ function CustomTooltip({
   const lastSentKeyRef = useRef<string>("");
 
   const safePayload = payload ?? [];
+  const toNum = (v: unknown): number | null => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
 
   // Sort payload: daily first, then ma7
   const sorted = safePayload.length
@@ -82,11 +88,11 @@ function CustomTooltip({
     : [];
 
   const mainValue = sorted[0];
-  const mainValueFormatted = mainValue ? fmtValue(Number(mainValue.value ?? 0)) : null;
+  const mainValueNum = mainValue ? toNum(mainValue.value) : null;
+  const mainValueFormatted = mainValueNum == null ? null : fmtValue(mainValueNum);
   const maEntry = sorted.find((e) => e.dataKey === "ma7");
-  const ma7ValueFormatted = maEntry
-    ? fmtValue(Math.round(Number(maEntry.value ?? 0)))
-    : null;
+  const ma7Num = maEntry ? toNum(maEntry.value) : null;
+  const ma7ValueFormatted = ma7Num == null ? null : fmtValue(Math.round(ma7Num));
   const overrideItems = extractOverrideItemsFromRechartsPayload(safePayload);
   useEffect(() => {
     if (!active) return;
@@ -116,12 +122,12 @@ function CustomTooltip({
         {sorted.map((entry, index) => {
           const isMA = entry.dataKey === "ma7";
           const label = isMA ? "MA (7d)" : valueLabel;
-          let value = fmtValue(Number(entry.value ?? 0));
+          const raw = toNum(entry.value);
+          let value = raw == null ? "—" : fmtValue(raw);
           
           // Round MA7 to nearest whole number
           if (isMA) {
-            const numValue = Math.round(Number(entry.value ?? 0));
-            value = fmtValue(numValue);
+            value = raw == null ? "—" : fmtValue(Math.round(raw));
           }
 
           const valueColor = isDark ? chartColor : "var(--sb-text)";
@@ -198,6 +204,7 @@ export function DailyStreamsWithMAChart({
   // Use theme-aware colors from CSS variables
   const effectiveDailyColor = dailyColor ?? themeColors.accentStroke;
   const effectiveMaColor = maColor ?? (themeColors.isDark ? "#ffffff" : "#000000");
+  const sundayColor = getSundayAccentColor(effectiveDailyColor, { isDark: themeColors.isDark, bgColor: themeColors.bg });
   
   // Keep parity with DailyStreamsChart: accept newest-first and render oldest->newest
   const annItemsByDate = new Map<string, ManualOverrideAnnotation[]>();
@@ -218,6 +225,7 @@ export function DailyStreamsWithMAChart({
   }));
   const chartDates = new Set(chartData.map((d) => d.date));
   const annotationDates = [...annItemsByDate.keys()].filter((d) => chartDates.has(d));
+  const sundayDates = chartData.filter((d) => isSundayDate(d.date)).map((d) => d.date);
   
   // Debug: Check if we have any ma7 values
   const hasMa7Data = chartData.some((d) => d.ma7 != null && !isNaN(Number(d.ma7)));
@@ -298,6 +306,18 @@ export function DailyStreamsWithMAChart({
               opacity: 0.8,
             }}
           />
+          {/* Subtle Sunday indicator (follows the active metric color) */}
+          {sundayDates.map((d) => (
+            <ReferenceLine
+              key={`sunday-${d}`}
+              x={d}
+              stroke={sundayColor}
+              strokeOpacity={themeColors.isDark ? 0.10 : 0.07}
+              strokeWidth={10}
+              strokeDasharray="0"
+              ifOverflow="hidden"
+            />
+          ))}
           {annotationDates.map((d) => (
             <ReferenceLine
               key={`override-${d}`}
@@ -316,8 +336,44 @@ export function DailyStreamsWithMAChart({
             strokeWidth={2}
             fillOpacity={1}
             fill={`url(#${gid})`}
-            dot={{ r: 3, fill: effectiveDailyColor, stroke: "var(--sb-bg)", strokeWidth: 1.5 }}
-            activeDot={{ r: 4, fill: effectiveDailyColor, stroke: "var(--sb-bg)", strokeWidth: 1.5 }}
+            dot={(props: any) => {
+              const { cx, cy, payload } = props ?? {};
+              if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
+              const date = String(payload?.date ?? "");
+              const isSunday = date ? isSundayDate(date) : false;
+              const fill = isSunday ? sundayColor : effectiveDailyColor;
+              const fillOpacity = isSunday ? 0.78 : 1;
+              return (
+                <circle
+                  cx={cx}
+                  cy={cy}
+                  r={3}
+                  fill={fill}
+                  fillOpacity={fillOpacity}
+                  stroke="var(--sb-bg)"
+                  strokeWidth={1.5}
+                />
+              );
+            }}
+            activeDot={(props: any) => {
+              const { cx, cy, payload } = props ?? {};
+              if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
+              const date = String(payload?.date ?? "");
+              const isSunday = date ? isSundayDate(date) : false;
+              const fill = isSunday ? sundayColor : effectiveDailyColor;
+              const fillOpacity = isSunday ? 0.85 : 1;
+              return (
+                <circle
+                  cx={cx}
+                  cy={cy}
+                  r={4}
+                  fill={fill}
+                  fillOpacity={fillOpacity}
+                  stroke="var(--sb-bg)"
+                  strokeWidth={1.5}
+                />
+              );
+            }}
           />
           {hasMa7Data && (
             <Line

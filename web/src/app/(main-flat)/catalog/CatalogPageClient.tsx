@@ -30,7 +30,7 @@ type ChartDataPoint = {
 
 type DailyDataPoint = {
   date: string;
-  daily: number;
+  daily: number | null;
 };
 
 type ArtistOption = { id: string; name: string; imageUrl?: string | null };
@@ -45,7 +45,7 @@ type TopTrack = {
   artistIds?: string[] | null;
 };
 type TrackSeriesPoint = { date: string; value: number };
-type TrackDailyPoint = { date: string; daily: number; ma7?: number | null };
+type TrackDailyPoint = { date: string; daily: number | null; ma7?: number | null };
 type SelectedTrack = {
   name: string | null;
   albumImageUrl: string | null;
@@ -517,7 +517,7 @@ export function CatalogPageClient(props: {
           const dailySeries = trackMode === "revenue"
             ? props.trackDailyWithMaDesc.map((p) => ({
                 date: dataDateFromRunDate(p.date),
-                daily: p.daily * streamPayoutPerStreamUsd,
+                daily: p.daily == null ? null : p.daily * streamPayoutPerStreamUsd,
                 ma7: p.ma7 == null ? p.ma7 : p.ma7 * streamPayoutPerStreamUsd,
               }))
             : props.trackDailyWithMaDesc.map((p) => ({

@@ -207,13 +207,17 @@ export function TrackExclusionForm({
           />
         </div>
 
-        <div className="sm:col-span-1 flex items-end">
+        <div className="sm:col-span-1">
+          {/* Keep action button aligned with the input row (not helper text). */}
+          <div className="hidden sm:block text-[11px] font-medium opacity-0 select-none">
+            Action
+          </div>
           <Button
             type="submit"
             disabled={isSubmitting}
             variant="primary"
             size="md"
-            className="w-full rounded-xl"
+            className="mt-1 w-full rounded-xl"
           >
             {isSubmitting ? "Adding…" : (submitLabel ?? (allowMulti ? "Add all" : "Add"))}
           </Button>

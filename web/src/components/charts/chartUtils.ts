@@ -122,7 +122,7 @@ export function extractOverrideItemsFromRechartsPayload(payload: unknown): Manua
  * Input: array in descending order (newest first) with { date, value }.
  * Output: array in descending order with { date, value, ma7 }.
  */
-export function computeRollingAvg7<T extends { date: string; value: number }>(
+export function computeRollingAvg7<T extends { date: string; value: number | null | undefined }>(
   desc: T[]
 ): Array<T & { ma7: number | null }> {
   const asc = [...desc].reverse();
@@ -130,13 +130,16 @@ export function computeRollingAvg7<T extends { date: string; value: number }>(
   
   for (let i = 0; i < asc.length; i++) {
     const windowStart = Math.max(0, i - 6);
-    const windowSize = i - windowStart + 1;
     let sum = 0;
+    let count = 0;
     for (let j = windowStart; j <= i; j++) {
-      sum += asc[j].value;
+      const v = Number((asc[j] as any).value);
+      if (!Number.isFinite(v)) continue;
+      sum += v;
+      count += 1;
     }
-    // Show MA from the beginning by averaging over the available window (1..7 points).
-    outAsc.push({ ...asc[i], ma7: sum / windowSize });
+    // Strict MA7: only show once we have a full 7 valid points.
+    outAsc.push({ ...asc[i], ma7: count === 7 ? sum / 7 : null });
   }
   
   return outAsc.reverse();
@@ -147,7 +150,7 @@ export function computeRollingAvg7<T extends { date: string; value: number }>(
  * Input: array in descending order (newest first) with { date, daily }.
  * Output: array in descending order with { date, daily, ma7 }.
  */
-export function computeDailyRollingAvg7<T extends { date: string; daily: number }>(
+export function computeDailyRollingAvg7<T extends { date: string; daily: number | null | undefined }>(
   desc: T[]
 ): Array<T & { ma7: number | null }> {
   const asc = [...desc].reverse();
@@ -155,15 +158,122 @@ export function computeDailyRollingAvg7<T extends { date: string; daily: number 
   
   for (let i = 0; i < asc.length; i++) {
     const windowStart = Math.max(0, i - 6);
-    const windowSize = i - windowStart + 1;
     let sum = 0;
+    let count = 0;
     for (let j = windowStart; j <= i; j++) {
-      sum += asc[j].daily;
+      const v = Number((asc[j] as any).daily);
+      if (!Number.isFinite(v)) continue;
+      sum += v;
+      count += 1;
     }
-    // Show MA from the beginning by averaging over the available window (1..7 points).
-    outAsc.push({ ...asc[i], ma7: sum / windowSize });
+    // Strict MA7: only show once we have a full 7 valid points.
+    outAsc.push({ ...asc[i], ma7: count === 7 ? sum / 7 : null });
   }
   
   return outAsc.reverse();
+}
+
+// ============================================================================
+// Calendar / Styling helpers (e.g. Sunday highlighting)
+// ============================================================================
+
+export function isSundayDate(dateString: string): boolean {
+  const date = isIsoDateString(dateString) ? isoDateToNoonUtc(dateString) : new Date(dateString);
+  // getUTCDay is stable for noon UTC dates, and avoids local TZ surprises.
+  return date.getUTCDay() === 0;
+}
+
+type RGBA = { r: number; g: number; b: number; a: number };
+
+function clamp01(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  return Math.min(1, Math.max(0, n));
+}
+
+function clamp255(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  return Math.min(255, Math.max(0, Math.round(n)));
+}
+
+function parseCssColor(input: string): RGBA | null {
+  const s = String(input ?? "").trim();
+  if (!s) return null;
+
+  // #rgb, #rrggbb, #rrggbbaa
+  if (s.startsWith("#")) {
+    const h = s.slice(1);
+    if (h.length === 3) {
+      const r = parseInt(h[0] + h[0], 16);
+      const g = parseInt(h[1] + h[1], 16);
+      const b = parseInt(h[2] + h[2], 16);
+      if ([r, g, b].some((n) => Number.isNaN(n))) return null;
+      return { r, g, b, a: 1 };
+    }
+    if (h.length === 6 || h.length === 8) {
+      const r = parseInt(h.slice(0, 2), 16);
+      const g = parseInt(h.slice(2, 4), 16);
+      const b = parseInt(h.slice(4, 6), 16);
+      if ([r, g, b].some((n) => Number.isNaN(n))) return null;
+      const a = h.length === 8 ? parseInt(h.slice(6, 8), 16) / 255 : 1;
+      return { r, g, b, a: clamp01(a) };
+    }
+    return null;
+  }
+
+  // rgb(...) / rgba(...)
+  const m = s.match(
+    /^rgba?\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)(?:\s*,\s*([0-9.]+))?\s*\)$/i,
+  );
+  if (m) {
+    const r = Number(m[1]);
+    const g = Number(m[2]);
+    const b = Number(m[3]);
+    const a = m[4] == null ? 1 : Number(m[4]);
+    if (![r, g, b, a].every((n) => Number.isFinite(n))) return null;
+    return { r: clamp255(r), g: clamp255(g), b: clamp255(b), a: clamp01(a) };
+  }
+
+  // Unknown formats (e.g. named colors) — return null so callers can fall back.
+  return null;
+}
+
+function rgbaToCss({ r, g, b, a }: RGBA): string {
+  const rr = clamp255(r);
+  const gg = clamp255(g);
+  const bb = clamp255(b);
+  const aa = clamp01(a);
+  return `rgba(${rr}, ${gg}, ${bb}, ${aa})`;
+}
+
+function mixRgb(a: RGBA, b: RGBA, t: number): RGBA {
+  const tt = clamp01(t);
+  return {
+    r: a.r + (b.r - a.r) * tt,
+    g: a.g + (b.g - a.g) * tt,
+    b: a.b + (b.b - a.b) * tt,
+    a: 1,
+  };
+}
+
+/**
+ * Given a base series color, produce a subtly "faded/darker" variant to use on Sundays.
+ * This is designed to follow metric toggles (streams/revenue/tracks) automatically.
+ */
+export function getSundayAccentColor(
+  baseColor: string,
+  opts?: { isDark?: boolean; bgColor?: string }
+): string {
+  const base = parseCssColor(baseColor);
+  if (!base) return baseColor;
+
+  const isDark = Boolean(opts?.isDark);
+  const bgParsed = opts?.bgColor ? parseCssColor(opts.bgColor) : null;
+
+  // In dark mode, mixing toward the actual background reads as "faded".
+  // In light mode, mixing toward black reads as "slightly darker".
+  const mixTarget = isDark ? (bgParsed ?? { r: 0, g: 0, b: 0, a: 1 }) : { r: 0, g: 0, b: 0, a: 1 };
+  const t = isDark ? 0.42 : 0.22;
+  const mixed = mixRgb(base, mixTarget, t);
+  return rgbaToCss(mixed);
 }
 

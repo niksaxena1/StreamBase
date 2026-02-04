@@ -13,9 +13,10 @@ import {
 } from "recharts";
 import { useId, useMemo } from "react";
 import { formatInt, formatUsd2 } from "@/lib/format";
-import { formatKmbTick, formatUsdCompact } from "@/components/charts/chartUtils";
+import { formatKmbTick, formatUsdCompact, getSundayAccentColor, isSundayDate } from "@/components/charts/chartUtils";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
+import { useThemeColors } from "@/components/charts/useThemeColors";
 
 export const COLLECTOR_COLORS: Record<string, string> = {
   // Individuals (softer)
@@ -168,6 +169,7 @@ export function CollectorComparisonChart({
 }) {
   const gid = useId();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
+  const themeColors = useThemeColors();
 
   // Process data into chart format
   const chartData = useMemo(() => {
@@ -269,7 +271,7 @@ export function CollectorComparisonChart({
 
   // Determine which lines to render
   const lineKeys = mode === "combined" ? ["combined"] : selectedCollectors;
-  const combinedColor = "var(--sb-accent)";
+  const combinedColor = themeColors.accentStroke;
 
   const getLineColor = (key: string) => {
     if (key === "combined") return combinedColor;
@@ -283,6 +285,16 @@ export function CollectorComparisonChart({
         ? "combined"
         : selectedCollectors[0]
       : null;
+
+  const sundayDates = useMemo(() => {
+    if (granularity !== "daily") return [];
+    return chartData.filter((d) => isSundayDate(String(d.date ?? ""))).map((d) => String(d.date));
+  }, [chartData, granularity]);
+
+  const sundayBandColor = getSundayAccentColor(
+    areaKey ? getLineColor(areaKey) : themeColors.accentStroke,
+    { isDark: themeColors.isDark, bgColor: themeColors.bg },
+  );
 
   if (!chartData.length) {
     return (
@@ -381,6 +393,21 @@ export function CollectorComparisonChart({
             }}
           />
 
+          {/* Subtle Sunday indicator (daily only) */}
+          {granularity === "daily"
+            ? sundayDates.map((d) => (
+                <ReferenceLine
+                  key={`sunday-${d}`}
+                  x={d}
+                  stroke={sundayBandColor}
+                  strokeOpacity={themeColors.isDark ? 0.10 : 0.07}
+                  strokeWidth={10}
+                  strokeDasharray="0"
+                  ifOverflow="hidden"
+                />
+              ))
+            : null}
+
           {areaKey ? (
             <Area
               type="monotone"
@@ -389,8 +416,48 @@ export function CollectorComparisonChart({
               strokeWidth={2}
               fillOpacity={1}
               fill={`url(#${gid}-area)`}
-              dot={{ r: 3, fill: getLineColor(areaKey), stroke: "var(--sb-bg)", strokeWidth: 1.5 }}
-              activeDot={{ r: 4, fill: getLineColor(areaKey), stroke: "var(--sb-bg)", strokeWidth: 1.5 }}
+              dot={(props: any) => {
+                const { cx, cy, payload } = props ?? {};
+                if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
+                const base = getLineColor(areaKey);
+                const sunday = getSundayAccentColor(base, { isDark: themeColors.isDark, bgColor: themeColors.bg });
+                const date = String(payload?.date ?? "");
+                const isSundayPt = granularity === "daily" && date ? isSundayDate(date) : false;
+                const fill = isSundayPt ? sunday : base;
+                const fillOpacity = isSundayPt ? 0.78 : 1;
+                return (
+                  <circle
+                    cx={cx}
+                    cy={cy}
+                    r={3}
+                    fill={fill}
+                    fillOpacity={fillOpacity}
+                    stroke="var(--sb-bg)"
+                    strokeWidth={1.5}
+                  />
+                );
+              }}
+              activeDot={(props: any) => {
+                const { cx, cy, payload } = props ?? {};
+                if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
+                const base = getLineColor(areaKey);
+                const sunday = getSundayAccentColor(base, { isDark: themeColors.isDark, bgColor: themeColors.bg });
+                const date = String(payload?.date ?? "");
+                const isSundayPt = granularity === "daily" && date ? isSundayDate(date) : false;
+                const fill = isSundayPt ? sunday : base;
+                const fillOpacity = isSundayPt ? 0.85 : 1;
+                return (
+                  <circle
+                    cx={cx}
+                    cy={cy}
+                    r={4}
+                    fill={fill}
+                    fillOpacity={fillOpacity}
+                    stroke="var(--sb-bg)"
+                    strokeWidth={1.5}
+                  />
+                );
+              }}
               isAnimationActive={true}
             />
           ) : null}
@@ -400,6 +467,7 @@ export function CollectorComparisonChart({
             if (areaKey && key === areaKey) return null;
 
             const color = getLineColor(key);
+            const sunday = getSundayAccentColor(color, { isDark: themeColors.isDark, bgColor: themeColors.bg });
             return (
               <Line
                 key={key}
@@ -407,8 +475,44 @@ export function CollectorComparisonChart({
                 dataKey={key}
                 stroke={color}
                 strokeWidth={2}
-                dot={{ r: 3, fill: color, stroke: "var(--sb-bg)", strokeWidth: 1.5 }}
-                activeDot={{ r: 4, fill: color, stroke: "var(--sb-bg)", strokeWidth: 1.5 }}
+                dot={(props: any) => {
+                  const { cx, cy, payload } = props ?? {};
+                  if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
+                  const date = String(payload?.date ?? "");
+                  const isSundayPt = granularity === "daily" && date ? isSundayDate(date) : false;
+                  const fill = isSundayPt ? sunday : color;
+                  const fillOpacity = isSundayPt ? 0.78 : 1;
+                  return (
+                    <circle
+                      cx={cx}
+                      cy={cy}
+                      r={3}
+                      fill={fill}
+                      fillOpacity={fillOpacity}
+                      stroke="var(--sb-bg)"
+                      strokeWidth={1.5}
+                    />
+                  );
+                }}
+                activeDot={(props: any) => {
+                  const { cx, cy, payload } = props ?? {};
+                  if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
+                  const date = String(payload?.date ?? "");
+                  const isSundayPt = granularity === "daily" && date ? isSundayDate(date) : false;
+                  const fill = isSundayPt ? sunday : color;
+                  const fillOpacity = isSundayPt ? 0.85 : 1;
+                  return (
+                    <circle
+                      cx={cx}
+                      cy={cy}
+                      r={4}
+                      fill={fill}
+                      fillOpacity={fillOpacity}
+                      stroke="var(--sb-bg)"
+                      strokeWidth={1.5}
+                    />
+                  );
+                }}
                 isAnimationActive={true}
               />
             );

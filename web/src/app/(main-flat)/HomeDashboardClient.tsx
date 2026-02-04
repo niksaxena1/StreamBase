@@ -41,7 +41,7 @@ type ManualOverrideAnnotation = {
 
 import { computeRollingAvg7 } from "@/components/charts/chartUtils";
 
-type ChartPoint = { date: string; value: number; ma7?: number | null };
+type ChartPoint = { date: string; value: number | null; ma7?: number | null };
 
 function hrefWith(
   existing: { scope?: string; range?: string; daily?: string; xy_date?: string },
@@ -683,8 +683,10 @@ function HomeDashboardInner(props: {
     // (e.g. when the stored daily field is accidentally cumulative).
     const dailyDeltaFromTotalsDesc = (rowsDesc: PlaylistDailyStatsRow[]) =>
       rowsDesc.map((r, idx) => {
+        // rowsDesc is newest-first; "prev" means the next older day.
+        if (idx >= rowsDesc.length - 1) return null; // no older day in-range
         const cur = safeNum(r?.total_streams_cumulative);
-        const prev = idx < rowsDesc.length - 1 ? safeNum(rowsDesc[idx + 1]?.total_streams_cumulative) : cur;
+        const prev = safeNum(rowsDesc[idx + 1]?.total_streams_cumulative);
         return Math.max(0, cur - prev);
       });
 
@@ -692,7 +694,7 @@ function HomeDashboardInner(props: {
       const dailyDeltas = dailyDeltaFromTotalsDesc(desc);
       const dailyDesc = desc.map((r, idx) => ({
         date: dataDateFromRunDate(r.date),
-        value: dailyDeltas[idx] * streamPayoutPerStreamUsd,
+        value: dailyDeltas[idx] == null ? null : dailyDeltas[idx] * streamPayoutPerStreamUsd,
       }));
       const totalDesc = desc.map((r) => ({
         date: dataDateFromRunDate(r.date),
@@ -781,10 +783,17 @@ function HomeDashboardInner(props: {
 
   const allCatalogMa7 = useMemo(() => {
     if (props.playlistKey !== "all_catalog") return null;
-    const slice = (props.history ?? []).slice(0, 7);
-    if (!slice.length) return null;
-    const sum = slice.reduce((acc, r) => acc + Number(r.daily_streams_net ?? 0), 0);
-    return sum / slice.length;
+    const hist = props.history ?? [];
+    if (hist.length < 2) return null;
+    const deltas: number[] = [];
+    for (let i = 0; i < Math.min(7, hist.length - 1); i++) {
+      const cur = Number(hist[i]?.total_streams_cumulative ?? 0);
+      const prev = Number(hist[i + 1]?.total_streams_cumulative ?? 0);
+      if (!Number.isFinite(cur) || !Number.isFinite(prev)) continue;
+      deltas.push(Math.max(0, cur - prev));
+    }
+    if (!deltas.length) return null;
+    return deltas.reduce((a, b) => a + b, 0) / deltas.length;
   }, [props.history, props.playlistKey]);
 
   const allCatalogAsOf = props.latest?.date

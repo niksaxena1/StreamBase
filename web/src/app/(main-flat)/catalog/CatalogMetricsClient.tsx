@@ -19,7 +19,7 @@ type ChartDataPoint = {
 
 type DailyDataPoint = {
   date: string;
-  daily: number;
+  daily: number | null;
 };
 
 export function CatalogMetricsClient(props: {
@@ -63,7 +63,7 @@ export function CatalogMetricsClient(props: {
     if (metric === "revenue") {
       return props.dailyArtistDesc.map((p) => ({
         date: dataDateFromRunDate(p.date),
-        daily: p.daily * streamPayoutPerStreamUsd,
+        daily: p.daily == null ? null : p.daily * streamPayoutPerStreamUsd,
       }));
     } else if (metric === "tracks") {
       // Track count doesn't change daily for an artist's catalog

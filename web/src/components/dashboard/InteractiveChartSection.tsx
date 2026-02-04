@@ -12,7 +12,7 @@ import { useThemeColors, getChartColor } from "@/components/charts/useThemeColor
 
 type ChartData = {
   date: string;
-  value: number;
+  value: number | null;
   ma7?: number | null;
 };
 
@@ -105,7 +105,11 @@ export function InteractiveChartSection({
             subtitle="Lifetime"
             accent={selectedChart === "total"}
             accentColor={accentColor}
-            trendData={totalStreamsData.map((d) => d.value).slice(0, 30).reverse()}
+            trendData={totalStreamsData
+              .map((d) => (Number.isFinite(Number(d.value)) ? Number(d.value) : null))
+              .filter((n): n is number => n !== null)
+              .slice(0, 30)
+              .reverse()}
           />
         </button>
         <button
@@ -120,7 +124,11 @@ export function InteractiveChartSection({
             accent={selectedChart === "daily"}
             accentColor={accentColor}
             trend="up"
-            trendData={dailyStreamsData.map((d) => d.value).slice(0, 30).reverse()}
+            trendData={dailyStreamsData
+              .map((d) => (Number.isFinite(Number(d.value)) ? Number(d.value) : null))
+              .filter((n): n is number => n !== null)
+              .slice(0, 30)
+              .reverse()}
           />
         </button>
       </div>
