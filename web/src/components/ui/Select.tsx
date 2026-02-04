@@ -13,7 +13,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
       ref={ref}
       {...props}
       className={cx(
-        "sb-ring w-full rounded-xl border bg-white/70 px-3 py-2 text-sm outline-none transition",
+        "sb-ring w-full min-h-[44px] rounded-xl border bg-white/70 px-3 py-2 text-sm outline-none transition",
         "dark:bg-white/5 dark:text-white dark:border-white/10 dark:focus:border-white/20",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
         className,

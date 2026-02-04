@@ -37,6 +37,9 @@ export function GlassTable({
 }: GlassTableProps) {
   return (
     <div className={["sb-card relative overflow-hidden", className].filter(Boolean).join(" ")}>
+      {/* Horizontal scroll indicator for mobile */}
+      <div className="absolute bottom-0 right-0 top-0 w-4 bg-gradient-to-l from-black/10 to-transparent pointer-events-none sm:hidden z-20" />
+      
       <div
         className={[
           maxBodyHeightClassName ?? "max-h-[440px]",

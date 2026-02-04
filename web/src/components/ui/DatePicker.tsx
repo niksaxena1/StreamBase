@@ -168,7 +168,7 @@ function DatePickerInner({
                     type="button"
                     onClick={goToPrevMonth}
                     disabled={!canGoPrev}
-                    className="sb-ring grid h-6 w-6 place-items-center rounded-md hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed"
+                    className="sb-ring grid min-h-[40px] min-w-[40px] h-10 w-10 place-items-center rounded-md hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed"
                     style={{ color: "var(--sb-text)" }}
                     aria-label="Previous month"
                   >
@@ -181,7 +181,7 @@ function DatePickerInner({
                     type="button"
                     onClick={goToNextMonth}
                     disabled={!canGoNext}
-                    className="sb-ring grid h-6 w-6 place-items-center rounded-md hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed"
+                    className="sb-ring grid min-h-[40px] min-w-[40px] h-10 w-10 place-items-center rounded-md hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed"
                     style={{ color: "var(--sb-text)" }}
                     aria-label="Next month"
                   >
@@ -207,9 +207,9 @@ function DatePickerInner({
                       month_caption: "hidden",
                       month_grid: "border-collapse",
                       weekdays: "flex",
-                      weekday: "w-8 h-6 text-center text-[10px] font-medium opacity-50",
+                      weekday: "w-10 h-8 text-center text-[10px] font-medium opacity-50",
                       week: "flex",
-                      day: "w-8 h-8 p-0 text-center",
+                      day: "w-10 h-10 p-0 text-center min-h-[40px] min-w-[40px]",
                       day_button: "w-full h-full rounded-md text-[11px] font-medium cursor-pointer transition-colors hover:bg-black/5 dark:hover:bg-white/10 focus:outline-none",
                       today: "ring-1 ring-inset ring-[color:var(--sb-accent)]",
                       selected: "!bg-[color:var(--sb-accent)] !text-black hover:!bg-[color:var(--sb-accent)]",

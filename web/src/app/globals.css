@@ -761,6 +761,66 @@ html[data-theme="dark"] .sb-filter-bar {
 }
 
 /* ============================================================================
+   Enhanced Mobile Optimizations
+   ============================================================================ */
+
+/* Mobile-friendly button padding for better touch targets */
+@media (max-width: 639px) {
+  button {
+    /* Ensure minimum height for touch */
+    min-height: 44px;
+  }
+  
+  input,
+  select {
+    /* Better touch targets for form elements */
+    min-height: 44px;
+    font-size: 16px; /* Prevents zoom on iOS */
+  }
+  
+  /* Improve spacing on mobile */
+  .gap-2 {
+    gap: 0.75rem;
+  }
+}
+
+/* Mobile-safe area utilities for notched devices */
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0);
+}
+
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+.pl-safe {
+  padding-left: env(safe-area-inset-left, 0);
+}
+
+.pr-safe {
+  padding-right: env(safe-area-inset-right, 0);
+}
+
+/* Mobile scroll hint for tables with horizontal overflow */
+@media (max-width: 639px) {
+  .sb-table-scroll-hint {
+    position: relative;
+  }
+  
+  .sb-table-scroll-hint::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 16px;
+    background: linear-gradient(to left, rgba(0, 0, 0, 0.1), transparent);
+    pointer-events: none;
+    border-radius: 0 8px 8px 0;
+  }
+}
+
+/* ============================================================================
    Mobile Nav Badge Animation (#8)
    ============================================================================ */
 

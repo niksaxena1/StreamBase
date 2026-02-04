@@ -56,7 +56,7 @@ function SideRailContent({
             href={it.href}
             title={it.label}
             className={[
-              "relative grid h-9 w-9 place-items-center rounded-full transition",
+              "relative grid h-11 w-11 min-h-[44px] min-w-[44px] place-items-center rounded-full transition",
               active
                 ? "bg-black text-white shadow-sm dark:bg-white dark:text-black"
                 : "bg-white/70 text-black/70 hover:bg-white dark:bg-white/10 dark:text-white/70 dark:hover:bg-white/20",
@@ -88,7 +88,7 @@ function SideRailContent({
 
       <Link
         href="/settings"
-        className="grid h-9 w-9 place-items-center rounded-full transition hover:opacity-90"
+        className="grid h-11 w-11 min-h-[44px] min-w-[44px] place-items-center rounded-full transition hover:opacity-90"
         style={{
           background: "var(--sb-accent)",
           color: "#000",
@@ -124,7 +124,7 @@ export function SideRail({
           {navItems.map((it) => (
             <div
               key={it.href}
-              className="relative grid h-9 w-9 place-items-center rounded-full bg-white/70"
+              className="relative grid h-11 w-11 min-h-[44px] min-w-[44px] place-items-center rounded-full bg-white/70"
             >
               {it.icon(false)}
             </div>

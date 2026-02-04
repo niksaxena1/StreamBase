@@ -50,13 +50,13 @@ export function NumberInput({ value, operator, fieldDef, onChange }: NumberInput
       : { min: 0, max: 0 };
     
     return (
-      <div className="flex items-center gap-2">
+      <div className="flex flex-col lg:flex-row lg:items-center gap-2 w-full lg:w-auto">
         <NumberSingleInput
           value={rangeValue.min}
           placeholder={fieldDef.placeholder ?? "Min"}
           onChange={(n) => onChange({ ...rangeValue, min: n ?? 0 })}
         />
-        <span className="text-xs" style={{ color: "var(--sb-muted)" }}>and</span>
+        <span className="text-xs hidden lg:block" style={{ color: "var(--sb-muted)" }}>and</span>
         <NumberSingleInput
           value={rangeValue.max}
           placeholder="Max"
@@ -127,7 +127,7 @@ function NumberSingleInput({
         }
       }}
       onBlur={handleBlur}
-      className="min-w-[100px] max-w-[140px]"
+      className="w-full lg:min-w-[100px] lg:max-w-[140px]"
     />
   );
 }
@@ -149,7 +149,7 @@ export function DateInput({ value, operator, fieldDef, onChange }: DateInputProp
     const monthValue = typeof value === "string" ? value : "";
     const monthOptions: ComboboxOption[] = MONTH_OPTIONS.map((m) => ({ value: m.value, label: m.label }));
     return (
-      <div className="sb-ring min-w-[180px] max-w-[220px] rounded-xl bg-white/70 px-3 py-2 dark:bg-white/5">
+      <div className="sb-ring w-full lg:min-w-[180px] lg:max-w-[220px] rounded-xl bg-white/70 px-3 py-2 dark:bg-white/5">
         <Combobox
           value={monthValue || null}
           options={monthOptions}
@@ -170,7 +170,7 @@ export function DateInput({ value, operator, fieldDef, onChange }: DateInputProp
     const yearOptions: ComboboxOption[] = years.map((y) => ({ value: String(y), label: String(y) }));
     
     return (
-      <div className="sb-ring min-w-[140px] max-w-[180px] rounded-xl bg-white/70 px-3 py-2 dark:bg-white/5">
+      <div className="sb-ring w-full lg:min-w-[140px] lg:max-w-[180px] rounded-xl bg-white/70 px-3 py-2 dark:bg-white/5">
         <Combobox
           value={yearValue || null}
           options={yearOptions}
@@ -190,13 +190,13 @@ export function DateInput({ value, operator, fieldDef, onChange }: DateInputProp
       : { start: "", end: "" };
     
     return (
-      <div className="flex items-center gap-2">
+      <div className="flex flex-col lg:flex-row lg:items-center gap-2 w-full lg:w-auto">
         <DateSingleInput
           value={rangeValue.start}
           placeholder="Start date"
           onChange={(d) => onChange({ ...rangeValue, start: d })}
         />
-        <span className="text-xs" style={{ color: "var(--sb-muted)" }}>and</span>
+        <span className="text-xs hidden lg:block" style={{ color: "var(--sb-muted)" }}>and</span>
         <DateSingleInput
           value={rangeValue.end}
           placeholder="End date"
@@ -228,12 +228,12 @@ function DateSingleInput({
   onChange: (value: string) => void;
 }) {
   return (
-    <div className="relative">
+    <div className="relative w-full lg:w-auto">
       <Input
         type="date"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="min-w-[140px] max-w-[160px] pr-8"
+        className="w-full lg:min-w-[140px] lg:max-w-[160px] pr-8"
         style={{ colorScheme: "light dark" }}
       />
       <Calendar 
@@ -263,7 +263,7 @@ export function TextInput({ value, fieldDef, onChange }: TextInputProps) {
       value={textValue}
       placeholder={fieldDef.placeholder ?? "Enter text..."}
       onChange={(e) => onChange(e.target.value)}
-      className="min-w-[160px] max-w-[240px]"
+      className="w-full lg:min-w-[160px] lg:max-w-[240px]"
     />
   );
 }
@@ -285,7 +285,7 @@ export function SelectInput({ value, fieldDef, options, onChange }: SelectInputP
   const comboOptions: ComboboxOption[] = (options ?? []).map((o) => ({ value: o.value, label: o.label }));
   
   return (
-    <div className="sb-ring min-w-[200px] max-w-[280px] rounded-xl bg-white/70 px-3 py-2 dark:bg-white/5">
+    <div className="sb-ring w-full lg:min-w-[200px] lg:max-w-[280px] rounded-xl bg-white/70 px-3 py-2 dark:bg-white/5">
       <Combobox
         value={selectValue || null}
         options={comboOptions}
@@ -367,7 +367,7 @@ export function MultiSelectInput({ value, fieldDef, options, onChange, imageShap
   }
   
   return (
-    <div ref={rootRef} className="relative min-w-[200px] max-w-[360px]">
+    <div ref={rootRef} className="relative w-full lg:min-w-[200px] lg:max-w-[360px]">
       {/* Trigger button */}
       <button
         type="button"

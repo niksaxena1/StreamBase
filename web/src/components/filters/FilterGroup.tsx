@@ -90,7 +90,7 @@ export function FilterGroup({
               type="button"
               onClick={() => handleLogicChange("AND")}
               className={cx(
-                "px-3 py-1 text-xs font-medium transition",
+                "px-3 py-2 min-h-[36px] text-xs font-medium transition",
                 group.logic === "AND"
                   ? "bg-black text-white dark:bg-white dark:text-black"
                   : "bg-transparent hover:bg-black/5 dark:hover:bg-white/10"
@@ -103,7 +103,7 @@ export function FilterGroup({
               type="button"
               onClick={() => handleLogicChange("OR")}
               className={cx(
-                "px-3 py-1 text-xs font-medium transition",
+                "px-3 py-2 min-h-[36px] text-xs font-medium transition",
                 group.logic === "OR"
                   ? "bg-black text-white dark:bg-white dark:text-black"
                   : "bg-transparent hover:bg-black/5 dark:hover:bg-white/10"

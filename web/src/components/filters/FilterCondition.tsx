@@ -100,18 +100,18 @@ export function FilterCondition({
   return (
     <div
       className={cx(
-        "group flex items-center gap-2 p-2 rounded-xl transition",
+        "group flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-2 p-2 rounded-xl transition",
         "sb-panel sb-panel-hover",
         !condition.enabled && "opacity-50"
       )}
     >
       {/* Drag handle (visual only for now) */}
-      <div className="cursor-grab opacity-30 hover:opacity-60 transition">
+      <div className="hidden lg:block cursor-grab opacity-30 hover:opacity-60 transition">
         <GripVertical className="h-4 w-4" />
       </div>
       
       {/* Field selector */}
-      <div className="sb-ring min-w-[180px] max-w-[220px] rounded-xl bg-white/70 px-3 py-2 dark:bg-white/5">
+      <div className="sb-ring w-full lg:min-w-[180px] lg:max-w-[220px] rounded-xl bg-white/70 px-3 py-2 dark:bg-white/5">
         <Combobox
           value={condition.field || null}
           options={fieldOptionsForCombobox}
@@ -124,7 +124,7 @@ export function FilterCondition({
       
       {/* Operator selector (only show if field is selected) */}
       {fieldDef && (
-        <div className="sb-ring min-w-[160px] max-w-[200px] rounded-xl bg-white/70 px-3 py-2 dark:bg-white/5">
+        <div className="sb-ring w-full lg:min-w-[160px] lg:max-w-[200px] rounded-xl bg-white/70 px-3 py-2 dark:bg-white/5">
           <Combobox
             value={String(condition.operator || "") || null}
             options={operatorOptionsForCombobox}
@@ -148,35 +148,37 @@ export function FilterCondition({
       )}
       
       {/* Spacer */}
-      <div className="flex-1" />
+      <div className="hidden lg:flex-1 lg:block" />
       
-      {/* Toggle enabled/disabled */}
-      <IconButton
-        aria-label={condition.enabled ? "Disable condition" : "Enable condition"}
-        onClick={handleToggleEnabled}
-        className="opacity-50 hover:opacity-100"
-        title={condition.enabled ? "Click to disable" : "Click to enable"}
-      >
-        {condition.enabled ? (
-          <ToggleRight className="h-4 w-4" style={{ color: "var(--sb-accent)" }} />
-        ) : (
-          <ToggleLeft className="h-4 w-4" />
-        )}
-      </IconButton>
-      
-      {/* Remove button */}
-      <IconButton
-        aria-label="Remove condition"
-        onClick={onRemove}
-        disabled={!canRemove}
-        className={cx(
-          "opacity-0 group-hover:opacity-50 hover:!opacity-100 transition",
-          !canRemove && "!opacity-0 cursor-not-allowed"
-        )}
-        title="Remove condition"
-      >
-        <Trash2 className="h-4 w-4" />
-      </IconButton>
+      {/* Toggle enabled/disabled and Remove button */}
+      <div className="flex items-center gap-2 lg:gap-0">
+        <IconButton
+          aria-label={condition.enabled ? "Disable condition" : "Enable condition"}
+          onClick={handleToggleEnabled}
+          className="opacity-50 hover:opacity-100"
+          title={condition.enabled ? "Click to disable" : "Click to enable"}
+        >
+          {condition.enabled ? (
+            <ToggleRight className="h-4 w-4" style={{ color: "var(--sb-accent)" }} />
+          ) : (
+            <ToggleLeft className="h-4 w-4" />
+          )}
+        </IconButton>
+        
+        {/* Remove button */}
+        <IconButton
+          aria-label="Remove condition"
+          onClick={onRemove}
+          disabled={!canRemove}
+          className={cx(
+            "opacity-0 group-hover:opacity-50 hover:!opacity-100 transition",
+            !canRemove && "!opacity-0 cursor-not-allowed"
+          )}
+          title="Remove condition"
+        >
+          <Trash2 className="h-4 w-4" />
+        </IconButton>
+      </div>
     </div>
   );
 }
