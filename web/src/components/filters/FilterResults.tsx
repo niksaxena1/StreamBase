@@ -297,7 +297,11 @@ function TracksTable({
               )}
               <div className="min-w-0">
                 <Link
-                  href={`/catalog/${track.isrc}`}
+                  href={
+                    (track.spotify_artist_ids?.[0] ?? "").trim()
+                      ? `/catalog?artist_id=${encodeURIComponent(String(track.spotify_artist_ids?.[0] ?? ""))}&isrc=${encodeURIComponent(track.isrc)}`
+                      : `/catalog?isrc=${encodeURIComponent(track.isrc)}`
+                  }
                   className="font-medium text-sm hover:underline truncate block"
                   style={{ color: "var(--sb-text)" }}
                 >

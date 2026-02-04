@@ -232,6 +232,36 @@ export default async function CatalogPage({
     }
 
     const artistId = (sp.artist_id ?? "").trim();
+    const requestedIsrc = (sp.isrc ?? "").trim();
+
+    // If a track is specified without an artist, prefer the track's primary (first) artist.
+    // This makes "click a track → open Catalog" land on the correct artist automatically.
+    if (!artistId && requestedIsrc) {
+      const { data: trackRow } = await cachedQuery(
+        async () =>
+          await svc
+            .from("tracks")
+            .select("spotify_artist_ids")
+            .eq("isrc", requestedIsrc)
+            .maybeSingle(),
+        `catalog-isrc-primary-artist-${requestedIsrc}`,
+        3600,
+      );
+
+      const typed = (trackRow ?? null) as { spotify_artist_ids: string[] | null } | null;
+      const primaryArtistId = Array.isArray(typed?.spotify_artist_ids)
+        ? String(typed?.spotify_artist_ids?.[0] ?? "").trim()
+        : "";
+
+      if (primaryArtistId) {
+        const params = new URLSearchParams();
+        params.set("artist_id", primaryArtistId);
+        params.set("isrc", requestedIsrc);
+        if (sp.range) params.set("range", String(clampRangeDays(sp.range)));
+        redirect(`/catalog?${params.toString()}`);
+      }
+    }
+
     if (!artistId) {
       // Scalable default: pick the most recently seen track's first artist (no "scan 5k tracks").
       const { data: recent } = await cachedQuery(
@@ -324,7 +354,7 @@ export default async function CatalogPage({
   const latestRunDate = (latestRun as PlaylistDailyStatsRow | null)?.date ?? null;
   const startRunDate = latestRunDate ? addDays(latestRunDate, -rangeDays) : null;
 
-  const isrc = (sp.isrc ?? "").trim() || null;
+  const isrc = requestedIsrc || null;
 
   // Auto-select first track alphabetically if no track is selected and tracks are available
   if (!isrc && artistTracks.length > 0) {
@@ -405,21 +435,64 @@ export default async function CatalogPage({
   const artist28d = sumLastNDays(dailyArtistDesc, 28);
   const artist30d = sumLastNDays(dailyArtistDesc, 30);
 
-  const topByCumulative = ((topTotalRows ?? []) as CatalogTopTrackRow[]).map((r) => ({
-    isrc: r.isrc,
-    total: r.total ?? null,
-    daily: null,
-    name: r.name ?? null,
-    albumImageUrl: r.album_image_url ?? null,
-  }));
+  const trackMetaByIsrc = new Map<string, TrackRow>();
+  for (const t of artistTracks) trackMetaByIsrc.set(t.isrc, t);
 
-  const topByDaily = ((topDailyRows ?? []) as CatalogTopTrackRow[]).map((r) => ({
-    isrc: r.isrc,
-    daily: r.daily ?? null,
-    total: r.total ?? null,
-    name: r.name ?? null,
-    albumImageUrl: r.album_image_url ?? null,
-  }));
+  // Ensure top-track rows have artist metadata (even if the artist track list is capped).
+  const topIsrcs = new Set<string>();
+  for (const r of (topTotalRows ?? []) as CatalogTopTrackRow[]) topIsrcs.add(r.isrc);
+  for (const r of (topDailyRows ?? []) as CatalogTopTrackRow[]) topIsrcs.add(r.isrc);
+  const missingTopIsrcs = Array.from(topIsrcs).filter((x) => x && !trackMetaByIsrc.has(x));
+  if (missingTopIsrcs.length) {
+    const { data: metaRows, error } = await svc
+      .from("tracks")
+      .select("isrc,spotify_artist_ids,spotify_artist_names")
+      .in("isrc", missingTopIsrcs);
+    if (error) {
+      console.warn("Error fetching top-track artist metadata:", error);
+    } else {
+      for (const r of (metaRows ?? []) as Array<{
+        isrc: string;
+        spotify_artist_ids: string[] | null;
+        spotify_artist_names: string[] | null;
+      }>) {
+        if (!r?.isrc) continue;
+        trackMetaByIsrc.set(r.isrc, {
+          isrc: r.isrc,
+          name: null,
+          spotify_artist_ids: r.spotify_artist_ids ?? null,
+          spotify_artist_names: r.spotify_artist_names ?? null,
+          spotify_album_image_url: null,
+        });
+      }
+    }
+  }
+
+  const topByCumulative = ((topTotalRows ?? []) as CatalogTopTrackRow[]).map((r) => {
+    const meta = trackMetaByIsrc.get(r.isrc) ?? null;
+    return {
+      isrc: r.isrc,
+      total: r.total ?? null,
+      daily: null,
+      name: r.name ?? null,
+      albumImageUrl: r.album_image_url ?? null,
+      artistNames: meta?.spotify_artist_names ?? null,
+      artistIds: meta?.spotify_artist_ids ?? null,
+    };
+  });
+
+  const topByDaily = ((topDailyRows ?? []) as CatalogTopTrackRow[]).map((r) => {
+    const meta = trackMetaByIsrc.get(r.isrc) ?? null;
+    return {
+      isrc: r.isrc,
+      daily: r.daily ?? null,
+      total: r.total ?? null,
+      name: r.name ?? null,
+      albumImageUrl: r.album_image_url ?? null,
+      artistNames: meta?.spotify_artist_names ?? null,
+      artistIds: meta?.spotify_artist_ids ?? null,
+    };
+  });
 
   // Selected track panels (optional)
   const trackSeries =

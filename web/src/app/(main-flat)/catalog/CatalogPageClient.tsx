@@ -41,6 +41,8 @@ type TopTrack = {
   total: number | null;
   daily: number | null;
   albumImageUrl: string | null;
+  artistNames?: string[] | null;
+  artistIds?: string[] | null;
 };
 type TrackSeriesPoint = { date: string; value: number };
 type TrackDailyPoint = { date: string; daily: number; ma7?: number | null };
@@ -322,12 +324,23 @@ export function CatalogPageClient(props: {
                       )}
                     </TableCell>
                     <TableCell>
-                      <Link
-                        href={`/tracks/${t.isrc}`}
-                        className="font-medium transition-colors sb-link-hover"
-                      >
-                        {t.name ?? t.isrc}
-                      </Link>
+                      <div className="min-w-0">
+                        <Link
+                          href={hrefWithPatchedSearchParams(sp, { isrc: t.isrc })}
+                          className="block truncate font-medium transition-colors sb-link-hover"
+                        >
+                          {t.name ?? t.isrc}
+                        </Link>
+                        {t.artistNames?.length ? (
+                          <div className="mt-0.5 truncate text-xs" style={{ color: "var(--sb-muted)" }}>
+                            <ArtistLinks
+                              artistNames={t.artistNames}
+                              artistIds={t.artistIds}
+                              className="inline"
+                            />
+                          </div>
+                        ) : null}
+                      </div>
                     </TableCell>
                     <TableCell mono className="text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>
                       {t.isrc}
@@ -394,12 +407,23 @@ export function CatalogPageClient(props: {
                       )}
                     </TableCell>
                     <TableCell>
-                      <Link
-                        href={`/tracks/${t.isrc}`}
-                        className="font-medium transition-colors sb-link-hover"
-                      >
-                        {t.name ?? t.isrc}
-                      </Link>
+                      <div className="min-w-0">
+                        <Link
+                          href={hrefWithPatchedSearchParams(sp, { isrc: t.isrc })}
+                          className="block truncate font-medium transition-colors sb-link-hover"
+                        >
+                          {t.name ?? t.isrc}
+                        </Link>
+                        {t.artistNames?.length ? (
+                          <div className="mt-0.5 truncate text-xs" style={{ color: "var(--sb-muted)" }}>
+                            <ArtistLinks
+                              artistNames={t.artistNames}
+                              artistIds={t.artistIds}
+                              className="inline"
+                            />
+                          </div>
+                        ) : null}
+                      </div>
                     </TableCell>
                     <TableCell mono className="text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>
                       {t.isrc}
