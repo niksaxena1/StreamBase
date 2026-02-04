@@ -74,6 +74,22 @@ export default async function CollectorsPage({
   // for cached reads; access is still gated above.
   const svc = supabaseService();
 
+  // Cache-buster: include latest override id in cache keys so SQL-inserted overrides
+  // don't leave collector aggregates stale until TTL.
+  let overrideBuster = "0";
+  try {
+    const { data: latestOverride } = await svc
+      .from("track_daily_stream_overrides")
+      .select("id")
+      .order("id", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const id = Number((latestOverride as any)?.id ?? 0);
+    overrideBuster = Number.isFinite(id) && id > 0 ? String(id) : "0";
+  } catch {
+    // ignore
+  }
+
   // If custom start/end dates are provided, calculate range from them
   let rangeDays = clampRangeDays(sp.range);
   if (sp.start && sp.end) {
@@ -268,7 +284,7 @@ export default async function CollectorsPage({
       },
     },
     // bump cache key when changing server-side track pagination behavior
-    `collectors-${selectedCollector}-${rangeStart}-${rangeEnd}-${latestRunDate}-tracksPaged1`,
+    `collectors-${selectedCollector}-${rangeStart}-${rangeEnd}-${latestRunDate}-tracksPaged1-ov${overrideBuster}`,
     600,
   );
 
@@ -372,7 +388,7 @@ export default async function CollectorsPage({
               .in("playlist_key", selectedKeys)
               .order("est_revenue_daily_net", { ascending: false })
               .limit(15),
-          `collectors-top-${selectedCollector}-${latestRunDate}`,
+          `collectors-top-${selectedCollector}-${latestRunDate}-ov${overrideBuster}`,
           600,
         );
 

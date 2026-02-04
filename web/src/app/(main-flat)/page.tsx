@@ -161,6 +161,23 @@ export default async function Home({
   // for cached reads so cache revalidation can't fail due to missing cookies.
   const svc = supabaseService();
 
+  // Cache-buster: if overrides are inserted via SQL (outside the Settings UI),
+  // Next's `unstable_cache` may keep serving stale playlist_daily_stats until TTL.
+  // Include the latest override id in cache keys so any new override forces a refresh.
+  let overrideBuster = "0";
+  try {
+    const { data: latestOverride } = await svc
+      .from("track_daily_stream_overrides")
+      .select("id")
+      .order("id", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const id = Number((latestOverride as any)?.id ?? 0);
+    overrideBuster = Number.isFinite(id) && id > 0 ? String(id) : "0";
+  } catch {
+    // ignore (table may not exist yet)
+  }
+
   const playlistImageUrl =
     playlistKey === "all_catalog"
       ? null
@@ -188,7 +205,7 @@ export default async function Home({
         .eq("playlist_key", playlistKey)
         .order("date", { ascending: false })
         .limit(rangeDays),
-    `home-playlist-stats-${playlistKey}-${rangeDays}-${session.user.id}`,
+    `home-playlist-stats-v2-${playlistKey}-${rangeDays}-${session.user.id}-ov${overrideBuster}`,
     3600, // 1 hour
   );
 

@@ -40,6 +40,19 @@ type TrackOverrideRow = {
   note: string | null;
 };
 
+type TrackOverrideRowWithIsrc = {
+  date: string;
+  isrc: string;
+  note: string | null;
+};
+
+type ManualOverrideAnnotation = {
+  date: string;
+  note: string;
+  title?: string;
+  imageUrl?: string | null;
+};
+
 type PlaylistDailyStatsRow = { date: string };
 type CatalogArtistSeriesRow = { date: string; streams_cumulative: number | null };
 type CatalogTopTrackRow = {
@@ -202,6 +215,22 @@ export default async function CatalogPage({
     // access is still gated above.
     const svc = supabaseService();
 
+    // Cache-buster: include latest override id in cache keys so SQL-inserted overrides
+    // don't leave catalog aggregates/annotations stale until TTL.
+    let overrideBuster = "0";
+    try {
+      const { data: latestOverride } = await svc
+        .from("track_daily_stream_overrides")
+        .select("id")
+        .order("id", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const id = Number((latestOverride as any)?.id ?? 0);
+      overrideBuster = Number.isFinite(id) && id > 0 ? String(id) : "0";
+    } catch {
+      // ignore (table may not exist yet)
+    }
+
     const artistId = (sp.artist_id ?? "").trim();
     if (!artistId) {
       // Scalable default: pick the most recently seen track's first artist (no "scan 5k tracks").
@@ -324,7 +353,7 @@ export default async function CatalogPage({
               start_date: startRunDate,
               end_date: latestRunDate,
             }),
-          `catalog-artist-series-${artistId}-${startRunDate}-${latestRunDate}`,
+          `catalog-artist-series-${artistId}-${startRunDate}-${latestRunDate}-ov${overrideBuster}`,
           3600,
         )
       : Promise.resolve({ data: [] as any, error: null as any }),
@@ -336,7 +365,7 @@ export default async function CatalogPage({
               run_date: latestRunDate,
               limit_rows: 25,
             }),
-          `catalog-artist-top-total-${artistId}-${latestRunDate}`,
+          `catalog-artist-top-total-${artistId}-${latestRunDate}-ov${overrideBuster}`,
           3600,
         )
       : Promise.resolve({ data: [] as any, error: null as any }),
@@ -348,7 +377,7 @@ export default async function CatalogPage({
               run_date: latestRunDate,
               limit_rows: 25,
             }),
-          `catalog-artist-top-daily-${artistId}-${latestRunDate}`,
+          `catalog-artist-top-daily-${artistId}-${latestRunDate}-ov${overrideBuster}`,
           3600,
         )
       : Promise.resolve({ data: [] as any, error: null as any }),
@@ -410,7 +439,7 @@ export default async function CatalogPage({
                 .gte("date", startRunDate)
                 .lte("date", latestRunDate)
                 .order("date", { ascending: false }),
-            `track-overrides-${isrc}-${startRunDate}-${latestRunDate}`,
+            `track-overrides-${isrc}-${startRunDate}-${latestRunDate}-ov${overrideBuster}`,
             3600,
           )
         ).data
@@ -454,6 +483,81 @@ export default async function CatalogPage({
       albumImageUrl: t.spotify_album_image_url ?? null,
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
+
+  // Artist-wide override annotations for the top charts.
+  // Overrides are stored per-track per-run-date; annotate the artist charts for any track override.
+  const artistOverrideAnnotationsDataDate: ManualOverrideAnnotation[] = await (async () => {
+    if (!latestRunDate || !startRunDate) return [];
+    if (!isrcs.length) return [];
+
+    const metaByIsrc = new Map<string, TrackRow>();
+    for (const t of artistTracks) {
+      if (!t?.isrc) continue;
+      metaByIsrc.set(t.isrc, t);
+    }
+
+    const rowsAll: TrackOverrideRowWithIsrc[] = [];
+    const chunks = chunk(isrcs, 200);
+    for (let i = 0; i < chunks.length; i++) {
+      const isrcChunk = chunks[i] ?? [];
+      if (!isrcChunk.length) continue;
+
+      const { data: rowsRaw } = await cachedQuery(
+        async () =>
+          await svc
+            .from("track_daily_stream_overrides")
+            .select("date,isrc,note")
+            .in("isrc", isrcChunk)
+            .gte("date", startRunDate)
+            .lte("date", latestRunDate)
+            .order("date", { ascending: false })
+            .limit(500),
+        `catalog-artist-overrides-${artistId}-${startRunDate}-${latestRunDate}-c${i}-ov${overrideBuster}`,
+        3600,
+      );
+
+      rowsAll.push(...(((rowsRaw ?? []) as TrackOverrideRowWithIsrc[]) ?? []));
+    }
+
+    const deduped: TrackOverrideRowWithIsrc[] = [];
+    const seen = new Set<string>();
+    for (const r of rowsAll) {
+      const d = (r?.date ?? "").trim();
+      const isrc = (r?.isrc ?? "").trim();
+      if (!d || !isrc) continue;
+      const key = `${d}||${isrc}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      deduped.push({ date: d, isrc, note: r.note ?? null });
+    }
+
+    deduped.sort((a, b) => {
+      const d = b.date.localeCompare(a.date);
+      if (d !== 0) return d;
+      return a.isrc.localeCompare(b.isrc);
+    });
+
+    return deduped.slice(0, 500).map((o) => {
+      const t = metaByIsrc.get(o.isrc) ?? null;
+      const artist = t?.spotify_artist_names?.[0] ?? null;
+      const trackName = t?.name ?? null;
+      const title =
+        artist && trackName
+          ? `${artist} - ${trackName}`
+          : trackName
+            ? trackName
+            : artist
+              ? artist
+              : o.isrc;
+
+      return {
+        date: dataDateFromRunDate(o.date),
+        title,
+        imageUrl: t?.spotify_album_image_url ?? null,
+        note: (o.note ?? "").trim() || `Manual override (ISRC: ${o.isrc})`,
+      };
+    });
+  })();
 
   // Artist images for dropdown + header. Use the cached path to avoid hammering Spotify on every request.
   // We cap thumbnails to avoid very large, cold-cache Spotify fetches.
@@ -529,6 +633,7 @@ export default async function CatalogPage({
         trackCumDesc={trackCumDesc}
         trackDailyWithMaDesc={trackDailyWithMaDesc}
         trackOverrideAnnotations={trackOverrideAnnotationsDataDate}
+        artistOverrideAnnotations={artistOverrideAnnotationsDataDate}
         track24h={track24h}
         track7d={track7d}
         track28d={track28d}

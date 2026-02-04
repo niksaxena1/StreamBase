@@ -3,10 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { supabaseService } from "@/lib/supabase/service";
 import { cachedQueries } from "@/lib/supabase/cache";
-import { formatDateISO, formatInt } from "@/lib/format";
-import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/GlassTable";
-import { ArtistLinks } from "@/components/ui/ArtistLinks";
-import { SectionHeader } from "@/components/ui/SectionHeader";
+import { PlaylistTracksSectionClient } from "./PlaylistTracksSectionClient";
 
 function errorMessage(err: unknown): string {
   if (!err) return "unknown error";
@@ -90,14 +87,17 @@ export async function PlaylistTracksSection(props: {
 
   if (!props.latestRunDate) {
     return (
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-        <div className="space-y-3">
-          <SectionHeader title="Tracks currently in playlist" />
-          <GlassTable headers={["", "Track", "ISRC", "Daily", "Total", "Added"]}>
-            <EmptyState colSpan={6} message="No stats date available yet" />
-          </GlassTable>
-        </div>
-      </div>
+      <PlaylistTracksSectionClient
+        playlistKey={props.playlistKey}
+        latestRunDate={props.latestRunDate}
+        currentRows={[]}
+        addedLast7Days={[]}
+        removed={[]}
+        topErrMessage="No stats date available yet"
+        addedErrMessage={null}
+        removedErrMessage={null}
+        debug={null}
+      />
     );
   }
 
@@ -197,190 +197,17 @@ export async function PlaylistTracksSection(props: {
   })();
 
   return (
-    <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-      <div className="space-y-3">
-        <SectionHeader title="Tracks currently in playlist" />
-        {debug ? (
-          <details
-            className="rounded-xl border px-3 py-2 text-xs"
-            style={{ borderColor: "var(--sb-border)", color: "var(--sb-muted)" }}
-          >
-            <summary className="cursor-pointer select-none">Debug: playlist_memberships snapshot</summary>
-            <div className="mt-2 grid grid-cols-1 gap-1 font-mono">
-              <div>playlist_key={props.playlistKey}</div>
-              <div>run_date={props.latestRunDate}</div>
-              <div>rows_total={debug.totalRows ?? "?"}</div>
-              <div>rows_valid_to_null={debug.nullValidToRows ?? "?"}</div>
-              <div>rows_active_at_run_date={debug.activeAtRunDateRows ?? "?"}</div>
-              <div>valid_from_min={debug.minValidFrom ?? "?"}</div>
-              <div>valid_from_max={debug.maxValidFrom ?? "?"}</div>
-            </div>
-          </details>
-        ) : null}
-        <GlassTable headers={["", "Track", "ISRC", "Daily", "Total", "Added"]}>
-          {topErr ? (
-            <EmptyState
-              colSpan={6}
-              message={`Error loading current tracks: ${errorMessage(topErr)}`}
-            />
-          ) : null}
-          {currentRows.map((t) => (
-            <TableRow key={t.isrc}>
-              <TableCell>
-                {t.album_image_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={t.album_image_url}
-                    alt="Album cover"
-                    className="h-8 w-8 rounded-lg object-cover sb-ring"
-                  />
-                ) : (
-                  <div className="h-8 w-8 rounded-lg sb-ring bg-white/60" />
-                )}
-              </TableCell>
-              <TableCell>
-                <Link
-                  href={`/tracks/${t.isrc}`}
-                  className="font-medium transition-colors sb-link-hover"
-                >
-                  {t.name ?? t.isrc}
-                </Link>
-                {t.artist_names?.length ? (
-                  <div className="mt-0.5 text-xs opacity-60">
-                    <ArtistLinks artistNames={t.artist_names} artistIds={t.artist_ids ?? undefined} />
-                  </div>
-                ) : null}
-              </TableCell>
-              <TableCell mono className="text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>
-                {t.isrc}
-              </TableCell>
-              <TableCell className="font-medium sb-positive">
-                {t.daily === null ? "—" : `+${formatInt(t.daily)}`}
-              </TableCell>
-              <TableCell>{t.total === null ? "—" : formatInt(t.total)}</TableCell>
-              <TableCell mono className="text-xs">
-                {formatDateISO(t.valid_from)}
-              </TableCell>
-            </TableRow>
-          ))}
-          {!topErr && !currentRows.length && <EmptyState colSpan={6} message="No active tracks found" />}
-        </GlassTable>
-      </div>
-
-      <div className="flex h-full flex-col gap-3">
-        <div className="space-y-3">
-          <SectionHeader
-            title="Tracks added (last 7 days)"
-            subtitle="Based on membership added date."
-          />
-          <GlassTable headers={["", "Track", "ISRC", "Added"]} maxBodyHeightClassName="max-h-[260px]">
-            {addedErr ? (
-              <EmptyState
-                colSpan={4}
-                message={`Error loading added tracks: ${errorMessage(addedErr)}`}
-              />
-            ) : null}
-            {addedLast7Days.map((m, idx) => (
-              <TableRow key={`${m.isrc}-${m.valid_from}-${idx}`}>
-                <TableCell>
-                  {m.album_image_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={m.album_image_url}
-                      alt="Album cover"
-                      className="h-8 w-8 rounded-lg object-cover sb-ring"
-                    />
-                  ) : (
-                    <div className="h-8 w-8 rounded-lg sb-ring bg-white/60" />
-                  )}
-                </TableCell>
-                <TableCell>
-                  <Link
-                    href={`/tracks/${m.isrc}`}
-                    className="font-medium transition-colors sb-link-hover"
-                  >
-                    {m.name ?? m.isrc}
-                  </Link>
-                  {m.artist_names?.length ? (
-                    <div className="mt-0.5 text-xs opacity-60">
-                      <ArtistLinks artistNames={m.artist_names} artistIds={m.artist_ids ?? undefined} />
-                    </div>
-                  ) : null}
-                </TableCell>
-                <TableCell mono className="text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>
-                  {m.isrc}
-                </TableCell>
-                <TableCell mono className="text-xs">
-                  {formatDateISO(m.valid_from)}
-                </TableCell>
-              </TableRow>
-            ))}
-            {!addedErr && !addedLast7Days.length && (
-              <EmptyState colSpan={4} message="No tracks added in the last 7 days" />
-            )}
-          </GlassTable>
-        </div>
-
-        <div className="flex flex-1 flex-col gap-3">
-          <SectionHeader
-            title="Tracks removed"
-            subtitle="Most recent removals first."
-          />
-          <GlassTable
-            className="flex-1"
-            bodyClassName="flex-1"
-            maxBodyHeightClassName="flex-1"
-            headers={["", "Track", "ISRC", "Removed", "Added"]}
-          >
-            {removedErr ? (
-              <EmptyState
-                colSpan={5}
-                message={`Error loading removed tracks: ${errorMessage(removedErr)}`}
-              />
-            ) : null}
-            {removed.map((m, idx) => (
-              <TableRow key={`${m.isrc}-${m.valid_from}-${idx}`}>
-                <TableCell>
-                  {m.album_image_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={m.album_image_url}
-                      alt="Album cover"
-                      className="h-8 w-8 rounded-lg object-cover sb-ring"
-                    />
-                  ) : (
-                    <div className="h-8 w-8 rounded-lg sb-ring bg-white/60" />
-                  )}
-                </TableCell>
-                <TableCell>
-                  <Link
-                    href={`/tracks/${m.isrc}`}
-                    className="font-medium transition-colors sb-link-hover"
-                  >
-                    {m.name ?? m.isrc}
-                  </Link>
-                  {m.artist_names?.length ? (
-                    <div className="mt-0.5 text-xs opacity-60">
-                      <ArtistLinks artistNames={m.artist_names} artistIds={m.artist_ids ?? undefined} />
-                    </div>
-                  ) : null}
-                </TableCell>
-                <TableCell mono className="text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>
-                  {m.isrc}
-                </TableCell>
-                <TableCell mono className="text-xs">
-                  {m.valid_to ? formatDateISO(m.valid_to) : "—"}
-                </TableCell>
-                <TableCell mono className="text-xs">
-                  {formatDateISO(m.valid_from)}
-                </TableCell>
-              </TableRow>
-            ))}
-            {!removedErr && !removed.length && <EmptyState colSpan={5} message="No removed tracks found" />}
-          </GlassTable>
-        </div>
-      </div>
-    </div>
+    <PlaylistTracksSectionClient
+      playlistKey={props.playlistKey}
+      latestRunDate={props.latestRunDate}
+      currentRows={currentRows}
+      addedLast7Days={addedLast7Days}
+      removed={removed}
+      topErrMessage={topErr ? errorMessage(topErr) : null}
+      addedErrMessage={addedErr ? errorMessage(addedErr) : null}
+      removedErrMessage={removedErr ? errorMessage(removedErr) : null}
+      debug={debug}
+    />
   );
 }
 

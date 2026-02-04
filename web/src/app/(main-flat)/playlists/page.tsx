@@ -116,6 +116,22 @@ export default async function PlaylistsPage({
   // client for cached reads; access is still gated above.
   const svc = supabaseService();
 
+  // Cache-buster: include latest override id in cache keys so SQL-inserted overrides
+  // don't leave playlist stats stale until TTL.
+  let overrideBuster = "0";
+  try {
+    const { data: latestOverride } = await svc
+      .from("track_daily_stream_overrides")
+      .select("id")
+      .order("id", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const id = Number((latestOverride as any)?.id ?? 0);
+    overrideBuster = Number.isFinite(id) && id > 0 ? String(id) : "0";
+  } catch {
+    // ignore
+  }
+
   // Backwards-compat: old query-driven list view
   if ((sp.view ?? "").trim().toLowerCase() === "list") {
     redirect("/playlists/config");
@@ -160,7 +176,7 @@ export default async function PlaylistsPage({
           .order("date", { ascending: false })
           .limit(1)
           .maybeSingle(),
-      `playlist-latest-${playlistKey}`,
+      `playlist-latest-v2-${playlistKey}-ov${overrideBuster}`,
       3600,
     ),
     cachedQuery(
@@ -172,7 +188,7 @@ export default async function PlaylistsPage({
           .order("date", { ascending: false })
           .range(1, 1)
           .maybeSingle(),
-      `playlist-prev-${playlistKey}`,
+      `playlist-prev-v2-${playlistKey}-ov${overrideBuster}`,
       3600,
     ),
     cachedQuery(
@@ -183,7 +199,7 @@ export default async function PlaylistsPage({
           .eq("playlist_key", playlistKey)
           .order("date", { ascending: false })
           .limit(rangeDays),
-      `playlist-history-${playlistKey}-${rangeDays}`,
+      `playlist-history-v2-${playlistKey}-${rangeDays}-ov${overrideBuster}`,
       3600,
     ),
   ]);

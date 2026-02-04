@@ -63,6 +63,7 @@ export function CatalogPageClient(props: {
   artist28d: number;
   artist30d: number;
   trackCount: number;
+  artistOverrideAnnotations: Array<{ date: string; note: string; title?: string; imageUrl?: string | null }>;
   artists: ArtistOption[];
   artistId: string;
   tracks: TrackOption[];
@@ -270,6 +271,7 @@ export function CatalogPageClient(props: {
             artist28d={props.artist28d}
             artist30d={props.artist30d}
             trackCount={props.trackCount}
+            overrideAnnotations={props.artistOverrideAnnotations}
           />
 
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">

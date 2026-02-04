@@ -33,6 +33,7 @@ export function CatalogMetricsClient(props: {
   artist28d: number;
   artist30d: number;
   trackCount: number;
+  overrideAnnotations: Array<{ date: string; note: string; title?: string; imageUrl?: string | null }>;
 }) {
   const { streamPayoutPerStreamUsd } = usePayoutRate();
   const { metric } = useMetric();
@@ -101,6 +102,7 @@ export function CatalogMetricsClient(props: {
   // Use different colors based on metric: blue for tracks, emerald for revenue, accent stroke for streams
   // Note: streams color is left undefined to let the chart component use theme-aware accentStroke
   const chartColor = metric === "tracks" ? "#3b82f6" : metric === "revenue" ? "#10b981" : undefined;
+  const chartAnnotations = metric === "tracks" ? [] : props.overrideAnnotations;
 
   return (
     <div className="space-y-4">
@@ -130,6 +132,7 @@ export function CatalogMetricsClient(props: {
               heightPx={220}
               isCumulative={true}
               color={chartColor}
+              annotations={chartAnnotations}
             />
           </div>
         </SpotlightCard>
@@ -158,6 +161,7 @@ export function CatalogMetricsClient(props: {
               yTickFormat={yTickFormat}
               heightPx={220}
               dailyColor={chartColor}
+              annotations={chartAnnotations}
             />
           </div>
         </SpotlightCard>
