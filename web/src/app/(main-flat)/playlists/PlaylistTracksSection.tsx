@@ -1,4 +1,3 @@
-import Link from "next/link";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { supabaseService } from "@/lib/supabase/service";
@@ -93,7 +92,7 @@ export async function PlaylistTracksSection(props: {
         currentRows={[]}
         addedLast7Days={[]}
         removed={[]}
-        topErrMessage="No stats date available yet"
+        topErrMessage={null}
         addedErrMessage={null}
         removedErrMessage={null}
         debug={null}

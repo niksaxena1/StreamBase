@@ -70,17 +70,25 @@ export function PlaylistTracksSectionClient(props: {
 }) {
   const { metric } = useMetric();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
+  const hasStatsDate = !!props.latestRunDate;
 
   // Track-level tables only make sense for streams/revenue; treat "tracks" as streams.
   const mode: "streams" | "revenue" = metric === "revenue" ? "revenue" : "streams";
   const dailyLabel = mode === "revenue" ? "Daily revenue" : "Daily streams";
   const totalLabel = mode === "revenue" ? "Total revenue" : "Total streams";
 
+  // Match global metric coloring used across the app.
+  // This table treats "tracks" as streams, so it uses the streams color for both.
+  const numberStyle =
+    metric === "revenue"
+      ? ({ color: "#10b981" } as const) // emerald-500
+      : ({ color: "var(--sb-accent-stroke)" } as const);
+
   return (
     <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
       <div className="space-y-3">
         <SectionHeader title="Tracks currently in playlist" />
-        {props.debug ? (
+        {hasStatsDate && props.debug ? (
           <details
             className="rounded-xl border px-3 py-2 text-xs"
             style={{ borderColor: "var(--sb-border)", color: "var(--sb-muted)" }}
@@ -98,7 +106,9 @@ export function PlaylistTracksSectionClient(props: {
           </details>
         ) : null}
         <GlassTable headers={["", "Track", "ISRC", dailyLabel, totalLabel, "Added"]}>
-          {props.topErrMessage ? (
+          {!hasStatsDate ? (
+            <EmptyState colSpan={6} message="No stats date available yet" />
+          ) : props.topErrMessage ? (
             <EmptyState colSpan={6} message={`Error loading current tracks: ${props.topErrMessage}`} />
           ) : null}
           {props.currentRows.map((t) => (
@@ -124,10 +134,10 @@ export function PlaylistTracksSectionClient(props: {
               <TableCell mono className="text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>
                 {t.isrc}
               </TableCell>
-              <TableCell className="font-medium sb-positive">
+              <TableCell className="font-medium" style={numberStyle}>
                 {t.daily === null ? "—" : fmtDelta({ mode, value: t.daily, streamPayoutPerStreamUsd })}
               </TableCell>
-              <TableCell>
+              <TableCell className="font-medium" style={numberStyle}>
                 {t.total === null ? "—" : fmtTotal({ mode, value: t.total, streamPayoutPerStreamUsd })}
               </TableCell>
               <TableCell mono className="text-xs">
@@ -135,13 +145,22 @@ export function PlaylistTracksSectionClient(props: {
               </TableCell>
             </TableRow>
           ))}
-          {!props.topErrMessage && !props.currentRows.length && <EmptyState colSpan={6} message="No active tracks found" />}
+          {hasStatsDate && !props.topErrMessage && !props.currentRows.length && (
+            <EmptyState colSpan={6} message="No active tracks found" />
+          )}
         </GlassTable>
       </div>
 
       <div className="flex h-full flex-col gap-3">
         <div className="space-y-3">
-          <SectionHeader title="Tracks added (last 7 days)" subtitle="Based on membership added date." />
+          <SectionHeader
+            title="Tracks added (last 7 days)"
+            actions={
+              <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
+                Based on membership added date.
+              </div>
+            }
+          />
           <GlassTable headers={["", "Track", "ISRC", "Added"]} maxBodyHeightClassName="max-h-[260px]">
             {props.addedErrMessage ? (
               <EmptyState colSpan={4} message={`Error loading added tracks: ${props.addedErrMessage}`} />
@@ -181,7 +200,14 @@ export function PlaylistTracksSectionClient(props: {
         </div>
 
         <div className="flex flex-1 flex-col gap-3">
-          <SectionHeader title="Tracks removed" subtitle="Most recent removals first." />
+          <SectionHeader
+            title="Tracks removed"
+            actions={
+              <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
+                Most recent removals first.
+              </div>
+            }
+          />
           <GlassTable
             className="flex-1"
             bodyClassName="flex-1"
