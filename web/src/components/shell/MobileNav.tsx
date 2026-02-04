@@ -24,9 +24,37 @@ export function MobileNav({
   const [hasScrolled, setHasScrolled] = useState(false);
   const [isScrolling, setIsScrolling] = useState(false);
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
+  const [vvBottomOffset, setVvBottomOffset] = useState(0);
   const scrollTimerRef = useRef<number | null>(null);
   const prevBadgeCount = useRef(healthBadgeCount);
   const [badgeAnimating, setBadgeAnimating] = useState(false);
+
+  // Keep the nav pinned to the *visual* viewport bottom (fixes mobile scroll/zoom UI jitter).
+  // On mobile browsers, `position: fixed` is relative to the layout viewport; during pinch-zoom,
+  // address-bar show/hide, or keyboard interactions, the visual viewport can shift.
+  // Using VisualViewport bottom inset keeps the bar stable.
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.visualViewport) return;
+
+    const vv = window.visualViewport;
+
+    const update = () => {
+      // bottom gap between layout viewport and visual viewport
+      const bottomGap = window.innerHeight - vv.height - vv.offsetTop;
+      setVvBottomOffset(Math.max(0, Math.round(bottomGap)));
+    };
+
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    window.addEventListener("resize", update);
+
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+    };
+  }, []);
 
   // Detect keyboard open via viewport height change (#10)
   useEffect(() => {
@@ -84,13 +112,14 @@ export function MobileNav({
   return (
     <nav
       className={[
-        "fixed bottom-0 left-0 right-0 z-50 block sb-glass-nav sm:hidden",
+        "fixed left-0 right-0 z-50 block sb-glass-nav sm:hidden",
         hasScrolled ? "sb-glass-nav--scrolled" : "",
         isScrolling ? "sb-glass-nav--scrolling" : "",
         isKeyboardOpen ? "sb-glass-nav--keyboard" : "",
       ].join(" ")}
       style={{
         borderColor: "var(--sb-border)",
+        bottom: `${vvBottomOffset}px`,
         // #7: Adaptive safe area handling
         paddingBottom: "env(safe-area-inset-bottom, 0px)",
         minHeight: "calc(72px + env(safe-area-inset-bottom, 0px))",

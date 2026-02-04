@@ -33,7 +33,7 @@ export function AppShell(props: { children: ReactNode; mainSurface?: MainSurface
         </div>
       </div>
 
-      <div className="mx-auto flex w-full max-w-[1600px] gap-3 px-3 py-3 pb-24 sm:pb-3">
+      <div className="mx-auto flex w-full max-w-[1600px] gap-3 px-3 py-3 pb-[calc(72px+env(safe-area-inset-bottom,0px)+24px)] sm:pb-3">
         <SideRailWithBadge />
 
         <div className="flex min-w-0 flex-1 flex-col gap-3">
