@@ -1,10 +1,14 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { Search, X, Music } from "lucide-react";
+import { Search, X, Music, Download } from "lucide-react";
 import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
-import { formatInt } from "@/lib/format";
+import { formatInt, formatUsd2 } from "@/lib/format";
 import { foldForSearch } from "@/lib/searchFold";
+import { useMetric } from "@/components/metrics/MetricContext";
+import { downloadCsv, todayIsoDate } from "@/lib/csv";
+import { IconButton } from "@/components/ui/Button";
+import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 
 type PlaylistRow = {
   playlist_key: string;
@@ -19,6 +23,7 @@ type PlaylistRow = {
 
 type PlaylistStats = {
   track_count: number | null;
+  daily_tracks_net: number | null;
   total_streams_cumulative: number | null;
   daily_streams_net: number | null;
 };
@@ -28,7 +33,7 @@ type PlaylistFiltersProps = {
   statsMap: Record<string, PlaylistStats>;
 };
 
-type SortOption = "name" | "tracks" | "streams" | "daily" | "type";
+type SortOption = "name" | "total" | "daily" | "type";
 type FilterType = "all" | "Catalog" | "Label" | "Entity" | "Distro" | "Standard";
 
 export function PlaylistFilters({ playlists, statsMap }: PlaylistFiltersProps) {
@@ -36,6 +41,8 @@ export function PlaylistFilters({ playlists, statsMap }: PlaylistFiltersProps) {
   const [typeFilter, setTypeFilter] = useState<FilterType>("all");
   const [sortBy, setSortBy] = useState<SortOption>("name");
   const [sortAsc, setSortAsc] = useState(true);
+  const { metric } = useMetric();
+  const { streamPayoutPerStreamUsd } = usePayoutRate();
 
   const filteredAndSorted = useMemo(() => {
     let result = [...playlists];
@@ -68,36 +75,49 @@ export function PlaylistFilters({ playlists, statsMap }: PlaylistFiltersProps) {
 
       let comparison = 0;
 
+      const statsA = statsMap[a.playlist_key];
+      const statsB = statsMap[b.playlist_key];
+
+      const totalA =
+        metric === "tracks"
+          ? statsA?.track_count ?? 0
+          : metric === "revenue"
+            ? (statsA?.total_streams_cumulative ?? 0) * streamPayoutPerStreamUsd
+            : statsA?.total_streams_cumulative ?? 0;
+      const totalB =
+        metric === "tracks"
+          ? statsB?.track_count ?? 0
+          : metric === "revenue"
+            ? (statsB?.total_streams_cumulative ?? 0) * streamPayoutPerStreamUsd
+            : statsB?.total_streams_cumulative ?? 0;
+
+      const dailyA =
+        metric === "tracks"
+          ? statsA?.daily_tracks_net ?? 0
+          : metric === "revenue"
+            ? (statsA?.daily_streams_net ?? 0) * streamPayoutPerStreamUsd
+            : statsA?.daily_streams_net ?? 0;
+      const dailyB =
+        metric === "tracks"
+          ? statsB?.daily_tracks_net ?? 0
+          : metric === "revenue"
+            ? (statsB?.daily_streams_net ?? 0) * streamPayoutPerStreamUsd
+            : statsB?.daily_streams_net ?? 0;
+
       switch (sortBy) {
         case "name":
           comparison = a.display_name.localeCompare(b.display_name);
           break;
         case "type":
-          const typeA = a.playlist_type || (a.is_catalog ? "Catalog" : "Standard");
-          const typeB = b.playlist_type || (b.is_catalog ? "Catalog" : "Standard");
-          comparison = typeA.localeCompare(typeB);
+          comparison = (a.playlist_type || (a.is_catalog ? "Catalog" : "Standard")).localeCompare(
+            b.playlist_type || (b.is_catalog ? "Catalog" : "Standard"),
+          );
           break;
-        case "tracks": {
-          const statsA = statsMap[a.playlist_key];
-          const statsB = statsMap[b.playlist_key];
-          const tracksA = statsA?.track_count ?? 0;
-          const tracksB = statsB?.track_count ?? 0;
-          comparison = tracksA - tracksB;
-          break;
-        }
-        case "streams": {
-          const statsA = statsMap[a.playlist_key];
-          const statsB = statsMap[b.playlist_key];
-          const streamsA = statsA?.total_streams_cumulative ?? 0;
-          const streamsB = statsB?.total_streams_cumulative ?? 0;
-          comparison = streamsA - streamsB;
+        case "total": {
+          comparison = totalA - totalB;
           break;
         }
         case "daily": {
-          const statsA = statsMap[a.playlist_key];
-          const statsB = statsMap[b.playlist_key];
-          const dailyA = statsA?.daily_streams_net ?? 0;
-          const dailyB = statsB?.daily_streams_net ?? 0;
           comparison = dailyA - dailyB;
           break;
         }
@@ -107,7 +127,13 @@ export function PlaylistFilters({ playlists, statsMap }: PlaylistFiltersProps) {
     });
 
     return result;
-  }, [playlists, statsMap, searchQuery, typeFilter, sortBy, sortAsc]);
+  }, [playlists, statsMap, searchQuery, typeFilter, sortBy, sortAsc, metric, streamPayoutPerStreamUsd]);
+
+  const totalHeader = metric === "tracks" ? "TOTAL TRACKS" : metric === "revenue" ? "TOTAL REVENUE" : "TOTAL STREAMS";
+  const dailyHeader = metric === "tracks" ? "DAILY TRACKS" : metric === "revenue" ? "DAILY REVENUE" : "DAILY STREAMS";
+
+  const metricColor =
+    metric === "tracks" ? "#3b82f6" : metric === "revenue" ? "#10b981" : "var(--sb-accent)";
 
   return (
     <div className="flex h-full flex-col space-y-3">
@@ -163,12 +189,10 @@ export function PlaylistFilters({ playlists, statsMap }: PlaylistFiltersProps) {
         >
           <option value="name-asc">Name ↑</option>
           <option value="name-desc">Name ↓</option>
-          <option value="tracks-desc">Tracks ↓</option>
-          <option value="tracks-asc">Tracks ↑</option>
-          <option value="streams-desc">Streams ↓</option>
-          <option value="streams-asc">Streams ↑</option>
-          <option value="daily-desc">L24H ↓</option>
-          <option value="daily-asc">L24H ↑</option>
+          <option value="total-desc">{totalHeader} ↓</option>
+          <option value="total-asc">{totalHeader} ↑</option>
+          <option value="daily-desc">{dailyHeader} ↓</option>
+          <option value="daily-asc">{dailyHeader} ↑</option>
           <option value="type-asc">Type ↑</option>
           <option value="type-desc">Type ↓</option>
         </select>
@@ -180,13 +204,68 @@ export function PlaylistFilters({ playlists, statsMap }: PlaylistFiltersProps) {
       </div>
 
       {/* Table */}
-      <div className="flex-1 min-h-0">
+      <div className="flex-1 min-h-0 flex flex-col">
+        <div className="flex items-center justify-end mb-2">
+          <IconButton
+            type="button"
+            onClick={() => {
+              const csvData = filteredAndSorted.map((p) => {
+                const stats = statsMap[p.playlist_key];
+                const type = p.playlist_type || (p.is_catalog ? "Catalog" : "Standard");
+                const totalStreams = stats?.total_streams_cumulative ?? null;
+                const dailyStreams = stats?.daily_streams_net ?? null;
+                const totalTracks = stats?.track_count ?? null;
+                const dailyTracks = stats?.daily_tracks_net ?? null;
+                const totalRevenueUsd = totalStreams == null ? null : totalStreams * streamPayoutPerStreamUsd;
+                const dailyRevenueUsd = dailyStreams == null ? null : dailyStreams * streamPayoutPerStreamUsd;
+                return {
+                  "Playlist Key": p.playlist_key,
+                  Name: p.display_name,
+                  Type: type,
+                  "Total Streams": totalStreams,
+                  "Daily Streams": dailyStreams,
+                  "Total Revenue (USD)": totalRevenueUsd,
+                  "Daily Revenue (USD)": dailyRevenueUsd,
+                  "Total Tracks": totalTracks,
+                  "Daily Tracks": dailyTracks,
+                };
+              });
+              downloadCsv({
+                filename: `playlist-config-export-${todayIsoDate()}.csv`,
+                rows: csvData,
+              });
+            }}
+            title="Download table as CSV"
+            aria-label="Download table as CSV"
+          >
+            <Download className="h-3.5 w-3.5" />
+          </IconButton>
+        </div>
         <GlassTable 
-          headers={["", "Name", "Tracks", "Cum. Streams", "L24H Streams", "Type"]}
+          headers={["", "Name", totalHeader, dailyHeader, "Type"]}
           className="[&_th:first-child]:w-12 [&_td:first-child]:w-12 h-full [&>div]:h-full [&>div]:max-h-none"
         >
         {filteredAndSorted.map((p) => {
           const stats = statsMap[p.playlist_key];
+          
+          const totalValue =
+            metric === "tracks"
+              ? stats?.track_count
+              : metric === "revenue"
+                ? (stats?.total_streams_cumulative == null ? null : stats.total_streams_cumulative * streamPayoutPerStreamUsd)
+                : stats?.total_streams_cumulative;
+
+          const dailyValue =
+            metric === "tracks"
+              ? stats?.daily_tracks_net
+              : metric === "revenue"
+                ? (stats?.daily_streams_net == null ? null : stats.daily_streams_net * streamPayoutPerStreamUsd)
+                : stats?.daily_streams_net;
+
+          const formatValue = (n: number | null | undefined) => {
+            return metric === "revenue" ? formatUsd2(n) : formatInt(n);
+          };
+          
           return (
             <TableRow key={p.playlist_key}>
               <TableCell className="w-12">
@@ -212,24 +291,24 @@ export function PlaylistFilters({ playlists, statsMap }: PlaylistFiltersProps) {
                 <span className="font-medium">{p.display_name}</span>
               </TableCell>
               <TableCell>
-                {formatInt(stats?.track_count ?? null)}
+                <span style={{ color: metricColor }} className="font-medium">
+                  {formatValue(totalValue ?? null)}
+                </span>
               </TableCell>
               <TableCell>
-                {formatInt(stats?.total_streams_cumulative ?? null)}
-              </TableCell>
-              <TableCell>
-                {stats?.daily_streams_net !== null && stats?.daily_streams_net !== undefined ? (
-                  <span className="sb-positive font-medium">
-                    +{formatInt(stats.daily_streams_net)}
+                {dailyValue !== null && dailyValue !== undefined ? (
+                  <span style={{ color: metricColor }} className="font-medium">
+                    {dailyValue > 0 ? "+" : ""}
+                    {formatValue(dailyValue)}
                   </span>
                 ) : (
-                  formatInt(null)
+                  <span style={{ color: "var(--sb-muted)" }}>{formatInt(null)}</span>
                 )}
               </TableCell>
               <TableCell>
                 {(() => {
                   const type = p.playlist_type || (p.is_catalog ? "Catalog" : "Standard");
-                  const typeColors: Record<string, { bg: string; text: string }> = {
+                  const typeColors = {
                     Catalog: {
                       bg: "bg-lime-400/20",
                       text: "text-lime-800 dark:text-lime-300",
@@ -246,8 +325,9 @@ export function PlaylistFilters({ playlists, statsMap }: PlaylistFiltersProps) {
                       bg: "bg-orange-400/20",
                       text: "text-orange-800 dark:text-orange-300",
                     },
-                  };
-                  const colors = typeColors[type] || {
+                  } as const;
+                  const colors =
+                    (typeColors as Record<string, { bg: string; text: string }>)[type] || {
                     bg: "bg-black/10",
                     text: "text-black/80 dark:text-white/60",
                   };
@@ -263,7 +343,7 @@ export function PlaylistFilters({ playlists, statsMap }: PlaylistFiltersProps) {
         })}
         {!filteredAndSorted.length && (
           <TableRow>
-            <TableCell className="py-8 text-center opacity-50" colSpan={6}>
+            <TableCell className="py-8 text-center opacity-50" colSpan={5}>
               No playlists found.
             </TableCell>
           </TableRow>

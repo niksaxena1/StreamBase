@@ -168,36 +168,6 @@ export function PlaylistMetricsClient(props: {
             />
           </div>
         </SpotlightCard>
-
-        {props.metric === "tracks" && (
-          <SpotlightCard className="lg:col-span-12 p-3 overflow-visible">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
-                  Track count over time
-                </div>
-                <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
-                  Daily snapshots from ingestion.
-                </div>
-              </div>
-              <ChartCsvDownloadButton
-                rows={cumulativeSeries as unknown as Array<Record<string, unknown>>}
-                filename={`playlist-${slugifyForFilename("track-count-over-time")}-${props.rangeDays}d-${todayIsoDate()}.csv`}
-                title="Download CSV"
-              />
-            </div>
-            <div className="mt-2 min-h-[180px]">
-              <DailyStreamsChart
-                data={cumulativeSeries}
-                valueLabel="Tracks"
-                valueFormat="int"
-                yTickFormat="int"
-                heightPx={200}
-                color="#60a5fa"
-              />
-            </div>
-          </SpotlightCard>
-        )}
       </div>
     </div>
   );

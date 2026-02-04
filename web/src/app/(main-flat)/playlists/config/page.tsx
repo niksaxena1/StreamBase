@@ -68,7 +68,15 @@ export default async function PlaylistsConfigPage({
 
   // Fetch latest stats for all playlists
   const playlistKeys = playlists.map((p) => p.playlist_key);
-  const statsMap = new Map<string, { track_count: number | null; total_streams_cumulative: number | null; daily_streams_net: number | null }>();
+  const statsMap = new Map<
+    string,
+    {
+      track_count: number | null;
+      daily_tracks_net: number | null;
+      total_streams_cumulative: number | null;
+      daily_streams_net: number | null;
+    }
+  >();
   
   if (playlistKeys.length > 0) {
     try {
@@ -76,22 +84,28 @@ export default async function PlaylistsConfigPage({
       const statsPromises = playlistKeys.map(async (key) => {
         const { data: statsData } = await sb
           .from("playlist_daily_stats")
-          .select("track_count,total_streams_cumulative,daily_streams_net")
+          .select("date,track_count,total_streams_cumulative,daily_streams_net")
           .eq("playlist_key", key)
           .order("date", { ascending: false })
-          .limit(1)
-          .maybeSingle();
+          .limit(2);
         
         return { key, stats: statsData };
       });
       
       const statsResults = await Promise.all(statsPromises);
       statsResults.forEach(({ key, stats }) => {
-        if (stats) {
+        const cur = stats?.[0] ?? null;
+        const prev = stats?.[1] ?? null;
+        if (cur) {
+          const curTracks = cur.track_count ?? null;
+          const prevTracks = prev?.track_count ?? null;
+          const dailyTracksNet =
+            curTracks === null || prevTracks === null ? null : Number(curTracks) - Number(prevTracks);
           statsMap.set(key, {
-            track_count: stats.track_count,
-            total_streams_cumulative: stats.total_streams_cumulative,
-            daily_streams_net: stats.daily_streams_net,
+            track_count: cur.track_count,
+            daily_tracks_net: dailyTracksNet,
+            total_streams_cumulative: cur.total_streams_cumulative,
+            daily_streams_net: cur.daily_streams_net,
           });
         }
       });
