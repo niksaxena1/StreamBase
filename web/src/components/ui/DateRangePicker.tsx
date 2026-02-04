@@ -300,7 +300,7 @@ function DateRangePickerInner({
           setIsOpen(!isOpen);
         }}
         className={[
-          "sb-ring flex items-center gap-1.5 rounded-full px-2.5 py-2 min-h-[40px] text-[11px] font-medium transition",
+          "sb-ring flex items-center gap-1.5 rounded-full px-2.5 py-2 text-[11px] font-medium transition",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
           isOpen || hasCustomRange
             ? "bg-black text-white shadow-sm dark:bg-white dark:text-black"

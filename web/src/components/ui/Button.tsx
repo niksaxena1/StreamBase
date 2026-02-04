@@ -26,8 +26,8 @@ const VARIANT: Record<ButtonVariant, string> = {
 };
 
 const SIZE: Record<ButtonSize, string> = {
-  xs: "min-h-[32px] h-8 px-2 text-[11px]",
-  sm: "min-h-[40px] h-10 px-3 text-xs",
+  xs: "h-6 px-2 text-[11px]",
+  sm: "h-8 px-3 text-xs",
   md: "h-9 px-4 text-sm",
   lg: "h-11 px-6 text-base",
 };
@@ -92,7 +92,7 @@ export const IconButton = forwardRef<
     asChild?: boolean;
   }
 >(function IconButton({ className, variant = "ghost", size = "sm", asChild, children, ...props }, ref) {
-  const dim = size === "lg" ? "h-11 w-11" : size === "md" ? "h-11 w-11" : size === "xs" ? "min-h-[40px] min-w-[40px] h-10 w-10" : "h-11 w-11";
+  const dim = size === "lg" ? "h-11 w-11" : size === "md" ? "h-9 w-9" : size === "xs" ? "h-6 w-6" : "h-8 w-8";
   const v =
     variant === "primary"
       ? "bg-black text-white hover:bg-black/90 dark:bg-white dark:text-black dark:hover:bg-white/90"
