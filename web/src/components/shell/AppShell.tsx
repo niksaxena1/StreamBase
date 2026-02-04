@@ -66,7 +66,7 @@ export function AppShell(props: { children: ReactNode; mainSurface?: MainSurface
                   </div>
                 </div>
 
-                <div className="hidden sm:flex items-center gap-3 min-w-0 flex-1 sm:flex-initial">
+                <div className="flex items-center gap-3 min-w-0 flex-1 sm:flex-initial">
                   <div className="w-full max-w-xs sm:w-64">
                     <SearchBar />
                   </div>
