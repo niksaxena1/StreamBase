@@ -779,3 +779,114 @@ html[data-theme="dark"] .sb-filter-bar {
 .animate-badge-pop {
   animation: badge-pop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
+
+/* ============================================================================
+   Mobile Bottom Nav - Bulletproof Fixed Positioning
+   ============================================================================
+   Multiple techniques to prevent the nav from "floating" away from bottom:
+   1. position: fixed with bottom: 0 (baseline)
+   2. transform: translate3d(0,0,0) to force GPU layer and prevent repaint jitter
+   3. will-change: transform to hint the browser to optimize
+   4. contain: layout style to isolate from ancestor transforms/filters
+   5. Safe area inset for notched devices
+   ============================================================================ */
+
+.sb-mobile-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 9999; /* Higher than typical z-50 to ensure it's always on top */
+  
+  /* Force GPU compositing - prevents repaints from causing position jitter */
+  transform: translate3d(0, 0, 0);
+  -webkit-transform: translate3d(0, 0, 0);
+  
+  /* Hint browser to keep this layer ready for compositing */
+  will-change: transform;
+  
+  /* Isolate from any ancestor transforms/filters that could affect fixed positioning */
+  contain: layout style;
+  
+  /* Safe area padding for notched devices (iPhone X+, etc.) */
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  min-height: calc(72px + env(safe-area-inset-bottom, 0px));
+  
+  /* Prevent the nav itself from being a scroll container */
+  overflow: visible;
+  
+  /* Disable touch actions that could interfere */
+  touch-action: manipulation;
+  
+  /* Ensure it doesn't inherit any problematic properties */
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  perspective: 1000px;
+  -webkit-perspective: 1000px;
+}
+
+/* When keyboard is open, hide the nav to prevent overlap issues */
+.sb-mobile-nav.sb-glass-nav--keyboard {
+  transform: translate3d(0, 100%, 0);
+  -webkit-transform: translate3d(0, 100%, 0);
+  transition: transform 0.2s ease-out;
+}
+
+/* Ensure smooth transition back when keyboard closes */
+.sb-mobile-nav:not(.sb-glass-nav--keyboard) {
+  transition: transform 0.15s ease-out;
+}
+
+/* ============================================================================
+   Body-level fixes for mobile scroll behavior
+   ============================================================================ */
+
+@media (max-width: 639px) {
+  /* Prevent overscroll bounce from affecting fixed elements */
+  html {
+    overscroll-behavior: none;
+    overscroll-behavior-y: none;
+  }
+  
+  body {
+    /* Prevent pull-to-refresh gesture from interfering */
+    overscroll-behavior-y: contain;
+    
+    /* Ensure the body is the scroll container, not a nested element */
+    overflow-x: hidden;
+  }
+}
+
+/* ============================================================================
+   iOS Safari specific fixes
+   ============================================================================ */
+
+@supports (-webkit-touch-callout: none) {
+  /* iOS Safari only */
+  .sb-mobile-nav {
+    /* Use -webkit-sticky as additional fallback behavior hint */
+    position: -webkit-sticky;
+    position: fixed;
+    
+    /* Additional iOS-specific GPU acceleration */
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
+  }
+  
+  /* Prevent rubber-banding from moving the nav */
+  html, body {
+    height: 100%;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* ============================================================================
+   App Shell - Ensure no ancestor interferes with fixed positioning
+   ============================================================================ */
+
+.sb-app-shell {
+  /* Isolate this container so its children's transforms/filters 
+     don't create new stacking contexts that break fixed positioning */
+  isolation: isolate;
+}
