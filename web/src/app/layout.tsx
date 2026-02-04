@@ -25,6 +25,12 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  maximumScale: 5,
+  userScalable: true,
+  // Cover the entire screen including notch/safe areas
+  viewportFit: "cover",
+  // Ensure visual viewport resizes (not overlays) when keyboard/UI appears
+  interactiveWidget: "resizes-visual",
 };
 
 export default function RootLayout({

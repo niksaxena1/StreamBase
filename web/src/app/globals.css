@@ -781,60 +781,70 @@ html[data-theme="dark"] .sb-filter-bar {
 }
 
 /* ============================================================================
-   Mobile Bottom Nav - Bulletproof Fixed Positioning
+   Mobile Bottom Nav - Visual Viewport Positioning
    ============================================================================
-   Multiple techniques to prevent the nav from "floating" away from bottom:
-   1. position: fixed with bottom: 0 (baseline)
-   2. transform: translate3d(0,0,0) to force GPU layer and prevent repaint jitter
-   3. will-change: transform to hint the browser to optimize
-   4. contain: layout style to isolate from ancestor transforms/filters
-   5. Safe area inset for notched devices
+   The nav is positioned via JavaScript using the VisualViewport API to track
+   the actual visible area during zoom, scroll, keyboard, etc.
+   
+   CSS here provides:
+   1. Base styles and dimensions
+   2. GPU acceleration hints
+   3. Safe area handling
+   4. Keyboard hide animation
    ============================================================================ */
 
 .sb-mobile-nav {
+  /* Position is controlled by JS, but set defaults for SSR/fallback */
   position: fixed;
   bottom: 0;
   left: 0;
   right: 0;
-  z-index: 9999; /* Higher than typical z-50 to ensure it's always on top */
+  z-index: 9999;
   
-  /* Force GPU compositing - prevents repaints from causing position jitter */
-  transform: translate3d(0, 0, 0);
-  -webkit-transform: translate3d(0, 0, 0);
-  
-  /* Hint browser to keep this layer ready for compositing */
+  /* Force own compositing layer - critical for smooth repositioning */
   will-change: transform;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
   
-  /* Isolate from any ancestor transforms/filters that could affect fixed positioning */
-  contain: layout style;
+  /* Contain paint to this layer only */
+  contain: layout style paint;
   
   /* Safe area padding for notched devices (iPhone X+, etc.) */
   padding-bottom: env(safe-area-inset-bottom, 0px);
   min-height: calc(72px + env(safe-area-inset-bottom, 0px));
   
-  /* Prevent the nav itself from being a scroll container */
-  overflow: visible;
+  /* Prevent any internal scrolling */
+  overflow: hidden;
   
-  /* Disable touch actions that could interfere */
+  /* Optimize touch handling */
   touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
   
-  /* Ensure it doesn't inherit any problematic properties */
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
-  perspective: 1000px;
-  -webkit-perspective: 1000px;
+  /* Ensure crisp rendering during transforms */
+  -webkit-font-smoothing: antialiased;
 }
 
-/* When keyboard is open, hide the nav to prevent overlap issues */
-.sb-mobile-nav.sb-glass-nav--keyboard {
-  transform: translate3d(0, 100%, 0);
-  -webkit-transform: translate3d(0, 100%, 0);
-  transition: transform 0.2s ease-out;
+/* Hide nav when keyboard is open - JS adds this class */
+.sb-mobile-nav--keyboard {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease-out;
 }
 
-/* Ensure smooth transition back when keyboard closes */
-.sb-mobile-nav:not(.sb-glass-nav--keyboard) {
-  transition: transform 0.15s ease-out;
+.sb-mobile-nav:not(.sb-mobile-nav--keyboard) {
+  opacity: 1;
+  pointer-events: auto;
+  transition: opacity 0.1s ease-out;
+}
+
+/* ============================================================================
+   Desktop: Hide mobile nav completely (don't waste GPU layer)
+   ============================================================================ */
+
+@media (min-width: 640px) {
+  .sb-mobile-nav {
+    display: none !important;
+  }
 }
 
 /* ============================================================================
@@ -842,51 +852,50 @@ html[data-theme="dark"] .sb-filter-bar {
    ============================================================================ */
 
 @media (max-width: 639px) {
-  /* Prevent overscroll bounce from affecting fixed elements */
   html {
-    overscroll-behavior: none;
+    /* Prevent overscroll bounce that can confuse viewport calculations */
     overscroll-behavior-y: none;
   }
   
   body {
-    /* Prevent pull-to-refresh gesture from interfering */
+    /* Contain overscroll to prevent pull-to-refresh */
     overscroll-behavior-y: contain;
     
-    /* Ensure the body is the scroll container, not a nested element */
+    /* Prevent horizontal scroll */
     overflow-x: hidden;
-  }
-}
-
-/* ============================================================================
-   iOS Safari specific fixes
-   ============================================================================ */
-
-@supports (-webkit-touch-callout: none) {
-  /* iOS Safari only */
-  .sb-mobile-nav {
-    /* Use -webkit-sticky as additional fallback behavior hint */
-    position: -webkit-sticky;
-    position: fixed;
     
-    /* Additional iOS-specific GPU acceleration */
-    -webkit-transform: translateZ(0);
-    transform: translateZ(0);
-  }
-  
-  /* Prevent rubber-banding from moving the nav */
-  html, body {
-    height: 100%;
-    overflow: auto;
+    /* Ensure body is scrollable, not a child */
+    overflow-y: auto;
     -webkit-overflow-scrolling: touch;
   }
 }
 
 /* ============================================================================
-   App Shell - Ensure no ancestor interferes with fixed positioning
+   iOS Safari specific: prevent address bar issues
+   ============================================================================ */
+
+@supports (-webkit-touch-callout: none) {
+  /* iOS uses 100vh incorrectly (includes hidden address bar), use dvh */
+  html {
+    min-height: 100dvh;
+    min-height: -webkit-fill-available;
+  }
+  
+  body {
+    min-height: 100dvh;
+    min-height: -webkit-fill-available;
+  }
+}
+
+/* ============================================================================
+   App Shell - Isolate from fixed positioning interference
    ============================================================================ */
 
 .sb-app-shell {
-  /* Isolate this container so its children's transforms/filters 
-     don't create new stacking contexts that break fixed positioning */
+  /* Create isolation context */
   isolation: isolate;
+  
+  /* Prevent this container from affecting fixed descendants */
+  transform: none !important;
+  filter: none !important;
 }

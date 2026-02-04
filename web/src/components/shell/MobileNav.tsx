@@ -22,41 +22,119 @@ export function MobileNav({
 }) {
   const pathname = usePathname();
   const [hasScrolled, setHasScrolled] = useState(false);
-  const [isScrolling, setIsScrolling] = useState(false);
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
   const scrollTimerRef = useRef<number | null>(null);
   const prevBadgeCount = useRef(healthBadgeCount);
   const [badgeAnimating, setBadgeAnimating] = useState(false);
   const navRef = useRef<HTMLElement>(null);
+  const rafRef = useRef<number | null>(null);
 
-  // Detect keyboard open via viewport height change (#10)
+  // ============================================================================
+  // BULLETPROOF VISUAL VIEWPORT POSITIONING
+  // ============================================================================
+  // On mobile browsers, `position: fixed` is relative to the "layout viewport",
+  // but the user sees the "visual viewport" which moves during:
+  // - Pinch zoom
+  // - Address bar show/hide
+  // - Keyboard open/close
+  // - Momentum scrolling overshoot
+  // - Page transitions
+  //
+  // This effect directly positions the nav at the bottom of the visual viewport
+  // using the VisualViewport API, updated on every relevant event via rAF.
+  // ============================================================================
   useEffect(() => {
-    if (typeof window === "undefined" || !window.visualViewport) return;
+    if (typeof window === "undefined") return;
+    
+    const nav = navRef.current;
+    if (!nav) return;
 
-    const viewport = window.visualViewport;
-    const initialHeight = viewport.height;
-
-    function onResize() {
-      // If viewport shrinks significantly, keyboard is likely open
-      const heightDiff = initialHeight - viewport.height;
-      setIsKeyboardOpen(heightDiff > 150);
+    const vv = window.visualViewport;
+    
+    // Fallback for browsers without VisualViewport API
+    if (!vv) {
+      nav.style.position = "fixed";
+      nav.style.bottom = "0";
+      nav.style.left = "0";
+      nav.style.right = "0";
+      return;
     }
 
-    viewport.addEventListener("resize", onResize);
-    return () => viewport.removeEventListener("resize", onResize);
+    let ticking = false;
+
+    const updatePosition = () => {
+      // Calculate where the bottom of the visual viewport is relative to the layout viewport
+      // vv.offsetTop = distance from layout viewport top to visual viewport top
+      // vv.height = height of visual viewport
+      // So the visual viewport bottom is at: vv.offsetTop + vv.height
+      // We want the nav's bottom to be at that position
+      
+      const visualBottom = vv.offsetTop + vv.height;
+      const layoutHeight = window.innerHeight;
+      
+      // How far from the layout viewport bottom is the visual viewport bottom?
+      // If positive, visual viewport bottom is above layout viewport bottom (e.g., zoomed in)
+      // If negative, visual viewport bottom is below (shouldn't happen normally)
+      const bottomOffset = layoutHeight - visualBottom;
+      
+      // Position the nav so its bottom aligns with visual viewport bottom
+      // We use `top` instead of `bottom` for more predictable behavior
+      const navHeight = nav.offsetHeight || 72;
+      const topPosition = visualBottom - navHeight;
+      
+      // Use transform for smooth GPU-accelerated positioning
+      nav.style.position = "fixed";
+      nav.style.top = "0";
+      nav.style.bottom = "auto";
+      nav.style.left = `${vv.offsetLeft}px`;
+      nav.style.width = `${vv.width}px`;
+      nav.style.transform = `translateY(${topPosition}px)`;
+      
+      // Detect keyboard (significant height reduction)
+      const heightRatio = vv.height / layoutHeight;
+      setIsKeyboardOpen(heightRatio < 0.7);
+      
+      ticking = false;
+    };
+
+    const requestUpdate = () => {
+      if (!ticking) {
+        ticking = true;
+        rafRef.current = requestAnimationFrame(updatePosition);
+      }
+    };
+
+    // Initial position
+    updatePosition();
+
+    // Listen to all events that can change the visual viewport
+    vv.addEventListener("resize", requestUpdate);
+    vv.addEventListener("scroll", requestUpdate);
+    window.addEventListener("scroll", requestUpdate, { passive: true });
+    window.addEventListener("resize", requestUpdate);
+    window.addEventListener("orientationchange", requestUpdate);
+    
+    // Also update on touch events for immediate response during gestures
+    document.addEventListener("touchmove", requestUpdate, { passive: true });
+    document.addEventListener("touchend", requestUpdate, { passive: true });
+
+    return () => {
+      vv.removeEventListener("resize", requestUpdate);
+      vv.removeEventListener("scroll", requestUpdate);
+      window.removeEventListener("scroll", requestUpdate);
+      window.removeEventListener("resize", requestUpdate);
+      window.removeEventListener("orientationchange", requestUpdate);
+      document.removeEventListener("touchmove", requestUpdate);
+      document.removeEventListener("touchend", requestUpdate);
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
   }, []);
 
-  // Scroll detection
+  // Scroll detection for glass effects
   useEffect(() => {
     function onScroll() {
       const y = window.scrollY || 0;
       setHasScrolled(y > 4);
-
-      setIsScrolling(true);
-      if (scrollTimerRef.current) window.clearTimeout(scrollTimerRef.current);
-      scrollTimerRef.current = window.setTimeout(() => {
-        setIsScrolling(false);
-      }, 160);
     }
 
     onScroll();
@@ -88,8 +166,7 @@ export function MobileNav({
       className={[
         "sb-mobile-nav sb-glass-nav sm:hidden",
         hasScrolled ? "sb-glass-nav--scrolled" : "",
-        isScrolling ? "sb-glass-nav--scrolling" : "",
-        isKeyboardOpen ? "sb-glass-nav--keyboard" : "",
+        isKeyboardOpen ? "sb-mobile-nav--keyboard" : "",
       ].join(" ")}
     >
       <div className="flex h-[72px] items-center justify-around px-1">
