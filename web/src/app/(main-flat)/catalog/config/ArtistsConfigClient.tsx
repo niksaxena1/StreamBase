@@ -7,6 +7,7 @@ import { ArrowLeft, Download } from "lucide-react";
 import { SearchBox } from "./SearchBox";
 import { ArtistsList } from "./ArtistsList";
 import { IconButton } from "@/components/ui/Button";
+import { Select } from "@/components/ui/Select";
 import { downloadCsv, todayIsoDate } from "@/lib/csv";
 import { useMetric } from "@/components/metrics/MetricContext";
 
@@ -90,15 +91,14 @@ export function ArtistsConfigClient({ artists, totalCount }: ArtistsConfigClient
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <select
+          <Select
             value={`${sortBy}-${sortAsc ? "asc" : "desc"}`}
             onChange={(e) => {
               const [newSortBy, newSortAsc] = e.target.value.split("-");
               setSortBy(newSortBy as SortOption);
               setSortAsc(newSortAsc === "asc");
             }}
-            className="rounded-xl border bg-white/70 px-2.5 py-1.5 text-xs outline-none transition focus:border-black/20 focus:ring-2 focus:ring-black/5 dark:bg-white/5 dark:text-white dark:border-white/10 dark:focus:border-white/20 dark:focus:ring-white/5"
-            style={{ borderColor: "var(--sb-border)" }}
+            className="w-auto px-2.5 py-1.5 text-xs"
           >
             <option value="name-asc">Name ↑</option>
             <option value="name-desc">Name ↓</option>
@@ -106,7 +106,7 @@ export function ArtistsConfigClient({ artists, totalCount }: ArtistsConfigClient
             <option value="total-asc">Total ↑</option>
             <option value="daily-desc">Daily ↓</option>
             <option value="daily-asc">Daily ↑</option>
-          </select>
+          </Select>
           <SearchBox onSearchChange={setSearchQuery} placeholder="Search artists…" />
           <IconButton
             type="button"
