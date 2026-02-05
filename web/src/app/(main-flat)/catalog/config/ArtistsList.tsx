@@ -8,12 +8,17 @@ import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
 import { IconButton } from "@/components/ui/Button";
 import { foldForSearch } from "@/lib/searchFold";
 import { downloadCsv, todayIsoDate } from "@/lib/csv";
+import { useMetric } from "@/components/metrics/MetricContext";
+import { usePayoutRate } from "@/components/payout/PayoutRateContext";
+import { formatInt, formatUsd2 } from "@/lib/format";
 
 type Artist = {
   id: string;
   name: string;
   imageUrl: string | null;
   externalUrl: string;
+  totalStreams: number | null;
+  dailyStreams: number | null;
 };
 
 type ArtistsListProps = {
@@ -22,6 +27,9 @@ type ArtistsListProps = {
 };
 
 export function ArtistsList({ artists, searchQuery }: ArtistsListProps) {
+  const { metric } = useMetric();
+  const { streamPayoutPerStreamUsd } = usePayoutRate();
+
   const filteredArtists = useMemo(() => {
     if (!searchQuery.trim()) {
       return artists;
@@ -29,6 +37,16 @@ export function ArtistsList({ artists, searchQuery }: ArtistsListProps) {
     const q = foldForSearch(searchQuery);
     return artists.filter((artist) => foldForSearch(artist.name).includes(q));
   }, [artists, searchQuery]);
+
+  // Color scheme based on metric
+  const metricColor =
+    metric === "revenue" ? "#10b981" : metric === "tracks" ? "#3b82f6" : "var(--sb-accent)";
+
+  const formatValue = (value: number | null) => {
+    if (value === null) return "—";
+    if (metric === "revenue") return formatUsd2(value * streamPayoutPerStreamUsd);
+    return formatInt(value);
+  };
 
   return (
     <div className="flex flex-col space-y-2">
@@ -39,6 +57,8 @@ export function ArtistsList({ artists, searchQuery }: ArtistsListProps) {
             const csvData = filteredArtists.map((artist) => ({
               "Artist Name": artist.name,
               "Artist ID": artist.id,
+              "Total Streams": artist.totalStreams ?? "",
+              "Daily Streams": artist.dailyStreams ?? "",
               "Spotify URL": artist.externalUrl,
             }));
             downloadCsv({
@@ -52,7 +72,7 @@ export function ArtistsList({ artists, searchQuery }: ArtistsListProps) {
           <Download className="h-3.5 w-3.5" />
         </IconButton>
       </div>
-      <GlassTable headers={["", "Artist", "ID", ""]}>
+      <GlassTable headers={["", "Artist", "Total", "Daily", "ID", ""]}>
         {filteredArtists.map((artist) => (
           <TableRow key={artist.id}>
             <TableCell>
@@ -77,6 +97,17 @@ export function ArtistsList({ artists, searchQuery }: ArtistsListProps) {
                 {artist.name}
               </Link>
             </TableCell>
+            <TableCell>
+              <span style={{ color: metricColor }} className="font-medium text-xs">
+                {formatValue(artist.totalStreams)}
+              </span>
+            </TableCell>
+            <TableCell>
+              <span style={{ color: metricColor }} className="font-medium text-xs">
+                {artist.dailyStreams !== null && artist.dailyStreams > 0 ? "+" : ""}
+                {formatValue(artist.dailyStreams)}
+              </span>
+            </TableCell>
             <TableCell mono className="text-xs">
               {artist.id}
             </TableCell>
@@ -96,7 +127,7 @@ export function ArtistsList({ artists, searchQuery }: ArtistsListProps) {
         ))}
         {!filteredArtists.length && (
           <TableRow>
-            <TableCell className="py-8 text-center opacity-50" colSpan={4}>
+            <TableCell className="py-8 text-center opacity-50" colSpan={6}>
               {searchQuery.trim() ? "No artists found matching your search." : "No artists found."}
             </TableCell>
           </TableRow>

@@ -8,6 +8,9 @@ import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { IconButton } from "@/components/ui/Button";
 import { foldForSearch } from "@/lib/searchFold";
 import { downloadCsv, todayIsoDate } from "@/lib/csv";
+import { useMetric } from "@/components/metrics/MetricContext";
+import { usePayoutRate } from "@/components/payout/PayoutRateContext";
+import { formatInt, formatUsd2 } from "@/lib/format";
 
 type Track = {
   isrc: string;
@@ -18,6 +21,8 @@ type Track = {
   artistNames: string[] | null;
   artistIds: string[] | null;
   externalUrl: string | null;
+  totalStreams: number | null;
+  dailyStreams: number | null;
 };
 
 type TracksListProps = {
@@ -26,6 +31,9 @@ type TracksListProps = {
 };
 
 export function TracksList({ tracks, searchQuery }: TracksListProps) {
+  const { metric } = useMetric();
+  const { streamPayoutPerStreamUsd } = usePayoutRate();
+
   const filteredTracks = useMemo(() => {
     if (!searchQuery.trim()) {
       return tracks;
@@ -49,6 +57,19 @@ export function TracksList({ tracks, searchQuery }: TracksListProps) {
     });
   }, [tracks, searchQuery]);
 
+  // For tracks, use streams instead of tracks metric
+  const displayMetric = metric === "tracks" ? "streams" : metric;
+  
+  // Color scheme based on metric
+  const metricColor =
+    displayMetric === "revenue" ? "#10b981" : "var(--sb-accent)";
+
+  const formatValue = (value: number | null) => {
+    if (value === null) return "—";
+    if (displayMetric === "revenue") return formatUsd2(value * streamPayoutPerStreamUsd);
+    return formatInt(value);
+  };
+
   return (
     <div className="sb-card overflow-hidden">
       <div
@@ -68,6 +89,8 @@ export function TracksList({ tracks, searchQuery }: TracksListProps) {
               "Track Name": track.name ?? track.isrc,
               ISRC: track.isrc,
               Artists: track.artistNames?.join(" | ") ?? "",
+              "Total Streams": track.totalStreams ?? "",
+              "Daily Streams": track.dailyStreams ?? "",
               "Release Date": track.release_date ?? "",
               "Last Seen": track.last_seen ?? "",
             }));
@@ -88,6 +111,8 @@ export function TracksList({ tracks, searchQuery }: TracksListProps) {
             <tr className="border-b" style={{ borderColor: "var(--sb-border)" }}>
               <th className="px-3 py-2 font-medium"></th>
               <th className="px-3 py-2 font-medium">Track</th>
+              <th className="px-3 py-2 font-medium">Total</th>
+              <th className="px-3 py-2 font-medium">Daily</th>
               <th className="px-3 py-2 font-medium">ISRC</th>
               <th className="px-3 py-2 font-medium">Release</th>
               <th className="px-3 py-2 font-medium">Last seen</th>
@@ -129,6 +154,17 @@ export function TracksList({ tracks, searchQuery }: TracksListProps) {
                     </div>
                   ) : null}
                 </td>
+                <td className="px-3 py-2 text-xs">
+                  <span style={{ color: metricColor }} className="font-medium">
+                    {formatValue(track.totalStreams)}
+                  </span>
+                </td>
+                <td className="px-3 py-2 text-xs">
+                  <span style={{ color: metricColor }} className="font-medium">
+                    {track.dailyStreams !== null && track.dailyStreams > 0 ? "+" : ""}
+                    {formatValue(track.dailyStreams)}
+                  </span>
+                </td>
                 <td className="px-3 py-2 font-mono text-[11px] opacity-40" style={{ color: "var(--sb-muted)" }}>
                   <Link className="underline" href={`/tracks/${track.isrc}`}>
                     {track.isrc}
@@ -161,7 +197,7 @@ export function TracksList({ tracks, searchQuery }: TracksListProps) {
                 <td
                   className="px-3 py-6 text-sm"
                   style={{ color: "var(--sb-muted)" }}
-                  colSpan={6}
+                  colSpan={8}
                 >
                   {searchQuery.trim() ? "No tracks found matching your search." : "No tracks found."}
                 </td>
