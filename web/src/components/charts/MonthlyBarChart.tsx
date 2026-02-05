@@ -15,9 +15,17 @@ import { formatKmbTick, formatUsdCompact } from "@/components/charts/chartUtils"
 import { useThemeColors } from "@/components/charts/useThemeColors";
 import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
 
-type MonthlyDataPoint = {
+export type MonthlyDataPoint = {
   month: string; // yyyy-mm
   value: number;
+  /** Extra amount above actual value representing the projected remainder (only for current/incomplete month) */
+  projectedExtra?: number;
+  /** Full projected value for the complete month (only for current/incomplete month) */
+  projectedTotal?: number;
+  /** Number of days with data in this month (only for current/incomplete month) */
+  daysWithData?: number;
+  /** Total calendar days in this month (only for current/incomplete month) */
+  totalDaysInMonth?: number;
 };
 
 type ValueFormat = "int" | "usd";
@@ -32,14 +40,16 @@ function MonthlyTooltip({
 }: {
   active?: boolean;
   label?: string;
-  payload?: Array<{ value?: unknown }>;
+  payload?: Array<{ value?: unknown; payload?: MonthlyDataPoint }>;
   valueLabel: string;
   fmtValue: (n: number) => string;
 }) {
   if (!active || !payload?.length) return null;
-  const raw = payload[0]?.value;
-  const n = typeof raw === "number" ? raw : Number(raw);
-  const value = Number.isFinite(n) ? fmtValue(n) : fmtValue(0);
+
+  // Get the data point from the first payload entry (both stacked bars share it)
+  const dp = payload[0]?.payload;
+  const value = Number.isFinite(dp?.value) ? fmtValue(dp!.value) : fmtValue(0);
+  const hasProjection = (dp?.projectedExtra ?? 0) > 0;
 
   return (
     <ViewportAwareTooltip>
@@ -56,7 +66,21 @@ function MonthlyTooltip({
         <div className="mb-1 font-medium">{label ? formatTooltipMonth(label) : "—"}</div>
         <div>
           {valueLabel}: <span className="font-semibold">{value}</span>
+          {hasProjection && dp?.daysWithData != null && dp?.totalDaysInMonth != null && (
+            <span className="ml-1 opacity-50">
+              ({dp.daysWithData}/{dp.totalDaysInMonth} days)
+            </span>
+          )}
         </div>
+        {hasProjection && dp?.projectedTotal != null && (
+          <div
+            className="mt-1 opacity-70"
+            style={{ borderTop: "1px dashed var(--sb-border)", paddingTop: 4 }}
+          >
+            Est. full month:{" "}
+            <span className="font-semibold">{fmtValue(dp.projectedTotal)}</span>
+          </div>
+        )}
       </div>
     </ViewportAwareTooltip>
   );
@@ -71,6 +95,65 @@ function formatTooltipMonth(monthString: string): string {
   const date = new Date(`${monthString}-01`);
   return date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
 }
+
+/* ── Custom bar shapes ─────────────────────────────────────── */
+
+/** Build an SVG path with rounded top corners and flat bottom. Falls back to plain rect for tiny heights. */
+function roundedTopPath(x: number, y: number, w: number, h: number, r: number): string {
+  if (h < r * 2) {
+    return `M${x},${y + h} L${x},${y} L${x + w},${y} L${x + w},${y + h} Z`;
+  }
+  return [
+    `M${x},${y + h}`,
+    `L${x},${y + r}`,
+    `Q${x},${y} ${x + r},${y}`,
+    `L${x + w - r},${y}`,
+    `Q${x + w},${y} ${x + w},${y + r}`,
+    `L${x + w},${y + h}`,
+    `Z`,
+  ].join(" ");
+}
+
+/** Solid bar for the actual value. Flat-tops when a projected bar sits above it. */
+function ActualBarShape(props: any) {
+  const { x, y, width, height, fill } = props;
+  if (!width || !height || height <= 0) return null;
+  const hasProjection = (props.payload?.projectedExtra ?? 0) > 0;
+  if (hasProjection) {
+    // Flat top — the projected bar on top will carry the rounded corners
+    return <rect x={x} y={y} width={width} height={height} fill={fill} />;
+  }
+  return <path d={roundedTopPath(x, y, width, height, 4)} fill={fill} />;
+}
+
+/** Dashed / faded bar for the projected remainder. Opacity scales with data confidence. */
+function ProjectedBarShape(props: any) {
+  const { x, y, width, height, fill, payload } = props;
+  if (!width || !height || height <= 0 || !(payload?.projectedExtra > 0)) return null;
+
+  const confidence =
+    payload.daysWithData && payload.totalDaysInMonth
+      ? payload.daysWithData / payload.totalDaysInMonth
+      : 0;
+
+  // More days of data → higher confidence → more visible outline
+  const fillOpacity = 0.05 + confidence * 0.13;
+  const strokeOpacity = 0.25 + confidence * 0.45;
+
+  return (
+    <path
+      d={roundedTopPath(x, y, width, height, 4)}
+      fill={fill}
+      fillOpacity={fillOpacity}
+      stroke={fill}
+      strokeOpacity={strokeOpacity}
+      strokeWidth={1.5}
+      strokeDasharray="4 3"
+    />
+  );
+}
+
+/* ── Component ─────────────────────────────────────────────── */
 
 export function MonthlyBarChart({
   data,
@@ -101,8 +184,10 @@ export function MonthlyBarChart({
     return formatKmbTick(n);
   };
 
-  // Sort data by month (ascending)
-  const chartData = [...data].sort((a, b) => a.month.localeCompare(b.month));
+  // Sort data by month (ascending) and ensure projectedExtra defaults to 0 for stacking
+  const chartData = [...data]
+    .sort((a, b) => a.month.localeCompare(b.month))
+    .map((d) => ({ ...d, projectedExtra: d.projectedExtra ?? 0 }));
 
   return (
     <div className="w-full">
@@ -143,7 +228,7 @@ export function MonthlyBarChart({
               <MonthlyTooltip
                 active={active}
                 label={label as string}
-                payload={payload as Array<{ value?: unknown }>}
+                payload={payload as Array<{ value?: unknown; payload?: MonthlyDataPoint }>}
                 valueLabel={valueLabel}
                 fmtValue={fmtValue}
               />
@@ -152,10 +237,19 @@ export function MonthlyBarChart({
               fill: "rgba(0,0,0,0.1)",
             }}
           />
+          {/* Actual value — solid gradient fill */}
           <Bar
             dataKey="value"
+            stackId="monthly"
             fill={`url(#${gid})`}
-            radius={[4, 4, 0, 0]}
+            shape={ActualBarShape}
+          />
+          {/* Projected remainder — dashed outline, faded fill, confidence-scaled opacity */}
+          <Bar
+            dataKey="projectedExtra"
+            stackId="monthly"
+            fill={effectiveColor}
+            shape={ProjectedBarShape}
           />
         </BarChart>
       </ResponsiveContainer>

@@ -30,16 +30,18 @@ export async function POST(req: NextRequest) {
   if (adminErr) return NextResponse.json({ ok: false, error: adminErr.message }, { status: 500 });
   if (!isAdmin) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
 
-  const body = await req.json().catch(() => ({}));
+  const rawBody: unknown = await req.json().catch(() => ({}));
+  const body =
+    rawBody && typeof rawBody === "object" ? (rawBody as Record<string, unknown>) : ({} as Record<string, unknown>);
 
-  const kindRaw = (body as any)?.kind;
+  const kindRaw = body.kind;
   const kind: Kind =
     kindRaw === "playlists" || kindRaw === "tracks" || kindRaw === "artists" ? kindRaw : "tracks";
 
-  const collector = String((body as any)?.collector ?? "").trim().toUpperCase();
-  const run_date = String((body as any)?.run_date ?? "").trim();
-  const offset = Math.max(0, Number((body as any)?.offset ?? 0) || 0);
-  const limit = Math.max(1, Math.min(Number((body as any)?.limit ?? 200) || 200, 500));
+  const collector = String(body.collector ?? "").trim().toUpperCase();
+  const run_date = String(body.run_date ?? "").trim();
+  const offset = Math.max(0, Number(body.offset ?? 0) || 0);
+  const limit = Math.max(1, Math.min(Number(body.limit ?? 200) || 200, 500));
 
   if (!collector) {
     return NextResponse.json({ ok: false, error: "missing collector" }, { status: 400 });
@@ -51,7 +53,7 @@ export async function POST(req: NextRequest) {
   const svc = supabaseService();
 
   if (kind === "playlists") {
-    const { data, error } = await svc
+    const { data: playlists, error } = await svc
       .from("playlists")
       .select("playlist_key,display_name,spotify_playlist_image_url,playlist_type,display_order")
       .eq("collector", collector)
@@ -60,12 +62,58 @@ export async function POST(req: NextRequest) {
 
     if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
 
-    const items = (data ?? []).map((p: any) => ({
-      playlist_key: String(p?.playlist_key ?? ""),
-      display_name: String(p?.display_name ?? p?.playlist_key ?? ""),
-      spotify_playlist_image_url: (p?.spotify_playlist_image_url ?? null) as string | null,
-      playlist_type: (p?.playlist_type ?? null) as string | null,
-    })).filter((p: any) => p.playlist_key);
+    const playlistRows = (playlists ?? []) as Array<Record<string, unknown>>;
+    const keys = playlistRows.map((p) => String(p.playlist_key ?? "").trim()).filter(Boolean);
+
+    const statsByKey = new Map<
+      string,
+      {
+        track_count: number;
+        total_streams_cumulative: number | null;
+        daily_streams_net: number | null;
+        est_revenue_total: number | null;
+        est_revenue_daily_net: number | null;
+      }
+    >();
+
+    if (keys.length) {
+      const { data: stats, error: statsErr } = await svc
+        .from("playlist_daily_stats")
+        .select("playlist_key,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net")
+        .eq("date", run_date)
+        .in("playlist_key", keys);
+      if (statsErr) return NextResponse.json({ ok: false, error: statsErr.message }, { status: 500 });
+
+      for (const s of (stats ?? []) as any[]) {
+        const k = String(s?.playlist_key ?? "").trim();
+        if (!k) continue;
+        statsByKey.set(k, {
+          track_count: Number(s?.track_count ?? 0),
+          total_streams_cumulative: s?.total_streams_cumulative == null ? null : Number(s.total_streams_cumulative),
+          daily_streams_net: s?.daily_streams_net == null ? null : Number(s.daily_streams_net),
+          est_revenue_total: s?.est_revenue_total == null ? null : Number(s.est_revenue_total),
+          est_revenue_daily_net: s?.est_revenue_daily_net == null ? null : Number(s.est_revenue_daily_net),
+        });
+      }
+    }
+
+    const items = playlistRows
+      .map((p) => {
+        const key = String(p.playlist_key ?? "");
+        const s = statsByKey.get(key) ?? null;
+        return {
+          playlist_key: key,
+          display_name: String(p.display_name ?? p.playlist_key ?? ""),
+          spotify_playlist_image_url: (p.spotify_playlist_image_url ?? null) as string | null,
+          playlist_type: (p.playlist_type ?? null) as string | null,
+          track_count: s?.track_count ?? 0,
+          total_streams_cumulative: s?.total_streams_cumulative ?? null,
+          daily_streams_net: s?.daily_streams_net ?? null,
+          est_revenue_total: s?.est_revenue_total ?? null,
+          est_revenue_daily_net: s?.est_revenue_daily_net ?? null,
+        };
+      })
+      .filter((p) => p.playlist_key);
 
     return NextResponse.json({ ok: true, items, done: true }, { status: 200 });
   }
@@ -95,8 +143,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, items, done: items.length < limit }, { status: 200 });
   }
 
-  // artists
-  const { data, error } = await svc.rpc("collector_artists_paged", {
+  // artists (includes track_count + total/daily streams)
+  const { data, error } = await svc.rpc("collector_artists_stats_paged", {
     collector,
     run_date,
     offset_rows: offset,
@@ -111,6 +159,8 @@ export async function POST(req: NextRequest) {
       name: (r?.name ?? null) as string | null,
       image_url: (r?.image_url ?? null) as string | null,
       track_count: r?.track_count == null ? 0 : Number(r.track_count),
+      total_streams_cumulative: r?.total_streams_cumulative == null ? 0 : Number(r.total_streams_cumulative),
+      daily_streams_delta: r?.daily_streams_delta == null ? 0 : Number(r.daily_streams_delta),
     }))
     .filter((a) => a.artist_id);
 
