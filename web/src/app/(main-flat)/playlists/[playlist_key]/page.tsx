@@ -203,7 +203,10 @@ export default async function PlaylistDetailPage({
           </div>
           <div className="mt-2 flex items-center gap-3">
             {playlistRow?.is_catalog ? (
-              <span className="inline-flex items-center rounded-full bg-lime-400/20 px-2.5 py-0.5 text-xs font-medium text-lime-800 dark:text-lime-300">
+              <span
+                className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium"
+                style={{ background: "var(--sb-accent-10)", color: "var(--sb-positive)" }}
+              >
                 Catalog
               </span>
             ) : (

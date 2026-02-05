@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useMemo } from "react";
 import { Search, X, Music, Download } from "lucide-react";
 import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
@@ -133,7 +134,7 @@ export function PlaylistFilters({ playlists, statsMap }: PlaylistFiltersProps) {
   const dailyHeader = metric === "tracks" ? "DAILY TRACKS" : metric === "revenue" ? "DAILY REVENUE" : "DAILY STREAMS";
 
   const metricColor =
-    metric === "tracks" ? "#3b82f6" : metric === "revenue" ? "#10b981" : "var(--sb-accent)";
+    metric === "tracks" ? "var(--sb-tracks)" : metric === "revenue" ? "var(--sb-revenue)" : "var(--sb-accent)";
 
   return (
     <div className="flex h-full flex-col space-y-3">
@@ -288,7 +289,13 @@ export function PlaylistFilters({ playlists, statsMap }: PlaylistFiltersProps) {
                 )}
               </TableCell>
               <TableCell>
-                <span className="font-medium">{p.display_name}</span>
+                <Link
+                  href={`/playlists?playlist_key=${encodeURIComponent(p.playlist_key)}`}
+                  className="font-medium transition-colors sb-link-hover"
+                  title={`Open ${p.display_name}`}
+                >
+                  {p.display_name}
+                </Link>
               </TableCell>
               <TableCell>
                 <span style={{ color: metricColor }} className="font-medium">
@@ -308,11 +315,17 @@ export function PlaylistFilters({ playlists, statsMap }: PlaylistFiltersProps) {
               <TableCell>
                 {(() => {
                   const type = p.playlist_type || (p.is_catalog ? "Catalog" : "Standard");
+                  if (type === "Catalog") {
+                    return (
+                      <span
+                        className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium"
+                        style={{ background: "var(--sb-accent-10)", color: "var(--sb-positive)" }}
+                      >
+                        Catalog
+                      </span>
+                    );
+                  }
                   const typeColors = {
-                    Catalog: {
-                      bg: "bg-lime-400/20",
-                      text: "text-lime-800 dark:text-lime-300",
-                    },
                     Label: {
                       bg: "bg-blue-400/20",
                       text: "text-blue-800 dark:text-blue-300",

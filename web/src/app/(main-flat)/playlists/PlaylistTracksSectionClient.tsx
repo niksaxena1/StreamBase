@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import { Download } from "lucide-react";
 
 import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
 import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/GlassTable";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
-import { SectionHeader } from "@/components/ui/SectionHeader";
 import { useMetric } from "@/components/metrics/MetricContext";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
+import { downloadCsv, slugifyForFilename, todayIsoDate } from "@/lib/csv";
 
 type PlaylistTopTrackRow = {
   isrc: string;
@@ -84,10 +85,84 @@ export function PlaylistTracksSectionClient(props: {
       ? ({ color: "#10b981" } as const) // emerald-500
       : ({ color: "var(--sb-accent-stroke)" } as const);
 
+  const exportCurrentTracks = () => {
+    const rows = props.currentRows.map((t) => {
+      const daily =
+        mode === "revenue"
+          ? t.daily === null
+            ? null
+            : t.daily * streamPayoutPerStreamUsd
+          : t.daily;
+      const total =
+        mode === "revenue"
+          ? t.total === null
+            ? null
+            : t.total * streamPayoutPerStreamUsd
+          : t.total;
+
+      return {
+        ISRC: t.isrc,
+        Track: t.name ?? "",
+        Artists: t.artist_names ?? [],
+        Added: t.valid_from,
+        [dailyLabel]: daily,
+        [totalLabel]: total,
+      } as Record<string, unknown>;
+    });
+
+    downloadCsv({
+      filename: `playlist-${slugifyForFilename(props.playlistKey)}-tracks-current-${todayIsoDate()}.csv`,
+      rows,
+    });
+  };
+
+  const exportAddedTracks = () => {
+    const rows = props.addedLast7Days.map((t) => ({
+      ISRC: t.isrc,
+      Track: t.name ?? "",
+      Artists: t.artist_names ?? [],
+      Added: t.valid_from,
+    }));
+
+    downloadCsv({
+      filename: `playlist-${slugifyForFilename(props.playlistKey)}-tracks-added-7d-${todayIsoDate()}.csv`,
+      rows,
+    });
+  };
+
+  const exportRemovedTracks = () => {
+    const rows = props.removed.map((t) => ({
+      ISRC: t.isrc,
+      Track: t.name ?? "",
+      Artists: t.artist_names ?? [],
+      Removed: t.valid_to ?? "",
+      Added: t.valid_from,
+    }));
+
+    downloadCsv({
+      filename: `playlist-${slugifyForFilename(props.playlistKey)}-tracks-removed-${todayIsoDate()}.csv`,
+      rows,
+    });
+  };
+
   return (
     <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
       <div className="space-y-3">
-        <SectionHeader title="Tracks currently in playlist" />
+        <div className="flex items-end justify-between px-1">
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-semibold">Tracks currently in playlist</h2>
+            <button
+              type="button"
+              onClick={exportCurrentTracks}
+              className="inline-flex items-center justify-center p-0 transition-colors hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
+              title="Download as CSV"
+              aria-label="Download as CSV"
+              style={{ color: "var(--sb-muted)" }}
+            >
+              <Download className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
         {hasStatsDate && props.debug ? (
           <details
             className="rounded-xl border px-3 py-2 text-xs"
@@ -153,14 +228,24 @@ export function PlaylistTracksSectionClient(props: {
 
       <div className="flex h-full flex-col gap-3">
         <div className="space-y-3">
-          <SectionHeader
-            title="Tracks added (last 7 days)"
-            actions={
-              <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
-                Based on membership added date.
-              </div>
-            }
-          />
+          <div className="flex items-end justify-between px-1">
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-semibold">Tracks added (last 7 days)</h2>
+              <button
+                type="button"
+                onClick={exportAddedTracks}
+                className="inline-flex items-center justify-center p-0 transition-colors hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
+                title="Download as CSV"
+                aria-label="Download as CSV"
+                style={{ color: "var(--sb-muted)" }}
+              >
+                <Download className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
+              Based on membership added date.
+            </div>
+          </div>
           <GlassTable headers={["", "Track", "ISRC", "Added"]} maxBodyHeightClassName="max-h-[260px]">
             {props.addedErrMessage ? (
               <EmptyState colSpan={4} message={`Error loading added tracks: ${props.addedErrMessage}`} />
@@ -200,14 +285,24 @@ export function PlaylistTracksSectionClient(props: {
         </div>
 
         <div className="flex flex-1 flex-col gap-3">
-          <SectionHeader
-            title="Tracks removed"
-            actions={
-              <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
-                Most recent removals first.
-              </div>
-            }
-          />
+          <div className="flex items-end justify-between px-1">
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-semibold">Tracks removed</h2>
+              <button
+                type="button"
+                onClick={exportRemovedTracks}
+                className="inline-flex items-center justify-center p-0 transition-colors hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
+                title="Download as CSV"
+                aria-label="Download as CSV"
+                style={{ color: "var(--sb-muted)" }}
+              >
+                <Download className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
+              Most recent removals first.
+            </div>
+          </div>
           <GlassTable
             className="flex-1"
             bodyClassName="flex-1"
