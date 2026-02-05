@@ -241,11 +241,11 @@ export default async function CatalogConfigPage() {
         trackCount += 1;
         
         const stats = trackStats.get(track.isrc);
-        if (stats?.totalStreams !== null) {
+        if (stats && stats.totalStreams !== null) {
           artistTotalStreams += stats.totalStreams;
           hasTotalStats = true;
         }
-        if (stats?.dailyStreams !== null) {
+        if (stats && stats.dailyStreams !== null) {
           artistDailyStreams += stats.dailyStreams;
           hasDailyStats = true;
         }

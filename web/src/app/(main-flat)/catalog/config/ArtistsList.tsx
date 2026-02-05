@@ -104,8 +104,11 @@ export function ArtistsList({ artists, searchQuery, sortBy = "name", sortAsc = t
   return (
     <div className="flex flex-col space-y-2">
       <GlassTable headers={["", "Artist", getTotalMetricLabel(), getDailyMetricLabel(), "ID", ""]}>
-        {filteredAndSortedArtists.map((artist) => (
-          <TableRow key={artist.id}>
+        {filteredAndSortedArtists.map((artist) => {
+          const dailyMetricValue = getDailyMetricValue(artist);
+
+          return (
+            <TableRow key={artist.id}>
             <TableCell>
               {artist.imageUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -135,8 +138,8 @@ export function ArtistsList({ artists, searchQuery, sortBy = "name", sortAsc = t
             </TableCell>
             <TableCell>
               <span style={{ color: metricColor }} className="font-medium text-xs">
-                {getDailyMetricValue(artist) > 0 ? "+" : ""}
-                {formatValue(getDailyMetricValue(artist))}
+                {dailyMetricValue != null && dailyMetricValue > 0 ? "+" : ""}
+                {formatValue(dailyMetricValue)}
               </span>
             </TableCell>
             <TableCell mono className="text-xs" style={{ color: "var(--sb-muted)" }}>
@@ -154,8 +157,9 @@ export function ArtistsList({ artists, searchQuery, sortBy = "name", sortAsc = t
                 <ExternalLink className="h-4 w-4" />
               </Link>
             </TableCell>
-          </TableRow>
-        ))}
+            </TableRow>
+          );
+        })}
         {!filteredAndSortedArtists.length && (
           <TableRow>
             <TableCell className="py-8 text-center opacity-50" colSpan={6}>
