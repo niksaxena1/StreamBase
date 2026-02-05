@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
-import { Download } from "lucide-react";
+import { Download, ExternalLink } from "lucide-react";
 
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { IconButton } from "@/components/ui/Button";
@@ -17,6 +17,7 @@ type Track = {
   albumImageUrl: string | null;
   artistNames: string[] | null;
   artistIds: string[] | null;
+  externalUrl: string | null;
 };
 
 type TracksListProps = {
@@ -90,6 +91,7 @@ export function TracksList({ tracks, searchQuery }: TracksListProps) {
               <th className="px-3 py-2 font-medium">ISRC</th>
               <th className="px-3 py-2 font-medium">Release</th>
               <th className="px-3 py-2 font-medium">Last seen</th>
+              <th className="px-3 py-2 font-medium"></th>
             </tr>
           </thead>
           <tbody>
@@ -138,6 +140,20 @@ export function TracksList({ tracks, searchQuery }: TracksListProps) {
                 <td className="px-3 py-2 font-mono text-[11px]">
                   {track.last_seen ?? "—"}
                 </td>
+                <td className="px-3 py-2">
+                  {track.externalUrl ? (
+                    <Link
+                      href={track.externalUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center justify-center rounded-full p-1.5 transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+                      title="Open on Spotify"
+                      style={{ color: "var(--sb-muted)" }}
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                    </Link>
+                  ) : null}
+                </td>
               </tr>
             ))}
             {!filteredTracks.length && (
@@ -145,7 +161,7 @@ export function TracksList({ tracks, searchQuery }: TracksListProps) {
                 <td
                   className="px-3 py-6 text-sm"
                   style={{ color: "var(--sb-muted)" }}
-                  colSpan={5}
+                  colSpan={6}
                 >
                   {searchQuery.trim() ? "No tracks found matching your search." : "No tracks found."}
                 </td>

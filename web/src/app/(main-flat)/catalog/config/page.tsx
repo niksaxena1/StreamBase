@@ -78,6 +78,7 @@ async function fetchAllTracksForTable(
     spotify_album_image_url: string | null;
     spotify_artist_names: string[] | null;
     spotify_artist_ids: string[] | null;
+    spotify_track_id: string | null;
   }> = [];
   let from = 0;
 
@@ -85,7 +86,7 @@ async function fetchAllTracksForTable(
     const to = from + pageSize - 1;
     const { data, error } = await sb
       .from("tracks")
-      .select("isrc,name,release_date,last_seen,spotify_album_image_url,spotify_artist_names,spotify_artist_ids")
+      .select("isrc,name,release_date,last_seen,spotify_album_image_url,spotify_artist_names,spotify_artist_ids,spotify_track_id")
       .order("last_seen", { ascending: false })
       .order("isrc", { ascending: true })
       .range(from, to);
@@ -136,6 +137,7 @@ export default async function CatalogConfigPage() {
     albumImageUrl: track.spotify_album_image_url ?? null,
     artistNames: track.spotify_artist_names ?? null,
     artistIds: track.spotify_artist_ids ?? null,
+    externalUrl: track.spotify_track_id ? `https://open.spotify.com/track/${track.spotify_track_id}` : null,
   }));
 
   return (
