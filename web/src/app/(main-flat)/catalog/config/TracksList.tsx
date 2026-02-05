@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import Link from "next/link";
 import { Download, ExternalLink } from "lucide-react";
 
+import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { IconButton } from "@/components/ui/Button";
 import { foldForSearch } from "@/lib/searchFold";
@@ -106,17 +107,8 @@ export function TracksList({ tracks, searchQuery, sortBy = "name", sortAsc = tru
   };
 
   return (
-    <div className="sb-card overflow-hidden">
-      <div
-        className="flex items-center justify-between border-b px-3 py-2"
-        style={{ borderColor: "var(--sb-border)" }}
-      >
-        <div className="text-xs font-medium">
-          Results{" "}
-          <span style={{ color: "var(--sb-muted)" }}>
-            ({filteredAndSortedTracks.length.toLocaleString("en-US")})
-          </span>
-        </div>
+    <div className="flex flex-col space-y-2">
+      <div className="flex items-center justify-end">
         <IconButton
           type="button"
           onClick={() => {
@@ -140,107 +132,83 @@ export function TracksList({ tracks, searchQuery, sortBy = "name", sortAsc = tru
           <Download className="h-3.5 w-3.5" />
         </IconButton>
       </div>
-      <div className="overflow-x-auto">
-        <table className="min-w-full text-xs">
-          <thead className="text-left text-[11px]" style={{ color: "var(--sb-muted)" }}>
-            <tr className="border-b" style={{ borderColor: "var(--sb-border)" }}>
-              <th className="px-3 py-2 font-medium"></th>
-              <th className="px-3 py-2 font-medium">Track</th>
-              <th className="px-3 py-2 font-medium">Total</th>
-              <th className="px-3 py-2 font-medium">Daily</th>
-              <th className="px-3 py-2 font-medium">ISRC</th>
-              <th className="px-3 py-2 font-medium">Release</th>
-              <th className="px-3 py-2 font-medium">Last seen</th>
-              <th className="px-3 py-2 font-medium"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredAndSortedTracks.map((track) => (
-              <tr
-                key={track.isrc}
-                className="border-b last:border-0"
-                style={{ borderColor: "var(--sb-border)" }}
+      <GlassTable headers={["", "Track", "Total", "Daily", "ISRC", "Release", "Last seen", ""]}>
+        {filteredAndSortedTracks.map((track) => (
+          <TableRow key={track.isrc}>
+            <TableCell>
+              {track.albumImageUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={track.albumImageUrl}
+                  alt="Album cover"
+                  className="h-8 w-8 rounded-lg object-cover sb-ring"
+                />
+              ) : (
+                <div className="h-8 w-8 rounded-lg sb-ring bg-white/60" />
+              )}
+            </TableCell>
+            <TableCell>
+              <Link
+                href={`/tracks/${track.isrc}`}
+                className="font-medium transition-colors sb-link-hover"
               >
-                <td className="px-3 py-2">
-                  {track.albumImageUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={track.albumImageUrl}
-                      alt="Album cover"
-                      className="h-8 w-8 rounded-lg object-cover sb-ring"
-                    />
-                  ) : (
-                    <div className="h-8 w-8 rounded-lg sb-ring bg-white/60" />
-                  )}
-                </td>
-                <td className="px-3 py-2">
-                  <Link
-                    href={`/tracks/${track.isrc}`}
-                    className="font-medium transition-colors sb-link-hover"
-                  >
-                    {track.name ?? track.isrc}
-                  </Link>
-                  {track.artistNames?.length ? (
-                    <div className="mt-0.5 text-xs opacity-60">
-                      <ArtistLinks
-                        artistNames={track.artistNames}
-                        artistIds={track.artistIds ?? undefined}
-                      />
-                    </div>
-                  ) : null}
-                </td>
-                <td className="px-3 py-2 text-xs">
-                  <span style={{ color: metricColor }} className="font-medium">
-                    {formatValue(track.totalStreams)}
-                  </span>
-                </td>
-                <td className="px-3 py-2 text-xs">
-                  <span style={{ color: metricColor }} className="font-medium">
-                    {track.dailyStreams !== null && track.dailyStreams > 0 ? "+" : ""}
-                    {formatValue(track.dailyStreams)}
-                  </span>
-                </td>
-                <td className="px-3 py-2 font-mono text-[11px] opacity-40" style={{ color: "var(--sb-muted)" }}>
-                  <Link className="underline" href={`/tracks/${track.isrc}`}>
-                    {track.isrc}
-                  </Link>
-                </td>
-                <td className="px-3 py-2 font-mono text-[11px]">
-                  {track.release_date ?? "—"}
-                </td>
-                <td className="px-3 py-2 font-mono text-[11px]">
-                  {track.last_seen ?? "—"}
-                </td>
-                <td className="px-3 py-2">
-                  {track.externalUrl ? (
-                    <Link
-                      href={track.externalUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center justify-center rounded-full p-1.5 transition-colors hover:bg-black/5 dark:hover:bg-white/10"
-                      title="Open on Spotify"
-                      style={{ color: "var(--sb-muted)" }}
-                    >
-                      <ExternalLink className="h-4 w-4" />
-                    </Link>
-                  ) : null}
-                </td>
-              </tr>
-            ))}
-            {!filteredAndSortedTracks.length && (
-              <tr>
-                <td
-                  className="px-3 py-6 text-sm"
+                {track.name ?? track.isrc}
+              </Link>
+              {track.artistNames?.length ? (
+                <div className="mt-0.5 text-xs opacity-60">
+                  <ArtistLinks
+                    artistNames={track.artistNames}
+                    artistIds={track.artistIds ?? undefined}
+                  />
+                </div>
+              ) : null}
+            </TableCell>
+            <TableCell>
+              <span style={{ color: metricColor }} className="font-medium text-xs">
+                {formatValue(track.totalStreams)}
+              </span>
+            </TableCell>
+            <TableCell>
+              <span style={{ color: metricColor }} className="font-medium text-xs">
+                {track.dailyStreams !== null && track.dailyStreams > 0 ? "+" : ""}
+                {formatValue(track.dailyStreams)}
+              </span>
+            </TableCell>
+            <TableCell mono className="text-xs">
+              <Link className="underline" href={`/tracks/${track.isrc}`}>
+                {track.isrc}
+              </Link>
+            </TableCell>
+            <TableCell className="text-xs">
+              {track.release_date ?? "—"}
+            </TableCell>
+            <TableCell className="text-xs">
+              {track.last_seen ?? "—"}
+            </TableCell>
+            <TableCell>
+              {track.externalUrl ? (
+                <Link
+                  href={track.externalUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center rounded-full p-1.5 transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+                  title="Open on Spotify"
                   style={{ color: "var(--sb-muted)" }}
-                  colSpan={8}
                 >
-                  {searchQuery.trim() ? "No tracks found matching your search." : "No tracks found."}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+                  <ExternalLink className="h-4 w-4" />
+                </Link>
+              ) : null}
+            </TableCell>
+          </TableRow>
+        ))}
+        {!filteredAndSortedTracks.length && (
+          <TableRow>
+            <TableCell className="py-8 text-center opacity-50" colSpan={8}>
+              {searchQuery.trim() ? "No tracks found matching your search." : "No tracks found."}
+            </TableCell>
+          </TableRow>
+        )}
+      </GlassTable>
     </div>
   );
 }

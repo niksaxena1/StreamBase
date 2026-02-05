@@ -19,6 +19,8 @@ type Artist = {
   externalUrl: string;
   totalStreams: number | null;
   dailyStreams: number | null;
+  trackCount: number;
+  dailyTrackCount: number;
 };
 
 type SortOption = "name" | "total" | "daily";
@@ -69,6 +71,20 @@ export function ArtistsList({ artists, searchQuery, sortBy = "name", sortAsc = t
   const metricColor =
     metric === "revenue" ? "#10b981" : metric === "tracks" ? "#3b82f6" : "var(--sb-accent)";
 
+  const getMetricValue = (artist: Artist) => {
+    if (metric === "tracks") {
+      return artist.trackCount;
+    }
+    return artist.totalStreams;
+  };
+
+  const getDailyMetricValue = (artist: Artist) => {
+    if (metric === "tracks") {
+      return artist.dailyTrackCount;
+    }
+    return artist.dailyStreams;
+  };
+
   const formatValue = (value: number | null) => {
     if (value === null) return "—";
     if (metric === "revenue") return formatUsd2(value * streamPayoutPerStreamUsd);
@@ -81,13 +97,24 @@ export function ArtistsList({ artists, searchQuery, sortBy = "name", sortAsc = t
         <IconButton
           type="button"
           onClick={() => {
-            const csvData = filteredAndSortedArtists.map((artist) => ({
-              "Artist Name": artist.name,
-              "Artist ID": artist.id,
-              "Total Streams": artist.totalStreams ?? "",
-              "Daily Streams": artist.dailyStreams ?? "",
-              "Spotify URL": artist.externalUrl,
-            }));
+            const csvData = filteredAndSortedArtists.map((artist) => {
+              if (metric === "tracks") {
+                return {
+                  "Artist Name": artist.name,
+                  "Artist ID": artist.id,
+                  "Total Tracks": artist.trackCount,
+                  "Daily Tracks": artist.dailyTrackCount,
+                  "Spotify URL": artist.externalUrl,
+                };
+              }
+              return {
+                "Artist Name": artist.name,
+                "Artist ID": artist.id,
+                "Total Streams": artist.totalStreams ?? "",
+                "Daily Streams": artist.dailyStreams ?? "",
+                "Spotify URL": artist.externalUrl,
+              };
+            });
             downloadCsv({
               filename: `artists-config-export-${todayIsoDate()}.csv`,
               rows: csvData,
@@ -126,13 +153,13 @@ export function ArtistsList({ artists, searchQuery, sortBy = "name", sortAsc = t
             </TableCell>
             <TableCell>
               <span style={{ color: metricColor }} className="font-medium text-xs">
-                {formatValue(artist.totalStreams)}
+                {formatValue(getMetricValue(artist))}
               </span>
             </TableCell>
             <TableCell>
               <span style={{ color: metricColor }} className="font-medium text-xs">
-                {artist.dailyStreams !== null && artist.dailyStreams > 0 ? "+" : ""}
-                {formatValue(artist.dailyStreams)}
+                {getDailyMetricValue(artist) > 0 ? "+" : ""}
+                {formatValue(getDailyMetricValue(artist))}
               </span>
             </TableCell>
             <TableCell mono className="text-xs">

@@ -219,6 +219,8 @@ export default async function CatalogConfigPage() {
   type ArtistStats = {
     totalStreams: number | null;
     dailyStreams: number | null;
+    trackCount: number;
+    dailyTrackCount: number;
   };
   
   const artistStats = new Map<string, ArtistStats>();
@@ -227,10 +229,17 @@ export default async function CatalogConfigPage() {
     let artistDailyStreams = 0;
     let hasTotalStats = false;
     let hasDailyStats = false;
+    let trackCount = 0;
+    
+    // Track ISRCs seen on each date for daily track count
+    const isrcsOnLatestDate = new Set<string>();
+    const isrcsOnPreviousDate = new Set<string>();
     
     // Find all tracks for this artist and sum their stats
     for (const track of trackRows) {
       if (track.spotify_artist_ids?.includes(artist.id)) {
+        trackCount += 1;
+        
         const stats = trackStats.get(track.isrc);
         if (stats?.totalStreams !== null) {
           artistTotalStreams += stats.totalStreams;
@@ -240,12 +249,27 @@ export default async function CatalogConfigPage() {
           artistDailyStreams += stats.dailyStreams;
           hasDailyStats = true;
         }
+        
+        // Check if track appears in latest/previous dates
+        if (latestStreams.has(track.isrc)) {
+          isrcsOnLatestDate.add(track.isrc);
+        }
+        if (previousStreams.has(track.isrc)) {
+          isrcsOnPreviousDate.add(track.isrc);
+        }
       }
     }
+    
+    // Daily track count is new tracks (in latest but not in previous)
+    const dailyTrackCount = Array.from(isrcsOnLatestDate).filter(
+      (isrc) => !isrcsOnPreviousDate.has(isrc)
+    ).length;
     
     artistStats.set(artist.id, {
       totalStreams: hasTotalStats ? artistTotalStreams : null,
       dailyStreams: hasDailyStats ? artistDailyStreams : null,
+      trackCount,
+      dailyTrackCount,
     });
   }
 
@@ -262,11 +286,16 @@ export default async function CatalogConfigPage() {
     dailyStreams: trackStats.get(track.isrc)?.dailyStreams ?? null,
   }));
 
-  const artistsWithStats = artistsWithData.map((artist) => ({
-    ...artist,
-    totalStreams: artistStats.get(artist.id)?.totalStreams ?? null,
-    dailyStreams: artistStats.get(artist.id)?.dailyStreams ?? null,
-  }));
+  const artistsWithStats = artistsWithData.map((artist) => {
+    const stats = artistStats.get(artist.id);
+    return {
+      ...artist,
+      totalStreams: stats?.totalStreams ?? null,
+      dailyStreams: stats?.dailyStreams ?? null,
+      trackCount: stats?.trackCount ?? 0,
+      dailyTrackCount: stats?.dailyTrackCount ?? 0,
+    };
+  });
 
   return (
     <div className="space-y-4">
