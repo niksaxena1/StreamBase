@@ -134,7 +134,11 @@ export function PlaylistFilters({ playlists, statsMap }: PlaylistFiltersProps) {
   const dailyHeader = metric === "tracks" ? "DAILY TRACKS" : metric === "revenue" ? "DAILY REVENUE" : "DAILY STREAMS";
 
   const metricColor =
-    metric === "tracks" ? "var(--sb-tracks)" : metric === "revenue" ? "var(--sb-revenue)" : "var(--sb-accent)";
+    metric === "tracks"
+      ? "var(--sb-tracks)"
+      : metric === "revenue"
+        ? "var(--sb-revenue)"
+        : "var(--sb-accent-stroke)";
 
   return (
     <div className="flex h-full flex-col space-y-3">
@@ -243,7 +247,13 @@ export function PlaylistFilters({ playlists, statsMap }: PlaylistFiltersProps) {
           </IconButton>
         </div>
         <GlassTable 
-          headers={["", "Name", totalHeader, dailyHeader, "Type"]}
+          headers={[
+            "",
+            "Name",
+            { label: totalHeader, align: "right" },
+            { label: dailyHeader, align: "right" },
+            "Type",
+          ]}
           className="[&_th:first-child]:w-12 [&_td:first-child]:w-12 h-full [&>div]:h-full [&>div]:max-h-none"
         >
         {filteredAndSorted.map((p) => {
@@ -297,15 +307,14 @@ export function PlaylistFilters({ playlists, statsMap }: PlaylistFiltersProps) {
                   {p.display_name}
                 </Link>
               </TableCell>
-              <TableCell>
+              <TableCell numeric>
                 <span style={{ color: metricColor }} className="font-medium">
                   {formatValue(totalValue ?? null)}
                 </span>
               </TableCell>
-              <TableCell>
+              <TableCell numeric>
                 {dailyValue !== null && dailyValue !== undefined ? (
                   <span style={{ color: metricColor }} className="font-medium">
-                    {dailyValue > 0 ? "+" : ""}
                     {formatValue(dailyValue)}
                   </span>
                 ) : (

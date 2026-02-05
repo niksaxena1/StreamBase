@@ -325,7 +325,7 @@ export default async function PlaylistDetailPage({
               <TableCell numeric>{formatInt(r.track_count)}</TableCell>
               <TableCell numeric>{formatInt(r.total_streams_cumulative)}</TableCell>
               <TableCell numeric className="sb-positive font-medium">
-                +{formatInt(r.daily_streams_net)}
+                {formatInt(r.daily_streams_net)}
               </TableCell>
               <TableCell numeric>{formatUsd(Number(r.total_streams_cumulative ?? 0) * payoutPerStreamUsd)}</TableCell>
               <TableCell numeric>

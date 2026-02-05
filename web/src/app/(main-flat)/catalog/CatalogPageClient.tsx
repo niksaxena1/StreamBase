@@ -22,6 +22,7 @@ import { ChipGroup } from "@/components/ui/Chip";
 import { IconButton } from "@/components/ui/Button";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { useMetric } from "@/components/metrics/MetricContext";
+import { SectionHeader } from "@/components/ui/SectionHeader";
 
 type ChartDataPoint = {
   date: string;
@@ -53,6 +54,16 @@ type SelectedTrack = {
   artistNames: string[] | null;
   artistIds: string[] | null;
 };
+type TrackPlaylistMembership = {
+  playlistKey: string;
+  playlistName: string;
+  playlistType: string;
+  addedRunDate: string;
+  removedRunDate: string | null;
+  spotifyPlaylistId: string | null;
+  spotifyPlaylistImageUrl: string | null;
+  isCatalog: boolean;
+};
 
 export function CatalogPageClient(props: {
   latestCum: number;
@@ -82,6 +93,7 @@ export function CatalogPageClient(props: {
   track7d: number;
   track28d: number;
   track30d: number;
+  selectedTrackPlaylistMemberships: TrackPlaylistMembership[];
 }) {
   const { metric } = useMetric();
   const [isArtistExpanded, setIsArtistExpanded] = useState(true);
@@ -595,6 +607,102 @@ export function CatalogPageClient(props: {
             </div>
           );
         })() : null}
+      </div>
+
+      {/* Track playlist memberships (last section) */}
+      <div className="space-y-2 border-t pt-3" style={{ borderColor: "var(--sb-border)" }}>
+        <SectionHeader
+          title="Playlist memberships"
+          subtitle={
+            props.isrc
+              ? "Playlists this track has been in (as of the latest data date)."
+              : "Pick a track to see playlist memberships."
+          }
+        />
+
+        <GlassTable headers={["", "Playlist", "Key", "Type", "Added", "Removed"]} maxBodyHeightClassName="max-h-80">
+          {(props.isrc ? props.selectedTrackPlaylistMemberships : []).map((m) => (
+            <TableRow key={m.playlistKey}>
+              <TableCell>
+                {m.spotifyPlaylistImageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={m.spotifyPlaylistImageUrl}
+                    alt="Playlist cover"
+                    className="h-8 w-8 rounded-lg object-cover sb-ring"
+                  />
+                ) : (
+                  <div className="h-8 w-8 rounded-lg sb-ring bg-white/60" />
+                )}
+              </TableCell>
+              <TableCell>
+                <div className="min-w-0">
+                  <Link
+                    href={`/playlists/${m.playlistKey}`}
+                    className="block truncate font-medium transition-colors sb-link-hover"
+                  >
+                    {m.playlistName}
+                  </Link>
+                </div>
+              </TableCell>
+              <TableCell mono className="text-[11px] opacity-60" style={{ color: "var(--sb-muted)" }}>
+                {m.playlistKey}
+              </TableCell>
+              <TableCell>
+                {(() => {
+                  const type = (m.playlistType ?? "").trim() || "Standard";
+                  if (type === "Catalog") {
+                    return (
+                      <span
+                        className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium"
+                        style={{ background: "var(--sb-accent-10)", color: "var(--sb-positive)" }}
+                      >
+                        Catalog
+                      </span>
+                    );
+                  }
+                  const typeColors = {
+                    Label: {
+                      bg: "bg-blue-400/20",
+                      text: "text-blue-800 dark:text-blue-300",
+                    },
+                    Entity: {
+                      bg: "bg-purple-400/20",
+                      text: "text-purple-800 dark:text-purple-300",
+                    },
+                    Distro: {
+                      bg: "bg-orange-400/20",
+                      text: "text-orange-800 dark:text-orange-300",
+                    },
+                  } as const;
+                  const colors =
+                    (typeColors as Record<string, { bg: string; text: string }>)[type] || {
+                      bg: "bg-black/10",
+                      text: "text-black/80 dark:text-white/60",
+                    };
+                  return (
+                    <span
+                      className={`inline-flex items-center rounded-full ${colors.bg} px-2.5 py-0.5 text-xs font-medium ${colors.text}`}
+                    >
+                      {type}
+                    </span>
+                  );
+                })()}
+              </TableCell>
+              <TableCell mono className="text-[11px]">
+                {formatDateISO(dataDateFromRunDate(m.addedRunDate))}
+              </TableCell>
+              <TableCell mono className="text-[11px]">
+                {m.removedRunDate ? formatDateISO(dataDateFromRunDate(m.removedRunDate)) : "—"}
+              </TableCell>
+            </TableRow>
+          ))}
+
+          {props.isrc && !props.selectedTrackPlaylistMemberships.length ? (
+            <EmptyState colSpan={6} message="No playlist memberships found for this track." />
+          ) : null}
+          {!props.isrc ? <EmptyState colSpan={6} message="Select a track to see memberships." /> : null}
+        </GlassTable>
       </div>
     </>
   );

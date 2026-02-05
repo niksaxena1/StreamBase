@@ -154,7 +154,6 @@ export function TracksList({ tracks, searchQuery, sortBy = "name", sortAsc = tru
             </TableCell>
             <TableCell>
               <span style={{ color: metricColor }} className="font-medium text-xs">
-                {track.dailyStreams !== null && track.dailyStreams > 0 ? "+" : ""}
                 {formatValue(track.dailyStreams)}
               </span>
             </TableCell>

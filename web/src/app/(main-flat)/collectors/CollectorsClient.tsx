@@ -1382,7 +1382,7 @@ export function CollectorsClient(props: {
                       >
                         {drillIsRevenueMetric
                           ? formatUsd2(dailyValue)
-                          : `${Number(t.daily_streams_delta ?? 0) >= 0 ? "+" : ""}${formatInt(dailyStreams)}`}
+                          : `${formatInt(dailyStreams)}`}
                       </TableCell>
                     </>
                   )}
@@ -1593,7 +1593,7 @@ export function CollectorsClient(props: {
                     {formatUsd2(Number(p.daily_streams_net ?? 0) * payoutPerStreamUsd)}
                   </TableCell>
                   <TableCell className="sb-positive font-medium">
-                    +{formatInt(p.daily_streams_net)}
+                    {formatInt(p.daily_streams_net)}
                   </TableCell>
                   <TableCell title={p.missing_streams_track_count ? "Missing catalog tracks for this date." : undefined}>
                     {p.missing_streams_track_count ? (
@@ -1841,7 +1841,7 @@ export function CollectorsClient(props: {
                     >
                       {t.daily_streams_delta == null
                         ? "—"
-                        : `${t.daily_streams_delta >= 0 ? "+" : ""}${formatInt(t.daily_streams_delta)}`}
+                        : `${formatInt(t.daily_streams_delta)}`}
                     </TableCell>
                     <TableCell title={distroKeys.length ? distroTitle : undefined}>
                       {distroKeys.length ? (
@@ -1877,7 +1877,7 @@ export function CollectorsClient(props: {
                                 style={{ backgroundColor: "var(--sb-surface)", color: "var(--sb-text)" }}
                                 title={distroTitle}
                               >
-                                +{distroKeys.length - 4}
+                                {distroKeys.length - 4}
                               </div>
                             ) : null}
                           </div>

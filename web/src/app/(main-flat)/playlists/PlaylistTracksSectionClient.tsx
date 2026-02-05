@@ -49,8 +49,8 @@ type DebugCounts = {
 };
 
 function fmtDelta(args: { mode: "streams" | "revenue"; value: number; streamPayoutPerStreamUsd: number }) {
-  if (args.mode === "revenue") return `+${formatUsd(args.value * args.streamPayoutPerStreamUsd)}`;
-  return `+${formatInt(args.value)}`;
+  if (args.mode === "revenue") return formatUsd(args.value * args.streamPayoutPerStreamUsd);
+  return formatInt(args.value);
 }
 
 function fmtTotal(args: { mode: "streams" | "revenue"; value: number; streamPayoutPerStreamUsd: number }) {

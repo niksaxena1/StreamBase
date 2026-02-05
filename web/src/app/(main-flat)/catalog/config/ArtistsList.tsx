@@ -150,7 +150,6 @@ export function ArtistsList({ artists, searchQuery, sortBy = "name", sortAsc = t
             </TableCell>
             <TableCell>
               <span style={{ color: metricColor }} className="font-medium text-xs">
-                {dailyMetricValue != null && dailyMetricValue > 0 ? "+" : ""}
                 {formatValue(dailyMetricValue)}
               </span>
             </TableCell>

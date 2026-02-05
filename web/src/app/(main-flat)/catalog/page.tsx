@@ -62,6 +62,21 @@ type CatalogTopTrackRow = {
   total: number | null;
   daily: number | null;
 };
+type PlaylistMembershipRow = {
+  playlist_key: string;
+  valid_from: string;
+  valid_to: string | null;
+};
+
+type PlaylistMetaRow = {
+  playlist_key: string;
+  display_name: string | null;
+  is_catalog: boolean | null;
+  playlist_type: string | null;
+  display_order: number | null;
+  spotify_playlist_id: string | null;
+  spotify_playlist_image_url: string | null;
+};
 
 function clampRangeDays(x: unknown) {
   const n = Number(x ?? "90") || 90;
@@ -681,6 +696,126 @@ export default async function CatalogPage({
     }
   }
 
+  // Selected track playlist memberships (active as-of latestRunDate)
+  const selectedTrackPlaylistMemberships = await (async () => {
+    if (!isrc || !latestRunDate) return [];
+
+    const { data: membershipRows, error: membershipErr } = await cachedQuery(
+      async () =>
+        await svc
+          .from("playlist_memberships")
+          .select("playlist_key,valid_from,valid_to")
+          .eq("isrc", isrc)
+          .lte("valid_from", latestRunDate)
+          .order("playlist_key", { ascending: true })
+          .order("valid_from", { ascending: false })
+          .limit(5000),
+      `catalog-track-playlist-memberships-v1-${isrc}-${latestRunDate}`,
+      3600,
+    );
+
+    if (membershipErr) {
+      console.warn("Error fetching track playlist memberships:", membershipErr);
+      return [];
+    }
+
+    const latestByPlaylist = new Map<string, PlaylistMembershipRow>();
+    for (const r of (membershipRows ?? []) as PlaylistMembershipRow[]) {
+      const key = String(r?.playlist_key ?? "").trim();
+      if (!key) continue;
+      if (!latestByPlaylist.has(key)) latestByPlaylist.set(key, r);
+    }
+
+    const latestRows = Array.from(latestByPlaylist.values());
+    const playlistKeys = latestRows
+      .map((r) => String(r.playlist_key ?? "").trim())
+      .filter(Boolean);
+    if (!playlistKeys.length) return [];
+
+    // Fetch playlist metadata (no caching: keeps type badges in sync with /playlists/config edits).
+    // Also provide a fallback if `playlist_type`/`display_order` columns don't exist yet.
+    let playlistMetaRows: unknown[] = [];
+    try {
+      const res = await svc
+        .from("playlists")
+        .select(
+          "playlist_key,display_name,is_catalog,playlist_type,display_order,spotify_playlist_id,spotify_playlist_image_url",
+        )
+        .in("playlist_key", playlistKeys);
+
+      if (
+        res.error &&
+        (String(res.error.message ?? "").includes("playlist_type") ||
+          String(res.error.message ?? "").includes("display_order"))
+      ) {
+        const fallback = await svc
+          .from("playlists")
+          .select("playlist_key,display_name,is_catalog,spotify_playlist_id,spotify_playlist_image_url")
+          .in("playlist_key", playlistKeys);
+
+        if (fallback.error) {
+          console.warn("Error fetching playlist metadata (fallback):", fallback.error);
+        } else {
+          playlistMetaRows = (fallback.data ?? []) as unknown[];
+        }
+      } else if (res.error) {
+        console.warn("Error fetching playlist metadata:", res.error);
+      } else {
+        playlistMetaRows = (res.data ?? []) as unknown[];
+      }
+    } catch (e) {
+      console.warn("Error fetching playlist metadata:", e);
+    }
+
+    const metaByKey = new Map<string, PlaylistMetaRow>();
+    for (const r of (playlistMetaRows ?? []) as PlaylistMetaRow[]) {
+      const key = String(r?.playlist_key ?? "").trim();
+      if (!key) continue;
+      metaByKey.set(key, r);
+    }
+
+    const out = latestRows.map((r) => {
+      const key = String(r.playlist_key ?? "").trim();
+      const meta = metaByKey.get(key) ?? null;
+      const playlistTypeRaw = (meta?.playlist_type ?? "").trim();
+      const playlistType =
+        playlistTypeRaw || (meta?.is_catalog ? "Catalog" : "Standard");
+      return {
+        playlistKey: key,
+        playlistName: (meta?.display_name ?? "").trim() || key,
+        playlistType,
+        displayOrder: typeof meta?.display_order === "number" ? meta.display_order : null,
+        addedRunDate: String(r.valid_from).slice(0, 10),
+        removedRunDate: r.valid_to ? String(r.valid_to).slice(0, 10) : null,
+        spotifyPlaylistId: meta?.spotify_playlist_id ?? null,
+        spotifyPlaylistImageUrl: meta?.spotify_playlist_image_url ?? null,
+        isCatalog: Boolean(meta?.is_catalog),
+      };
+    });
+
+    out.sort((a, b) => {
+      // Match /playlists/config ordering:
+      // 1) display_order ASC (NULLS LAST)
+      // 2) is_catalog DESC
+      // 3) display_name ASC
+      const ao = a.displayOrder;
+      const bo = b.displayOrder;
+      const aHas = ao != null && Number.isFinite(ao);
+      const bHas = bo != null && Number.isFinite(bo);
+      if (aHas && bHas && ao !== bo) return ao - bo;
+      if (aHas !== bHas) return aHas ? -1 : 1;
+
+      const ac = a.isCatalog ? 1 : 0;
+      const bc = b.isCatalog ? 1 : 0;
+      if (ac !== bc) return bc - ac;
+
+      const n = a.playlistName.localeCompare(b.playlistName);
+      if (n !== 0) return n;
+      return a.playlistKey.localeCompare(b.playlistKey);
+    });
+    return out;
+  })();
+
   return (
     <div className="space-y-4">
       <CatalogPageClient
@@ -711,6 +846,7 @@ export default async function CatalogPage({
         track7d={track7d}
         track28d={track28d}
         track30d={track30d}
+        selectedTrackPlaylistMemberships={selectedTrackPlaylistMemberships}
       />
     </div>
   );
