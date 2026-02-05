@@ -91,6 +91,18 @@ export function ArtistsList({ artists, searchQuery, sortBy = "name", sortAsc = t
     return formatInt(value);
   };
 
+  const getTotalMetricLabel = () => {
+    if (metric === "tracks") return "Total Tracks";
+    if (metric === "revenue") return "Total Revenue";
+    return "Total Streams";
+  };
+
+  const getDailyMetricLabel = () => {
+    if (metric === "tracks") return "Daily Tracks";
+    if (metric === "revenue") return "Daily Revenue";
+    return "Daily Streams";
+  };
+
   return (
     <div className="flex flex-col space-y-2">
       <div className="flex items-center justify-end">
@@ -126,7 +138,7 @@ export function ArtistsList({ artists, searchQuery, sortBy = "name", sortAsc = t
           <Download className="h-3.5 w-3.5" />
         </IconButton>
       </div>
-      <GlassTable headers={["", "Artist", "Total", "Daily", "ID", ""]}>
+      <GlassTable headers={["", "Artist", getTotalMetricLabel(), getDailyMetricLabel(), "ID", ""]}>
         {filteredAndSortedArtists.map((artist) => (
           <TableRow key={artist.id}>
             <TableCell>
@@ -162,7 +174,7 @@ export function ArtistsList({ artists, searchQuery, sortBy = "name", sortAsc = t
                 {formatValue(getDailyMetricValue(artist))}
               </span>
             </TableCell>
-            <TableCell mono className="text-xs">
+            <TableCell mono className="text-xs" style={{ color: "var(--sb-muted)" }}>
               {artist.id}
             </TableCell>
             <TableCell>

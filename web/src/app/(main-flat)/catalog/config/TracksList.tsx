@@ -106,6 +106,16 @@ export function TracksList({ tracks, searchQuery, sortBy = "name", sortAsc = tru
     return formatInt(value);
   };
 
+  const getTotalMetricLabel = () => {
+    if (displayMetric === "revenue") return "Total Revenue";
+    return "Total Streams";
+  };
+
+  const getDailyMetricLabel = () => {
+    if (displayMetric === "revenue") return "Daily Revenue";
+    return "Daily Streams";
+  };
+
   return (
     <div className="flex flex-col space-y-2">
       <div className="flex items-center justify-end">
@@ -132,7 +142,7 @@ export function TracksList({ tracks, searchQuery, sortBy = "name", sortAsc = tru
           <Download className="h-3.5 w-3.5" />
         </IconButton>
       </div>
-      <GlassTable headers={["", "Track", "Total", "Daily", "ISRC", "Release", "Last seen", ""]}>
+      <GlassTable headers={["", "Track", getTotalMetricLabel(), getDailyMetricLabel(), "ISRC", "Release", "Last seen", ""]}>
         {filteredAndSortedTracks.map((track) => (
           <TableRow key={track.isrc}>
             <TableCell>
@@ -174,10 +184,8 @@ export function TracksList({ tracks, searchQuery, sortBy = "name", sortAsc = tru
                 {formatValue(track.dailyStreams)}
               </span>
             </TableCell>
-            <TableCell mono className="text-xs">
-              <Link className="underline" href={`/tracks/${track.isrc}`}>
-                {track.isrc}
-              </Link>
+            <TableCell mono className="text-xs" style={{ color: "var(--sb-muted)" }}>
+              {track.isrc}
             </TableCell>
             <TableCell className="text-xs">
               {track.release_date ?? "—"}
