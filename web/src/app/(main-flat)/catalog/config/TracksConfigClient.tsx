@@ -12,6 +12,9 @@ type Track = {
   albumImageUrl: string | null;
   artistNames: string[] | null;
   artistIds: string[] | null;
+  externalUrl: string | null;
+  totalStreams: number | null;
+  dailyStreams: number | null;
 };
 
 type TracksConfigClientProps = {
@@ -19,8 +22,12 @@ type TracksConfigClientProps = {
   totalCount: number;
 };
 
+type SortOption = "name" | "total" | "daily" | "release" | "lastseen";
+
 export function TracksConfigClient({ tracks, totalCount }: TracksConfigClientProps) {
   const [searchQuery, setSearchQuery] = useState("");
+  const [sortBy, setSortBy] = useState<SortOption>("name");
+  const [sortAsc, setSortAsc] = useState(true);
 
   return (
     <>
@@ -35,10 +42,38 @@ export function TracksConfigClient({ tracks, totalCount }: TracksConfigClientPro
             )}
           </h1>
         </div>
-        <SearchBox onSearchChange={setSearchQuery} placeholder="Search tracks…" />
+        <div className="flex items-center gap-2">
+          <select
+            value={`${sortBy}-${sortAsc ? "asc" : "desc"}`}
+            onChange={(e) => {
+              const [newSortBy, newSortAsc] = e.target.value.split("-");
+              setSortBy(newSortBy as SortOption);
+              setSortAsc(newSortAsc === "asc");
+            }}
+            className="rounded-xl border bg-white/70 px-2.5 py-1.5 text-xs outline-none transition focus:border-black/20 focus:ring-2 focus:ring-black/5 dark:bg-white/5 dark:text-white dark:border-white/10 dark:focus:border-white/20 dark:focus:ring-white/5"
+            style={{ borderColor: "var(--sb-border)" }}
+          >
+            <option value="name-asc">Name ↑</option>
+            <option value="name-desc">Name ↓</option>
+            <option value="total-desc">Total ↓</option>
+            <option value="total-asc">Total ↑</option>
+            <option value="daily-desc">Daily ↓</option>
+            <option value="daily-asc">Daily ↑</option>
+            <option value="release-desc">Release ↓</option>
+            <option value="release-asc">Release ↑</option>
+            <option value="lastseen-desc">Last Seen ↓</option>
+            <option value="lastseen-asc">Last Seen ↑</option>
+          </select>
+          <SearchBox onSearchChange={setSearchQuery} placeholder="Search tracks…" />
+        </div>
       </div>
 
-      <TracksList tracks={tracks} searchQuery={searchQuery} />
+      <TracksList 
+        tracks={tracks} 
+        searchQuery={searchQuery}
+        sortBy={sortBy}
+        sortAsc={sortAsc}
+      />
     </>
   );
 }

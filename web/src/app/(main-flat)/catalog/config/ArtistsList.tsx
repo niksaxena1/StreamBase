@@ -21,22 +21,49 @@ type Artist = {
   dailyStreams: number | null;
 };
 
+type SortOption = "name" | "total" | "daily";
+
 type ArtistsListProps = {
   artists: Artist[];
   searchQuery: string;
+  sortBy?: SortOption;
+  sortAsc?: boolean;
 };
 
-export function ArtistsList({ artists, searchQuery }: ArtistsListProps) {
+export function ArtistsList({ artists, searchQuery, sortBy = "name", sortAsc = true }: ArtistsListProps) {
   const { metric } = useMetric();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
 
-  const filteredArtists = useMemo(() => {
-    if (!searchQuery.trim()) {
-      return artists;
+  const filteredAndSortedArtists = useMemo(() => {
+    let result = [...artists];
+
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const q = foldForSearch(searchQuery);
+      result = result.filter((artist) => foldForSearch(artist.name).includes(q));
     }
-    const q = foldForSearch(searchQuery);
-    return artists.filter((artist) => foldForSearch(artist.name).includes(q));
-  }, [artists, searchQuery]);
+
+    // Sort
+    result.sort((a, b) => {
+      let comparison = 0;
+
+      switch (sortBy) {
+        case "name":
+          comparison = a.name.localeCompare(b.name);
+          break;
+        case "total":
+          comparison = (a.totalStreams ?? 0) - (b.totalStreams ?? 0);
+          break;
+        case "daily":
+          comparison = (a.dailyStreams ?? 0) - (b.dailyStreams ?? 0);
+          break;
+      }
+
+      return sortAsc ? comparison : -comparison;
+    });
+
+    return result;
+  }, [artists, searchQuery, sortBy, sortAsc]);
 
   // Color scheme based on metric
   const metricColor =
@@ -54,7 +81,7 @@ export function ArtistsList({ artists, searchQuery }: ArtistsListProps) {
         <IconButton
           type="button"
           onClick={() => {
-            const csvData = filteredArtists.map((artist) => ({
+            const csvData = filteredAndSortedArtists.map((artist) => ({
               "Artist Name": artist.name,
               "Artist ID": artist.id,
               "Total Streams": artist.totalStreams ?? "",
@@ -73,7 +100,7 @@ export function ArtistsList({ artists, searchQuery }: ArtistsListProps) {
         </IconButton>
       </div>
       <GlassTable headers={["", "Artist", "Total", "Daily", "ID", ""]}>
-        {filteredArtists.map((artist) => (
+        {filteredAndSortedArtists.map((artist) => (
           <TableRow key={artist.id}>
             <TableCell>
               {artist.imageUrl ? (
@@ -125,7 +152,7 @@ export function ArtistsList({ artists, searchQuery }: ArtistsListProps) {
             </TableCell>
           </TableRow>
         ))}
-        {!filteredArtists.length && (
+        {!filteredAndSortedArtists.length && (
           <TableRow>
             <TableCell className="py-8 text-center opacity-50" colSpan={6}>
               {searchQuery.trim() ? "No artists found matching your search." : "No artists found."}

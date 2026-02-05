@@ -25,37 +25,72 @@ type Track = {
   dailyStreams: number | null;
 };
 
+type SortOption = "name" | "total" | "daily" | "release" | "lastseen";
+
 type TracksListProps = {
   tracks: Track[];
   searchQuery: string;
+  sortBy?: SortOption;
+  sortAsc?: boolean;
 };
 
-export function TracksList({ tracks, searchQuery }: TracksListProps) {
+export function TracksList({ tracks, searchQuery, sortBy = "name", sortAsc = true }: TracksListProps) {
   const { metric } = useMetric();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
 
-  const filteredTracks = useMemo(() => {
-    if (!searchQuery.trim()) {
-      return tracks;
-    }
-    
-    // Split query into words to allow searching for both artist and track name
-    const queryParts = searchQuery.trim().split(/\s+/).filter(Boolean);
-    
-    return tracks.filter((track) => {
-      const trackName = track.name ?? track.isrc;
-      const normalizedTrackName = foldForSearch(trackName);
-      const artistNamesText = (track.artistNames ?? []).join(" ");
-      const normalizedArtistNames = foldForSearch(artistNamesText);
+  const filteredAndSortedTracks = useMemo(() => {
+    let result = [...tracks];
+
+    // Filter by search query
+    if (searchQuery.trim()) {
+      // Split query into words to allow searching for both artist and track name
+      const queryParts = searchQuery.trim().split(/\s+/).filter(Boolean);
       
-      // Check if all query parts match either the track name or artist names
-      return queryParts.every((part) => {
-        const normalizedPart = foldForSearch(part);
-        return normalizedTrackName.includes(normalizedPart) || 
-               normalizedArtistNames.includes(normalizedPart);
+      result = result.filter((track) => {
+        const trackName = track.name ?? track.isrc;
+        const normalizedTrackName = foldForSearch(trackName);
+        const artistNamesText = (track.artistNames ?? []).join(" ");
+        const normalizedArtistNames = foldForSearch(artistNamesText);
+        
+        // Check if all query parts match either the track name or artist names
+        return queryParts.every((part) => {
+          const normalizedPart = foldForSearch(part);
+          return normalizedTrackName.includes(normalizedPart) || 
+                 normalizedArtistNames.includes(normalizedPart);
+        });
       });
+    }
+
+    // Sort
+    result.sort((a, b) => {
+      let comparison = 0;
+
+      switch (sortBy) {
+        case "name": {
+          const nameA = a.name ?? a.isrc;
+          const nameB = b.name ?? b.isrc;
+          comparison = nameA.localeCompare(nameB);
+          break;
+        }
+        case "total":
+          comparison = (a.totalStreams ?? 0) - (b.totalStreams ?? 0);
+          break;
+        case "daily":
+          comparison = (a.dailyStreams ?? 0) - (b.dailyStreams ?? 0);
+          break;
+        case "release":
+          comparison = (a.release_date ?? "").localeCompare(b.release_date ?? "");
+          break;
+        case "lastseen":
+          comparison = (a.last_seen ?? "").localeCompare(b.last_seen ?? "");
+          break;
+      }
+
+      return sortAsc ? comparison : -comparison;
     });
-  }, [tracks, searchQuery]);
+
+    return result;
+  }, [tracks, searchQuery, sortBy, sortAsc]);
 
   // For tracks, use streams instead of tracks metric
   const displayMetric = metric === "tracks" ? "streams" : metric;
@@ -79,13 +114,13 @@ export function TracksList({ tracks, searchQuery }: TracksListProps) {
         <div className="text-xs font-medium">
           Results{" "}
           <span style={{ color: "var(--sb-muted)" }}>
-            ({filteredTracks.length.toLocaleString("en-US")})
+            ({filteredAndSortedTracks.length.toLocaleString("en-US")})
           </span>
         </div>
         <IconButton
           type="button"
           onClick={() => {
-            const csvData = filteredTracks.map((track) => ({
+            const csvData = filteredAndSortedTracks.map((track) => ({
               "Track Name": track.name ?? track.isrc,
               ISRC: track.isrc,
               Artists: track.artistNames?.join(" | ") ?? "",
@@ -120,7 +155,7 @@ export function TracksList({ tracks, searchQuery }: TracksListProps) {
             </tr>
           </thead>
           <tbody>
-            {filteredTracks.map((track) => (
+            {filteredAndSortedTracks.map((track) => (
               <tr
                 key={track.isrc}
                 className="border-b last:border-0"
@@ -192,7 +227,7 @@ export function TracksList({ tracks, searchQuery }: TracksListProps) {
                 </td>
               </tr>
             ))}
-            {!filteredTracks.length && (
+            {!filteredAndSortedTracks.length && (
               <tr>
                 <td
                   className="px-3 py-6 text-sm"
