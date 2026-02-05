@@ -295,7 +295,8 @@ function aggregateMonthlyDelta(
     .sort((a, b) => a.month.localeCompare(b.month));
 
   // Compute projection for the latest (current/incomplete) month via linear extrapolation
-  if (result.length > 0) {
+  // Skip projection for tracks metric (only show for revenue/streams)
+  if (metric !== "tracks" && result.length > 0) {
     const last = result[result.length - 1];
     const [yearStr, monthStr] = last.month.split("-");
     const totalDays = new Date(Number(yearStr), Number(monthStr), 0).getDate();
@@ -649,6 +650,22 @@ export function CollectorsClient(props: {
 
   const DRILL_PAGE_SIZE = 200;
 
+  // Effective metric for drilldowns:
+  // - For Tracks drilldown, global "tracks" behaves like "streams" (values + colors).
+  // - For Playlists/Artists drilldowns, global "tracks" shows track counts.
+  const drillEffectiveMetric: Metric = drillKind === "tracks" && metric === "tracks" ? "streams" : metric;
+  const drillIsTracksMetric = drillEffectiveMetric === "tracks";
+  const drillIsRevenueMetric = drillEffectiveMetric === "revenue";
+  const drillIsStreamsMetric = drillEffectiveMetric === "streams";
+  const drillTracksColorClass = "text-blue-600 dark:text-blue-400 font-medium";
+  const drillStreamsNumberClass = "sb-positive font-medium";
+  const drillRevenueNumberClass = "font-medium";
+  const drillMetricNumberClass = drillIsRevenueMetric
+    ? drillRevenueNumberClass
+    : drillIsStreamsMetric
+      ? drillStreamsNumberClass
+      : drillTracksColorClass;
+
   function openDrill(collector: string, kind: DrillKind) {
     setDrillCollector(collector);
     setDrillKind(kind);
@@ -707,6 +724,7 @@ export function CollectorsClient(props: {
 
   const filteredSortedDrillItems = useMemo(() => {
     const q = drillQuery.trim().toLowerCase();
+    const effectiveMetric: Metric = drillKind === "tracks" && metric === "tracks" ? "streams" : metric;
 
     if (drillKind === "playlists") {
       let items = drillItems.map(parseDrillPlaylistItem).filter(Boolean) as DrillPlaylistItem[];
@@ -720,8 +738,8 @@ export function CollectorsClient(props: {
       // Sort by metric value (desc) while keeping deterministic ties.
       items = [...items].sort((a, b) => {
         const cmpNum = (x: number | null, y: number | null) => (y ?? -Infinity) - (x ?? -Infinity);
-        if (metric === "tracks") return (b.track_count ?? 0) - (a.track_count ?? 0) || a.playlist_key.localeCompare(b.playlist_key);
-        if (metric === "revenue") return cmpNum(a.est_revenue_daily_net, b.est_revenue_daily_net) || cmpNum(a.est_revenue_total, b.est_revenue_total) || a.playlist_key.localeCompare(b.playlist_key);
+        if (effectiveMetric === "tracks") return (b.track_count ?? 0) - (a.track_count ?? 0) || a.playlist_key.localeCompare(b.playlist_key);
+        if (effectiveMetric === "revenue") return cmpNum(a.est_revenue_daily_net, b.est_revenue_daily_net) || cmpNum(a.est_revenue_total, b.est_revenue_total) || a.playlist_key.localeCompare(b.playlist_key);
         return cmpNum(a.daily_streams_net, b.daily_streams_net) || cmpNum(a.total_streams_cumulative, b.total_streams_cumulative) || a.playlist_key.localeCompare(b.playlist_key);
       });
       return items;
@@ -737,7 +755,7 @@ export function CollectorsClient(props: {
         });
       }
       items = [...items].sort((a, b) => {
-        if (metric === "tracks") return (b.track_count ?? 0) - (a.track_count ?? 0) || a.artist_id.localeCompare(b.artist_id);
+        if (effectiveMetric === "tracks") return (b.track_count ?? 0) - (a.track_count ?? 0) || a.artist_id.localeCompare(b.artist_id);
         const daily = (b.daily_streams_delta ?? 0) - (a.daily_streams_delta ?? 0);
         return daily || (b.total_streams_cumulative ?? 0) - (a.total_streams_cumulative ?? 0) || a.artist_id.localeCompare(b.artist_id);
       });
@@ -754,9 +772,8 @@ export function CollectorsClient(props: {
         return name.includes(q) || isrc.includes(q) || artists.includes(q);
       });
     }
-    if (metric === "tracks") {
-      items = [...items].sort((a, b) => String(a.name ?? a.isrc).localeCompare(String(b.name ?? b.isrc)));
-    }
+    // When the global metric is "tracks", we still treat this drilldown as streams,
+    // so keep the API-provided ordering (daily delta desc) instead of name sorting.
     return items;
   }, [drillItems, drillKind, drillQuery, metric]);
 
@@ -1144,13 +1161,13 @@ export function CollectorsClient(props: {
           {drillKind === "playlists" ? (
             <GlassTable
               headers={
-                metric === "tracks"
+                drillIsTracksMetric
                   ? ["Playlist", "Type", { label: "Tracks", align: "right" }]
                   : [
                       "Playlist",
                       "Type",
-                      { label: metric === "revenue" ? "Total Revenue" : "Total Streams", align: "right" },
-                      { label: metric === "revenue" ? "Daily Revenue" : "Daily Streams", align: "right" },
+                      { label: drillIsRevenueMetric ? "Total Revenue" : "Total Streams", align: "right" },
+                      { label: drillIsRevenueMetric ? "Daily Revenue" : "Daily Streams", align: "right" },
                     ]
               }
               maxBodyHeightClassName="max-h-[520px]"
@@ -1158,10 +1175,12 @@ export function CollectorsClient(props: {
               {(filteredSortedDrillItems as DrillPlaylistItem[]).map((p) => {
                 const totalStreams = Number(p.total_streams_cumulative ?? 0);
                 const dailyStreams = Number(p.daily_streams_net ?? 0);
-                const totalValue = metric === "revenue" ? Number(p.est_revenue_total ?? totalStreams * payoutPerStreamUsd) : totalStreams;
-                const dailyValue = metric === "revenue" ? Number(p.est_revenue_daily_net ?? dailyStreams * payoutPerStreamUsd) : dailyStreams;
-                const metricNumberClass =
-                  metric === "revenue" ? "font-medium" : metric === "streams" ? "sb-positive font-medium" : "font-medium";
+                const totalValue = drillIsRevenueMetric
+                  ? Number(p.est_revenue_total ?? totalStreams * payoutPerStreamUsd)
+                  : totalStreams;
+                const dailyValue = drillIsRevenueMetric
+                  ? Number(p.est_revenue_daily_net ?? dailyStreams * payoutPerStreamUsd)
+                  : dailyStreams;
 
                 return (
                 <TableRow key={String(p.playlist_key)}>
@@ -1194,15 +1213,15 @@ export function CollectorsClient(props: {
                     </div>
                   </TableCell>
                   <TableCell>{p.playlist_type ? String(p.playlist_type) : <span className="opacity-30">—</span>}</TableCell>
-                  {metric === "tracks" ? (
-                    <TableCell numeric className="font-medium">{formatInt(Number(p.track_count ?? 0))}</TableCell>
+                  {drillIsTracksMetric ? (
+                    <TableCell numeric className={drillTracksColorClass}>{formatInt(Number(p.track_count ?? 0))}</TableCell>
                   ) : (
                     <>
-                      <TableCell numeric className={metricNumberClass} style={metric === "revenue" ? { color: "#10b981" } : undefined}>
-                        {metric === "revenue" ? formatUsd2(totalValue) : formatInt(totalValue)}
+                      <TableCell numeric className={drillMetricNumberClass} style={drillIsRevenueMetric ? { color: "#10b981" } : undefined}>
+                        {drillIsRevenueMetric ? formatUsd2(totalValue) : formatInt(totalValue)}
                       </TableCell>
-                      <TableCell numeric className={metricNumberClass} style={metric === "revenue" ? { color: "#10b981" } : undefined}>
-                        {metric === "revenue" ? formatUsd2(dailyValue) : formatInt(dailyValue)}
+                      <TableCell numeric className={drillMetricNumberClass} style={drillIsRevenueMetric ? { color: "#10b981" } : undefined}>
+                        {drillIsRevenueMetric ? formatUsd2(dailyValue) : formatInt(dailyValue)}
                       </TableCell>
                     </>
                   )}
@@ -1211,7 +1230,7 @@ export function CollectorsClient(props: {
               })}
               {!(filteredSortedDrillItems as DrillPlaylistItem[]).length && !drillLoading ? (
                 <TableRow>
-                  <TableCell className="py-10 text-center opacity-50" colSpan={metric === "tracks" ? 3 : 4}>
+                  <TableCell className="py-10 text-center opacity-50" colSpan={drillIsTracksMetric ? 3 : 4}>
                     No playlists found.
                   </TableCell>
                 </TableRow>
@@ -1220,13 +1239,13 @@ export function CollectorsClient(props: {
           ) : drillKind === "artists" ? (
             <GlassTable
               headers={
-                metric === "tracks"
+                drillIsTracksMetric
                   ? [{ label: "Artist" }, { label: "Tracks", align: "right" }]
                   : [
                       { label: "Artist" },
                       { label: "Tracks", align: "right" },
-                      { label: metric === "revenue" ? "Total Revenue" : "Total Streams", align: "right" },
-                      { label: metric === "revenue" ? "Daily Revenue" : "Daily Streams", align: "right" },
+                      { label: drillIsRevenueMetric ? "Total Revenue" : "Total Streams", align: "right" },
+                      { label: drillIsRevenueMetric ? "Daily Revenue" : "Daily Streams", align: "right" },
                     ]
               }
               maxBodyHeightClassName="max-h-[520px]"
@@ -1234,10 +1253,8 @@ export function CollectorsClient(props: {
               {(filteredSortedDrillItems as DrillArtistItem[]).map((a) => {
                 const totalStreams = Number(a.total_streams_cumulative ?? 0);
                 const dailyStreams = Number(a.daily_streams_delta ?? 0);
-                const totalValue = metric === "revenue" ? totalStreams * payoutPerStreamUsd : totalStreams;
-                const dailyValue = metric === "revenue" ? dailyStreams * payoutPerStreamUsd : dailyStreams;
-                const metricNumberClass =
-                  metric === "revenue" ? "font-medium" : metric === "streams" ? "sb-positive font-medium" : "font-medium";
+                const totalValue = drillIsRevenueMetric ? totalStreams * payoutPerStreamUsd : totalStreams;
+                const dailyValue = drillIsRevenueMetric ? dailyStreams * payoutPerStreamUsd : dailyStreams;
 
                 return (
                 <TableRow key={String(a.artist_id)}>
@@ -1264,16 +1281,16 @@ export function CollectorsClient(props: {
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell numeric>{formatInt(Number(a.track_count ?? 0))}</TableCell>
-                  {metric === "tracks" ? (
-                    null
-                  ) : (
+                  <TableCell numeric className={drillIsTracksMetric ? drillTracksColorClass : "font-medium"}>
+                    {formatInt(Number(a.track_count ?? 0))}
+                  </TableCell>
+                  {drillIsTracksMetric ? null : (
                     <>
-                      <TableCell numeric className={metricNumberClass} style={metric === "revenue" ? { color: "#10b981" } : undefined}>
-                        {metric === "revenue" ? formatUsd2(totalValue) : formatInt(totalValue)}
+                      <TableCell numeric className={drillMetricNumberClass} style={drillIsRevenueMetric ? { color: "#10b981" } : undefined}>
+                        {drillIsRevenueMetric ? formatUsd2(totalValue) : formatInt(totalValue)}
                       </TableCell>
-                      <TableCell numeric className={metricNumberClass} style={metric === "revenue" ? { color: "#10b981" } : undefined}>
-                        {metric === "revenue" ? formatUsd2(dailyValue) : formatInt(dailyValue)}
+                      <TableCell numeric className={drillMetricNumberClass} style={drillIsRevenueMetric ? { color: "#10b981" } : undefined}>
+                        {drillIsRevenueMetric ? formatUsd2(dailyValue) : formatInt(dailyValue)}
                       </TableCell>
                     </>
                   )}
@@ -1282,7 +1299,7 @@ export function CollectorsClient(props: {
               })}
               {!(filteredSortedDrillItems as DrillArtistItem[]).length && !drillLoading ? (
                 <TableRow>
-                  <TableCell className="py-10 text-center opacity-50" colSpan={metric === "tracks" ? 2 : 4}>
+                  <TableCell className="py-10 text-center opacity-50" colSpan={drillIsTracksMetric ? 2 : 4}>
                     No artists found.
                   </TableCell>
                 </TableRow>
@@ -1294,13 +1311,13 @@ export function CollectorsClient(props: {
                 "",
                 "Track",
                 "Artists",
-                ...(metric === "tracks"
+                ...(drillIsTracksMetric
                   ? []
                   : [
-                      { label: metric === "revenue" ? "Total Revenue" : "Total Streams", align: "right" } as const,
+                      { label: drillIsRevenueMetric ? "Total Revenue" : "Total Streams", align: "right" } as const,
                       (
                         <span key="d1" title="Today minus yesterday (based on cumulative streams).">
-                          {metric === "revenue" ? "Daily Revenue" : "Daily Streams"}
+                          {drillIsRevenueMetric ? "Daily Revenue" : "Daily Streams"}
                         </span>
                       ) as const,
                     ]),
@@ -1310,10 +1327,8 @@ export function CollectorsClient(props: {
               {(filteredSortedDrillItems as DrillTrackItem[]).map((t) => {
                 const totalStreams = Number(t.total_streams_cumulative ?? 0);
                 const dailyStreams = Number(t.daily_streams_delta ?? 0);
-                const totalValue = metric === "revenue" ? totalStreams * payoutPerStreamUsd : totalStreams;
-                const dailyValue = metric === "revenue" ? dailyStreams * payoutPerStreamUsd : dailyStreams;
-                const metricNumberClass =
-                  metric === "revenue" ? "font-medium" : metric === "streams" ? "sb-positive font-medium" : "font-medium";
+                const totalValue = drillIsRevenueMetric ? totalStreams * payoutPerStreamUsd : totalStreams;
+                const dailyValue = drillIsRevenueMetric ? dailyStreams * payoutPerStreamUsd : dailyStreams;
 
                 return (
                 <TableRow key={String(t.isrc)}>
@@ -1349,23 +1364,23 @@ export function CollectorsClient(props: {
                       {String(t.isrc)}
                     </div>
                   </TableCell>
-                  {metric === "tracks" ? null : (
+                  {drillIsTracksMetric ? null : (
                     <>
-                      <TableCell numeric className={metricNumberClass} style={metric === "revenue" ? { color: "#10b981" } : undefined}>
-                        {metric === "revenue" ? formatUsd2(totalValue) : formatInt(totalValue)}
+                      <TableCell numeric className={drillMetricNumberClass} style={drillIsRevenueMetric ? { color: "#10b981" } : undefined}>
+                        {drillIsRevenueMetric ? formatUsd2(totalValue) : formatInt(totalValue)}
                       </TableCell>
                       <TableCell
                         numeric
                         className={
-                          metric === "revenue"
-                            ? metricNumberClass
+                          drillIsRevenueMetric
+                            ? drillMetricNumberClass
                             : Number(t.daily_streams_delta ?? 0) < 0
                               ? "text-red-600 dark:text-red-400 font-medium"
-                              : "sb-positive font-medium"
+                              : drillStreamsNumberClass
                         }
-                        style={metric === "revenue" ? { color: "#10b981" } : undefined}
+                        style={drillIsRevenueMetric ? { color: "#10b981" } : undefined}
                       >
-                        {metric === "revenue"
+                        {drillIsRevenueMetric
                           ? formatUsd2(dailyValue)
                           : `${Number(t.daily_streams_delta ?? 0) >= 0 ? "+" : ""}${formatInt(dailyStreams)}`}
                       </TableCell>
@@ -1376,7 +1391,7 @@ export function CollectorsClient(props: {
               })}
               {!(filteredSortedDrillItems as DrillTrackItem[]).length && !drillLoading ? (
                 <TableRow>
-                  <TableCell className="py-10 text-center opacity-50" colSpan={metric === "tracks" ? 3 : 5}>
+                  <TableCell className="py-10 text-center opacity-50" colSpan={drillIsTracksMetric ? 3 : 5}>
                     No tracks found.
                   </TableCell>
                 </TableRow>

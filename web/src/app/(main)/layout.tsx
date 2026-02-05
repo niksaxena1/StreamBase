@@ -3,6 +3,7 @@ import { supabaseServer } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { PayoutRateProvider } from "@/components/payout/PayoutRateContext";
 import { MetricProvider } from "@/components/metrics/MetricContext";
+import { WeekHighlightProvider } from "@/components/charts/WeekHighlightContext";
 
 export default async function MainLayout({
   children,
@@ -21,9 +22,11 @@ export default async function MainLayout({
 
   return (
     <PayoutRateProvider>
-      <MetricProvider defaultMetric="streams">
-        <AppShell>{children}</AppShell>
-      </MetricProvider>
+      <WeekHighlightProvider>
+        <MetricProvider defaultMetric="streams">
+          <AppShell>{children}</AppShell>
+        </MetricProvider>
+      </WeekHighlightProvider>
     </PayoutRateProvider>
   );
 }

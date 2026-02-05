@@ -177,10 +177,32 @@ export function computeDailyRollingAvg7<T extends { date: string; daily: number 
 // Calendar / Styling helpers (e.g. Sunday highlighting)
 // ============================================================================
 
-export function isSundayDate(dateString: string): boolean {
+export type WeekdayIndexUtc = 0 | 1 | 2 | 3 | 4 | 5 | 6;
+
+function normalizeWeekdayIndexUtc(n: unknown, fallback: WeekdayIndexUtc): WeekdayIndexUtc {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return fallback;
+  const i = Math.trunc(v);
+  if (i === 0 || i === 1 || i === 2 || i === 3 || i === 4 || i === 5 || i === 6) return i;
+  return fallback;
+}
+
+export function isWeekdayDateUtc(dateString: string, weekdayUtc: WeekdayIndexUtc): boolean {
   const date = isIsoDateString(dateString) ? isoDateToNoonUtc(dateString) : new Date(dateString);
   // getUTCDay is stable for noon UTC dates, and avoids local TZ surprises.
-  return date.getUTCDay() === 0;
+  return date.getUTCDay() === weekdayUtc;
+}
+
+export function isSundayDate(dateString: string): boolean {
+  return isWeekdayDateUtc(dateString, 0);
+}
+
+/**
+ * “Highlight day” helper for charts. Defaults to Sunday (0) for backwards compatibility.
+ */
+export function isHighlightDayDateUtc(dateString: string, highlightWeekdayUtc?: unknown): boolean {
+  const weekday = normalizeWeekdayIndexUtc(highlightWeekdayUtc, 0);
+  return isWeekdayDateUtc(dateString, weekday);
 }
 
 type RGBA = { r: number; g: number; b: number; a: number };
