@@ -2,10 +2,12 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
-import { ExternalLink, User } from "lucide-react";
+import { ExternalLink, User, Download } from "lucide-react";
 
 import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
+import { IconButton } from "@/components/ui/Button";
 import { foldForSearch } from "@/lib/searchFold";
+import { downloadCsv, todayIsoDate } from "@/lib/csv";
 
 type Artist = {
   id: string;
@@ -29,7 +31,28 @@ export function ArtistsList({ artists, searchQuery }: ArtistsListProps) {
   }, [artists, searchQuery]);
 
   return (
-    <GlassTable headers={["", "Artist", "ID", ""]}>
+    <div className="flex flex-col space-y-2">
+      <div className="flex items-center justify-end">
+        <IconButton
+          type="button"
+          onClick={() => {
+            const csvData = filteredArtists.map((artist) => ({
+              "Artist Name": artist.name,
+              "Artist ID": artist.id,
+              "Spotify URL": artist.externalUrl,
+            }));
+            downloadCsv({
+              filename: `artists-config-export-${todayIsoDate()}.csv`,
+              rows: csvData,
+            });
+          }}
+          title="Download table as CSV"
+          aria-label="Download table as CSV"
+        >
+          <Download className="h-3.5 w-3.5" />
+        </IconButton>
+      </div>
+      <GlassTable headers={["", "Artist", "ID", ""]}>
         {filteredArtists.map((artist) => (
           <TableRow key={artist.id}>
             <TableCell>
@@ -78,6 +101,7 @@ export function ArtistsList({ artists, searchQuery }: ArtistsListProps) {
             </TableCell>
           </TableRow>
         )}
-    </GlassTable>
+      </GlassTable>
+    </div>
   );
 }
