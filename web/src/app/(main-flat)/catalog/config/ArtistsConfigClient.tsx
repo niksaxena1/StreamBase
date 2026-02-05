@@ -6,10 +6,11 @@ import { ArrowLeft, Download } from "lucide-react";
 
 import { SearchBox } from "./SearchBox";
 import { ArtistsList } from "./ArtistsList";
-import { Select } from "@/components/ui/Select";
+import { MenuSelect } from "@/components/ui/MenuSelect";
 import { downloadCsv, todayIsoDate } from "@/lib/csv";
 import { foldForSearch } from "@/lib/searchFold";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
+import { useMetric } from "@/components/metrics/MetricContext";
 
 type Artist = {
   id: string;
@@ -34,6 +35,8 @@ export function ArtistsConfigClient({ artists, totalCount }: ArtistsConfigClient
   const [sortBy, setSortBy] = useState<SortOption>("name");
   const [sortAsc, setSortAsc] = useState(true);
   const { streamPayoutPerStreamUsd } = usePayoutRate();
+  const { metric } = useMetric();
+  const sortValue = `${sortBy}-${sortAsc ? "asc" : "desc"}` as const;
 
   // Filter and sort artists for CSV export
   const filteredAndSortedForExport = (() => {
@@ -54,10 +57,22 @@ export function ArtistsConfigClient({ artists, totalCount }: ArtistsConfigClient
           comparison = a.name.localeCompare(b.name);
           break;
         case "total":
-          comparison = (a.totalStreams ?? 0) - (b.totalStreams ?? 0);
+          comparison =
+            metric === "tracks"
+              ? (a.trackCount ?? 0) - (b.trackCount ?? 0)
+              : metric === "revenue"
+                ? (a.totalStreams ?? 0) * streamPayoutPerStreamUsd -
+                  (b.totalStreams ?? 0) * streamPayoutPerStreamUsd
+                : (a.totalStreams ?? 0) - (b.totalStreams ?? 0);
           break;
         case "daily":
-          comparison = (a.dailyStreams ?? 0) - (b.dailyStreams ?? 0);
+          comparison =
+            metric === "tracks"
+              ? (a.dailyTrackCount ?? 0) - (b.dailyTrackCount ?? 0)
+              : metric === "revenue"
+                ? (a.dailyStreams ?? 0) * streamPayoutPerStreamUsd -
+                  (b.dailyStreams ?? 0) * streamPayoutPerStreamUsd
+                : (a.dailyStreams ?? 0) - (b.dailyStreams ?? 0);
           break;
       }
 
@@ -128,22 +143,24 @@ export function ArtistsConfigClient({ artists, totalCount }: ArtistsConfigClient
             placeholder="Search artists…"
             className="min-w-[260px]"
           />
-          <Select
-            value={`${sortBy}-${sortAsc ? "asc" : "desc"}`}
-            onChange={(e) => {
-              const [newSortBy, newSortAsc] = e.target.value.split("-");
+          <MenuSelect
+            value={sortValue}
+            onChange={(v) => {
+              const [newSortBy, newSortAsc] = v.split("-");
               setSortBy(newSortBy as SortOption);
               setSortAsc(newSortAsc === "asc");
             }}
-            className="w-auto px-2.5 py-1.5 text-xs"
-          >
-            <option value="name-asc">Name ↑</option>
-            <option value="name-desc">Name ↓</option>
-            <option value="total-desc">Total ↓</option>
-            <option value="total-asc">Total ↑</option>
-            <option value="daily-desc">Daily ↓</option>
-            <option value="daily-asc">Daily ↑</option>
-          </Select>
+            ariaLabel="Artist sorting"
+            align="right"
+            options={[
+              { value: "name-asc", label: "Name ↑" },
+              { value: "name-desc", label: "Name ↓" },
+              { value: "total-desc", label: "Total ↓" },
+              { value: "total-asc", label: "Total ↑" },
+              { value: "daily-desc", label: "Daily ↓" },
+              { value: "daily-asc", label: "Daily ↑" },
+            ]}
+          />
         </div>
       </div>
 

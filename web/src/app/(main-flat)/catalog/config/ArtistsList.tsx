@@ -52,10 +52,22 @@ export function ArtistsList({ artists, searchQuery, sortBy = "name", sortAsc = t
           comparison = a.name.localeCompare(b.name);
           break;
         case "total":
-          comparison = (a.totalStreams ?? 0) - (b.totalStreams ?? 0);
+          comparison =
+            metric === "tracks"
+              ? (a.trackCount ?? 0) - (b.trackCount ?? 0)
+              : metric === "revenue"
+                ? (a.totalStreams ?? 0) * streamPayoutPerStreamUsd -
+                  (b.totalStreams ?? 0) * streamPayoutPerStreamUsd
+                : (a.totalStreams ?? 0) - (b.totalStreams ?? 0);
           break;
         case "daily":
-          comparison = (a.dailyStreams ?? 0) - (b.dailyStreams ?? 0);
+          comparison =
+            metric === "tracks"
+              ? (a.dailyTrackCount ?? 0) - (b.dailyTrackCount ?? 0)
+              : metric === "revenue"
+                ? (a.dailyStreams ?? 0) * streamPayoutPerStreamUsd -
+                  (b.dailyStreams ?? 0) * streamPayoutPerStreamUsd
+                : (a.dailyStreams ?? 0) - (b.dailyStreams ?? 0);
           break;
       }
 
@@ -63,7 +75,7 @@ export function ArtistsList({ artists, searchQuery, sortBy = "name", sortAsc = t
     });
 
     return result;
-  }, [artists, searchQuery, sortBy, sortAsc]);
+  }, [artists, metric, searchQuery, sortBy, sortAsc, streamPayoutPerStreamUsd]);
 
   // Color scheme based on metric
   const metricColor =

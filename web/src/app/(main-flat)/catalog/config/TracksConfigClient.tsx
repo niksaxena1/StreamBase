@@ -5,7 +5,7 @@ import { Download } from "lucide-react";
 
 import { SearchBox } from "./SearchBox";
 import { TracksList } from "./TracksList";
-import { Select } from "@/components/ui/Select";
+import { MenuSelect } from "@/components/ui/MenuSelect";
 import { downloadCsv, todayIsoDate } from "@/lib/csv";
 import { foldForSearch } from "@/lib/searchFold";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
@@ -35,6 +35,7 @@ export function TracksConfigClient({ tracks, totalCount }: TracksConfigClientPro
   const [sortBy, setSortBy] = useState<SortOption>("name");
   const [sortAsc, setSortAsc] = useState(true);
   const { streamPayoutPerStreamUsd } = usePayoutRate();
+  const sortValue = `${sortBy}-${sortAsc ? "asc" : "desc"}` as const;
 
   // Filter and sort tracks for CSV export
   const filteredAndSortedForExport = (() => {
@@ -141,26 +142,28 @@ export function TracksConfigClient({ tracks, totalCount }: TracksConfigClientPro
             placeholder="Search tracks…"
             className="min-w-[260px]"
           />
-          <Select
-            value={`${sortBy}-${sortAsc ? "asc" : "desc"}`}
-            onChange={(e) => {
-              const [newSortBy, newSortAsc] = e.target.value.split("-");
+          <MenuSelect
+            value={sortValue}
+            onChange={(v) => {
+              const [newSortBy, newSortAsc] = v.split("-");
               setSortBy(newSortBy as SortOption);
               setSortAsc(newSortAsc === "asc");
             }}
-            className="w-auto px-2.5 py-1.5 text-xs"
-          >
-            <option value="name-asc">Name ↑</option>
-            <option value="name-desc">Name ↓</option>
-            <option value="total-desc">Total ↓</option>
-            <option value="total-asc">Total ↑</option>
-            <option value="daily-desc">Daily ↓</option>
-            <option value="daily-asc">Daily ↑</option>
-            <option value="release-desc">Release ↓</option>
-            <option value="release-asc">Release ↑</option>
-            <option value="lastseen-desc">Last Seen ↓</option>
-            <option value="lastseen-asc">Last Seen ↑</option>
-          </Select>
+            ariaLabel="Track sorting"
+            align="right"
+            options={[
+              { value: "name-asc", label: "Name ↑" },
+              { value: "name-desc", label: "Name ↓" },
+              { value: "total-desc", label: "Total ↓" },
+              { value: "total-asc", label: "Total ↑" },
+              { value: "daily-desc", label: "Daily ↓" },
+              { value: "daily-asc", label: "Daily ↑" },
+              { value: "release-desc", label: "Release ↓" },
+              { value: "release-asc", label: "Release ↑" },
+              { value: "lastseen-desc", label: "Last Seen ↓" },
+              { value: "lastseen-asc", label: "Last Seen ↑" },
+            ]}
+          />
         </div>
       </div>
 

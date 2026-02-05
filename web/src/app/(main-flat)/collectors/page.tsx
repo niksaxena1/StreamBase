@@ -219,6 +219,11 @@ export default async function CollectorsPage({
           )
           .eq("date", latestRunDate),
 
+      artistCounts: async () =>
+        await svc.rpc("collector_artist_counts_for_date", {
+          run_date: latestRunDate,
+        }),
+
       spark14: async () =>
         await svc
           .from("collector_daily_agg")
@@ -284,7 +289,7 @@ export default async function CollectorsPage({
       },
     },
     // bump cache key when changing server-side track pagination behavior
-    `collectors-${selectedCollector}-${rangeStart}-${rangeEnd}-${latestRunDate}-tracksPaged1-ov${overrideBuster}`,
+    `collectors-${selectedCollector}-${rangeStart}-${rangeEnd}-${latestRunDate}-tracksPaged1-artists1-ov${overrideBuster}`,
     600,
   );
 
@@ -299,6 +304,7 @@ export default async function CollectorsPage({
 
   const compareRows = (results.compareToday.data ?? []) as any[];
   const sparkRows = (results.spark14.data ?? []) as any[];
+  const artistCountRows = (results.artistCounts.data ?? []) as Array<{ collector: string; artist_count: number }>;
 
   const sparkByCollector = new Map<string, { rev: number[]; streams: number[]; tracks: number[] }>();
   for (const c of COLLECTORS) sparkByCollector.set(c, { rev: [], streams: [], tracks: [] });
@@ -311,12 +317,21 @@ export default async function CollectorsPage({
     cur.tracks.push(Number(r.track_count ?? 0));
   }
 
+  const artistCountByCollector = new Map<string, number>();
+  for (const c of COLLECTORS) artistCountByCollector.set(c, 0);
+  for (const r of artistCountRows) {
+    const c = String(r.collector ?? "").toUpperCase();
+    if (!artistCountByCollector.has(c)) continue;
+    artistCountByCollector.set(c, Number((r as any).artist_count ?? 0));
+  }
+
   const summary: CollectorSummaryRow[] = COLLECTORS.map((c) => {
     const row = compareRows.find((r) => String(r.collector ?? "").toUpperCase() === c) ?? {};
     const spark = sparkByCollector.get(c)!;
     return {
       collector: c,
       playlists: playlistCountByCollector.get(c) ?? 0,
+      artist_count: artistCountByCollector.get(c) ?? 0,
       track_count: Number(row.track_count ?? 0),
       total_streams_cumulative: Number(row.total_streams_cumulative ?? 0),
       daily_streams_net: Number(row.daily_streams_net ?? 0),
@@ -440,6 +455,7 @@ export default async function CollectorsPage({
 
       <CollectorsClient
         latestDate={latestDataDate}
+        latestRunDate={latestRunDate}
         selectedCollector={selectedCollector}
         rangeDays={rangeDays}
         summary={summary}

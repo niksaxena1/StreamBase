@@ -32,6 +32,7 @@ import { IconButton } from "@/components/ui/Button";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { useMetric } from "@/components/metrics/MetricContext";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
+import { Modal } from "@/components/ui/Modal";
 
 const METRICS = ["streams", "revenue", "tracks"] as const;
 type Metric = (typeof METRICS)[number];
@@ -216,6 +217,7 @@ function aggregateMonthlyDelta(
 export type CollectorSummaryRow = {
   collector: string;
   playlists: number;
+  artist_count: number;
   track_count: number;
   total_streams_cumulative: number;
   daily_streams_net: number;
@@ -267,6 +269,7 @@ export type CollectorTrackRow = {
 
 export function CollectorsClient(props: {
   latestDate: string | null;
+  latestRunDate: string;
   selectedCollector: string;
   rangeDays: number;
   summary: CollectorSummaryRow[];
@@ -534,6 +537,102 @@ export function CollectorsClient(props: {
   const [trackQuery, setTrackQuery] = useState("");
   const [trackSort, setTrackSort] = useState<TrackSort>("delta_desc");
 
+  type DrillKind = "playlists" | "artists" | "tracks";
+  const [drillOpen, setDrillOpen] = useState(false);
+  const [drillKind, setDrillKind] = useState<DrillKind>("tracks");
+  const [drillCollector, setDrillCollector] = useState<string | null>(null);
+  const [drillQuery, setDrillQuery] = useState("");
+  const [drillError, setDrillError] = useState<string | null>(null);
+  const [drillLoading, setDrillLoading] = useState(false);
+  const [drillDone, setDrillDone] = useState(false);
+  const [drillOffset, setDrillOffset] = useState(0);
+  const [drillItems, setDrillItems] = useState<any[]>([]);
+
+  const DRILL_PAGE_SIZE = 200;
+
+  function openDrill(collector: string, kind: DrillKind) {
+    setDrillCollector(collector);
+    setDrillKind(kind);
+    setDrillQuery("");
+    setDrillError(null);
+    setDrillItems([]);
+    setDrillOffset(0);
+    setDrillDone(false);
+    setDrillOpen(true);
+  }
+
+  useEffect(() => {
+    if (!drillOpen) return;
+    if (!drillCollector) return;
+
+    let cancelled = false;
+
+    async function run() {
+      setDrillLoading(true);
+      setDrillError(null);
+      try {
+        const res = await fetch("/api/collectors/comparison-drilldown", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            kind: drillKind,
+            collector: drillCollector,
+            run_date: props.latestRunDate,
+            offset: drillOffset,
+            limit: DRILL_PAGE_SIZE,
+          }),
+        });
+        const json = (await res.json().catch(() => null)) as any;
+        if (!res.ok || !json?.ok) {
+          throw new Error(json?.error ?? `Request failed (${res.status})`);
+        }
+        const newItems = Array.isArray(json.items) ? json.items : [];
+        if (!cancelled) {
+          setDrillItems((prev) => (drillOffset === 0 ? newItems : [...prev, ...newItems]));
+          setDrillDone(Boolean(json.done) || newItems.length < DRILL_PAGE_SIZE);
+        }
+      } catch (e) {
+        if (!cancelled) setDrillError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (!cancelled) setDrillLoading(false);
+      }
+    }
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [drillOpen, drillCollector, drillKind, drillOffset, props.latestRunDate]);
+
+  const filteredDrillItems = useMemo(() => {
+    const q = drillQuery.trim().toLowerCase();
+    if (!q) return drillItems;
+
+    if (drillKind === "playlists") {
+      return drillItems.filter((p: any) => {
+        const name = String(p?.display_name ?? "").toLowerCase();
+        const key = String(p?.playlist_key ?? "").toLowerCase();
+        return name.includes(q) || key.includes(q);
+      });
+    }
+
+    if (drillKind === "artists") {
+      return drillItems.filter((a: any) => {
+        const name = String(a?.name ?? "").toLowerCase();
+        const id = String(a?.artist_id ?? "").toLowerCase();
+        return name.includes(q) || id.includes(q);
+      });
+    }
+
+    // tracks
+    return drillItems.filter((t: any) => {
+      const name = String(t?.name ?? "").toLowerCase();
+      const isrc = String(t?.isrc ?? "").toLowerCase();
+      const artists = Array.isArray(t?.artist_names) ? t.artist_names.join(", ").toLowerCase() : "";
+      return name.includes(q) || isrc.includes(q) || artists.includes(q);
+    });
+  }, [drillItems, drillKind, drillQuery]);
+
   const filteredSortedTracks = useMemo(() => {
     const q = trackQuery.trim().toLowerCase();
     let rows = props.collectorTracks ?? [];
@@ -714,6 +813,7 @@ export function CollectorsClient(props: {
                   className: "sticky left-0 z-20 min-w-[110px]",
                 },
                 { label: "Pl", className: "w-[70px] text-right" },
+                { label: "Artists", className: "w-[84px] text-right" },
                 { label: "Tracks", className: "w-[84px] text-right" },
                 { label: "Value", className: "w-[110px] text-right font-medium" },
                 {
@@ -779,8 +879,36 @@ export function CollectorsClient(props: {
                         {r.collector}
                       </Link>
                     </TableCell>
-                    <TableCell numeric>{formatInt(r.playlists)}</TableCell>
-                    <TableCell numeric>{formatInt(r.track_count)}</TableCell>
+                    <TableCell numeric>
+                      <button
+                        type="button"
+                        className="w-full text-right font-medium transition-colors sb-link-hover"
+                        onClick={() => openDrill(r.collector, "playlists")}
+                        title={`Show playlists for ${r.collector}`}
+                      >
+                        {formatInt(r.playlists)}
+                      </button>
+                    </TableCell>
+                    <TableCell numeric>
+                      <button
+                        type="button"
+                        className="w-full text-right font-medium transition-colors sb-link-hover"
+                        onClick={() => openDrill(r.collector, "artists")}
+                        title={`Show artists for ${r.collector}`}
+                      >
+                        {formatInt(r.artist_count)}
+                      </button>
+                    </TableCell>
+                    <TableCell numeric>
+                      <button
+                        type="button"
+                        className="w-full text-right font-medium transition-colors sb-link-hover"
+                        onClick={() => openDrill(r.collector, "tracks")}
+                        title={`Show tracks for ${r.collector}`}
+                      >
+                        {formatInt(r.track_count)}
+                      </button>
+                    </TableCell>
                     <TableCell
                       numeric
                       className="font-medium"
@@ -802,6 +930,260 @@ export function CollectorsClient(props: {
             </GlassTable>
         </div>
       </div>
+
+      <Modal
+        open={drillOpen}
+        onClose={() => {
+          setDrillOpen(false);
+          setDrillQuery("");
+          setDrillError(null);
+          setDrillItems([]);
+          setDrillOffset(0);
+          setDrillDone(false);
+        }}
+        title={
+          drillCollector ? (
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="font-medium">{drillCollector}</span>
+              <span className="opacity-60" style={{ color: "var(--sb-muted)" }}>
+                •
+              </span>
+              <span className="font-medium">
+                {drillKind === "playlists" ? "Playlists" : drillKind === "artists" ? "Artists" : "Tracks"}
+              </span>
+            </div>
+          ) : (
+            "Drilldown"
+          )
+        }
+        subtitle={
+          props.latestDate ? (
+            <span>
+              Data date {formatDateISO(props.latestDate)}{" "}
+              <span className="opacity-60" style={{ color: "var(--sb-muted)" }}>
+                •
+              </span>{" "}
+              Run date <span className="font-mono">{props.latestRunDate}</span>
+            </span>
+          ) : (
+            <span>
+              Run date <span className="font-mono">{props.latestRunDate}</span>
+            </span>
+          )
+        }
+        maxWidthClassName="max-w-6xl"
+      >
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex min-w-[240px] flex-1 items-center gap-2">
+              <div className="relative w-full">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 opacity-60" />
+                <Input
+                  type="text"
+                  value={drillQuery}
+                  onChange={(e) => setDrillQuery(e.target.value)}
+                  placeholder={
+                    drillKind === "playlists"
+                      ? "Filter playlists…"
+                      : drillKind === "artists"
+                        ? "Filter artists…"
+                        : "Filter tracks / artists / ISRC…"
+                  }
+                  className="pl-10 pr-9 py-2 text-sm"
+                />
+                {drillQuery.trim() ? (
+                  <IconButton
+                    type="button"
+                    aria-label="Clear filter"
+                    title="Clear filter"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 rounded-md"
+                    onClick={() => setDrillQuery("")}
+                  >
+                    <X className="h-4 w-4" style={{ color: "var(--sb-muted)" }} />
+                  </IconButton>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="text-xs whitespace-nowrap" style={{ color: "var(--sb-muted)" }}>
+              {formatInt(filteredDrillItems.length)} shown{drillQuery.trim() ? ` (filtered from ${formatInt(drillItems.length)})` : ""}
+            </div>
+          </div>
+
+          {drillError ? (
+            <div className="text-xs text-red-600 dark:text-red-400">{drillError}</div>
+          ) : null}
+
+          {drillKind === "playlists" ? (
+            <GlassTable headers={["Playlist", "Type"]} maxBodyHeightClassName="max-h-[520px]">
+              {filteredDrillItems.map((p: any) => (
+                <TableRow key={String(p.playlist_key)}>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      {p.spotify_playlist_image_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={String(p.spotify_playlist_image_url)}
+                          alt={String(p.display_name ?? p.playlist_key)}
+                          className="h-7 w-7 rounded-full object-cover sb-ring flex-shrink-0"
+                        />
+                      ) : (
+                        <div
+                          className="h-7 w-7 rounded-full sb-ring flex items-center justify-center text-[10px] font-bold flex-shrink-0"
+                          style={{ backgroundColor: "var(--sb-surface)", color: "var(--sb-muted)" }}
+                        >
+                          {String(p.display_name ?? p.playlist_key).trim().slice(0, 1).toUpperCase()}
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <Link
+                          href={`/playlists/${encodeURIComponent(String(p.playlist_key))}`}
+                          className="font-medium transition-colors sb-link-hover block truncate"
+                        >
+                          {String(p.display_name ?? p.playlist_key)}
+                        </Link>
+                        <div className="font-mono text-[11px] opacity-50">{String(p.playlist_key)}</div>
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell>{p.playlist_type ? String(p.playlist_type) : <span className="opacity-30">—</span>}</TableCell>
+                </TableRow>
+              ))}
+              {!filteredDrillItems.length && !drillLoading ? (
+                <TableRow>
+                  <TableCell className="py-10 text-center opacity-50" colSpan={2}>
+                    No playlists found.
+                  </TableCell>
+                </TableRow>
+              ) : null}
+            </GlassTable>
+          ) : drillKind === "artists" ? (
+            <GlassTable headers={["Artist", "Tracks"]} maxBodyHeightClassName="max-h-[520px]">
+              {filteredDrillItems.map((a: any) => (
+                <TableRow key={String(a.artist_id)}>
+                  <TableCell>
+                    <div className="flex items-center gap-2 min-w-0">
+                      {a.image_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={String(a.image_url)}
+                          alt={String(a.name ?? a.artist_id)}
+                          className="h-7 w-7 rounded-full object-cover sb-ring flex-shrink-0"
+                        />
+                      ) : (
+                        <div className="h-7 w-7 rounded-full sb-ring bg-white/60 dark:bg-white/10 flex-shrink-0" />
+                      )}
+                      <div className="min-w-0">
+                        <Link
+                          href={`/catalog?artist_id=${encodeURIComponent(String(a.artist_id))}`}
+                          className="font-medium transition-colors sb-link-hover block truncate"
+                        >
+                          {String(a.name ?? a.artist_id)}
+                        </Link>
+                        <div className="font-mono text-[11px] opacity-50">{String(a.artist_id)}</div>
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell numeric>{formatInt(Number(a.track_count ?? 0))}</TableCell>
+                </TableRow>
+              ))}
+              {!filteredDrillItems.length && !drillLoading ? (
+                <TableRow>
+                  <TableCell className="py-10 text-center opacity-50" colSpan={2}>
+                    No artists found.
+                  </TableCell>
+                </TableRow>
+              ) : null}
+            </GlassTable>
+          ) : (
+            <GlassTable
+              headers={[
+                "",
+                "Track",
+                "ISRC",
+                "Streams (total)",
+                <span key="d1" title="Today minus yesterday (based on cumulative streams).">
+                  Streams (daily)
+                </span>,
+              ]}
+              maxBodyHeightClassName="max-h-[520px]"
+            >
+              {filteredDrillItems.map((t: any) => (
+                <TableRow key={String(t.isrc)}>
+                  <TableCell>
+                    {t.album_image_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={String(t.album_image_url)}
+                        alt="Album cover"
+                        className="h-8 w-8 rounded-lg object-cover sb-ring"
+                      />
+                    ) : (
+                      <div className="h-8 w-8 rounded-lg sb-ring bg-white/60 dark:bg-white/10" />
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <Link
+                      href={`/tracks/${encodeURIComponent(String(t.isrc))}`}
+                      className="font-medium transition-colors sb-link-hover"
+                    >
+                      {String(t.name ?? t.isrc)}
+                    </Link>
+                    {Array.isArray(t.artist_names) && t.artist_names.length ? (
+                      <div className="mt-0.5 text-xs opacity-60">
+                        <ArtistLinks artistNames={t.artist_names} artistIds={Array.isArray(t.artist_ids) ? t.artist_ids : null} />
+                      </div>
+                    ) : null}
+                  </TableCell>
+                  <TableCell mono className="text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>
+                    {String(t.isrc)}
+                  </TableCell>
+                  <TableCell className="font-medium">
+                    {t.total_streams_cumulative == null ? "—" : formatInt(Number(t.total_streams_cumulative))}
+                  </TableCell>
+                  <TableCell
+                    className={
+                      t.daily_streams_delta != null && Number(t.daily_streams_delta) < 0
+                        ? "text-red-600 dark:text-red-400 font-medium"
+                        : "sb-positive font-medium"
+                    }
+                  >
+                    {t.daily_streams_delta == null
+                      ? "—"
+                      : `${Number(t.daily_streams_delta) >= 0 ? "+" : ""}${formatInt(Number(t.daily_streams_delta))}`}
+                  </TableCell>
+                </TableRow>
+              ))}
+              {!filteredDrillItems.length && !drillLoading ? (
+                <TableRow>
+                  <TableCell className="py-10 text-center opacity-50" colSpan={5}>
+                    No tracks found.
+                  </TableCell>
+                </TableRow>
+              ) : null}
+            </GlassTable>
+          )}
+
+          {!drillDone && !drillLoading ? (
+            <div className="flex items-center justify-center pt-2">
+              <button
+                type="button"
+                className="sb-ring rounded-full bg-white/70 px-4 py-2 text-xs font-medium transition hover:bg-white dark:bg-white/10 dark:hover:bg-white/15"
+                style={{ color: "var(--sb-text)" }}
+                onClick={() => setDrillOffset((n) => n + DRILL_PAGE_SIZE)}
+              >
+                Load more
+              </button>
+            </div>
+          ) : null}
+
+          {drillLoading ? (
+            <div className="text-center text-xs opacity-60" style={{ color: "var(--sb-muted)" }}>
+              Loading…
+            </div>
+          ) : null}
+        </div>
+      </Modal>
 
       {/* Selected collector combined view */}
       <div className="sb-card p-4">

@@ -21,19 +21,22 @@ import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
 type TrackPoint = {
   isrc: string;
   total_streams_cumulative: number;
+  artist_ids?: string[] | null;
 };
 
 type MilestoneDataPoint = {
   milestone: number;
   milestoneLabel: string;
   unique_tracks: number;
+  unique_artists: number;
 };
 
 type MilestoneTooltipProps = {
   active?: boolean;
   payload?: Array<{ value?: unknown; payload?: MilestoneDataPoint }>;
   label?: string | number;
-  totalTracks: number;
+  totalCount: number;
+  countLabel: "Tracks" | "Artists";
   mode: "streams" | "revenue";
   accentColor?: string;
   onActivePayload?: (p: MilestoneDataPoint | null) => void;
@@ -43,7 +46,8 @@ function MilestoneTooltip({
   active,
   payload,
   label,
-  totalTracks,
+  totalCount,
+  countLabel,
   mode,
   accentColor,
   onActivePayload,
@@ -62,7 +66,7 @@ function MilestoneTooltip({
   const count = Number.isFinite(n) ? n : 0;
   const color = accentColor ?? (mode === "revenue" ? "var(--sb-revenue)" : "var(--sb-accent)");
   const pct =
-    totalTracks > 0 ? Math.max(0, Math.min(100, (count / totalTracks) * 100)) : 0;
+    totalCount > 0 ? Math.max(0, Math.min(100, (count / totalCount) * 100)) : 0;
   const pctLabel = pct >= 10 ? pct.toFixed(0) : pct.toFixed(1);
 
   return (
@@ -80,7 +84,7 @@ function MilestoneTooltip({
           {mode === "revenue" ? "Revenue milestone" : "Milestone"}: {label ?? "—"}
         </div>
         <div>
-          Tracks:{" "}
+          {countLabel}:{" "}
           <span style={{ color, fontWeight: 700 }}>
             {formatInt(count)}
           </span>
@@ -190,21 +194,82 @@ function computeMilestoneData(
   milestones: number[],
   mode: "streams" | "revenue",
   payoutPerStreamUsd: number,
+  countMode: "tracks" | "artists",
+  bucketMode: "cumulative" | "exclusive",
 ): MilestoneDataPoint[] {
   // Sort milestones descending (highest first for display)
   const sorted = [...milestones].sort((a, b) => b - a);
 
+  if (bucketMode === "exclusive") {
+    // Bucket each track into the highest milestone it reaches.
+    const trackCounts = new Map<number, number>();
+    const artistSets = new Map<number, Set<string>>();
+
+    for (const t of tracks) {
+      const total = Number(t?.total_streams_cumulative ?? 0);
+      if (!Number.isFinite(total) || total <= 0) continue;
+
+      let bucket: number | null = null;
+      for (const m of sorted) {
+        if (total >= m) {
+          bucket = m;
+          break;
+        }
+      }
+      if (bucket == null) continue;
+
+      trackCounts.set(bucket, (trackCounts.get(bucket) ?? 0) + 1);
+
+      if (countMode === "artists") {
+        let set = artistSets.get(bucket);
+        if (!set) {
+          set = new Set<string>();
+          artistSets.set(bucket, set);
+        }
+        const ids = t.artist_ids ?? [];
+        for (const id of ids) {
+          if (id) set.add(id);
+        }
+      }
+    }
+
+    return sorted.map((milestone) => {
+      const uniqueTracks = trackCounts.get(milestone) ?? 0;
+      const uniqueArtists = countMode === "artists" ? (artistSets.get(milestone)?.size ?? 0) : 0;
+      return {
+        milestone,
+        milestoneLabel:
+          mode === "revenue"
+            ? formatRevenueMilestoneLabel(milestone, payoutPerStreamUsd)
+            : formatMilestoneLabel(milestone),
+        unique_tracks: uniqueTracks,
+        unique_artists: uniqueArtists,
+      };
+    });
+  }
+
+  // Default: cumulative / inclusive (≥ milestone)
   return sorted.map((milestone) => {
-    const count = tracks.filter(
-      (t) => (t.total_streams_cumulative ?? 0) >= milestone
-    ).length;
+    const qualifying = tracks.filter((t) => (t.total_streams_cumulative ?? 0) >= milestone);
+    const uniqueTracks = qualifying.length;
+    const artistSet = new Set<string>();
+    if (countMode === "artists") {
+      for (const t of qualifying) {
+        const ids = t.artist_ids ?? [];
+        for (const id of ids) {
+          if (id) artistSet.add(id);
+        }
+      }
+    }
+    const uniqueArtists = countMode === "artists" ? artistSet.size : 0;
     return {
       milestone,
       milestoneLabel:
         mode === "revenue"
           ? formatRevenueMilestoneLabel(milestone, payoutPerStreamUsd)
           : formatMilestoneLabel(milestone),
-      unique_tracks: count,
+      unique_tracks: uniqueTracks,
+      unique_artists: uniqueArtists,
     };
   });
 }
@@ -217,6 +282,10 @@ export type TracksPerMilestoneChartProps = {
   customMilestones?: number[];
   /** Display mode */
   mode?: "streams" | "revenue";
+  /** Count mode */
+  countMode?: "tracks" | "artists";
+  /** Bucket mode */
+  bucketMode?: "cumulative" | "exclusive";
   /** USD payout per stream (required for revenue mode) */
   payoutPerStreamUsd?: number;
   /** Chart height in pixels */
@@ -231,6 +300,8 @@ export function TracksPerMilestoneChart({
   tracks,
   customMilestones,
   mode = "streams",
+  countMode = "tracks",
+  bucketMode = "cumulative",
   payoutPerStreamUsd = 0,
   heightPx = 280,
   highlightMilestone,
@@ -240,6 +311,18 @@ export function TracksPerMilestoneChart({
   const themeColors = useThemeColors();
 
   const totalTracks = tracks.length;
+  const totalArtists = useMemo(() => {
+    const s = new Set<string>();
+    for (const t of tracks) {
+      const ids = t.artist_ids ?? [];
+      for (const id of ids) {
+        if (id) s.add(id);
+      }
+    }
+    return s.size;
+  }, [tracks]);
+  const totalCount = countMode === "artists" ? totalArtists : totalTracks;
+  const countLabel: "Tracks" | "Artists" = countMode === "artists" ? "Artists" : "Tracks";
   const accentColor = mode === "revenue" ? themeColors.revenue : themeColors.accent;
 
   // Track the currently hovered/active milestone from the tooltip
@@ -281,8 +364,8 @@ export function TracksPerMilestoneChart({
       ? customMilestones
       : generateMilestones(maxStreams);
 
-    return computeMilestoneData(tracks, milestones, mode, payoutPerStreamUsd);
-  }, [tracks, customMilestones, mode, payoutPerStreamUsd]);
+    return computeMilestoneData(tracks, milestones, mode, payoutPerStreamUsd, countMode, bucketMode);
+  }, [tracks, customMilestones, mode, payoutPerStreamUsd, countMode, bucketMode]);
 
   const maxMilestone = chartData.length
     ? Math.max(...chartData.map((d) => d.milestone))
@@ -318,7 +401,8 @@ export function TracksPerMilestoneChart({
     longPressTimerRef.current = window.setTimeout(() => {
       const p = activePayloadRef.current;
       if (!p) return;
-      onMilestoneClick(p.milestone, p.unique_tracks);
+      const count = countMode === "artists" ? p.unique_artists : p.unique_tracks;
+      onMilestoneClick(p.milestone, count);
     }, LONG_PRESS_MS);
   };
 
@@ -350,7 +434,8 @@ export function TracksPerMilestoneChart({
     // Desktop click: open modal if we have an active bar
     const p = activePayloadRef.current;
     if (!p || !onMilestoneClick) return;
-    onMilestoneClick(p.milestone, p.unique_tracks);
+    const count = countMode === "artists" ? p.unique_artists : p.unique_tracks;
+    onMilestoneClick(p.milestone, count);
   };
 
   return (
@@ -430,7 +515,8 @@ export function TracksPerMilestoneChart({
           <Tooltip
             content={
               <MilestoneTooltip
-                totalTracks={totalTracks}
+                totalCount={totalCount}
+                countLabel={countLabel}
                 mode={mode}
                 accentColor={accentColor}
                 onActivePayload={handleActivePayload}
@@ -451,7 +537,7 @@ export function TracksPerMilestoneChart({
             />
           )}
           <Bar
-            dataKey="unique_tracks"
+            dataKey={countMode === "artists" ? "unique_artists" : "unique_tracks"}
             radius={[4, 4, 0, 0]}
             activeBar={false}
             style={{ cursor: onMilestoneClick ? "pointer" : "default" }}

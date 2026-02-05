@@ -399,6 +399,10 @@ function HomeDashboardInner(props: {
   const [openScatter, setOpenScatter] = useState(false);
   const [openMilestones, setOpenMilestones] = useState(false);
   const [openHistory, setOpenHistory] = useState(false);
+  const [milestoneCountMode, setMilestoneCountMode] = useState<"tracks" | "artists">("tracks");
+  const [milestoneBucketMode, setMilestoneBucketMode] = useState<"cumulative" | "exclusive">(
+    "cumulative",
+  );
 
   // User setting: show/hide Filters section on Home
   const [homeFiltersEnabled, setHomeFiltersEnabled] = useState(true);
@@ -409,9 +413,13 @@ function HomeDashboardInner(props: {
   const [customMilestones, setCustomMilestones] = useState<number[] | null>(null);
   const [milestoneDrillOpen, setMilestoneDrillOpen] = useState(false);
   const [milestoneDrillMilestone, setMilestoneDrillMilestone] = useState<number | null>(null);
+  const [milestoneDrillView, setMilestoneDrillView] = useState<"tracks" | "artists">("tracks");
   const [milestoneDrillQuery, setMilestoneDrillQuery] = useState("");
   const deferredMilestoneDrillQuery = useDeferredValue(milestoneDrillQuery);
   const [milestoneDrillPage, setMilestoneDrillPage] = useState(1);
+  const [milestoneDrillArtistImagesById, setMilestoneDrillArtistImagesById] = useState<
+    Map<string, string | null> | null
+  >(null);
   const autoMilestonesForCurrentData = useMemo(() => {
     const maxStreams = Math.max(
       0,
@@ -420,6 +428,9 @@ function HomeDashboardInner(props: {
     return generateAutoMilestonesFromMax(maxStreams);
   }, [props.trackScatterPoints]);
   const activeMilestonesForEditing = (customMilestones?.length ? customMilestones : autoMilestonesForCurrentData) ?? [];
+  const activeMilestonesSortedDesc = useMemo(() => {
+    return [...activeMilestonesForEditing].sort((a, b) => b - a);
+  }, [activeMilestonesForEditing]);
   const minActiveMilestone = useMemo(() => {
     if (!activeMilestonesForEditing.length) return 100_000;
     return Math.max(100_000, Math.min(...activeMilestonesForEditing));
@@ -449,9 +460,17 @@ function HomeDashboardInner(props: {
 
     const q = foldForSearch(deferredMilestoneDrillQuery ?? "");
     const out: TrackStreamsXYPoint[] = [];
+    const upperExclusive =
+      milestoneBucketMode === "exclusive"
+        ? (() => {
+            const idx = activeMilestonesSortedDesc.indexOf(milestone);
+            return idx > 0 ? activeMilestonesSortedDesc[idx - 1] : null;
+          })()
+        : null;
     for (const p of props.trackScatterPoints ?? []) {
       const total = Number(p?.total_streams_cumulative ?? 0);
       if (!Number.isFinite(total) || total < milestone) continue;
+      if (upperExclusive != null && total >= upperExclusive) continue;
 
       if (q) {
         const isrc = String(p?.isrc ?? "");
@@ -477,13 +496,138 @@ function HomeDashboardInner(props: {
     });
 
     return out;
-  }, [deferredMilestoneDrillQuery, milestoneDrillMilestone, props.trackScatterPoints]);
+  }, [
+    activeMilestonesSortedDesc,
+    deferredMilestoneDrillQuery,
+    milestoneBucketMode,
+    milestoneDrillMilestone,
+    props.trackScatterPoints,
+  ]);
+
+  // Best-effort: load artist thumbnails for the Artists view.
+  useEffect(() => {
+    if (!milestoneDrillOpen) return;
+    if (milestoneDrillView !== "artists") return;
+    if (milestoneDrillArtistImagesById) return;
+
+    let cancelled = false;
+    async function load() {
+      try {
+        const res = await fetch("/api/artists/options");
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) return;
+        const rows = Array.isArray((json as any)?.artists) ? ((json as any).artists as any[]) : [];
+        const map = new Map<string, string | null>();
+        for (const r of rows) {
+          const id = String(r?.artist_id ?? "");
+          if (!id) continue;
+          map.set(id, (r?.image_url ?? null) as string | null);
+        }
+        if (!cancelled) setMilestoneDrillArtistImagesById(map);
+      } catch {
+        // ignore
+      }
+    }
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [milestoneDrillArtistImagesById, milestoneDrillOpen, milestoneDrillView]);
+
+  type MilestoneDrillArtistRow = {
+    key: string;
+    artist_id: string | null;
+    artist_name: string;
+    track_count: number;
+    total_streams_cumulative: number;
+    daily_streams_delta: number;
+  };
+
+  const milestoneDrillArtists = useMemo((): MilestoneDrillArtistRow[] => {
+    const milestone = milestoneDrillMilestone;
+    if (!milestone || milestone <= 0) return [];
+
+    const map = new Map<string, MilestoneDrillArtistRow>();
+    const upperExclusive =
+      milestoneBucketMode === "exclusive"
+        ? (() => {
+            const idx = activeMilestonesSortedDesc.indexOf(milestone);
+            return idx > 0 ? activeMilestonesSortedDesc[idx - 1] : null;
+          })()
+        : null;
+    for (const p of props.trackScatterPoints ?? []) {
+      const total = Number(p?.total_streams_cumulative ?? 0);
+      if (!Number.isFinite(total) || total < milestone) continue;
+      if (upperExclusive != null && total >= upperExclusive) continue;
+
+      const artistNames = p?.artist_names ?? [];
+      const artistIds = p?.artist_ids ?? [];
+      const perTrackSeen = new Set<string>();
+      for (let idx = 0; idx < artistNames.length; idx += 1) {
+        const id = (artistIds as any[])[idx] ?? null;
+        const label = String((artistNames as any[])[idx] ?? "").trim();
+        if (!label && !id) continue;
+        const key = id ? `id:${String(id)}` : `name:${foldForSearch(label)}`;
+        if (perTrackSeen.has(key)) continue;
+        perTrackSeen.add(key);
+
+        const existing = map.get(key);
+        if (existing) {
+          existing.track_count += 1;
+          existing.total_streams_cumulative += Number(p?.total_streams_cumulative ?? 0) || 0;
+          existing.daily_streams_delta += Number(p?.daily_streams_delta ?? 0) || 0;
+        } else {
+          map.set(key, {
+            key,
+            artist_id: id ? String(id) : null,
+            artist_name: label || (id ? String(id) : "Unknown artist"),
+            track_count: 1,
+            total_streams_cumulative: Number(p?.total_streams_cumulative ?? 0) || 0,
+            daily_streams_delta: Number(p?.daily_streams_delta ?? 0) || 0,
+          });
+        }
+      }
+    }
+
+    const q = foldForSearch(deferredMilestoneDrillQuery ?? "");
+    let out = Array.from(map.values());
+    if (q) {
+      out = out.filter((a) => {
+        const nameL = foldForSearch(a.artist_name);
+        const idL = a.artist_id ? foldForSearch(a.artist_id) : "";
+        return nameL.includes(q) || idL.includes(q);
+      });
+    }
+
+    const payout = streamPayoutPerStreamUsd;
+    out.sort((a, b) => {
+      const ta = metric === "revenue" ? a.total_streams_cumulative * payout : a.total_streams_cumulative;
+      const tb = metric === "revenue" ? b.total_streams_cumulative * payout : b.total_streams_cumulative;
+      if (tb !== ta) return tb - ta;
+      return a.artist_name.localeCompare(b.artist_name);
+    });
+    return out;
+  }, [
+    activeMilestonesSortedDesc,
+    deferredMilestoneDrillQuery,
+    metric,
+    milestoneBucketMode,
+    milestoneDrillMilestone,
+    props.trackScatterPoints,
+    streamPayoutPerStreamUsd,
+  ]);
 
   const milestoneDrillPageSize = 50;
-  const milestoneDrillTotalPages = Math.max(1, Math.ceil(milestoneDrillTracks.length / milestoneDrillPageSize));
+  const milestoneDrillTotalCount = milestoneDrillView === "artists" ? milestoneDrillArtists.length : milestoneDrillTracks.length;
+  const milestoneDrillTotalPages = Math.max(1, Math.ceil(milestoneDrillTotalCount / milestoneDrillPageSize));
   const milestoneDrillSafePage = Math.min(Math.max(1, milestoneDrillPage), milestoneDrillTotalPages);
   const milestoneDrillPageStart = (milestoneDrillSafePage - 1) * milestoneDrillPageSize;
-  const milestoneDrillPageItems = milestoneDrillTracks.slice(
+  const milestoneDrillTrackPageItems = milestoneDrillTracks.slice(
+    milestoneDrillPageStart,
+    milestoneDrillPageStart + milestoneDrillPageSize,
+  );
+  const milestoneDrillArtistPageItems = milestoneDrillArtists.slice(
     milestoneDrillPageStart,
     milestoneDrillPageStart + milestoneDrillPageSize,
   );
@@ -1265,7 +1409,7 @@ function HomeDashboardInner(props: {
               <div className="flex items-start gap-2">
                 <span className="mt-0.5 flex-shrink-0 text-xs opacity-60">▸</span>
                 <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
-                  Tracks Per Milestone
+                  {milestoneCountMode === "artists" ? "Artists" : "Tracks"} Per Milestone
                 </div>
               </div>
 
@@ -1284,6 +1428,64 @@ function HomeDashboardInner(props: {
                   <div className="text-[11px] opacity-70" style={{ color: "var(--sb-muted)" }}>
                     {formatInt(tracksBelowAnyMilestoneCount)} ({tracksBelowAnyMilestonePctLabel}) below{" "}
                     {formatMilestoneHeaderLabel(minActiveMilestone, milestoneMode, streamPayoutPerStreamUsd)}
+                  </div>
+                ) : null}
+                {openMilestones ? (
+                  <div className="flex items-center rounded-full bg-black/5 p-0.5 dark:bg-white/10">
+                    <button
+                      type="button"
+                      onClick={() => setMilestoneCountMode("tracks")}
+                      className={[
+                        "rounded-full px-2 py-1 text-[11px] font-medium transition",
+                        milestoneCountMode === "tracks"
+                          ? "bg-black text-white dark:bg-white dark:text-black"
+                          : "text-black/70 hover:bg-white/50 dark:text-white/70 dark:hover:bg-white/20",
+                      ].join(" ")}
+                    >
+                      Tracks
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMilestoneCountMode("artists")}
+                      className={[
+                        "rounded-full px-2 py-1 text-[11px] font-medium transition",
+                        milestoneCountMode === "artists"
+                          ? "bg-black text-white dark:bg-white dark:text-black"
+                          : "text-black/70 hover:bg-white/50 dark:text-white/70 dark:hover:bg-white/20",
+                      ].join(" ")}
+                    >
+                      Artists
+                    </button>
+                  </div>
+                ) : null}
+                {openMilestones ? (
+                  <div className="flex items-center rounded-full bg-black/5 p-0.5 dark:bg-white/10">
+                    <button
+                      type="button"
+                      onClick={() => setMilestoneBucketMode("cumulative")}
+                      className={[
+                        "rounded-full px-2 py-1 text-[11px] font-medium transition",
+                        milestoneBucketMode === "cumulative"
+                          ? "bg-black text-white dark:bg-white dark:text-black"
+                          : "text-black/70 hover:bg-white/50 dark:text-white/70 dark:hover:bg-white/20",
+                      ].join(" ")}
+                      title="Cumulative: counts entities that reached this milestone or higher"
+                    >
+                      Cum.
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMilestoneBucketMode("exclusive")}
+                      className={[
+                        "rounded-full px-2 py-1 text-[11px] font-medium transition",
+                        milestoneBucketMode === "exclusive"
+                          ? "bg-black text-white dark:bg-white dark:text-black"
+                          : "text-black/70 hover:bg-white/50 dark:text-white/70 dark:hover:bg-white/20",
+                      ].join(" ")}
+                      title="Exclusive: each entity is counted only in its highest milestone bucket"
+                    >
+                      Exc.
+                    </button>
                   </div>
                 ) : null}
                 {openMilestones ? (
@@ -1315,14 +1517,18 @@ function HomeDashboardInner(props: {
               tracks={props.trackScatterPoints.map((p) => ({
                 isrc: p.isrc,
                 total_streams_cumulative: p.total_streams_cumulative,
+                artist_ids: p.artist_ids ?? null,
               }))}
               heightPx={320}
-              customMilestones={customMilestones ?? undefined}
+              customMilestones={activeMilestonesSortedDesc.length ? activeMilestonesSortedDesc : undefined}
               mode={milestoneMode}
+              countMode={milestoneCountMode}
+              bucketMode={milestoneBucketMode}
               payoutPerStreamUsd={streamPayoutPerStreamUsd}
               highlightMilestone={milestoneDrillOpen ? milestoneDrillMilestone : null}
               onMilestoneClick={(milestone) => {
                 setMilestoneDrillMilestone(milestone);
+                setMilestoneDrillView(milestoneCountMode === "artists" ? "artists" : "tracks");
                 setMilestoneDrillQuery("");
                 setMilestoneDrillPage(1);
                 setMilestoneDrillOpen(true);
@@ -1443,7 +1649,7 @@ function HomeDashboardInner(props: {
         title={
           milestoneDrillMilestone ? (
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span>Tracks at</span>
+              <span>{milestoneDrillView === "artists" ? "Artists" : "Tracks"} at</span>
               <span className="font-mono">
                 {formatMilestoneHeaderLabel(milestoneDrillMilestone, milestoneMode, streamPayoutPerStreamUsd)}
               </span>
@@ -1452,7 +1658,7 @@ function HomeDashboardInner(props: {
               </span>
             </div>
           ) : (
-            "Milestone tracks"
+            "Milestone drilldown"
           )
         }
         subtitle={
@@ -1462,7 +1668,8 @@ function HomeDashboardInner(props: {
               <span className="opacity-70" style={{ color: "var(--sb-muted)" }}>
                 •
               </span>{" "}
-              {formatInt(milestoneDrillTracks.length)} tracks
+              {formatInt(milestoneDrillView === "artists" ? milestoneDrillArtists.length : milestoneDrillTracks.length)}{" "}
+              {milestoneDrillView === "artists" ? "artists" : "tracks"}
             </span>
           ) : null
         }
@@ -1479,7 +1686,7 @@ function HomeDashboardInner(props: {
                     setMilestoneDrillQuery(e.target.value);
                     setMilestoneDrillPage(1);
                   }}
-                  placeholder="Filter by track, artist, or ISRC…"
+                  placeholder={milestoneDrillView === "artists" ? "Filter by artist…" : "Filter by track, artist, or ISRC…"}
                   className={[
                     "sb-ring w-full rounded-xl bg-white/70 py-2 pl-10 pr-9 text-sm outline-none",
                     "placeholder:text-black/40 dark:bg-white/5 dark:placeholder:text-white/40",
@@ -1505,13 +1712,51 @@ function HomeDashboardInner(props: {
             </div>
 
             <div className="flex items-center gap-2">
+              <div className="flex items-center rounded-full bg-black/5 p-0.5 dark:bg-white/10">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMilestoneDrillView("tracks");
+                    setMilestoneDrillPage(1);
+                  }}
+                  className={[
+                    "rounded-full px-2 py-1 text-[11px] font-medium transition",
+                    milestoneDrillView === "tracks"
+                      ? "bg-black text-white dark:bg-white dark:text-black"
+                      : "text-black/70 hover:bg-white/50 dark:text-white/70 dark:hover:bg-white/20",
+                  ].join(" ")}
+                >
+                  Tracks
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMilestoneDrillView("artists");
+                    setMilestoneDrillPage(1);
+                  }}
+                  className={[
+                    "rounded-full px-2 py-1 text-[11px] font-medium transition",
+                    milestoneDrillView === "artists"
+                      ? "bg-black text-white dark:bg-white dark:text-black"
+                      : "text-black/70 hover:bg-white/50 dark:text-white/70 dark:hover:bg-white/20",
+                  ].join(" ")}
+                >
+                  Artists
+                </button>
+              </div>
               <div className="text-xs opacity-70" style={{ color: "var(--sb-muted)" }}>
                 Showing{" "}
                 <span className="font-mono">
-                  {milestoneDrillTracks.length ? milestoneDrillPageStart + 1 : 0}-
-                  {Math.min(milestoneDrillPageStart + milestoneDrillPageItems.length, milestoneDrillTracks.length)}
+                  {milestoneDrillTotalCount ? milestoneDrillPageStart + 1 : 0}-
+                  {Math.min(
+                    milestoneDrillPageStart +
+                      (milestoneDrillView === "artists"
+                        ? milestoneDrillArtistPageItems.length
+                        : milestoneDrillTrackPageItems.length),
+                    milestoneDrillTotalCount,
+                  )}
                 </span>{" "}
-                of <span className="font-mono">{formatInt(milestoneDrillTracks.length)}</span>
+                of <span className="font-mono">{formatInt(milestoneDrillTotalCount)}</span>
               </div>
               <Button
                 type="button"
@@ -1536,119 +1781,215 @@ function HomeDashboardInner(props: {
             </div>
           </div>
 
-          <GlassTable
-            headers={[
-              { label: "Track" },
-              { label: "Artists" },
-              {
-                label: metric === "revenue" ? "Total Revenue" : "Total Streams",
-                align: "right",
-              },
-              {
-                label: metric === "revenue" ? "Daily Revenue" : "Daily Streams",
-                align: "right",
-              },
-            ]}
-            maxBodyHeightClassName="max-h-[60vh] overflow-auto"
-          >
-            {milestoneDrillPageItems.map((p) => {
-              const title = String(p?.name ?? "").trim() || String(p?.isrc ?? "");
-              const artists = (p?.artist_names ?? []).filter(Boolean);
-              const totalStreams = Number(p?.total_streams_cumulative ?? 0);
-              const dailyStreams = Number(p?.daily_streams_delta ?? 0);
-              const totalValue =
-                metric === "revenue" ? totalStreams * streamPayoutPerStreamUsd : totalStreams;
-              const dailyValue =
-                metric === "revenue" ? dailyStreams * streamPayoutPerStreamUsd : dailyStreams;
-              const metricNumberClass =
-                metric === "revenue"
-                  ? "font-medium" // revenue uses emerald via inline style
-                  : "sb-positive font-medium";
+          {milestoneDrillView === "tracks" ? (
+            <GlassTable
+              headers={[
+                { label: "Track" },
+                { label: "Artists" },
+                {
+                  label: metric === "revenue" ? "Total Revenue" : "Total Streams",
+                  align: "right",
+                },
+                {
+                  label: metric === "revenue" ? "Daily Revenue" : "Daily Streams",
+                  align: "right",
+                },
+              ]}
+              maxBodyHeightClassName="max-h-[60vh] overflow-auto"
+            >
+              {milestoneDrillTrackPageItems.map((p) => {
+                const title = String(p?.name ?? "").trim() || String(p?.isrc ?? "");
+                const artists = (p?.artist_names ?? []).filter(Boolean);
+                const totalStreams = Number(p?.total_streams_cumulative ?? 0);
+                const dailyStreams = Number(p?.daily_streams_delta ?? 0);
+                const totalValue =
+                  metric === "revenue" ? totalStreams * streamPayoutPerStreamUsd : totalStreams;
+                const dailyValue =
+                  metric === "revenue" ? dailyStreams * streamPayoutPerStreamUsd : dailyStreams;
+                const metricNumberClass =
+                  metric === "revenue"
+                    ? "font-medium" // revenue uses emerald via inline style
+                    : "sb-positive font-medium";
 
-              return (
-                <TableRow key={p.isrc}>
-                  <TableCell className="min-w-[260px]">
-                    <div className="flex items-center gap-2">
-                      {p.album_image_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={p.album_image_url}
-                          alt=""
-                          className="h-9 w-9 rounded-md object-cover sb-ring"
-                          loading="lazy"
-                          decoding="async"
-                        />
-                      ) : (
-                        <div className="h-9 w-9 rounded-md sb-ring bg-white/60 dark:bg-white/10" />
-                      )}
-                      <div className="min-w-0">
-                        <Link
-                          href={`/catalog?isrc=${encodeURIComponent(p.isrc)}`}
-                          className="block truncate text-sm font-medium hover:underline"
-                          style={{ color: "var(--sb-text)" }}
-                          title={p.isrc}
-                        >
-                          {title}
-                        </Link>
-                        <div className="truncate text-[11px] opacity-70" style={{ color: "var(--sb-muted)" }}>
-                          <span className="font-mono">{p.isrc}</span>
+                return (
+                  <TableRow key={p.isrc}>
+                    <TableCell className="min-w-[260px]">
+                      <div className="flex items-center gap-2">
+                        {p.album_image_url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={p.album_image_url}
+                            alt=""
+                            className="h-9 w-9 rounded-md object-cover sb-ring"
+                            loading="lazy"
+                            decoding="async"
+                          />
+                        ) : (
+                          <div className="h-9 w-9 rounded-md sb-ring bg-white/60 dark:bg-white/10" />
+                        )}
+                        <div className="min-w-0">
+                          <Link
+                            href={`/catalog?isrc=${encodeURIComponent(p.isrc)}`}
+                            className="block truncate text-sm font-medium hover:underline"
+                            style={{ color: "var(--sb-text)" }}
+                            title={p.isrc}
+                          >
+                            {title}
+                          </Link>
+                          <div className="truncate text-[11px] opacity-70" style={{ color: "var(--sb-muted)" }}>
+                            <span className="font-mono">{p.isrc}</span>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </TableCell>
-                  <TableCell className="min-w-[240px]">
-                    {artists.length ? (
-                      <div className="truncate text-sm" style={{ color: "var(--sb-text)" }}>
-                        {artists.map((name, idx) => {
-                          const id = (p.artist_ids ?? [])[idx] ?? null;
-                          const label = String(name ?? "").trim();
-                          if (!label) return null;
-                          const sep = idx > 0 ? (
-                            <span key={`sep-${p.isrc}-${idx}`} style={{ color: "var(--sb-muted)" }}>
-                              ,{" "}
-                            </span>
-                          ) : null;
-                          return (
-                            <span key={`${p.isrc}-${idx}`}>
-                              {sep}
-                              {id ? (
-                                <Link
-                                  href={`/catalog?artist_id=${encodeURIComponent(id)}`}
-                                  className="hover:underline"
-                                  style={{ color: "var(--sb-text)" }}
-                                  title={id}
-                                >
-                                  {label}
-                                </Link>
-                              ) : (
-                                <span>{label}</span>
-                              )}
-                            </span>
-                          );
-                        })}
+                    </TableCell>
+                    <TableCell className="min-w-[240px]">
+                      {artists.length ? (
+                        <div className="truncate text-sm" style={{ color: "var(--sb-text)" }}>
+                          {artists.map((name, idx) => {
+                            const id = (p.artist_ids ?? [])[idx] ?? null;
+                            const label = String(name ?? "").trim();
+                            if (!label) return null;
+                            const sep = idx > 0 ? (
+                              <span key={`sep-${p.isrc}-${idx}`} style={{ color: "var(--sb-muted)" }}>
+                                ,{" "}
+                              </span>
+                            ) : null;
+                            return (
+                              <span key={`${p.isrc}-${idx}`}>
+                                {sep}
+                                {id ? (
+                                  <Link
+                                    href={`/catalog?artist_id=${encodeURIComponent(id)}`}
+                                    className="hover:underline"
+                                    style={{ color: "var(--sb-text)" }}
+                                    title={id}
+                                  >
+                                    {label}
+                                  </Link>
+                                ) : (
+                                  <span>{label}</span>
+                                )}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <span className="text-sm opacity-60" style={{ color: "var(--sb-muted)" }}>
+                          —
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell numeric className={metricNumberClass} style={metric === "revenue" ? { color: "#10b981" } : undefined}>
+                      {metric === "revenue" ? formatUsd(totalValue) : formatInt(totalValue)}
+                    </TableCell>
+                    <TableCell numeric className={metricNumberClass} style={metric === "revenue" ? { color: "#10b981" } : undefined}>
+                      {metric === "revenue" ? formatUsd(dailyValue) : formatInt(dailyValue)}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+              {!milestoneDrillTrackPageItems.length && (
+                <EmptyState
+                  colSpan={4}
+                  message={
+                    milestoneDrillTracks.length ? "No tracks match your filter." : "No tracks found for this milestone."
+                  }
+                />
+              )}
+            </GlassTable>
+          ) : (
+            <GlassTable
+              headers={[
+                { label: "Artist" },
+                { label: "Tracks", align: "right" },
+                {
+                  label: metric === "revenue" ? "Total Revenue" : "Total Streams",
+                  align: "right",
+                },
+                {
+                  label: metric === "revenue" ? "Daily Revenue" : "Daily Streams",
+                  align: "right",
+                },
+              ]}
+              maxBodyHeightClassName="max-h-[60vh] overflow-auto"
+            >
+              {milestoneDrillArtistPageItems.map((a) => {
+                const totalStreams = Number(a.total_streams_cumulative ?? 0);
+                const dailyStreams = Number(a.daily_streams_delta ?? 0);
+                const totalValue =
+                  metric === "revenue" ? totalStreams * streamPayoutPerStreamUsd : totalStreams;
+                const dailyValue =
+                  metric === "revenue" ? dailyStreams * streamPayoutPerStreamUsd : dailyStreams;
+                const metricNumberClass =
+                  metric === "revenue"
+                    ? "font-medium" // revenue uses emerald via inline style
+                    : "sb-positive font-medium";
+                const imageUrl = a.artist_id
+                  ? (milestoneDrillArtistImagesById?.get(a.artist_id) ?? null)
+                  : null;
+
+                return (
+                  <TableRow key={a.key}>
+                    <TableCell className="min-w-[260px]">
+                      <div className="flex items-center gap-2">
+                        {imageUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={imageUrl}
+                            alt=""
+                            className="h-9 w-9 rounded-full object-cover sb-ring"
+                            loading="lazy"
+                            decoding="async"
+                          />
+                        ) : (
+                          <div className="h-9 w-9 rounded-full sb-ring bg-white/60 dark:bg-white/10" />
+                        )}
+
+                        <div className="min-w-0">
+                          {a.artist_id ? (
+                            <Link
+                              href={`/catalog?artist_id=${encodeURIComponent(a.artist_id)}`}
+                              className="block truncate text-sm font-medium hover:underline"
+                              style={{ color: "var(--sb-text)" }}
+                              title={a.artist_id}
+                            >
+                              {a.artist_name}
+                            </Link>
+                          ) : (
+                            <div className="truncate text-sm font-medium" style={{ color: "var(--sb-text)" }}>
+                              {a.artist_name}
+                            </div>
+                          )}
+                          {a.artist_id ? (
+                            <div className="truncate text-[11px] opacity-70" style={{ color: "var(--sb-muted)" }}>
+                              <span className="font-mono">{a.artist_id}</span>
+                            </div>
+                          ) : null}
+                        </div>
                       </div>
-                    ) : (
-                      <span className="text-sm opacity-60" style={{ color: "var(--sb-muted)" }}>
-                        —
-                      </span>
-                    )}
-                  </TableCell>
-                  <TableCell numeric className={metricNumberClass} style={metric === "revenue" ? { color: "#10b981" } : undefined}>
-                    {metric === "revenue" ? formatUsd(totalValue) : formatInt(totalValue)}
-                  </TableCell>
-                  <TableCell numeric className={metricNumberClass} style={metric === "revenue" ? { color: "#10b981" } : undefined}>
-                    {metric === "revenue" ? formatUsd(dailyValue) : formatInt(dailyValue)}
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-            {!milestoneDrillPageItems.length && (
-              <EmptyState
-                colSpan={4}
-                message={milestoneDrillTracks.length ? "No tracks match your filter." : "No tracks found for this milestone."}
-              />
-            )}
-          </GlassTable>
+                    </TableCell>
+                    <TableCell numeric className="font-medium">
+                      {formatInt(a.track_count)}
+                    </TableCell>
+                    <TableCell numeric className={metricNumberClass} style={metric === "revenue" ? { color: "#10b981" } : undefined}>
+                      {metric === "revenue" ? formatUsd(totalValue) : formatInt(totalValue)}
+                    </TableCell>
+                    <TableCell numeric className={metricNumberClass} style={metric === "revenue" ? { color: "#10b981" } : undefined}>
+                      {metric === "revenue" ? formatUsd(dailyValue) : formatInt(dailyValue)}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+              {!milestoneDrillArtistPageItems.length && (
+                <EmptyState
+                  colSpan={4}
+                  message={
+                    milestoneDrillArtists.length ? "No artists match your filter." : "No artists found for this milestone."
+                  }
+                />
+              )}
+            </GlassTable>
+          )}
         </div>
       </Modal>
 
