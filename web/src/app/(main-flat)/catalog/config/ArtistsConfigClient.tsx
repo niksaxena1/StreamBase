@@ -2,10 +2,13 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Download } from "lucide-react";
 
 import { SearchBox } from "./SearchBox";
 import { ArtistsList } from "./ArtistsList";
+import { IconButton } from "@/components/ui/Button";
+import { downloadCsv, todayIsoDate } from "@/lib/csv";
+import { useMetric } from "@/components/metrics/MetricContext";
 
 type Artist = {
   id: string;
@@ -14,6 +17,8 @@ type Artist = {
   externalUrl: string;
   totalStreams: number | null;
   dailyStreams: number | null;
+  trackCount: number;
+  dailyTrackCount: number;
 };
 
 type ArtistsConfigClientProps = {
@@ -27,6 +32,39 @@ export function ArtistsConfigClient({ artists, totalCount }: ArtistsConfigClient
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<SortOption>("name");
   const [sortAsc, setSortAsc] = useState(true);
+  const { metric } = useMetric();
+
+  // Filter and sort artists for CSV export
+  const filteredAndSortedForExport = (() => {
+    let result = [...artists];
+
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter((artist) => artist.name.toLowerCase().includes(q));
+    }
+
+    // Sort
+    result.sort((a, b) => {
+      let comparison = 0;
+
+      switch (sortBy) {
+        case "name":
+          comparison = a.name.localeCompare(b.name);
+          break;
+        case "total":
+          comparison = (a.totalStreams ?? 0) - (b.totalStreams ?? 0);
+          break;
+        case "daily":
+          comparison = (a.dailyStreams ?? 0) - (b.dailyStreams ?? 0);
+          break;
+      }
+
+      return sortAsc ? comparison : -comparison;
+    });
+
+    return result;
+  })();
 
   return (
     <>
@@ -70,6 +108,37 @@ export function ArtistsConfigClient({ artists, totalCount }: ArtistsConfigClient
             <option value="daily-asc">Daily ↑</option>
           </select>
           <SearchBox onSearchChange={setSearchQuery} placeholder="Search artists…" />
+          <IconButton
+            type="button"
+            onClick={() => {
+              const csvData = filteredAndSortedForExport.map((artist) => {
+                if (metric === "tracks") {
+                  return {
+                    "Artist Name": artist.name,
+                    "Artist ID": artist.id,
+                    "Total Tracks": artist.trackCount,
+                    "Daily Tracks": artist.dailyTrackCount,
+                    "Spotify URL": artist.externalUrl,
+                  };
+                }
+                return {
+                  "Artist Name": artist.name,
+                  "Artist ID": artist.id,
+                  "Total Streams": artist.totalStreams ?? "",
+                  "Daily Streams": artist.dailyStreams ?? "",
+                  "Spotify URL": artist.externalUrl,
+                };
+              });
+              downloadCsv({
+                filename: `artists-config-export-${todayIsoDate()}.csv`,
+                rows: csvData,
+              });
+            }}
+            title="Download table as CSV"
+            aria-label="Download table as CSV"
+          >
+            <Download className="h-3.5 w-3.5" />
+          </IconButton>
         </div>
       </div>
 

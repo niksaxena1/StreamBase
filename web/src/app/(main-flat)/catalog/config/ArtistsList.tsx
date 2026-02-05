@@ -2,12 +2,10 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
-import { ExternalLink, User, Download } from "lucide-react";
+import { ExternalLink, User } from "lucide-react";
 
 import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
-import { IconButton } from "@/components/ui/Button";
 import { foldForSearch } from "@/lib/searchFold";
-import { downloadCsv, todayIsoDate } from "@/lib/csv";
 import { useMetric } from "@/components/metrics/MetricContext";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { formatInt, formatUsd2 } from "@/lib/format";
@@ -105,39 +103,6 @@ export function ArtistsList({ artists, searchQuery, sortBy = "name", sortAsc = t
 
   return (
     <div className="flex flex-col space-y-2">
-      <div className="flex items-center justify-end">
-        <IconButton
-          type="button"
-          onClick={() => {
-            const csvData = filteredAndSortedArtists.map((artist) => {
-              if (metric === "tracks") {
-                return {
-                  "Artist Name": artist.name,
-                  "Artist ID": artist.id,
-                  "Total Tracks": artist.trackCount,
-                  "Daily Tracks": artist.dailyTrackCount,
-                  "Spotify URL": artist.externalUrl,
-                };
-              }
-              return {
-                "Artist Name": artist.name,
-                "Artist ID": artist.id,
-                "Total Streams": artist.totalStreams ?? "",
-                "Daily Streams": artist.dailyStreams ?? "",
-                "Spotify URL": artist.externalUrl,
-              };
-            });
-            downloadCsv({
-              filename: `artists-config-export-${todayIsoDate()}.csv`,
-              rows: csvData,
-            });
-          }}
-          title="Download table as CSV"
-          aria-label="Download table as CSV"
-        >
-          <Download className="h-3.5 w-3.5" />
-        </IconButton>
-      </div>
       <GlassTable headers={["", "Artist", getTotalMetricLabel(), getDailyMetricLabel(), "ID", ""]}>
         {filteredAndSortedArtists.map((artist) => (
           <TableRow key={artist.id}>

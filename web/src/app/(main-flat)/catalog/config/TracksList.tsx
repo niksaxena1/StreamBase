@@ -2,13 +2,11 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
-import { Download, ExternalLink } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 
 import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
-import { IconButton } from "@/components/ui/Button";
 import { foldForSearch } from "@/lib/searchFold";
-import { downloadCsv, todayIsoDate } from "@/lib/csv";
 import { useMetric } from "@/components/metrics/MetricContext";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { formatInt, formatUsd2 } from "@/lib/format";
@@ -118,30 +116,6 @@ export function TracksList({ tracks, searchQuery, sortBy = "name", sortAsc = tru
 
   return (
     <div className="flex flex-col space-y-2">
-      <div className="flex items-center justify-end">
-        <IconButton
-          type="button"
-          onClick={() => {
-            const csvData = filteredAndSortedTracks.map((track) => ({
-              "Track Name": track.name ?? track.isrc,
-              ISRC: track.isrc,
-              Artists: track.artistNames?.join(" | ") ?? "",
-              "Total Streams": track.totalStreams ?? "",
-              "Daily Streams": track.dailyStreams ?? "",
-              "Release Date": track.release_date ?? "",
-              "Last Seen": track.last_seen ?? "",
-            }));
-            downloadCsv({
-              filename: `tracks-config-export-${todayIsoDate()}.csv`,
-              rows: csvData,
-            });
-          }}
-          title="Download table as CSV"
-          aria-label="Download table as CSV"
-        >
-          <Download className="h-3.5 w-3.5" />
-        </IconButton>
-      </div>
       <GlassTable headers={["", "Track", getTotalMetricLabel(), getDailyMetricLabel(), "ISRC", "Release", "Last seen", ""]}>
         {filteredAndSortedTracks.map((track) => (
           <TableRow key={track.isrc}>
