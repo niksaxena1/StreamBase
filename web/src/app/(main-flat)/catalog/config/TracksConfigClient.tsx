@@ -125,6 +125,8 @@ export function TracksConfigClient({ tracks, totalCount }: TracksConfigClientPro
           <SearchBox onSearchChange={setSearchQuery} placeholder="Search tracks…" />
           <IconButton
             type="button"
+            variant="ghost"
+            size="sm"
             onClick={() => {
               const csvData = filteredAndSortedForExport.map((track) => ({
                 "Track Name": track.name ?? track.isrc,

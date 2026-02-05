@@ -110,6 +110,8 @@ export function ArtistsConfigClient({ artists, totalCount }: ArtistsConfigClient
           <SearchBox onSearchChange={setSearchQuery} placeholder="Search artists…" />
           <IconButton
             type="button"
+            variant="ghost"
+            size="sm"
             onClick={() => {
               const csvData = filteredAndSortedForExport.map((artist) => {
                 if (metric === "tracks") {
