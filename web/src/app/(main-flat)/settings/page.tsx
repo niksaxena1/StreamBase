@@ -10,6 +10,7 @@ import { TrackExclusionForm } from "./TrackExclusionForm";
 import { SAISettingsToggle } from "./SAISettingsToggle";
 import { HomeFiltersToggle } from "./HomeFiltersToggle";
 import { PayoutRateSetting } from "./PayoutRateSetting";
+import { WeekHighlightDaySetting } from "./WeekHighlightDaySetting";
 import { ManualStreamOverrideForm } from "./ManualStreamOverrideForm";
 import { StreamOverridesTable, StreamOverridesTableDownloadButton } from "./StreamOverridesTable";
 import { SectionHeader } from "@/components/ui/SectionHeader";
@@ -470,6 +471,11 @@ export default async function SettingsPage() {
       <div className="space-y-2">
         <SectionHeader title="Revenue" subtitle="Configure how estimated revenue is calculated from streams." />
         <PayoutRateSetting />
+      </div>
+
+      <div className="space-y-2">
+        <SectionHeader title="Charts" subtitle="Visual preferences for time-series charts." />
+        <WeekHighlightDaySetting />
       </div>
 
       <div className="space-y-2">

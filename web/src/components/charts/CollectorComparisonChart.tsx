@@ -13,10 +13,11 @@ import {
 } from "recharts";
 import { useId, useMemo } from "react";
 import { formatInt, formatUsd2 } from "@/lib/format";
-import { formatKmbTick, formatUsdCompact, getSundayAccentColor, isSundayDate } from "@/components/charts/chartUtils";
+import { formatKmbTick, formatUsdCompact, getSundayAccentColor, isHighlightDayDateUtc } from "@/components/charts/chartUtils";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
 import { useThemeColors } from "@/components/charts/useThemeColors";
+import { useWeekHighlight } from "@/components/charts/WeekHighlightContext";
 
 export const COLLECTOR_COLORS: Record<string, string> = {
   // Individuals (softer)
@@ -170,6 +171,7 @@ export function CollectorComparisonChart({
   const gid = useId();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
   const themeColors = useThemeColors();
+  const { weekHighlightDayUtc } = useWeekHighlight();
 
   // Process data into chart format
   const chartData = useMemo(() => {
@@ -286,10 +288,12 @@ export function CollectorComparisonChart({
         : selectedCollectors[0]
       : null;
 
-  const sundayDates = useMemo(() => {
+  const highlightDates = useMemo(() => {
     if (granularity !== "daily") return [];
-    return chartData.filter((d) => isSundayDate(String(d.date ?? ""))).map((d) => String(d.date));
-  }, [chartData, granularity]);
+    return chartData
+      .filter((d) => isHighlightDayDateUtc(String(d.date ?? ""), weekHighlightDayUtc))
+      .map((d) => String(d.date));
+  }, [chartData, granularity, weekHighlightDayUtc]);
 
   const sundayBandColor = getSundayAccentColor(
     areaKey ? getLineColor(areaKey) : themeColors.accentStroke,
@@ -393,11 +397,11 @@ export function CollectorComparisonChart({
             }}
           />
 
-          {/* Subtle Sunday indicator (daily only) */}
+          {/* Subtle highlight-day indicator (daily only) */}
           {granularity === "daily"
-            ? sundayDates.map((d) => (
+            ? highlightDates.map((d) => (
                 <ReferenceLine
-                  key={`sunday-${d}`}
+                  key={`highlight-${d}`}
                   x={d}
                   stroke={sundayBandColor}
                   strokeOpacity={themeColors.isDark ? 0.10 : 0.07}
@@ -422,9 +426,9 @@ export function CollectorComparisonChart({
                 const base = getLineColor(areaKey);
                 const sunday = getSundayAccentColor(base, { isDark: themeColors.isDark, bgColor: themeColors.bg });
                 const date = String(payload?.date ?? "");
-                const isSundayPt = granularity === "daily" && date ? isSundayDate(date) : false;
-                const fill = isSundayPt ? sunday : base;
-                const fillOpacity = isSundayPt ? 0.78 : 1;
+                const isHighlight = granularity === "daily" && date ? isHighlightDayDateUtc(date, weekHighlightDayUtc) : false;
+                const fill = isHighlight ? sunday : base;
+                const fillOpacity = isHighlight ? 0.78 : 1;
                 return (
                   <circle
                     cx={cx}
@@ -443,9 +447,9 @@ export function CollectorComparisonChart({
                 const base = getLineColor(areaKey);
                 const sunday = getSundayAccentColor(base, { isDark: themeColors.isDark, bgColor: themeColors.bg });
                 const date = String(payload?.date ?? "");
-                const isSundayPt = granularity === "daily" && date ? isSundayDate(date) : false;
-                const fill = isSundayPt ? sunday : base;
-                const fillOpacity = isSundayPt ? 0.85 : 1;
+                const isHighlight = granularity === "daily" && date ? isHighlightDayDateUtc(date, weekHighlightDayUtc) : false;
+                const fill = isHighlight ? sunday : base;
+                const fillOpacity = isHighlight ? 0.85 : 1;
                 return (
                   <circle
                     cx={cx}
@@ -479,9 +483,9 @@ export function CollectorComparisonChart({
                   const { cx, cy, payload } = props ?? {};
                   if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
                   const date = String(payload?.date ?? "");
-                  const isSundayPt = granularity === "daily" && date ? isSundayDate(date) : false;
-                  const fill = isSundayPt ? sunday : color;
-                  const fillOpacity = isSundayPt ? 0.78 : 1;
+                  const isHighlight = granularity === "daily" && date ? isHighlightDayDateUtc(date, weekHighlightDayUtc) : false;
+                  const fill = isHighlight ? sunday : color;
+                  const fillOpacity = isHighlight ? 0.78 : 1;
                   return (
                     <circle
                       cx={cx}
@@ -498,9 +502,9 @@ export function CollectorComparisonChart({
                   const { cx, cy, payload } = props ?? {};
                   if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
                   const date = String(payload?.date ?? "");
-                  const isSundayPt = granularity === "daily" && date ? isSundayDate(date) : false;
-                  const fill = isSundayPt ? sunday : color;
-                  const fillOpacity = isSundayPt ? 0.85 : 1;
+                  const isHighlight = granularity === "daily" && date ? isHighlightDayDateUtc(date, weekHighlightDayUtc) : false;
+                  const fill = isHighlight ? sunday : color;
+                  const fillOpacity = isHighlight ? 0.85 : 1;
                   return (
                     <circle
                       cx={cx}

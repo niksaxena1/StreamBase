@@ -18,13 +18,14 @@ import {
   extractOverrideItemsFromRechartsPayload,
   formatTooltipDateDaily,
   getSundayAccentColor,
-  isSundayDate,
+  isHighlightDayDateUtc,
   formatKmbTick,
   formatUsdCompact,
 } from "@/components/charts/chartUtils";
 import { useChartCopyToClipboard, type TooltipCopyValues } from "@/components/charts/useChartCopyToClipboard";
 import { useThemeColors } from "@/components/charts/useThemeColors";
 import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
+import { useWeekHighlight } from "@/components/charts/WeekHighlightContext";
 
 type DataPoint = {
   date: string;
@@ -200,6 +201,7 @@ export function DailyStreamsWithMAChart({
   const gid = useId();
   const themeColors = useThemeColors();
   const { containerProps, setTooltipValues, copyModal } = useChartCopyToClipboard({ valueLabel });
+  const { weekHighlightDayUtc } = useWeekHighlight();
   
   // Use theme-aware colors from CSS variables
   const effectiveDailyColor = dailyColor ?? themeColors.accentStroke;
@@ -225,7 +227,7 @@ export function DailyStreamsWithMAChart({
   }));
   const chartDates = new Set(chartData.map((d) => d.date));
   const annotationDates = [...annItemsByDate.keys()].filter((d) => chartDates.has(d));
-  const sundayDates = chartData.filter((d) => isSundayDate(d.date)).map((d) => d.date);
+  const highlightDates = chartData.filter((d) => isHighlightDayDateUtc(d.date, weekHighlightDayUtc)).map((d) => d.date);
   
   // Debug: Check if we have any ma7 values
   const hasMa7Data = chartData.some((d) => d.ma7 != null && !isNaN(Number(d.ma7)));
@@ -306,10 +308,10 @@ export function DailyStreamsWithMAChart({
               opacity: 0.8,
             }}
           />
-          {/* Subtle Sunday indicator (follows the active metric color) */}
-          {sundayDates.map((d) => (
+          {/* Subtle highlight-day indicator (daily charts) */}
+          {highlightDates.map((d) => (
             <ReferenceLine
-              key={`sunday-${d}`}
+              key={`highlight-${d}`}
               x={d}
               stroke={sundayColor}
               strokeOpacity={themeColors.isDark ? 0.10 : 0.07}
@@ -340,9 +342,9 @@ export function DailyStreamsWithMAChart({
               const { cx, cy, payload } = props ?? {};
               if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
               const date = String(payload?.date ?? "");
-              const isSunday = date ? isSundayDate(date) : false;
-              const fill = isSunday ? sundayColor : effectiveDailyColor;
-              const fillOpacity = isSunday ? 0.78 : 1;
+              const isHighlight = date ? isHighlightDayDateUtc(date, weekHighlightDayUtc) : false;
+              const fill = isHighlight ? sundayColor : effectiveDailyColor;
+              const fillOpacity = isHighlight ? 0.78 : 1;
               return (
                 <circle
                   cx={cx}
@@ -359,9 +361,9 @@ export function DailyStreamsWithMAChart({
               const { cx, cy, payload } = props ?? {};
               if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
               const date = String(payload?.date ?? "");
-              const isSunday = date ? isSundayDate(date) : false;
-              const fill = isSunday ? sundayColor : effectiveDailyColor;
-              const fillOpacity = isSunday ? 0.85 : 1;
+              const isHighlight = date ? isHighlightDayDateUtc(date, weekHighlightDayUtc) : false;
+              const fill = isHighlight ? sundayColor : effectiveDailyColor;
+              const fillOpacity = isHighlight ? 0.85 : 1;
               return (
                 <circle
                   cx={cx}

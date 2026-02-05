@@ -1314,12 +1314,12 @@ export function CollectorsClient(props: {
                 ...(drillIsTracksMetric
                   ? []
                   : [
-                      { label: drillIsRevenueMetric ? "Total Revenue" : "Total Streams", align: "right" } as const,
+                      { label: drillIsRevenueMetric ? "Total Revenue" : "Total Streams", align: "right" as const },
                       (
                         <span key="d1" title="Today minus yesterday (based on cumulative streams).">
                           {drillIsRevenueMetric ? "Daily Revenue" : "Daily Streams"}
                         </span>
-                      ) as const,
+                      ),
                     ]),
               ]}
               maxBodyHeightClassName="max-h-[520px]"

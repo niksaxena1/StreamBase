@@ -18,13 +18,14 @@ import {
   extractOverrideItemsFromRechartsPayload,
   formatTooltipDateDaily,
   getSundayAccentColor,
-  isSundayDate,
+  isHighlightDayDateUtc,
   formatKmbTick,
   formatUsdCompact,
 } from "@/components/charts/chartUtils";
 import { useChartCopyToClipboard, type TooltipCopyValues } from "@/components/charts/useChartCopyToClipboard";
 import { useThemeColors } from "@/components/charts/useThemeColors";
 import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
+import { useWeekHighlight } from "@/components/charts/WeekHighlightContext";
 
 type DataPoint = {
   date: string;
@@ -204,6 +205,7 @@ export function DailyStreamsChart({
   const gid = useId();
   const themeColors = useThemeColors();
   const { containerProps, setTooltipValues, copyModal } = useChartCopyToClipboard({ valueLabel });
+  const { weekHighlightDayUtc } = useWeekHighlight();
   
   // Use theme-aware colors from CSS variables
   const effectiveColor = color ?? themeColors.accentStroke;
@@ -230,7 +232,7 @@ export function DailyStreamsChart({
   const hasMA7 = showMA7 && chartData.some((d) => d.ma7 !== null && d.ma7 !== undefined);
   const chartDates = new Set(chartData.map((d) => d.date));
   const annotationDates = [...annItemsByDate.keys()].filter((d) => chartDates.has(d));
-  const sundayDates = chartData.filter((d) => isSundayDate(d.date)).map((d) => d.date);
+  const highlightDates = chartData.filter((d) => isHighlightDayDateUtc(d.date, weekHighlightDayUtc)).map((d) => d.date);
 
   // Calculate Y-axis domain for cumulative charts (use exact min/max for better readability)
   const yAxisDomain = isCumulative && chartData.length > 0
@@ -325,10 +327,10 @@ export function DailyStreamsChart({
               opacity: 0.8
             }}
           />
-          {/* Subtle Sunday indicator (follows the active metric color) */}
-          {sundayDates.map((d) => (
+          {/* Subtle highlight-day indicator (daily charts) */}
+          {highlightDates.map((d) => (
             <ReferenceLine
-              key={`sunday-${d}`}
+              key={`highlight-${d}`}
               x={d}
               stroke={sundayColor}
               strokeOpacity={themeColors.isDark ? 0.10 : 0.07}
@@ -359,9 +361,9 @@ export function DailyStreamsChart({
               const { cx, cy, payload } = props ?? {};
               if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
               const date = String(payload?.date ?? "");
-              const isSunday = date ? isSundayDate(date) : false;
-              const fill = isSunday ? sundayColor : effectiveColor;
-              const fillOpacity = isSunday ? 0.78 : 1;
+              const isHighlight = date ? isHighlightDayDateUtc(date, weekHighlightDayUtc) : false;
+              const fill = isHighlight ? sundayColor : effectiveColor;
+              const fillOpacity = isHighlight ? 0.78 : 1;
               return (
                 <circle
                   cx={cx}
@@ -378,9 +380,9 @@ export function DailyStreamsChart({
               const { cx, cy, payload } = props ?? {};
               if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
               const date = String(payload?.date ?? "");
-              const isSunday = date ? isSundayDate(date) : false;
-              const fill = isSunday ? sundayColor : effectiveColor;
-              const fillOpacity = isSunday ? 0.85 : 1;
+              const isHighlight = date ? isHighlightDayDateUtc(date, weekHighlightDayUtc) : false;
+              const fill = isHighlight ? sundayColor : effectiveColor;
+              const fillOpacity = isHighlight ? 0.85 : 1;
               return (
                 <circle
                   cx={cx}
