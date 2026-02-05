@@ -5,10 +5,10 @@ import { Download } from "lucide-react";
 
 import { SearchBox } from "./SearchBox";
 import { TracksList } from "./TracksList";
-import { IconButton } from "@/components/ui/Button";
 import { Select } from "@/components/ui/Select";
 import { downloadCsv, todayIsoDate } from "@/lib/csv";
 import { foldForSearch } from "@/lib/searchFold";
+import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 
 type Track = {
   isrc: string;
@@ -34,6 +34,7 @@ export function TracksConfigClient({ tracks, totalCount }: TracksConfigClientPro
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<SortOption>("name");
   const [sortAsc, setSortAsc] = useState(true);
+  const { streamPayoutPerStreamUsd } = usePayoutRate();
 
   // Filter and sort tracks for CSV export
   const filteredAndSortedForExport = (() => {
@@ -91,7 +92,7 @@ export function TracksConfigClient({ tracks, totalCount }: TracksConfigClientPro
   return (
     <>
       <div className="flex items-center justify-between gap-4">
-        <div>
+        <div className="flex items-center gap-2">
           <h1 className="font-display text-xl font-semibold tracking-tight sm:text-2xl">
             Tracks
             {totalCount > 0 && (
@@ -100,8 +101,46 @@ export function TracksConfigClient({ tracks, totalCount }: TracksConfigClientPro
               </span>
             )}
           </h1>
+          <button
+            type="button"
+            onClick={() => {
+              const csvData = filteredAndSortedForExport.map((track) => {
+                const totalStreams = track.totalStreams ?? null;
+                const dailyStreams = track.dailyStreams ?? null;
+                const totalRevenueUsd = totalStreams === null ? null : totalStreams * streamPayoutPerStreamUsd;
+                const dailyRevenueUsd = dailyStreams === null ? null : dailyStreams * streamPayoutPerStreamUsd;
+                return {
+                  "Track Name": track.name ?? track.isrc,
+                  ISRC: track.isrc,
+                  Artists: track.artistNames?.join(" | ") ?? "",
+                  "Total Streams": totalStreams,
+                  "Daily Streams": dailyStreams,
+                  "Total Revenue (USD)": totalRevenueUsd,
+                  "Daily Revenue (USD)": dailyRevenueUsd,
+                  "Release Date": track.release_date ?? "",
+                  "Last Seen": track.last_seen ?? "",
+                  "Spotify URL": track.externalUrl ?? "",
+                };
+              });
+              downloadCsv({
+                filename: `tracks-config-export-${todayIsoDate()}.csv`,
+                rows: csvData,
+              });
+            }}
+            className="inline-flex items-center justify-center p-0 transition-colors hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
+            title="Download as CSV"
+            aria-label="Download as CSV"
+            style={{ color: "var(--sb-muted)" }}
+          >
+            <Download className="h-3.5 w-3.5" />
+          </button>
         </div>
         <div className="flex items-center gap-2">
+          <SearchBox
+            onSearchChange={setSearchQuery}
+            placeholder="Search tracks…"
+            className="min-w-[260px]"
+          />
           <Select
             value={`${sortBy}-${sortAsc ? "asc" : "desc"}`}
             onChange={(e) => {
@@ -122,31 +161,6 @@ export function TracksConfigClient({ tracks, totalCount }: TracksConfigClientPro
             <option value="lastseen-desc">Last Seen ↓</option>
             <option value="lastseen-asc">Last Seen ↑</option>
           </Select>
-          <SearchBox onSearchChange={setSearchQuery} placeholder="Search tracks…" />
-          <IconButton
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              const csvData = filteredAndSortedForExport.map((track) => ({
-                "Track Name": track.name ?? track.isrc,
-                ISRC: track.isrc,
-                Artists: track.artistNames?.join(" | ") ?? "",
-                "Total Streams": track.totalStreams ?? "",
-                "Daily Streams": track.dailyStreams ?? "",
-                "Release Date": track.release_date ?? "",
-                "Last Seen": track.last_seen ?? "",
-              }));
-              downloadCsv({
-                filename: `tracks-config-export-${todayIsoDate()}.csv`,
-                rows: csvData,
-              });
-            }}
-            title="Download table as CSV"
-            aria-label="Download table as CSV"
-          >
-            <Download className="h-3.5 w-3.5" />
-          </IconButton>
         </div>
       </div>
 

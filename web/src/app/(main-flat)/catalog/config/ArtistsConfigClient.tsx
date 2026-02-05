@@ -6,10 +6,10 @@ import { ArrowLeft, Download } from "lucide-react";
 
 import { SearchBox } from "./SearchBox";
 import { ArtistsList } from "./ArtistsList";
-import { IconButton } from "@/components/ui/Button";
 import { Select } from "@/components/ui/Select";
 import { downloadCsv, todayIsoDate } from "@/lib/csv";
-import { useMetric } from "@/components/metrics/MetricContext";
+import { foldForSearch } from "@/lib/searchFold";
+import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 
 type Artist = {
   id: string;
@@ -33,7 +33,7 @@ export function ArtistsConfigClient({ artists, totalCount }: ArtistsConfigClient
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<SortOption>("name");
   const [sortAsc, setSortAsc] = useState(true);
-  const { metric } = useMetric();
+  const { streamPayoutPerStreamUsd } = usePayoutRate();
 
   // Filter and sort artists for CSV export
   const filteredAndSortedForExport = (() => {
@@ -41,8 +41,8 @@ export function ArtistsConfigClient({ artists, totalCount }: ArtistsConfigClient
 
     // Filter by search query
     if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter((artist) => artist.name.toLowerCase().includes(q));
+      const q = foldForSearch(searchQuery);
+      result = result.filter((artist) => foldForSearch(artist.name).includes(q));
     }
 
     // Sort
@@ -79,7 +79,7 @@ export function ArtistsConfigClient({ artists, totalCount }: ArtistsConfigClient
           >
             <ArrowLeft className="h-4 w-4" style={{ color: "var(--sb-text)" }} />
           </Link>
-          <div>
+          <div className="flex items-center gap-2">
             <h1 className="font-display text-xl font-semibold tracking-tight sm:text-2xl">
               Artists
               {totalCount > 0 && (
@@ -88,9 +88,46 @@ export function ArtistsConfigClient({ artists, totalCount }: ArtistsConfigClient
                 </span>
               )}
             </h1>
+            <button
+              type="button"
+              onClick={() => {
+                const csvData = filteredAndSortedForExport.map((artist) => {
+                  const totalStreams = artist.totalStreams ?? null;
+                  const dailyStreams = artist.dailyStreams ?? null;
+                  const totalRevenueUsd = totalStreams === null ? null : totalStreams * streamPayoutPerStreamUsd;
+                  const dailyRevenueUsd = dailyStreams === null ? null : dailyStreams * streamPayoutPerStreamUsd;
+                  return {
+                    "Artist Name": artist.name,
+                    "Artist ID": artist.id,
+                    "Total Streams": totalStreams,
+                    "Daily Streams": dailyStreams,
+                    "Total Revenue (USD)": totalRevenueUsd,
+                    "Daily Revenue (USD)": dailyRevenueUsd,
+                    "Total Tracks": artist.trackCount,
+                    "Daily Tracks": artist.dailyTrackCount,
+                    "Spotify URL": artist.externalUrl,
+                  };
+                });
+                downloadCsv({
+                  filename: `artists-config-export-${todayIsoDate()}.csv`,
+                  rows: csvData,
+                });
+              }}
+              className="inline-flex items-center justify-center p-0 transition-colors hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
+              title="Download as CSV"
+              aria-label="Download as CSV"
+              style={{ color: "var(--sb-muted)" }}
+            >
+              <Download className="h-3.5 w-3.5" />
+            </button>
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <SearchBox
+            onSearchChange={setSearchQuery}
+            placeholder="Search artists…"
+            className="min-w-[260px]"
+          />
           <Select
             value={`${sortBy}-${sortAsc ? "asc" : "desc"}`}
             onChange={(e) => {
@@ -107,40 +144,6 @@ export function ArtistsConfigClient({ artists, totalCount }: ArtistsConfigClient
             <option value="daily-desc">Daily ↓</option>
             <option value="daily-asc">Daily ↑</option>
           </Select>
-          <SearchBox onSearchChange={setSearchQuery} placeholder="Search artists…" />
-          <IconButton
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              const csvData = filteredAndSortedForExport.map((artist) => {
-                if (metric === "tracks") {
-                  return {
-                    "Artist Name": artist.name,
-                    "Artist ID": artist.id,
-                    "Total Tracks": artist.trackCount,
-                    "Daily Tracks": artist.dailyTrackCount,
-                    "Spotify URL": artist.externalUrl,
-                  };
-                }
-                return {
-                  "Artist Name": artist.name,
-                  "Artist ID": artist.id,
-                  "Total Streams": artist.totalStreams ?? "",
-                  "Daily Streams": artist.dailyStreams ?? "",
-                  "Spotify URL": artist.externalUrl,
-                };
-              });
-              downloadCsv({
-                filename: `artists-config-export-${todayIsoDate()}.csv`,
-                rows: csvData,
-              });
-            }}
-            title="Download table as CSV"
-            aria-label="Download table as CSV"
-          >
-            <Download className="h-3.5 w-3.5" />
-          </IconButton>
         </div>
       </div>
 

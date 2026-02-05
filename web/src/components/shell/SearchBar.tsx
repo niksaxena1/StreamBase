@@ -5,6 +5,8 @@ import { Search, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import { Modal } from "@/components/ui/Modal";
+import { useMetric } from "@/components/metrics/MetricContext";
+import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 
 type SearchResult = {
   type: "track" | "artist" | "playlist";
@@ -39,6 +41,13 @@ function formatStreams(streams: number) {
   if (streams >= 1_000_000) return `${(streams / 1_000_000).toFixed(1)}M`;
   if (streams >= 1_000) return `${(streams / 1_000).toFixed(1)}K`;
   return String(streams);
+}
+
+function formatRevenueCompact(revenue: number) {
+  if (revenue >= 1_000_000) return `$${(revenue / 1_000_000).toFixed(1)}M`;
+  if (revenue >= 1_000) return `$${(revenue / 1_000).toFixed(1)}K`;
+  if (revenue >= 1) return `$${revenue.toFixed(2)}`;
+  return `$${revenue.toFixed(2)}`;
 }
 
 function getShortcutLabel() {
@@ -78,6 +87,8 @@ export function SearchBar() {
   const [recents, setRecents] = useState<RecentItem[]>([]);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const router = useRouter();
+  const { metric } = useMetric();
+  const { streamPayoutPerStreamUsd } = usePayoutRate();
 
   useEffect(() => {
     // Load recents on mount (client-only).
@@ -416,9 +427,8 @@ export function SearchBar() {
                                 : result.subtitle ?? "";
 
                           return (
-                            <button
+                            <div
                               key={statsKey}
-                              type="button"
                               className={[
                                 "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition",
                                 active ? "bg-black/5 dark:bg-white/10" : "hover:bg-black/5 dark:hover:bg-white/5",
@@ -427,28 +437,78 @@ export function SearchBar() {
                                 setActiveIndex(globalIndex);
                                 ensureStatsLoaded(result);
                               }}
-                              onClick={() => navigateTo(result)}
                             >
-                              {result.imageUrl ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img
-                                  src={result.imageUrl}
-                                  alt={result.name}
-                                  className={`h-8 w-8 object-cover ${result.type === "artist" ? "rounded-full" : "rounded"}`}
-                                />
-                              ) : (
-                                <div
-                                  className={`h-8 w-8 ${result.type === "artist" ? "rounded-full" : "rounded"} bg-black/10 dark:bg-white/10`}
-                                />
-                              )}
-                              <div className="min-w-0 flex-1">
-                                <div className="truncate font-medium">{result.name}</div>
-                                {subtitle ? <div className="truncate text-xs opacity-60">{subtitle}</div> : null}
+                              <button
+                                type="button"
+                                className="flex flex-1 items-center gap-3 text-left min-w-0"
+                                onClick={() => navigateTo(result)}
+                              >
+                                {result.imageUrl ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img
+                                    src={result.imageUrl}
+                                    alt={result.name}
+                                    className={`h-8 w-8 flex-shrink-0 object-cover ${result.type === "artist" ? "rounded-full" : "rounded"}`}
+                                  />
+                                ) : (
+                                  <div
+                                    className={`h-8 w-8 flex-shrink-0 ${result.type === "artist" ? "rounded-full" : "rounded"} bg-black/10 dark:bg-white/10`}
+                                  />
+                                )}
+                                <div className="min-w-0 flex-1">
+                                  <div className="truncate font-medium">{result.name}</div>
+                                  {result.type === "track" && result.artistIds && result.artistNames ? (
+                                    <div className="text-xs opacity-60">
+                                      {result.artistNames.map((name, idx) => (
+                                        <span key={result.artistIds?.[idx] ?? idx}>
+                                          <button
+                                            type="button"
+                                            className="sb-link-hover transition-colors cursor-pointer"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              const artistId = result.artistIds?.[idx];
+                                              if (artistId) {
+                                                router.push(`/catalog?artist_id=${encodeURIComponent(artistId)}`);
+                                                addRecent({
+                                                  type: "artist",
+                                                  id: artistId,
+                                                  name: name,
+                                                });
+                                                setQuery("");
+                                                setResults([]);
+                                                setOpen(false);
+                                              }
+                                            }}
+                                          >
+                                            {name}
+                                          </button>
+                                          {idx < result.artistNames!.length - 1 && ", "}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    subtitle && <div className="truncate text-xs opacity-60">{subtitle}</div>
+                                  )}
+                                </div>
+                              </button>
+                              <div
+                                className="text-xs font-medium flex-shrink-0"
+                                style={{
+                                  color:
+                                    metric === "revenue"
+                                      ? "#10b981"
+                                      : metric === "tracks"
+                                        ? "#3b82f6"
+                                        : "var(--sb-accent)",
+                                }}
+                              >
+                                {isLoadingStats ? "…" : stats ? (
+                                  metric === "revenue"
+                                    ? formatRevenueCompact(stats.streams * streamPayoutPerStreamUsd)
+                                    : formatStreams(stats.streams)
+                                ) : ""}
                               </div>
-                              <div className="text-xs font-medium" style={{ color: "var(--sb-accent)" }}>
-                                {isLoadingStats ? "…" : stats ? formatStreams(stats.streams) : ""}
-                              </div>
-                            </button>
+                            </div>
                           );
                         })}
                       </div>
