@@ -26,7 +26,7 @@ function formatDisplay(date: Date): string {
   return `${d} ${m} ${y}`;
 }
 
-export function RollbackButton() {
+export function RollbackButton({ latestDataDate }: { latestDataDate: string | null }) {
   const { rollbackDate, setRollbackDate, isActive } = useRollback();
   const [isOpen, setIsOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
@@ -38,8 +38,10 @@ export function RollbackButton() {
     [rollbackDate],
   );
 
-  const today = useMemo(() => new Date(), []);
-  const maxDate = today;
+  const maxDate = useMemo(
+    () => (latestDataDate ? parseYmd(latestDataDate) : new Date()),
+    [latestDataDate],
+  );
   const disabledDays: Matcher[] = useMemo(() => [{ after: maxDate }], [maxDate]);
 
   // Escape closes popover
@@ -59,14 +61,14 @@ export function RollbackButton() {
       const el = buttonRef.current;
       if (!el) return;
       const rect = el.getBoundingClientRect();
-      const width = 280;
+      const width = 240;
       const margin = 8;
 
       let left = rect.left;
       left = Math.max(margin, Math.min(left, window.innerWidth - width - margin));
 
-      const preferBelow = rect.bottom + 12 + 400 <= window.innerHeight;
-      const top = preferBelow ? rect.bottom + 8 : Math.max(margin, rect.top - 8 - 400);
+      const preferBelow = rect.bottom + 12 + 380 <= window.innerHeight;
+      const top = preferBelow ? rect.bottom + 8 : Math.max(margin, rect.top - 8 - 380);
 
       setPopoverPos({ top, left });
     };
@@ -117,7 +119,7 @@ export function RollbackButton() {
         type="button"
         onClick={() => {
           if (!isOpen) {
-            setDisplayMonth(selected ?? today);
+            setDisplayMonth(selected ?? maxDate);
           }
           setIsOpen((v) => !v);
         }}
@@ -163,7 +165,7 @@ export function RollbackButton() {
               />
               {/* Popover */}
               <div
-                className="fixed z-50 w-[280px] sb-card shadow-lg overflow-hidden"
+                className="fixed z-50 w-[240px] sb-card shadow-lg overflow-hidden"
                 style={{ top: popoverPos.top, left: popoverPos.left }}
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => e.stopPropagation()}
@@ -246,6 +248,7 @@ export function RollbackButton() {
                     month={displayMonth}
                     onMonthChange={setDisplayMonth}
                     hideNavigation
+                    today={maxDate}
                     classNames={{
                       months: "flex",
                       month: "flex flex-col gap-1",
@@ -262,7 +265,7 @@ export function RollbackButton() {
                         "ring-1 ring-inset ring-[color:var(--sb-accent)]",
                       selected:
                         "!bg-[color:var(--sb-positive)] !text-white dark:!text-black hover:!bg-[color:var(--sb-positive)]",
-                      outside: "opacity-30",
+                      outside: "invisible",
                       disabled:
                         "opacity-20 cursor-not-allowed hover:bg-transparent dark:hover:bg-transparent",
                       hidden: "invisible",

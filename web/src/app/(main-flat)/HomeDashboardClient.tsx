@@ -18,7 +18,7 @@ import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { TrackStreamsXYChart, type TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChart";
 import { ArtistStreamsXYChart, aggregateTracksToArtists } from "@/components/charts/ArtistStreamsXYChart";
 import { TracksPerMilestoneChart } from "@/components/charts/TracksPerMilestoneChart";
-import { DatePicker } from "@/components/ui/DatePicker";
+
 import { foldForSearch } from "@/lib/searchFold";
 import { Modal } from "@/components/ui/Modal";
 import { FilterBuilder, type TrackDataPoint, type PlaylistDataPoint } from "@/components/filters";
@@ -396,6 +396,9 @@ function HomeDashboardInner(props: {
   const [scatterSearchFocused, setScatterSearchFocused] = useState(false);
   const [scatterLogScale, setScatterLogScale] = useState(false);
   const [scatterView, setScatterView] = useState<"tracks" | "artists">("tracks");
+  const [scatterArtistImagesById, setScatterArtistImagesById] = useState<Map<string, string | null> | null>(
+    null,
+  );
   const [openScatter, setOpenScatter] = useState(false);
   const [openMilestones, setOpenMilestones] = useState(false);
   const [openHistory, setOpenHistory] = useState(false);
@@ -535,6 +538,37 @@ function HomeDashboardInner(props: {
     };
   }, [milestoneDrillArtistImagesById, milestoneDrillOpen, milestoneDrillView]);
 
+  // Best-effort: load artist thumbnails for the Artists scatter chart.
+  useEffect(() => {
+    if (!openScatter) return;
+    if (scatterView !== "artists") return;
+    if (scatterArtistImagesById) return;
+
+    let cancelled = false;
+    async function load() {
+      try {
+        const res = await fetch("/api/artists/options");
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) return;
+        const rows = Array.isArray((json as any)?.artists) ? ((json as any).artists as any[]) : [];
+        const map = new Map<string, string | null>();
+        for (const r of rows) {
+          const id = String(r?.artist_id ?? "");
+          if (!id) continue;
+          map.set(id, (r?.image_url ?? null) as string | null);
+        }
+        if (!cancelled) setScatterArtistImagesById(map);
+      } catch {
+        // ignore
+      }
+    }
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [openScatter, scatterArtistImagesById, scatterView]);
+
   type MilestoneDrillArtistRow = {
     key: string;
     artist_id: string | null;
@@ -634,9 +668,18 @@ function HomeDashboardInner(props: {
 
   // Restore persisted collapsible state after mount.
   useEffect(() => {
-    setOpenScatter(readStoredBool(HOME_DETAILS_STORAGE.scatterOpen, false));
-    setOpenMilestones(readStoredBool(HOME_DETAILS_STORAGE.milestoneOpen, false));
-    setOpenHistory(readStoredBool(HOME_DETAILS_STORAGE.historyOpen, false));
+    const restoredScatter = readStoredBool(HOME_DETAILS_STORAGE.scatterOpen, false);
+    const restoredMilestones = readStoredBool(HOME_DETAILS_STORAGE.milestoneOpen, false);
+    const restoredHistory = readStoredBool(HOME_DETAILS_STORAGE.historyOpen, false);
+
+    // Avoid setState calls directly inside effect body (eslint react-hooks/set-state-in-effect).
+    const schedule =
+      typeof queueMicrotask === "function" ? queueMicrotask : (cb: () => void) => void Promise.resolve().then(cb);
+    schedule(() => {
+      setOpenScatter(restoredScatter);
+      setOpenMilestones(restoredMilestones);
+      setOpenHistory(restoredHistory);
+    });
 
     function applySavedMilestones(saved: string) {
       // Prefer new format: comma-separated stream milestone integers.
@@ -743,8 +786,8 @@ function HomeDashboardInner(props: {
   // Aggregate tracks to artists for artist view
   const artistScatterPoints = useMemo(() => {
     if (scatterView !== "artists") return [];
-    return aggregateTracksToArtists(props.trackScatterPoints ?? []);
-  }, [props.trackScatterPoints, scatterView]);
+    return aggregateTracksToArtists(props.trackScatterPoints ?? [], scatterArtistImagesById);
+  }, [props.trackScatterPoints, scatterArtistImagesById, scatterView]);
 
   // Track search matches
   const scatterTrackMatches = useMemo(() => {
@@ -1172,17 +1215,6 @@ function HomeDashboardInner(props: {
                 >
                   {scatterLogScale ? "Log" : "Linear"}
                 </button>
-                <DatePicker
-                  value={props.trackScatterDataDate ?? props.latestDataDate ?? ""}
-                  min={
-                    props.history?.length
-                      ? dataDateFromRunDate((props.history ?? [])[props.history.length - 1]?.date ?? "")
-                      : undefined
-                  }
-                  max={props.latestDataDate ?? undefined}
-                  path="/"
-                  param="xy_date"
-                />
               </div>
             ) : null}
           </div>

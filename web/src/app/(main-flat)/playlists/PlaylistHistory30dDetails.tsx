@@ -61,6 +61,7 @@ export function PlaylistHistory30dDetails(props: { rows: PlaylistHistoryRow[] })
           headers={[
             { label: "Date" },
             { label: "Tracks", align: "right" },
+            { label: "" }, // Invisible column for track delta
             { label: "Total Streams", align: "right" },
             { label: "Daily", align: "right" },
             { label: "Est. Rev", align: "right" },
@@ -69,27 +70,44 @@ export function PlaylistHistory30dDetails(props: { rows: PlaylistHistoryRow[] })
           // Constrain height so the panel stays tidy; scroll for more.
           maxBodyHeightClassName="max-h-[320px] overflow-auto"
         >
-          {rows30.map((r) => (
-            <TableRow key={r.date}>
-              <TableCell mono>{formatDateISO(dataDateFromRunDate(r.date))}</TableCell>
-              <TableCell numeric>{formatInt(r.track_count)}</TableCell>
-              <TableCell numeric>{formatInt(r.total_streams_cumulative)}</TableCell>
-              <TableCell numeric className="sb-positive font-medium">
-                {formatInt(r.daily_streams_net)}
-              </TableCell>
-              <TableCell numeric>
-                {formatUsd(Number(r.total_streams_cumulative ?? 0) * streamPayoutPerStreamUsd)}
-              </TableCell>
-              <TableCell numeric>
-                {r.missing_streams_track_count ? (
-                  <span className="text-red-600 dark:text-red-400 font-medium">
-                    {formatInt(r.missing_streams_track_count)}
-                  </span>
-                ) : null}
-              </TableCell>
-            </TableRow>
-          ))}
-          {!rows30.length && <EmptyState colSpan={6} message="No stats yet for this playlist." />}
+          {rows30.map((r, idx) => {
+            const prev = idx < rows30.length - 1 ? rows30[idx + 1] : null;
+            const trackDelta = prev ? Number(r.track_count ?? 0) - Number(prev.track_count ?? 0) : 0;
+
+            return (
+              <TableRow key={r.date}>
+                <TableCell mono>{formatDateISO(dataDateFromRunDate(r.date))}</TableCell>
+                <TableCell numeric>{formatInt(r.track_count)}</TableCell>
+                <TableCell className="w-12 pl-1 pr-0 text-xs">
+                  {trackDelta !== 0 && (
+                    <span
+                      className={
+                        trackDelta > 0 ? "text-blue-600 dark:text-blue-400" : "text-red-600 dark:text-red-400"
+                      }
+                    >
+                      {trackDelta > 0 ? "+" : ""}
+                      {formatInt(trackDelta)}
+                    </span>
+                  )}
+                </TableCell>
+                <TableCell numeric>{formatInt(r.total_streams_cumulative)}</TableCell>
+                <TableCell numeric className="sb-positive font-medium">
+                  {formatInt(r.daily_streams_net)}
+                </TableCell>
+                <TableCell numeric>
+                  {formatUsd(Number(r.total_streams_cumulative ?? 0) * streamPayoutPerStreamUsd)}
+                </TableCell>
+                <TableCell numeric>
+                  {r.missing_streams_track_count ? (
+                    <span className="text-red-600 dark:text-red-400 font-medium">
+                      {formatInt(r.missing_streams_track_count)}
+                    </span>
+                  ) : null}
+                </TableCell>
+              </TableRow>
+            );
+          })}
+          {!rows30.length && <EmptyState colSpan={7} message="No stats yet for this playlist." />}
         </GlassTable>
       </div>
     </details>

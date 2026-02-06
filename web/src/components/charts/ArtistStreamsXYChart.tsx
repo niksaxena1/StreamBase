@@ -38,7 +38,10 @@ function hexToRgba(hex: string, alpha: number): string {
 }
 
 /** Aggregate track points into artist points */
-export function aggregateTracksToArtists(tracks: TrackStreamsXYPoint[]): ArtistStreamsXYPoint[] {
+export function aggregateTracksToArtists(
+  tracks: TrackStreamsXYPoint[],
+  artistImagesById?: Map<string, string | null> | null,
+): ArtistStreamsXYPoint[] {
   const artistMap = new Map<string, {
     artist_id: string;
     artist_name: string;
@@ -57,7 +60,7 @@ export function aggregateTracksToArtists(tracks: TrackStreamsXYPoint[]): ArtistS
       const id = ids[i];
       const name = names[i] ?? "Unknown";
       if (!id) continue;
-      const maybeImg = t.album_image_url ?? null;
+      const maybeImg = artistImagesById?.get(id) ?? null;
 
       const existing = artistMap.get(id);
       if (existing) {

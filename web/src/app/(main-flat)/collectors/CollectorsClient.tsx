@@ -637,6 +637,13 @@ export function CollectorsClient(props: {
   const [trackQuery, setTrackQuery] = useState("");
   const [trackSort, setTrackSort] = useState<TrackSort>("delta_desc");
 
+  // Tracks table (in the collector details section) is stream-based data. When the global
+  // metric is "tracks", we still show streams here (values + colors), matching other drilldowns.
+  const tracksTableMetric: "streams" | "revenue" = metric === "revenue" ? "revenue" : "streams";
+  const tracksTableIsRevenue = tracksTableMetric === "revenue";
+  const tracksTableTotalLabel = tracksTableIsRevenue ? "Est. revenue (total)" : "Streams (total)";
+  const tracksTableDailyLabel = tracksTableIsRevenue ? "Est. revenue (daily)" : "Streams (daily)";
+
   type DrillKind = "playlists" | "artists" | "tracks";
   const [drillOpen, setDrillOpen] = useState(false);
   const [drillKind, setDrillKind] = useState<DrillKind>("tracks");
@@ -793,10 +800,18 @@ export function CollectorsClient(props: {
     const safeNum = (n: number | null | undefined) => (n == null || Number.isNaN(n) ? null : Number(n));
 
     rows = [...rows].sort((a, b) => {
-      const aDelta = safeNum(a.daily_streams_delta);
-      const bDelta = safeNum(b.daily_streams_delta);
-      const aTotal = safeNum(a.total_streams_cumulative);
-      const bTotal = safeNum(b.total_streams_cumulative);
+      const aDeltaStreams = safeNum(a.daily_streams_delta);
+      const bDeltaStreams = safeNum(b.daily_streams_delta);
+      const aTotalStreams = safeNum(a.total_streams_cumulative);
+      const bTotalStreams = safeNum(b.total_streams_cumulative);
+
+      const toValue = (n: number | null) =>
+        n == null ? null : tracksTableMetric === "revenue" ? n * payoutPerStreamUsd : n;
+
+      const aDelta = toValue(aDeltaStreams);
+      const bDelta = toValue(bDeltaStreams);
+      const aTotal = toValue(aTotalStreams);
+      const bTotal = toValue(bTotalStreams);
       const aName = (a.name ?? a.isrc ?? "").toLowerCase();
       const bName = (b.name ?? b.isrc ?? "").toLowerCase();
 
@@ -826,7 +841,7 @@ export function CollectorsClient(props: {
     });
 
     return rows;
-  }, [props.collectorTracks, trackQuery, trackSort]);
+  }, [props.collectorTracks, trackQuery, trackSort, tracksTableMetric, payoutPerStreamUsd]);
 
   const playlistMetaByKey = useMemo(() => {
     return new Map(props.selectedPlaylistsMeta.map((p) => [p.playlist_key, p]));
@@ -1649,7 +1664,7 @@ export function CollectorsClient(props: {
 
           <div className="mt-3 space-y-4">
             <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
-              Cumulative streams are totals from the DB on the data date. “Daily” is today minus yesterday.
+              Cumulative streams are totals from the DB on the data date. “Daily” is today minus yesterday (based on cumulative streams). Revenue is estimated from payout rate.
             </div>
             {/* Quick summary */}
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -1783,9 +1798,9 @@ export function CollectorsClient(props: {
                   "",
                   "Track",
                   "ISRC",
-                  "Streams (total)",
+                  tracksTableTotalLabel,
                   <span key="d1" title="Today minus yesterday (based on cumulative streams).">
-                    Streams (daily)
+                    {tracksTableDailyLabel}
                   </span>,
                   "Distro",
                 ]}
@@ -1829,19 +1844,35 @@ export function CollectorsClient(props: {
                     <TableCell mono className="text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>
                       {t.isrc}
                     </TableCell>
-                    <TableCell className="font-medium">
-                      {t.total_streams_cumulative == null ? "—" : formatInt(t.total_streams_cumulative)}
+                    <TableCell
+                      className={tracksTableIsRevenue ? "font-medium" : "sb-positive font-medium"}
+                      style={tracksTableIsRevenue ? { color: "#10b981" } : undefined}
+                    >
+                      {t.total_streams_cumulative == null
+                        ? "—"
+                        : tracksTableIsRevenue
+                          ? formatUsd2(t.total_streams_cumulative * payoutPerStreamUsd)
+                          : formatInt(t.total_streams_cumulative)}
                     </TableCell>
                     <TableCell
                       className={
                         t.daily_streams_delta != null && t.daily_streams_delta < 0
                           ? "text-red-600 dark:text-red-400 font-medium"
-                          : "sb-positive font-medium"
+                          : tracksTableIsRevenue
+                            ? "font-medium"
+                            : "sb-positive font-medium"
+                      }
+                      style={
+                        tracksTableIsRevenue && !(t.daily_streams_delta != null && t.daily_streams_delta < 0)
+                          ? { color: "#10b981" }
+                          : undefined
                       }
                     >
                       {t.daily_streams_delta == null
                         ? "—"
-                        : `${formatInt(t.daily_streams_delta)}`}
+                        : tracksTableIsRevenue
+                          ? formatUsd2(t.daily_streams_delta * payoutPerStreamUsd)
+                          : `${formatInt(t.daily_streams_delta)}`}
                     </TableCell>
                     <TableCell title={distroKeys.length ? distroTitle : undefined}>
                       {distroKeys.length ? (
