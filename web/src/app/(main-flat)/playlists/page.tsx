@@ -11,6 +11,7 @@ import { RememberParamRedirect } from "@/components/dashboard/RememberParamRedir
 import { supabaseService } from "@/lib/supabase/service";
 import { PlaylistPageClient } from "./PlaylistPageClient";
 import { dataDateFromRunDate } from "@/lib/sotDates";
+import { getRollbackDate, rollbackDataDateToRunDate } from "@/lib/rollback";
 import { PlaylistTracksSection } from "./PlaylistTracksSection";
 import { PageHeader } from "@/components/shell/PageHeader";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -152,6 +153,10 @@ export default async function PlaylistsPage({
     );
   }
 
+  // Global time-rollback: if active, cap all queries at this date.
+  const rollbackDate = await getRollbackDate();
+  const rollbackRunDate = rollbackDate ? rollbackDataDateToRunDate(rollbackDate) : null;
+
   // Dashboard view - show analytics for selected playlist (cached for 1 hour)
   const [
     { data: playlists },
@@ -170,40 +175,49 @@ export default async function PlaylistsPage({
       3600,
     ),
     cachedQuery(
-      async () =>
-        await svc
+      async () => {
+        let q = svc
           .from("playlist_daily_stats")
           .select("date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net")
-          .eq("playlist_key", playlistKey)
+          .eq("playlist_key", playlistKey);
+        if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
+        return await q
           .order("date", { ascending: false })
           .limit(1)
-          .maybeSingle(),
-      `playlist-latest-v2-${playlistKey}-ov${overrideBuster}`,
+          .maybeSingle();
+      },
+      `playlist-latest-v2-${playlistKey}-ov${overrideBuster}-rb${rollbackDate ?? "live"}`,
       3600,
     ),
     cachedQuery(
-      async () =>
-        await svc
+      async () => {
+        let q = svc
           .from("playlist_daily_stats")
           .select("date")
-          .eq("playlist_key", playlistKey)
+          .eq("playlist_key", playlistKey);
+        if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
+        return await q
           .order("date", { ascending: false })
           .range(1, 1)
-          .maybeSingle(),
-      `playlist-prev-v2-${playlistKey}-ov${overrideBuster}`,
+          .maybeSingle();
+      },
+      `playlist-prev-v2-${playlistKey}-ov${overrideBuster}-rb${rollbackDate ?? "live"}`,
       3600,
     ),
     cachedQuery(
-      async () =>
-        await svc
+      async () => {
+        let q = svc
           .from("playlist_daily_stats")
           .select(
             "date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net,missing_streams_track_count",
           )
-          .eq("playlist_key", playlistKey)
+          .eq("playlist_key", playlistKey);
+        if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
+        return await q
           .order("date", { ascending: false })
-          .limit(rangeDays),
-      `playlist-history-v2-${playlistKey}-${rangeDays}-ov${overrideBuster}`,
+          .limit(rangeDays);
+      },
+      `playlist-history-v2-${playlistKey}-${rangeDays}-ov${overrideBuster}-rb${rollbackDate ?? "live"}`,
       3600,
     ),
   ]);

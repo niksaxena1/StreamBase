@@ -9,6 +9,7 @@ import { RememberParamRedirect } from "@/components/dashboard/RememberParamRedir
 import { CatalogPageClient } from "./CatalogPageClient";
 import { computeDailyRollingAvg7 } from "@/components/charts/chartUtils";
 import { dataDateFromRunDate } from "@/lib/sotDates";
+import { getRollbackDate, rollbackDataDateToRunDate, capRunDate } from "@/lib/rollback";
 import { Alert } from "@/components/ui/Alert";
 
 const CATALOG_ARTIST_DROPDOWN_MAX_TRACKS = 10_000;
@@ -352,17 +353,24 @@ export default async function CatalogPage({
     artistNameFor(artistTracks, artistId) ??
     artistId;
 
-  // Canonical latest RUN date (DB snapshot date) - cached
+  // Global time-rollback: if active, cap all queries at this date.
+  const rollbackDate = await getRollbackDate();
+  const rollbackRunDate = rollbackDate ? rollbackDataDateToRunDate(rollbackDate) : null;
+
+  // Canonical latest RUN date (DB snapshot date) - cached, capped by rollback
   const { data: latestRun } = await cachedQuery(
-    async () =>
-      await svc
+    async () => {
+      let q = svc
         .from("playlist_daily_stats")
         .select("date")
-        .eq("playlist_key", "all_catalog")
+        .eq("playlist_key", "all_catalog");
+      if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
+      return await q
         .order("date", { ascending: false })
         .limit(1)
-        .maybeSingle(),
-    "latest-date-all-catalog",
+        .maybeSingle();
+    },
+    `latest-date-all-catalog-rb${rollbackDate ?? "live"}`,
     3600,
   );
 

@@ -9,6 +9,7 @@ import { supabaseService } from "@/lib/supabase/service";
 import { getPlaylist } from "@/lib/spotify";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { dataDateFromRunDate, addDaysISO, SOT_DATA_LAG_DAYS } from "@/lib/sotDates";
+import { getRollbackDate, rollbackDataDateToRunDate } from "@/lib/rollback";
 import { Alert } from "@/components/ui/Alert";
 import { SectionHeader } from "@/components/ui/SectionHeader";
 
@@ -113,12 +114,18 @@ export default async function PlaylistDetailPage({
     // ignore
   }
 
-  const { data: stats, error: statsErr } = await sb
+  // Global time-rollback: if active, cap stats at this date.
+  const rollbackDate = await getRollbackDate();
+  const rollbackRunDate = rollbackDate ? rollbackDataDateToRunDate(rollbackDate) : null;
+
+  let statsQuery = sb
     .from("playlist_daily_stats")
     .select(
       "date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net,missing_streams_track_count",
     )
-    .eq("playlist_key", playlist_key)
+    .eq("playlist_key", playlist_key);
+  if (rollbackRunDate) statsQuery = statsQuery.lte("date", rollbackRunDate);
+  const { data: stats, error: statsErr } = await statsQuery
     .order("date", { ascending: false })
     .limit(30);
 
@@ -164,11 +171,11 @@ export default async function PlaylistDetailPage({
     };
   });
 
-  // Get date range for picker (first stats date to today)
+  // Get date range for picker (first stats date to today, capped by rollback)
   const firstRunDate = stats?.[stats.length - 1]?.date ?? selectedDate;
   const firstDate = dataDateFromRunDate(firstRunDate);
   const today = new Date().toISOString().split("T")[0];
-  const todayDataDate = dataDateFromRunDate(today);
+  const todayDataDate = rollbackDate ?? dataDateFromRunDate(today);
 
   return (
     <div className="space-y-4">

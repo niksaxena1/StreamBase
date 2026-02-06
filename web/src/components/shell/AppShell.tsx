@@ -10,6 +10,7 @@ import { IngestionStatusBanner } from "@/components/health/IngestionStatusBanner
 import { SAIWidget } from "@/components/sai/SAIWidget";
 import { UserMenu } from "@/components/shell/UserMenu";
 import { GlobalMetricToggle } from "@/components/shell/GlobalMetricToggle";
+import { RollbackButton } from "@/components/shell/RollbackButton";
 
 type MainSurface = "glass" | "plain";
 
@@ -77,6 +78,7 @@ export function AppShell(props: { children: ReactNode; mainSurface?: MainSurface
                 </div>
 
                 <div className="flex items-center gap-2">
+                  <RollbackButton />
                   <GlobalMetricToggle />
                   <UserMenu />
                 </div>

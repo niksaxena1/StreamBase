@@ -4,6 +4,7 @@ import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { cachedQuery } from "@/lib/supabase/cache";
 import { SOT_DATA_LAG_DAYS, addDaysISO, dataDateFromRunDate } from "@/lib/sotDates";
+import { getRollbackDate, rollbackDataDateToRunDate } from "@/lib/rollback";
 import { HomeDashboardClient } from "./HomeDashboardClient";
 
 type PlaylistDailyStatsRow = {
@@ -178,6 +179,10 @@ export default async function Home({
     // ignore (table may not exist yet)
   }
 
+  // Global time-rollback: if active, cap all queries at this date.
+  const rollbackDate = await getRollbackDate();
+  const rollbackRunDate = rollbackDate ? rollbackDataDateToRunDate(rollbackDate) : null;
+
   const playlistImageUrl =
     playlistKey === "all_catalog"
       ? null
@@ -196,16 +201,17 @@ export default async function Home({
 
   // Single query: fetch history and derive latest from first row (cached for 1 hour)
   const { data: history, error: historyErr } = await cachedQuery(
-    async () =>
-      await svc
+    async () => {
+      let q = svc
         .from("playlist_daily_stats")
         .select(
           "date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net",
         )
-        .eq("playlist_key", playlistKey)
-        .order("date", { ascending: false })
-        .limit(rangeDays),
-    `home-playlist-stats-v2-${playlistKey}-${rangeDays}-${session.user.id}-ov${overrideBuster}`,
+        .eq("playlist_key", playlistKey);
+      if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
+      return await q.order("date", { ascending: false }).limit(rangeDays);
+    },
+    `home-playlist-stats-v2-${playlistKey}-${rangeDays}-${session.user.id}-ov${overrideBuster}-rb${rollbackDate ?? "live"}`,
     3600, // 1 hour
   );
 

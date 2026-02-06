@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { PayoutRateProvider } from "@/components/payout/PayoutRateContext";
 import { MetricProvider } from "@/components/metrics/MetricContext";
 import { WeekHighlightProvider } from "@/components/charts/WeekHighlightContext";
+import { RollbackProvider } from "@/components/rollback/RollbackContext";
 
 export default async function MainFlatLayout({
   children,
@@ -24,7 +25,9 @@ export default async function MainFlatLayout({
     <PayoutRateProvider>
       <WeekHighlightProvider>
         <MetricProvider defaultMetric="streams">
-          <AppShell mainSurface="plain">{children}</AppShell>
+          <RollbackProvider>
+            <AppShell mainSurface="plain">{children}</AppShell>
+          </RollbackProvider>
         </MetricProvider>
       </WeekHighlightProvider>
     </PayoutRateProvider>

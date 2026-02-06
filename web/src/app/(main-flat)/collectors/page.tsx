@@ -8,6 +8,7 @@ import { RememberParamRedirect } from "@/components/dashboard/RememberParamRedir
 import { cachedQueries, cachedQuery } from "@/lib/supabase/cache";
 import { DateRangePicker } from "@/components/ui/DateRangePicker";
 import { dataDateFromRunDate, SOT_DATA_LAG_DAYS, addDaysISO } from "@/lib/sotDates";
+import { getRollbackDate, rollbackDataDateToRunDate } from "@/lib/rollback";
 import {
   CollectorsClient,
   type CollectorSeriesPoint,
@@ -103,19 +104,26 @@ export default async function CollectorsPage({
     ? (rawCollector as CollectorKey)
     : null;
 
+  // Global time-rollback: if active, cap all queries at this date.
+  const rollbackDate = await getRollbackDate();
+  const rollbackRunDate = rollbackDate ? rollbackDataDateToRunDate(rollbackDate) : null;
+
   if (!selectedCollector) {
     // Fetch latest data to find the collector with highest streams
     const { data: latestRowForDefault } = await cachedQueries(
       {
-        latest: async () =>
-          await svc
+        latest: async () => {
+          let q = svc
             .from("playlist_daily_stats")
-            .select("date")
+            .select("date");
+          if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
+          return await q
             .order("date", { ascending: false })
             .limit(1)
-            .maybeSingle(),
+            .maybeSingle();
+        },
       },
-      "collectors-latest-for-default",
+      `collectors-latest-for-default-rb${rollbackDate ?? "live"}`,
       600,
     ).then((r) => r.latest);
 
@@ -170,15 +178,18 @@ export default async function CollectorsPage({
 
   const { data: latestRow } = await cachedQueries(
     {
-      latest: async () =>
-        await svc
+      latest: async () => {
+        let q = svc
           .from("playlist_daily_stats")
-          .select("date")
+          .select("date");
+        if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
+        return await q
           .order("date", { ascending: false })
           .limit(1)
-          .maybeSingle(),
+          .maybeSingle();
+      },
     },
-    "collectors-latest",
+    `collectors-latest-rb${rollbackDate ?? "live"}`,
     600,
   ).then((r) => r.latest);
 
@@ -255,13 +266,15 @@ export default async function CollectorsPage({
           .order("date", { ascending: true }),
 
       // Fetch ALL-TIME data for non-daily granularities (weekly/monthly/quarterly/yearly)
-      allCollectorsAllTime: async () =>
-        await svc
+      allCollectorsAllTime: async () => {
+        let q = svc
           .from("collector_daily_agg")
           .select(
             "collector,date,track_count,daily_streams_net,est_revenue_daily_net",
-          )
-          .order("date", { ascending: true }),
+          );
+        if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
+        return await q.order("date", { ascending: true });
+      },
 
       // NOTE: Supabase/PostgREST often caps API responses at 1000 rows.
       // Use a paged RPC so we can fetch the full set reliably.
@@ -289,7 +302,7 @@ export default async function CollectorsPage({
       },
     },
     // bump cache key when changing server-side track pagination behavior
-    `collectors-${selectedCollector}-${rangeStart}-${rangeEnd}-${latestRunDate}-tracksPaged1-artists1-ov${overrideBuster}`,
+    `collectors-${selectedCollector}-${rangeStart}-${rangeEnd}-${latestRunDate}-tracksPaged1-artists1-ov${overrideBuster}-rb${rollbackDate ?? "live"}`,
     600,
   );
 
