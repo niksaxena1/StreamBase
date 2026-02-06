@@ -33,7 +33,7 @@ GitHub Actions scheduled workflows use **UTC**. Below is the same schedule shown
 - Click result behavior:
   - **Track** → opens `/catalog?isrc=<ISRC>` (and may include `artist_id` if known)
   - **Artist** → opens `/catalog?artist_id=<spotify_artist_id>`
-  - **Playlist** → opens `/playlists/<playlist_key>`
+  - **Playlist** → opens `/playlists?playlist_key=<playlist_key>`
 - The small number shown at the right of each result is the **latest total streams** for that entity (see `/api/search-stats`).
 
 Implementation pointers:
@@ -71,7 +71,7 @@ Shortcut:
 ### View a playlist’s performance (streams/revenue/track count)
 
 - Open `/playlists`
-- Select a playlist (or open directly `/playlists/<playlist_key>`)
+- Select a playlist (or open directly `/playlists?playlist_key=<playlist_key>`)
 - Use the range toggles (30/90/365) to change the time window
 
 What you’re seeing:

@@ -1203,7 +1203,7 @@ export function CollectorsClient(props: {
                       )}
                       <div className="min-w-0">
                         <Link
-                          href={`/playlists/${encodeURIComponent(String(p.playlist_key))}`}
+                          href={`/playlists?playlist_key=${encodeURIComponent(String(p.playlist_key))}`}
                           className="font-medium transition-colors sb-link-hover block truncate"
                         >
                           {String(p.display_name ?? p.playlist_key)}
@@ -1581,7 +1581,7 @@ export function CollectorsClient(props: {
                         );
                       })()}
                       <Link
-                        href={`/playlists/${p.playlist_key}`}
+                        href={`/playlists?playlist_key=${encodeURIComponent(String(p.playlist_key))}`}
                         className="font-medium transition-colors sb-link-hover"
                       >
                         {p.display_name}

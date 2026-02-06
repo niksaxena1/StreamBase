@@ -194,7 +194,7 @@ export default async function PlaylistDetailPage({
             )}
             <h1 className="font-display text-xl font-semibold tracking-tight sm:text-2xl">
               <Link
-                href={`/playlists/${playlist_key}`}
+                href={`/playlists?playlist_key=${encodeURIComponent(String(playlist_key))}`}
                 className="transition-colors sb-link-hover"
               >
                 {playlistRow?.display_name ?? playlist_key}
@@ -296,50 +296,6 @@ export default async function PlaylistDetailPage({
             </TableRow>
           ))}
           {!tracks.length && <EmptyState colSpan={5} message="No tracks found for this date." />}
-        </GlassTable>
-      </div>
-
-      <div className="space-y-2">
-        <SectionHeader
-          title="History (30d)"
-          actions={
-            <span className="text-xs opacity-50">
-              Missing streams = tracks not present in catalog snapshot today
-            </span>
-          }
-        />
-        
-        <GlassTable
-          headers={[
-            { label: "Date" },
-            { label: "Tracks", align: "right" },
-            { label: "Total Streams", align: "right" },
-            { label: "Daily", align: "right" },
-            { label: "Est. Rev", align: "right" },
-            { label: "Missing", align: "right" },
-          ]}
-        >
-          {(stats ?? []).map((r) => (
-            <TableRow key={r.date}>
-              <TableCell mono>{formatDateISO(dataDateFromRunDate(r.date))}</TableCell>
-              <TableCell numeric>{formatInt(r.track_count)}</TableCell>
-              <TableCell numeric>{formatInt(r.total_streams_cumulative)}</TableCell>
-              <TableCell numeric className="sb-positive font-medium">
-                {formatInt(r.daily_streams_net)}
-              </TableCell>
-              <TableCell numeric>{formatUsd(Number(r.total_streams_cumulative ?? 0) * payoutPerStreamUsd)}</TableCell>
-              <TableCell numeric>
-                {r.missing_streams_track_count ? (
-                  <span className="text-red-600 dark:text-red-400 font-medium">
-                    {formatInt(r.missing_streams_track_count)}
-                  </span>
-                ) : (
-                  null
-                )}
-              </TableCell>
-            </TableRow>
-          ))}
-          {!stats?.length && <EmptyState colSpan={6} message="No stats yet for this playlist." />}
         </GlassTable>
       </div>
     </div>

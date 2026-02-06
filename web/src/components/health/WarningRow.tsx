@@ -219,7 +219,7 @@ export function WarningRow({
         <TableCell className="hidden sm:table-cell">
           {warning.playlist_key ? (
             <Link
-              href={`/playlists/${warning.playlist_key}`}
+              href={`/playlists?playlist_key=${encodeURIComponent(String(warning.playlist_key))}`}
               className="flex items-center gap-2 min-w-0 transition-colors sb-link-hover"
               onClick={(e) => e.stopPropagation()}
               title={`${playlistMeta?.name ?? warning.playlist_key} (${warning.playlist_key})`}
@@ -284,7 +284,7 @@ export function WarningRow({
                   <>
                     <span className="opacity-40">·</span>
                     <Link
-                      href={`/playlists/${warning.playlist_key}`}
+                      href={`/playlists?playlist_key=${encodeURIComponent(String(warning.playlist_key))}`}
                       className="flex items-center gap-1.5 min-w-0 hover:opacity-90"
                       onClick={(e) => e.stopPropagation()}
                       title={`${playlistMeta?.name ?? warning.playlist_key} (${warning.playlist_key})`}

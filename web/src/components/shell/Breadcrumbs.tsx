@@ -154,8 +154,10 @@ export function Breadcrumbs() {
     <nav className="flex items-center gap-1.5 text-xs" aria-label="Breadcrumb">
       {breadcrumbs.map((crumb, index) => {
         const isLast = index === breadcrumbs.length - 1;
+        const wrapperClassName =
+          index === 0 ? "hidden sm:flex items-center gap-1.5" : "flex items-center gap-1.5";
         return (
-          <div key={crumb.href} className="flex items-center gap-1.5">
+          <div key={crumb.href} className={wrapperClassName}>
             {index === 0 ? (
               <Link
                 href={crumb.href}

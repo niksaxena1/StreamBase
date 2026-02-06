@@ -228,7 +228,7 @@ export function SearchBar() {
     } else if (result.type === "artist") {
       router.push(`/catalog?artist_id=${encodeURIComponent(result.id)}`);
     } else if (result.type === "playlist") {
-      router.push(`/playlists/${encodeURIComponent(result.id)}`);
+      router.push(`/playlists?playlist_key=${encodeURIComponent(result.id)}`);
     }
 
     addRecent(toRecentItem(result));

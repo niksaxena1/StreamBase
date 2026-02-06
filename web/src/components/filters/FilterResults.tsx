@@ -453,7 +453,7 @@ function PlaylistsTable({
               )}
               <div className="min-w-0">
                 <Link
-                  href={`/playlists/${playlist.playlist_key}`}
+                  href={`/playlists?playlist_key=${encodeURIComponent(String(playlist.playlist_key))}`}
                   className="font-medium text-sm hover:underline truncate block"
                   style={{ color: "var(--sb-text)" }}
                 >

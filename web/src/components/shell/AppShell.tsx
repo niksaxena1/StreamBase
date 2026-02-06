@@ -59,9 +59,13 @@ export function AppShell(props: { children: ReactNode; mainSurface?: MainSurface
                     <LogoMark />
                   </Link>
                   <div className="flex items-center gap-2">
-                    <div className="font-display text-sm font-semibold tracking-tight">
+                    <Link
+                      href="/"
+                      className="font-display text-sm font-semibold tracking-tight transition-opacity hover:opacity-80"
+                      suppressHydrationWarning
+                    >
                       SpotiBase
-                    </div>
+                    </Link>
                     <Breadcrumbs />
                   </div>
                 </div>

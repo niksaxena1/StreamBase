@@ -16,6 +16,7 @@ import { PageHeader } from "@/components/shell/PageHeader";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { ChipGroup } from "@/components/ui/Chip";
 import { hrefWithPatchedSearchParams } from "@/lib/searchParams";
+import { PlaylistHistory30dDetails, type PlaylistHistoryRow } from "./PlaylistHistory30dDetails";
 
 // Uses Supabase session cookies; this route must be dynamic in Next 16.
 export const dynamic = "force-dynamic";
@@ -37,6 +38,7 @@ type PlaylistDailyStatsRow = {
   daily_streams_net: number | null;
   est_revenue_total: number | null;
   est_revenue_daily_net: number | null;
+  missing_streams_track_count?: number | null;
 };
 
 type TrackOverrideRow = {
@@ -195,7 +197,9 @@ export default async function PlaylistsPage({
       async () =>
         await svc
           .from("playlist_daily_stats")
-          .select("date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net")
+          .select(
+            "date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net,missing_streams_track_count",
+          )
           .eq("playlist_key", playlistKey)
           .order("date", { ascending: false })
           .limit(rangeDays),
@@ -498,6 +502,8 @@ export default async function PlaylistsPage({
         >
           <PlaylistTracksSection playlistKey={playlistKey} latestRunDate={latestDate} prevRunDate={prevDate} />
         </Suspense>
+
+        <PlaylistHistory30dDetails rows={hist as unknown as PlaylistHistoryRow[]} />
     </div>
   );
 }

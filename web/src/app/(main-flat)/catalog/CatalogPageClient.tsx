@@ -610,15 +610,15 @@ export function CatalogPageClient(props: {
       </div>
 
       {/* Track playlist memberships (last section) */}
-      <div className="space-y-2 border-t pt-3" style={{ borderColor: "var(--sb-border)" }}>
-        <SectionHeader
-          title="Playlist memberships"
-          subtitle={
-            props.isrc
-              ? "Playlists this track has been in (as of the latest data date)."
-              : "Pick a track to see playlist memberships."
-          }
-        />
+      <div className="space-y-2 pt-3">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold">Playlist memberships</h2>
+          <div className="text-xs text-right" style={{ color: "var(--sb-muted)" }}>
+            {props.isrc
+              ? "Playlists this track has been in (as of the latest data date)"
+              : "Pick a track to see playlist memberships"}
+          </div>
+        </div>
 
         <GlassTable headers={["", "Playlist", "Key", "Type", "Added", "Removed"]} maxBodyHeightClassName="max-h-80">
           {(props.isrc ? props.selectedTrackPlaylistMemberships : []).map((m) => (
@@ -638,7 +638,7 @@ export function CatalogPageClient(props: {
               <TableCell>
                 <div className="min-w-0">
                   <Link
-                    href={`/playlists/${m.playlistKey}`}
+                    href={`/playlists?playlist_key=${encodeURIComponent(String(m.playlistKey))}`}
                     className="block truncate font-medium transition-colors sb-link-hover"
                   >
                     {m.playlistName}

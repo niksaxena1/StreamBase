@@ -811,7 +811,7 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
                       {track.playlists.map((pl) => (
                         <Link
                           key={pl}
-                          href={`/playlists/${pl}`}
+                          href={`/playlists?playlist_key=${encodeURIComponent(String(pl))}`}
                           className="font-mono text-[10px] underline hover:text-lime-600 dark:hover:text-lime-400"
                         >
                           {pl}
@@ -905,7 +905,7 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
                       )}
                       <div className="min-w-0">
                         <Link
-                          href={`/playlists/${key}`}
+                          href={`/playlists?playlist_key=${encodeURIComponent(String(key))}`}
                           className="font-medium hover:underline block truncate"
                           style={{ color: "var(--sb-text)" }}
                           title={name}
