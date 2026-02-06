@@ -2,6 +2,7 @@ import argparse
 import csv
 import os
 import random
+import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -16,6 +17,17 @@ SOT_PLAYLIST_URL = SOT_BASE + "/playlists/spotify/{sot_playlist_id}"
 
 NAV_TIMEOUT_MS = 45_000
 BTN_TIMEOUT_MS = 12_000
+
+# Windows consoles commonly default to a legacy encoding (e.g. cp1252) which
+# can't encode emoji used in logs. Force UTF-8 when possible to prevent
+# UnicodeEncodeError on local runs.
+try:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 
 
 @dataclass(frozen=True)

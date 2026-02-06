@@ -21,6 +21,17 @@ BTN_TIMEOUT_MS = 12_000
 
 RETRIES = 5
 
+# Windows consoles commonly default to a legacy encoding (e.g. cp1252) which
+# can't encode emoji used in logs. Force UTF-8 when possible to prevent
+# UnicodeEncodeError on local runs.
+try:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
 NAV_PAUSE_MIN = 0.02
 NAV_PAUSE_MAX = 0.06
 CLICK_PAUSE_MIN = 0.01
