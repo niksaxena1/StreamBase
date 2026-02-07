@@ -18,6 +18,8 @@ import { formatKmbTick, formatUsdCompact } from "@/components/charts/chartUtils"
 import { useThemeColors } from "@/components/charts/useThemeColors";
 import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
 import { useCurrencyDisplay } from "@/components/currency/CurrencyDisplayContext";
+import { useLongPress } from "@/components/charts/useLongPress";
+import { formatMilestoneCompact, generateAutoMilestonesFromMax } from "@/lib/milestones";
 
 type TrackPoint = {
   isrc: string;
@@ -98,75 +100,7 @@ function MilestoneTooltip({
   );
 }
 
-/**
- * Generate nice round milestone thresholds based on the data.
- * Returns milestones in descending order (highest first).
- */
-function generateMilestones(maxStreams: number): number[] {
-  if (maxStreams <= 0) return [];
-
-  // Define possible milestone values (nice round numbers)
-  // Minimum is 100K
-  const possibleMilestones = [
-    // Billions
-    10_000_000_000, 5_000_000_000, 2_000_000_000, 1_000_000_000,
-    // Hundreds of millions
-    500_000_000, 400_000_000, 300_000_000, 200_000_000, 100_000_000,
-    // Tens of millions
-    50_000_000, 45_000_000, 40_000_000, 35_000_000, 30_000_000,
-    25_000_000, 20_000_000, 19_000_000, 18_000_000, 17_000_000,
-    16_000_000, 15_000_000, 14_000_000, 13_000_000, 12_000_000,
-    11_000_000, 10_000_000, 9_000_000, 8_000_000, 7_000_000,
-    6_000_000, 5_000_000, 4_500_000, 4_000_000, 3_500_000,
-    3_000_000, 2_500_000, 2_000_000, 1_500_000, 1_000_000,
-    // Hundreds of thousands
-    900_000, 800_000, 750_000, 700_000, 600_000, 500_000,
-    400_000, 300_000, 250_000, 200_000, 150_000, 100_000,
-  ];
-
-  // Filter to milestones that are at or below the max
-  const relevantMilestones = possibleMilestones.filter((m) => m <= maxStreams);
-
-  // If we have too many, thin them out to keep ~25-35 bars
-  const targetCount = 30;
-  if (relevantMilestones.length <= targetCount) {
-    return relevantMilestones;
-  }
-
-  // Take every Nth milestone to get roughly targetCount
-  const step = Math.ceil(relevantMilestones.length / targetCount);
-  const thinned: number[] = [];
-  for (let i = 0; i < relevantMilestones.length; i += step) {
-    thinned.push(relevantMilestones[i]);
-  }
-
-  // Always include the smallest milestone if we have data
-  const smallest = relevantMilestones[relevantMilestones.length - 1];
-  if (smallest && !thinned.includes(smallest)) {
-    thinned.push(smallest);
-  }
-
-  return thinned;
-}
-
-/**
- * Format milestone number as compact label (e.g., "50M", "100K")
- */
-function formatMilestoneLabel(n: number): string {
-  if (n >= 1_000_000_000) {
-    const b = n / 1_000_000_000;
-    return `${b % 1 === 0 ? b.toFixed(0) : b.toFixed(1)}B`;
-  }
-  if (n >= 1_000_000) {
-    const m = n / 1_000_000;
-    return `${m % 1 === 0 ? m.toFixed(0) : m.toFixed(1)}M`;
-  }
-  if (n >= 1_000) {
-    const k = n / 1_000;
-    return `${k % 1 === 0 ? k.toFixed(0) : k.toFixed(1)}K`;
-  }
-  return formatInt(n);
-}
+const formatMilestoneLabel = (n: number) => formatMilestoneCompact(n, { case: "upper" });
 
 function formatRevenueMilestoneLabel(streamsMilestone: number, payoutPerStreamUsd: number): string {
   const usd = Math.max(0, Number(streamsMilestone) * Math.max(0, payoutPerStreamUsd));
@@ -316,31 +250,28 @@ export function TracksPerMilestoneChart({
 
   // Track the currently hovered/active milestone from the tooltip
   const activePayloadRef = useRef<MilestoneDataPoint | null>(null);
-  // Track pointer type to distinguish touch from mouse
-  const lastPointerTypeRef = useRef<string | null>(null);
-  // Long-press timer and start position
-  const longPressTimerRef = useRef<number | null>(null);
-  const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
-
-  const LONG_PRESS_MS = 550;
-
-  const clearLongPressTimer = useCallback(() => {
-    if (longPressTimerRef.current != null) {
-      window.clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
-    longPressStartRef.current = null;
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      clearLongPressTimer();
-    };
-  }, [clearLongPressTimer]);
 
   const handleActivePayload = useCallback((p: MilestoneDataPoint | null) => {
     activePayloadRef.current = p;
   }, []);
+
+  const onLongPress = useCallback(() => {
+    const p = activePayloadRef.current;
+    if (!p || !onMilestoneClick) return;
+    const count = countMode === "artists" ? p.unique_artists : p.unique_tracks;
+    onMilestoneClick(p.milestone, count);
+  }, [countMode, onMilestoneClick]);
+
+  const {
+    onPointerDown: handlePointerDown,
+    onPointerMove: handlePointerMove,
+    onPointerUp: handlePointerUp,
+    onPointerCancel: handlePointerCancel,
+    lastPointerTypeRef,
+  } = useLongPress({
+    enabled: Boolean(onMilestoneClick),
+    onLongPress,
+  });
 
   const chartData = useMemo(() => {
     if (!tracks.length) return [];
@@ -351,7 +282,7 @@ export function TracksPerMilestoneChart({
 
     const milestones = customMilestones?.length
       ? customMilestones
-      : generateMilestones(maxStreams);
+      : generateAutoMilestonesFromMax(maxStreams);
 
     return computeMilestoneData(tracks, milestones, mode, payoutPerStreamUsd, countMode, bucketMode);
   }, [tracks, customMilestones, mode, payoutPerStreamUsd, countMode, bucketMode, currencyDisplay]);
@@ -375,45 +306,6 @@ export function TracksPerMilestoneChart({
   const handleMouseDown = (e: MouseEvent) => {
     // Prevent focus outline box on click
     e.preventDefault();
-  };
-
-  const handlePointerDown = (e: PointerEvent) => {
-    lastPointerTypeRef.current = e.pointerType ?? null;
-    const pt = e.pointerType ?? null;
-    
-    // Only start long-press timer for touch/pen
-    if (pt !== "touch" && pt !== "pen") return;
-    if (!onMilestoneClick) return;
-
-    clearLongPressTimer();
-    longPressStartRef.current = { x: e.clientX, y: e.clientY };
-    longPressTimerRef.current = window.setTimeout(() => {
-      const p = activePayloadRef.current;
-      if (!p) return;
-      const count = countMode === "artists" ? p.unique_artists : p.unique_tracks;
-      onMilestoneClick(p.milestone, count);
-    }, LONG_PRESS_MS);
-  };
-
-  const handlePointerMove = (e: PointerEvent) => {
-    const pt = e.pointerType ?? null;
-    if (pt !== "touch" && pt !== "pen") return;
-    const start = longPressStartRef.current;
-    if (!start) return;
-    // Cancel long-press if finger moved too far (user is scrolling)
-    const dx = e.clientX - start.x;
-    const dy = e.clientY - start.y;
-    if (Math.hypot(dx, dy) > 10) {
-      clearLongPressTimer();
-    }
-  };
-
-  const handlePointerUp = () => {
-    clearLongPressTimer();
-  };
-
-  const handlePointerCancel = () => {
-    clearLongPressTimer();
   };
 
   const handleClick = () => {

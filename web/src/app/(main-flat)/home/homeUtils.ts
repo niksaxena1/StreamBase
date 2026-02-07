@@ -1,4 +1,5 @@
 import type { PlaylistDailyStatsRow } from "./homeTypes";
+import { formatMilestoneCompact, generateAutoMilestonesFromMax as generateAutoMilestonesFromMaxShared } from "@/lib/milestones";
 
 // ============================================================================
 // Storage keys
@@ -153,23 +154,8 @@ export function parseDailyBucketsText(
 // ============================================================================
 
 export function formatMilestoneForInput(n: number): string {
-  const abs = Math.abs(n);
-  if (abs >= 1_000_000_000) {
-    const b = n / 1_000_000_000;
-    const s = Number.isInteger(b) ? String(b) : b.toFixed(1).replace(/\.0$/, "");
-    return `${s}b`;
-  }
-  if (abs >= 1_000_000) {
-    const m = n / 1_000_000;
-    const s = Number.isInteger(m) ? String(m) : m.toFixed(1).replace(/\.0$/, "");
-    return `${s}m`;
-  }
-  if (abs >= 1_000) {
-    const k = n / 1_000;
-    const s = Number.isInteger(k) ? String(k) : k.toFixed(1).replace(/\.0$/, "");
-    return `${s}k`;
-  }
-  return String(n);
+  // Lowercase so users can type "50m, 100k, 2b".
+  return formatMilestoneCompact(n, { case: "lower" });
 }
 
 export function formatUsdCompact(n: number): string {
@@ -208,34 +194,7 @@ export function formatMilestoneHeaderLabel(
 }
 
 export function generateAutoMilestonesFromMax(maxStreams: number): number[] {
-  if (!Number.isFinite(maxStreams) || maxStreams <= 0) return [];
-
-  const possibleMilestones = [
-    10_000_000_000, 5_000_000_000, 2_000_000_000, 1_000_000_000,
-    500_000_000, 400_000_000, 300_000_000, 200_000_000, 100_000_000,
-    50_000_000, 45_000_000, 40_000_000, 35_000_000, 30_000_000,
-    25_000_000, 20_000_000, 19_000_000, 18_000_000, 17_000_000,
-    16_000_000, 15_000_000, 14_000_000, 13_000_000, 12_000_000,
-    11_000_000, 10_000_000, 9_000_000, 8_000_000, 7_000_000,
-    6_000_000, 5_000_000, 4_500_000, 4_000_000, 3_500_000,
-    3_000_000, 2_500_000, 2_000_000, 1_500_000, 1_000_000,
-    900_000, 800_000, 750_000, 700_000, 600_000, 500_000,
-    400_000, 300_000, 250_000, 200_000, 150_000, 100_000,
-  ];
-
-  const relevant = possibleMilestones.filter((m) => m <= maxStreams);
-  if (!relevant.length) return [];
-
-  const targetCount = 30;
-  if (relevant.length <= targetCount) return relevant;
-
-  const step = Math.ceil(relevant.length / targetCount);
-  const thinned: number[] = [];
-  for (let i = 0; i < relevant.length; i += step) thinned.push(relevant[i]);
-
-  const smallest = relevant[relevant.length - 1];
-  if (smallest && !thinned.includes(smallest)) thinned.push(smallest);
-  return thinned;
+  return generateAutoMilestonesFromMaxShared(maxStreams);
 }
 
 export function rollSum(

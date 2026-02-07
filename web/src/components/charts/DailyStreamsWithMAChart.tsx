@@ -11,25 +11,24 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { useEffect, useId, useRef } from "react";
+import { useId } from "react";
 
 import { formatInt, formatUsd } from "@/lib/format";
 import {
   computePaddedDomain,
-  extractOverrideItemsFromRechartsPayload,
   filterDailySeriesFromIsoDate,
-  formatTooltipDateDaily,
   getSundayAccentColor,
   isHighlightDayDateUtc,
   formatKmbTick,
   formatUsdCompact,
 } from "@/components/charts/chartUtils";
-import { useChartCopyToClipboard, type TooltipCopyValues } from "@/components/charts/useChartCopyToClipboard";
+import { useChartCopyToClipboard } from "@/components/charts/useChartCopyToClipboard";
 import { useThemeColors } from "@/components/charts/useThemeColors";
-import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
 import { useWeekHighlight } from "@/components/charts/WeekHighlightContext";
 import { useChartStartDate } from "@/components/charts/ChartStartDateContext";
 import { useChartAxisZoom } from "@/components/charts/ChartAxisZoomContext";
+import { DailySeriesTooltip } from "@/components/charts/DailySeriesTooltip";
+import { makeHighlightDayDotRenderers } from "@/components/charts/rechartsRenderers";
 
 type DataPoint = {
   date: string;
@@ -52,136 +51,6 @@ type TooltipPayload = {
   value: number | string;
   dataKey: string;
 };
-
-function CustomTooltip({
-  active,
-  label,
-  payload,
-  valueLabel,
-  fmtValue,
-  isDark,
-  chartColor,
-  onValuesFormatted,
-}: {
-  active?: boolean;
-  label?: string;
-  payload?: TooltipPayload[];
-  valueLabel: string;
-  fmtValue: (n: number) => string;
-  isDark: boolean;
-  chartColor: string;
-  onValuesFormatted?: (v: TooltipCopyValues) => void;
-}) {
-  // Avoid update loops by only notifying when values change.
-  const lastSentKeyRef = useRef<string>("");
-
-  const safePayload = payload ?? [];
-  const toNum = (v: unknown): number | null => {
-    const n = Number(v);
-    return Number.isFinite(n) ? n : null;
-  };
-
-  // Sort payload: daily first, then ma7
-  const sorted = safePayload.length
-    ? [...safePayload].sort((a, b) => {
-    const aIsMA = a.dataKey === "ma7";
-    const bIsMA = b.dataKey === "ma7";
-    if (aIsMA && !bIsMA) return 1;
-    if (!aIsMA && bIsMA) return -1;
-    return 0;
-    })
-    : [];
-
-  const mainValue = sorted[0];
-  const mainValueNum = mainValue ? toNum(mainValue.value) : null;
-  const mainValueFormatted = mainValueNum == null ? null : fmtValue(mainValueNum);
-  const maEntry = sorted.find((e) => e.dataKey === "ma7");
-  const ma7Num = maEntry ? toNum(maEntry.value) : null;
-  const ma7ValueFormatted = ma7Num == null ? null : fmtValue(Math.round(ma7Num));
-  const overrideItems = extractOverrideItemsFromRechartsPayload(safePayload);
-  useEffect(() => {
-    if (!active) return;
-    if (!mainValueFormatted) return;
-    const key = `${label ?? ""}||${mainValueFormatted}||${ma7ValueFormatted ?? ""}`;
-    if (key === lastSentKeyRef.current) return;
-    lastSentKeyRef.current = key;
-    onValuesFormatted?.({ label: label ?? null, main: mainValueFormatted, ma7: ma7ValueFormatted });
-  }, [active, label, mainValueFormatted, ma7ValueFormatted, onValuesFormatted]);
-
-  if (!active || sorted.length === 0) return null;
-
-  return (
-    <ViewportAwareTooltip>
-      <div
-        className="rounded-lg border p-3 max-h-[60vh] overflow-auto"
-        style={{
-          backgroundColor: "var(--sb-card)",
-          borderColor: "var(--sb-border)",
-          boxShadow: "var(--sb-shadow-compact)",
-          color: "var(--sb-text)",
-        }}
-      >
-        {label && (
-          <div className="mb-2 text-xs font-medium">{formatTooltipDateDaily(label)}</div>
-        )}
-        {sorted.map((entry, index) => {
-          const isMA = entry.dataKey === "ma7";
-          const label = isMA ? "MA (7d)" : valueLabel;
-          const raw = toNum(entry.value);
-          let value = raw == null ? "—" : fmtValue(raw);
-          
-          // Round MA7 to nearest whole number
-          if (isMA) {
-            value = raw == null ? "—" : fmtValue(Math.round(raw));
-          }
-
-          const valueColor = isDark ? chartColor : "var(--sb-text)";
-
-          return (
-            <div key={index} className="text-xs">
-              <span style={{ color: "var(--sb-text)" }}>
-                {label}: <span className="font-bold" style={{ color: valueColor }}>{value}</span>
-              </span>
-            </div>
-          );
-        })}
-        {overrideItems?.length ? (
-          <div className="mt-2 border-t pt-2" style={{ borderColor: "var(--sb-border)" }}>
-            <div className="text-[11px] font-medium uppercase tracking-wide" style={{ color: "var(--sb-warning)" }}>
-              Manual override
-            </div>
-            <div className="mt-1 space-y-1">
-              {overrideItems.map((it, idx) => (
-                <div key={idx} className="flex items-start gap-2">
-                  {it.imageUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={it.imageUrl}
-                      alt=""
-                      className="h-8 w-8 rounded-md object-cover sb-ring"
-                    />
-                  ) : (
-                    <div className="h-8 w-8 rounded-md sb-ring bg-white/60 dark:bg-white/10" />
-                  )}
-                  <div className="min-w-0">
-                    {it.title ? (
-                      <div className="text-xs font-medium truncate" style={{ color: "var(--sb-text)" }}>
-                        {it.title}
-                      </div>
-                    ) : null}
-                    <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
-                      {it.note}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : null}
-      </div>
-    </ViewportAwareTooltip>
-  );
-}
 
 export function DailyStreamsWithMAChart({
   data,
@@ -259,6 +128,12 @@ export function DailyStreamsWithMAChart({
       )
     : undefined;
 
+  const { dot, activeDot } = makeHighlightDayDotRenderers({
+    baseColor: effectiveDailyColor,
+    highlightColor: sundayColor,
+    highlightWeekdayUtc: weekHighlightDayUtc,
+  });
+
   return (
     <div
       className="w-full overflow-visible outline-none"
@@ -307,7 +182,7 @@ export function DailyStreamsWithMAChart({
             allowEscapeViewBox={{ x: true, y: true }}
             wrapperStyle={{ zIndex: 1000 }}
             content={({ active, label, payload }) => (
-              <CustomTooltip
+              <DailySeriesTooltip
                 active={active}
                 label={label as string}
                 payload={payload as TooltipPayload[]}
@@ -357,44 +232,8 @@ export function DailyStreamsWithMAChart({
             strokeWidth={2}
             fillOpacity={1}
             fill={`url(#${gid})`}
-            dot={(props: any) => {
-              const { cx, cy, payload } = props ?? {};
-              if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
-              const date = String(payload?.date ?? "");
-              const isHighlight = date ? isHighlightDayDateUtc(date, weekHighlightDayUtc) : false;
-              const fill = isHighlight ? sundayColor : effectiveDailyColor;
-              const fillOpacity = isHighlight ? 0.78 : 1;
-              return (
-                <circle
-                  cx={cx}
-                  cy={cy}
-                  r={3}
-                  fill={fill}
-                  fillOpacity={fillOpacity}
-                  stroke="var(--sb-bg)"
-                  strokeWidth={1.5}
-                />
-              );
-            }}
-            activeDot={(props: any) => {
-              const { cx, cy, payload } = props ?? {};
-              if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
-              const date = String(payload?.date ?? "");
-              const isHighlight = date ? isHighlightDayDateUtc(date, weekHighlightDayUtc) : false;
-              const fill = isHighlight ? sundayColor : effectiveDailyColor;
-              const fillOpacity = isHighlight ? 0.85 : 1;
-              return (
-                <circle
-                  cx={cx}
-                  cy={cy}
-                  r={4}
-                  fill={fill}
-                  fillOpacity={fillOpacity}
-                  stroke="var(--sb-bg)"
-                  strokeWidth={1.5}
-                />
-              );
-            }}
+            dot={dot}
+            activeDot={activeDot}
           />
           {hasMa7Data && (
             <Line

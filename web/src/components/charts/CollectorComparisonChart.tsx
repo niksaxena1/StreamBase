@@ -27,6 +27,7 @@ import { useThemeColors } from "@/components/charts/useThemeColors";
 import { useWeekHighlight } from "@/components/charts/WeekHighlightContext";
 import { useChartStartDate } from "@/components/charts/ChartStartDateContext";
 import { useChartAxisZoom } from "@/components/charts/ChartAxisZoomContext";
+import { makeHighlightDayDotRenderers } from "@/components/charts/rechartsRenderers";
 
 export const COLLECTOR_COLORS: Record<string, string> = {
   // Individuals (softer)
@@ -330,6 +331,18 @@ export function CollectorComparisonChart({
     { isDark: themeColors.isDark, bgColor: themeColors.bg },
   );
 
+  const areaDotRenderers = (() => {
+    if (!areaKey) return null;
+    const base = getLineColor(areaKey);
+    const highlight = getSundayAccentColor(base, { isDark: themeColors.isDark, bgColor: themeColors.bg });
+    return makeHighlightDayDotRenderers({
+      baseColor: base,
+      highlightColor: highlight,
+      highlightWeekdayUtc: weekHighlightDayUtc,
+      enabled: granularity === "daily",
+    });
+  })();
+
   if (!chartData.length) {
     return (
       <div
@@ -450,48 +463,8 @@ export function CollectorComparisonChart({
               strokeWidth={2}
               fillOpacity={1}
               fill={`url(#${gid}-area)`}
-              dot={(props: any) => {
-                const { cx, cy, payload } = props ?? {};
-                if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
-                const base = getLineColor(areaKey);
-                const sunday = getSundayAccentColor(base, { isDark: themeColors.isDark, bgColor: themeColors.bg });
-                const date = String(payload?.date ?? "");
-                const isHighlight = granularity === "daily" && date ? isHighlightDayDateUtc(date, weekHighlightDayUtc) : false;
-                const fill = isHighlight ? sunday : base;
-                const fillOpacity = isHighlight ? 0.78 : 1;
-                return (
-                  <circle
-                    cx={cx}
-                    cy={cy}
-                    r={3}
-                    fill={fill}
-                    fillOpacity={fillOpacity}
-                    stroke="var(--sb-bg)"
-                    strokeWidth={1.5}
-                  />
-                );
-              }}
-              activeDot={(props: any) => {
-                const { cx, cy, payload } = props ?? {};
-                if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
-                const base = getLineColor(areaKey);
-                const sunday = getSundayAccentColor(base, { isDark: themeColors.isDark, bgColor: themeColors.bg });
-                const date = String(payload?.date ?? "");
-                const isHighlight = granularity === "daily" && date ? isHighlightDayDateUtc(date, weekHighlightDayUtc) : false;
-                const fill = isHighlight ? sunday : base;
-                const fillOpacity = isHighlight ? 0.85 : 1;
-                return (
-                  <circle
-                    cx={cx}
-                    cy={cy}
-                    r={4}
-                    fill={fill}
-                    fillOpacity={fillOpacity}
-                    stroke="var(--sb-bg)"
-                    strokeWidth={1.5}
-                  />
-                );
-              }}
+              dot={areaDotRenderers?.dot}
+              activeDot={areaDotRenderers?.activeDot}
               isAnimationActive={true}
             />
           ) : null}
@@ -502,6 +475,12 @@ export function CollectorComparisonChart({
 
             const color = getLineColor(key);
             const sunday = getSundayAccentColor(color, { isDark: themeColors.isDark, bgColor: themeColors.bg });
+            const { dot, activeDot } = makeHighlightDayDotRenderers({
+              baseColor: color,
+              highlightColor: sunday,
+              highlightWeekdayUtc: weekHighlightDayUtc,
+              enabled: granularity === "daily",
+            });
             return (
               <Line
                 key={key}
@@ -509,44 +488,8 @@ export function CollectorComparisonChart({
                 dataKey={key}
                 stroke={color}
                 strokeWidth={2}
-                dot={(props: any) => {
-                  const { cx, cy, payload } = props ?? {};
-                  if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
-                  const date = String(payload?.date ?? "");
-                  const isHighlight = granularity === "daily" && date ? isHighlightDayDateUtc(date, weekHighlightDayUtc) : false;
-                  const fill = isHighlight ? sunday : color;
-                  const fillOpacity = isHighlight ? 0.78 : 1;
-                  return (
-                    <circle
-                      cx={cx}
-                      cy={cy}
-                      r={3}
-                      fill={fill}
-                      fillOpacity={fillOpacity}
-                      stroke="var(--sb-bg)"
-                      strokeWidth={1.5}
-                    />
-                  );
-                }}
-                activeDot={(props: any) => {
-                  const { cx, cy, payload } = props ?? {};
-                  if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
-                  const date = String(payload?.date ?? "");
-                  const isHighlight = granularity === "daily" && date ? isHighlightDayDateUtc(date, weekHighlightDayUtc) : false;
-                  const fill = isHighlight ? sunday : color;
-                  const fillOpacity = isHighlight ? 0.85 : 1;
-                  return (
-                    <circle
-                      cx={cx}
-                      cy={cy}
-                      r={4}
-                      fill={fill}
-                      fillOpacity={fillOpacity}
-                      stroke="var(--sb-bg)"
-                      strokeWidth={1.5}
-                    />
-                  );
-                }}
+                dot={dot}
+                activeDot={activeDot}
                 isAnimationActive={true}
               />
             );

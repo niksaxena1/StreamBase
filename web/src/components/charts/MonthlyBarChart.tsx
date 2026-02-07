@@ -10,12 +10,13 @@ import {
   ResponsiveContainer,
   Scatter,
 } from "recharts";
-import { useCallback, useEffect, useId, useRef } from "react";
+import { useCallback, useId, useRef } from "react";
 import { formatInt, formatUsd } from "@/lib/format";
 import { filterMonthlySeriesFromIsoDate, formatKmbTick, formatUsdCompact } from "@/components/charts/chartUtils";
 import { useThemeColors } from "@/components/charts/useThemeColors";
 import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
 import { useChartStartDate } from "@/components/charts/ChartStartDateContext";
+import { useLongPress } from "@/components/charts/useLongPress";
 
 export type MonthlyDataPoint = {
   month: string; // yyyy-mm
@@ -210,24 +211,22 @@ export function MonthlyBarChart({
 
   // Track active month under tooltip (for click/long-press interactions)
   const activeMonthRef = useRef<string | null>(null);
-  const lastPointerTypeRef = useRef<string | null>(null);
-  const longPressTimerRef = useRef<number | null>(null);
-  const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
-  const LONG_PRESS_MS = 550;
+  const onLongPress = useCallback(() => {
+    const m = activeMonthRef.current;
+    if (!m || !onMonthClick) return;
+    onMonthClick(m);
+  }, [onMonthClick]);
 
-  const clearLongPressTimer = useCallback(() => {
-    if (longPressTimerRef.current != null) {
-      window.clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
-    longPressStartRef.current = null;
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      clearLongPressTimer();
-    };
-  }, [clearLongPressTimer]);
+  const {
+    onPointerDown: handlePointerDown,
+    onPointerMove: handlePointerMove,
+    onPointerUp: handlePointerUp,
+    onPointerCancel: handlePointerCancel,
+    lastPointerTypeRef,
+  } = useLongPress({
+    enabled: Boolean(onMonthClick),
+    onLongPress,
+  });
 
   const fmtValue = (n: number) =>
     valueFormat === "usd" ? formatUsd(n) : formatInt(n);
@@ -263,45 +262,6 @@ export function MonthlyBarChart({
     // Prevent focus outline box on click (matches other charts).
     e.preventDefault();
   }, []);
-
-  const handlePointerDown = useCallback(
-    (e: React.PointerEvent) => {
-      lastPointerTypeRef.current = e.pointerType ?? null;
-      const pt = e.pointerType ?? null;
-      if (pt !== "touch" && pt !== "pen") return;
-      if (!onMonthClick) return;
-
-      clearLongPressTimer();
-      longPressStartRef.current = { x: e.clientX, y: e.clientY };
-      longPressTimerRef.current = window.setTimeout(() => {
-        const m = activeMonthRef.current;
-        if (!m) return;
-        onMonthClick(m);
-      }, LONG_PRESS_MS);
-    },
-    [onMonthClick, clearLongPressTimer],
-  );
-
-  const handlePointerMove = useCallback(
-    (e: React.PointerEvent) => {
-      const pt = e.pointerType ?? null;
-      if (pt !== "touch" && pt !== "pen") return;
-      const start = longPressStartRef.current;
-      if (!start) return;
-      const dx = e.clientX - start.x;
-      const dy = e.clientY - start.y;
-      if (Math.hypot(dx, dy) > 10) clearLongPressTimer();
-    },
-    [clearLongPressTimer],
-  );
-
-  const handlePointerUp = useCallback(() => {
-    clearLongPressTimer();
-  }, [clearLongPressTimer]);
-
-  const handlePointerCancel = useCallback(() => {
-    clearLongPressTimer();
-  }, [clearLongPressTimer]);
 
   return (
     <div

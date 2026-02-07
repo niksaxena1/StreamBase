@@ -18,6 +18,7 @@ import { formatKmbTick, formatUsdCompact } from "@/components/charts/chartUtils"
 import { useThemeColors } from "@/components/charts/useThemeColors";
 import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
 import { useCurrencyDisplay } from "@/components/currency/CurrencyDisplayContext";
+import { useLongPress } from "@/components/charts/useLongPress";
 
 type TrackPoint = {
   isrc: string;
@@ -312,31 +313,28 @@ export function DailyStreamsDistributionChart({
 
   // Track the currently hovered/active bucket from the tooltip
   const activePayloadRef = useRef<BucketDataPoint | null>(null);
-  // Track pointer type to distinguish touch from mouse
-  const lastPointerTypeRef = useRef<string | null>(null);
-  // Long-press timer and start position
-  const longPressTimerRef = useRef<number | null>(null);
-  const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
-
-  const LONG_PRESS_MS = 550;
-
-  const clearLongPressTimer = useCallback(() => {
-    if (longPressTimerRef.current != null) {
-      window.clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
-    longPressStartRef.current = null;
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      clearLongPressTimer();
-    };
-  }, [clearLongPressTimer]);
 
   const handleActivePayload = useCallback((p: BucketDataPoint | null) => {
     activePayloadRef.current = p;
   }, []);
+
+  const onLongPress = useCallback(() => {
+    const p = activePayloadRef.current;
+    if (!p || !onBucketClick) return;
+    const count = countMode === "artists" ? p.unique_artists : p.unique_tracks;
+    onBucketClick(p.bucketMin, p.bucketMax, p.bucketLabel, count);
+  }, [countMode, onBucketClick]);
+
+  const {
+    onPointerDown: handlePointerDown,
+    onPointerMove: handlePointerMove,
+    onPointerUp: handlePointerUp,
+    onPointerCancel: handlePointerCancel,
+    lastPointerTypeRef,
+  } = useLongPress({
+    enabled: Boolean(onBucketClick),
+    onLongPress,
+  });
 
   const chartData = useMemo(() => {
     if (!tracks.length) return [];
@@ -358,45 +356,6 @@ export function DailyStreamsDistributionChart({
   const handleMouseDown = (e: MouseEvent) => {
     // Prevent focus outline box on click
     e.preventDefault();
-  };
-
-  const handlePointerDown = (e: PointerEvent) => {
-    lastPointerTypeRef.current = e.pointerType ?? null;
-    const pt = e.pointerType ?? null;
-    
-    // Only start long-press timer for touch/pen
-    if (pt !== "touch" && pt !== "pen") return;
-    if (!onBucketClick) return;
-
-    clearLongPressTimer();
-    longPressStartRef.current = { x: e.clientX, y: e.clientY };
-    longPressTimerRef.current = window.setTimeout(() => {
-      const p = activePayloadRef.current;
-      if (!p) return;
-      const count = countMode === "artists" ? p.unique_artists : p.unique_tracks;
-      onBucketClick(p.bucketMin, p.bucketMax, p.bucketLabel, count);
-    }, LONG_PRESS_MS);
-  };
-
-  const handlePointerMove = (e: PointerEvent) => {
-    const pt = e.pointerType ?? null;
-    if (pt !== "touch" && pt !== "pen") return;
-    const start = longPressStartRef.current;
-    if (!start) return;
-    // Cancel long-press if finger moved too far (user is scrolling)
-    const dx = e.clientX - start.x;
-    const dy = e.clientY - start.y;
-    if (Math.hypot(dx, dy) > 10) {
-      clearLongPressTimer();
-    }
-  };
-
-  const handlePointerUp = () => {
-    clearLongPressTimer();
-  };
-
-  const handlePointerCancel = () => {
-    clearLongPressTimer();
   };
 
   const handleClick = () => {
