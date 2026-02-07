@@ -3,8 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { Chip, ChipGroup } from "@/components/ui/Chip";
-
-type CurrencyDisplay = "USD" | "AED";
+import type { CurrencyDisplay } from "@/lib/format";
 
 function parseCurrency(raw: unknown): CurrencyDisplay {
   const s = String(raw ?? "").trim().toUpperCase();

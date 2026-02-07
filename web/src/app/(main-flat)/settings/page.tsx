@@ -1,5 +1,4 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { revalidatePath, revalidateTag } from "next/cache";
 
 import { supabaseServer } from "@/lib/supabase/server";
@@ -418,7 +417,7 @@ export default async function SettingsPage() {
 
     // Invalidate all Supabase query caches (unstable_cache uses tags in `cachedQuery`).
     // Without this, playlist tables may stay stale for up to 24h.
-    revalidateTag("supabase", "max");
+    revalidateTag("supabase");
 
     revalidatePath("/health");
     revalidatePath("/settings");
@@ -444,7 +443,7 @@ export default async function SettingsPage() {
       await svc.rpc("spotibase_recompute_playlist_daily_stats", { p_date: date });
     }
 
-    revalidateTag("supabase", "max");
+    revalidateTag("supabase");
 
     revalidatePath("/health");
     revalidatePath("/settings");

@@ -2,11 +2,10 @@ import { NextResponse, NextRequest } from "next/server";
 
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
+import type { CurrencyDisplay } from "@/lib/format";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-type CurrencyDisplay = "USD" | "AED";
 
 function isSchemaMissing(err: unknown) {
   const msg = String((err as any)?.message ?? "");
