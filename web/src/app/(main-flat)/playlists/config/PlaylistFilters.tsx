@@ -173,7 +173,7 @@ export function PlaylistFilters({ playlists, statsMap, registerExport }: Playlis
   }, [filteredAndSorted, registerExport, statsMap, streamPayoutPerStreamUsd]);
 
   return (
-    <div className="flex h-full flex-col space-y-3">
+    <div className="flex flex-col space-y-3">
       {/* Controls */}
       <div className="flex flex-wrap items-center gap-2">
         {/* Search */}

@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ArrowLeft, Download, Settings } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
 import { Alert } from "@/components/ui/Alert";
 import { PlaylistFilters } from "./PlaylistFilters";
@@ -31,20 +31,25 @@ export function PlaylistsConfigClient(props: {
   isAdmin: boolean;
   errorMessage?: string | null;
 }) {
+  const router = useRouter();
   const [exportCsv, setExportCsv] = useState<null | (() => void)>(null);
+  const registerExport = useCallback((fn: () => void) => {
+    setExportCsv(() => fn);
+  }, []);
 
   return (
-    <div className="flex h-full flex-col space-y-4">
-      <div className="relative z-10 flex items-center justify-between gap-4">
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-2">
-          <Link
-            href="/playlists"
-            className="sb-ring grid h-8 w-8 place-items-center rounded-full bg-white/70 text-xs font-medium transition hover:bg-white dark:bg-white/10 dark:hover:bg-white/15"
+          <button
+            type="button"
+            onClick={() => router.push("/playlists")}
+            className="sb-ring grid h-8 w-8 place-items-center rounded-full bg-white/70 text-xs font-medium transition hover:bg-white dark:bg-white/10 dark:hover:bg-white/15 cursor-pointer"
             aria-label="Back to playlists dashboard"
             title="Back to playlists dashboard"
           >
             <ArrowLeft className="h-4 w-4" style={{ color: "var(--sb-text)" }} />
-          </Link>
+          </button>
           <div className="flex items-center gap-2">
             <div>
               <h1 className="font-display text-xl font-semibold tracking-tight sm:text-2xl">
@@ -71,14 +76,15 @@ export function PlaylistsConfigClient(props: {
 
         <div className="flex items-center gap-2">
           {props.isAdmin ? (
-            <Link
-              href="/playlists/config/settings"
-              className="sb-ring grid h-8 w-8 place-items-center rounded-full bg-white/70 text-xs font-medium transition hover:bg-white dark:bg-white/10 dark:hover:bg-white/15"
+            <button
+              type="button"
+              onClick={() => router.push("/playlists/config/settings")}
+              className="sb-ring grid h-8 w-8 place-items-center rounded-full bg-white/70 text-xs font-medium transition hover:bg-white dark:bg-white/10 dark:hover:bg-white/15 cursor-pointer"
               aria-label="Playlist settings"
               title="Playlist settings"
             >
               <Settings className="h-4 w-4" style={{ color: "var(--sb-text)" }} />
-            </Link>
+            </button>
           ) : null}
         </div>
       </div>
@@ -89,13 +95,11 @@ export function PlaylistsConfigClient(props: {
         </Alert>
       ) : null}
 
-      <div className="flex-1 min-h-0">
-        <PlaylistFilters
-          playlists={props.playlists}
-          statsMap={props.statsMap}
-          registerExport={(fn) => setExportCsv(() => fn)}
-        />
-      </div>
+      <PlaylistFilters
+        playlists={props.playlists}
+        statsMap={props.statsMap}
+        registerExport={registerExport}
+      />
     </div>
   );
 }
