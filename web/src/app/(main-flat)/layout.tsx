@@ -1,49 +1,10 @@
-import { AppShell } from "@/components/shell/AppShell";
-import { supabaseServer } from "@/lib/supabase/server";
-import { redirect } from "next/navigation";
-import { PayoutRateProvider } from "@/components/payout/PayoutRateContext";
-import { MetricProvider } from "@/components/metrics/MetricContext";
-import { WeekHighlightProvider } from "@/components/charts/WeekHighlightContext";
-import { ChartStartDateProvider } from "@/components/charts/ChartStartDateContext";
-import { ChartAxisZoomProvider } from "@/components/charts/ChartAxisZoomContext";
-import { RollbackProvider } from "@/components/rollback/RollbackContext";
-import { KeyboardShortcutsProvider, KeyboardShortcutsHelp } from "@/components/keyboard";
-import { CurrencyDisplayProvider } from "@/components/currency/CurrencyDisplayContext";
+import { AuthedAppLayout } from "@/app/_shared/AuthedAppLayout";
 
 export default async function MainFlatLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const sb = await supabaseServer();
-  const {
-    data: { session },
-  } = await sb.auth.getSession();
-
-  if (!session) {
-    // Middleware should already redirect, but keep a hard server-side guard.
-    redirect("/login");
-  }
-
-  return (
-    <KeyboardShortcutsProvider>
-      <PayoutRateProvider>
-        <WeekHighlightProvider>
-          <CurrencyDisplayProvider>
-            <ChartStartDateProvider>
-              <ChartAxisZoomProvider>
-                <MetricProvider defaultMetric="streams">
-                  <RollbackProvider>
-                    <AppShell mainSurface="plain">{children}</AppShell>
-                    <KeyboardShortcutsHelp />
-                  </RollbackProvider>
-                </MetricProvider>
-              </ChartAxisZoomProvider>
-            </ChartStartDateProvider>
-          </CurrencyDisplayProvider>
-        </WeekHighlightProvider>
-      </PayoutRateProvider>
-    </KeyboardShortcutsProvider>
-  );
+  return <AuthedAppLayout appShellProps={{ mainSurface: "plain" }}>{children}</AuthedAppLayout>;
 }
 

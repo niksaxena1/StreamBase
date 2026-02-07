@@ -268,7 +268,6 @@ function aggregateMonthlyDelta(
     daysPerMonth.get(curMonth)!.add(curDataDate);
 
     const prev = i > 0 ? asc[i - 1] : null;
-    const prevDataDate = prev ? prev.date : null;
 
     // Get the delta for this day
     let delta = 0;

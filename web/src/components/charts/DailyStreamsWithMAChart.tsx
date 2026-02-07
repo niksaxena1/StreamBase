@@ -106,7 +106,6 @@ export function DailyStreamsWithMAChart({
   const annotationDates = [...annItemsByDate.keys()].filter((d) => chartDates.has(d));
   const highlightDates = chartData.filter((d) => isHighlightDayDateUtc(d.date, weekHighlightDayUtc)).map((d) => d.date);
   
-  // Debug: Check if we have any ma7 values
   const hasMa7Data = chartData.some((d) => d.ma7 != null && !isNaN(Number(d.ma7)));
 
   const fmtValue = (n: number) =>

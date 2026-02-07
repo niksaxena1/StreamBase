@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { DEFAULT_CHART_START_DATE_ISO, normalizeIsoDateOrNull } from "@/components/charts/chartUtils";
 
@@ -33,7 +33,7 @@ export function ChartStartDateProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
 
-  const refetch = () => setNonce((n) => n + 1);
+  const refetch = useCallback(() => setNonce((n) => n + 1), []);
 
   useEffect(() => {
     let alive = true;
@@ -70,7 +70,7 @@ export function ChartStartDateProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<ChartStartDateState>(
     () => ({ chartStartDateIso, loading, configured, error, refetch }),
-    [chartStartDateIso, loading, configured, error],
+    [chartStartDateIso, loading, configured, error, refetch],
   );
 
   return <ChartStartDateContext.Provider value={value}>{children}</ChartStartDateContext.Provider>;

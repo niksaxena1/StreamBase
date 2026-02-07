@@ -1,5 +1,6 @@
 import type { PlaylistDailyStatsRow } from "./homeTypes";
 import { formatMilestoneCompact, generateAutoMilestonesFromMax as generateAutoMilestonesFromMaxShared } from "@/lib/milestones";
+import { AED_PER_USD, getCurrencyDisplay } from "@/lib/format";
 
 // ============================================================================
 // Storage keys
@@ -161,8 +162,6 @@ export function formatMilestoneForInput(n: number): string {
 export function formatUsdCompact(n: number): string {
   // Keep Home milestone labels consistent with the rest of the app’s currency display setting.
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { getCurrencyDisplay, AED_PER_USD } = require("@/lib/format") as typeof import("@/lib/format");
     const mode = getCurrencyDisplay();
     if (mode === "AED") {
       const aed = n * AED_PER_USD;

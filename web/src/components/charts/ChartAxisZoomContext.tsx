@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 type ChartAxisZoomState = {
   zoomDailyYAxis: boolean;
@@ -42,7 +42,7 @@ export function ChartAxisZoomProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
 
-  const refetch = () => setNonce((n) => n + 1);
+  const refetch = useCallback(() => setNonce((n) => n + 1), []);
 
   useEffect(() => {
     let alive = true;
@@ -87,7 +87,7 @@ export function ChartAxisZoomProvider({ children }: { children: ReactNode }) {
       error,
       refetch,
     }),
-    [zoomDailyYAxis, zoomDailyYAxisCollectorComparison, loading, configured, error],
+    [zoomDailyYAxis, zoomDailyYAxisCollectorComparison, loading, configured, error, refetch],
   );
 
   return <ChartAxisZoomContext.Provider value={value}>{children}</ChartAxisZoomContext.Provider>;

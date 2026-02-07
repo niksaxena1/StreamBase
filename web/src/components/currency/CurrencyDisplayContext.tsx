@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { setCurrencyDisplay, type CurrencyDisplay } from "@/lib/format";
 
@@ -30,7 +30,7 @@ export function CurrencyDisplayProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
 
-  const refetch = () => setNonce((n) => n + 1);
+  const refetch = useCallback(() => setNonce((n) => n + 1), []);
 
   useEffect(() => {
     let alive = true;
@@ -73,7 +73,7 @@ export function CurrencyDisplayProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<CurrencyDisplayState>(
     () => ({ currencyDisplay, loading, configured, error, refetch }),
-    [currencyDisplay, loading, configured, error],
+    [currencyDisplay, loading, configured, error, refetch],
   );
 
   return <CurrencyDisplayContext.Provider value={value}>{children}</CurrencyDisplayContext.Provider>;
