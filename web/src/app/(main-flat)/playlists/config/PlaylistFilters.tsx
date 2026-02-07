@@ -1,15 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useMemo } from "react";
-import { Search, X, Music, Download } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Search, X, Music } from "lucide-react";
 import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
 import { formatInt, formatUsd2 } from "@/lib/format";
 import { foldForSearch } from "@/lib/searchFold";
 import { useMetric } from "@/components/metrics/MetricContext";
 import { downloadCsv, todayIsoDate } from "@/lib/csv";
-import { IconButton } from "@/components/ui/Button";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
+import { MenuSelect } from "@/components/ui/MenuSelect";
 
 type PlaylistRow = {
   playlist_key: string;
@@ -32,12 +32,13 @@ type PlaylistStats = {
 type PlaylistFiltersProps = {
   playlists: PlaylistRow[];
   statsMap: Record<string, PlaylistStats>;
+  registerExport?: (fn: () => void) => void;
 };
 
 type SortOption = "name" | "total" | "daily" | "type";
 type FilterType = "all" | "Catalog" | "Label" | "Entity" | "Distro" | "Standard";
 
-export function PlaylistFilters({ playlists, statsMap }: PlaylistFiltersProps) {
+export function PlaylistFilters({ playlists, statsMap, registerExport }: PlaylistFiltersProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<FilterType>("all");
   const [sortBy, setSortBy] = useState<SortOption>("name");
@@ -130,8 +131,8 @@ export function PlaylistFilters({ playlists, statsMap }: PlaylistFiltersProps) {
     return result;
   }, [playlists, statsMap, searchQuery, typeFilter, sortBy, sortAsc, metric, streamPayoutPerStreamUsd]);
 
-  const totalHeader = metric === "tracks" ? "TOTAL TRACKS" : metric === "revenue" ? "TOTAL REVENUE" : "TOTAL STREAMS";
-  const dailyHeader = metric === "tracks" ? "DAILY TRACKS" : metric === "revenue" ? "DAILY REVENUE" : "DAILY STREAMS";
+  const totalHeader = metric === "tracks" ? "Total" : metric === "revenue" ? "Total" : "Total";
+  const dailyHeader = metric === "tracks" ? "Daily" : metric === "revenue" ? "Daily" : "Daily";
 
   const metricColor =
     metric === "tracks"
@@ -139,6 +140,37 @@ export function PlaylistFilters({ playlists, statsMap }: PlaylistFiltersProps) {
       : metric === "revenue"
         ? "var(--sb-revenue)"
         : "var(--sb-accent-stroke)";
+
+  useEffect(() => {
+    if (!registerExport) return;
+    registerExport(() => {
+      const csvData = filteredAndSorted.map((p) => {
+        const stats = statsMap[p.playlist_key];
+        const type = p.playlist_type || (p.is_catalog ? "Catalog" : "Standard");
+        const totalStreams = stats?.total_streams_cumulative ?? null;
+        const dailyStreams = stats?.daily_streams_net ?? null;
+        const totalTracks = stats?.track_count ?? null;
+        const dailyTracks = stats?.daily_tracks_net ?? null;
+        const totalRevenueUsd = totalStreams == null ? null : totalStreams * streamPayoutPerStreamUsd;
+        const dailyRevenueUsd = dailyStreams == null ? null : dailyStreams * streamPayoutPerStreamUsd;
+        return {
+          "Playlist Key": p.playlist_key,
+          Name: p.display_name,
+          Type: type,
+          "Total Streams": totalStreams,
+          "Daily Streams": dailyStreams,
+          "Total Revenue (USD)": totalRevenueUsd,
+          "Daily Revenue (USD)": dailyRevenueUsd,
+          "Total Tracks": totalTracks,
+          "Daily Tracks": dailyTracks,
+        };
+      });
+      downloadCsv({
+        filename: `playlist-config-export-${todayIsoDate()}.csv`,
+        rows: csvData,
+      });
+    });
+  }, [filteredAndSorted, registerExport, statsMap, streamPayoutPerStreamUsd]);
 
   return (
     <div className="flex h-full flex-col space-y-3">
@@ -167,40 +199,41 @@ export function PlaylistFilters({ playlists, statsMap }: PlaylistFiltersProps) {
         </div>
 
         {/* Type Filter */}
-        <select
+        <MenuSelect
           value={typeFilter}
-          onChange={(e) => setTypeFilter(e.target.value as FilterType)}
-          className="rounded-xl border bg-white/70 px-2.5 py-1.5 text-xs outline-none transition focus:border-black/20 focus:ring-2 focus:ring-black/5 dark:bg-white/5 dark:text-white dark:border-white/10 dark:focus:border-white/20 dark:focus:ring-white/5"
-          style={{ borderColor: "var(--sb-border)" }}
-        >
-          <option value="all">All Types</option>
-          <option value="Catalog">Catalog</option>
-          <option value="Label">Label</option>
-          <option value="Entity">Entity</option>
-          <option value="Distro">Distro</option>
-          <option value="Standard">Standard</option>
-        </select>
+          onChange={(v) => setTypeFilter(v as FilterType)}
+          ariaLabel="Filter by playlist type"
+          options={[
+            { value: "all", label: "All Types" },
+            { value: "Catalog", label: "Catalog" },
+            { value: "Label", label: "Label" },
+            { value: "Entity", label: "Entity" },
+            { value: "Distro", label: "Distro" },
+            { value: "Standard", label: "Standard" },
+          ]}
+        />
 
         {/* Sort */}
-        <select
+        <MenuSelect
           value={`${sortBy}-${sortAsc ? "asc" : "desc"}`}
-          onChange={(e) => {
-            const [newSortBy, newSortAsc] = e.target.value.split("-");
+          onChange={(v) => {
+            const [newSortBy, newSortAsc] = String(v).split("-");
             setSortBy(newSortBy as SortOption);
             setSortAsc(newSortAsc === "asc");
           }}
-          className="rounded-xl border bg-white/70 px-2.5 py-1.5 text-xs outline-none transition focus:border-black/20 focus:ring-2 focus:ring-black/5 dark:bg-white/5 dark:text-white dark:border-white/10 dark:focus:border-white/20 dark:focus:ring-white/5"
-          style={{ borderColor: "var(--sb-border)" }}
-        >
-          <option value="name-asc">Name ↑</option>
-          <option value="name-desc">Name ↓</option>
-          <option value="total-desc">{totalHeader} ↓</option>
-          <option value="total-asc">{totalHeader} ↑</option>
-          <option value="daily-desc">{dailyHeader} ↓</option>
-          <option value="daily-asc">{dailyHeader} ↑</option>
-          <option value="type-asc">Type ↑</option>
-          <option value="type-desc">Type ↓</option>
-        </select>
+          ariaLabel="Sort playlists"
+          options={[
+            { value: "name-asc", label: "Name ↑" },
+            { value: "name-desc", label: "Name ↓" },
+            { value: "total-desc", label: `${totalHeader} ↓` },
+            { value: "total-asc", label: `${totalHeader} ↑` },
+            { value: "daily-desc", label: `${dailyHeader} ↓` },
+            { value: "daily-asc", label: `${dailyHeader} ↑` },
+            { value: "type-asc", label: "Type ↑" },
+            { value: "type-desc", label: "Type ↓" },
+          ]}
+          align="right"
+        />
 
         {/* Results count */}
         <div className="text-xs whitespace-nowrap" style={{ color: "var(--sb-muted)" }}>
@@ -210,42 +243,6 @@ export function PlaylistFilters({ playlists, statsMap }: PlaylistFiltersProps) {
 
       {/* Table */}
       <div className="flex-1 min-h-0 flex flex-col">
-        <div className="flex items-center justify-end mb-2">
-          <IconButton
-            type="button"
-            onClick={() => {
-              const csvData = filteredAndSorted.map((p) => {
-                const stats = statsMap[p.playlist_key];
-                const type = p.playlist_type || (p.is_catalog ? "Catalog" : "Standard");
-                const totalStreams = stats?.total_streams_cumulative ?? null;
-                const dailyStreams = stats?.daily_streams_net ?? null;
-                const totalTracks = stats?.track_count ?? null;
-                const dailyTracks = stats?.daily_tracks_net ?? null;
-                const totalRevenueUsd = totalStreams == null ? null : totalStreams * streamPayoutPerStreamUsd;
-                const dailyRevenueUsd = dailyStreams == null ? null : dailyStreams * streamPayoutPerStreamUsd;
-                return {
-                  "Playlist Key": p.playlist_key,
-                  Name: p.display_name,
-                  Type: type,
-                  "Total Streams": totalStreams,
-                  "Daily Streams": dailyStreams,
-                  "Total Revenue (USD)": totalRevenueUsd,
-                  "Daily Revenue (USD)": dailyRevenueUsd,
-                  "Total Tracks": totalTracks,
-                  "Daily Tracks": dailyTracks,
-                };
-              });
-              downloadCsv({
-                filename: `playlist-config-export-${todayIsoDate()}.csv`,
-                rows: csvData,
-              });
-            }}
-            title="Download table as CSV"
-            aria-label="Download table as CSV"
-          >
-            <Download className="h-3.5 w-3.5" />
-          </IconButton>
-        </div>
         <GlassTable 
           headers={[
             "",

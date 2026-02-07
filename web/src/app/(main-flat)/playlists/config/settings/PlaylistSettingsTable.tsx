@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { GripVertical, Music } from "lucide-react";
 import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/GlassTable";
 import { Input } from "@/components/ui/Input";
-import { Select } from "@/components/ui/Select";
+import { MenuSelect } from "@/components/ui/MenuSelect";
 
 type Playlist = {
   playlist_key: string;
@@ -265,20 +265,24 @@ export function PlaylistSettingsTable({
             </TableCell>
             <TableCell>
               <div className="flex items-center gap-2">
-                <Select
+                <MenuSelect
                   value={draftPlaylistType}
-                  onChange={(e) => {
-                    const next = e.target.value;
+                  onChange={(next) => {
                     setPlaylistTypeDraft((s) => ({ ...s, [p.playlist_key]: next }));
                     savePlaylistType(p.playlist_key, next);
                   }}
-                >
-                  <option value="">—</option>
-                  <option value="Catalog">Catalog</option>
-                  <option value="Label">Label</option>
-                  <option value="Entity">Entity</option>
-                  <option value="Distro">Distro</option>
-                </Select>
+                  ariaLabel={`Playlist type for ${p.display_name}`}
+                  placeholder="—"
+                  className="w-full"
+                  buttonClassName="w-full"
+                  options={[
+                    { value: "", label: "—" },
+                    { value: "Catalog", label: "Catalog" },
+                    { value: "Label", label: "Label" },
+                    { value: "Entity", label: "Entity" },
+                    { value: "Distro", label: "Distro" },
+                  ]}
+                />
                 {renderStatus(`${p.playlist_key}:type`)}
               </div>
             </TableCell>
@@ -289,22 +293,26 @@ export function PlaylistSettingsTable({
                 </span>
               ) : (
                 <div className="flex items-center gap-2">
-                  <Select
+                  <MenuSelect
                     value={draftCollector}
-                    onChange={(e) => {
-                      const next = e.target.value;
+                    onChange={(next) => {
                       setCollectorDraft((s) => ({ ...s, [p.playlist_key]: next }));
                       saveCollector(p.playlist_key, next);
                     }}
-                  >
-                    <option value="">—</option>
-                    <option value="A">A</option>
-                    <option value="K">K</option>
-                    <option value="N">N</option>
-                    <option value="PL">PL</option>
-                    <option value="TG">TG</option>
-                    <option value="NL">NL</option>
-                  </Select>
+                    ariaLabel={`Collector for ${p.display_name}`}
+                    placeholder="—"
+                    className="w-full"
+                    buttonClassName="w-full"
+                    options={[
+                      { value: "", label: "—" },
+                      { value: "A", label: "A" },
+                      { value: "K", label: "K" },
+                      { value: "N", label: "N" },
+                      { value: "PL", label: "PL" },
+                      { value: "TG", label: "TG" },
+                      { value: "NL", label: "NL" },
+                    ]}
+                  />
                   {renderStatus(`${p.playlist_key}:collector`)}
                 </div>
               )}

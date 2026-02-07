@@ -2,137 +2,171 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-export type MenuSelectOption<T extends string> = {
-  value: T;
+function cx(...parts: Array<string | false | null | undefined>) {
+  return parts.filter(Boolean).join(" ");
+}
+
+export type MenuSelectOption = {
+  value: string;
   label: string;
+  disabled?: boolean;
 };
 
-export function MenuSelect<T extends string>(props: {
-  value: T;
-  options: Array<MenuSelectOption<T>>;
-  onChange: (v: T) => void;
-  className?: string;
-  align?: "left" | "right";
+export function MenuSelect({
+  value,
+  options,
+  onChange,
+  placeholder = "Select…",
+  ariaLabel,
+  disabled = false,
+  className,
+  buttonClassName,
+  menuClassName,
+  align = "left",
+  matchTriggerWidth = true,
+}: {
+  value: string;
+  options: MenuSelectOption[];
+  onChange: (value: string) => void;
+  placeholder?: string;
   ariaLabel?: string;
+  disabled?: boolean;
+  className?: string;
+  buttonClassName?: string;
+  menuClassName?: string;
+  align?: "left" | "right";
+  matchTriggerWidth?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const [isOpen, setIsOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
-  const [buttonWidth, setButtonWidth] = useState<number | undefined>();
+  const [menuWidth, setMenuWidth] = useState<number | undefined>();
 
   useEffect(() => {
-    function onDocDown(e: MouseEvent) {
-      const el = containerRef.current;
-      if (!el) return;
-      if (e.target instanceof Node && el.contains(e.target)) return;
-      setOpen(false);
-    }
-    document.addEventListener("mousedown", onDocDown);
-    return () => document.removeEventListener("mousedown", onDocDown);
+    const onMouseDown = (event: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onMouseDown);
+    return () => document.removeEventListener("mousedown", onMouseDown);
   }, []);
 
   useEffect(() => {
-    function onKeyDown(ev: KeyboardEvent) {
-      if (ev.key === "Escape") setOpen(false);
-    }
+    const onKeyDown = (ev: KeyboardEvent) => {
+      if (ev.key === "Escape") setIsOpen(false);
+    };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
   }, []);
 
   useEffect(() => {
-    if (open && buttonRef.current) setButtonWidth(buttonRef.current.offsetWidth);
-  }, [open]);
+    if (isOpen && matchTriggerWidth && buttonRef.current) {
+      setMenuWidth(buttonRef.current.offsetWidth);
+    }
+  }, [isOpen, matchTriggerWidth]);
 
-  const selectedLabel = useMemo(
-    () => props.options.find((o) => o.value === props.value)?.label ?? "",
-    [props.options, props.value],
-  );
-
-  const sideClass =
-    props.align === "left" ? "left-0" : "right-0";
+  const selectedLabel = useMemo(() => {
+    return options.find((o) => o.value === value)?.label ?? (value ? value : placeholder);
+  }, [options, placeholder, value]);
 
   return (
-    <div className="relative" ref={containerRef}>
+    <div ref={rootRef} className={cx("relative", className)}>
       <button
         ref={buttonRef}
         type="button"
-        onClick={() => setOpen((v) => !v)}
-        className={[
-          "flex items-center gap-2 whitespace-nowrap rounded-xl border px-3 py-2 text-sm font-medium transition",
-          props.className,
-        ]
-          .filter(Boolean)
-          .join(" ")}
+        disabled={disabled}
+        onClick={() => setIsOpen((v) => !v)}
+        className={cx(
+          "flex items-center justify-between gap-2 rounded-[var(--sb-radius)] border px-2.5 py-1.5 text-[11px] font-medium transition",
+          disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer",
+          buttonClassName,
+        )}
         style={{
           backgroundColor: "var(--sb-surface)",
           borderColor: "var(--sb-border-2)",
           color: "var(--sb-text)",
         }}
         onMouseEnter={(e) => {
-          e.currentTarget.style.backgroundColor = open ? "var(--sb-surface)" : "var(--sb-card)";
+          if (disabled) return;
+          e.currentTarget.style.backgroundColor = isOpen ? "var(--sb-surface)" : "var(--sb-card)";
         }}
         onMouseLeave={(e) => {
+          if (disabled) return;
           e.currentTarget.style.backgroundColor = "var(--sb-surface)";
         }}
         aria-haspopup="listbox"
-        aria-expanded={open}
-        aria-label={props.ariaLabel}
+        aria-expanded={isOpen}
+        aria-label={ariaLabel}
       >
-        <span>{selectedLabel}</span>
+        <span className="truncate">{selectedLabel}</span>
         <svg
-          className={`h-3 w-3 transition-transform ${open ? "rotate-180" : ""}`}
+          className={cx("h-3 w-3 shrink-0 transition-transform", isOpen && "rotate-180")}
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
           style={{ color: "var(--sb-muted)" }}
+          aria-hidden="true"
         >
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
         </svg>
       </button>
 
-      {open ? (
+      {isOpen && !disabled && (
         <div
-          className={`absolute ${sideClass} top-full z-50 mt-2 rounded-[var(--sb-radius)] border p-1 shadow-lg`}
+          className={cx(
+            "absolute top-full z-50 mt-2 rounded-[var(--sb-radius)] border p-1 shadow-lg",
+            align === "right" ? "right-0" : "left-0",
+            menuClassName,
+          )}
           style={{
-            width: buttonWidth,
+            width: matchTriggerWidth ? menuWidth : undefined,
             backgroundColor: "var(--sb-card)",
             borderColor: "var(--sb-border-2)",
             backdropFilter: "blur(var(--sb-blur))",
             WebkitBackdropFilter: "blur(var(--sb-blur))",
           }}
           role="listbox"
+          aria-label={ariaLabel}
         >
-          {props.options.map((o) => {
-            const selected = o.value === props.value;
+          {options.map((opt) => {
+            const isSelected = opt.value === value;
+            const isDisabled = Boolean(opt.disabled);
             return (
               <button
-                key={o.value}
+                key={opt.value}
                 type="button"
+                disabled={isDisabled}
                 onClick={() => {
-                  props.onChange(o.value);
-                  setOpen(false);
+                  if (isDisabled) return;
+                  onChange(opt.value);
+                  setIsOpen(false);
                 }}
-                className="flex w-full items-center justify-between gap-2 whitespace-nowrap rounded-[calc(var(--sb-radius)-8px)] px-2 py-1.5 text-left text-xs transition"
+                className={cx(
+                  "flex w-full items-center justify-between gap-2 rounded-[calc(var(--sb-radius)-8px)] px-2 py-1.5 text-left text-xs transition",
+                  isDisabled ? "cursor-not-allowed opacity-50" : "cursor-pointer",
+                )}
                 style={{
-                  color: selected ? "#000" : "var(--sb-text)",
-                  backgroundColor: selected ? "var(--sb-accent)" : "transparent",
+                  color: isSelected ? "#000" : "var(--sb-text)",
+                  backgroundColor: isSelected ? "var(--sb-accent)" : "transparent",
                 }}
                 onMouseEnter={(e) => {
-                  if (!selected) e.currentTarget.style.backgroundColor = "var(--sb-surface)";
+                  if (isSelected || isDisabled) return;
+                  e.currentTarget.style.backgroundColor = "var(--sb-surface)";
                 }}
                 onMouseLeave={(e) => {
-                  if (!selected) e.currentTarget.style.backgroundColor = "transparent";
+                  if (isSelected || isDisabled) return;
+                  e.currentTarget.style.backgroundColor = "transparent";
                 }}
                 role="option"
-                aria-selected={selected}
+                aria-selected={isSelected}
               >
-                <span>{o.label}</span>
+                <span className="truncate">{opt.label}</span>
               </button>
             );
           })}
         </div>
-      ) : null}
+      )}
     </div>
   );
 }
-

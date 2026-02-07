@@ -403,7 +403,7 @@ export default async function PlaylistsPage({
             <img
               src={playlistImageUrl}
               alt="Playlist cover"
-              className="h-12 w-12 rounded-lg object-cover sb-ring"
+              className="h-12 w-12 rounded-lg object-cover sb-ring opacity-100"
             />
           ) : (
             <div className="h-12 w-12 rounded-lg sb-ring bg-white/60" />

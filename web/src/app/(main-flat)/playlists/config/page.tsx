@@ -1,11 +1,7 @@
-import Link from "next/link";
-import { ArrowLeft, Settings } from "lucide-react";
-
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { getPlaylist } from "@/lib/spotify";
-import { PlaylistFilters } from "./PlaylistFilters";
-import { Alert } from "@/components/ui/Alert";
+import { PlaylistsConfigClient } from "./PlaylistsConfigClient";
 
 export const revalidate = 86400; // 24h ISR - playlist config is slow-changing
 
@@ -150,53 +146,12 @@ export default async function PlaylistsConfigPage({
   }
 
   return (
-    <div className="flex h-full flex-col space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Link
-            href="/playlists"
-            className="sb-ring grid h-8 w-8 place-items-center rounded-full bg-white/70 text-xs font-medium transition hover:bg-white dark:bg-white/10 dark:hover:bg-white/15"
-            aria-label="Back to playlists dashboard"
-            title="Back to playlists dashboard"
-          >
-            <ArrowLeft className="h-4 w-4" style={{ color: "var(--sb-text)" }} />
-          </Link>
-          <div>
-            <h1 className="font-display text-xl font-semibold tracking-tight sm:text-2xl">
-              Playlists
-            </h1>
-            <p className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
-              Tracked playlists from configuration.
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {isAdmin ? (
-            <Link
-              href="/playlists/config/settings"
-              className="sb-ring grid h-8 w-8 place-items-center rounded-full bg-white/70 text-xs font-medium transition hover:bg-white dark:bg-white/10 dark:hover:bg-white/15"
-              aria-label="Playlist settings"
-              title="Playlist settings"
-            >
-              <Settings className="h-4 w-4" style={{ color: "var(--sb-text)" }} />
-            </Link>
-          ) : null}
-        </div>
-      </div>
-
-      {error && (
-        <Alert variant="error" title="Query error">
-          {error.message}
-        </Alert>
-      )}
-
-      <div className="flex-1 min-h-0">
-        <PlaylistFilters 
-          playlists={playlists} 
-          statsMap={Object.fromEntries(statsMap)} 
-        />
-      </div>
-    </div>
+    <PlaylistsConfigClient
+      playlists={playlists}
+      statsMap={Object.fromEntries(statsMap)}
+      isAdmin={Boolean(isAdmin)}
+      errorMessage={error?.message ?? null}
+    />
   );
 }
 
