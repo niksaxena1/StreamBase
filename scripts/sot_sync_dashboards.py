@@ -1,5 +1,6 @@
 import argparse
 import csv
+import json
 import os
 import random
 import shutil
@@ -38,6 +39,11 @@ CLICK_PAUSE_MIN = 0.01
 CLICK_PAUSE_MAX = 0.04
 
 TASK_RETRIES = 5
+
+# Rotate the browser context every N tasks to avoid accumulated throttling
+# from SpotOnTrack / Cloudflare. A fresh context resets cookies, local storage,
+# and request fingerprints, which reduces the chance of cascading blocks.
+CONTEXT_ROTATION_INTERVAL = 4
 
 
 @dataclass(frozen=True)
@@ -605,6 +611,21 @@ def run_sync(
                 return 3
 
         for n, task in enumerate(tasks, start=1):
+            # Rotate browser context periodically to avoid accumulated throttling.
+            if n > 1 and (n - 1) % CONTEXT_ROTATION_INTERVAL == 0:
+                print(f"\n🔄 Rotating browser context (every {CONTEXT_ROTATION_INTERVAL} tasks)...")
+                try:
+                    context.close()
+                except Exception:
+                    pass
+                context = browser.new_context(**context_options)
+                enable_turbo_blocking(context)
+                page = context.new_page()
+                page.goto(SOT_BASE + "/dashboard", wait_until="networkidle", timeout=NAV_TIMEOUT_MS)
+                if is_logged_out(page):
+                    if not ensure_logged_in(page, email=email, password=password):
+                        print("❌ Re-login after context rotation failed. Continuing with new context.")
+
             playlist_url = SOT_PLAYLIST_URL.format(sot_playlist_id=task.sot_playlist_id)
             task_label = f"{n}/{len(tasks)}|{task.display_name}"
 
@@ -836,6 +857,18 @@ def run_sync(
 
         context.close()
         browser.close()
+
+    # Write machine-readable summary for CI notification workflow.
+    summary = {
+        "total_added": total_added,
+        "total_removed": total_removed,
+        "total_errors": total_errors,
+        "total_skipped": total_skipped,
+        "tasks_total": len(tasks),
+    }
+    summary_path = Path(".artifacts") / "sync_summary.json"
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
+    summary_path.write_text(json.dumps(summary, indent=2))
 
     print("\n" + "=" * 72)
     print("✅ DASHBOARD SYNC COMPLETE")

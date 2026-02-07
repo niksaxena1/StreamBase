@@ -2,8 +2,11 @@ name: SOT Daily Dashboard Sync
 
 on:
   schedule:
-    # Run 1 hour before the export workflow (export is 10:00 UTC)
+    # Run 1 hour before the export workflow (export is 10:00 UTC).
+    # Two schedules for redundancy: if the first is missed or blocked, the
+    # fallback 30 min later gets a second chance.
     - cron: "0 9 * * *"
+    - cron: "30 9 * * *"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -68,3 +71,64 @@ jobs:
           path: .artifacts/
           if-no-files-found: warn
 
+      - name: Check sync results for notification
+        id: notify_check
+        if: always()
+        shell: bash
+        run: |
+          SHOULD_NOTIFY="false"
+          SUBJECT="[SpotiBase] Dashboard Sync: unknown issue"
+          SKIPPED="?"
+          ERRORS="?"
+          TOTAL="?"
+          ADDED="?"
+          REMOVED="?"
+
+          if [ -f ".artifacts/sync_summary.json" ]; then
+            SUMMARY=$(cat .artifacts/sync_summary.json)
+            SKIPPED=$(echo "$SUMMARY" | python3 -c "import sys,json; print(json.load(sys.stdin).get('total_skipped',0))")
+            ERRORS=$(echo "$SUMMARY" | python3 -c "import sys,json; print(json.load(sys.stdin).get('total_errors',0))")
+            TOTAL=$(echo "$SUMMARY" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tasks_total',0))")
+            ADDED=$(echo "$SUMMARY" | python3 -c "import sys,json; print(json.load(sys.stdin).get('total_added',0))")
+            REMOVED=$(echo "$SUMMARY" | python3 -c "import sys,json; print(json.load(sys.stdin).get('total_removed',0))")
+
+            if [ "$SKIPPED" -gt 0 ] || [ "$ERRORS" -gt 0 ]; then
+              SHOULD_NOTIFY="true"
+              SUBJECT="[SpotiBase] Dashboard Sync: ${SKIPPED} skipped, ${ERRORS} errors"
+            fi
+          fi
+
+          # Always notify on hard failure (even without summary).
+          if [ "${{ job.status }}" = "failure" ]; then
+            SHOULD_NOTIFY="true"
+            SUBJECT="[SpotiBase] Dashboard Sync FAILED"
+          fi
+
+          echo "should_notify=$SHOULD_NOTIFY" >> "$GITHUB_OUTPUT"
+          echo "subject=$SUBJECT" >> "$GITHUB_OUTPUT"
+          {
+            echo 'body<<ENDOFBODY'
+            if [ -f ".artifacts/sync_summary.json" ]; then
+              echo "Dashboard Sync results:"
+              echo "  Tasks: ${TOTAL}"
+              echo "  Skipped: ${SKIPPED} (0-track scans or safety blocks)"
+              echo "  Errors: ${ERRORS}"
+              echo "  Added: ${ADDED}"
+              echo "  Removed: ${REMOVED}"
+            else
+              echo "No sync summary available (script may not have completed)."
+            fi
+            echo ""
+            echo "Skipped tasks may have debug screenshots in the workflow artifacts."
+            echo ""
+            echo "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo 'ENDOFBODY'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Send notification email
+        if: always() && steps.notify_check.outputs.should_notify == 'true'
+        uses: ./.github/actions/notify-email
+        with:
+          password: ${{ secrets.NOTIFY_SMTP_PASSWORD }}
+          subject: ${{ steps.notify_check.outputs.subject }}
+          body: ${{ steps.notify_check.outputs.body }}

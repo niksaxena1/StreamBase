@@ -585,6 +585,52 @@ def main():
                 ],
             )
 
+        # --- Stale source data detection ---
+        # If Spotify itself didn't update stream counts, most ISRCs will have identical
+        # cumulative values as yesterday. Detect and emit a health warning (data is still
+        # ingested as-is; manual overrides can be used to correct if needed).
+        stale_data_detected = False
+        common_isrcs = set(catalog_streams_today.keys()) & set(prev_streams.keys())
+        if len(common_isrcs) >= 50:
+            identical_count = sum(
+                1 for isrc in common_isrcs
+                if catalog_streams_today.get(isrc) == prev_streams.get(isrc)
+            )
+            identical_ratio = identical_count / len(common_isrcs)
+            if identical_ratio >= 0.90:
+                stale_data_detected = True
+                pg.insert(
+                    "ingestion_warnings",
+                    [
+                        {
+                            "run_id": run_id,
+                            "run_date": run_date.isoformat(),
+                            "playlist_key": "all_catalog",
+                            "severity": "warn",
+                            "code": "stale_source_data",
+                            "message": (
+                                f"Spotify likely did not update stream counts: "
+                                f"{identical_ratio:.0%} of tracks ({identical_count}/{len(common_isrcs)}) "
+                                f"have identical cumulative streams as yesterday"
+                            ),
+                            "details_json": {
+                                "identical_count": identical_count,
+                                "common_isrcs_count": len(common_isrcs),
+                                "identical_ratio": round(identical_ratio, 4),
+                                "note": (
+                                    "SpotOnTrack exported the same stream totals as the previous day. "
+                                    "This typically means Spotify itself has not refreshed. Data was still "
+                                    "ingested as-is; use manual overrides if correction is needed."
+                                ),
+                            },
+                        }
+                    ],
+                )
+                print(
+                    f"  ⚠ Stale source data: {identical_ratio:.0%} of catalog streams identical to yesterday "
+                    f"({identical_count}/{len(common_isrcs)} tracks)"
+                )
+
         # If any configured minimum row thresholds fail, abort BEFORE mutating memberships/stats.
         if hard_fail_warnings:
             pg.insert("ingestion_warnings", hard_fail_warnings)
@@ -909,6 +955,17 @@ def main():
 
         pg.patch("ingestion_runs", {"status": "success", "finished_at": datetime.now(timezone.utc).isoformat()}, f"id=eq.{run_id}")
         print(f"✅ Ingestion complete for {run_date} (run_id={run_id})")
+
+        # Write machine-readable summary for CI notification workflow.
+        ingestion_summary = {
+            "status": "success",
+            "run_date": run_date.isoformat(),
+            "run_id": run_id,
+            "stale_data_detected": stale_data_detected,
+        }
+        summary_path = Path(".artifacts") / "ingestion_summary.json"
+        summary_path.parent.mkdir(parents=True, exist_ok=True)
+        summary_path.write_text(json.dumps(ingestion_summary, indent=2))
 
     except Exception as e:
         if run_id:

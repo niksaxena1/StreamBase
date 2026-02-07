@@ -47,3 +47,14 @@ jobs:
           sleep 2
           python scripts/enrich_tracks_with_spotify.py --limit "${LIMIT}"
 
+      - name: Send failure notification
+        if: failure()
+        uses: ./.github/actions/notify-email
+        with:
+          password: ${{ secrets.NOTIFY_SMTP_PASSWORD }}
+          subject: "[SpotiBase] Spotify Enrichment FAILED"
+          body: |
+            The Spotify Enrichment workflow failed.
+
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+

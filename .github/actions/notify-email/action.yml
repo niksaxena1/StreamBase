@@ -1,0 +1,29 @@
+name: Send Email Notification
+description: Sends an email notification via Gmail SMTP for SpotiBase CI alerts
+
+inputs:
+  password:
+    description: Gmail App Password (NOTIFY_SMTP_PASSWORD secret)
+    required: true
+  subject:
+    description: Email subject line
+    required: true
+  body:
+    description: Email body (plain text)
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Send email
+      uses: dawidd6/action-send-mail@v3
+      with:
+        server_address: smtp.gmail.com
+        server_port: 587
+        secure: true
+        username: nikhil.auh@gmail.com
+        password: ${{ inputs.password }}
+        subject: ${{ inputs.subject }}
+        body: ${{ inputs.body }}
+        to: nikhil.auh@gmail.com
+        from: SpotiBase CI <nikhil.auh@gmail.com>
