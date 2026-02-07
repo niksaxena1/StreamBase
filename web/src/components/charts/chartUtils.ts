@@ -1,10 +1,14 @@
+import { AED_PER_USD, getCurrencyDisplay } from "@/lib/format";
+
 export type ManualOverrideTooltipItem = {
   note: string;
   title?: string;
   imageUrl?: string | null;
 };
 
-function isIsoDateString(s: string): boolean {
+export const DEFAULT_CHART_START_DATE_ISO = "2026-01-28";
+
+export function isIsoDateString(s: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(s);
 }
 
@@ -12,6 +16,162 @@ function isoDateToNoonUtc(dateString: string): Date {
   // Using noon UTC avoids local timezone shifting the calendar date.
   const [y, m, d] = dateString.split("-").map((x) => Number(x));
   return new Date(Date.UTC(y, (m ?? 1) - 1, d ?? 1, 12, 0, 0));
+}
+
+export function normalizeIsoDateOrNull(raw: unknown): string | null {
+  const s = String(raw ?? "").trim();
+  if (!s) return null;
+  if (!isIsoDateString(s)) return null;
+  return s;
+}
+
+/**
+ * Filter a daily time series by an inclusive start date (YYYY-MM-DD).
+ * Keeps the original order of `data` (newest-first or oldest-first).
+ */
+export function filterDailySeriesFromIsoDate<T extends { date: string }>(
+  data: T[],
+  startDateIso?: string | null,
+): T[] {
+  const start = normalizeIsoDateOrNull(startDateIso) ?? null;
+  if (!start) return data;
+
+  // Fast path: ISO date strings can be compared lexicographically.
+  return (data ?? []).filter((d) => {
+    const ds = String(d?.date ?? "");
+    if (isIsoDateString(ds)) return ds >= start;
+    const dt = new Date(ds);
+    if (!Number.isFinite(dt.getTime())) return true; // don't drop unknown formats
+    const startDt = isoDateToNoonUtc(start);
+    return dt.getTime() >= startDt.getTime();
+  });
+}
+
+/**
+ * Filter a monthly series (`YYYY-MM`) using a daily start date (`YYYY-MM-DD`).
+ * Includes the month containing the start date (e.g. start=2026-01-28 includes 2026-01).
+ */
+export function filterMonthlySeriesFromIsoDate<T extends { month: string }>(
+  data: T[],
+  startDateIso?: string | null,
+): T[] {
+  const start = normalizeIsoDateOrNull(startDateIso) ?? null;
+  if (!start) return data;
+  const startMonth = start.slice(0, 7); // YYYY-MM
+  if (!/^\d{4}-\d{2}$/.test(startMonth)) return data;
+
+  return (data ?? []).filter((d) => {
+    const m = String(d?.month ?? "").trim();
+    return /^\d{4}-\d{2}$/.test(m) ? m >= startMonth : true;
+  });
+}
+
+export type ChartBucketGranularity = "daily" | "weekly" | "monthly" | "quarterly" | "yearly";
+
+export function computePaddedDomain(values: Array<number | null | undefined>, opts?: {
+  /** Padding as a fraction of (max-min). Default: 0.08 (8%). */
+  padRatio?: number;
+  /** If true, clamps the domain min to 0 (useful for strictly-nonnegative series). Default: false. */
+  clampMinToZero?: boolean;
+  /** Minimum absolute padding to apply when range is tiny. Default: 1. */
+  minAbsPad?: number;
+}): [number, number] | undefined {
+  const cleaned = (values ?? []).map((v) => (v == null ? null : Number(v))).filter((v): v is number => v !== null && Number.isFinite(v));
+  if (!cleaned.length) return undefined;
+  if (cleaned.length === 1) {
+    const v = cleaned[0];
+    const pad = Math.max(opts?.minAbsPad ?? 1, Math.abs(v) * 0.05);
+    const mn = (opts?.clampMinToZero ?? false) ? Math.max(0, v - pad) : v - pad;
+    return [mn, v + pad];
+  }
+
+  const min = Math.min(...cleaned);
+  const max = Math.max(...cleaned);
+  const range = Math.max(0, max - min);
+  const padRatio = opts?.padRatio ?? 0.08;
+  const minAbsPad = opts?.minAbsPad ?? 1;
+  const pad = Math.max(minAbsPad, range * padRatio, Math.max(Math.abs(min), Math.abs(max)) * 0.002);
+
+  const mn = (opts?.clampMinToZero ?? false) ? Math.max(0, min - pad) : (min - pad);
+  const mx = max + pad;
+  if (!Number.isFinite(mn) || !Number.isFinite(mx)) return undefined;
+  if (mn === mx) return [mn - minAbsPad, mx + minAbsPad];
+  return [mn, mx];
+}
+
+function isoDateToIsoWeekKey(dateIso: string): string | null {
+  // Returns ISO week key like "2026-W05" (zero-padded).
+  if (!isIsoDateString(dateIso)) return null;
+  const d = isoDateToNoonUtc(dateIso);
+  // ISO week date: set to nearest Thursday.
+  const day = d.getUTCDay() || 7; // 1..7 (Mon..Sun)
+  d.setUTCDate(d.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1, 12, 0, 0));
+  const weekNo = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+  const y = d.getUTCFullYear();
+  const w = String(weekNo).padStart(2, "0");
+  return `${y}-W${w}`;
+}
+
+function isoDateToQuarterKey(dateIso: string): { year: number; q: number } | null {
+  if (!isIsoDateString(dateIso)) return null;
+  const [y, m] = dateIso.split("-").map((x) => Number(x));
+  if (!Number.isFinite(y) || !Number.isFinite(m) || m < 1 || m > 12) return null;
+  const q = Math.floor((m - 1) / 3) + 1;
+  return { year: y, q };
+}
+
+export function filterBucketedSeriesFromIsoDate<T extends { date: string }>(
+  data: T[],
+  granularity: ChartBucketGranularity,
+  startDateIso?: string | null,
+): T[] {
+  const start = normalizeIsoDateOrNull(startDateIso) ?? null;
+  if (!start) return data;
+
+  if (granularity === "daily") {
+    return filterDailySeriesFromIsoDate(data, start);
+  }
+
+  if (granularity === "weekly") {
+    const startKey = isoDateToIsoWeekKey(start);
+    if (!startKey) return data;
+    return (data ?? []).filter((d) => {
+      const key = String(d?.date ?? "");
+      return /^\d{4}-W\d{2}$/.test(key) ? key >= startKey : true;
+    });
+  }
+
+  if (granularity === "monthly") {
+    const startMonth = start.slice(0, 7);
+    return (data ?? []).filter((d) => {
+      const key = String(d?.date ?? "");
+      return /^\d{4}-\d{2}$/.test(key) ? key >= startMonth : true;
+    });
+  }
+
+  if (granularity === "yearly") {
+    const startYear = Number(start.slice(0, 4));
+    if (!Number.isFinite(startYear)) return data;
+    return (data ?? []).filter((d) => {
+      const key = String(d?.date ?? "");
+      const y = Number(key);
+      return /^\d{4}$/.test(key) && Number.isFinite(y) ? y >= startYear : true;
+    });
+  }
+
+  // quarterly: keys like "Q1 2024"
+  const sq = isoDateToQuarterKey(start);
+  if (!sq) return data;
+  return (data ?? []).filter((d) => {
+    const key = String(d?.date ?? "");
+    const m = key.match(/^Q([1-4])\s+(\d{4})$/);
+    if (!m) return true;
+    const q = Number(m[1]);
+    const y = Number(m[2]);
+    if (!Number.isFinite(q) || !Number.isFinite(y)) return true;
+    return y > sq.year || (y === sq.year && q >= sq.q);
+  });
 }
 
 function getOrdinalSuffix(n: number): string {
@@ -33,7 +193,18 @@ export function formatTooltipDateDaily(dateString: string): string {
 }
 
 export function formatUsdCompact(n: number, fallback: (n: number) => string): string {
+  // NOTE: Despite the name, this is the shared "money compact" formatter for charts.
+  // It respects the global currency display mode (USD vs AED) since we store money in USD.
   try {
+    const mode = getCurrencyDisplay();
+    if (mode === "AED") {
+      const aed = n * AED_PER_USD;
+      const num = new Intl.NumberFormat("en-US", {
+        notation: "compact",
+        maximumFractionDigits: 1,
+      }).format(aed);
+      return `AED ${num}`;
+    }
     return new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: "USD",

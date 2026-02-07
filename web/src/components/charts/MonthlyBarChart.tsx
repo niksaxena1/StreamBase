@@ -1,23 +1,27 @@
 "use client";
 
 import {
-  BarChart,
+  ComposedChart,
   Bar,
   CartesianGrid,
   XAxis,
   YAxis,
   Tooltip,
   ResponsiveContainer,
+  Scatter,
 } from "recharts";
-import { useId } from "react";
+import { useCallback, useEffect, useId, useRef } from "react";
 import { formatInt, formatUsd } from "@/lib/format";
-import { formatKmbTick, formatUsdCompact } from "@/components/charts/chartUtils";
+import { filterMonthlySeriesFromIsoDate, formatKmbTick, formatUsdCompact } from "@/components/charts/chartUtils";
 import { useThemeColors } from "@/components/charts/useThemeColors";
 import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
+import { useChartStartDate } from "@/components/charts/ChartStartDateContext";
 
 export type MonthlyDataPoint = {
   month: string; // yyyy-mm
   value: number;
+  /** Optional actual revenue (USD) for this month (user-entered). */
+  actualRevenueUsd?: number | null;
   /** Extra amount above actual value representing the projected remainder (only for current/incomplete month) */
   projectedExtra?: number;
   /** Full projected value for the complete month (only for current/incomplete month) */
@@ -37,12 +41,14 @@ function MonthlyTooltip({
   payload,
   valueLabel,
   fmtValue,
+  valueColor,
 }: {
   active?: boolean;
   label?: string;
   payload?: Array<{ value?: unknown; payload?: MonthlyDataPoint }>;
   valueLabel: string;
   fmtValue: (n: number) => string;
+  valueColor: string;
 }) {
   if (!active || !payload?.length) return null;
 
@@ -50,6 +56,10 @@ function MonthlyTooltip({
   const dp = payload[0]?.payload;
   const value = Number.isFinite(dp?.value) ? fmtValue(dp!.value) : fmtValue(0);
   const hasProjection = (dp?.projectedExtra ?? 0) > 0;
+  const actualRevenue =
+    dp?.actualRevenueUsd == null || !Number.isFinite(Number(dp.actualRevenueUsd))
+      ? null
+      : Number(dp.actualRevenueUsd);
 
   return (
     <ViewportAwareTooltip>
@@ -65,20 +75,38 @@ function MonthlyTooltip({
       >
         <div className="mb-1 font-medium">{label ? formatTooltipMonth(label) : "—"}</div>
         <div>
-          {valueLabel}: <span className="font-semibold">{value}</span>
+          {valueLabel}:{" "}
+          <span className="font-semibold" style={{ color: valueColor }}>
+            {value}
+          </span>
           {hasProjection && dp?.daysWithData != null && dp?.totalDaysInMonth != null && (
             <span className="ml-1 opacity-50">
               ({dp.daysWithData}/{dp.totalDaysInMonth} days)
             </span>
           )}
         </div>
+        {actualRevenue != null && (
+          <div className="mt-1">
+            Actual revenue:{" "}
+            <span className="font-semibold" style={{ color: valueColor }}>
+              {fmtValue(actualRevenue)}
+            </span>
+            {dp?.projectedTotal != null && Number.isFinite(Number(dp.projectedTotal)) ? (
+              <span className="ml-1 opacity-50">
+                (Δ {fmtValue(actualRevenue - Number(dp.projectedTotal))})
+              </span>
+            ) : null}
+          </div>
+        )}
         {hasProjection && dp?.projectedTotal != null && (
           <div
             className="mt-1 opacity-70"
             style={{ borderTop: "1px dashed var(--sb-border)", paddingTop: 4 }}
           >
             Est. full month:{" "}
-            <span className="font-semibold">{fmtValue(dp.projectedTotal)}</span>
+            <span className="font-semibold" style={{ color: valueColor }}>
+              {fmtValue(dp.projectedTotal)}
+            </span>
           </div>
         )}
       </div>
@@ -162,6 +190,8 @@ export function MonthlyBarChart({
   yTickFormat = "k",
   color,
   heightPx = 220,
+  showActualRevenue = false,
+  onMonthClick,
 }: {
   data: MonthlyDataPoint[];
   valueLabel?: string;
@@ -169,11 +199,35 @@ export function MonthlyBarChart({
   yTickFormat?: YTickFormat;
   color?: string;
   heightPx?: number;
+  showActualRevenue?: boolean;
+  onMonthClick?: (month: string) => void;
 }) {
   const gid = useId();
   const themeColors = useThemeColors();
+  const { chartStartDateIso } = useChartStartDate();
   // Use theme-aware colors from CSS variables
   const effectiveColor = color ?? themeColors.accentStroke;
+
+  // Track active month under tooltip (for click/long-press interactions)
+  const activeMonthRef = useRef<string | null>(null);
+  const lastPointerTypeRef = useRef<string | null>(null);
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
+  const LONG_PRESS_MS = 550;
+
+  const clearLongPressTimer = useCallback(() => {
+    if (longPressTimerRef.current != null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    longPressStartRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      clearLongPressTimer();
+    };
+  }, [clearLongPressTimer]);
 
   const fmtValue = (n: number) =>
     valueFormat === "usd" ? formatUsd(n) : formatInt(n);
@@ -185,16 +239,90 @@ export function MonthlyBarChart({
   };
 
   // Sort data by month (ascending) and ensure projectedExtra defaults to 0 for stacking
-  const chartData = [...data]
+  const chartData = [...filterMonthlySeriesFromIsoDate(data ?? [], chartStartDateIso)]
     .sort((a, b) => a.month.localeCompare(b.month))
     .map((d) => ({ ...d, projectedExtra: d.projectedExtra ?? 0 }));
 
+  const actualRevenuePoints = showActualRevenue
+    ? chartData
+        .map((d) => {
+          const actual = d.actualRevenueUsd == null ? null : Number(d.actualRevenueUsd);
+          const hasActual = actual != null && Number.isFinite(actual);
+          const projectedExtra = Number(d.projectedExtra ?? 0);
+          const estimatedTop = Number(d.value ?? 0) + (Number.isFinite(projectedExtra) ? projectedExtra : 0);
+          return {
+            month: d.month,
+            actualRevenueUsd: hasActual ? actual : estimatedTop,
+            _hasActual: hasActual,
+          };
+        })
+        .filter((p) => /^\d{4}-\d{2}$/.test(String(p.month ?? "")) && Number.isFinite(Number(p.actualRevenueUsd)))
+    : [];
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    // Prevent focus outline box on click (matches other charts).
+    e.preventDefault();
+  }, []);
+
+  const handlePointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      lastPointerTypeRef.current = e.pointerType ?? null;
+      const pt = e.pointerType ?? null;
+      if (pt !== "touch" && pt !== "pen") return;
+      if (!onMonthClick) return;
+
+      clearLongPressTimer();
+      longPressStartRef.current = { x: e.clientX, y: e.clientY };
+      longPressTimerRef.current = window.setTimeout(() => {
+        const m = activeMonthRef.current;
+        if (!m) return;
+        onMonthClick(m);
+      }, LONG_PRESS_MS);
+    },
+    [onMonthClick, clearLongPressTimer],
+  );
+
+  const handlePointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      const pt = e.pointerType ?? null;
+      if (pt !== "touch" && pt !== "pen") return;
+      const start = longPressStartRef.current;
+      if (!start) return;
+      const dx = e.clientX - start.x;
+      const dy = e.clientY - start.y;
+      if (Math.hypot(dx, dy) > 10) clearLongPressTimer();
+    },
+    [clearLongPressTimer],
+  );
+
+  const handlePointerUp = useCallback(() => {
+    clearLongPressTimer();
+  }, [clearLongPressTimer]);
+
+  const handlePointerCancel = useCallback(() => {
+    clearLongPressTimer();
+  }, [clearLongPressTimer]);
+
   return (
-    <div className="w-full">
+    <div
+      className="w-full overflow-visible outline-none"
+      style={{
+        outline: "none",
+        WebkitUserSelect: "none",
+        userSelect: "none",
+        WebkitTapHighlightColor: "transparent",
+      }}
+      onMouseDown={handleMouseDown}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
+    >
       <ResponsiveContainer width="100%" height={heightPx} minWidth={0}>
-        <BarChart
+        <ComposedChart
           data={chartData}
           margin={{ top: 6, right: 6, left: 0, bottom: 0 }}
+          style={{ outline: "none" }}
         >
           <defs>
             <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
@@ -224,15 +352,23 @@ export function MonthlyBarChart({
             tickFormatter={(value) => fmtYTick(Number(value ?? 0))}
           />
           <Tooltip
-            content={({ active, label, payload }) => (
-              <MonthlyTooltip
-                active={active}
-                label={label as string}
-                payload={payload as Array<{ value?: unknown; payload?: MonthlyDataPoint }>}
-                valueLabel={valueLabel}
-                fmtValue={fmtValue}
-              />
-            )}
+            content={({ active, label, payload }) => {
+              const dp =
+                active && payload && payload.length
+                  ? ((payload[0] as any)?.payload as MonthlyDataPoint)
+                  : null;
+              activeMonthRef.current = dp?.month ? String(dp.month) : null;
+              return (
+                <MonthlyTooltip
+                  active={active}
+                  label={label as string}
+                  payload={payload as Array<{ value?: unknown; payload?: MonthlyDataPoint }>}
+                  valueLabel={valueLabel}
+                  fmtValue={fmtValue}
+                  valueColor={effectiveColor}
+                />
+              );
+            }}
             cursor={{
               fill: "rgba(0,0,0,0.1)",
             }}
@@ -243,6 +379,12 @@ export function MonthlyBarChart({
             stackId="monthly"
             fill={`url(#${gid})`}
             shape={ActualBarShape}
+            onClick={(bar: any) => {
+              const pt = lastPointerTypeRef.current;
+              if (pt === "touch" || pt === "pen") return;
+              const m = String(bar?.payload?.month ?? "").trim();
+              if (m && onMonthClick) onMonthClick(m);
+            }}
           />
           {/* Projected remainder — dashed outline, faded fill, confidence-scaled opacity */}
           <Bar
@@ -250,8 +392,43 @@ export function MonthlyBarChart({
             stackId="monthly"
             fill={effectiveColor}
             shape={ProjectedBarShape}
+            onClick={(bar: any) => {
+              const pt = lastPointerTypeRef.current;
+              if (pt === "touch" || pt === "pen") return;
+              const m = String(bar?.payload?.month ?? "").trim();
+              if (m && onMonthClick) onMonthClick(m);
+            }}
           />
-        </BarChart>
+          {/* Actual revenue marker (diamond), when enabled */}
+          {showActualRevenue && actualRevenuePoints.length > 0 && (
+            <Scatter
+              data={actualRevenuePoints}
+              dataKey="actualRevenueUsd"
+              shape={(props: any) => {
+                const { cx, cy, payload } = props ?? {};
+                if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
+                const s = 6;
+                const hasActual = Boolean(payload?._hasActual);
+                return (
+                  <path
+                    d={`M ${cx} ${cy - s} L ${cx + s} ${cy} L ${cx} ${cy + s} L ${cx - s} ${cy} Z`}
+                    fill={hasActual ? "var(--sb-card)" : "transparent"}
+                    stroke={effectiveColor}
+                    strokeWidth={2}
+                    strokeDasharray={hasActual ? undefined : "3 3"}
+                    opacity={hasActual ? 0.95 : 0.35}
+                  />
+                );
+              }}
+              onClick={(dot: any) => {
+                const pt = lastPointerTypeRef.current;
+                if (pt === "touch" || pt === "pen") return;
+                const m = String(dot?.payload?.month ?? "").trim();
+                if (m && onMonthClick) onMonthClick(m);
+              }}
+            />
+          )}
+        </ComposedChart>
       </ResponsiveContainer>
     </div>
   );

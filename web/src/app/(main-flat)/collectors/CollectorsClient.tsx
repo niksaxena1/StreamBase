@@ -10,13 +10,11 @@ import { SpotlightCard } from "@/components/ui/SpotlightCard";
 import { DailyStreamsChart } from "@/components/charts/DailyStreamsChart";
 import { DailyStreamsWithMAChart } from "@/components/charts/DailyStreamsWithMAChart";
 import { MonthlyBarChart } from "@/components/charts/MonthlyBarChart";
-import { AnimatedCounter } from "@/components/ui/AnimatedCounter";
 import { Sparkline } from "@/components/charts/Sparkline";
 import { StatCard } from "@/components/StatCard";
 import { formatDateISO, formatInt, formatUsd2 } from "@/lib/format";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
 import { slugifyForFilename, todayIsoDate } from "@/lib/csv";
-import { dataDateFromRunDate } from "@/lib/sotDates";
 import {
   CollectorComparisonChart,
   COLLECTOR_COLORS,
@@ -33,9 +31,10 @@ import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { useMetric } from "@/components/metrics/MetricContext";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { Modal } from "@/components/ui/Modal";
+import { useChartStartDate } from "@/components/charts/ChartStartDateContext";
+import { filterDailySeriesFromIsoDate } from "@/components/charts/chartUtils";
 
-const METRICS = ["streams", "revenue", "tracks"] as const;
-type Metric = (typeof METRICS)[number];
+type Metric = "streams" | "revenue" | "tracks";
 
 const COLLECTOR_ORDER = ["A", "K", "N", "PL", "TG", "NL"] as const;
 
@@ -128,6 +127,10 @@ const COLLECTORS_COMPARISON_STORAGE = {
   collectors: "sb:collectors:comparison:collectors",
   mode: "sb:collectors:comparison:mode",
   granularity: "sb:collectors:comparison:granularity",
+} as const;
+
+const COLLECTORS_MONTHLY_ACTUAL_REVENUE_STORAGE = {
+  visible: "sb:collectors:monthly:actual_revenue_visible",
 } as const;
 
 import {
@@ -255,7 +258,9 @@ function aggregateMonthlyDelta(
 
   for (let i = 0; i < asc.length; i++) {
     const cur = asc[i];
-    const curDataDate = dataDateFromRunDate(cur.date);
+    // `CollectorsPage` already shifts DB run dates → data dates before passing into this client.
+    // So `cur.date` here is the *data date* (YYYY-MM-DD).
+    const curDataDate = cur.date;
     const curMonth = curDataDate.substring(0, 7); // yyyy-mm from data date
 
     // Track unique dates per month for projection calculation
@@ -263,8 +268,7 @@ function aggregateMonthlyDelta(
     daysPerMonth.get(curMonth)!.add(curDataDate);
 
     const prev = i > 0 ? asc[i - 1] : null;
-    const prevDataDate = prev ? dataDateFromRunDate(prev.date) : null;
-    const prevMonth = prevDataDate?.substring(0, 7);
+    const prevDataDate = prev ? prev.date : null;
 
     // Get the delta for this day
     let delta = 0;
@@ -388,10 +392,25 @@ export function CollectorsClient(props: {
   const searchParams = useSearchParams();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
   const { metric } = useMetric();
+  const { chartStartDateIso } = useChartStartDate();
 
   const [openPlaylists, setOpenPlaylists] = useState(true);
   const [openTracks, setOpenTracks] = useState(true);
   const [comparisonBaseline, setComparisonBaseline] = useState<"ma7" | "yday">("ma7");
+
+  const [showActualRevenue, setShowActualRevenue] = useState<boolean>(() =>
+    readStoredBool(COLLECTORS_MONTHLY_ACTUAL_REVENUE_STORAGE.visible, true),
+  );
+  useEffect(() => {
+    writeStoredBool(COLLECTORS_MONTHLY_ACTUAL_REVENUE_STORAGE.visible, showActualRevenue);
+  }, [showActualRevenue]);
+
+  const [actualRevenueByMonth, setActualRevenueByMonth] = useState<Record<string, number>>({});
+  const [forecastOpen, setForecastOpen] = useState(false);
+  const [forecastMonth, setForecastMonth] = useState<string | null>(null);
+  const [forecastValue, setForecastValue] = useState<string>("");
+  const [forecastSaving, setForecastSaving] = useState(false);
+  const [forecastError, setForecastError] = useState<string | null>(null);
 
   // Metric is global now (top bar toggle); legacy `metric` query param is ignored.
   
@@ -467,6 +486,42 @@ export function CollectorsClient(props: {
     writeStoredString(COLLECTORS_COMPARISON_STORAGE.granularity, granularity);
   }, [comparisonCollectors, comparisonMode, granularity, searchParams, router]);
 
+  // Actual monthly revenue (overlay markers + editable values).
+  useEffect(() => {
+    if (metric !== "revenue") return;
+    let cancelled = false;
+
+    async function load() {
+      try {
+        const res = await fetch(
+          `/api/collectors/monthly-revenue-forecast?collector=${encodeURIComponent(props.selectedCollector)}`,
+          { method: "GET" },
+        );
+        const json: unknown = await res.json().catch(() => null);
+        const obj = json && typeof json === "object" ? (json as Record<string, unknown>) : null;
+        if (!res.ok || obj?.ok !== true) return;
+
+        const items = Array.isArray(obj?.items) ? (obj?.items as any[]) : [];
+        const next: Record<string, number> = {};
+        for (const it of items) {
+          const month = String(it?.month ?? "").trim();
+          const amount = Number(it?.amount_usd);
+          if (!/^\d{4}-\d{2}$/.test(month)) continue;
+          if (!Number.isFinite(amount)) continue;
+          next[month] = amount;
+        }
+        if (!cancelled) setActualRevenueByMonth(next);
+      } catch {
+        // ignore (best-effort overlay)
+      }
+    }
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [metric, props.selectedCollector]);
+
   // Compute aggregated data based on granularity
   const comparisonChartData = useMemo(() => {
     // For daily, use the date-range filtered data; for others, use all-time
@@ -498,6 +553,63 @@ export function CollectorsClient(props: {
     return rows;
   }, [props.summary]);
 
+  const sparkByCollector = useMemo(() => {
+    const filtered = filterDailySeriesFromIsoDate(props.allCollectorsSeries ?? [], chartStartDateIso);
+    const byCollector = new Map<string, CollectorDailyData[]>();
+    for (const row of filtered) {
+      const c = String((row as any)?.collector ?? "").trim();
+      const d = String((row as any)?.date ?? "").trim();
+      if (!c || !d) continue;
+      const arr = byCollector.get(c) ?? [];
+      arr.push(row);
+      byCollector.set(c, arr);
+    }
+    for (const [c, arr] of byCollector) {
+      arr.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+      byCollector.set(c, arr);
+    }
+
+    const build = (collector: string) => {
+      const rows = byCollector.get(collector) ?? [];
+      if (!rows.length) return { streams: null as number[] | null, revenue: null as number[] | null, tracks: null as number[] | null };
+
+      const streams = rows.map((r) => Number((r as any)?.daily_streams_net ?? 0)).filter((n) => Number.isFinite(n));
+      const revenue = rows
+        .map((r) => {
+          const v = (r as any)?.est_revenue_daily_net;
+          const n = v == null ? Number((r as any)?.daily_streams_net ?? 0) * streamPayoutPerStreamUsd : Number(v);
+          return Number.isFinite(n) ? n : null;
+        })
+        .filter((n): n is number => n !== null);
+
+      // Daily track change (delta) from track_count totals
+      const tracksDelta: number[] = [];
+      for (let i = 1; i < rows.length; i++) {
+        const cur = Number((rows[i] as any)?.track_count ?? 0);
+        const prev = Number((rows[i - 1] as any)?.track_count ?? 0);
+        const d = Number.isFinite(cur) && Number.isFinite(prev) ? cur - prev : 0;
+        tracksDelta.push(d);
+      }
+
+      const takeLast = (arr: number[]) => (arr.length > 30 ? arr.slice(arr.length - 30) : arr);
+      return {
+        streams: takeLast(streams),
+        revenue: takeLast(revenue),
+        tracks: takeLast(tracksDelta),
+      };
+    };
+
+    const out = new Map<string, { streams: number[] | null; revenue: number[] | null; tracks: number[] | null }>();
+    for (const c of COLLECTOR_ORDER) {
+      out.set(c, build(c));
+    }
+    // Also include any non-standard collector keys present.
+    for (const c of byCollector.keys()) {
+      if (!out.has(c)) out.set(c, build(c));
+    }
+    return out;
+  }, [props.allCollectorsSeries, chartStartDateIso, streamPayoutPerStreamUsd]);
+
   function computeComparisonRow(r: CollectorSummaryRow) {
     const value =
       metric === "revenue"
@@ -524,12 +636,13 @@ export function CollectorsClient(props: {
     const ydayValue = deltaYday != null ? value - deltaYday : null;
     const ma7Value = deltaMa7 != null ? value - deltaMa7 : null;
 
+    const sparkFromDailySeries = sparkByCollector.get(r.collector);
     const spark =
       metric === "revenue"
-        ? r.spark_streams_daily?.map((n) => Number(n ?? 0) * payoutPerStreamUsd)
+        ? (sparkFromDailySeries?.revenue ?? null)
         : metric === "streams"
-          ? r.spark_streams_daily
-          : r.spark_tracks;
+          ? (sparkFromDailySeries?.streams ?? null)
+          : (sparkFromDailySeries?.tracks ?? null);
 
     const fmtValue = metric === "revenue" ? formatUsd2(value) : formatInt(value);
 
@@ -560,7 +673,7 @@ export function CollectorsClient(props: {
     const datesDesc = props.seriesDesc.map((p) => p.date);
 
     const revenueTotalDesc = datesDesc.map((d, i) => ({
-      date: dataDateFromRunDate(d),
+      date: d,
       value: Number(props.seriesDesc[i]?.total_streams_cumulative ?? 0) * streamPayoutPerStreamUsd,
     }));
     const revenueDailyDesc = datesDesc.map((d, i) => {
@@ -569,29 +682,29 @@ export function CollectorsClient(props: {
         i + 1 < props.seriesDesc.length
           ? Number(props.seriesDesc[i + 1]?.total_streams_cumulative ?? 0)
           : curTotal;
-      if (i + 1 >= props.seriesDesc.length) return { date: dataDateFromRunDate(d), daily: null };
+      if (i + 1 >= props.seriesDesc.length) return { date: d, daily: null };
       const dailyStreams = Math.max(0, curTotal - prevTotal);
-      return { date: dataDateFromRunDate(d), daily: dailyStreams * streamPayoutPerStreamUsd };
+      return { date: d, daily: dailyStreams * streamPayoutPerStreamUsd };
     });
 
-    const streamsTotalDesc = datesDesc.map((d, i) => ({ date: dataDateFromRunDate(d), value: Number(props.seriesDesc[i]?.total_streams_cumulative ?? 0) }));
+    const streamsTotalDesc = datesDesc.map((d, i) => ({ date: d, value: Number(props.seriesDesc[i]?.total_streams_cumulative ?? 0) }));
     const streamsDailyDesc = datesDesc.map((d, i) => {
       const curTotal = Number(props.seriesDesc[i]?.total_streams_cumulative ?? 0);
       const prevTotal =
         i + 1 < props.seriesDesc.length
           ? Number(props.seriesDesc[i + 1]?.total_streams_cumulative ?? 0)
           : curTotal;
-      if (i + 1 >= props.seriesDesc.length) return { date: dataDateFromRunDate(d), daily: null };
+      if (i + 1 >= props.seriesDesc.length) return { date: d, daily: null };
       const daily = Math.max(0, curTotal - prevTotal);
-      return { date: dataDateFromRunDate(d), daily };
+      return { date: d, daily };
     });
 
-    const tracksTotalDesc = datesDesc.map((d, i) => ({ date: dataDateFromRunDate(d), value: Number(props.seriesDesc[i]?.track_count ?? 0) }));
+    const tracksTotalDesc = datesDesc.map((d, i) => ({ date: d, value: Number(props.seriesDesc[i]?.track_count ?? 0) }));
     const tracksDailyDeltaDesc = datesDesc.map((d, i) => {
       const cur = Number(props.seriesDesc[i]?.track_count ?? 0);
       const prev = Number(props.seriesDesc[i + 1]?.track_count ?? 0);
       // oldest->newest diff is more intuitive, but we keep newest-first: compare to next older day
-      return { date: dataDateFromRunDate(d), daily: i + 1 < props.seriesDesc.length ? cur - prev : 0 };
+      return { date: d, daily: i + 1 < props.seriesDesc.length ? cur - prev : 0 };
     });
 
     return {
@@ -619,6 +732,15 @@ export function CollectorsClient(props: {
       tracks: aggregateMonthlyDelta(props.seriesDesc, "tracks", streamPayoutPerStreamUsd),
     };
   }, [props.seriesDesc, streamPayoutPerStreamUsd]);
+
+  const monthlyChartDataForMetric = useMemo(() => {
+    const base = monthlyData[metric];
+    if (metric !== "revenue") return base;
+    return base.map((d) => ({
+      ...d,
+      actualRevenueUsd: actualRevenueByMonth[String(d.month ?? "")] ?? null,
+    }));
+  }, [monthlyData, metric, actualRevenueByMonth]);
 
   const metricLabel = metric === "revenue" ? "Est. revenue" : metric === "streams" ? "Streams" : "Tracks";
   const dailyLabel =
@@ -682,6 +804,62 @@ export function CollectorsClient(props: {
     setDrillOffset(0);
     setDrillDone(false);
     setDrillOpen(true);
+  }
+
+  function formatMonthLong(monthKey: string): string {
+    // monthKey: YYYY-MM
+    const d = new Date(`${monthKey}-01T00:00:00Z`);
+    if (!Number.isFinite(d.getTime())) return monthKey;
+    return d.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  }
+
+  function openRevenueForecast(monthKey: string) {
+    if (metric !== "revenue") return;
+    const m = String(monthKey ?? "").trim();
+    if (!/^\d{4}-\d{2}$/.test(m)) return;
+    setForecastError(null);
+    setForecastMonth(m);
+    const existing = actualRevenueByMonth[m];
+    setForecastValue(existing == null ? "" : String(existing));
+    setForecastOpen(true);
+  }
+
+  async function saveRevenueForecast(monthKey: string, amountUsd: number | null) {
+    setForecastSaving(true);
+    setForecastError(null);
+    try {
+      const res = await fetch("/api/collectors/monthly-revenue-forecast", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          collector: props.selectedCollector,
+          month: monthKey,
+          amount_usd: amountUsd,
+        }),
+      });
+      const json: unknown = await res.json().catch(() => null);
+      const obj = json && typeof json === "object" ? (json as Record<string, unknown>) : null;
+      if (!res.ok || obj?.ok !== true) {
+        const err = obj?.error;
+        throw new Error(typeof err === "string" ? err : `Request failed (${res.status})`);
+      }
+
+      setActualRevenueByMonth((prev) => {
+        const next = { ...prev };
+        if (amountUsd == null) {
+          delete next[monthKey];
+        } else {
+          next[monthKey] = amountUsd;
+        }
+        return next;
+      });
+
+      setForecastOpen(false);
+    } catch (e) {
+      setForecastError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setForecastSaving(false);
+    }
   }
 
   useEffect(() => {
@@ -1080,7 +1258,11 @@ export function CollectorsClient(props: {
                     </TableCell>
                     <TableCell className="hidden md:table-cell">
                       <div className="h-5 w-20 opacity-60">
-                        <Sparkline data={row.spark?.slice().reverse()} trend="neutral" />
+                        <Sparkline
+                          data={row.spark ?? undefined}
+                          trend="neutral"
+                          upColor={metric === "revenue" ? valueCellColor : undefined}
+                        />
                       </div>
                     </TableCell>
                   </TableRow>
@@ -1435,6 +1617,88 @@ export function CollectorsClient(props: {
         </div>
       </Modal>
 
+      <Modal
+        open={forecastOpen}
+        onClose={() => {
+          setForecastOpen(false);
+          setForecastError(null);
+        }}
+        title="Actual revenue"
+        subtitle={
+          forecastMonth ? (
+            <span>
+              {props.selectedCollector} • {formatMonthLong(forecastMonth)}
+            </span>
+          ) : (
+            <span>{props.selectedCollector}</span>
+          )
+        }
+        maxWidthClassName="max-w-lg"
+      >
+        <div className="space-y-3">
+          <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
+            Set the actual revenue for this month (USD). This is shown as a diamond marker on the chart (when enabled).
+          </div>
+
+          <div className="space-y-1">
+            <div className="text-xs font-medium" style={{ color: "var(--sb-text)" }}>
+              Amount (USD)
+            </div>
+            <Input
+              type="text"
+              inputMode="decimal"
+              value={forecastValue}
+              onChange={(e) => setForecastValue(e.target.value)}
+              placeholder="e.g. 1234.56"
+              className="text-sm"
+            />
+          </div>
+
+          {forecastError ? (
+            <div className="text-xs text-red-600 dark:text-red-400">{forecastError}</div>
+          ) : null}
+
+          <div className="flex items-center justify-end gap-2 pt-2">
+            <button
+              type="button"
+              className="sb-ring rounded-full bg-white/60 px-3 py-2 text-xs font-medium hover:bg-white/80 dark:bg-white/10 dark:hover:bg-white/15"
+              style={{ color: "var(--sb-text)" }}
+              disabled={forecastSaving || !forecastMonth}
+              onClick={() => {
+                if (!forecastMonth) return;
+                void saveRevenueForecast(forecastMonth, null);
+              }}
+              title="Clear actual revenue for this month"
+            >
+              Clear
+            </button>
+            <button
+              type="button"
+              className="sb-ring rounded-full bg-black px-4 py-2 text-xs font-medium text-white hover:bg-black/90 disabled:opacity-60 disabled:hover:bg-black dark:bg-white dark:text-black dark:hover:bg-white/90"
+              disabled={forecastSaving || !forecastMonth}
+              onClick={() => {
+                if (!forecastMonth) return;
+                const raw = forecastValue.trim();
+                const cleaned = raw.replace(/[$,]/g, "");
+                const n = Number(cleaned);
+                if (!cleaned) {
+                  setForecastError("Enter a USD amount, or click Clear to remove.");
+                  return;
+                }
+                if (!Number.isFinite(n) || n < 0) {
+                  setForecastError("Amount must be a number (>= 0).");
+                  return;
+                }
+                void saveRevenueForecast(forecastMonth, n);
+              }}
+              title="Save actual revenue"
+            >
+              {forecastSaving ? "Saving…" : "Save"}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
       {/* Selected collector combined view */}
       <div className="sb-card p-4">
         <div className="space-y-6">
@@ -1511,23 +1775,36 @@ export function CollectorsClient(props: {
             <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
               Monthly {metric === "revenue" ? "Est. Revenue" : metric === "streams" ? "Streams" : "Track"}
             </div>
-            <ChartCsvDownloadButton
-              rows={monthlyData[metric] as unknown as Array<Record<string, unknown>>}
-              filename={`collectors-${slugifyForFilename(`monthly-${metric}`)}-${todayIsoDate()}.csv`}
-              title="Download CSV"
-            />
+            <div className="flex items-center gap-2">
+              {metric === "revenue" ? (
+                <Chip
+                  selected={showActualRevenue}
+                  onClick={() => setShowActualRevenue((v) => !v)}
+                  title="Toggle actual revenue markers"
+                >
+                  Show actual
+                </Chip>
+              ) : null}
+              <ChartCsvDownloadButton
+                rows={(metric === "revenue" ? (monthlyChartDataForMetric as any) : (monthlyData[metric] as any)) as Array<Record<string, unknown>>}
+                filename={`collectors-${slugifyForFilename(`monthly-${metric}`)}-${todayIsoDate()}.csv`}
+                title="Download CSV"
+              />
+            </div>
           </div>
           <p className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
             All-time monthly aggregation (not affected by date range)
           </p>
           <div className="mt-3 min-h-[220px]">
             <MonthlyBarChart
-              data={monthlyData[metric]}
+              data={monthlyChartDataForMetric as any}
               valueLabel={metricLabel}
               valueFormat={valueFormat as any}
               yTickFormat={yTickFormat as any}
               heightPx={220}
               color={chartColor}
+              showActualRevenue={metric === "revenue" && showActualRevenue}
+              onMonthClick={metric === "revenue" ? openRevenueForecast : undefined}
             />
           </div>
         </SpotlightCard>

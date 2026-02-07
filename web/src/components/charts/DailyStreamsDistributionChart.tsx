@@ -13,10 +13,11 @@ import {
 } from "recharts";
 import { useCallback, useEffect, useId, useMemo, useRef } from "react";
 import type { PointerEvent, MouseEvent } from "react";
-import { formatInt } from "@/lib/format";
-import { formatKmbTick } from "@/components/charts/chartUtils";
+import { formatInt, formatUsd } from "@/lib/format";
+import { formatKmbTick, formatUsdCompact } from "@/components/charts/chartUtils";
 import { useThemeColors } from "@/components/charts/useThemeColors";
 import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
+import { useCurrencyDisplay } from "@/components/currency/CurrencyDisplayContext";
 
 type TrackPoint = {
   isrc: string;
@@ -43,19 +44,6 @@ type DistributionTooltipProps = {
   onActivePayload?: (p: BucketDataPoint | null) => void;
 };
 
-function formatUsdCompact(n: number): string {
-  try {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      notation: "compact",
-      maximumFractionDigits: n < 1000 ? 2 : 1,
-    }).format(n);
-  } catch {
-    return `$${Math.round(n).toLocaleString("en-US")}`;
-  }
-}
-
 function formatBucketRangeLabel(
   min: number,
   max: number | null,
@@ -66,9 +54,9 @@ function formatBucketRangeLabel(
     const minUsd = min * payoutPerStreamUsd;
     const maxUsd = max !== null ? max * payoutPerStreamUsd : null;
     if (maxUsd === null) {
-      return `${formatUsdCompact(minUsd)}+`;
+      return `${formatUsdCompact(minUsd, formatUsd)}+`;
     }
-    return `${formatUsdCompact(minUsd)} – ${formatUsdCompact(maxUsd)}`;
+    return `${formatUsdCompact(minUsd, formatUsd)} – ${formatUsdCompact(maxUsd, formatUsd)}`;
   }
   // Streams mode
   if (max === null) {
@@ -302,6 +290,8 @@ export function DailyStreamsDistributionChart({
 }: DailyStreamsDistributionChartProps) {
   const gid = useId();
   const themeColors = useThemeColors();
+  // Subscribe so tooltips/labels can react to currency display changes.
+  useCurrencyDisplay();
 
   const totalTracks = tracks.length;
   const totalArtists = useMemo(() => {

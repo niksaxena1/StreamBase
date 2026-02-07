@@ -13,6 +13,7 @@ import { hrefWithPatchedSearchParams } from "@/lib/searchParams";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { type TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChart";
 import { computeRollingAvg7 } from "@/components/charts/chartUtils";
+import { useCurrencyDisplay } from "@/components/currency/CurrencyDisplayContext";
 
 import type { PlaylistDailyStatsRow, ManualOverrideAnnotation, ChartPoint } from "./home/homeTypes";
 import { rollSum } from "./home/homeUtils";
@@ -75,6 +76,8 @@ function HomeDashboardInner(props: {
   overrideAnnotations?: ManualOverrideAnnotation[];
 }) {
   const { metric } = useMetric();
+  // Subscribe so money values re-render when currency setting changes.
+  useCurrencyDisplay();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
   const [selectedChart, setSelectedChart] = useState<"daily" | "total">("daily");
 

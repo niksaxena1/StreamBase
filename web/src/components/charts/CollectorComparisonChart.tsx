@@ -13,11 +13,20 @@ import {
 } from "recharts";
 import { useId, useMemo } from "react";
 import { formatInt, formatUsd2 } from "@/lib/format";
-import { formatKmbTick, formatUsdCompact, getSundayAccentColor, isHighlightDayDateUtc } from "@/components/charts/chartUtils";
+import {
+  computePaddedDomain,
+  filterBucketedSeriesFromIsoDate,
+  formatKmbTick,
+  formatUsdCompact,
+  getSundayAccentColor,
+  isHighlightDayDateUtc,
+} from "@/components/charts/chartUtils";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
 import { useThemeColors } from "@/components/charts/useThemeColors";
 import { useWeekHighlight } from "@/components/charts/WeekHighlightContext";
+import { useChartStartDate } from "@/components/charts/ChartStartDateContext";
+import { useChartAxisZoom } from "@/components/charts/ChartAxisZoomContext";
 
 export const COLLECTOR_COLORS: Record<string, string> = {
   // Individuals (softer)
@@ -172,6 +181,8 @@ export function CollectorComparisonChart({
   const { streamPayoutPerStreamUsd } = usePayoutRate();
   const themeColors = useThemeColors();
   const { weekHighlightDayUtc } = useWeekHighlight();
+  const { chartStartDateIso } = useChartStartDate();
+  const { zoomDailyYAxis, zoomDailyYAxisCollectorComparison } = useChartAxisZoom();
 
   // Process data into chart format
   const chartData = useMemo(() => {
@@ -259,8 +270,8 @@ export function CollectorComparisonChart({
       result.push(point);
     }
 
-    return result;
-  }, [data, selectedCollectors, mode, metric, granularity, streamPayoutPerStreamUsd]);
+    return filterBucketedSeriesFromIsoDate(result, granularity, chartStartDateIso);
+  }, [data, selectedCollectors, mode, metric, granularity, streamPayoutPerStreamUsd, chartStartDateIso]);
 
   const formatYTick = (n: number) => {
     if (mode === "percentage") return `${n.toFixed(0)}%`;
@@ -270,6 +281,25 @@ export function CollectorComparisonChart({
 
   const yDomain = mode === "percentage" ? [0, 100] : undefined;
   const yTicks = mode === "percentage" ? [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100] : undefined;
+
+  // For daily (non-percentage) charts, zoom the Y domain so changes are easier to see.
+  const zoomedDailyDomain = useMemo(() => {
+    if (mode === "percentage") return undefined;
+    if (granularity !== "daily") return undefined;
+    if (!zoomDailyYAxis) return undefined;
+    if (!zoomDailyYAxisCollectorComparison) return undefined;
+    if (!chartData.length) return undefined;
+
+    const keys = mode === "combined" ? ["combined"] : selectedCollectors;
+    const vals: Array<number | null> = [];
+    for (const row of chartData as any[]) {
+      for (const k of keys) {
+        const n = Number((row as any)?.[k]);
+        vals.push(Number.isFinite(n) ? n : null);
+      }
+    }
+    return computePaddedDomain(vals, { clampMinToZero: false, padRatio: 0.12, minAbsPad: 1 });
+  }, [chartData, granularity, mode, selectedCollectors, zoomDailyYAxis, zoomDailyYAxisCollectorComparison]);
 
   // Determine which lines to render
   const lineKeys = mode === "combined" ? ["combined"] : selectedCollectors;
@@ -366,7 +396,7 @@ export function CollectorComparisonChart({
             tickLine={false}
             axisLine={false}
             tickFormatter={formatYTick}
-            domain={yDomain}
+            domain={zoomedDailyDomain ?? yDomain}
             ticks={yTicks}
           />
           {mode === "percentage" ? (

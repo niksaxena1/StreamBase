@@ -9,6 +9,8 @@ import { AnimatedCounter } from "@/components/ui/AnimatedCounter";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
 import { slugifyForFilename, todayIsoDate } from "@/lib/csv";
 import { useThemeColors, getChartColor } from "@/components/charts/useThemeColors";
+import { useChartStartDate } from "@/components/charts/ChartStartDateContext";
+import { filterDailySeriesFromIsoDate } from "@/components/charts/chartUtils";
 
 type ChartData = {
   date: string;
@@ -70,20 +72,24 @@ export function InteractiveChartSection({
     useState<ChartType>("daily");
   const selectedChart = selectedChartProp ?? selectedChartState;
   const setSelectedChart = onSelectChart ?? setSelectedChartState;
+  const { chartStartDateIso } = useChartStartDate();
   
   // Use theme-aware chart color if none specified
   const themeColors = useThemeColors();
   const effectiveColor = color ?? themeColors.accentStroke;
 
+  const dailyFiltered = filterDailySeriesFromIsoDate(dailyStreamsData ?? [], chartStartDateIso);
+  const totalFiltered = filterDailySeriesFromIsoDate(totalStreamsData ?? [], chartStartDateIso);
+
   const chartConfigs = {
     daily: {
       title: dailyTitle,
-      data: dailyStreamsData,
+      data: dailyFiltered,
       valueLabel: dailyValueLabel,
     },
     total: {
       title: totalTitle,
-      data: totalStreamsData,
+      data: totalFiltered,
       valueLabel: totalValueLabel,
     },
   };
@@ -105,7 +111,7 @@ export function InteractiveChartSection({
             subtitle="Lifetime"
             accent={selectedChart === "total"}
             accentColor={accentColor}
-            trendData={totalStreamsData
+            trendData={totalFiltered
               .map((d) => (Number.isFinite(Number(d.value)) ? Number(d.value) : null))
               .filter((n): n is number => n !== null)
               .slice(0, 30)
@@ -124,7 +130,7 @@ export function InteractiveChartSection({
             accent={selectedChart === "daily"}
             accentColor={accentColor}
             trend="up"
-            trendData={dailyStreamsData
+            trendData={dailyFiltered
               .map((d) => (Number.isFinite(Number(d.value)) ? Number(d.value) : null))
               .filter((n): n is number => n !== null)
               .slice(0, 30)

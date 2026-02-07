@@ -3,6 +3,17 @@
 /* Make Tailwind's `dark:` variant follow our theme toggle (html[data-theme="dark"]) */
 @custom-variant dark (&:where(html[data-theme="dark"], html[data-theme="dark"] *));
 
+/* UAE Dirham symbol font (maps 'ê' to the symbol) */
+@font-face {
+  font-family: "UAESymbol";
+  src:
+    url("/fonts/uae-symbol/font.woff2") format("woff2"),
+    url("/fonts/uae-symbol/font.woff") format("woff");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   /* SpotiBase design tokens (light-first) */
   --sb-bg: #f0f0f0;
@@ -210,7 +221,8 @@ html {
 body {
   background: var(--sb-bg);
   color: var(--sb-text);
-  font-family: var(--font-sans), ui-sans-serif, system-ui, -apple-system,
+  /* Include UAESymbol so the custom Dirham glyph renders for 'ê' */
+  font-family: UAESymbol, var(--font-sans), ui-sans-serif, system-ui, -apple-system,
     Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
     
   /* Tabular figures for better data alignment */

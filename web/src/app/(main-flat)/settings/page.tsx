@@ -11,6 +11,9 @@ import { SAISettingsToggle } from "./SAISettingsToggle";
 import { HomeFiltersToggle } from "./HomeFiltersToggle";
 import { PayoutRateSetting } from "./PayoutRateSetting";
 import { WeekHighlightDaySetting } from "./WeekHighlightDaySetting";
+import { ChartStartDateSetting } from "./ChartStartDateSetting";
+import { ChartAxisZoomSetting } from "./ChartAxisZoomSetting";
+import { CurrencyDisplaySetting } from "./CurrencyDisplaySetting";
 import { ManualStreamOverrideForm } from "./ManualStreamOverrideForm";
 import { StreamOverridesTable, StreamOverridesTableDownloadButton } from "./StreamOverridesTable";
 import { SectionHeader } from "@/components/ui/SectionHeader";
@@ -471,11 +474,14 @@ export default async function SettingsPage() {
       <div className="space-y-2">
         <SectionHeader title="Revenue" subtitle="Configure how estimated revenue is calculated from streams." />
         <PayoutRateSetting />
+        <CurrencyDisplaySetting />
       </div>
 
       <div className="space-y-2">
         <SectionHeader title="Charts" subtitle="Visual preferences for time-series charts." />
         <WeekHighlightDaySetting />
+        <ChartStartDateSetting />
+        <ChartAxisZoomSetting />
       </div>
 
       <div className="space-y-2">

@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { formatMoney } from "@/lib/format";
+import { useCurrencyDisplay } from "@/components/currency/CurrencyDisplayContext";
 
 type Format = "int" | "usd" | "raw";
 
@@ -16,23 +18,10 @@ function fmt(
 ) {
   if (format === "raw") return String(n);
   if (format === "usd") {
-    try {
-      return new Intl.NumberFormat("en-US", {
-        style: "currency",
-        currency: "USD",
-        maximumFractionDigits: usdMaximumFractionDigits,
-        minimumFractionDigits: usdMinimumFractionDigits,
-      }).format(n);
-    } catch {
-      const rounded =
-        usdMaximumFractionDigits <= 0
-          ? Math.round(n)
-          : Number(n.toFixed(usdMaximumFractionDigits));
-      return `$${rounded.toLocaleString("en-US", {
-        minimumFractionDigits: usdMinimumFractionDigits,
-        maximumFractionDigits: usdMaximumFractionDigits,
-      })}`;
-    }
+    return formatMoney(n, {
+      minimumFractionDigits: usdMinimumFractionDigits,
+      maximumFractionDigits: usdMaximumFractionDigits,
+    });
   }
   // int
   try {
@@ -64,6 +53,7 @@ export function AnimatedCounter({
   usdMaximumFractionDigits?: number;
   usdMinimumFractionDigits?: number;
 }) {
+  const { currencyDisplay } = useCurrencyDisplay();
   const safeValue = Number.isFinite(value) ? value : 0;
   const maxUsdDigits = usdMaximumFractionDigits ?? 0;
   const minUsdDigits = usdMinimumFractionDigits ?? (maxUsdDigits > 0 ? maxUsdDigits : 0);
@@ -75,7 +65,7 @@ export function AnimatedCounter({
 
   const formatted = useMemo(
     () => fmt(display, format, maxUsdDigits, minUsdDigits),
-    [display, format, maxUsdDigits, minUsdDigits],
+    [display, format, maxUsdDigits, minUsdDigits, currencyDisplay],
   );
 
   useEffect(() => {

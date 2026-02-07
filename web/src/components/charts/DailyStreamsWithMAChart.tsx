@@ -15,7 +15,9 @@ import { useEffect, useId, useRef } from "react";
 
 import { formatInt, formatUsd } from "@/lib/format";
 import {
+  computePaddedDomain,
   extractOverrideItemsFromRechartsPayload,
+  filterDailySeriesFromIsoDate,
   formatTooltipDateDaily,
   getSundayAccentColor,
   isHighlightDayDateUtc,
@@ -26,6 +28,8 @@ import { useChartCopyToClipboard, type TooltipCopyValues } from "@/components/ch
 import { useThemeColors } from "@/components/charts/useThemeColors";
 import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
 import { useWeekHighlight } from "@/components/charts/WeekHighlightContext";
+import { useChartStartDate } from "@/components/charts/ChartStartDateContext";
+import { useChartAxisZoom } from "@/components/charts/ChartAxisZoomContext";
 
 type DataPoint = {
   date: string;
@@ -202,6 +206,8 @@ export function DailyStreamsWithMAChart({
   const themeColors = useThemeColors();
   const { containerProps, setTooltipValues, copyModal } = useChartCopyToClipboard({ valueLabel });
   const { weekHighlightDayUtc } = useWeekHighlight();
+  const { chartStartDateIso } = useChartStartDate();
+  const { zoomDailyYAxis } = useChartAxisZoom();
   
   // Use theme-aware colors from CSS variables
   const effectiveDailyColor = dailyColor ?? themeColors.accentStroke;
@@ -217,7 +223,9 @@ export function DailyStreamsWithMAChart({
     annItemsByDate.set(a.date, arr);
   }
 
-  const chartData = [...data].reverse().map((d) => ({
+  const filteredData = filterDailySeriesFromIsoDate(data ?? [], chartStartDateIso);
+
+  const chartData = [...filteredData].reverse().map((d) => ({
     ...d,
     _overrideItems: (annItemsByDate.get(d.date) ?? null)?.map((a) => ({
       note: a.note,
@@ -240,6 +248,16 @@ export function DailyStreamsWithMAChart({
     if (yTickFormat === "usd_compact") return formatUsdCompact(n, formatUsd);
     return formatKmbTick(n);
   };
+
+  const yAxisDomain = zoomDailyYAxis
+    ? computePaddedDomain(
+        [
+          ...chartData.map((d) => d.daily),
+          ...chartData.map((d) => d.ma7),
+        ],
+        { clampMinToZero: false, padRatio: 0.10, minAbsPad: 1 },
+      )
+    : undefined;
 
   return (
     <div
@@ -283,6 +301,7 @@ export function DailyStreamsWithMAChart({
             tickLine={false}
             axisLine={false}
             tickFormatter={(value) => fmtYTick(Number(value ?? 0))}
+            domain={yAxisDomain}
           />
           <Tooltip
             allowEscapeViewBox={{ x: true, y: true }}

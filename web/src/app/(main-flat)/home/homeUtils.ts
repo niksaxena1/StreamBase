@@ -173,7 +173,19 @@ export function formatMilestoneForInput(n: number): string {
 }
 
 export function formatUsdCompact(n: number): string {
+  // Keep Home milestone labels consistent with the rest of the app’s currency display setting.
   try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { getCurrencyDisplay, AED_PER_USD } = require("@/lib/format") as typeof import("@/lib/format");
+    const mode = getCurrencyDisplay();
+    if (mode === "AED") {
+      const aed = n * AED_PER_USD;
+      const num = new Intl.NumberFormat("en-US", {
+        notation: "compact",
+        maximumFractionDigits: aed < 1000 ? 0 : 1,
+      }).format(aed);
+      return `AED ${num}`;
+    }
     return new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: "USD",

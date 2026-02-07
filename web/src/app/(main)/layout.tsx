@@ -4,8 +4,11 @@ import { redirect } from "next/navigation";
 import { PayoutRateProvider } from "@/components/payout/PayoutRateContext";
 import { MetricProvider } from "@/components/metrics/MetricContext";
 import { WeekHighlightProvider } from "@/components/charts/WeekHighlightContext";
+import { ChartStartDateProvider } from "@/components/charts/ChartStartDateContext";
+import { ChartAxisZoomProvider } from "@/components/charts/ChartAxisZoomContext";
 import { RollbackProvider } from "@/components/rollback/RollbackContext";
 import { KeyboardShortcutsProvider, KeyboardShortcutsHelp } from "@/components/keyboard";
+import { CurrencyDisplayProvider } from "@/components/currency/CurrencyDisplayContext";
 
 export default async function MainLayout({
   children,
@@ -26,12 +29,18 @@ export default async function MainLayout({
     <KeyboardShortcutsProvider>
       <PayoutRateProvider>
         <WeekHighlightProvider>
-          <MetricProvider defaultMetric="streams">
-            <RollbackProvider>
-              <AppShell>{children}</AppShell>
-              <KeyboardShortcutsHelp />
-            </RollbackProvider>
-          </MetricProvider>
+          <CurrencyDisplayProvider>
+            <ChartStartDateProvider>
+              <ChartAxisZoomProvider>
+                <MetricProvider defaultMetric="streams">
+                  <RollbackProvider>
+                    <AppShell>{children}</AppShell>
+                    <KeyboardShortcutsHelp />
+                  </RollbackProvider>
+                </MetricProvider>
+              </ChartAxisZoomProvider>
+            </ChartStartDateProvider>
+          </CurrencyDisplayProvider>
         </WeekHighlightProvider>
       </PayoutRateProvider>
     </KeyboardShortcutsProvider>

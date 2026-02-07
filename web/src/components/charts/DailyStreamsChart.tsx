@@ -15,7 +15,9 @@ import {
 import { useEffect, useId, useRef } from "react";
 import { formatInt, formatUsd } from "@/lib/format";
 import {
+  computePaddedDomain,
   extractOverrideItemsFromRechartsPayload,
+  filterDailySeriesFromIsoDate,
   formatTooltipDateDaily,
   getSundayAccentColor,
   isHighlightDayDateUtc,
@@ -26,6 +28,8 @@ import { useChartCopyToClipboard, type TooltipCopyValues } from "@/components/ch
 import { useThemeColors } from "@/components/charts/useThemeColors";
 import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
 import { useWeekHighlight } from "@/components/charts/WeekHighlightContext";
+import { useChartStartDate } from "@/components/charts/ChartStartDateContext";
+import { useChartAxisZoom } from "@/components/charts/ChartAxisZoomContext";
 
 type DataPoint = {
   date: string;
@@ -206,6 +210,8 @@ export function DailyStreamsChart({
   const themeColors = useThemeColors();
   const { containerProps, setTooltipValues, copyModal } = useChartCopyToClipboard({ valueLabel });
   const { weekHighlightDayUtc } = useWeekHighlight();
+  const { chartStartDateIso } = useChartStartDate();
+  const { zoomDailyYAxis } = useChartAxisZoom();
   
   // Use theme-aware colors from CSS variables
   const effectiveColor = color ?? themeColors.accentStroke;
@@ -220,8 +226,10 @@ export function DailyStreamsChart({
     annItemsByDate.set(a.date, arr);
   }
 
+  const filteredData = filterDailySeriesFromIsoDate(data ?? [], chartStartDateIso);
+
   // Reverse data if it's in descending order (newest first) -> charts usually need ascending
-  const chartData = [...data].reverse().map((d) => ({
+  const chartData = [...filteredData].reverse().map((d) => ({
     ...d,
     _overrideItems: (annItemsByDate.get(d.date) ?? null)?.map((a) => ({
       note: a.note,
@@ -234,19 +242,21 @@ export function DailyStreamsChart({
   const annotationDates = [...annItemsByDate.keys()].filter((d) => chartDates.has(d));
   const highlightDates = chartData.filter((d) => isHighlightDayDateUtc(d.date, weekHighlightDayUtc)).map((d) => d.date);
 
-  // Calculate Y-axis domain for cumulative charts (use exact min/max for better readability)
-  const yAxisDomain = isCumulative && chartData.length > 0
-    ? (() => {
-        const values = chartData
-          .map((d) => d.value)
-          .filter((v): v is number => typeof v === "number" && Number.isFinite(v));
-        if (values.length === 0) return undefined;
-        const min = Math.min(...values);
-        const max = Math.max(...values);
-        // Use exact min and max values - no padding, so the line fills the chart
-        return [min, max];
-      })()
-    : undefined;
+  // Calculate Y-axis domain:
+  // - Cumulative: exact min/max (fills chart, avoids wasted space).
+  // - Daily: "zoomed" domain around min/max with padding (improves at-a-glance deltas).
+  const yAxisDomain = (() => {
+    if (chartData.length === 0) return undefined;
+    const v = chartData.map((d) => d.value);
+    const ma = hasMA7 ? chartData.map((d) => d.ma7) : [];
+    if (isCumulative) {
+      const values = v.filter((x): x is number => typeof x === "number" && Number.isFinite(x));
+      if (!values.length) return undefined;
+      return [Math.min(...values), Math.max(...values)] as [number, number];
+    }
+    if (!zoomDailyYAxis) return undefined;
+    return computePaddedDomain([...v, ...ma], { clampMinToZero: false, padRatio: 0.10, minAbsPad: 1 });
+  })();
 
   const fmtValue = (n: number) =>
     valueFormat === "usd" ? formatUsd(n) : formatInt(n);

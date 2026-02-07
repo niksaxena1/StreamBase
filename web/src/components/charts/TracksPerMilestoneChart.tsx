@@ -13,10 +13,11 @@ import {
 } from "recharts";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { PointerEvent, MouseEvent } from "react";
-import { formatInt } from "@/lib/format";
-import { formatKmbTick } from "@/components/charts/chartUtils";
+import { formatInt, formatUsd } from "@/lib/format";
+import { formatKmbTick, formatUsdCompact } from "@/components/charts/chartUtils";
 import { useThemeColors } from "@/components/charts/useThemeColors";
 import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
+import { useCurrencyDisplay } from "@/components/currency/CurrencyDisplayContext";
 
 type TrackPoint = {
   isrc: string;
@@ -167,22 +168,9 @@ function formatMilestoneLabel(n: number): string {
   return formatInt(n);
 }
 
-function formatUsdCompact(n: number): string {
-  try {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      notation: "compact",
-      maximumFractionDigits: n < 1000 ? 0 : 1,
-    }).format(n);
-  } catch {
-    return `$${Math.round(n).toLocaleString("en-US")}`;
-  }
-}
-
 function formatRevenueMilestoneLabel(streamsMilestone: number, payoutPerStreamUsd: number): string {
   const usd = Math.max(0, Number(streamsMilestone) * Math.max(0, payoutPerStreamUsd));
-  return formatUsdCompact(usd);
+  return formatUsdCompact(usd, formatUsd);
 }
 
 /**
@@ -309,6 +297,7 @@ export function TracksPerMilestoneChart({
 }: TracksPerMilestoneChartProps) {
   const gid = useId();
   const themeColors = useThemeColors();
+  const { currencyDisplay } = useCurrencyDisplay();
 
   const totalTracks = tracks.length;
   const totalArtists = useMemo(() => {
@@ -365,7 +354,7 @@ export function TracksPerMilestoneChart({
       : generateMilestones(maxStreams);
 
     return computeMilestoneData(tracks, milestones, mode, payoutPerStreamUsd, countMode, bucketMode);
-  }, [tracks, customMilestones, mode, payoutPerStreamUsd, countMode, bucketMode]);
+  }, [tracks, customMilestones, mode, payoutPerStreamUsd, countMode, bucketMode, currencyDisplay]);
 
   const maxMilestone = chartData.length
     ? Math.max(...chartData.map((d) => d.milestone))
