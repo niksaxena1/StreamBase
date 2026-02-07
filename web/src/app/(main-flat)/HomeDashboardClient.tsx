@@ -18,6 +18,7 @@ import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { TrackStreamsXYChart, type TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChart";
 import { ArtistStreamsXYChart, aggregateTracksToArtists } from "@/components/charts/ArtistStreamsXYChart";
 import { TracksPerMilestoneChart } from "@/components/charts/TracksPerMilestoneChart";
+import { DailyStreamsDistributionChart, DEFAULT_DAILY_BUCKETS } from "@/components/charts/DailyStreamsDistributionChart";
 
 import { foldForSearch } from "@/lib/searchFold";
 import { Modal } from "@/components/ui/Modal";
@@ -89,6 +90,10 @@ const HOME_MILESTONE_SETTINGS_STORAGE = {
   customMilestones: "sb:home:milestones:custom_v1",
 } as const;
 
+const HOME_DAILY_BUCKETS_STORAGE = {
+  customBuckets: "sb:home:daily_buckets:custom_v1",
+} as const;
+
 function parseMilestonesText(
   input: string,
   args: { mode: "streams" | "revenue"; payoutPerStreamUsd: number },
@@ -142,6 +147,80 @@ function parseMilestonesText(
 
   const uniq = Array.from(new Set(out)).sort((a, b) => b - a);
   return { milestones: uniq, error: uniq.length ? null : "Please enter at least one milestone." };
+}
+
+/**
+ * Parse daily bucket text like "0-100, 100-500, 500-1K, 1K+" into bucket definitions.
+ */
+function parseDailyBucketsText(
+  input: string,
+): { buckets: Array<{ min: number; max: number | null; label: string }>; error: string | null } {
+  const raw = String(input ?? "").trim();
+  if (!raw) return { buckets: [], error: null };
+
+  const parts = raw
+    .split(/[\s,]+/g)
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  const out: Array<{ min: number; max: number | null; label: string }> = [];
+
+  for (const p0 of parts) {
+    const cleaned = p0.toLowerCase().trim();
+    
+    // Match patterns like: "0-100", "100-500", "500-1k", "1k-2.5k", "10k+", "100k+"
+    // Also support "1K-2.5K" format
+    const rangeMatch = cleaned.match(/^(\d+(?:\.\d+)?)(k|m)?[-–](\d+(?:\.\d+)?)(k|m)?$/i);
+    const openEndedMatch = cleaned.match(/^(\d+(?:\.\d+)?)(k|m)?\+$/i);
+    
+    if (rangeMatch) {
+      const minNum = Number(rangeMatch[1]);
+      const minSuffix = (rangeMatch[2] ?? "").toLowerCase();
+      const minMult = minSuffix === "k" ? 1_000 : minSuffix === "m" ? 1_000_000 : 1;
+      const min = minNum * minMult;
+
+      const maxNum = Number(rangeMatch[3]);
+      const maxSuffix = (rangeMatch[4] ?? "").toLowerCase();
+      const maxMult = maxSuffix === "k" ? 1_000 : maxSuffix === "m" ? 1_000_000 : 1;
+      const max = maxNum * maxMult;
+
+      if (!Number.isFinite(min) || !Number.isFinite(max) || min < 0 || max <= min) {
+        return { buckets: [], error: `Invalid bucket range: "${p0}"` };
+      }
+
+      out.push({ min, max, label: p0 });
+    } else if (openEndedMatch) {
+      const minNum = Number(openEndedMatch[1]);
+      const minSuffix = (openEndedMatch[2] ?? "").toLowerCase();
+      const minMult = minSuffix === "k" ? 1_000 : minSuffix === "m" ? 1_000_000 : 1;
+      const min = minNum * minMult;
+
+      if (!Number.isFinite(min) || min < 0) {
+        return { buckets: [], error: `Invalid bucket: "${p0}"` };
+      }
+
+      out.push({ min, max: null, label: p0 });
+    } else {
+      return { buckets: [], error: `Invalid bucket format: "${p0}". Use ranges like "0-100" or "10K+"` };
+    }
+  }
+
+  // Sort by min value ascending
+  out.sort((a, b) => a.min - b.min);
+
+  // Validate that buckets don't overlap and cover continuous ranges
+  for (let i = 0; i < out.length - 1; i++) {
+    const curr = out[i];
+    const next = out[i + 1];
+    if (curr.max === null) {
+      return { buckets: [], error: `Open-ended bucket "${curr.label}" must be last` };
+    }
+    if (curr.max !== next.min) {
+      return { buckets: [], error: `Buckets must be continuous: "${curr.label}" ends at ${curr.max} but "${next.label}" starts at ${next.min}` };
+    }
+  }
+
+  return { buckets: out, error: out.length ? null : "Please enter at least one bucket." };
 }
 
 function formatMilestoneForInput(n: number): string {
@@ -401,6 +480,21 @@ function HomeDashboardInner(props: {
   );
   const [openScatter, setOpenScatter] = useState(false);
   const [openMilestones, setOpenMilestones] = useState(false);
+  const [openDailyDistribution, setOpenDailyDistribution] = useState(false);
+  const [dailyDistributionCountMode, setDailyDistributionCountMode] = useState<"tracks" | "artists">("tracks");
+  const [customDailyBuckets, setCustomDailyBuckets] = useState<Array<{ min: number; max: number | null; label: string }> | null>(null);
+  const [dailyBucketsSettingsOpen, setDailyBucketsSettingsOpen] = useState(false);
+  const [dailyBucketsSettingsText, setDailyBucketsSettingsText] = useState("");
+  const [dailyBucketsSettingsError, setDailyBucketsSettingsError] = useState<string | null>(null);
+  const [dailyDistDrillOpen, setDailyDistDrillOpen] = useState(false);
+  const [dailyDistDrillBucket, setDailyDistDrillBucket] = useState<{ min: number; max: number | null; label: string } | null>(null);
+  const [dailyDistDrillView, setDailyDistDrillView] = useState<"tracks" | "artists">("tracks");
+  const [dailyDistDrillQuery, setDailyDistDrillQuery] = useState("");
+  const deferredDailyDistDrillQuery = useDeferredValue(dailyDistDrillQuery);
+  const [dailyDistDrillPage, setDailyDistDrillPage] = useState(1);
+  const [dailyDistDrillArtistImagesById, setDailyDistDrillArtistImagesById] = useState<
+    Map<string, string | null> | null
+  >(null);
   const [openHistory, setOpenHistory] = useState(false);
   const [milestoneCountMode, setMilestoneCountMode] = useState<"tracks" | "artists">("tracks");
   const [milestoneBucketMode, setMilestoneBucketMode] = useState<"cumulative" | "exclusive">(
@@ -438,22 +532,49 @@ function HomeDashboardInner(props: {
     if (!activeMilestonesForEditing.length) return 100_000;
     return Math.max(100_000, Math.min(...activeMilestonesForEditing));
   }, [activeMilestonesForEditing]);
-  const tracksBelowAnyMilestoneCount = useMemo(() => {
+  const belowMilestoneStats = useMemo(() => {
     const threshold = minActiveMilestone;
-    let count = 0;
+    let trackCount = 0;
+    const artistsBelow = new Set<string>();
+    const allArtists = new Set<string>();
+    
     for (const p of props.trackScatterPoints ?? []) {
+      // Collect all artists for total count
+      const ids = p.artist_ids ?? [];
+      for (const id of ids) {
+        if (id) allArtists.add(id);
+      }
+      
       const n = Number(p?.total_streams_cumulative ?? 0);
-      if (Number.isFinite(n) && n < threshold) count += 1;
+      if (Number.isFinite(n) && n < threshold) {
+        trackCount += 1;
+        // Collect artists from tracks below threshold
+        for (const id of ids) {
+          if (id) artistsBelow.add(id);
+        }
+      }
     }
-    return count;
+    
+    return {
+      trackCount,
+      artistCount: artistsBelow.size,
+      totalTracks: (props.trackScatterPoints ?? []).length,
+      totalArtists: allArtists.size,
+    };
   }, [minActiveMilestone, props.trackScatterPoints]);
-  const tracksBelowAnyMilestonePctLabel = useMemo(() => {
-    const total = (props.trackScatterPoints ?? []).length;
+  
+  const belowMilestoneCount = milestoneCountMode === "artists" 
+    ? belowMilestoneStats.artistCount 
+    : belowMilestoneStats.trackCount;
+  const belowMilestonePctLabel = useMemo(() => {
+    const total = milestoneCountMode === "artists" 
+      ? belowMilestoneStats.totalArtists 
+      : belowMilestoneStats.totalTracks;
     if (total <= 0) return "0%";
-    const pct = Math.max(0, Math.min(100, (tracksBelowAnyMilestoneCount / total) * 100));
+    const pct = Math.max(0, Math.min(100, (belowMilestoneCount / total) * 100));
     const s = pct >= 10 ? pct.toFixed(0) : pct.toFixed(1);
     return `${s}%`;
-  }, [props.trackScatterPoints, tracksBelowAnyMilestoneCount]);
+  }, [milestoneCountMode, belowMilestoneStats, belowMilestoneCount]);
 
   const milestoneMode: "streams" | "revenue" = metric === "revenue" ? "revenue" : "streams";
 
@@ -666,6 +787,179 @@ function HomeDashboardInner(props: {
     milestoneDrillPageStart + milestoneDrillPageSize,
   );
 
+  // Daily Distribution Drill-down data
+  const dailyDistDrillTracks = useMemo(() => {
+    const bucket = dailyDistDrillBucket;
+    if (!bucket) return [];
+
+    const q = foldForSearch(deferredDailyDistDrillQuery ?? "");
+    const out: TrackStreamsXYPoint[] = [];
+
+    for (const p of props.trackScatterPoints ?? []) {
+      const daily = Number(p?.daily_streams_delta ?? 0);
+      if (!Number.isFinite(daily) || daily < 0) continue;
+
+      // Check if track is in this bucket
+      const inBucket = bucket.max === null
+        ? daily >= bucket.min
+        : daily >= bucket.min && daily < bucket.max;
+      if (!inBucket) continue;
+
+      if (q) {
+        const isrc = String(p?.isrc ?? "");
+        const title = String(p?.name ?? "").trim();
+        const artists = (p?.artist_names ?? []).filter(Boolean).join(", ");
+
+        const isrcL = foldForSearch(isrc);
+        const titleL = foldForSearch(title);
+        const artistsL = foldForSearch(artists);
+        if (!isrcL.includes(q) && !titleL.includes(q) && !artistsL.includes(q)) continue;
+      }
+
+      out.push(p);
+    }
+
+    out.sort((a, b) => {
+      const da = Number(a?.daily_streams_delta ?? 0);
+      const db = Number(b?.daily_streams_delta ?? 0);
+      if (db !== da) return db - da;
+      const na = String(a?.name ?? "").trim();
+      const nb = String(b?.name ?? "").trim();
+      return na.localeCompare(nb);
+    });
+
+    return out;
+  }, [
+    dailyDistDrillBucket,
+    deferredDailyDistDrillQuery,
+    props.trackScatterPoints,
+  ]);
+
+  // Best-effort: load artist thumbnails for the Daily Distribution Artists view.
+  useEffect(() => {
+    if (!dailyDistDrillOpen) return;
+    if (dailyDistDrillView !== "artists") return;
+    if (dailyDistDrillArtistImagesById) return;
+
+    let cancelled = false;
+    async function load() {
+      try {
+        const res = await fetch("/api/artists/options");
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) return;
+        const rows = Array.isArray((json as any)?.artists) ? ((json as any).artists as any[]) : [];
+        const map = new Map<string, string | null>();
+        for (const r of rows) {
+          const id = String(r?.artist_id ?? "");
+          if (!id) continue;
+          map.set(id, (r?.image_url ?? null) as string | null);
+        }
+        if (!cancelled) setDailyDistDrillArtistImagesById(map);
+      } catch {
+        // ignore
+      }
+    }
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [dailyDistDrillArtistImagesById, dailyDistDrillOpen, dailyDistDrillView]);
+
+  type DailyDistDrillArtistRow = {
+    key: string;
+    artist_id: string | null;
+    artist_name: string;
+    track_count: number;
+    total_streams_cumulative: number;
+    daily_streams_delta: number;
+  };
+
+  const dailyDistDrillArtists = useMemo((): DailyDistDrillArtistRow[] => {
+    const bucket = dailyDistDrillBucket;
+    if (!bucket) return [];
+
+    const map = new Map<string, DailyDistDrillArtistRow>();
+
+    for (const p of props.trackScatterPoints ?? []) {
+      const daily = Number(p?.daily_streams_delta ?? 0);
+      if (!Number.isFinite(daily) || daily < 0) continue;
+
+      // Check if track is in this bucket
+      const inBucket = bucket.max === null
+        ? daily >= bucket.min
+        : daily >= bucket.min && daily < bucket.max;
+      if (!inBucket) continue;
+
+      const artistNames = p?.artist_names ?? [];
+      const artistIds = p?.artist_ids ?? [];
+      const perTrackSeen = new Set<string>();
+      for (let idx = 0; idx < artistNames.length; idx += 1) {
+        const id = (artistIds as any[])[idx] ?? null;
+        const label = String((artistNames as any[])[idx] ?? "").trim();
+        if (!label && !id) continue;
+        const key = id ? `id:${String(id)}` : `name:${foldForSearch(label)}`;
+        if (perTrackSeen.has(key)) continue;
+        perTrackSeen.add(key);
+
+        const existing = map.get(key);
+        if (existing) {
+          existing.track_count += 1;
+          existing.total_streams_cumulative += Number(p?.total_streams_cumulative ?? 0) || 0;
+          existing.daily_streams_delta += Number(p?.daily_streams_delta ?? 0) || 0;
+        } else {
+          map.set(key, {
+            key,
+            artist_id: id ? String(id) : null,
+            artist_name: label || (id ? String(id) : "Unknown artist"),
+            track_count: 1,
+            total_streams_cumulative: Number(p?.total_streams_cumulative ?? 0) || 0,
+            daily_streams_delta: Number(p?.daily_streams_delta ?? 0) || 0,
+          });
+        }
+      }
+    }
+
+    const q = foldForSearch(deferredDailyDistDrillQuery ?? "");
+    let out = Array.from(map.values());
+    if (q) {
+      out = out.filter((a) => {
+        const nameL = foldForSearch(a.artist_name);
+        const idL = a.artist_id ? foldForSearch(a.artist_id) : "";
+        return nameL.includes(q) || idL.includes(q);
+      });
+    }
+
+    const payout = streamPayoutPerStreamUsd;
+    out.sort((a, b) => {
+      const da = metric === "revenue" ? a.daily_streams_delta * payout : a.daily_streams_delta;
+      const db = metric === "revenue" ? b.daily_streams_delta * payout : b.daily_streams_delta;
+      if (db !== da) return db - da;
+      return a.artist_name.localeCompare(b.artist_name);
+    });
+    return out;
+  }, [
+    dailyDistDrillBucket,
+    deferredDailyDistDrillQuery,
+    metric,
+    props.trackScatterPoints,
+    streamPayoutPerStreamUsd,
+  ]);
+
+  const dailyDistDrillPageSize = 50;
+  const dailyDistDrillTotalCount = dailyDistDrillView === "artists" ? dailyDistDrillArtists.length : dailyDistDrillTracks.length;
+  const dailyDistDrillTotalPages = Math.max(1, Math.ceil(dailyDistDrillTotalCount / dailyDistDrillPageSize));
+  const dailyDistDrillSafePage = Math.min(Math.max(1, dailyDistDrillPage), dailyDistDrillTotalPages);
+  const dailyDistDrillPageStart = (dailyDistDrillSafePage - 1) * dailyDistDrillPageSize;
+  const dailyDistDrillTrackPageItems = dailyDistDrillTracks.slice(
+    dailyDistDrillPageStart,
+    dailyDistDrillPageStart + dailyDistDrillPageSize,
+  );
+  const dailyDistDrillArtistPageItems = dailyDistDrillArtists.slice(
+    dailyDistDrillPageStart,
+    dailyDistDrillPageStart + dailyDistDrillPageSize,
+  );
+
   // Restore persisted collapsible state after mount.
   useEffect(() => {
     const restoredScatter = readStoredBool(HOME_DETAILS_STORAGE.scatterOpen, false);
@@ -728,6 +1022,17 @@ function HomeDashboardInner(props: {
         const savedLocal = readStoredString(HOME_MILESTONE_SETTINGS_STORAGE.customMilestones);
         if (savedLocal) applySavedMilestones(savedLocal);
       });
+  }, []);
+
+  // Load custom daily buckets from localStorage on mount.
+  useEffect(() => {
+    const savedLocal = readStoredString(HOME_DAILY_BUCKETS_STORAGE.customBuckets);
+    if (savedLocal) {
+      const parsed = parseDailyBucketsText(savedLocal);
+      if (!parsed.error && parsed.buckets.length) {
+        setCustomDailyBuckets(parsed.buckets);
+      }
+    }
   }, []);
 
   // Fetch Home Filters setting (best-effort; defaults to enabled).
@@ -1458,7 +1763,7 @@ function HomeDashboardInner(props: {
               >
                 {openMilestones ? (
                   <div className="text-[11px] opacity-70" style={{ color: "var(--sb-muted)" }}>
-                    {formatInt(tracksBelowAnyMilestoneCount)} ({tracksBelowAnyMilestonePctLabel}) below{" "}
+                    {formatInt(belowMilestoneCount)} ({belowMilestonePctLabel}) below{" "}
                     {formatMilestoneHeaderLabel(minActiveMilestone, milestoneMode, streamPayoutPerStreamUsd)}
                   </div>
                 ) : null}
@@ -1570,6 +1875,468 @@ function HomeDashboardInner(props: {
         </details>
       )}
 
+      {/* Daily Streams Distribution Chart (collapsible) */}
+      {props.trackScatterPoints?.length > 0 && (
+        <details
+          open={openDailyDistribution}
+          onToggle={(ev) => setOpenDailyDistribution(ev.currentTarget.open)}
+          className="rounded-xl border sb-panel p-3"
+          style={{ borderColor: "var(--sb-border)" }}
+        >
+          <summary className="cursor-pointer select-none">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-2">
+                <span className="mt-0.5 flex-shrink-0 text-xs opacity-60">▸</span>
+                <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
+                  {dailyDistributionCountMode === "artists" ? "Artists" : "Tracks"} Per Daily {milestoneMode === "revenue" ? "Revenue" : "Streams"}
+                </div>
+              </div>
+
+              <div
+                className="flex items-center gap-2"
+                onMouseDown={(ev) => {
+                  ev.preventDefault();
+                  ev.stopPropagation();
+                }}
+                onClick={(ev) => {
+                  ev.preventDefault();
+                  ev.stopPropagation();
+                }}
+              >
+                {openDailyDistribution ? (
+                  <div className="flex items-center rounded-full bg-black/5 p-0.5 dark:bg-white/10">
+                    <button
+                      type="button"
+                      onClick={() => setDailyDistributionCountMode("tracks")}
+                      className={[
+                        "rounded-full px-2 py-1 text-[11px] font-medium transition",
+                        dailyDistributionCountMode === "tracks"
+                          ? "bg-black text-white dark:bg-white dark:text-black"
+                          : "text-black/70 hover:bg-white/50 dark:text-white/70 dark:hover:bg-white/20",
+                      ].join(" ")}
+                    >
+                      Tracks
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDailyDistributionCountMode("artists")}
+                      className={[
+                        "rounded-full px-2 py-1 text-[11px] font-medium transition",
+                        dailyDistributionCountMode === "artists"
+                          ? "bg-black text-white dark:bg-white dark:text-black"
+                          : "text-black/70 hover:bg-white/50 dark:text-white/70 dark:hover:bg-white/20",
+                      ].join(" ")}
+                    >
+                      Artists
+                    </button>
+                  </div>
+                ) : null}
+                {openDailyDistribution ? (
+                  <IconButton
+                    aria-label="Configure buckets"
+                    variant="ghost"
+                    size="sm"
+                    title="Configure buckets"
+                    onClick={() => {
+                      setDailyBucketsSettingsError(null);
+                      // Pre-fill with the currently active buckets
+                      const activeBuckets = customDailyBuckets ?? DEFAULT_DAILY_BUCKETS;
+                      setDailyBucketsSettingsText(
+                        activeBuckets.map((b) => b.label).join(", "),
+                      );
+                      setDailyBucketsSettingsOpen(true);
+                    }}
+                  >
+                    <Settings className="h-4 w-4 opacity-70" />
+                  </IconButton>
+                ) : null}
+              </div>
+            </div>
+          </summary>
+
+          <div className="mt-2">
+            <DailyStreamsDistributionChart
+              tracks={props.trackScatterPoints.map((p) => ({
+                isrc: p.isrc,
+                daily_streams: p.daily_streams_delta,
+                artist_ids: p.artist_ids ?? null,
+              }))}
+              heightPx={280}
+              mode={milestoneMode}
+              countMode={dailyDistributionCountMode}
+              payoutPerStreamUsd={streamPayoutPerStreamUsd}
+              customBuckets={customDailyBuckets ?? undefined}
+              highlightBucketLabel={dailyDistDrillOpen ? dailyDistDrillBucket?.label : null}
+              onBucketClick={(bucketMin, bucketMax, bucketLabel) => {
+                setDailyDistDrillBucket({ min: bucketMin, max: bucketMax, label: bucketLabel });
+                setDailyDistDrillView(dailyDistributionCountMode === "artists" ? "artists" : "tracks");
+                setDailyDistDrillQuery("");
+                setDailyDistDrillPage(1);
+                setDailyDistDrillOpen(true);
+              }}
+            />
+          </div>
+        </details>
+      )}
+
+      {/* Daily Distribution Drill-down Modal */}
+      <Modal
+        open={dailyDistDrillOpen}
+        onClose={() => {
+          setDailyDistDrillOpen(false);
+          setDailyDistDrillQuery("");
+          setDailyDistDrillPage(1);
+        }}
+        title={
+          dailyDistDrillBucket ? (
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span>{dailyDistDrillView === "artists" ? "Artists" : "Tracks"} with</span>
+              <span className="font-mono">
+                {dailyDistDrillBucket.label}
+              </span>
+              <span>daily streams</span>
+            </div>
+          ) : (
+            "Daily streams drilldown"
+          )
+        }
+        subtitle={
+          dailyDistDrillBucket ? (
+            <span>
+              Daily streams{" "}
+              {dailyDistDrillBucket.max === null ? (
+                <>≥ <span className="font-mono">{formatInt(dailyDistDrillBucket.min)}</span></>
+              ) : (
+                <><span className="font-mono">{formatInt(dailyDistDrillBucket.min)}</span> – <span className="font-mono">{formatInt(dailyDistDrillBucket.max)}</span></>
+              )}{" "}
+              <span className="opacity-70" style={{ color: "var(--sb-muted)" }}>
+                •
+              </span>{" "}
+              {formatInt(dailyDistDrillView === "artists" ? dailyDistDrillArtists.length : dailyDistDrillTracks.length)}{" "}
+              {dailyDistDrillView === "artists" ? "artists" : "tracks"}
+            </span>
+          ) : null
+        }
+        maxWidthClassName="max-w-6xl"
+      >
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex min-w-[240px] flex-1 items-center gap-2">
+              <div className="relative w-full">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 opacity-60" />
+                <input
+                  value={dailyDistDrillQuery}
+                  onChange={(e) => {
+                    setDailyDistDrillQuery(e.target.value);
+                    setDailyDistDrillPage(1);
+                  }}
+                  placeholder={dailyDistDrillView === "artists" ? "Filter by artist…" : "Filter by track, artist, or ISRC…"}
+                  className={[
+                    "sb-ring w-full rounded-xl bg-white/70 py-2 pl-10 pr-9 text-sm outline-none",
+                    "placeholder:text-black/40 dark:bg-white/5 dark:placeholder:text-white/40",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
+                  ].join(" ")}
+                  style={{ color: "var(--sb-text)" }}
+                />
+                {dailyDistDrillQuery.trim() ? (
+                  <button
+                    type="button"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 opacity-70 hover:opacity-100"
+                    style={{ color: "var(--sb-text)" }}
+                    onClick={() => {
+                      setDailyDistDrillQuery("");
+                      setDailyDistDrillPage(1);
+                    }}
+                    aria-label="Clear filter"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="flex items-center rounded-full bg-black/5 p-0.5 dark:bg-white/10">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDailyDistDrillView("tracks");
+                    setDailyDistDrillPage(1);
+                  }}
+                  className={[
+                    "rounded-full px-2 py-1 text-[11px] font-medium transition",
+                    dailyDistDrillView === "tracks"
+                      ? "bg-black text-white dark:bg-white dark:text-black"
+                      : "text-black/70 hover:bg-white/50 dark:text-white/70 dark:hover:bg-white/20",
+                  ].join(" ")}
+                >
+                  Tracks
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDailyDistDrillView("artists");
+                    setDailyDistDrillPage(1);
+                  }}
+                  className={[
+                    "rounded-full px-2 py-1 text-[11px] font-medium transition",
+                    dailyDistDrillView === "artists"
+                      ? "bg-black text-white dark:bg-white dark:text-black"
+                      : "text-black/70 hover:bg-white/50 dark:text-white/70 dark:hover:bg-white/20",
+                  ].join(" ")}
+                >
+                  Artists
+                </button>
+              </div>
+              <div className="text-xs opacity-70" style={{ color: "var(--sb-muted)" }}>
+                Showing{" "}
+                <span className="font-mono">
+                  {dailyDistDrillTotalCount ? dailyDistDrillPageStart + 1 : 0}-
+                  {Math.min(
+                    dailyDistDrillPageStart +
+                      (dailyDistDrillView === "artists"
+                        ? dailyDistDrillArtistPageItems.length
+                        : dailyDistDrillTrackPageItems.length),
+                    dailyDistDrillTotalCount,
+                  )}
+                </span>{" "}
+                of <span className="font-mono">{formatInt(dailyDistDrillTotalCount)}</span>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={dailyDistDrillSafePage <= 1}
+                onClick={() => setDailyDistDrillPage((p) => Math.max(1, p - 1))}
+              >
+                Prev
+              </Button>
+              <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
+                <span className="font-mono">{dailyDistDrillSafePage}</span> /{" "}
+                <span className="font-mono">{dailyDistDrillTotalPages}</span>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={dailyDistDrillSafePage >= dailyDistDrillTotalPages}
+                onClick={() => setDailyDistDrillPage((p) => Math.min(dailyDistDrillTotalPages, p + 1))}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+
+          {dailyDistDrillView === "tracks" ? (
+            <GlassTable
+              headers={[
+                { label: "Track" },
+                { label: "Artists" },
+                {
+                  label: metric === "revenue" ? "Daily Revenue" : "Daily Streams",
+                  align: "right",
+                },
+                {
+                  label: metric === "revenue" ? "Total Revenue" : "Total Streams",
+                  align: "right",
+                },
+              ]}
+              maxBodyHeightClassName="max-h-[60vh] overflow-auto"
+            >
+              {dailyDistDrillTrackPageItems.map((p) => {
+                const title = String(p?.name ?? "").trim() || String(p?.isrc ?? "");
+                const artists = (p?.artist_names ?? []).filter(Boolean);
+                const totalStreams = Number(p?.total_streams_cumulative ?? 0);
+                const dailyStreams = Number(p?.daily_streams_delta ?? 0);
+                const totalValue =
+                  metric === "revenue" ? totalStreams * streamPayoutPerStreamUsd : totalStreams;
+                const dailyValue =
+                  metric === "revenue" ? dailyStreams * streamPayoutPerStreamUsd : dailyStreams;
+                const metricNumberClass =
+                  metric === "revenue"
+                    ? "font-medium" // revenue uses emerald via inline style
+                    : "sb-positive font-medium";
+
+                return (
+                  <TableRow key={p.isrc}>
+                    <TableCell className="min-w-[260px]">
+                      <div className="flex items-center gap-2">
+                        {p.album_image_url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={p.album_image_url}
+                            alt=""
+                            className="h-9 w-9 rounded-md object-cover sb-ring"
+                            loading="lazy"
+                            decoding="async"
+                          />
+                        ) : (
+                          <div className="h-9 w-9 rounded-md sb-ring bg-white/60 dark:bg-white/10" />
+                        )}
+                        <div className="min-w-0">
+                          <Link
+                            href={`/catalog?isrc=${encodeURIComponent(p.isrc)}`}
+                            className="block truncate text-sm font-medium hover:underline"
+                            style={{ color: "var(--sb-text)" }}
+                            title={p.isrc}
+                          >
+                            {title}
+                          </Link>
+                          <div className="truncate text-[11px] opacity-70" style={{ color: "var(--sb-muted)" }}>
+                            <span className="font-mono">{p.isrc}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell className="min-w-[240px]">
+                      {artists.length ? (
+                        <div className="truncate text-sm" style={{ color: "var(--sb-text)" }}>
+                          {artists.map((name, idx) => {
+                            const id = (p.artist_ids ?? [])[idx] ?? null;
+                            const label = String(name ?? "").trim();
+                            if (!label) return null;
+                            const sep = idx > 0 ? (
+                              <span key={`sep-${p.isrc}-${idx}`} style={{ color: "var(--sb-muted)" }}>
+                                ,{" "}
+                              </span>
+                            ) : null;
+                            return (
+                              <span key={`${p.isrc}-${idx}`}>
+                                {sep}
+                                {id ? (
+                                  <Link
+                                    href={`/catalog?artist_id=${encodeURIComponent(id)}`}
+                                    className="hover:underline"
+                                    style={{ color: "var(--sb-text)" }}
+                                    title={id}
+                                  >
+                                    {label}
+                                  </Link>
+                                ) : (
+                                  <span>{label}</span>
+                                )}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <span className="text-sm opacity-60" style={{ color: "var(--sb-muted)" }}>
+                          —
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell numeric className={metricNumberClass} style={metric === "revenue" ? { color: "#10b981" } : undefined}>
+                      {metric === "revenue" ? formatUsd(dailyValue) : formatInt(dailyValue)}
+                    </TableCell>
+                    <TableCell numeric className={metricNumberClass} style={metric === "revenue" ? { color: "#10b981" } : undefined}>
+                      {metric === "revenue" ? formatUsd(totalValue) : formatInt(totalValue)}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+              {!dailyDistDrillTrackPageItems.length && (
+                <EmptyState
+                  colSpan={4}
+                  message={
+                    dailyDistDrillTracks.length ? "No tracks match your filter." : "No tracks found for this bucket."
+                  }
+                />
+              )}
+            </GlassTable>
+          ) : (
+            <GlassTable
+              headers={[
+                { label: "Artist" },
+                { label: "Tracks", align: "right" },
+                {
+                  label: metric === "revenue" ? "Daily Revenue" : "Daily Streams",
+                  align: "right",
+                },
+                {
+                  label: metric === "revenue" ? "Total Revenue" : "Total Streams",
+                  align: "right",
+                },
+              ]}
+              maxBodyHeightClassName="max-h-[60vh] overflow-auto"
+            >
+              {dailyDistDrillArtistPageItems.map((a) => {
+                const totalStreams = Number(a.total_streams_cumulative ?? 0);
+                const dailyStreams = Number(a.daily_streams_delta ?? 0);
+                const totalValue =
+                  metric === "revenue" ? totalStreams * streamPayoutPerStreamUsd : totalStreams;
+                const dailyValue =
+                  metric === "revenue" ? dailyStreams * streamPayoutPerStreamUsd : dailyStreams;
+                const metricNumberClass =
+                  metric === "revenue"
+                    ? "font-medium" // revenue uses emerald via inline style
+                    : "sb-positive font-medium";
+                const imageUrl = a.artist_id
+                  ? (dailyDistDrillArtistImagesById?.get(a.artist_id) ?? null)
+                  : null;
+
+                return (
+                  <TableRow key={a.key}>
+                    <TableCell className="min-w-[260px]">
+                      <div className="flex items-center gap-2">
+                        {imageUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={imageUrl}
+                            alt=""
+                            className="h-9 w-9 rounded-full object-cover sb-ring"
+                            loading="lazy"
+                            decoding="async"
+                          />
+                        ) : (
+                          <div className="h-9 w-9 rounded-full sb-ring bg-white/60 dark:bg-white/10" />
+                        )}
+
+                        <div className="min-w-0">
+                          {a.artist_id ? (
+                            <Link
+                              href={`/catalog?artist_id=${encodeURIComponent(a.artist_id)}`}
+                              className="block truncate text-sm font-medium hover:underline"
+                              style={{ color: "var(--sb-text)" }}
+                              title={a.artist_id}
+                            >
+                              {a.artist_name}
+                            </Link>
+                          ) : (
+                            <div className="truncate text-sm font-medium" style={{ color: "var(--sb-text)" }}>
+                              {a.artist_name}
+                            </div>
+                          )}
+                          {a.artist_id ? (
+                            <div className="truncate text-[11px] opacity-70" style={{ color: "var(--sb-muted)" }}>
+                              <span className="font-mono">{a.artist_id}</span>
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell numeric className="font-medium">
+                      {formatInt(a.track_count)}
+                    </TableCell>
+                    <TableCell numeric className={metricNumberClass} style={metric === "revenue" ? { color: "#10b981" } : undefined}>
+                      {metric === "revenue" ? formatUsd(dailyValue) : formatInt(dailyValue)}
+                    </TableCell>
+                    <TableCell numeric className={metricNumberClass} style={metric === "revenue" ? { color: "#10b981" } : undefined}>
+                      {metric === "revenue" ? formatUsd(totalValue) : formatInt(totalValue)}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+              {!dailyDistDrillArtistPageItems.length && (
+                <EmptyState
+                  colSpan={4}
+                  message={
+                    dailyDistDrillArtists.length ? "No artists match your filter." : "No artists found for this bucket."
+                  }
+                />
+              )}
+            </GlassTable>
+          )}
+        </div>
+      </Modal>
+
       <Modal
         open={milestoneSettingsOpen}
         onClose={() => {
@@ -1662,6 +2429,93 @@ function HomeDashboardInner(props: {
                   }).catch(() => {});
                   setMilestoneSettingsOpen(false);
                   setMilestoneSettingsError(null);
+                }}
+              >
+                Save
+              </Button>
+            </div>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Daily Buckets Settings Modal */}
+      <Modal
+        open={dailyBucketsSettingsOpen}
+        onClose={() => {
+          setDailyBucketsSettingsOpen(false);
+          setDailyBucketsSettingsError(null);
+        }}
+        title="Daily streams bucket settings"
+        subtitle="Enter bucket ranges like: 0-100, 100-500, 500-1K, 1K-5K, 5K+ (use K for thousands)"
+        maxWidthClassName="max-w-xl"
+        showCloseButton={false}
+      >
+        <div className="space-y-3">
+          <label className="block text-xs font-medium" style={{ color: "var(--sb-text)" }}>
+            Buckets
+          </label>
+          <textarea
+            value={dailyBucketsSettingsText}
+            onChange={(e) => {
+              setDailyBucketsSettingsText(e.target.value);
+              setDailyBucketsSettingsError(null);
+            }}
+            placeholder="Example: 0-100, 100-500, 500-1K, 1K-2.5K, 2.5K-5K, 5K-10K, 10K+"
+            rows={4}
+            className={[
+              "sb-ring w-full rounded-xl bg-white/70 px-3 py-2 text-sm outline-none",
+              "placeholder:text-black/40 dark:bg-white/5 dark:placeholder:text-white/40",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
+            ].join(" ")}
+            style={{ color: "var(--sb-text)" }}
+          />
+
+          {dailyBucketsSettingsError ? (
+            <div className="text-xs text-red-600 dark:text-red-400">{dailyBucketsSettingsError}</div>
+          ) : null}
+
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setCustomDailyBuckets(null);
+                setDailyBucketsSettingsText("");
+                setDailyBucketsSettingsError(null);
+                removeStoredItem(HOME_DAILY_BUCKETS_STORAGE.customBuckets);
+              }}
+            >
+              Reset to defaults
+            </Button>
+
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => {
+                  setDailyBucketsSettingsOpen(false);
+                  setDailyBucketsSettingsError(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                onClick={() => {
+                  const parsed = parseDailyBucketsText(dailyBucketsSettingsText);
+                  if (parsed.error) {
+                    setDailyBucketsSettingsError(parsed.error);
+                    return;
+                  }
+                  setCustomDailyBuckets(parsed.buckets);
+                  // Persist to localStorage
+                  writeStoredString(
+                    HOME_DAILY_BUCKETS_STORAGE.customBuckets,
+                    parsed.buckets.map((b) => b.label).join(", "),
+                  );
+                  setDailyBucketsSettingsOpen(false);
+                  setDailyBucketsSettingsError(null);
                 }}
               >
                 Save

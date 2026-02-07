@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Search, X } from "lucide-react";
+import { Search, X, Music, User, ListMusic } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import { Modal } from "@/components/ui/Modal";
 import { useMetric } from "@/components/metrics/MetricContext";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
+import { useKeyboardShortcutsSafe } from "@/components/keyboard";
 
 type SearchResult = {
   type: "track" | "artist" | "playlist";
@@ -36,6 +37,15 @@ type RecentItem = {
 
 const RECENTS_KEY = "sb_recent_search_items_v1";
 const MAX_RECENTS = 8;
+
+type TypeFilter = "all" | "track" | "artist" | "playlist";
+
+const TYPE_FILTERS: { value: TypeFilter; label: string; icon: typeof Music }[] = [
+  { value: "all", label: "All", icon: Search },
+  { value: "artist", label: "Artists", icon: User },
+  { value: "track", label: "Tracks", icon: Music },
+  { value: "playlist", label: "Playlists", icon: ListMusic },
+];
 
 function formatStreams(streams: number) {
   if (streams >= 1_000_000) return `${(streams / 1_000_000).toFixed(1)}M`;
@@ -77,6 +87,136 @@ function safeWriteRecents(items: RecentItem[]) {
   }
 }
 
+// Extracted result item component to avoid duplication
+function ResultItem({
+  result,
+  active,
+  globalIndex,
+  setActiveIndex,
+  ensureStatsLoaded,
+  navigateTo,
+  hoveredResultStats,
+  loadingStats,
+  metric,
+  streamPayoutPerStreamUsd,
+  router,
+  addRecent,
+  setQuery,
+  setResults,
+  setOpen,
+}: {
+  result: SearchResult;
+  active: boolean;
+  globalIndex: number;
+  setActiveIndex: (i: number) => void;
+  ensureStatsLoaded: (r: SearchResult) => void;
+  navigateTo: (r: SearchResult) => void;
+  hoveredResultStats: Record<string, SearchStats>;
+  loadingStats: Record<string, boolean>;
+  metric: string;
+  streamPayoutPerStreamUsd: number;
+  router: ReturnType<typeof useRouter>;
+  addRecent: (item: RecentItem) => void;
+  setQuery: (q: string) => void;
+  setResults: (r: SearchResult[]) => void;
+  setOpen: (o: boolean) => void;
+}) {
+  const statsKey = `${result.type}-${result.id}`;
+  const stats = hoveredResultStats[statsKey];
+  const isLoadingStats = loadingStats[statsKey];
+
+  const subtitle =
+    result.type === "artist" || result.type === "playlist"
+      ? `${result.trackCount || 0} track${result.trackCount !== 1 ? "s" : ""}`
+      : result.artistNames?.length
+        ? result.artistNames.join(", ")
+        : result.subtitle ?? "";
+
+  return (
+    <div
+      className={[
+        "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition",
+        active ? "bg-black/5 dark:bg-white/10" : "hover:bg-black/5 dark:hover:bg-white/5",
+      ].join(" ")}
+      onMouseEnter={() => {
+        setActiveIndex(globalIndex);
+        ensureStatsLoaded(result);
+      }}
+    >
+      <button
+        type="button"
+        className="flex flex-1 items-center gap-3 text-left min-w-0"
+        onClick={() => navigateTo(result)}
+      >
+        {result.imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={result.imageUrl}
+            alt={result.name}
+            className={`h-8 w-8 flex-shrink-0 object-cover ${result.type === "artist" ? "rounded-full" : "rounded"}`}
+          />
+        ) : (
+          <div
+            className={`h-8 w-8 flex-shrink-0 ${result.type === "artist" ? "rounded-full" : "rounded"} bg-black/10 dark:bg-white/10`}
+          />
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="truncate font-medium">{result.name}</div>
+          {result.type === "track" && result.artistIds && result.artistNames ? (
+            <div className="text-xs opacity-60">
+              {result.artistNames.map((name, idx) => (
+                <span key={result.artistIds?.[idx] ?? idx}>
+                  <button
+                    type="button"
+                    className="sb-link-hover transition-colors cursor-pointer"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const artistId = result.artistIds?.[idx];
+                      if (artistId) {
+                        router.push(`/catalog?artist_id=${encodeURIComponent(artistId)}`);
+                        addRecent({
+                          type: "artist",
+                          id: artistId,
+                          name: name,
+                        });
+                        setQuery("");
+                        setResults([]);
+                        setOpen(false);
+                      }
+                    }}
+                  >
+                    {name}
+                  </button>
+                  {idx < result.artistNames!.length - 1 && ", "}
+                </span>
+              ))}
+            </div>
+          ) : (
+            subtitle && <div className="truncate text-xs opacity-60">{subtitle}</div>
+          )}
+        </div>
+      </button>
+      <div
+        className="text-xs font-medium flex-shrink-0"
+        style={{
+          color:
+            metric === "revenue"
+              ? "#10b981"
+              : metric === "tracks"
+                ? "#3b82f6"
+                : "var(--sb-accent)",
+        }}
+      >
+        {isLoadingStats ? "…" : stats ? (
+          metric === "revenue"
+            ? formatRevenueCompact(stats.streams * streamPayoutPerStreamUsd)
+            : formatStreams(stats.streams)
+        ) : ""}
+      </div>
+    </div>
+  );
+}
+
 export function SearchBar() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -85,15 +225,24 @@ export function SearchBar() {
   const [hoveredResultStats, setHoveredResultStats] = useState<Record<string, SearchStats>>({});
   const [loadingStats, setLoadingStats] = useState<Record<string, boolean>>({});
   const [recents, setRecents] = useState<RecentItem[]>([]);
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const inputRef = useRef<HTMLInputElement | null>(null);
   const router = useRouter();
   const { metric } = useMetric();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
+  const keyboardShortcuts = useKeyboardShortcutsSafe();
 
   useEffect(() => {
     // Load recents on mount (client-only).
     setRecents(safeReadRecents());
   }, []);
+
+  // Register search opener with keyboard shortcuts provider
+  useEffect(() => {
+    if (keyboardShortcuts) {
+      keyboardShortcuts.setSearchOpener(() => setOpen(true));
+    }
+  }, [keyboardShortcuts]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -164,11 +313,16 @@ export function SearchBar() {
   }, [open, query]);
 
   const grouped = useMemo(() => {
-    const tracks = results.filter((r) => r.type === "track");
-    const artists = results.filter((r) => r.type === "artist");
-    const playlists = results.filter((r) => r.type === "playlist");
-    return { tracks, artists, playlists };
-  }, [results]);
+    // Apply type filter
+    const filtered = typeFilter === "all" 
+      ? results 
+      : results.filter((r) => r.type === typeFilter);
+    
+    const tracks = filtered.filter((r) => r.type === "track");
+    const artists = filtered.filter((r) => r.type === "artist");
+    const playlists = filtered.filter((r) => r.type === "playlist");
+    return { tracks, artists, playlists, all: filtered };
+  }, [results, typeFilter]);
 
   const orderedResults = useMemo(() => {
     // UX: always prefer Artists first (then Tracks), regardless of backend ordering.
@@ -300,6 +454,12 @@ export function SearchBar() {
         <div className="flex items-center gap-2">
           <Search className="h-4 w-4 opacity-50" />
           <span className="flex-1 truncate opacity-70">Search…</span>
+          <kbd 
+            className="hidden sm:inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium opacity-60"
+            style={{ borderColor: "var(--sb-border)", background: "var(--sb-surface)" }}
+          >
+            /
+          </kbd>
         </div>
       </button>
 
@@ -309,11 +469,12 @@ export function SearchBar() {
           setOpen(false);
           setQuery("");
           setResults([]);
+          setTypeFilter("all");
         }}
         title="Search"
         subtitle={
           <span>
-            Tracks, artists, playlists.
+            Tracks, artists, playlists. Press <kbd className="rounded border px-1.5 py-0.5 text-[10px] font-medium" style={{ borderColor: "var(--sb-border)", background: "var(--sb-surface)" }}>/</kbd> to open.
           </span>
         }
         maxWidthClassName="max-w-xl"
@@ -345,7 +506,47 @@ export function SearchBar() {
             ) : null}
           </div>
 
-          <div className="max-h-[55vh] overflow-auto rounded-xl border" style={{ borderColor: "var(--sb-border)" }}>
+          {/* Type filter tabs */}
+          <div className="flex gap-1 rounded-lg p-1" style={{ background: "var(--sb-surface)" }}>
+            {TYPE_FILTERS.map((filter) => {
+              const Icon = filter.icon;
+              const isActive = typeFilter === filter.value;
+              const count = filter.value === "all" 
+                ? results.length 
+                : results.filter(r => r.type === filter.value).length;
+              
+              return (
+                <button
+                  key={filter.value}
+                  type="button"
+                  onClick={() => setTypeFilter(filter.value)}
+                  className={[
+                    "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition",
+                    isActive
+                      ? "bg-white shadow-sm dark:bg-white/15"
+                      : "hover:bg-white/50 dark:hover:bg-white/10",
+                  ].join(" ")}
+                  style={{ color: isActive ? "var(--sb-text)" : "var(--sb-muted)" }}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  <span>{filter.label}</span>
+                  {query.trim() && count > 0 && (
+                    <span
+                      className="ml-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
+                      style={{
+                        background: isActive ? "var(--sb-accent)" : "var(--sb-border)",
+                        color: isActive ? "#000" : "var(--sb-muted)",
+                      }}
+                    >
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="max-h-[50vh] overflow-auto rounded-xl border" style={{ borderColor: "var(--sb-border)" }}>
             {!query.trim() ? (
               <div className="p-1">
                 <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wide opacity-60">
@@ -395,129 +596,80 @@ export function SearchBar() {
               </div>
             ) : isLoading ? (
               <div className="px-3 py-3 text-sm opacity-60">Searching…</div>
-            ) : results.length ? (
+            ) : grouped.all.length ? (
               <div className="p-1">
-                {(
-                  [
-                    { label: "Artists", items: grouped.artists },
-                    { label: "Tracks", items: grouped.tracks },
-                    { label: "Playlists", items: grouped.playlists },
-                  ] as const
-                ).map((group) => {
-                  if (!group.items.length) return null;
-                  return (
-                    <div key={group.label}>
-                      <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wide opacity-60">
-                        {group.label}
+                {/* When filtering by specific type, show flat list without headers */}
+                {typeFilter !== "all" ? (
+                  <div>
+                    {grouped.all.map((result) => (
+                      <ResultItem
+                        key={`${result.type}-${result.id}`}
+                        result={result}
+                        active={orderedIndexByKey.get(`${result.type}-${result.id}`) === activeIndex}
+                        globalIndex={orderedIndexByKey.get(`${result.type}-${result.id}`) ?? 0}
+                        setActiveIndex={setActiveIndex}
+                        ensureStatsLoaded={ensureStatsLoaded}
+                        navigateTo={navigateTo}
+                        hoveredResultStats={hoveredResultStats}
+                        loadingStats={loadingStats}
+                        metric={metric}
+                        streamPayoutPerStreamUsd={streamPayoutPerStreamUsd}
+                        router={router}
+                        addRecent={addRecent}
+                        setQuery={setQuery}
+                        setResults={setResults}
+                        setOpen={setOpen}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  /* Show grouped results with headers when "All" is selected */
+                  (
+                    [
+                      { label: "Artists", items: grouped.artists },
+                      { label: "Tracks", items: grouped.tracks },
+                      { label: "Playlists", items: grouped.playlists },
+                    ] as const
+                  ).map((group) => {
+                    if (!group.items.length) return null;
+                    return (
+                      <div key={group.label}>
+                        <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wide opacity-60">
+                          {group.label}
+                        </div>
+                        <div>
+                          {group.items.map((result) => (
+                            <ResultItem
+                              key={`${result.type}-${result.id}`}
+                              result={result}
+                              active={orderedIndexByKey.get(`${result.type}-${result.id}`) === activeIndex}
+                              globalIndex={orderedIndexByKey.get(`${result.type}-${result.id}`) ?? 0}
+                              setActiveIndex={setActiveIndex}
+                              ensureStatsLoaded={ensureStatsLoaded}
+                              navigateTo={navigateTo}
+                              hoveredResultStats={hoveredResultStats}
+                              loadingStats={loadingStats}
+                              metric={metric}
+                              streamPayoutPerStreamUsd={streamPayoutPerStreamUsd}
+                              router={router}
+                              addRecent={addRecent}
+                              setQuery={setQuery}
+                              setResults={setResults}
+                              setOpen={setOpen}
+                            />
+                          ))}
+                        </div>
                       </div>
-                      <div>
-                        {group.items.map((result) => {
-                          const globalIndex =
-                            orderedIndexByKey.get(`${result.type}-${result.id}`) ?? 0;
-                          const active = globalIndex === activeIndex;
-                          const statsKey = `${result.type}-${result.id}`;
-                          const stats = hoveredResultStats[statsKey];
-                          const isLoadingStats = loadingStats[statsKey];
-
-                          const subtitle =
-                            result.type === "artist" || result.type === "playlist"
-                              ? `${result.trackCount || 0} track${result.trackCount !== 1 ? "s" : ""}`
-                              : result.artistNames?.length
-                                ? result.artistNames.join(", ")
-                                : result.subtitle ?? "";
-
-                          return (
-                            <div
-                              key={statsKey}
-                              className={[
-                                "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition",
-                                active ? "bg-black/5 dark:bg-white/10" : "hover:bg-black/5 dark:hover:bg-white/5",
-                              ].join(" ")}
-                              onMouseEnter={() => {
-                                setActiveIndex(globalIndex);
-                                ensureStatsLoaded(result);
-                              }}
-                            >
-                              <button
-                                type="button"
-                                className="flex flex-1 items-center gap-3 text-left min-w-0"
-                                onClick={() => navigateTo(result)}
-                              >
-                                {result.imageUrl ? (
-                                  // eslint-disable-next-line @next/next/no-img-element
-                                  <img
-                                    src={result.imageUrl}
-                                    alt={result.name}
-                                    className={`h-8 w-8 flex-shrink-0 object-cover ${result.type === "artist" ? "rounded-full" : "rounded"}`}
-                                  />
-                                ) : (
-                                  <div
-                                    className={`h-8 w-8 flex-shrink-0 ${result.type === "artist" ? "rounded-full" : "rounded"} bg-black/10 dark:bg-white/10`}
-                                  />
-                                )}
-                                <div className="min-w-0 flex-1">
-                                  <div className="truncate font-medium">{result.name}</div>
-                                  {result.type === "track" && result.artistIds && result.artistNames ? (
-                                    <div className="text-xs opacity-60">
-                                      {result.artistNames.map((name, idx) => (
-                                        <span key={result.artistIds?.[idx] ?? idx}>
-                                          <button
-                                            type="button"
-                                            className="sb-link-hover transition-colors cursor-pointer"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              const artistId = result.artistIds?.[idx];
-                                              if (artistId) {
-                                                router.push(`/catalog?artist_id=${encodeURIComponent(artistId)}`);
-                                                addRecent({
-                                                  type: "artist",
-                                                  id: artistId,
-                                                  name: name,
-                                                });
-                                                setQuery("");
-                                                setResults([]);
-                                                setOpen(false);
-                                              }
-                                            }}
-                                          >
-                                            {name}
-                                          </button>
-                                          {idx < result.artistNames!.length - 1 && ", "}
-                                        </span>
-                                      ))}
-                                    </div>
-                                  ) : (
-                                    subtitle && <div className="truncate text-xs opacity-60">{subtitle}</div>
-                                  )}
-                                </div>
-                              </button>
-                              <div
-                                className="text-xs font-medium flex-shrink-0"
-                                style={{
-                                  color:
-                                    metric === "revenue"
-                                      ? "#10b981"
-                                      : metric === "tracks"
-                                        ? "#3b82f6"
-                                        : "var(--sb-accent)",
-                                }}
-                              >
-                                {isLoadingStats ? "…" : stats ? (
-                                  metric === "revenue"
-                                    ? formatRevenueCompact(stats.streams * streamPayoutPerStreamUsd)
-                                    : formatStreams(stats.streams)
-                                ) : ""}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })
+                )}
               </div>
             ) : (
-              <div className="px-3 py-3 text-sm opacity-60">No results found.</div>
+              <div className="px-3 py-3 text-sm opacity-60">
+                {typeFilter !== "all" 
+                  ? `No ${typeFilter}s found.` 
+                  : "No results found."}
+              </div>
             )}
           </div>
         </div>

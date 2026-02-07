@@ -40,6 +40,26 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        {/* Theme initialization script - runs synchronously before hydration to prevent flash */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                const STORAGE_KEY = "sb-theme";
+                try {
+                  const stored = localStorage.getItem(STORAGE_KEY);
+                  const theme = (stored === "light" || stored === "dark") ? stored : "dark";
+                  document.documentElement.dataset.theme = theme;
+                } catch {
+                  // ignore errors (e.g., in private browsing)
+                  document.documentElement.dataset.theme = "dark";
+                }
+              })();
+            `,
+          }}
+        />
+      </head>
       <body
         className={`${inter.variable} ${geistMono.variable} ${spaceGrotesk.variable} antialiased`}
       >

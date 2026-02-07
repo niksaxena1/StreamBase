@@ -5,6 +5,7 @@ import { PayoutRateProvider } from "@/components/payout/PayoutRateContext";
 import { MetricProvider } from "@/components/metrics/MetricContext";
 import { WeekHighlightProvider } from "@/components/charts/WeekHighlightContext";
 import { RollbackProvider } from "@/components/rollback/RollbackContext";
+import { KeyboardShortcutsProvider, KeyboardShortcutsHelp } from "@/components/keyboard";
 
 export default async function MainFlatLayout({
   children,
@@ -22,15 +23,18 @@ export default async function MainFlatLayout({
   }
 
   return (
-    <PayoutRateProvider>
-      <WeekHighlightProvider>
-        <MetricProvider defaultMetric="streams">
-          <RollbackProvider>
-            <AppShell mainSurface="plain">{children}</AppShell>
-          </RollbackProvider>
-        </MetricProvider>
-      </WeekHighlightProvider>
-    </PayoutRateProvider>
+    <KeyboardShortcutsProvider>
+      <PayoutRateProvider>
+        <WeekHighlightProvider>
+          <MetricProvider defaultMetric="streams">
+            <RollbackProvider>
+              <AppShell mainSurface="plain">{children}</AppShell>
+              <KeyboardShortcutsHelp />
+            </RollbackProvider>
+          </MetricProvider>
+        </WeekHighlightProvider>
+      </PayoutRateProvider>
+    </KeyboardShortcutsProvider>
   );
 }
 

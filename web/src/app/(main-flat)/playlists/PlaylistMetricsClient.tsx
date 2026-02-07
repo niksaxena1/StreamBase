@@ -141,7 +141,7 @@ export function PlaylistMetricsClient(props: {
         </SpotlightCard>
 
         <SpotlightCard className="lg:col-span-6 p-3 overflow-visible">
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex items-start justify-between gap-3">
             <div>
               <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
                 {dailyLabel}

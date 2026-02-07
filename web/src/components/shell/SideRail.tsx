@@ -8,6 +8,7 @@ export type Item = {
   href: string;
   label: string;
   icon: (active: boolean) => React.ReactElement;
+  shortcut?: string;
 };
 
 export const navItems: Item[] = [
@@ -15,23 +16,27 @@ export const navItems: Item[] = [
     href: "/",
     label: "Home",
     icon: (a) => <IconHome active={a} />,
+    shortcut: "1",
   },
   {
     href: "/playlists",
     label: "Playlists",
     icon: (a) => <IconList active={a} />,
+    shortcut: "2",
   },
   {
     href: "/catalog",
     label: "Catalog",
     icon: (a) => <IconVinyl active={a} />,
+    shortcut: "3",
   },
   {
     href: "/collectors",
     label: "Collectors",
     icon: (a) => <IconUser active={a} />,
+    shortcut: "4",
   },
-  { href: "/health", label: "Health", icon: (a) => <IconPulse active={a} /> },
+  { href: "/health", label: "Health", icon: (a) => <IconPulse active={a} />, shortcut: "5" },
 ];
 
 function SideRailContent({
@@ -54,7 +59,7 @@ function SideRailContent({
           <Link
             key={it.href}
             href={it.href}
-            title={it.label}
+            title={it.shortcut ? `${it.label} (${it.shortcut})` : it.label}
             className={[
               "relative grid h-9 w-9 place-items-center rounded-full transition",
               active
@@ -94,7 +99,7 @@ function SideRailContent({
           color: "#000",
           boxShadow: "var(--sb-shadow-compact)",
         }}
-        title="Settings"
+        title="Settings (g s)"
       >
         <IconGear />
       </Link>

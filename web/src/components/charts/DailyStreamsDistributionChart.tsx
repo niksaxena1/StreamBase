@@ -11,7 +11,7 @@ import {
   Cell,
   ReferenceLine,
 } from "recharts";
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef } from "react";
 import type { PointerEvent, MouseEvent } from "react";
 import { formatInt } from "@/lib/format";
 import { formatKmbTick } from "@/components/charts/chartUtils";
@@ -20,38 +20,73 @@ import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
 
 type TrackPoint = {
   isrc: string;
-  total_streams_cumulative: number;
+  daily_streams: number;
   artist_ids?: string[] | null;
 };
 
-type MilestoneDataPoint = {
-  milestone: number;
-  milestoneLabel: string;
+type BucketDataPoint = {
+  bucketMin: number;
+  bucketMax: number | null; // null means "and above"
+  bucketLabel: string;
   unique_tracks: number;
   unique_artists: number;
 };
 
-type MilestoneTooltipProps = {
+type DistributionTooltipProps = {
   active?: boolean;
-  payload?: Array<{ value?: unknown; payload?: MilestoneDataPoint }>;
-  label?: string | number;
+  payload?: Array<{ value?: unknown; payload?: BucketDataPoint }>;
   totalCount: number;
   countLabel: "Tracks" | "Artists";
   mode: "streams" | "revenue";
+  payoutPerStreamUsd: number;
   accentColor?: string;
-  onActivePayload?: (p: MilestoneDataPoint | null) => void;
+  onActivePayload?: (p: BucketDataPoint | null) => void;
 };
 
-function MilestoneTooltip({
+function formatUsdCompact(n: number): string {
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      notation: "compact",
+      maximumFractionDigits: n < 1000 ? 2 : 1,
+    }).format(n);
+  } catch {
+    return `$${Math.round(n).toLocaleString("en-US")}`;
+  }
+}
+
+function formatBucketRangeLabel(
+  min: number,
+  max: number | null,
+  mode: "streams" | "revenue",
+  payoutPerStreamUsd: number,
+): string {
+  if (mode === "revenue") {
+    const minUsd = min * payoutPerStreamUsd;
+    const maxUsd = max !== null ? max * payoutPerStreamUsd : null;
+    if (maxUsd === null) {
+      return `${formatUsdCompact(minUsd)}+`;
+    }
+    return `${formatUsdCompact(minUsd)} – ${formatUsdCompact(maxUsd)}`;
+  }
+  // Streams mode
+  if (max === null) {
+    return `${formatCompact(min)}+`;
+  }
+  return `${formatCompact(min)} – ${formatCompact(max)}`;
+}
+
+function DistributionTooltip({
   active,
   payload,
-  label,
   totalCount,
   countLabel,
   mode,
+  payoutPerStreamUsd,
   accentColor,
   onActivePayload,
-}: MilestoneTooltipProps) {
+}: DistributionTooltipProps) {
   const p = payload?.[0]?.payload ?? null;
 
   // Notify parent of the currently active payload (for long-press action).
@@ -61,6 +96,8 @@ function MilestoneTooltip({
 
   if (!active || !payload?.length) return null;
 
+  if (!p) return null;
+
   const raw = payload[0]?.value;
   const n = typeof raw === "number" ? raw : Number(raw);
   const count = Number.isFinite(n) ? n : 0;
@@ -68,6 +105,9 @@ function MilestoneTooltip({
   const pct =
     totalCount > 0 ? Math.max(0, Math.min(100, (count / totalCount) * 100)) : 0;
   const pctLabel = pct >= 10 ? pct.toFixed(0) : pct.toFixed(1);
+
+  const rangeLabel = formatBucketRangeLabel(p.bucketMin, p.bucketMax, mode, payoutPerStreamUsd);
+  const metricLabel = mode === "revenue" ? "Daily revenue" : "Daily streams";
 
   return (
     <ViewportAwareTooltip>
@@ -81,7 +121,7 @@ function MilestoneTooltip({
         }}
       >
         <div className="mb-1 font-medium">
-          {mode === "revenue" ? "Revenue milestone" : "Milestone"}: {label ?? "—"}
+          {metricLabel}: {rangeLabel}
         </div>
         <div>
           {countLabel}:{" "}
@@ -98,64 +138,26 @@ function MilestoneTooltip({
 }
 
 /**
- * Generate nice round milestone thresholds based on the data.
- * Returns milestones in descending order (highest first).
+ * Default bucket thresholds for daily streams distribution.
+ * These are designed to show the "long tail" of catalog performance.
  */
-function generateMilestones(maxStreams: number): number[] {
-  if (maxStreams <= 0) return [];
-
-  // Define possible milestone values (nice round numbers)
-  // Minimum is 100K
-  const possibleMilestones = [
-    // Billions
-    10_000_000_000, 5_000_000_000, 2_000_000_000, 1_000_000_000,
-    // Hundreds of millions
-    500_000_000, 400_000_000, 300_000_000, 200_000_000, 100_000_000,
-    // Tens of millions
-    50_000_000, 45_000_000, 40_000_000, 35_000_000, 30_000_000,
-    25_000_000, 20_000_000, 19_000_000, 18_000_000, 17_000_000,
-    16_000_000, 15_000_000, 14_000_000, 13_000_000, 12_000_000,
-    11_000_000, 10_000_000, 9_000_000, 8_000_000, 7_000_000,
-    6_000_000, 5_000_000, 4_500_000, 4_000_000, 3_500_000,
-    3_000_000, 2_500_000, 2_000_000, 1_500_000, 1_000_000,
-    // Hundreds of thousands
-    900_000, 800_000, 750_000, 700_000, 600_000, 500_000,
-    400_000, 300_000, 250_000, 200_000, 150_000, 100_000,
-  ];
-
-  // Filter to milestones that are at or below the max
-  const relevantMilestones = possibleMilestones.filter((m) => m <= maxStreams);
-
-  // If we have too many, thin them out to keep ~25-35 bars
-  const targetCount = 30;
-  if (relevantMilestones.length <= targetCount) {
-    return relevantMilestones;
-  }
-
-  // Take every Nth milestone to get roughly targetCount
-  const step = Math.ceil(relevantMilestones.length / targetCount);
-  const thinned: number[] = [];
-  for (let i = 0; i < relevantMilestones.length; i += step) {
-    thinned.push(relevantMilestones[i]);
-  }
-
-  // Always include the smallest milestone if we have data
-  const smallest = relevantMilestones[relevantMilestones.length - 1];
-  if (smallest && !thinned.includes(smallest)) {
-    thinned.push(smallest);
-  }
-
-  return thinned;
-}
+export const DEFAULT_DAILY_BUCKETS: Array<{ min: number; max: number | null; label: string }> = [
+  { min: 0, max: 100, label: "0-100" },
+  { min: 100, max: 500, label: "100-500" },
+  { min: 500, max: 1000, label: "500-1K" },
+  { min: 1000, max: 2500, label: "1K-2.5K" },
+  { min: 2500, max: 5000, label: "2.5K-5K" },
+  { min: 5000, max: 10000, label: "5K-10K" },
+  { min: 10000, max: 25000, label: "10K-25K" },
+  { min: 25000, max: 50000, label: "25K-50K" },
+  { min: 50000, max: 100000, label: "50K-100K" },
+  { min: 100000, max: null, label: "100K+" },
+];
 
 /**
- * Format milestone number as compact label (e.g., "50M", "100K")
+ * Format number compactly for labels
  */
-function formatMilestoneLabel(n: number): string {
-  if (n >= 1_000_000_000) {
-    const b = n / 1_000_000_000;
-    return `${b % 1 === 0 ? b.toFixed(0) : b.toFixed(1)}B`;
-  }
+function formatCompact(n: number): string {
   if (n >= 1_000_000) {
     const m = n / 1_000_000;
     return `${m % 1 === 0 ? m.toFixed(0) : m.toFixed(1)}M`;
@@ -167,146 +169,89 @@ function formatMilestoneLabel(n: number): string {
   return formatInt(n);
 }
 
-function formatUsdCompact(n: number): string {
-  try {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      notation: "compact",
-      maximumFractionDigits: n < 1000 ? 0 : 1,
-    }).format(n);
-  } catch {
-    return `$${Math.round(n).toLocaleString("en-US")}`;
-  }
-}
-
-function formatRevenueMilestoneLabel(streamsMilestone: number, payoutPerStreamUsd: number): string {
-  const usd = Math.max(0, Number(streamsMilestone) * Math.max(0, payoutPerStreamUsd));
-  return formatUsdCompact(usd);
-}
-
 /**
- * Compute how many tracks have reached each milestone threshold.
- * A track "reaches" a milestone if its total streams >= milestone.
+ * Compute bucket data from tracks
  */
-function computeMilestoneData(
+function computeBucketData(
   tracks: TrackPoint[],
-  milestones: number[],
-  mode: "streams" | "revenue",
-  payoutPerStreamUsd: number,
+  buckets: Array<{ min: number; max: number | null; label: string }>,
   countMode: "tracks" | "artists",
-  bucketMode: "cumulative" | "exclusive",
-): MilestoneDataPoint[] {
-  // Sort milestones ascending (lowest first for display, left to right)
-  const sorted = [...milestones].sort((a, b) => a - b);
+): BucketDataPoint[] {
+  const trackCounts = new Map<string, number>();
+  const artistSets = new Map<string, Set<string>>();
 
-  if (bucketMode === "exclusive") {
-    // Bucket each track into the highest milestone it reaches.
-    const trackCounts = new Map<number, number>();
-    const artistSets = new Map<number, Set<string>>();
-
-    for (const t of tracks) {
-      const total = Number(t?.total_streams_cumulative ?? 0);
-      if (!Number.isFinite(total) || total <= 0) continue;
-
-      let bucket: number | null = null;
-      for (const m of sorted) {
-        if (total >= m) {
-          bucket = m;
-          break;
-        }
-      }
-      if (bucket == null) continue;
-
-      trackCounts.set(bucket, (trackCounts.get(bucket) ?? 0) + 1);
-
-      if (countMode === "artists") {
-        let set = artistSets.get(bucket);
-        if (!set) {
-          set = new Set<string>();
-          artistSets.set(bucket, set);
-        }
-        const ids = t.artist_ids ?? [];
-        for (const id of ids) {
-          if (id) set.add(id);
-        }
-      }
+  // Initialize all buckets
+  for (const bucket of buckets) {
+    trackCounts.set(bucket.label, 0);
+    if (countMode === "artists") {
+      artistSets.set(bucket.label, new Set());
     }
-
-    return sorted.map((milestone) => {
-      const uniqueTracks = trackCounts.get(milestone) ?? 0;
-      const uniqueArtists = countMode === "artists" ? (artistSets.get(milestone)?.size ?? 0) : 0;
-      return {
-        milestone,
-        milestoneLabel:
-          mode === "revenue"
-            ? formatRevenueMilestoneLabel(milestone, payoutPerStreamUsd)
-            : formatMilestoneLabel(milestone),
-        unique_tracks: uniqueTracks,
-        unique_artists: uniqueArtists,
-      };
-    });
   }
 
-  // Default: cumulative / inclusive (≥ milestone)
-  return sorted.map((milestone) => {
-    const qualifying = tracks.filter((t) => (t.total_streams_cumulative ?? 0) >= milestone);
-    const uniqueTracks = qualifying.length;
-    const artistSet = new Set<string>();
-    if (countMode === "artists") {
-      for (const t of qualifying) {
-        const ids = t.artist_ids ?? [];
-        for (const id of ids) {
-          if (id) artistSet.add(id);
+  // Bucket each track
+  for (const t of tracks) {
+    const daily = Number(t?.daily_streams ?? 0);
+    if (!Number.isFinite(daily) || daily < 0) continue;
+
+    // Find the bucket this track belongs to
+    for (const bucket of buckets) {
+      const inBucket = bucket.max === null
+        ? daily >= bucket.min
+        : daily >= bucket.min && daily < bucket.max;
+
+      if (inBucket) {
+        trackCounts.set(bucket.label, (trackCounts.get(bucket.label) ?? 0) + 1);
+
+        if (countMode === "artists") {
+          const set = artistSets.get(bucket.label)!;
+          const ids = t.artist_ids ?? [];
+          for (const id of ids) {
+            if (id) set.add(id);
+          }
         }
+        break; // Track can only be in one bucket
       }
     }
-    const uniqueArtists = countMode === "artists" ? artistSet.size : 0;
-    return {
-      milestone,
-      milestoneLabel:
-        mode === "revenue"
-          ? formatRevenueMilestoneLabel(milestone, payoutPerStreamUsd)
-          : formatMilestoneLabel(milestone),
-      unique_tracks: uniqueTracks,
-      unique_artists: uniqueArtists,
-    };
-  });
+  }
+
+  return buckets.map((bucket) => ({
+    bucketMin: bucket.min,
+    bucketMax: bucket.max,
+    bucketLabel: bucket.label,
+    unique_tracks: trackCounts.get(bucket.label) ?? 0,
+    unique_artists: countMode === "artists" ? (artistSets.get(bucket.label)?.size ?? 0) : 0,
+  }));
 }
 
-
-export type TracksPerMilestoneChartProps = {
-  /** Track data with total_streams_cumulative */
+export type DailyStreamsDistributionChartProps = {
+  /** Track data with daily_streams */
   tracks: TrackPoint[];
-  /** Optional custom milestones (if not provided, auto-generated) */
-  customMilestones?: number[];
+  /** Custom bucket definitions (if not provided, uses defaults) */
+  customBuckets?: Array<{ min: number; max: number | null; label: string }>;
   /** Display mode */
   mode?: "streams" | "revenue";
   /** Count mode */
   countMode?: "tracks" | "artists";
-  /** Bucket mode */
-  bucketMode?: "cumulative" | "exclusive";
   /** USD payout per stream (required for revenue mode) */
   payoutPerStreamUsd?: number;
   /** Chart height in pixels */
   heightPx?: number;
-  /** Highlight a specific milestone */
-  highlightMilestone?: number | null;
+  /** Highlight a specific bucket */
+  highlightBucketLabel?: string | null;
   /** Callback when a bar is clicked */
-  onMilestoneClick?: (milestone: number, trackCount: number) => void;
+  onBucketClick?: (bucketMin: number, bucketMax: number | null, bucketLabel: string, count: number) => void;
 };
 
-export function TracksPerMilestoneChart({
+export function DailyStreamsDistributionChart({
   tracks,
-  customMilestones,
+  customBuckets,
   mode = "streams",
   countMode = "tracks",
-  bucketMode = "cumulative",
   payoutPerStreamUsd = 0,
   heightPx = 280,
-  highlightMilestone,
-  onMilestoneClick,
-}: TracksPerMilestoneChartProps) {
+  highlightBucketLabel,
+  onBucketClick,
+}: DailyStreamsDistributionChartProps) {
   const gid = useId();
   const themeColors = useThemeColors();
 
@@ -325,8 +270,10 @@ export function TracksPerMilestoneChart({
   const countLabel: "Tracks" | "Artists" = countMode === "artists" ? "Artists" : "Tracks";
   const accentColor = mode === "revenue" ? themeColors.revenue : themeColors.accent;
 
-  // Track the currently hovered/active milestone from the tooltip
-  const activePayloadRef = useRef<MilestoneDataPoint | null>(null);
+  const buckets = customBuckets ?? DEFAULT_DAILY_BUCKETS;
+
+  // Track the currently hovered/active bucket from the tooltip
+  const activePayloadRef = useRef<BucketDataPoint | null>(null);
   // Track pointer type to distinguish touch from mouse
   const lastPointerTypeRef = useRef<string | null>(null);
   // Long-press timer and start position
@@ -349,27 +296,14 @@ export function TracksPerMilestoneChart({
     };
   }, [clearLongPressTimer]);
 
-  const handleActivePayload = useCallback((p: MilestoneDataPoint | null) => {
+  const handleActivePayload = useCallback((p: BucketDataPoint | null) => {
     activePayloadRef.current = p;
   }, []);
 
   const chartData = useMemo(() => {
     if (!tracks.length) return [];
-
-    const maxStreams = Math.max(
-      ...tracks.map((t) => t.total_streams_cumulative ?? 0)
-    );
-
-    const milestones = customMilestones?.length
-      ? customMilestones
-      : generateMilestones(maxStreams);
-
-    return computeMilestoneData(tracks, milestones, mode, payoutPerStreamUsd, countMode, bucketMode);
-  }, [tracks, customMilestones, mode, payoutPerStreamUsd, countMode, bucketMode]);
-
-  const maxMilestone = chartData.length
-    ? Math.max(...chartData.map((d) => d.milestone))
-    : 1;
+    return computeBucketData(tracks, buckets, countMode);
+  }, [tracks, buckets, countMode]);
 
   if (!chartData.length) {
     return (
@@ -382,7 +316,7 @@ export function TracksPerMilestoneChart({
     );
   }
 
-  // Container event handlers (same pattern as useChartCopyToClipboard)
+  // Container event handlers (same pattern as TracksPerMilestoneChart)
   const handleMouseDown = (e: MouseEvent) => {
     // Prevent focus outline box on click
     e.preventDefault();
@@ -394,7 +328,7 @@ export function TracksPerMilestoneChart({
     
     // Only start long-press timer for touch/pen
     if (pt !== "touch" && pt !== "pen") return;
-    if (!onMilestoneClick) return;
+    if (!onBucketClick) return;
 
     clearLongPressTimer();
     longPressStartRef.current = { x: e.clientX, y: e.clientY };
@@ -402,7 +336,7 @@ export function TracksPerMilestoneChart({
       const p = activePayloadRef.current;
       if (!p) return;
       const count = countMode === "artists" ? p.unique_artists : p.unique_tracks;
-      onMilestoneClick(p.milestone, count);
+      onBucketClick(p.bucketMin, p.bucketMax, p.bucketLabel, count);
     }, LONG_PRESS_MS);
   };
 
@@ -433,9 +367,9 @@ export function TracksPerMilestoneChart({
     
     // Desktop click: open modal if we have an active bar
     const p = activePayloadRef.current;
-    if (!p || !onMilestoneClick) return;
+    if (!p || !onBucketClick) return;
     const count = countMode === "artists" ? p.unique_artists : p.unique_tracks;
-    onMilestoneClick(p.milestone, count);
+    onBucketClick(p.bucketMin, p.bucketMax, p.bucketLabel, count);
   };
 
   return (
@@ -461,19 +395,19 @@ export function TracksPerMilestoneChart({
           style={{ outline: "none" }}
         >
           <defs>
-            {chartData.map((d) => {
-              const ratio = Math.log10(d.milestone) / Math.log10(Math.max(maxMilestone, 1));
-              const opacity = 0.4 + 0.6 * ratio;
+            {chartData.map((d, idx) => {
+              // Gradient based on position (lower buckets = lighter)
+              const ratio = idx / Math.max(1, chartData.length - 1);
+              const opacity = 0.4 + 0.5 * ratio;
               return (
                 <linearGradient
-                  key={d.milestone}
-                  id={`${gid}-${d.milestone}`}
+                  key={d.bucketLabel}
+                  id={`${gid}-${idx}`}
                   x1="0"
                   y1="0"
                   x2="0"
                   y2="1"
                 >
-                  {/* Theme-aware color with dynamic opacity */}
                   <stop
                     offset="5%"
                     stopColor={accentColor}
@@ -482,7 +416,7 @@ export function TracksPerMilestoneChart({
                   <stop
                     offset="95%"
                     stopColor={accentColor}
-                    stopOpacity={Math.max(opacity - 0.2, 0.3)}
+                    stopOpacity={Math.max(opacity - 0.15, 0.3)}
                   />
                 </linearGradient>
               );
@@ -494,16 +428,16 @@ export function TracksPerMilestoneChart({
             stroke="var(--sb-border)"
           />
           <XAxis
-            dataKey="milestoneLabel"
+            dataKey="bucketLabel"
             stroke="var(--sb-muted)"
-            fontSize={9}
+            fontSize={10}
             tickLine={false}
             axisLine={false}
             tickMargin={4}
             interval={0}
-            angle={-45}
+            angle={-35}
             textAnchor="end"
-            height={60}
+            height={50}
           />
           <YAxis
             stroke="var(--sb-muted)"
@@ -514,23 +448,20 @@ export function TracksPerMilestoneChart({
           />
           <Tooltip
             content={
-              <MilestoneTooltip
+              <DistributionTooltip
                 totalCount={totalCount}
                 countLabel={countLabel}
                 mode={mode}
+                payoutPerStreamUsd={payoutPerStreamUsd}
                 accentColor={accentColor}
                 onActivePayload={handleActivePayload}
               />
             }
             cursor={false}
           />
-          {highlightMilestone && (
+          {highlightBucketLabel && (
             <ReferenceLine
-              x={
-                mode === "revenue"
-                  ? formatRevenueMilestoneLabel(highlightMilestone, payoutPerStreamUsd)
-                  : formatMilestoneLabel(highlightMilestone)
-              }
+              x={highlightBucketLabel}
               stroke={accentColor}
               strokeWidth={2}
               strokeDasharray="4 4"
@@ -540,12 +471,12 @@ export function TracksPerMilestoneChart({
             dataKey={countMode === "artists" ? "unique_artists" : "unique_tracks"}
             radius={[4, 4, 0, 0]}
             activeBar={false}
-            style={{ cursor: onMilestoneClick ? "pointer" : "default" }}
+            style={{ cursor: onBucketClick ? "pointer" : "default" }}
           >
-            {chartData.map((entry) => (
+            {chartData.map((entry, idx) => (
               <Cell
-                key={entry.milestone}
-                fill={`url(#${gid}-${entry.milestone})`}
+                key={entry.bucketLabel}
+                fill={`url(#${gid}-${idx})`}
               />
             ))}
           </Bar>
