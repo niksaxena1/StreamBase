@@ -12,7 +12,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { useId } from "react";
+import { memo, useId } from "react";
 import { formatInt, formatUsd } from "@/lib/format";
 import {
   computePaddedDomain,
@@ -52,7 +52,7 @@ type TooltipPayload = {
   dataKey: string;
 };
 
-export function DailyStreamsChart({
+export const DailyStreamsChart = memo(function DailyStreamsChart({
   data,
   valueLabel = "Streams",
   valueFormat = "int",
@@ -262,4 +262,4 @@ export function DailyStreamsChart({
       {copyModal}
     </div>
   );
-}
+});

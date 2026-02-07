@@ -1,6 +1,8 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+
+import { fetchUserSettingsBundle, invalidateUserSettingsBundle } from "@/lib/userSettingsBundleFetch";
 
 const DEFAULT_RATE_PER_K_USD = 2.0;
 
@@ -16,13 +18,11 @@ type PayoutRateState = {
 const PayoutRateContext = createContext<PayoutRateState | null>(null);
 
 async function fetchRate() {
-  const res = await fetch("/api/user-settings/rate", { method: "GET" });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error((data as any)?.error ?? "Failed to load rate");
-  const ratePerK = Number((data as any)?.stream_payout_rate_per_k_usd ?? DEFAULT_RATE_PER_K_USD);
+  const data = await fetchUserSettingsBundle();
+  const ratePerK = Number(data.stream_payout_rate_per_k_usd ?? DEFAULT_RATE_PER_K_USD);
   return {
     streamPayoutRatePerKUsd: Number.isFinite(ratePerK) ? ratePerK : DEFAULT_RATE_PER_K_USD,
-    configured: (data as any)?.configured !== false,
+    configured: data.configured !== false,
   };
 }
 
@@ -33,7 +33,10 @@ export function PayoutRateProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
 
-  const refetch = () => setNonce((n) => n + 1);
+  const refetch = useCallback(() => {
+    invalidateUserSettingsBundle();
+    setNonce((n) => n + 1);
+  }, []);
 
   useEffect(() => {
     let alive = true;

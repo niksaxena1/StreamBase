@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Activity } from "lucide-react";
 import { StatCard } from "@/components/StatCard";
 import { SpotlightCard } from "@/components/ui/SpotlightCard";
@@ -81,6 +81,26 @@ export function InteractiveChartSection({
   const dailyFiltered = filterDailySeriesFromIsoDate(dailyStreamsData ?? [], chartStartDateIso);
   const totalFiltered = filterDailySeriesFromIsoDate(totalStreamsData ?? [], chartStartDateIso);
 
+  const totalTrend = useMemo(
+    () =>
+      totalFiltered
+        .map((d) => (Number.isFinite(Number(d.value)) ? Number(d.value) : null))
+        .filter((n): n is number => n !== null)
+        .slice(0, 30)
+        .reverse(),
+    [totalFiltered],
+  );
+
+  const dailyTrend = useMemo(
+    () =>
+      dailyFiltered
+        .map((d) => (Number.isFinite(Number(d.value)) ? Number(d.value) : null))
+        .filter((n): n is number => n !== null)
+        .slice(0, 30)
+        .reverse(),
+    [dailyFiltered],
+  );
+
   const chartConfigs = {
     daily: {
       title: dailyTitle,
@@ -111,11 +131,7 @@ export function InteractiveChartSection({
             subtitle="Lifetime"
             accent={selectedChart === "total"}
             accentColor={accentColor}
-            trendData={totalFiltered
-              .map((d) => (Number.isFinite(Number(d.value)) ? Number(d.value) : null))
-              .filter((n): n is number => n !== null)
-              .slice(0, 30)
-              .reverse()}
+            trendData={totalTrend}
           />
         </button>
         <button
@@ -130,11 +146,7 @@ export function InteractiveChartSection({
             accent={selectedChart === "daily"}
             accentColor={accentColor}
             trend="up"
-            trendData={dailyFiltered
-              .map((d) => (Number.isFinite(Number(d.value)) ? Number(d.value) : null))
-              .filter((n): n is number => n !== null)
-              .slice(0, 30)
-              .reverse()}
+            trendData={dailyTrend}
           />
         </button>
       </div>

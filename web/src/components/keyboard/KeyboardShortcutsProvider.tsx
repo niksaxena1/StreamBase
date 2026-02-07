@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useState, useCallback, ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, useCallback, ReactNode } from "react";
 import { useRouter, usePathname } from "next/navigation";
 
 type ShortcutHandler = () => void;
@@ -50,7 +50,10 @@ export function KeyboardShortcutsProvider({ children }: { children: ReactNode })
   const router = useRouter();
   const pathname = usePathname();
   const [isHelpOpen, setIsHelpOpen] = useState(false);
-  const [searchOpener, setSearchOpener] = useState<(() => void) | null>(null);
+  // IMPORTANT: Store the search opener in a ref so registering it does NOT
+  // trigger provider re-renders (which can cause "maximum update depth exceeded"
+  // if a child registers on each render/effect).
+  const searchOpenerRef = useRef<(() => void) | null>(null);
   const [customShortcuts, setCustomShortcuts] = useState<Map<string, { handler: ShortcutHandler; description: string }>>(
     new Map()
   );
@@ -59,14 +62,11 @@ export function KeyboardShortcutsProvider({ children }: { children: ReactNode })
   const closeHelp = useCallback(() => setIsHelpOpen(false), []);
 
   const openSearch = useCallback(() => {
-    if (searchOpener) {
-      searchOpener();
-    }
-  }, [searchOpener]);
+    searchOpenerRef.current?.();
+  }, []);
 
-  // IMPORTANT: store function values safely (avoid setState(function) invoking as updater)
   const registerSearchOpener = useCallback((opener: (() => void) | null) => {
-    setSearchOpener(() => opener);
+    searchOpenerRef.current = opener;
   }, []);
 
   const registerShortcut = useCallback(

@@ -1,8 +1,9 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import type { WeekdayIndexUtc } from "@/components/charts/chartUtils";
+import { fetchUserSettingsBundle, invalidateUserSettingsBundle } from "@/lib/userSettingsBundleFetch";
 
 const DEFAULT_HIGHLIGHT_DAY_UTC: WeekdayIndexUtc = 0; // Sunday
 
@@ -23,13 +24,10 @@ function normalizeWeekdayIndexUtc(n: unknown): WeekdayIndexUtc {
 }
 
 async function fetchHighlightDay() {
-  const res = await fetch("/api/user-settings/week-highlight-day", { method: "GET" });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error((data as any)?.error ?? "Failed to load highlight day");
-
+  const data = await fetchUserSettingsBundle();
   return {
-    weekHighlightDayUtc: normalizeWeekdayIndexUtc((data as any)?.chart_week_highlight_day),
-    configured: (data as any)?.configured !== false,
+    weekHighlightDayUtc: normalizeWeekdayIndexUtc(data.chart_week_highlight_day),
+    configured: data.configured !== false,
   };
 }
 
@@ -40,7 +38,10 @@ export function WeekHighlightProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
 
-  const refetch = () => setNonce((n) => n + 1);
+  const refetch = useCallback(() => {
+    invalidateUserSettingsBundle();
+    setNonce((n) => n + 1);
+  }, []);
 
   useEffect(() => {
     let alive = true;

@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Metric } from "./MetricSelector";
 
 const STORAGE_KEY = "sb:metric";
@@ -45,8 +45,10 @@ export function MetricProvider({
     }
   }, [metric]);
 
+  const value = useMemo(() => ({ metric, setMetric }), [metric, setMetric]);
+
   return (
-    <MetricContext.Provider value={{ metric, setMetric }}>
+    <MetricContext.Provider value={value}>
       {children}
     </MetricContext.Provider>
   );

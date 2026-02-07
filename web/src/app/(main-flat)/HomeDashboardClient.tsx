@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Download, Music } from "lucide-react";
+import { fetchUserSettingsBundle, invalidateUserSettingsBundle } from "@/lib/userSettingsBundleFetch";
 
 import { useMetric } from "@/components/metrics/MetricContext";
 import { LazyInteractiveChartSection } from "@/components/dashboard/LazyInteractiveChartSection";
@@ -85,18 +86,16 @@ function HomeDashboardInner(props: {
   const [homeFiltersEnabled, setHomeFiltersEnabled] = useState(true);
   const [homeFiltersConfigured, setHomeFiltersConfigured] = useState(true);
 
-  // Fetch Home Filters setting
+  // Fetch Home Filters setting (shares request with other context providers).
   useEffect(() => {
     let cancelled = false;
 
     async function load() {
       try {
-        const res = await fetch("/api/user-settings/home-filters");
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) return;
+        const data = await fetchUserSettingsBundle();
         if (cancelled) return;
-        setHomeFiltersEnabled((data as any)?.home_filters_enabled ?? true);
-        setHomeFiltersConfigured((data as any)?.configured !== false);
+        setHomeFiltersEnabled(data.home_filters_enabled ?? true);
+        setHomeFiltersConfigured(data.configured !== false);
       } catch {
         // ignore
       }
@@ -105,6 +104,7 @@ function HomeDashboardInner(props: {
     void load();
 
     function onUpdated() {
+      invalidateUserSettingsBundle();
       void load();
     }
 

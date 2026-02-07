@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { Download } from "lucide-react";
 
 import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
@@ -296,8 +297,7 @@ export function PlaylistTracksSectionClient(props: {
               <TableRow key={t.isrc}>
                 <TableCell>
                   {t.album_image_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={t.album_image_url} alt="Album cover" className="h-8 w-8 rounded-lg object-cover sb-ring" />
+                    <Image src={t.album_image_url} alt="Album cover" width={32} height={32} className="h-8 w-8 rounded-lg object-cover sb-ring" />
                   ) : (
                     <div className="h-8 w-8 rounded-lg sb-ring bg-white/60" />
                   )}
@@ -358,10 +358,11 @@ export function PlaylistTracksSectionClient(props: {
                 <TableRow key={`${m.isrc}-${m.valid_from}-${idx}`}>
                   <TableCell>
                     {m.album_image_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
+                      <Image
                         src={m.album_image_url}
                         alt="Album cover"
+                        width={32}
+                        height={32}
                         className="h-8 w-8 rounded-lg object-cover sb-ring"
                       />
                     ) : (
@@ -422,8 +423,7 @@ export function PlaylistTracksSectionClient(props: {
                 <TableRow key={`${m.isrc}-${m.valid_from}-${idx}`}>
                   <TableCell>
                     {m.album_image_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={m.album_image_url} alt="Album cover" className="h-8 w-8 rounded-lg object-cover sb-ring" />
+                      <Image src={m.album_image_url} alt="Album cover" width={32} height={32} className="h-8 w-8 rounded-lg object-cover sb-ring" />
                     ) : (
                       <div className="h-8 w-8 rounded-lg sb-ring bg-white/60" />
                     )}

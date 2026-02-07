@@ -1,9 +1,9 @@
 "use client";
 
-import { useId } from "react";
+import { memo, useId } from "react";
 import { useThemeColors } from "@/components/charts/useThemeColors";
 
-export function Sparkline({
+export const Sparkline = memo(function Sparkline({
   data,
   trend = "neutral",
   className,
@@ -122,5 +122,5 @@ export function Sparkline({
       </defs>
     </svg>
   );
-}
+});
 

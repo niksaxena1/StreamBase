@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import Image from "next/image";
 
 import { extractOverrideItemsFromRechartsPayload, formatTooltipDateDaily } from "@/components/charts/chartUtils";
 import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
@@ -117,8 +118,7 @@ export function DailySeriesTooltip({
               {overrideItems.map((it, idx) => (
                 <div key={idx} className="flex items-start gap-2">
                   {it.imageUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={it.imageUrl} alt="" className="h-8 w-8 rounded-md object-cover sb-ring" />
+                    <Image src={it.imageUrl} alt="" width={32} height={32} className="h-8 w-8 rounded-md object-cover sb-ring" />
                   ) : (
                     <div className="h-8 w-8 rounded-md sb-ring bg-white/60 dark:bg-white/10" />
                   )}

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Activity, Search, X } from "lucide-react";
 
@@ -468,22 +468,24 @@ export function CollectorsClient(props: {
     writeStoredBool(COLLECTORS_DETAILS_STORAGE.tracksOpen, openTracks);
   }, [openTracks]);
   
-  // Update URL when comparison settings change
+  // Update URL when comparison settings change.
+  // NOTE: searchParams and router are intentionally omitted from deps to avoid a
+  // self-triggering loop (router.replace updates searchParams which re-fires this effect).
   useEffect(() => {
-    const params = new URLSearchParams(searchParams.toString());
+    const params = new URLSearchParams(window.location.search);
     params.set("collectors", comparisonCollectors.join(","));
     params.set("mode", comparisonMode);
     params.set("granularity", granularity);
-    
-    // Use replace to avoid adding to history on every change
+
     const newUrl = `?${params.toString()}`;
-    if (newUrl !== `?${searchParams.toString()}`) {
+    if (newUrl !== `?${new URLSearchParams(window.location.search).toString()}`) {
       router.replace(newUrl, { scroll: false });
     }
     writeStoredString(COLLECTORS_COMPARISON_STORAGE.collectors, comparisonCollectors.join(","));
     writeStoredString(COLLECTORS_COMPARISON_STORAGE.mode, comparisonMode);
     writeStoredString(COLLECTORS_COMPARISON_STORAGE.granularity, granularity);
-  }, [comparisonCollectors, comparisonMode, granularity, searchParams, router]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [comparisonCollectors, comparisonMode, granularity]);
 
   // Actual monthly revenue (overlay markers + editable values).
   useEffect(() => {
@@ -609,63 +611,6 @@ export function CollectorsClient(props: {
     return out;
   }, [props.allCollectorsSeries, chartStartDateIso, streamPayoutPerStreamUsd]);
 
-  function computeComparisonRow(r: CollectorSummaryRow) {
-    const value =
-      metric === "revenue"
-        ? Number(r.daily_streams_net ?? 0) * payoutPerStreamUsd
-        : metric === "streams"
-          ? Number(r.daily_streams_net ?? 0)
-          : Number(r.track_count ?? 0);
-
-    const deltaYday =
-      metric === "revenue"
-        ? (r.daily_streams_delta_yday == null ? null : Number(r.daily_streams_delta_yday) * payoutPerStreamUsd)
-        : metric === "streams"
-          ? r.daily_streams_delta_yday
-          : r.track_count_delta_yday;
-
-    const deltaMa7 =
-      metric === "revenue"
-        ? (r.daily_streams_delta_ma7 == null ? null : Number(r.daily_streams_delta_ma7) * payoutPerStreamUsd)
-        : metric === "streams"
-          ? r.daily_streams_delta_ma7
-          : r.track_count_delta_ma7;
-
-    // Calculate actual values from deltas
-    const ydayValue = deltaYday != null ? value - deltaYday : null;
-    const ma7Value = deltaMa7 != null ? value - deltaMa7 : null;
-
-    const sparkFromDailySeries = sparkByCollector.get(r.collector);
-    const spark =
-      metric === "revenue"
-        ? (sparkFromDailySeries?.revenue ?? null)
-        : metric === "streams"
-          ? (sparkFromDailySeries?.streams ?? null)
-          : (sparkFromDailySeries?.tracks ?? null);
-
-    const fmtValue = metric === "revenue" ? formatUsd2(value) : formatInt(value);
-
-    const fmtYdayOrMa7 =
-      metric === "revenue"
-        ? (n: number | null | undefined) => (n == null ? "—" : formatUsd2(n))
-        : (n: number | null | undefined) => (n == null ? "—" : formatInt(n));
-
-    const href = `?collector=${encodeURIComponent(r.collector)}&range=${props.rangeDays}`;
-    const isSelectedCollector = r.collector === props.selectedCollector;
-
-    return {
-      value,
-      ydayValue,
-      ma7Value,
-      spark,
-      fmtValue,
-      fmtYday: fmtYdayOrMa7(ydayValue),
-      fmtMa7: fmtYdayOrMa7(ma7Value),
-      href,
-      isSelectedCollector,
-    } as const;
-  }
-
   const latest = props.seriesDesc[0] ?? null;
 
   const series = useMemo(() => {
@@ -754,6 +699,66 @@ export function CollectorsClient(props: {
     metric === "revenue" ? "#10b981" : metric === "streams" ? "var(--sb-accent)" : "var(--sb-text)";
 
   const payoutPerStreamUsd = streamPayoutPerStreamUsd;
+
+  const computeComparisonRow = useCallback(
+    (r: CollectorSummaryRow) => {
+      const value =
+        metric === "revenue"
+          ? Number(r.daily_streams_net ?? 0) * payoutPerStreamUsd
+          : metric === "streams"
+            ? Number(r.daily_streams_net ?? 0)
+            : Number(r.track_count ?? 0);
+
+      const deltaYday =
+        metric === "revenue"
+          ? (r.daily_streams_delta_yday == null ? null : Number(r.daily_streams_delta_yday) * payoutPerStreamUsd)
+          : metric === "streams"
+            ? r.daily_streams_delta_yday
+            : r.track_count_delta_yday;
+
+      const deltaMa7 =
+        metric === "revenue"
+          ? (r.daily_streams_delta_ma7 == null ? null : Number(r.daily_streams_delta_ma7) * payoutPerStreamUsd)
+          : metric === "streams"
+            ? r.daily_streams_delta_ma7
+            : r.track_count_delta_ma7;
+
+      // Calculate actual values from deltas
+      const ydayValue = deltaYday != null ? value - deltaYday : null;
+      const ma7Value = deltaMa7 != null ? value - deltaMa7 : null;
+
+      const sparkFromDailySeries = sparkByCollector.get(r.collector);
+      const spark =
+        metric === "revenue"
+          ? (sparkFromDailySeries?.revenue ?? null)
+          : metric === "streams"
+            ? (sparkFromDailySeries?.streams ?? null)
+            : (sparkFromDailySeries?.tracks ?? null);
+
+      const fmtValue = metric === "revenue" ? formatUsd2(value) : formatInt(value);
+
+      const fmtYdayOrMa7 =
+        metric === "revenue"
+          ? (n: number | null | undefined) => (n == null ? "—" : formatUsd2(n))
+          : (n: number | null | undefined) => (n == null ? "—" : formatInt(n));
+
+      const href = `?collector=${encodeURIComponent(r.collector)}&range=${props.rangeDays}`;
+      const isSelectedCollector = r.collector === props.selectedCollector;
+
+      return {
+        value,
+        ydayValue,
+        ma7Value,
+        spark,
+        fmtValue,
+        fmtYday: fmtYdayOrMa7(ydayValue),
+        fmtMa7: fmtYdayOrMa7(ma7Value),
+        href,
+        isSelectedCollector,
+      } as const;
+    },
+    [metric, payoutPerStreamUsd, sparkByCollector, props.rangeDays, props.selectedCollector],
+  );
 
   const [trackQuery, setTrackQuery] = useState("");
   const [trackSort, setTrackSort] = useState<TrackSort>("delta_desc");

@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { setCurrencyDisplay, type CurrencyDisplay } from "@/lib/format";
+import { fetchUserSettingsBundle, invalidateUserSettingsBundle } from "@/lib/userSettingsBundleFetch";
 
 type CurrencyDisplayState = {
   currencyDisplay: CurrencyDisplay;
@@ -15,12 +16,10 @@ type CurrencyDisplayState = {
 const CurrencyDisplayContext = createContext<CurrencyDisplayState | null>(null);
 
 async function fetchCurrencyDisplay() {
-  const res = await fetch("/api/user-settings/currency-display", { method: "GET" });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error((data as any)?.error ?? "Failed to load currency setting");
-  const raw = String((data as any)?.currency_display ?? "USD").toUpperCase();
+  const data = await fetchUserSettingsBundle();
+  const raw = String(data.currency_display ?? "USD").toUpperCase();
   const currencyDisplay: CurrencyDisplay = raw === "AED" ? "AED" : "USD";
-  return { currencyDisplay, configured: (data as any)?.configured !== false };
+  return { currencyDisplay, configured: data.configured !== false };
 }
 
 export function CurrencyDisplayProvider({ children }: { children: ReactNode }) {
@@ -30,7 +29,10 @@ export function CurrencyDisplayProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
 
-  const refetch = useCallback(() => setNonce((n) => n + 1), []);
+  const refetch = useCallback(() => {
+    invalidateUserSettingsBundle();
+    setNonce((n) => n + 1);
+  }, []);
 
   useEffect(() => {
     let alive = true;

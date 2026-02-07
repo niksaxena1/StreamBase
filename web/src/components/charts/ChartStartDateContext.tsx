@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { DEFAULT_CHART_START_DATE_ISO, normalizeIsoDateOrNull } from "@/components/charts/chartUtils";
+import { fetchUserSettingsBundle, invalidateUserSettingsBundle } from "@/lib/userSettingsBundleFetch";
 
 type ChartStartDateState = {
   chartStartDateIso: string; // always normalized YYYY-MM-DD
@@ -15,14 +16,11 @@ type ChartStartDateState = {
 const ChartStartDateContext = createContext<ChartStartDateState | null>(null);
 
 async function fetchChartStartDate() {
-  const res = await fetch("/api/user-settings/chart-start-date", { method: "GET" });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error((data as any)?.error ?? "Failed to load chart start date");
-
-  const fromApi = normalizeIsoDateOrNull((data as any)?.chart_start_date);
+  const data = await fetchUserSettingsBundle();
+  const fromApi = normalizeIsoDateOrNull(data.chart_start_date);
   return {
     chartStartDateIso: fromApi ?? DEFAULT_CHART_START_DATE_ISO,
-    configured: (data as any)?.configured !== false,
+    configured: data.configured !== false,
   };
 }
 
@@ -33,7 +31,10 @@ export function ChartStartDateProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
 
-  const refetch = useCallback(() => setNonce((n) => n + 1), []);
+  const refetch = useCallback(() => {
+    invalidateUserSettingsBundle();
+    setNonce((n) => n + 1);
+  }, []);
 
   useEffect(() => {
     let alive = true;

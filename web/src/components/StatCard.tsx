@@ -1,7 +1,7 @@
-import type { CSSProperties, ReactNode } from "react";
+import { memo, type CSSProperties, type ReactNode } from "react";
 import { Sparkline } from "@/components/charts/Sparkline";
 
-export function StatCard(props: {
+export const StatCard = memo(function StatCard(props: {
   title: string;
   value: ReactNode;
   subtitle?: ReactNode;
@@ -105,4 +105,4 @@ export function StatCard(props: {
       </div>
     </div>
   );
-}
+});
