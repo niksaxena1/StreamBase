@@ -156,7 +156,6 @@ def wait_for_tracks_or_empty_state(page, timeout_ms: int = 15_000) -> None:
             pass
         time.sleep(0.25)
 
-
 def debug_dump(page, slug: str) -> Tuple[str, str]:
     """
     Save HTML + screenshot for post-mortem debugging.
