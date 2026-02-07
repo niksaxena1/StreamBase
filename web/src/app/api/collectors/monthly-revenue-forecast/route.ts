@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
+import { isSchemaMissing } from "@/lib/supabase/schemaMissing";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,7 +45,13 @@ export async function GET(req: NextRequest) {
     .eq("collector", collector)
     .order("month", { ascending: true });
 
-  if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+  if (error) {
+    if (isSchemaMissing(error)) {
+      // Best-effort overlay: if the table isn't migrated yet, just show no markers.
+      return NextResponse.json({ ok: true, items: [], configured: false }, { status: 200 });
+    }
+    return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+  }
 
   const items = (data ?? []).map((r: any) => ({
     collector: String(r.collector ?? "").toUpperCase(),
@@ -88,7 +95,15 @@ export async function POST(req: NextRequest) {
       .delete()
       .eq("collector", collector)
       .eq("month", month);
-    if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    if (error) {
+      if (isSchemaMissing(error)) {
+        return NextResponse.json(
+          { ok: false, error: "Monthly revenue overlay isn’t configured in the database yet. Apply migrations, then retry." },
+          { status: 503 },
+        );
+      }
+      return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    }
     return NextResponse.json({ ok: true, cleared: true }, { status: 200 });
   }
 
@@ -109,7 +124,15 @@ export async function POST(req: NextRequest) {
     .select("collector,month,amount_usd,updated_at")
     .maybeSingle();
 
-  if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+  if (error) {
+    if (isSchemaMissing(error)) {
+      return NextResponse.json(
+        { ok: false, error: "Monthly revenue overlay isn’t configured in the database yet. Apply migrations, then retry." },
+        { status: 503 },
+      );
+    }
+    return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+  }
 
   return NextResponse.json(
     {

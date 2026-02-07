@@ -2,17 +2,13 @@ import { NextResponse, NextRequest } from "next/server";
 
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
+import { isSchemaMissing } from "@/lib/supabase/schemaMissing";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const DEFAULT_ZOOM_DAILY = true;
 const DEFAULT_ZOOM_COLLECTOR_COMPARISON = true;
-
-function isSchemaMissing(err: unknown) {
-  const msg = String((err as any)?.message ?? "");
-  return msg.includes("Could not find the table") || msg.includes("schema cache") || msg.includes("column");
-}
 
 function parseBool(raw: unknown): boolean {
   if (typeof raw === "boolean") return raw;

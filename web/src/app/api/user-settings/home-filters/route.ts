@@ -2,14 +2,10 @@ import { NextResponse, NextRequest } from "next/server";
 
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
+import { isSchemaMissing } from "@/lib/supabase/schemaMissing";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function isSchemaMissing(err: unknown) {
-  const msg = String((err as any)?.message ?? "");
-  return msg.includes("Could not find the table") || msg.includes("schema cache") || msg.includes("column");
-}
 
 export async function GET() {
   const sb = await supabaseServer();

@@ -2,16 +2,12 @@ import { NextResponse, NextRequest } from "next/server";
 
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
+import { isSchemaMissing } from "@/lib/supabase/schemaMissing";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const DEFAULT_DAY = 0; // Sunday (UTC)
-
-function isSchemaMissing(err: unknown) {
-  const msg = String((err as any)?.message ?? "");
-  return msg.includes("Could not find the table") || msg.includes("schema cache") || msg.includes("column");
-}
 
 function parseDayIndex(raw: unknown): number {
   const n = typeof raw === "string" ? Number(raw) : Number(raw);

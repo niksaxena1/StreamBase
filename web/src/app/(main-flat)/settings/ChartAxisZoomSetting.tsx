@@ -63,9 +63,8 @@ export function ChartAxisZoomSetting() {
 
   function toggleDaily() {
     const nextDaily = !zoomDaily;
-    const nextCollector = nextDaily ? zoomCollector : zoomCollector; // keep value, just ignored when off
     setZoomDaily(nextDaily);
-    if (!loading && !saving && configured) void save(nextDaily, nextCollector);
+    if (!loading && !saving && configured) void save(nextDaily, zoomCollector);
   }
 
   function toggleCollector() {
