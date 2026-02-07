@@ -88,10 +88,14 @@ import {
 
 const HOME_MILESTONE_SETTINGS_STORAGE = {
   customMilestones: "sb:home:milestones:custom_v1",
+  countMode: "sb:home:milestones:countMode_v1",
+  bucketMode: "sb:home:milestones:bucketMode_v1",
 } as const;
 
 const HOME_DAILY_BUCKETS_STORAGE = {
   customBuckets: "sb:home:daily_buckets:custom_v1",
+  countMode: "sb:home:daily_buckets:countMode_v1",
+  bucketMode: "sb:home:daily_buckets:bucketMode_v1",
 } as const;
 
 function parseMilestonesText(
@@ -482,6 +486,9 @@ function HomeDashboardInner(props: {
   const [openMilestones, setOpenMilestones] = useState(false);
   const [openDailyDistribution, setOpenDailyDistribution] = useState(false);
   const [dailyDistributionCountMode, setDailyDistributionCountMode] = useState<"tracks" | "artists">("tracks");
+  const [dailyDistributionBucketMode, setDailyDistributionBucketMode] = useState<"cumulative" | "exclusive">(
+    "cumulative",
+  );
   const [customDailyBuckets, setCustomDailyBuckets] = useState<Array<{ min: number; max: number | null; label: string }> | null>(null);
   const [dailyBucketsSettingsOpen, setDailyBucketsSettingsOpen] = useState(false);
   const [dailyBucketsSettingsText, setDailyBucketsSettingsText] = useState("");
@@ -1034,6 +1041,52 @@ function HomeDashboardInner(props: {
       }
     }
   }, []);
+
+  // Load milestone chart display settings from localStorage on mount.
+  useEffect(() => {
+    const savedCountMode = readStoredString(HOME_MILESTONE_SETTINGS_STORAGE.countMode);
+    if (savedCountMode === "artists" || savedCountMode === "tracks") {
+      setMilestoneCountMode(savedCountMode);
+    }
+    
+    const savedBucketMode = readStoredString(HOME_MILESTONE_SETTINGS_STORAGE.bucketMode);
+    if (savedBucketMode === "cumulative" || savedBucketMode === "exclusive") {
+      setMilestoneBucketMode(savedBucketMode);
+    }
+  }, []);
+
+  // Load daily distribution chart display settings from localStorage on mount.
+  useEffect(() => {
+    const savedCountMode = readStoredString(HOME_DAILY_BUCKETS_STORAGE.countMode);
+    if (savedCountMode === "artists" || savedCountMode === "tracks") {
+      setDailyDistributionCountMode(savedCountMode);
+    }
+    
+    const savedBucketMode = readStoredString(HOME_DAILY_BUCKETS_STORAGE.bucketMode);
+    if (savedBucketMode === "cumulative" || savedBucketMode === "exclusive") {
+      setDailyDistributionBucketMode(savedBucketMode);
+    }
+  }, []);
+
+  // Persist milestone chart count mode to localStorage.
+  useEffect(() => {
+    writeStoredString(HOME_MILESTONE_SETTINGS_STORAGE.countMode, milestoneCountMode);
+  }, [milestoneCountMode]);
+
+  // Persist milestone chart bucket mode to localStorage.
+  useEffect(() => {
+    writeStoredString(HOME_MILESTONE_SETTINGS_STORAGE.bucketMode, milestoneBucketMode);
+  }, [milestoneBucketMode]);
+
+  // Persist daily distribution chart count mode to localStorage.
+  useEffect(() => {
+    writeStoredString(HOME_DAILY_BUCKETS_STORAGE.countMode, dailyDistributionCountMode);
+  }, [dailyDistributionCountMode]);
+
+  // Persist daily distribution chart bucket mode to localStorage.
+  useEffect(() => {
+    writeStoredString(HOME_DAILY_BUCKETS_STORAGE.bucketMode, dailyDistributionBucketMode);
+  }, [dailyDistributionBucketMode]);
 
   // Fetch Home Filters setting (best-effort; defaults to enabled).
   useEffect(() => {
@@ -1932,6 +1985,36 @@ function HomeDashboardInner(props: {
                   </div>
                 ) : null}
                 {openDailyDistribution ? (
+                  <div className="flex items-center rounded-full bg-black/5 p-0.5 dark:bg-white/10">
+                    <button
+                      type="button"
+                      onClick={() => setDailyDistributionBucketMode("cumulative")}
+                      className={[
+                        "rounded-full px-2 py-1 text-[11px] font-medium transition",
+                        dailyDistributionBucketMode === "cumulative"
+                          ? "bg-black text-white dark:bg-white dark:text-black"
+                          : "text-black/70 hover:bg-white/50 dark:text-white/70 dark:hover:bg-white/20",
+                      ].join(" ")}
+                      title="Cumulative: counts entities that have this daily stream count or higher"
+                    >
+                      Cum.
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDailyDistributionBucketMode("exclusive")}
+                      className={[
+                        "rounded-full px-2 py-1 text-[11px] font-medium transition",
+                        dailyDistributionBucketMode === "exclusive"
+                          ? "bg-black text-white dark:bg-white dark:text-black"
+                          : "text-black/70 hover:bg-white/50 dark:text-white/70 dark:hover:bg-white/20",
+                      ].join(" ")}
+                      title="Exclusive: each entity is counted only in its specific bucket"
+                    >
+                      Exc.
+                    </button>
+                  </div>
+                ) : null}
+                {openDailyDistribution ? (
                   <IconButton
                     aria-label="Configure buckets"
                     variant="ghost"
@@ -1964,6 +2047,7 @@ function HomeDashboardInner(props: {
               heightPx={280}
               mode={milestoneMode}
               countMode={dailyDistributionCountMode}
+              bucketMode={dailyDistributionBucketMode}
               payoutPerStreamUsd={streamPayoutPerStreamUsd}
               customBuckets={customDailyBuckets ?? undefined}
               highlightBucketLabel={dailyDistDrillOpen ? dailyDistDrillBucket?.label : null}

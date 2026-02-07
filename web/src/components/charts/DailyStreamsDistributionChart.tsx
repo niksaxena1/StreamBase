@@ -176,7 +176,57 @@ function computeBucketData(
   tracks: TrackPoint[],
   buckets: Array<{ min: number; max: number | null; label: string }>,
   countMode: "tracks" | "artists",
+  bucketMode: "cumulative" | "exclusive" = "cumulative",
 ): BucketDataPoint[] {
+  if (bucketMode === "exclusive") {
+    // Bucket each track into its specific bucket only
+    const trackCounts = new Map<string, number>();
+    const artistSets = new Map<string, Set<string>>();
+
+    // Initialize all buckets
+    for (const bucket of buckets) {
+      trackCounts.set(bucket.label, 0);
+      if (countMode === "artists") {
+        artistSets.set(bucket.label, new Set());
+      }
+    }
+
+    // Bucket each track
+    for (const t of tracks) {
+      const daily = Number(t?.daily_streams ?? 0);
+      if (!Number.isFinite(daily) || daily < 0) continue;
+
+      // Find the bucket this track belongs to
+      for (const bucket of buckets) {
+        const inBucket = bucket.max === null
+          ? daily >= bucket.min
+          : daily >= bucket.min && daily < bucket.max;
+
+        if (inBucket) {
+          trackCounts.set(bucket.label, (trackCounts.get(bucket.label) ?? 0) + 1);
+
+          if (countMode === "artists") {
+            const set = artistSets.get(bucket.label)!;
+            const ids = t.artist_ids ?? [];
+            for (const id of ids) {
+              if (id) set.add(id);
+            }
+          }
+          break; // Track can only be in one bucket
+        }
+      }
+    }
+
+    return buckets.map((bucket) => ({
+      bucketMin: bucket.min,
+      bucketMax: bucket.max,
+      bucketLabel: bucket.label,
+      unique_tracks: trackCounts.get(bucket.label) ?? 0,
+      unique_artists: countMode === "artists" ? (artistSets.get(bucket.label)?.size ?? 0) : 0,
+    }));
+  }
+
+  // Cumulative mode: count all tracks/artists that meet or exceed the bucket minimum
   const trackCounts = new Map<string, number>();
   const artistSets = new Map<string, Set<string>>();
 
@@ -188,29 +238,24 @@ function computeBucketData(
     }
   }
 
-  // Bucket each track
-  for (const t of tracks) {
-    const daily = Number(t?.daily_streams ?? 0);
-    if (!Number.isFinite(daily) || daily < 0) continue;
+  // For each bucket, count tracks that have daily_streams >= bucket.min
+  for (const bucket of buckets) {
+    const qualifying = tracks.filter((t) => {
+      const daily = Number(t?.daily_streams ?? 0);
+      return Number.isFinite(daily) && daily >= bucket.min;
+    });
 
-    // Find the bucket this track belongs to
-    for (const bucket of buckets) {
-      const inBucket = bucket.max === null
-        ? daily >= bucket.min
-        : daily >= bucket.min && daily < bucket.max;
+    trackCounts.set(bucket.label, qualifying.length);
 
-      if (inBucket) {
-        trackCounts.set(bucket.label, (trackCounts.get(bucket.label) ?? 0) + 1);
-
-        if (countMode === "artists") {
-          const set = artistSets.get(bucket.label)!;
-          const ids = t.artist_ids ?? [];
-          for (const id of ids) {
-            if (id) set.add(id);
-          }
+    if (countMode === "artists") {
+      const set = new Set<string>();
+      for (const t of qualifying) {
+        const ids = t.artist_ids ?? [];
+        for (const id of ids) {
+          if (id) set.add(id);
         }
-        break; // Track can only be in one bucket
       }
+      artistSets.set(bucket.label, set);
     }
   }
 
@@ -232,6 +277,8 @@ export type DailyStreamsDistributionChartProps = {
   mode?: "streams" | "revenue";
   /** Count mode */
   countMode?: "tracks" | "artists";
+  /** Bucket mode */
+  bucketMode?: "cumulative" | "exclusive";
   /** USD payout per stream (required for revenue mode) */
   payoutPerStreamUsd?: number;
   /** Chart height in pixels */
@@ -247,6 +294,7 @@ export function DailyStreamsDistributionChart({
   customBuckets,
   mode = "streams",
   countMode = "tracks",
+  bucketMode = "cumulative",
   payoutPerStreamUsd = 0,
   heightPx = 280,
   highlightBucketLabel,
@@ -302,8 +350,8 @@ export function DailyStreamsDistributionChart({
 
   const chartData = useMemo(() => {
     if (!tracks.length) return [];
-    return computeBucketData(tracks, buckets, countMode);
-  }, [tracks, buckets, countMode]);
+    return computeBucketData(tracks, buckets, countMode, bucketMode);
+  }, [tracks, buckets, countMode, bucketMode]);
 
   if (!chartData.length) {
     return (
