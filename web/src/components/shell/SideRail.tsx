@@ -49,26 +49,25 @@ function SideRailContent({
   const pathname = usePathname();
 
   return (
-    <div className="sb-glass sticky top-3 flex flex-col items-center gap-2 px-2 py-2">
+    <div className="sb-glass sticky top-3 z-30 flex flex-col items-center gap-2 px-2 py-2">
       {navItems.map((it) => {
         const active = pathname ? (pathname === it.href || pathname.startsWith(`${it.href}/`)) : false;
         const isHealth = it.href === "/health";
-        const showBadge = isHealth && healthBadgeCount > 0;
-        
+
         return (
           <Link
             key={it.href}
             href={it.href}
-            title={it.shortcut ? `${it.label} (${it.shortcut})` : it.label}
             className={[
-              "relative grid h-9 w-9 place-items-center rounded-full transition",
+              "group relative grid h-9 w-9 place-items-center rounded-full transition",
               active
                 ? "bg-black text-white shadow-sm dark:bg-white dark:text-black"
                 : "bg-white/70 text-black/70 hover:bg-white dark:bg-white/10 dark:text-white/70 dark:hover:bg-white/20",
             ].join(" ")}
           >
             {it.icon(active)}
-            {/* Health badge - show if count > 0 */}
+
+            {/* Health badge */}
             {isHealth && healthBadgeCount > 0 && (
               <span
                 className={[
@@ -77,14 +76,37 @@ function SideRailContent({
                     ? "bg-red-500 text-white"
                     : "bg-orange-500 text-white",
                 ].join(" ")}
-                style={{
-                  boxShadow: "0 2px 6px rgba(0, 0, 0, 0.25)",
-                }}
+                style={{ boxShadow: "0 2px 6px rgba(0, 0, 0, 0.25)" }}
                 title={`${healthBadgeCount} warning${healthBadgeCount !== 1 ? "s" : ""}${healthHasCritical ? " (critical)" : ""}`}
               >
                 {healthBadgeCount > 99 ? "99+" : healthBadgeCount}
               </span>
             )}
+
+            {/* CSS-only tooltip */}
+            <span
+              className="pointer-events-none absolute left-full ml-3 flex items-center gap-2 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-medium opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100"
+              style={{
+                background: "var(--sb-card)",
+                color: "var(--sb-text)",
+                border: "1px solid var(--sb-border-2)",
+                backdropFilter: "blur(12px)",
+              }}
+            >
+              {it.label}
+              {it.shortcut && (
+                <kbd
+                  className="rounded border px-1.5 py-0.5 text-[10px] font-medium"
+                  style={{
+                    borderColor: "var(--sb-border)",
+                    background: "var(--sb-surface)",
+                    color: "var(--sb-muted)",
+                  }}
+                >
+                  {it.shortcut}
+                </kbd>
+              )}
+            </span>
           </Link>
         );
       })}
@@ -93,15 +115,36 @@ function SideRailContent({
 
       <Link
         href="/settings"
-        className="grid h-9 w-9 place-items-center rounded-full transition hover:opacity-90"
+        className="group relative grid h-9 w-9 place-items-center rounded-full transition hover:opacity-90"
         style={{
           background: "var(--sb-accent)",
           color: "#000",
           boxShadow: "var(--sb-shadow-compact)",
         }}
-        title="Settings (g s)"
       >
         <IconGear />
+        {/* CSS-only tooltip */}
+        <span
+          className="pointer-events-none absolute left-full ml-3 flex items-center gap-2 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-medium opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100"
+          style={{
+            background: "var(--sb-card)",
+            color: "var(--sb-text)",
+            border: "1px solid var(--sb-border-2)",
+            backdropFilter: "blur(12px)",
+          }}
+        >
+          Settings
+          <kbd
+            className="rounded border px-1.5 py-0.5 text-[10px] font-medium"
+            style={{
+              borderColor: "var(--sb-border)",
+              background: "var(--sb-surface)",
+              color: "var(--sb-muted)",
+            }}
+          >
+            g s
+          </kbd>
+        </span>
       </Link>
     </div>
   );

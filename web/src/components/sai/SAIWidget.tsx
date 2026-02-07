@@ -77,11 +77,17 @@ export function SAIWidget() {
   );
 
   useEffect(() => {
+    let alive = true;
     // Fetch SAI enabled setting on mount
     void fetch("/api/user-settings/sai")
       .then((res) => res.json())
-      .then((data) => setSaiEnabled(data.sai_enabled ?? true))
-      .catch(() => setSaiEnabled(true));
+      .then((data) => {
+        if (alive) setSaiEnabled(data.sai_enabled ?? true);
+      })
+      .catch(() => {
+        if (alive) setSaiEnabled(true);
+      });
+    return () => { alive = false; };
   }, []);
 
   useEffect(() => {

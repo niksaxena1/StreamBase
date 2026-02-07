@@ -45,7 +45,7 @@ export function Modal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 animate-[modal-fade-in_150ms_ease-out]"
       role="dialog"
       aria-modal="true"
       aria-label={typeof title === "string" ? title : "Modal"}
@@ -55,7 +55,7 @@ export function Modal({
 
       <div
         className={[
-          "relative w-full overflow-hidden sb-glass shadow-2xl",
+          "relative w-full overflow-hidden sb-glass shadow-2xl animate-[modal-scale-in_150ms_ease-out]",
           maxWidthClassName ?? "max-w-5xl",
         ].join(" ")}
         onMouseDown={(e) => e.stopPropagation()}

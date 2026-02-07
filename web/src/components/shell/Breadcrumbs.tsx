@@ -19,6 +19,7 @@ export function Breadcrumbs() {
 
   // Fetch custom labels for dynamic routes
   useEffect(() => {
+    let alive = true;
     const segments = pathname.split("/").filter(Boolean);
     
     // Handle artist pages: /artists/[spotify_artist_id]
@@ -26,18 +27,19 @@ export function Breadcrumbs() {
       fetch(`/api/breadcrumb/artist?artist_id=${encodeURIComponent(segments[1])}`)
         .then((res) => res.json())
         .then((data) => {
+          if (!alive) return;
           const label = (data?.artistName as string | undefined) ?? "";
           if (!label) return;
           setCustomLabelsByPath((prev) => ({ ...prev, [pathname]: label }));
         })
         .catch(() => {});
-      return;
+      return () => { alive = false; };
     }
 
     // Handle catalog route
     if (segments[0] === "catalog") {
       // No custom label needed for catalog page itself
-      return;
+      return () => { alive = false; };
     }
 
     // Handle track pages: /tracks/[isrc]
@@ -45,13 +47,16 @@ export function Breadcrumbs() {
       fetch(`/api/breadcrumb/track?isrc=${encodeURIComponent(segments[1])}`)
         .then((res) => res.json())
         .then((data) => {
+          if (!alive) return;
           const label = (data?.trackLabel as string | undefined) ?? "";
           if (!label) return;
           setCustomLabelsByPath((prev) => ({ ...prev, [pathname]: label }));
         })
         .catch(() => {});
-      return;
+      return () => { alive = false; };
     }
+
+    return () => { alive = false; };
   }, [pathname]);
 
   // Build breadcrumbs from pathname

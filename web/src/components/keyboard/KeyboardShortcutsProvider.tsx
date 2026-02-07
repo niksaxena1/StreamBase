@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, useCallback, ReactNode } from "react";
 import { useRouter, usePathname } from "next/navigation";
 
 type ShortcutHandler = () => void;
@@ -193,7 +193,7 @@ export function KeyboardShortcutsProvider({ children }: { children: ReactNode })
     };
   }, [router, pathname, isHelpOpen, openHelp, closeHelp, openSearch, customShortcuts]);
 
-  const value: KeyboardShortcutsContextValue = {
+  const value: KeyboardShortcutsContextValue = useMemo(() => ({
     registerShortcut,
     isHelpOpen,
     openHelp,
@@ -201,7 +201,7 @@ export function KeyboardShortcutsProvider({ children }: { children: ReactNode })
     shortcuts,
     openSearch,
     setSearchOpener,
-  };
+  }), [registerShortcut, isHelpOpen, openHelp, closeHelp, shortcuts, openSearch, setSearchOpener]);
 
   return (
     <KeyboardShortcutsContext.Provider value={value}>

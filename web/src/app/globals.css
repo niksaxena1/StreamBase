@@ -5,11 +5,11 @@
 
 :root {
   /* SpotiBase design tokens (light-first) */
-  --sb-bg: #ececec;
-  --sb-surface: rgba(255, 255, 255, 0.7);
-  --sb-card: rgba(255, 255, 255, 0.92);
-  --sb-border: rgba(0, 0, 0, 0.08);
-  --sb-border-2: rgba(0, 0, 0, 0.12);
+  --sb-bg: #f0f0f0;
+  --sb-surface: rgba(255, 255, 255, 0.82);
+  --sb-card: rgba(255, 255, 255, 0.95);
+  --sb-border: rgba(0, 0, 0, 0.12);
+  --sb-border-2: rgba(0, 0, 0, 0.16);
   --sb-text: #0b0b0c;
   --sb-muted: rgba(0, 0, 0, 0.55);
 
@@ -58,10 +58,10 @@
   --sb-blur: 10px;
 
   /* Shadows (compact) */
-  --sb-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
-  --sb-shadow-soft: 0 4px 12px rgba(0, 0, 0, 0.06);
-  --sb-shadow-compact: 0 2px 10px rgba(0, 0, 0, 0.06);
-  --sb-shadow-elevated: 0 12px 32px rgba(0, 0, 0, 0.1);
+  --sb-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+  --sb-shadow-soft: 0 4px 12px rgba(0, 0, 0, 0.07);
+  --sb-shadow-compact: 0 2px 10px rgba(0, 0, 0, 0.07);
+  --sb-shadow-elevated: 0 12px 32px rgba(0, 0, 0, 0.12);
 
   /* Transitions (consistent timing) */
   --sb-transition-fast: 100ms;
@@ -134,11 +134,11 @@
 
 /* Explicit theme overrides via data-theme on <html> */
 html[data-theme="light"] {
-  --sb-bg: #ececec;
-  --sb-surface: rgba(255, 255, 255, 0.7);
-  --sb-card: rgba(255, 255, 255, 0.92);
-  --sb-border: rgba(0, 0, 0, 0.08);
-  --sb-border-2: rgba(0, 0, 0, 0.12);
+  --sb-bg: #f0f0f0;
+  --sb-surface: rgba(255, 255, 255, 0.82);
+  --sb-card: rgba(255, 255, 255, 0.95);
+  --sb-border: rgba(0, 0, 0, 0.12);
+  --sb-border-2: rgba(0, 0, 0, 0.16);
   --sb-text: #0b0b0c;
   --sb-muted: rgba(0, 0, 0, 0.55);
   --sb-accent: #c7f33c;
@@ -159,10 +159,10 @@ html[data-theme="light"] {
   --sb-panel-hover: rgba(255, 255, 255, 0.8);
   --sb-code-bg: rgba(0, 0, 0, 0.04);
   --sb-blockquote-bg: rgba(0, 0, 0, 0.025);
-  --sb-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
-  --sb-shadow-soft: 0 4px 12px rgba(0, 0, 0, 0.06);
-  --sb-shadow-compact: 0 2px 10px rgba(0, 0, 0, 0.06);
-  --sb-shadow-elevated: 0 12px 32px rgba(0, 0, 0, 0.1);
+  --sb-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+  --sb-shadow-soft: 0 4px 12px rgba(0, 0, 0, 0.07);
+  --sb-shadow-compact: 0 2px 10px rgba(0, 0, 0, 0.07);
+  --sb-shadow-elevated: 0 12px 32px rgba(0, 0, 0, 0.12);
 }
 
 html[data-theme="dark"] {
@@ -382,6 +382,16 @@ html[data-theme="dark"] .sb-glass-nav {
   color: var(--sb-positive-muted);
 }
 
+/* Modal entrance animations */
+@keyframes modal-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes modal-scale-in {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+
 /* Enhanced Living Backgrounds */
 @keyframes blob-bounce {
   0% { transform: translate(0, 0) scale(1); }
@@ -399,10 +409,10 @@ html[data-theme="dark"] .sb-glass-nav {
 .sb-accent-glow {
   background: radial-gradient(
     60% 60% at 50% 50%,
-    rgba(199, 243, 60, 0.45),
-    rgba(199, 243, 60, 0.25) 25%,
-    rgba(199, 243, 60, 0.10) 50%,
-    rgba(199, 243, 60, 0.03) 75%,
+    rgba(199, 243, 60, 0.22),
+    rgba(199, 243, 60, 0.12) 25%,
+    rgba(199, 243, 60, 0.05) 50%,
+    rgba(199, 243, 60, 0.02) 75%,
     rgba(199, 243, 60, 0) 100%
   );
   filter: blur(50px);
