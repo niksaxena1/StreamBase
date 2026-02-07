@@ -16,7 +16,8 @@ export async function AuthedAppLayout({
   appShellProps,
 }: {
   children: React.ReactNode;
-  appShellProps?: React.ComponentProps<typeof AppShell>;
+  // Callers should not have to provide `children` inside `appShellProps`.
+  appShellProps?: Omit<React.ComponentProps<typeof AppShell>, "children">;
 }) {
   const sb = await supabaseServer();
   const {
