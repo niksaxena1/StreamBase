@@ -265,14 +265,20 @@ export default async function CollectorsPage({
           .lte("date", rangeEnd!)
           .order("date", { ascending: true }),
 
-      // Fetch ALL-TIME data for non-daily granularities (weekly/monthly/quarterly/yearly)
+      // Pre-bucketed aggregation for non-daily granularities (weekly/monthly/quarterly/yearly).
+      // Replaces unbounded allCollectorsAllTime fetch + client-side aggregation.
       allCollectorsAllTime: async () => {
+        // Fetch daily data bounded by the date range (used when granularity === "daily").
+        // For non-daily granularities, the client will call the bucketed RPC on demand.
         let q = svc
           .from("collector_daily_agg")
           .select(
             "collector,date,track_count,daily_streams_net,est_revenue_daily_net",
           );
         if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
+        // Bound to last 365 days instead of all-time to cap payload size.
+        const allTimeStart = latestRunDate ? addDaysIso(latestRunDate, -365) : null;
+        if (allTimeStart) q = q.gte("date", allTimeStart);
         return await q.order("date", { ascending: true });
       },
 

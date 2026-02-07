@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { ExternalLink, Music } from "lucide-react";
 
 import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
@@ -55,10 +56,11 @@ export function TracksList({ tracks, searchQuery }: TracksListProps) {
         <TableRow key={track.isrc}>
           <TableCell>
             {track.albumImageUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
+              <Image
                 src={track.albumImageUrl}
                 alt="Album cover"
+                width={40}
+                height={40}
                 className="h-10 w-10 rounded-lg object-cover sb-ring"
               />
             ) : (

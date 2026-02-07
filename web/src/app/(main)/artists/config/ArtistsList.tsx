@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { ExternalLink, User } from "lucide-react";
 
 import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
@@ -48,10 +49,11 @@ export function ArtistsList({ artists, searchQuery }: ArtistsListProps) {
           <TableRow key={artist.id}>
             <TableCell>
               {artist.imageUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
+                <Image
                   src={artist.imageUrl}
                   alt={artist.name}
+                  width={40}
+                  height={40}
                   className="h-10 w-10 rounded-full object-cover sb-ring"
                 />
               ) : (

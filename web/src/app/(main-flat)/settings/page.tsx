@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { revalidatePath, revalidateTag } from "next/cache";
+import Image from "next/image";
 
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
@@ -515,10 +516,11 @@ export default async function SettingsPage() {
                 <TableCell>
                   <div className="flex items-center gap-2">
                     {imageUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
+                      <Image
                         src={imageUrl}
                         alt={name}
+                        width={32}
+                        height={32}
                         className="h-8 w-8 rounded-lg object-cover sb-ring flex-shrink-0"
                       />
                     ) : (
@@ -585,10 +587,11 @@ export default async function SettingsPage() {
                 <TableCell>
                   <div className="flex items-center gap-2">
                     {imageUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
+                      <Image
                         src={imageUrl}
                         alt={name}
+                        width={32}
+                        height={32}
                         className="h-8 w-8 rounded-lg object-cover sb-ring flex-shrink-0"
                       />
                     ) : (

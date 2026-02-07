@@ -11,6 +11,7 @@
   "dependencies": {
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.91.1",
+    "@tanstack/react-virtual": "^3.13.18",
     "date-fns": "^4.1.0",
     "framer-motion": "^12.29.0",
     "lucide-react": "^0.563.0",

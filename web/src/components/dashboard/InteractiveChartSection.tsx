@@ -10,7 +10,7 @@ import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButt
 import { slugifyForFilename, todayIsoDate } from "@/lib/csv";
 import { useThemeColors, getChartColor } from "@/components/charts/useThemeColors";
 import { useChartStartDate } from "@/components/charts/ChartStartDateContext";
-import { filterDailySeriesFromIsoDate } from "@/components/charts/chartUtils";
+import { filterDailySeriesFromIsoDate, downsampleSeries } from "@/components/charts/chartUtils";
 
 type ChartData = {
   date: string;
@@ -78,8 +78,14 @@ export function InteractiveChartSection({
   const themeColors = useThemeColors();
   const effectiveColor = color ?? themeColors.accentStroke;
 
-  const dailyFiltered = filterDailySeriesFromIsoDate(dailyStreamsData ?? [], chartStartDateIso);
-  const totalFiltered = filterDailySeriesFromIsoDate(totalStreamsData ?? [], chartStartDateIso);
+  const dailyFiltered = useMemo(
+    () => downsampleSeries(filterDailySeriesFromIsoDate(dailyStreamsData ?? [], chartStartDateIso)),
+    [dailyStreamsData, chartStartDateIso],
+  );
+  const totalFiltered = useMemo(
+    () => downsampleSeries(filterDailySeriesFromIsoDate(totalStreamsData ?? [], chartStartDateIso)),
+    [totalStreamsData, chartStartDateIso],
+  );
 
   const totalTrend = useMemo(
     () =>

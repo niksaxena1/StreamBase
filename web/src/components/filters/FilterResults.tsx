@@ -8,6 +8,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, User, Disc3, ListMusic } from "lucide-react";
 import { GlassTable, TableRow, TableCell, EmptyState } from "@/components/ui/GlassTable";
 import { Button } from "@/components/ui/Button";
@@ -284,10 +285,11 @@ function TracksTable({
           <TableCell className="min-w-[260px]">
             <div className="flex items-center gap-3">
               {track.spotify_album_image_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
+                <Image
                   src={track.spotify_album_image_url}
                   alt=""
+                  width={40}
+                  height={40}
                   className="h-10 w-10 rounded-lg object-cover sb-ring"
                 />
               ) : (
@@ -371,10 +373,11 @@ function ArtistsTable({
           <TableCell className="min-w-[260px]">
             <div className="flex items-center gap-3">
               {artist.image_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
+                <Image
                   src={artist.image_url}
                   alt=""
+                  width={40}
+                  height={40}
                   className="h-10 w-10 rounded-full object-cover sb-ring"
                 />
               ) : (
@@ -440,10 +443,11 @@ function PlaylistsTable({
           <TableCell className="min-w-[260px]">
             <div className="flex items-center gap-3">
               {playlist.spotify_playlist_image_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
+                <Image
                   src={playlist.spotify_playlist_image_url}
                   alt=""
+                  width={40}
+                  height={40}
                   className="h-10 w-10 rounded-lg object-cover sb-ring"
                 />
               ) : (

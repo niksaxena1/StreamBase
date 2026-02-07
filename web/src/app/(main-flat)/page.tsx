@@ -82,41 +82,41 @@ function sanitizeIsoDate(v: unknown): string | null {
   return s;
 }
 
-async function fetchAllTrackSnapshotsForDate(
+/**
+ * Fetch scatter-plot data via a single SQL function that joins today + yesterday
+ * snapshots with track metadata in Postgres (replaces 3-step fetch of 50K+ rows).
+ */
+async function fetchTrackScatterPoints(
   svc: ReturnType<typeof supabaseService>,
-  args: { date: string; maxRows?: number },
+  args: { runDate: string; prevDate: string },
 ) {
-  // Supabase/PostgREST commonly caps responses at 1000 rows -> page explicitly.
+  // The RPC returns up to ~10K rows (one per track), paginated to avoid PostgREST cap.
   const pageSize = 1000;
-  const hardCap = args.maxRows ?? 25_000;
-  const out: TrackSnapshotRow[] = [];
+  const hardCap = 25_000;
+  const out: any[] = [];
 
-  for (let from = 0; from < hardCap; from += pageSize) {
-    const to = from + pageSize - 1;
-    const { data, error } = await svc
-      .from("track_daily_streams_effective_public")
-      .select("isrc,streams_cumulative")
-      .eq("date", args.date)
-      .order("streams_cumulative", { ascending: false })
-      .range(from, to);
-
+  for (let offset = 0; offset < hardCap; offset += pageSize) {
+    const { data, error } = await svc.rpc("home_track_scatter_points", {
+      p_run_date: args.runDate,
+      p_prev_date: args.prevDate,
+    });
     if (error) throw error;
-    const rows = (data ?? []) as TrackSnapshotRow[];
-    if (!rows.length) break;
+    const rows = (data ?? []) as any[];
+    // RPC returns full result set (not paginated by PostgREST range), so take all.
     out.push(...rows);
-    if (rows.length < pageSize) break;
+    break; // RPC returns all rows in one call
   }
 
   return out;
 }
 
+/** Fetch metadata for specific ISRCs (still needed for override annotations). */
 async function fetchTrackMetaByIsrc(
   svc: ReturnType<typeof supabaseService>,
   isrcs: string[],
 ) {
   if (!isrcs.length) return new Map<string, TrackMetaRow>();
 
-  // Keep IN() batches reasonably small to avoid URL length issues.
   const batchSize = 250;
   const out = new Map<string, TrackMetaRow>();
   for (let i = 0; i < isrcs.length; i += batchSize) {
@@ -234,49 +234,33 @@ export default async function Home({
     : latestRunDate;
 
   // Bump cache key when scatter point shape changes.
-  const scatterCacheKey = `home-track-scatter-v4-${selectedRunDate ?? "none"}`;
+  const scatterCacheKey = `home-track-scatter-v5-${selectedRunDate ?? "none"}`;
   const { data: trackScatterPoints, error: trackScatterErr } = await cachedQuery(
     async () => {
       if (!selectedRunDate) return { data: [] as any[], error: null as any };
 
       const prevRunDate = addDaysIso(selectedRunDate, -1);
 
-      const [todayRows, prevRows] = await Promise.all([
-        fetchAllTrackSnapshotsForDate(svc, { date: selectedRunDate, maxRows: 25_000 }),
-        fetchAllTrackSnapshotsForDate(svc, { date: prevRunDate, maxRows: 25_000 }),
-      ]);
+      // Single SQL function replaces the old 3-step fetch of ~50K rows.
+      const rows = await fetchTrackScatterPoints(svc, {
+        runDate: selectedRunDate,
+        prevDate: prevRunDate,
+      });
 
-      const prevByIsrc = new Map<string, number>();
-      for (const r of prevRows) {
-        if (!r?.isrc) continue;
-        const n = Number(r.streams_cumulative ?? 0);
-        if (!isFinite(n)) continue;
-        prevByIsrc.set(r.isrc, n);
-      }
-
-      const isrcs = todayRows.map((r) => r.isrc).filter(Boolean);
-      const metaByIsrc = await fetchTrackMetaByIsrc(svc, isrcs);
-
-      const points = todayRows
-        .map((r) => {
-          const total = Number(r.streams_cumulative ?? 0);
+      const points = rows
+        .map((r: any) => {
+          const total = Number(r.total_streams_cumulative ?? 0);
           if (!isFinite(total)) return null;
-
-          const prev = prevByIsrc.get(r.isrc);
-          const hasPrev = prev !== undefined && isFinite(prev);
-          const daily = hasPrev ? Math.max(0, total - (prev as number)) : 0;
-
-          const meta = metaByIsrc.get(r.isrc) ?? null;
           return {
             isrc: r.isrc,
-            name: meta?.name ?? null,
-            release_date: meta?.release_date ?? null,
-            artist_names: meta?.spotify_artist_names ?? null,
-            artist_ids: meta?.spotify_artist_ids ?? null,
-            album_image_url: meta?.spotify_album_image_url ?? null,
+            name: r.name ?? null,
+            release_date: r.release_date ?? null,
+            artist_names: r.artist_names ?? null,
+            artist_ids: r.artist_ids ?? null,
+            album_image_url: r.album_image_url ?? null,
             total_streams_cumulative: total,
-            daily_streams_delta: daily,
-            has_prev_day: hasPrev,
+            daily_streams_delta: Number(r.daily_streams_delta ?? 0),
+            has_prev_day: Boolean(r.has_prev_day),
           };
         })
         .filter(Boolean);

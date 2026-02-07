@@ -211,8 +211,9 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
   >();
 
   if (nonCatalogWarnings.length > 0 && selectedRunDate) {
-    for (const warning of nonCatalogWarnings) {
-      if (!warning.playlist_key) continue;
+    // Parallelize RPC calls instead of sequential loop (fixes N+1 pattern).
+    await Promise.all(nonCatalogWarnings.map(async (warning) => {
+      if (!warning.playlist_key) return;
       const { data: rows, error } = await svc.rpc("health_playlist_missing_catalog_tracks", {
         playlist_key: warning.playlist_key,
         run_date: selectedRunDate,
@@ -220,7 +221,7 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
 
       if (error) {
         console.error("health_playlist_missing_catalog_tracks RPC failed:", error);
-        continue;
+        return;
       }
 
       const nonCatalogTracks: Array<{
@@ -246,7 +247,7 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
           ? nonCatalogTracks.filter((t) => !isExcluded(warning.playlist_key!, t.isrc))
           : nonCatalogTracks,
       );
-    }
+    }));
   }
 
   // Fetch added/removed tracks for track_count_swing warnings
@@ -275,8 +276,9 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
   >();
 
   if (trackCountSwingWarnings.length > 0 && selectedRunDate) {
-    for (const warning of trackCountSwingWarnings) {
-      if (!warning.playlist_key) continue;
+    // Parallelize RPC calls instead of sequential loop (fixes N+1 pattern).
+    await Promise.all(trackCountSwingWarnings.map(async (warning) => {
+      if (!warning.playlist_key) return;
       const { data: rows, error } = await svc.rpc("health_track_count_swing_tracks", {
         playlist_key: warning.playlist_key,
         run_date: selectedRunDate,
@@ -284,7 +286,7 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
 
       if (error) {
         console.error("health_track_count_swing_tracks RPC failed:", error);
-        continue;
+        return;
       }
 
       const changeRows = (rows ?? []) as unknown[];
@@ -328,7 +330,7 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
         });
 
       trackCountSwingTracksMap.set(warning.playlist_key ?? "", { added, removed });
-    }
+    }));
   }
 
   // Fetch missing enrichment tracks for warnings
@@ -348,8 +350,9 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
   >();
 
   if (missingEnrichmentWarnings.length > 0 && selectedRunDate) {
-    for (const warning of missingEnrichmentWarnings) {
-      if (!warning.playlist_key) continue;
+    // Parallelize instead of sequential loop (fixes N+1 pattern).
+    await Promise.all(missingEnrichmentWarnings.map(async (warning) => {
+      if (!warning.playlist_key) return;
       const isrcList = warning.details_json?.isrc_list ?? [];
       
       // If we have ISRCs, fetch their details
@@ -362,9 +365,8 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
           : isrcList;
 
         if (Array.isArray(filteredIsrcs) && filteredIsrcs.length === 0) {
-          // All tracks were excluded for this warning.
           missingEnrichmentTracksMap.set(warning.playlist_key ?? "", []);
-          continue;
+          return;
         }
 
         const { data: rows, error } = await svc
@@ -374,9 +376,8 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
 
         if (error) {
           console.error("Failed to fetch missing enrichment tracks:", error);
-          // Set null to indicate we couldn't fetch the details
           missingEnrichmentTracksMap.set(warning.playlist_key, null);
-          continue;
+          return;
         }
 
         const tracksRaw: Array<{
@@ -410,7 +411,7 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
         if (error) {
           console.error("health_playlist_missing_enrichment_tracks RPC failed:", error);
           missingEnrichmentTracksMap.set(warning.playlist_key, null);
-          continue;
+          return;
         }
 
         const tracksRaw: Array<{
@@ -434,7 +435,7 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
           : tracksRaw;
         missingEnrichmentTracksMap.set(warning.playlist_key ?? "", tracks);
       }
-    }
+    }));
   }
 
   // Fetch missing catalog stream snapshot tracks for warning `catalog_missing_stream_snapshots`

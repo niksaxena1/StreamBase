@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ExternalLink } from "lucide-react";
+import Image from "next/image";
+import { ExternalLink, ChevronDown } from "lucide-react";
 
 import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
@@ -10,6 +11,9 @@ import { foldForSearch } from "@/lib/searchFold";
 import { useMetric } from "@/components/metrics/MetricContext";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { formatInt, formatUsd2 } from "@/lib/format";
+
+/** Number of rows to render initially before requiring "Show more". */
+const INITIAL_RENDER_CAP = 150;
 
 type Track = {
   isrc: string;
@@ -114,17 +118,23 @@ export function TracksList({ tracks, searchQuery, sortBy = "name", sortAsc = tru
     return "Daily Streams";
   };
 
+  // Incremental render cap to keep DOM node count low for large catalogs.
+  const [renderCap, setRenderCap] = useState(INITIAL_RENDER_CAP);
+  const visibleTracks = filteredAndSortedTracks.slice(0, renderCap);
+  const hasMore = filteredAndSortedTracks.length > renderCap;
+
   return (
     <div className="flex flex-col space-y-2">
       <GlassTable headers={["", "Track", getTotalMetricLabel(), getDailyMetricLabel(), "ISRC", "Release", "Last seen", ""]}>
-        {filteredAndSortedTracks.map((track) => (
+        {visibleTracks.map((track) => (
           <TableRow key={track.isrc}>
             <TableCell>
               {track.albumImageUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
+                <Image
                   src={track.albumImageUrl}
                   alt="Album cover"
+                  width={32}
+                  height={32}
                   className="h-8 w-8 rounded-lg object-cover sb-ring"
                 />
               ) : (
@@ -182,6 +192,21 @@ export function TracksList({ tracks, searchQuery, sortBy = "name", sortAsc = tru
             </TableCell>
           </TableRow>
         ))}
+        {hasMore && (
+          <TableRow>
+            <TableCell className="py-3 text-center" colSpan={8}>
+              <button
+                type="button"
+                onClick={() => setRenderCap((prev) => prev + INITIAL_RENDER_CAP)}
+                className="inline-flex items-center gap-1 text-xs font-medium transition-colors sb-link-hover"
+                style={{ color: "var(--sb-accent)" }}
+              >
+                <ChevronDown className="h-3.5 w-3.5" />
+                Show more ({filteredAndSortedTracks.length - renderCap} remaining)
+              </button>
+            </TableCell>
+          </TableRow>
+        )}
         {!filteredAndSortedTracks.length && (
           <TableRow>
             <TableCell className="py-8 text-center opacity-50" colSpan={8}>

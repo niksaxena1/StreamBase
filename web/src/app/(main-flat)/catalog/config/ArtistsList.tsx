@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ExternalLink, User } from "lucide-react";
+import Image from "next/image";
+import { ExternalLink, User, ChevronDown } from "lucide-react";
 
 import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
 import { foldForSearch } from "@/lib/searchFold";
@@ -29,6 +30,8 @@ type ArtistsListProps = {
   sortBy?: SortOption;
   sortAsc?: boolean;
 };
+
+const INITIAL_RENDER_CAP = 150;
 
 export function ArtistsList({ artists, searchQuery, sortBy = "name", sortAsc = true }: ArtistsListProps) {
   const { metric } = useMetric();
@@ -113,20 +116,26 @@ export function ArtistsList({ artists, searchQuery, sortBy = "name", sortAsc = t
     return "Daily Streams";
   };
 
+  // Incremental render cap to keep DOM node count low for large artist lists.
+  const [renderCap, setRenderCap] = useState(INITIAL_RENDER_CAP);
+  const visibleArtists = filteredAndSortedArtists.slice(0, renderCap);
+  const hasMore = filteredAndSortedArtists.length > renderCap;
+
   return (
     <div className="flex flex-col space-y-2">
       <GlassTable headers={["", "Artist", getTotalMetricLabel(), getDailyMetricLabel(), "ID", ""]}>
-        {filteredAndSortedArtists.map((artist) => {
+        {visibleArtists.map((artist) => {
           const dailyMetricValue = getDailyMetricValue(artist);
 
           return (
             <TableRow key={artist.id}>
             <TableCell>
               {artist.imageUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
+                <Image
                   src={artist.imageUrl}
                   alt={artist.name}
+                  width={40}
+                  height={40}
                   className="h-10 w-10 rounded-full object-cover sb-ring"
                 />
               ) : (
@@ -171,6 +180,21 @@ export function ArtistsList({ artists, searchQuery, sortBy = "name", sortAsc = t
             </TableRow>
           );
         })}
+        {hasMore && (
+          <TableRow>
+            <TableCell className="py-3 text-center" colSpan={6}>
+              <button
+                type="button"
+                onClick={() => setRenderCap((prev) => prev + INITIAL_RENDER_CAP)}
+                className="inline-flex items-center gap-1 text-xs font-medium transition-colors sb-link-hover"
+                style={{ color: "var(--sb-accent)" }}
+              >
+                <ChevronDown className="h-3.5 w-3.5" />
+                Show more ({filteredAndSortedArtists.length - renderCap} remaining)
+              </button>
+            </TableCell>
+          </TableRow>
+        )}
         {!filteredAndSortedArtists.length && (
           <TableRow>
             <TableCell className="py-8 text-center opacity-50" colSpan={6}>

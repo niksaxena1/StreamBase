@@ -285,6 +285,56 @@ export function extractOverrideItemsFromRechartsPayload(payload: unknown): Manua
 }
 
 // ============================================================================
+// Chart Downsampling (for long date ranges)
+// ============================================================================
+
+/**
+ * Downsample a daily chart series to keep the total point count manageable.
+ * Preserves first/last points and min/max within each bucket so visual
+ * peaks and valleys are never hidden.
+ *
+ * Strategy:
+ *   - ≤ maxPoints  → pass through unchanged
+ *   - > maxPoints  → bucket into `maxPoints` windows; pick the point with
+ *     the largest absolute `value` (or `daily`) in each bucket plus the
+ *     bucket boundaries, then dedupe.
+ *
+ * Works on both ascending and descending arrays.
+ * The output preserves the original ordering.
+ */
+export function downsampleSeries<T extends { date: string; value?: number | null; daily?: number | null }>(
+  data: T[],
+  maxPoints = 400,
+): T[] {
+  if (!data || data.length <= maxPoints) return data;
+
+  const bucketSize = data.length / maxPoints;
+  const kept = new Set<number>(); // indices to keep
+  kept.add(0);
+  kept.add(data.length - 1);
+
+  for (let b = 0; b < maxPoints; b++) {
+    const start = Math.floor(b * bucketSize);
+    const end = Math.min(Math.floor((b + 1) * bucketSize), data.length);
+
+    let bestIdx = start;
+    let bestAbs = -1;
+    for (let i = start; i < end; i++) {
+      const v = Math.abs(Number(data[i].value ?? data[i].daily ?? 0));
+      if (v > bestAbs) {
+        bestAbs = v;
+        bestIdx = i;
+      }
+    }
+    kept.add(start); // bucket boundary
+    kept.add(bestIdx); // peak within bucket
+  }
+
+  const sortedIndices = Array.from(kept).sort((a, b) => a - b);
+  return sortedIndices.map((i) => data[i]);
+}
+
+// ============================================================================
 // Rolling Average Utilities
 // ============================================================================
 

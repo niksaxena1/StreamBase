@@ -7,6 +7,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import { Calendar, Check, ChevronDown, X } from "lucide-react";
 import { Input } from "@/components/ui/Input";
 import { Combobox, type ComboboxOption } from "@/components/ui/Combobox";
@@ -491,10 +492,11 @@ export function MultiSelectInput({ value, fieldDef, options, onChange, imageShap
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       {opt.imageUrl && (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
+                        <Image
                           src={opt.imageUrl}
                           alt=""
+                          width={20}
+                          height={20}
                           className={[
                             "h-5 w-5 object-cover shrink-0",
                             imageShape === "square" ? "rounded-lg" : "rounded-full",

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useDeferredValue } from "react";
 import { Search, X } from "lucide-react";
 import Link from "next/link";
+import Image from "next/image";
 
 import { useMetric } from "@/components/metrics/MetricContext";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
@@ -335,10 +336,11 @@ export function HomeScatterSection(props: {
                       }}
                     >
                       {m.imageUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
+                        <Image
                           src={m.imageUrl}
                           alt=""
+                          width={32}
+                          height={32}
                           className="mt-0.5 h-8 w-8 rounded-md object-cover sb-ring"
                         />
                       ) : (

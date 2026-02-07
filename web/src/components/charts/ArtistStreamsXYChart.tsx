@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent, MouseEvent } from "react";
 import { CartesianGrid, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis } from "recharts";
@@ -135,10 +136,11 @@ const CustomTooltip = ({
       <div className="flex items-start gap-3">
         {showRich ? (
           p.artist_image_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
+            <Image
               src={p.artist_image_url}
               alt=""
+              width={48}
+              height={48}
               className="h-12 w-12 rounded-full object-cover sb-ring"
               loading="lazy"
               decoding="async"

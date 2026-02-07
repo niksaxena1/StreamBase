@@ -513,13 +513,13 @@ export function PlaylistTracksSectionClient(props: {
                 <TableCell>
                   <div className="flex items-center gap-2">
                     {a.artist_id && artistImagesById.get(a.artist_id) ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
+                      <Image
                         src={artistImagesById.get(a.artist_id) ?? ""}
                         alt=""
+                        width={28}
+                        height={28}
                         className="h-7 w-7 rounded-full object-cover sb-ring"
                         loading="lazy"
-                        decoding="async"
                       />
                     ) : (
                       <div className="h-7 w-7 rounded-full sb-ring bg-white/60 dark:bg-white/10" />

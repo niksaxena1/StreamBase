@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { Download } from "lucide-react";
+import Image from "next/image";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { IconButton } from "@/components/ui/Button";
@@ -226,10 +227,11 @@ export function StreamOverridesTable({
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         {imageUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
+                          <Image
                             src={imageUrl}
                             alt={name}
+                            width={32}
+                            height={32}
                             className="h-8 w-8 rounded-lg object-cover sb-ring flex-shrink-0"
                           />
                         ) : (

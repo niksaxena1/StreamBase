@@ -222,29 +222,17 @@ export default async function PlaylistsPage({
     ),
   ]);
 
-  // Fetch latest stats for all playlists to show track counts in dropdown
+  // Fetch latest stats for all playlists in a single query (replaces N+1 pattern).
   const { data: allPlaylistsLatestStats } = await cachedQuery(
     async () => {
       const playlistKeys = (playlists ?? []).map((p: any) => p.playlist_key);
       if (playlistKeys.length === 0) return { data: [], error: null };
-      
-      const rows = await Promise.all(
-        playlistKeys.map(async (key: string) => {
-          const { data } = await svc
-            .from("playlist_daily_stats")
-            .select("track_count")
-            .eq("playlist_key", key)
-            .order("date", { ascending: false })
-            .limit(1)
-            .maybeSingle();
 
-          return { playlist_key: key, track_count: data?.track_count ?? null };
-        }),
-      );
-
-      return { data: rows, error: null };
+      return await svc.rpc("playlists_latest_track_counts", {
+        p_keys: playlistKeys,
+      });
     },
-    "playlists-all-latest-stats-v2",
+    "playlists-all-latest-stats-v3",
     3600,
   );
 

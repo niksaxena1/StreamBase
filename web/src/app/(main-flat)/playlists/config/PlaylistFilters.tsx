@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { Search, X, Music } from "lucide-react";
 import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
@@ -285,10 +286,11 @@ export function PlaylistFilters({ playlists, statsMap, registerExport }: Playlis
                     <Music className="h-4 w-4" style={{ color: "black" }} />
                   </div>
                 ) : p.spotify_playlist_image_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
+                  <Image
                     src={p.spotify_playlist_image_url}
                     alt="Playlist cover"
+                    width={32}
+                    height={32}
                     className="h-8 w-8 rounded-lg object-cover sb-ring"
                   />
                 ) : (
