@@ -1,8 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname } from "next/navigation";
-import React, { useState, useEffect } from "react";
+import React from "react";
 
 export type Item = {
   href: string;
@@ -55,7 +54,7 @@ function SideRailContent({
         const isHealth = it.href === "/health";
 
         return (
-          <Link
+          <a
             key={it.href}
             href={it.href}
             className={[
@@ -107,13 +106,13 @@ function SideRailContent({
                 </kbd>
               )}
             </span>
-          </Link>
+          </a>
         );
       })}
 
       <div className="my-2 h-px w-full" style={{ background: "var(--sb-border)" }} />
 
-      <Link
+      <a
         href="/settings"
         className="group relative grid h-9 w-9 place-items-center rounded-full transition hover:opacity-90"
         style={{
@@ -145,7 +144,7 @@ function SideRailContent({
             g s
           </kbd>
         </span>
-      </Link>
+      </a>
     </div>
   );
 }
@@ -157,32 +156,9 @@ export function SideRail({
   healthBadgeCount?: number;
   healthHasCritical?: boolean;
 }) {
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
   return (
     <aside className="hidden w-[60px] shrink-0 sm:block">
-      {mounted ? (
-        <SideRailContent healthBadgeCount={healthBadgeCount} healthHasCritical={healthHasCritical} />
-      ) : (
-        <div className="sb-glass sticky top-3 flex flex-col items-center gap-2 px-2 py-2">
-          {navItems.map((it) => (
-            <div
-              key={it.href}
-              className="relative grid h-9 w-9 place-items-center rounded-full bg-white/70"
-            >
-              {it.icon(false)}
-            </div>
-          ))}
-          <div className="my-2 h-px w-full" style={{ background: "var(--sb-border)" }} />
-          <div className="grid h-9 w-9 place-items-center rounded-full">
-            <IconGear />
-          </div>
-        </div>
-      )}
+      <SideRailContent healthBadgeCount={healthBadgeCount} healthHasCritical={healthHasCritical} />
     </aside>
   );
 }

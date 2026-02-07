@@ -19,7 +19,7 @@ type KeyboardShortcutsContextValue = {
   /** Open search modal */
   openSearch: () => void;
   /** Register search opener (called by SearchBar) */
-  setSearchOpener: (opener: () => void) => void;
+  setSearchOpener: (opener: (() => void) | null) => void;
 };
 
 const KeyboardShortcutsContext = createContext<KeyboardShortcutsContextValue | null>(null);
@@ -64,6 +64,11 @@ export function KeyboardShortcutsProvider({ children }: { children: ReactNode })
     }
   }, [searchOpener]);
 
+  // IMPORTANT: store function values safely (avoid setState(function) invoking as updater)
+  const registerSearchOpener = useCallback((opener: (() => void) | null) => {
+    setSearchOpener(() => opener);
+  }, []);
+
   const registerShortcut = useCallback(
     (key: string, handler: ShortcutHandler, description: string) => {
       setCustomShortcuts((prev) => {
@@ -84,15 +89,18 @@ export function KeyboardShortcutsProvider({ children }: { children: ReactNode })
     []
   );
 
-  // Build shortcuts list for display
-  const shortcuts = [
-    { key: "/", description: "Open search" },
-    { key: "?", description: "Show keyboard shortcuts" },
-    ...NAV_ITEMS.map((item) => ({ key: item.key, description: `Go to ${item.label}` })),
-    { key: "g s", description: "Go to Settings" },
-    { key: "Esc", description: "Close modal / dialog" },
-    ...Array.from(customShortcuts.entries()).map(([key, { description }]) => ({ key, description })),
-  ];
+  // Build shortcuts list for display (memoized so context value stays stable)
+  const shortcuts = useMemo(
+    () => [
+      { key: "/", description: "Open search" },
+      { key: "?", description: "Show keyboard shortcuts" },
+      ...NAV_ITEMS.map((item) => ({ key: item.key, description: `Go to ${item.label}` })),
+      { key: "g s", description: "Go to Settings" },
+      { key: "Esc", description: "Close modal / dialog" },
+      ...Array.from(customShortcuts.entries()).map(([key, { description }]) => ({ key, description })),
+    ],
+    [customShortcuts],
+  );
 
   useEffect(() => {
     let gPressed = false;
@@ -200,8 +208,8 @@ export function KeyboardShortcutsProvider({ children }: { children: ReactNode })
     closeHelp,
     shortcuts,
     openSearch,
-    setSearchOpener,
-  }), [registerShortcut, isHelpOpen, openHelp, closeHelp, shortcuts, openSearch, setSearchOpener]);
+    setSearchOpener: registerSearchOpener,
+  }), [registerShortcut, isHelpOpen, openHelp, closeHelp, shortcuts, openSearch, registerSearchOpener]);
 
   return (
     <KeyboardShortcutsContext.Provider value={value}>

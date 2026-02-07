@@ -240,8 +240,11 @@ export function SearchBar() {
   // Register search opener with keyboard shortcuts provider
   useEffect(() => {
     if (keyboardShortcuts) {
-      keyboardShortcuts.setSearchOpener(() => () => setOpen(true));
+      keyboardShortcuts.setSearchOpener(() => setOpen(true));
     }
+    return () => {
+      keyboardShortcuts?.setSearchOpener(null);
+    };
   }, [keyboardShortcuts]);
 
   useEffect(() => {
