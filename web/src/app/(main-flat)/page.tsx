@@ -162,19 +162,19 @@ export default async function Home({
   // for cached reads so cache revalidation can't fail due to missing cookies.
   const svc = supabaseService();
 
-  // Cache-buster: if overrides are inserted via SQL (outside the Settings UI),
-  // Next's `unstable_cache` may keep serving stale playlist_daily_stats until TTL.
-  // Include the latest override id in cache keys so any new override forces a refresh.
+  // Cache-buster: include count + max(id) in cache keys so both additions AND
+  // removals of overrides invalidate stale playlist_daily_stats caches.
   let overrideBuster = "0";
   try {
-    const { data: latestOverride } = await svc
+    const { count, data: latestOverride } = await svc
       .from("track_daily_stream_overrides")
-      .select("id")
+      .select("id", { count: "exact" })
       .order("id", { ascending: false })
       .limit(1)
       .maybeSingle();
-    const id = Number((latestOverride as any)?.id ?? 0);
-    overrideBuster = Number.isFinite(id) && id > 0 ? String(id) : "0";
+    const maxId = Number((latestOverride as any)?.id ?? 0);
+    const total = Number(count ?? 0);
+    overrideBuster = `${total}-${maxId}`;
   } catch {
     // ignore (table may not exist yet)
   }

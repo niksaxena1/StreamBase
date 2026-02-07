@@ -14,6 +14,7 @@ type Playlist = {
   display_order: number | null;
   collector?: string | null;
   playlist_type?: string | null;
+  entity_playlist_key?: string | null;
 };
 
 type PlaylistSettingsTableProps = {
@@ -21,6 +22,7 @@ type PlaylistSettingsTableProps = {
   updatePlaylist: (formData: FormData) => Promise<void>;
   updateCollector: (formData: FormData) => Promise<void>;
   updatePlaylistType: (formData: FormData) => Promise<void>;
+  updateEntityPlaylist: (formData: FormData) => Promise<void>;
   reorderPlaylists: (updates: { playlist_key: string; display_order: number }[]) => Promise<void>;
 };
 
@@ -29,6 +31,7 @@ export function PlaylistSettingsTable({
   updatePlaylist,
   updateCollector,
   updatePlaylistType,
+  updateEntityPlaylist,
   reorderPlaylists,
 }: PlaylistSettingsTableProps) {
   const [playlists, setPlaylists] = useState(initialPlaylists);
@@ -41,6 +44,9 @@ export function PlaylistSettingsTable({
   );
   const [playlistTypeDraft, setPlaylistTypeDraft] = useState<Record<string, string>>(() =>
     Object.fromEntries(initialPlaylists.map((p) => [p.playlist_key, String(p.playlist_type ?? "")])),
+  );
+  const [entityDraft, setEntityDraft] = useState<Record<string, string>>(() =>
+    Object.fromEntries(initialPlaylists.map((p) => [p.playlist_key, String(p.entity_playlist_key ?? "")])),
   );
   const [spotifyDraft, setSpotifyDraft] = useState<Record<string, string>>(() =>
     Object.fromEntries(initialPlaylists.map((p) => [p.playlist_key, String(p.spotify_playlist_id ?? "")])),
@@ -139,6 +145,44 @@ export function PlaylistSettingsTable({
     });
   }
 
+  // Entity playlists available as options for the Entity dropdown
+  const entityPlaylistOptions = useMemo(() => {
+    const entities = playlists.filter(
+      (p) => (playlistTypeDraft[p.playlist_key] ?? p.playlist_type) === "Entity",
+    );
+    return [
+      { value: "", label: "—" },
+      ...entities.map((p) => ({ value: p.playlist_key, label: p.display_name })),
+    ];
+  }, [playlists, playlistTypeDraft]);
+
+  function saveEntityPlaylist(playlist_key: string, entityKey: string) {
+    const fieldKey = `${playlist_key}:entity`;
+    setFieldStatus(fieldKey, "saving");
+
+    startTransition(() => {
+      void (async () => {
+        try {
+          const fd = new FormData();
+          fd.set("playlist_key", playlist_key);
+          fd.set("entity_playlist_key", entityKey);
+          await updateEntityPlaylist(fd);
+
+          setPlaylists((prev) =>
+            prev.map((p) =>
+              p.playlist_key === playlist_key ? { ...p, entity_playlist_key: entityKey || null } : p,
+            ),
+          );
+
+          setFieldStatus(fieldKey, "saved");
+        } catch (e) {
+          console.error("Failed to update entity playlist:", e);
+          setFieldStatus(fieldKey, "error");
+        }
+      })();
+    });
+  }
+
   function saveSpotifyId(playlist_key: string, raw: string) {
     const fieldKey = `${playlist_key}:spotify`;
     setFieldStatus(fieldKey, "saving");
@@ -198,7 +242,7 @@ export function PlaylistSettingsTable({
   }
 
   return (
-    <GlassTable headers={["", "", "Playlist", "Type", "Collector", "Spotify playlist (URL/URI/ID)"]}>
+    <GlassTable headers={["", "", "Playlist", "Type", "Collector", "Entity", "Spotify playlist (URL/URI/ID)"]}>
       {playlists.map((p, index) => {
         const isAllCatalog = p.playlist_key === "all_catalog";
         const draftCollector = collectorDraft[p.playlist_key] ?? String(p.collector ?? "");
@@ -318,6 +362,29 @@ export function PlaylistSettingsTable({
               )}
             </TableCell>
             <TableCell>
+              {!isDistro || isAllCatalog ? (
+                <span className="text-xs" style={{ color: "var(--sb-muted)" }}>
+                  —
+                </span>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <MenuSelect
+                    value={entityDraft[p.playlist_key] ?? String(p.entity_playlist_key ?? "")}
+                    onChange={(next) => {
+                      setEntityDraft((s) => ({ ...s, [p.playlist_key]: next }));
+                      saveEntityPlaylist(p.playlist_key, next);
+                    }}
+                    ariaLabel={`Entity playlist for ${p.display_name}`}
+                    placeholder="—"
+                    className="w-full"
+                    buttonClassName="w-full"
+                    options={entityPlaylistOptions}
+                  />
+                  {renderStatus(`${p.playlist_key}:entity`)}
+                </div>
+              )}
+            </TableCell>
+            <TableCell>
               {isAllCatalog ? (
                 <span className="text-xs" style={{ color: "var(--sb-muted)" }}>
                   Not a Spotify playlist
@@ -358,7 +425,7 @@ export function PlaylistSettingsTable({
         );
       })}
       {!playlists.length && (
-        <EmptyState colSpan={6} message="No playlists found." />
+        <EmptyState colSpan={7} message="No playlists found." />
       )}
     </GlassTable>
   );

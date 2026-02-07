@@ -12,7 +12,9 @@ const nextConfig: NextConfig = {
     // Cache optimized images for a full day.
     minimumCacheTTL: 86400,
     remotePatterns: [
-      { protocol: "https", hostname: "i.scdn.co" },
+      // Spotify uses multiple CDN hostnames for images; allow wildcard subdomains.
+      { protocol: "https", hostname: "**.scdn.co" },
+      { protocol: "https", hostname: "**.spotifycdn.com" },
     ],
   },
 };

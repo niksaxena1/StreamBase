@@ -599,6 +599,72 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
     }
   }
 
+  // Fetch entity-distro drift warnings
+  const entityDistroDriftMap = new Map<
+    string,
+    {
+      extra: Array<{
+        isrc: string;
+        name: string | null;
+        artist_names?: string[] | null;
+        artist_ids?: string[] | null;
+        album_image_url?: string | null;
+        source_playlist_key?: string | null;
+      }>;
+      missing: Array<{
+        isrc: string;
+        name: string | null;
+        artist_names?: string[] | null;
+        artist_ids?: string[] | null;
+        album_image_url?: string | null;
+      }>;
+    }
+  >();
+
+  const entityDistroDriftWarnings = (warnings ?? []).filter(
+    (w) => w.code === "entity_distro_drift" && w.playlist_key && selectedRunDate
+  );
+
+  if (entityDistroDriftWarnings.length > 0 && selectedRunDate) {
+    // Fetch drift details from the RPC
+    const { data: driftRows, error: driftErr } = await svc.rpc("health_entity_distro_drift", {
+      run_date: selectedRunDate,
+    });
+
+    if (!driftErr && driftRows) {
+      // Group by entity_playlist_key
+      for (const row of driftRows as Array<{
+        entity_playlist_key: string;
+        drift_type: string;
+        isrc: string;
+        source_playlist_key: string | null;
+        name: string | null;
+        artist_names: string[] | null;
+        artist_ids: string[] | null;
+        album_image_url: string | null;
+      }>) {
+        const key = row.entity_playlist_key ?? "";
+        if (!entityDistroDriftMap.has(key)) {
+          entityDistroDriftMap.set(key, { extra: [], missing: [] });
+        }
+        const entry = entityDistroDriftMap.get(key)!;
+        const track = {
+          isrc: String(row.isrc ?? "").trim().toUpperCase(),
+          name: row.name ?? null,
+          artist_names: row.artist_names ?? null,
+          artist_ids: row.artist_ids ?? null,
+          album_image_url: row.album_image_url ?? null,
+          source_playlist_key: row.source_playlist_key ?? null,
+        };
+        if (row.drift_type === "extra_in_distro") {
+          entry.extra.push(track);
+        } else if (row.drift_type === "missing_from_distro") {
+          entry.missing.push(track);
+        }
+      }
+    }
+  }
+
   // Fetch ALL tracks missing from catalog across all playlists for the selected date
   let allMissingTracks: Array<{
     isrc: string;
@@ -738,6 +804,11 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
                   : undefined
               }
               enrichmentWarning={w.code === "tracks_missing_enrichment" ? w.details_json : undefined}
+              entityDistroDrift={
+                w.code === "entity_distro_drift" && w.playlist_key
+                  ? entityDistroDriftMap.get(w.playlist_key)
+                  : undefined
+              }
             />
           ))}
           {!displayedWarnings.length && (

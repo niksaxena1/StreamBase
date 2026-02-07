@@ -45,7 +45,7 @@ export default async function PlaylistSettingsPage() {
   const { data, error } = await sb
     .from("playlists")
     .select(
-      "playlist_key,display_name,spotify_playlist_id,spotify_playlist_image_url,display_order,collector,playlist_type",
+      "playlist_key,display_name,spotify_playlist_id,spotify_playlist_image_url,display_order,collector,playlist_type,entity_playlist_key",
     )
     .order("display_order", { ascending: true, nullsFirst: false })
     .order("display_name", { ascending: true });
@@ -85,6 +85,39 @@ export default async function PlaylistSettingsPage() {
     const { error: upErr } = await svc
       .from("playlists")
       .update({ playlist_type: playlistType })
+      .eq("playlist_key", playlistKey);
+
+    if (upErr) throw new Error(upErr.message);
+  }
+
+  async function updateEntityPlaylist(formData: FormData) {
+    "use server";
+
+    await requireAdmin();
+    const playlistKey = String(formData.get("playlist_key") ?? "");
+    const raw = String(formData.get("entity_playlist_key") ?? "").trim();
+
+    // Empty string means "unset"
+    const entityPlaylistKey = raw || null;
+
+    // If a value is provided, validate it exists and is an Entity playlist
+    if (entityPlaylistKey) {
+      const svc = supabaseService();
+      const { data: target, error: lookupErr } = await svc
+        .from("playlists")
+        .select("playlist_key,playlist_type")
+        .eq("playlist_key", entityPlaylistKey)
+        .single();
+
+      if (lookupErr || !target) throw new Error(`Entity playlist not found: ${entityPlaylistKey}`);
+      if (target.playlist_type !== "Entity")
+        throw new Error(`Playlist "${entityPlaylistKey}" is not an Entity playlist`);
+    }
+
+    const svc = supabaseService();
+    const { error: upErr } = await svc
+      .from("playlists")
+      .update({ entity_playlist_key: entityPlaylistKey })
       .eq("playlist_key", playlistKey);
 
     if (upErr) throw new Error(upErr.message);
@@ -159,6 +192,7 @@ export default async function PlaylistSettingsPage() {
         updatePlaylist={updatePlaylist}
         updateCollector={updateCollector}
         updatePlaylistType={updatePlaylistType}
+        updateEntityPlaylist={updateEntityPlaylist}
         reorderPlaylists={reorderPlaylists}
       />
     </div>

@@ -119,18 +119,19 @@ export default async function PlaylistsPage({
   // client for cached reads; access is still gated above.
   const svc = supabaseService();
 
-  // Cache-buster: include latest override id in cache keys so SQL-inserted overrides
-  // don't leave playlist stats stale until TTL.
+  // Cache-buster: include count + max(id) in cache keys so both additions AND
+  // removals of overrides invalidate stale playlist stats caches.
   let overrideBuster = "0";
   try {
-    const { data: latestOverride } = await svc
+    const { count, data: latestOverride } = await svc
       .from("track_daily_stream_overrides")
-      .select("id")
+      .select("id", { count: "exact" })
       .order("id", { ascending: false })
       .limit(1)
       .maybeSingle();
-    const id = Number((latestOverride as any)?.id ?? 0);
-    overrideBuster = Number.isFinite(id) && id > 0 ? String(id) : "0";
+    const maxId = Number((latestOverride as any)?.id ?? 0);
+    const total = Number(count ?? 0);
+    overrideBuster = `${total}-${maxId}`;
   } catch {
     // ignore
   }

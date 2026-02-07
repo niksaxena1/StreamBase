@@ -835,6 +835,74 @@ def main():
                 # If the enrichment check fails, don't block ingestion
                 pass
 
+        # --- Entity-vs-Distro drift check ---
+        # Load entity_playlist_key mappings from DB and compare membership sets.
+        try:
+            entity_map_rows = pg.select_all(
+                "playlists",
+                "playlist_key,entity_playlist_key,display_name",
+                "entity_playlist_key=not.is.null",
+                page_size=200,
+            )
+            # Group distro playlists by their entity
+            entity_to_distros: Dict[str, List[str]] = {}
+            distro_display_names: Dict[str, str] = {}
+            for r in entity_map_rows:
+                epk = (r.get("entity_playlist_key") or "").strip()
+                dpk = (r.get("playlist_key") or "").strip()
+                if epk and dpk:
+                    entity_to_distros.setdefault(epk, []).append(dpk)
+                    distro_display_names[dpk] = (r.get("display_name") or dpk).strip()
+
+            for entity_key, distro_keys in entity_to_distros.items():
+                entity_isrcs = playlist_to_isrcs.get(entity_key, set())
+                distro_union: Set[str] = set()
+                for dk in distro_keys:
+                    distro_union |= playlist_to_isrcs.get(dk, set())
+
+                extra_in_distro = sorted(distro_union - entity_isrcs)
+                missing_from_distro = sorted(entity_isrcs - distro_union)
+
+                if extra_in_distro or missing_from_distro:
+                    # Find entity display name
+                    entity_display = entity_key
+                    for pl in playlists:
+                        if pl.playlist_key == entity_key:
+                            entity_display = pl.display_name
+                            break
+
+                    parts = []
+                    if extra_in_distro:
+                        parts.append(f"{len(extra_in_distro)} extra in Distro")
+                    if missing_from_distro:
+                        parts.append(f"{len(missing_from_distro)} missing from Distro")
+                    summary = "; ".join(parts)
+
+                    warn_rows.append(
+                        {
+                            "run_id": run_id,
+                            "run_date": run_date.isoformat(),
+                            "playlist_key": entity_key,
+                            "severity": "warn",
+                            "code": "entity_distro_drift",
+                            "message": f"Entity/Distro drift for {entity_display}: {summary}",
+                            "details_json": {
+                                "entity_playlist_key": entity_key,
+                                "distro_playlist_keys": distro_keys,
+                                "extra_in_distro_count": len(extra_in_distro),
+                                "extra_in_distro_sample": extra_in_distro[:100],
+                                "missing_from_distro_count": len(missing_from_distro),
+                                "missing_from_distro_sample": missing_from_distro[:100],
+                            },
+                        }
+                    )
+                    print(
+                        f"  ⚠ Entity/Distro drift for {entity_display}: {summary}"
+                    )
+        except Exception as drift_err:
+            # Don't block ingestion if drift check fails
+            print(f"  ⚠ Entity-distro drift check failed: {drift_err}")
+
         pg.upsert("playlist_daily_stats", stats_rows, on_conflict="date,playlist_key")
         if warn_rows:
             pg.insert("ingestion_warnings", warn_rows)

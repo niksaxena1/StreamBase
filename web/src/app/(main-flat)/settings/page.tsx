@@ -403,6 +403,16 @@ export default async function SettingsPage() {
     if (!Number.isFinite(streams) || streams < 0) throw new Error("Streams must be a non-negative number.");
 
     const svc = supabaseService();
+
+    // Validate that the ISRC exists in the tracks table (FK constraint also enforces this,
+    // but a clear error message is better than a generic constraint violation).
+    const { data: trackRow } = await svc
+      .from("tracks")
+      .select("isrc")
+      .eq("isrc", isrc)
+      .maybeSingle();
+    if (!trackRow) throw new Error(`ISRC ${isrc} not found in the tracks table. Only existing tracks can be overridden.`);
+
     const { error: upErr } = await svc
       .from("track_daily_stream_overrides")
       .upsert(
@@ -412,8 +422,9 @@ export default async function SettingsPage() {
     if (upErr) throw new Error(upErr.message);
 
     if (recompute) {
-      // Best-effort: if RPC doesn't exist yet, still keep the override.
-      await svc.rpc("spotibase_recompute_playlist_daily_stats", { p_date: date });
+      // Cascade recompute: updates daily_streams_net for the overridden date AND all
+      // subsequent dates, so the forward chain of daily deltas stays correct.
+      await svc.rpc("spotibase_recompute_playlist_daily_stats_cascade", { p_start_date: date });
     }
 
     // Invalidate all Supabase query caches (unstable_cache uses tags in `cachedQuery`).
@@ -436,13 +447,11 @@ export default async function SettingsPage() {
     if (!id || Number.isNaN(id)) return;
 
     const svc = supabaseService();
-    const { error: delErr } = await svc.from("track_daily_stream_overrides").delete().eq("id", id);
-    if (delErr) throw new Error(delErr.message);
 
-    const date = String(formData.get("date") ?? "").trim();
-    if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      await svc.rpc("spotibase_recompute_playlist_daily_stats", { p_date: date });
-    }
+    // Atomic: delete the override AND cascade-recompute in a single transaction.
+    // If either step fails, everything rolls back — no stale stats left behind.
+    const { error: rpcErr } = await svc.rpc("spotibase_remove_stream_override", { p_override_id: id });
+    if (rpcErr) throw new Error(rpcErr.message);
 
     revalidateTag("supabase", "max");
 

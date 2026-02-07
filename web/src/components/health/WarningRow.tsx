@@ -64,6 +64,23 @@ type WarningRowProps = {
     missing_enrichment_track_count?: number;
     note?: string;
   };
+  entityDistroDrift?: {
+    extra: Array<{
+      isrc: string;
+      name: string | null;
+      artist_names?: string[] | null;
+      artist_ids?: string[] | null;
+      album_image_url?: string | null;
+      source_playlist_key?: string | null;
+    }>;
+    missing: Array<{
+      isrc: string;
+      name: string | null;
+      artist_names?: string[] | null;
+      artist_ids?: string[] | null;
+      album_image_url?: string | null;
+    }>;
+  };
 };
 
 function formatCodeLabel(code: string) {
@@ -85,6 +102,7 @@ export function WarningRow({
   trackCountSwingTracks,
   missingEnrichmentTracks,
   enrichmentWarning,
+  entityDistroDrift,
 }: WarningRowProps) {
   const [expanded, setExpanded] = useState(false);
   const [thumbByIsrc, setThumbByIsrc] = useState<Record<string, string | null>>({});
@@ -104,12 +122,15 @@ export function WarningRow({
     (Array.isArray(missingEnrichmentTracks) && missingEnrichmentTracks.length > 0) || 
     missingEnrichmentTracks === null
   );
+  const hasEntityDistroDrift = entityDistroDrift &&
+    (entityDistroDrift.extra.length > 0 || entityDistroDrift.missing.length > 0);
   const canExpand = (warning.code === "non_catalog_tracks_present" && hasTracks) ||
                    (warning.code === "track_count_swing" && hasSwingTracks) ||
                    (warning.code === "tracks_missing_enrichment" && hasMissingEnrichmentTracks) ||
                    (warning.code === "catalog_missing_stream_snapshots" && hasCatalogMissingSnapshotTracks) ||
                    (warning.code === "catalog_streams_missing_prev_nonzero" &&
-                     hasCatalogStreamsMissingPrevNonzeroTracks);
+                     hasCatalogStreamsMissingPrevNonzeroTracks) ||
+                   (warning.code === "entity_distro_drift" && hasEntityDistroDrift);
 
   const missingThumbIsrcs = useMemo(() => {
     if (!expanded) return [];
@@ -612,6 +633,117 @@ export function WarningRow({
                       {warning.details_json?.note ??
                         "These tracks appeared in a catalog export but had missing/invalid stream totals and were not written to track_daily_streams."}
                     </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {warning.code === "entity_distro_drift" && hasEntityDistroDrift && entityDistroDrift && (
+              <div className="space-y-4">
+                {entityDistroDrift.extra.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-xs font-medium opacity-70 mb-2">
+                      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium bg-orange-500/20 text-orange-700 dark:bg-orange-500/30 dark:text-orange-300 mr-2">
+                        Extra in Distro
+                      </span>
+                      Tracks in Distro playlists but NOT in Entity ({entityDistroDrift.extra.length}):
+                    </div>
+                    <div className="space-y-2">
+                      {entityDistroDrift.extra.map((track) => (
+                        <div key={track.isrc} className="flex items-center gap-3 text-xs">
+                          {track.album_image_url ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={track.album_image_url}
+                              alt="Album cover"
+                              className="h-10 w-10 rounded object-cover sb-ring flex-shrink-0"
+                            />
+                          ) : (
+                            <div className="h-10 w-10 rounded sb-ring bg-white/60 flex-shrink-0" />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Link
+                                href={`/tracks/${track.isrc}`}
+                                className="font-medium hover:underline"
+                                style={{ color: "var(--sb-text)" }}
+                              >
+                                {track.name || track.isrc}
+                              </Link>
+                              {track.artist_names && track.artist_names.length > 0 && (
+                                <span className="opacity-60">
+                                  by <ArtistLinks artistNames={track.artist_names} artistIds={track.artist_ids ?? undefined} />
+                                </span>
+                              )}
+                              {track.source_playlist_key && (
+                                <span className="opacity-50 font-mono text-[10px]">
+                                  via {track.source_playlist_key}
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-0.5">
+                              <Link
+                                href={`/tracks/${track.isrc}`}
+                                className="font-mono text-[10px] sb-positive underline hover:opacity-80"
+                              >
+                                {track.isrc}
+                              </Link>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {entityDistroDrift.missing.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-xs font-medium opacity-70 mb-2">
+                      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium bg-blue-500/20 text-blue-700 dark:bg-blue-500/30 dark:text-blue-300 mr-2">
+                        Missing from Distro
+                      </span>
+                      Tracks in Entity but NOT in any Distro playlist ({entityDistroDrift.missing.length}):
+                    </div>
+                    <div className="space-y-2">
+                      {entityDistroDrift.missing.map((track) => (
+                        <div key={track.isrc} className="flex items-center gap-3 text-xs">
+                          {track.album_image_url ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={track.album_image_url}
+                              alt="Album cover"
+                              className="h-10 w-10 rounded object-cover sb-ring flex-shrink-0"
+                            />
+                          ) : (
+                            <div className="h-10 w-10 rounded sb-ring bg-white/60 flex-shrink-0" />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Link
+                                href={`/tracks/${track.isrc}`}
+                                className="font-medium hover:underline"
+                                style={{ color: "var(--sb-text)" }}
+                              >
+                                {track.name || track.isrc}
+                              </Link>
+                              {track.artist_names && track.artist_names.length > 0 && (
+                                <span className="opacity-60">
+                                  by <ArtistLinks artistNames={track.artist_names} artistIds={track.artist_ids ?? undefined} />
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-0.5">
+                              <Link
+                                href={`/tracks/${track.isrc}`}
+                                className="font-mono text-[10px] sb-positive underline hover:opacity-80"
+                              >
+                                {track.isrc}
+                              </Link>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
