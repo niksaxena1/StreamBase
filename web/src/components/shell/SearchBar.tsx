@@ -8,6 +8,7 @@ import { Modal } from "@/components/ui/Modal";
 import { useMetric } from "@/components/metrics/MetricContext";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { useKeyboardShortcutsSafe } from "@/components/keyboard";
+import { triggerRouteLoadingBarStart } from "@/lib/navigation/loadingBar";
 
 type SearchResult = {
   type: "track" | "artist" | "playlist";
@@ -173,6 +174,7 @@ function ResultItem({
                       e.stopPropagation();
                       const artistId = result.artistIds?.[idx];
                       if (artistId) {
+                        triggerRouteLoadingBarStart(`/catalog?artist_id=${encodeURIComponent(artistId)}`);
                         router.push(`/catalog?artist_id=${encodeURIComponent(artistId)}`);
                         addRecent({
                           type: "artist",
@@ -375,16 +377,22 @@ export function SearchBar() {
     if (result.type === "track") {
       // If we have the first artist ID, load both artist and track in catalog
       if (result.firstArtistId) {
+        triggerRouteLoadingBarStart(
+          `/catalog?artist_id=${encodeURIComponent(result.firstArtistId)}&isrc=${encodeURIComponent(result.id)}`,
+        );
         router.push(
           `/catalog?artist_id=${encodeURIComponent(result.firstArtistId)}&isrc=${encodeURIComponent(result.id)}`
         );
       } else {
         // Fallback to just loading the track if no artist ID
+        triggerRouteLoadingBarStart(`/catalog?isrc=${encodeURIComponent(result.id)}`);
         router.push(`/catalog?isrc=${encodeURIComponent(result.id)}`);
       }
     } else if (result.type === "artist") {
+      triggerRouteLoadingBarStart(`/catalog?artist_id=${encodeURIComponent(result.id)}`);
       router.push(`/catalog?artist_id=${encodeURIComponent(result.id)}`);
     } else if (result.type === "playlist") {
+      triggerRouteLoadingBarStart(`/playlists?playlist_key=${encodeURIComponent(result.id)}`);
       router.push(`/playlists?playlist_key=${encodeURIComponent(result.id)}`);
     }
 

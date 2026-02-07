@@ -5,6 +5,7 @@ import { ArrowLeft, Download, Settings } from "lucide-react";
 import { useCallback, useState } from "react";
 
 import { Alert } from "@/components/ui/Alert";
+import { triggerRouteLoadingBarStart } from "@/lib/navigation/loadingBar";
 import { PlaylistFilters } from "./PlaylistFilters";
 
 type PlaylistRow = {
@@ -43,7 +44,10 @@ export function PlaylistsConfigClient(props: {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => router.push("/playlists")}
+            onClick={() => {
+              triggerRouteLoadingBarStart("/playlists");
+              router.push("/playlists");
+            }}
             className="sb-ring grid h-8 w-8 place-items-center rounded-full bg-white/70 text-xs font-medium transition hover:bg-white dark:bg-white/10 dark:hover:bg-white/15 cursor-pointer"
             aria-label="Back to playlists dashboard"
             title="Back to playlists dashboard"
@@ -78,7 +82,10 @@ export function PlaylistsConfigClient(props: {
           {props.isAdmin ? (
             <button
               type="button"
-              onClick={() => router.push("/playlists/config/settings")}
+              onClick={() => {
+                triggerRouteLoadingBarStart("/playlists/config/settings");
+                router.push("/playlists/config/settings");
+              }}
               className="sb-ring grid h-8 w-8 place-items-center rounded-full bg-white/70 text-xs font-medium transition hover:bg-white dark:bg-white/10 dark:hover:bg-white/15 cursor-pointer"
               aria-label="Playlist settings"
               title="Playlist settings"

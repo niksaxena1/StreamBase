@@ -3,6 +3,8 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, useCallback, ReactNode } from "react";
 import { useRouter, usePathname } from "next/navigation";
 
+import { triggerRouteLoadingBarStart } from "@/lib/navigation/loadingBar";
+
 type ShortcutHandler = () => void;
 
 type KeyboardShortcutsContextValue = {
@@ -164,6 +166,7 @@ export function KeyboardShortcutsProvider({ children }: { children: ReactNode })
         e.preventDefault();
         gPressed = false;
         if (gTimeout) clearTimeout(gTimeout);
+        triggerRouteLoadingBarStart("/settings");
         router.push("/settings");
         return;
       }
@@ -180,6 +183,7 @@ export function KeyboardShortcutsProvider({ children }: { children: ReactNode })
         e.preventDefault();
         // Only navigate if not already on that page
         if (pathname !== navItem.href) {
+          triggerRouteLoadingBarStart(navItem.href);
           router.push(navItem.href);
         }
         return;
