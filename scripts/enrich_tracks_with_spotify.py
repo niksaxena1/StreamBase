@@ -70,14 +70,21 @@ class Spotify:
         return self._token
 
     def get(self, path: str) -> Any:
-        res = requests.get(
-            f"https://api.spotify.com/v1{path}",
-            headers={"Authorization": f"Bearer {self.token()}"},
-            timeout=60,
-        )
-        if res.status_code != 200:
-            raise RuntimeError(f"Spotify API error {res.status_code}: {res.text[:300]}")
-        return res.json()
+        for attempt in range(5):
+            res = requests.get(
+                f"https://api.spotify.com/v1{path}",
+                headers={"Authorization": f"Bearer {self.token()}"},
+                timeout=60,
+            )
+            if res.status_code == 429:
+                retry_after = int(res.headers.get("Retry-After", 5))
+                print(f"  Rate-limited, waiting {retry_after}s (attempt {attempt + 1}/5)...")
+                time.sleep(retry_after)
+                continue
+            if res.status_code != 200:
+                raise RuntimeError(f"Spotify API error {res.status_code}: {res.text[:300]}")
+            return res.json()
+        raise RuntimeError(f"Spotify API still rate-limited after 5 retries")
 
     def find_track_by_isrc(self, isrc: str) -> Optional[Dict[str, Any]]:
         q = requests.utils.quote(f"isrc:{isrc}")
