@@ -81,6 +81,8 @@ type WarningRowProps = {
       album_image_url?: string | null;
     }>;
   };
+  /** Full playlist key→meta map so drift sections can resolve display names + thumbnails. */
+  allPlaylistMeta?: Record<string, { name: string; imageUrl: string | null }>;
 };
 
 function formatCodeLabel(code: string) {
@@ -93,6 +95,48 @@ function formatCodeLabel(code: string) {
     .join(" ");
 }
 
+/** Small pill showing a playlist thumbnail + display name. Used inside drift sections. */
+function DriftPlaylistChip({
+  playlistKey,
+  meta,
+  label,
+}: {
+  playlistKey: string;
+  meta?: { name: string; imageUrl: string | null } | null;
+  label?: string;
+}) {
+  const name = meta?.name ?? playlistKey;
+  const imageUrl = meta?.imageUrl ?? null;
+
+  return (
+    <Link
+      href={`/playlists?playlist_key=${encodeURIComponent(playlistKey)}`}
+      className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] transition-opacity hover:opacity-80 whitespace-nowrap"
+      style={{ backgroundColor: "var(--sb-surface)" }}
+      onClick={(e) => e.stopPropagation()}
+      title={`${name} (${playlistKey})`}
+    >
+      {label && <span className="opacity-50">{label}</span>}
+      {imageUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={imageUrl}
+          alt=""
+          className="h-4 w-4 rounded-full object-cover sb-ring flex-shrink-0"
+        />
+      ) : (
+        <div
+          className="h-4 w-4 rounded-full sb-ring flex items-center justify-center text-[8px] font-bold flex-shrink-0"
+          style={{ backgroundColor: "var(--sb-row-odd)", color: "var(--sb-muted)" }}
+        >
+          {name.trim().slice(0, 1).toUpperCase()}
+        </div>
+      )}
+      <span className="font-medium">{name}</span>
+    </Link>
+  );
+}
+
 export function WarningRow({
   warning,
   playlistMeta,
@@ -103,6 +147,7 @@ export function WarningRow({
   missingEnrichmentTracks,
   enrichmentWarning,
   entityDistroDrift,
+  allPlaylistMeta,
 }: WarningRowProps) {
   const [expanded, setExpanded] = useState(false);
   const [thumbByIsrc, setThumbByIsrc] = useState<Record<string, string | null>>({});
@@ -639,18 +684,18 @@ export function WarningRow({
             )}
 
             {warning.code === "entity_distro_drift" && hasEntityDistroDrift && entityDistroDrift && (
-              <div className="space-y-4">
+              <div className="space-y-5">
                 {entityDistroDrift.extra.length > 0 && (
-                  <div className="space-y-2">
-                    <div className="text-xs font-medium opacity-70 mb-2">
-                      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium bg-orange-500/20 text-orange-700 dark:bg-orange-500/30 dark:text-orange-300 mr-2">
+                  <div>
+                    <div className="text-xs font-medium opacity-70 mb-3 flex items-center gap-2">
+                      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium bg-orange-500/20 text-orange-700 dark:bg-orange-500/30 dark:text-orange-300">
                         Extra in Distro
                       </span>
-                      Tracks in Distro playlists but NOT in Entity ({entityDistroDrift.extra.length}):
+                      <span>Tracks in Distro playlists but NOT in Entity ({entityDistroDrift.extra.length}):</span>
                     </div>
-                    <div className="space-y-2">
+                    <div className="space-y-1">
                       {entityDistroDrift.extra.map((track) => (
-                        <div key={track.isrc} className="flex items-center gap-3 text-xs">
+                        <div key={track.isrc} className="flex items-center gap-3 text-xs rounded-lg px-2.5 py-2" style={{ backgroundColor: "var(--sb-surface)" }}>
                           {track.album_image_url ? (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img
@@ -662,7 +707,7 @@ export function WarningRow({
                             <div className="h-10 w-10 rounded sb-ring bg-white/60 flex-shrink-0" />
                           )}
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
+                            <div className="truncate">
                               <Link
                                 href={`/tracks/${track.isrc}`}
                                 className="font-medium hover:underline"
@@ -670,17 +715,12 @@ export function WarningRow({
                               >
                                 {track.name || track.isrc}
                               </Link>
-                              {track.artist_names && track.artist_names.length > 0 && (
-                                <span className="opacity-60">
-                                  by <ArtistLinks artistNames={track.artist_names} artistIds={track.artist_ids ?? undefined} />
-                                </span>
-                              )}
-                              {track.source_playlist_key && (
-                                <span className="opacity-50 font-mono text-[10px]">
-                                  via {track.source_playlist_key}
-                                </span>
-                              )}
                             </div>
+                            {track.artist_names && track.artist_names.length > 0 && (
+                              <div className="opacity-60 truncate mt-0.5">
+                                <ArtistLinks artistNames={track.artist_names} artistIds={track.artist_ids ?? undefined} />
+                              </div>
+                            )}
                             <div className="mt-0.5">
                               <Link
                                 href={`/tracks/${track.isrc}`}
@@ -690,6 +730,15 @@ export function WarningRow({
                               </Link>
                             </div>
                           </div>
+                          {track.source_playlist_key && (
+                            <div className="flex-shrink-0 ml-2">
+                              <DriftPlaylistChip
+                                playlistKey={track.source_playlist_key}
+                                meta={allPlaylistMeta?.[track.source_playlist_key]}
+                                label="via"
+                              />
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -697,16 +746,16 @@ export function WarningRow({
                 )}
 
                 {entityDistroDrift.missing.length > 0 && (
-                  <div className="space-y-2">
-                    <div className="text-xs font-medium opacity-70 mb-2">
-                      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium bg-blue-500/20 text-blue-700 dark:bg-blue-500/30 dark:text-blue-300 mr-2">
+                  <div>
+                    <div className="text-xs font-medium opacity-70 mb-3 flex items-center gap-2">
+                      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium bg-blue-500/20 text-blue-700 dark:bg-blue-500/30 dark:text-blue-300">
                         Missing from Distro
                       </span>
-                      Tracks in Entity but NOT in any Distro playlist ({entityDistroDrift.missing.length}):
+                      <span>Tracks in Entity but NOT in any Distro playlist ({entityDistroDrift.missing.length}):</span>
                     </div>
-                    <div className="space-y-2">
+                    <div className="space-y-1">
                       {entityDistroDrift.missing.map((track) => (
-                        <div key={track.isrc} className="flex items-center gap-3 text-xs">
+                        <div key={track.isrc} className="flex items-center gap-3 text-xs rounded-lg px-2.5 py-2" style={{ backgroundColor: "var(--sb-surface)" }}>
                           {track.album_image_url ? (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img
@@ -718,7 +767,7 @@ export function WarningRow({
                             <div className="h-10 w-10 rounded sb-ring bg-white/60 flex-shrink-0" />
                           )}
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
+                            <div className="truncate">
                               <Link
                                 href={`/tracks/${track.isrc}`}
                                 className="font-medium hover:underline"
@@ -726,12 +775,12 @@ export function WarningRow({
                               >
                                 {track.name || track.isrc}
                               </Link>
-                              {track.artist_names && track.artist_names.length > 0 && (
-                                <span className="opacity-60">
-                                  by <ArtistLinks artistNames={track.artist_names} artistIds={track.artist_ids ?? undefined} />
-                                </span>
-                              )}
                             </div>
+                            {track.artist_names && track.artist_names.length > 0 && (
+                              <div className="opacity-60 truncate mt-0.5">
+                                <ArtistLinks artistNames={track.artist_names} artistIds={track.artist_ids ?? undefined} />
+                              </div>
+                            )}
                             <div className="mt-0.5">
                               <Link
                                 href={`/tracks/${track.isrc}`}
@@ -741,6 +790,15 @@ export function WarningRow({
                               </Link>
                             </div>
                           </div>
+                          {warning.playlist_key && (
+                            <div className="flex-shrink-0 ml-2">
+                              <DriftPlaylistChip
+                                playlistKey={warning.playlist_key}
+                                meta={allPlaylistMeta?.[warning.playlist_key]}
+                                label="in"
+                              />
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>

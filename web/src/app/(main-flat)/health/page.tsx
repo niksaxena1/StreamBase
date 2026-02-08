@@ -8,6 +8,7 @@ import { GlassTable, TableRow, TableCell, EmptyState } from "@/components/ui/Gla
 import { WarningRow } from "@/components/health/WarningRow";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { ExportMissingTracksButton } from "@/components/health/ExportMissingTracksButton";
+import { RefreshButton } from "@/components/health/RefreshButton";
 import { PageHeader } from "@/components/shell/PageHeader";
 import { addDaysISO, dataDateFromRunDate, SOT_DATA_LAG_DAYS } from "@/lib/sotDates";
 import { Alert } from "@/components/ui/Alert";
@@ -168,20 +169,12 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
   }
 
   // Playlist metadata (for name + thumbnail display).
+  // Fetch all playlists — table is small and drift sections need source playlist metadata too.
   const playlistMetaByKey = new Map<string, { name: string; imageUrl: string | null }>();
-  const playlistKeysNeedingMeta = Array.from(
-    new Set(
-      [
-        ...(warnings ?? []).map((w) => (w?.playlist_key ?? "").trim()),
-        ...(exportsForLatest ?? []).map((e) => String((e ?? {}).playlist_key ?? "").trim()),
-      ].filter(Boolean),
-    ),
-  );
-  if (playlistKeysNeedingMeta.length > 0) {
+  {
     const { data: plRows } = await svc
       .from("playlists")
       .select("playlist_key,display_name,spotify_playlist_image_url")
-      .in("playlist_key", playlistKeysNeedingMeta)
       .limit(2000);
 
     for (const r of plRows ?? []) {
@@ -193,6 +186,10 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
       playlistMetaByKey.set(key, { name, imageUrl });
     }
   }
+
+  // Serializable version for client components (Maps don't transfer across the wire).
+  const allPlaylistMeta: Record<string, { name: string; imageUrl: string | null }> =
+    Object.fromEntries(playlistMetaByKey.entries());
 
   // Fetch non-catalog tracks for warnings of type "non_catalog_tracks_present"
   const nonCatalogWarnings = (warnings ?? []).filter(
@@ -369,10 +366,14 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
           return;
         }
 
+        // Only fetch tracks that are STILL missing enrichment (spotify_artist_ids IS NULL).
+        // The stored isrc_list is a snapshot from ingestion time — tracks may have been
+        // enriched since then, so we re-check at query time.
         const { data: rows, error } = await svc
           .from("tracks")
           .select("isrc,name,spotify_artist_names,spotify_artist_ids,spotify_album_image_url")
-          .in("isrc", filteredIsrcs);
+          .in("isrc", filteredIsrcs)
+          .is("spotify_artist_ids", null);
 
         if (error) {
           console.error("Failed to fetch missing enrichment tracks:", error);
@@ -396,9 +397,8 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
             album_image_url: (row.spotify_album_image_url ?? null) as string | null,
           };
         });
-        const tracks = enrichmentExclusionsEnabled
-          ? tracksRaw.filter((t) => !isExcludedEnrichment(warning.playlist_key!, t.isrc))
-          : tracksRaw;
+        // Apply user-configured exclusions on top of the DB-level enrichment filter.
+        const tracks = tracksRaw.filter((t) => !isExcludedEnrichment(warning.playlist_key!, t.isrc));
         missingEnrichmentTracksMap.set(warning.playlist_key ?? "", tracks);
       } else {
         // Fallback for older warnings: compute affected tracks from membership snapshot
@@ -430,9 +430,8 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
             album_image_url: (row.album_image_url ?? null) as string | null,
           };
         });
-        const tracks = enrichmentExclusionsEnabled
-          ? tracksRaw.filter((t) => !isExcludedEnrichment(warning.playlist_key!, t.isrc))
-          : tracksRaw;
+        // RPC already filters by spotify_artist_ids IS NULL; apply user exclusions on top.
+        const tracks = tracksRaw.filter((t) => !isExcludedEnrichment(warning.playlist_key!, t.isrc));
         missingEnrichmentTracksMap.set(warning.playlist_key ?? "", tracks);
       }
     }));
@@ -713,9 +712,9 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
       }
 
       if (w.code === "tracks_missing_enrichment" && w.playlist_key) {
-        if (!enrichmentExclusionsEnabled) return true;
         const tracks = missingEnrichmentTracksMap.get(w.playlist_key);
-        // If we successfully computed the list and it's empty, suppress the row.
+        // Suppress the warning if all tracks have since been enriched (or excluded).
+        // The DB query already re-checks spotify_artist_ids IS NULL at render time.
         if (Array.isArray(tracks)) return tracks.length > 0;
         return true;
       }
@@ -739,6 +738,7 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
       <PageHeader
         title="System Health"
         subtitle="Recent ingestion runs and anomaly warnings."
+        actions={<RefreshButton />}
       />
 
       {(runsErr || warnErr || exportsErr) && (
@@ -778,6 +778,7 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
               key={`${w.code}-${w.playlist_key ?? "global"}-${i}`}
               warning={w}
               playlistMeta={w.playlist_key ? playlistMetaByKey.get(w.playlist_key) ?? null : null}
+              allPlaylistMeta={allPlaylistMeta}
               nonCatalogTracks={
                 w.code === "non_catalog_tracks_present" && w.playlist_key
                   ? nonCatalogTracksMap.get(w.playlist_key)
