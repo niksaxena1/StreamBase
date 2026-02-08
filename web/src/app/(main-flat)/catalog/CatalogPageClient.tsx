@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ExternalLink, User, ChevronRight, Download, List } from "lucide-react";
-import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
+import { formatDateISO, formatDateOrdinalDMonYYYY, formatInt, formatUsd } from "@/lib/format";
 import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/GlassTable";
 import { CatalogMetricsClient } from "./CatalogMetricsClient";
 import { Combobox } from "@/components/ui/Combobox";
@@ -55,6 +55,7 @@ type SelectedTrack = {
   spotifyTrackId: string | null;
   artistNames: string[] | null;
   artistIds: string[] | null;
+  releaseDate: string | null;
 };
 type TrackPlaylistMembership = {
   playlistKey: string;
@@ -510,6 +511,17 @@ export function CatalogPageClient(props: {
                       artistNames={props.selectedTrack.artistNames}
                       artistIds={props.selectedTrack.artistIds}
                     />
+                    <span>•</span>
+                  </>
+                ) : null}
+                {props.selectedTrack.releaseDate ? (
+                  <>
+                    <span>
+                      Released:{" "}
+                      <span className="font-medium">
+                        {formatDateOrdinalDMonYYYY(props.selectedTrack.releaseDate)}
+                      </span>
+                    </span>
                     <span>•</span>
                   </>
                 ) : null}

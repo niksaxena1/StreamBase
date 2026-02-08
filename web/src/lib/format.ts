@@ -68,3 +68,29 @@ export function formatDateISO(s: string | null | undefined): string {
   return s;
 }
 
+function ordinalSuffix(n: number): string {
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 13) return "th";
+  const mod10 = n % 10;
+  if (mod10 === 1) return "st";
+  if (mod10 === 2) return "nd";
+  if (mod10 === 3) return "rd";
+  return "th";
+}
+
+/**
+ * Format an ISO date (`YYYY-MM-DD`) as `12th Apr 2019` (UTC-safe).
+ */
+export function formatDateOrdinalDMonYYYY(iso: string | null | undefined): string {
+  const s = String(iso ?? "").trim();
+  if (!s) return "—";
+  const d = new Date(`${s}T00:00:00Z`);
+  if (!Number.isFinite(d.getTime())) return "—";
+
+  const day = d.getUTCDate();
+  const year = d.getUTCFullYear();
+  const month = Intl.DateTimeFormat("en-GB", { month: "short", timeZone: "UTC" }).format(d);
+
+  return `${day}${ordinalSuffix(day)} ${month} ${year}`;
+}
+

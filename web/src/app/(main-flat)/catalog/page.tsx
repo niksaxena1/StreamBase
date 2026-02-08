@@ -675,13 +675,14 @@ export default async function CatalogPage({
     spotifyTrackId: string | null;
     artistNames: string[] | null;
     artistIds: string[] | null;
+    releaseDate: string | null;
   } | null = null;
   if (isrc) {
     const { data: trackData } = await cachedQuery(
       async () =>
         await svc
           .from("tracks")
-          .select("name,spotify_album_image_url,spotify_track_id,spotify_artist_names,spotify_artist_ids")
+          .select("name,spotify_album_image_url,spotify_track_id,spotify_artist_names,spotify_artist_ids,release_date")
           .eq("isrc", isrc)
           .maybeSingle(),
       `track-selected-${isrc}`,
@@ -694,6 +695,7 @@ export default async function CatalogPage({
         spotify_track_id: string | null;
         spotify_artist_names: string[] | null;
         spotify_artist_ids: string[] | null;
+        release_date: string | null;
       };
       selectedTrack = {
         name: track.name ?? null,
@@ -701,6 +703,7 @@ export default async function CatalogPage({
         spotifyTrackId: track.spotify_track_id ?? null,
         artistNames: track.spotify_artist_names ?? null,
         artistIds: track.spotify_artist_ids ?? null,
+        releaseDate: (track.release_date ?? "").trim() || null,
       };
     }
   }
