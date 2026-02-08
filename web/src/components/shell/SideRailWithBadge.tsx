@@ -43,7 +43,7 @@ export async function SideRailWithBadge() {
         .eq("severity", "critical"),
     ]);
 
-    badgeCount = totalWarnings ?? 0; // Count ALL warnings (warn, critical, info)
+    badgeCount = totalWarnings ?? 0; // Count all warnings (info, warn, critical)
     hasCritical = (criticalWarnings ?? 0) > 0;
   } catch (error) {
     // Silently fail - don't break navigation if badge fetch fails

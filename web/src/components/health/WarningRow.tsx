@@ -88,6 +88,7 @@ type WarningRowProps = {
 function formatCodeLabel(code: string) {
   const raw = (code ?? "").trim();
   if (!raw) return "—";
+  if (raw === "entity_distro_drift") return "Entity Distro Mismatch";
   return raw
     .split("_")
     .filter(Boolean)

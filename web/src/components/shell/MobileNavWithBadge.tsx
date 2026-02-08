@@ -43,7 +43,7 @@ export async function MobileNavWithBadge() {
         .eq("severity", "critical"),
     ]);
 
-    badgeCount = totalWarnings ?? 0;
+    badgeCount = totalWarnings ?? 0; // Count all warnings (info, warn, critical)
     hasCritical = (criticalWarnings ?? 0) > 0;
   } catch (error) {
     // Silently fail - don't break navigation if badge fetch fails

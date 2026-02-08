@@ -719,6 +719,14 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
         return true;
       }
 
+      if (w.code === "entity_distro_drift" && w.playlist_key) {
+        const drift = entityDistroDriftMap.get(w.playlist_key);
+        // Suppress the warning if there is no current mismatch.
+        // The stored warning message reflects ingestion-time counts and can go stale.
+        if (drift) return drift.extra.length > 0 || drift.missing.length > 0;
+        return true;
+      }
+
       return true;
     })
     .sort((a, b) => {
@@ -732,6 +740,37 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
       if (ac !== bc) return ac.localeCompare(bc);
       return (a.message ?? "").localeCompare(b.message ?? "");
     });
+
+  // Override stale warning messages with actual current counts.
+  // The stored messages reflect ingestion-time counts; tracks may have been enriched
+  // or excluded since then. Patch the message text for display.
+  const displayedWarningsPatched = displayedWarnings.map((w) => {
+    if (w.code === "tracks_missing_enrichment" && w.playlist_key) {
+      const tracks = missingEnrichmentTracksMap.get(w.playlist_key);
+      if (Array.isArray(tracks)) {
+        return { ...w, message: `${tracks.length} track(s) in playlist are missing Spotify enrichment data` };
+      }
+    }
+    if (w.code === "non_catalog_tracks_present" && w.playlist_key) {
+      const tracks = nonCatalogTracksMap.get(w.playlist_key);
+      if (tracks) {
+        return { ...w, message: `${tracks.length} track(s) in playlist have no catalog stream snapshot today` };
+      }
+    }
+    if (w.code === "entity_distro_drift" && w.playlist_key) {
+      const drift = entityDistroDriftMap.get(w.playlist_key);
+      if (drift) {
+        const plName = playlistMetaByKey.get(w.playlist_key)?.name ?? w.playlist_key;
+        const extra = drift.extra.length;
+        const missing = drift.missing.length;
+        return {
+          ...w,
+          message: `Entity/Distro mismatch for ${plName}: ${extra} extra in Distro, ${missing} missing from Distro`,
+        };
+      }
+    }
+    return w;
+  });
 
   return (
     <div className="space-y-4">
@@ -773,7 +812,7 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
             { label: "Message" },
           ]}
         >
-          {displayedWarnings.map((w, i) => (
+          {displayedWarningsPatched.map((w, i) => (
             <WarningRow
               key={`${w.code}-${w.playlist_key ?? "global"}-${i}`}
               warning={w}
@@ -812,7 +851,7 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
               }
             />
           ))}
-          {!displayedWarnings.length && (
+          {!displayedWarningsPatched.length && (
             <EmptyState colSpan={4} message="No warnings found for the selected filters." />
           )}
         </GlassTable>
