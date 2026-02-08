@@ -179,7 +179,7 @@ export function DailyStreamsWithMAChart({
           />
           <Tooltip
             allowEscapeViewBox={{ x: true, y: true }}
-            wrapperStyle={{ zIndex: 1000 }}
+            wrapperStyle={{ zIndex: 10000 }}
             content={({ active, label, payload }) => (
               <DailySeriesTooltip
                 active={active}

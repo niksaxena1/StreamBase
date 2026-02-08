@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ExternalLink, User, ChevronRight, Download, List } from "lucide-react";
@@ -9,6 +9,7 @@ import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/Gla
 import { CatalogMetricsClient } from "./CatalogMetricsClient";
 import { Combobox } from "@/components/ui/Combobox";
 import { SpotlightCard } from "@/components/ui/SpotlightCard";
+import { AnimatedCounter } from "@/components/ui/AnimatedCounter";
 import { DailyStreamsChart } from "@/components/charts/DailyStreamsChart";
 import { DailyStreamsWithMAChart } from "@/components/charts/DailyStreamsWithMAChart";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
@@ -23,6 +24,7 @@ import { IconButton } from "@/components/ui/Button";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { useMetric } from "@/components/metrics/MetricContext";
 import { SectionHeader } from "@/components/ui/SectionHeader";
+import { RememberTrackSelection } from "@/components/dashboard/RememberTrackSelection";
 
 type ChartDataPoint = {
   date: string;
@@ -101,6 +103,17 @@ export function CatalogPageClient(props: {
   const sp = useSearchParams();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
 
+  // Remember the last selected track when it changes
+  useEffect(() => {
+    if (props.isrc) {
+      try {
+        localStorage.setItem("sb:last_catalog_track_isrc", props.isrc);
+      } catch {
+        // ignore localStorage errors
+      }
+    }
+  }, [props.isrc]);
+
   // Top-track tables only make sense for streams/revenue; treat "tracks" as streams.
   const topTracksMode: "streams" | "revenue" = metric === "revenue" ? "revenue" : "streams";
   const topTracksNumberStyle =
@@ -130,6 +143,7 @@ export function CatalogPageClient(props: {
 
   return (
     <>
+      <RememberTrackSelection artistId={props.artistId} hasTrack={!!props.isrc} />
       <PageHeader
         title="Catalog"
         subtitle={
@@ -214,10 +228,7 @@ export function CatalogPageClient(props: {
                       <Combobox
                         ariaLabel="Select track"
                         value={props.isrc ?? null}
-                        options={[
-                          { value: "", label: "(none)" },
-                          ...props.tracks.map((t) => ({ value: t.isrc, label: t.name, imageUrl: t.albumImageUrl })),
-                        ]}
+                        options={props.tracks.map((t) => ({ value: t.isrc, label: t.name, imageUrl: t.albumImageUrl }))}
                         placeholder="Type a track…"
                         onChange={(isrc) => {
                           router.push(hrefWithPatchedSearchParams(sp, { isrc: isrc || null }));
@@ -234,8 +245,10 @@ export function CatalogPageClient(props: {
       />
 
       <div
-        className={`overflow-hidden transition-all duration-300 ease-in-out ${
-          isArtistExpanded ? "max-h-[5000px] opacity-100" : "max-h-0 opacity-0"
+        className={`transition-all duration-300 ease-in-out ${
+          isArtistExpanded
+            ? "overflow-visible max-h-[5000px] opacity-100"
+            : "overflow-hidden max-h-0 opacity-0"
         }`}
       >
         <div className="space-y-4 pt-2">
@@ -558,8 +571,17 @@ export function CatalogPageClient(props: {
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
               <SpotlightCard className="lg:col-span-6 p-3 overflow-visible">
                 <div className="flex items-center justify-between gap-3">
-                  <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
-                    {cumulativeTitle}
+                  <div>
+                    <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
+                      {cumulativeTitle}
+                    </div>
+                    <div className="mt-1 font-display text-3xl font-bold tracking-tight">
+                      {cumSeries.length > 0 ? (
+                        <AnimatedCounter value={cumSeries[cumSeries.length - 1]?.value ?? 0} format={valueFormat} />
+                      ) : (
+                        "—"
+                      )}
+                    </div>
                   </div>
                   <ChartCsvDownloadButton
                     rows={cumSeries as unknown as Array<Record<string, unknown>>}
@@ -583,8 +605,17 @@ export function CatalogPageClient(props: {
 
               <SpotlightCard className="lg:col-span-6 p-3 overflow-visible">
                 <div className="flex items-center justify-between gap-3">
-                  <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
-                    {dailyTitle}
+                  <div>
+                    <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
+                      {dailyTitle}
+                    </div>
+                    <div className="mt-1 font-display text-3xl font-bold tracking-tight">
+                      {dailySeries.length > 0 && dailySeries[0]?.daily != null ? (
+                        <AnimatedCounter value={Math.abs(dailySeries[0]?.daily ?? 0)} format={valueFormat} />
+                      ) : (
+                        "—"
+                      )}
+                    </div>
                   </div>
                   <ChartCsvDownloadButton
                     rows={dailySeries as unknown as Array<Record<string, unknown>>}

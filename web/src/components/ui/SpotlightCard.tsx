@@ -19,9 +19,13 @@ export function SpotlightCard({
     mouseY.set(clientY - top);
   }
 
+  // Check if the className requests overflow-visible (for charts with tooltips)
+  const hasOverflowVisible = className.includes("overflow-visible");
+  const overflowClass = hasOverflowVisible ? "overflow-visible" : "overflow-hidden";
+
   return (
     <div
-      className={["sb-card group relative overflow-hidden border border-transparent bg-neutral-100 dark:bg-neutral-900", className].join(" ")}
+      className={["sb-card group relative border border-transparent bg-neutral-100 dark:bg-neutral-900", overflowClass, className].join(" ")}
       onMouseMove={handleMouseMove}
     >
       <motion.div
