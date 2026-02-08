@@ -101,7 +101,7 @@ class Spotify:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--limit", type=int, default=200, help="Max tracks to enrich per run")
+    ap.add_argument("--limit", type=int, default=5000, help="Max tracks to enrich per run")
     ap.add_argument(
         "--only-missing",
         action="store_true",
@@ -118,10 +118,11 @@ def main():
     sp = Spotify(client_id=spotify_id, client_secret=spotify_secret)
 
     # Fetch candidate tracks.
-    # Note: PostgREST URL encoding is picky; keep filters simple.
-    # Updated to enrich all tracks daily to catch artist name changes.
+    # Unenriched tracks (spotify_artist_ids IS NULL) come first so they're always
+    # processed within the limit. Already-enriched tracks fill the remaining capacity
+    # to catch artist-name changes over time.
     filters = [
-        "order=last_seen.desc",
+        "order=spotify_artist_ids.nullsfirst,last_seen.desc",
         f"limit={int(args.limit)}",
     ]
 
@@ -129,6 +130,9 @@ def main():
     if not candidates:
         print("No tracks to enrich.")
         return
+
+    unenriched_count = sum(1 for c in candidates if not c.get("spotify_artist_ids"))
+    print(f"Fetched {len(candidates)} candidates ({unenriched_count} unenriched, {len(candidates) - unenriched_count} refresh)")
 
     ok = 0
     miss = 0
