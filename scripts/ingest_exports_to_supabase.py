@@ -683,18 +683,48 @@ def main():
         for pl_key, todays_isrcs in playlist_to_isrcs.items():
             if not todays_isrcs:
                 continue
-            active_rows = pg.select_all("playlist_memberships", "id,isrc", f"playlist_key=eq.{pl_key}&valid_to=is.null")
+            active_rows = pg.select_all("playlist_memberships", "id,isrc", f"playlist_key=eq.{pl_key}&valid_to=is.null&order=id")
             active_set = {r["isrc"] for r in active_rows}
             active_id = {r["isrc"]: r["id"] for r in active_rows}
             to_add = sorted(todays_isrcs - active_set)
             to_remove = sorted(active_set - todays_isrcs)
             if to_add:
                 # Upsert for idempotency (re-runs) and to avoid partial paging edge cases.
-                pg.upsert(
-                    "playlist_memberships",
-                    [{"playlist_key": pl_key, "isrc": isrc, "valid_from": run_date.isoformat()} for isrc in to_add],
-                    on_conflict="playlist_key,isrc,valid_from",
-                )
+                add_rows = [{"playlist_key": pl_key, "isrc": isrc, "valid_from": run_date.isoformat()} for isrc in to_add]
+                try:
+                    pg.upsert(
+                        "playlist_memberships",
+                        add_rows,
+                        on_conflict="playlist_key,isrc,valid_from",
+                    )
+                except RuntimeError as e:
+                    if "23P01" not in str(e):
+                        raise
+                    # Exclusion constraint violation: a track we're trying to add already has
+                    # an active (overlapping) membership that the pagination missed. Fall back
+                    # to one-by-one inserts, closing the conflicting membership first.
+                    print(f"  ⚠ Exclusion constraint hit for {pl_key}; falling back to row-by-row membership inserts")
+                    for row in add_rows:
+                        isrc = row["isrc"]
+                        try:
+                            # Close any existing active membership for this ISRC first.
+                            conflicting = pg.select(
+                                "playlist_memberships", "id",
+                                f"playlist_key=eq.{pl_key}&isrc=eq.{isrc}&valid_to=is.null&limit=1",
+                            )
+                            if conflicting:
+                                pg.patch(
+                                    "playlist_memberships",
+                                    {"valid_to": prev_date.isoformat()},
+                                    f"id=eq.{conflicting[0]['id']}&valid_to=is.null",
+                                )
+                            pg.upsert(
+                                "playlist_memberships",
+                                [row],
+                                on_conflict="playlist_key,isrc,valid_from",
+                            )
+                        except Exception as inner_e:
+                            print(f"  ⚠ Membership fallback failed for {pl_key}/{isrc}: {inner_e}")
             for isrc in to_remove:
                 rid = active_id.get(isrc)
                 if rid:

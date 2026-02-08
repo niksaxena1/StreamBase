@@ -20,7 +20,6 @@ runs:
       with:
         server_address: smtp.gmail.com
         server_port: 587
-        secure: true
         username: nikhil.auh@gmail.com
         password: ${{ inputs.password }}
         subject: ${{ inputs.subject }}
