@@ -3,9 +3,11 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useState, useTransition } from "react";
 import { RefreshCw } from "lucide-react";
+import { refreshHealthData } from "@/lib/health/actions";
 
 /**
- * Refresh button that re-runs the server component data fetch via router.refresh().
+ * Refresh button that busts the health cache and re-runs the server component
+ * data fetch via router.refresh().
  * Shows a spinning animation while the refresh is in progress.
  */
 export function RefreshButton() {
@@ -15,7 +17,9 @@ export function RefreshButton() {
 
   const handleClick = useCallback(() => {
     setSpin(true);
-    startTransition(() => {
+    startTransition(async () => {
+      // Bust the cached health data first, then re-render.
+      await refreshHealthData();
       router.refresh();
     });
     // Keep the spin animation for at least 600ms so it's visible even on fast refreshes.

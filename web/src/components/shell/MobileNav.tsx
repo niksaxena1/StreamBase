@@ -16,9 +16,11 @@ function triggerHaptic(style: "light" | "medium" = "light") {
 export function MobileNav({
   healthBadgeCount = 0,
   healthHasCritical = false,
+  healthInfoOnly = false,
 }: {
   healthBadgeCount?: number;
   healthHasCritical?: boolean;
+  healthInfoOnly?: boolean;
 }) {
   const pathname = usePathname();
   const [hasScrolled, setHasScrolled] = useState(false);
@@ -206,7 +208,9 @@ export function MobileNav({
                       "absolute -right-2.5 -top-1.5 z-10 flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1 text-[10px] font-bold leading-none",
                       healthHasCritical
                         ? "bg-red-500 text-white"
-                        : "bg-orange-500 text-white",
+                        : healthInfoOnly
+                          ? "bg-blue-500 text-white"
+                          : "bg-orange-500 text-white",
                       // Animation on count change
                       badgeAnimating ? "animate-badge-pop" : "",
                     ].join(" ")}

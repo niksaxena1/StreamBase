@@ -41,9 +41,11 @@ export const navItems: Item[] = [
 function SideRailContent({
   healthBadgeCount = 0,
   healthHasCritical = false,
+  healthInfoOnly = false,
 }: {
   healthBadgeCount?: number;
   healthHasCritical?: boolean;
+  healthInfoOnly?: boolean;
 }) {
   const pathname = usePathname();
 
@@ -73,7 +75,9 @@ function SideRailContent({
                   "absolute -right-0.5 -top-0.5 z-[100] flex h-5 min-w-[18px] items-center justify-center rounded-full px-1.5 text-[10px] font-bold leading-none whitespace-nowrap",
                   healthHasCritical
                     ? "bg-red-500 text-white"
-                    : "bg-orange-500 text-white",
+                    : healthInfoOnly
+                      ? "bg-blue-500 text-white"
+                      : "bg-orange-500 text-white",
                 ].join(" ")}
                 style={{ boxShadow: "0 2px 6px rgba(0, 0, 0, 0.25)" }}
                 title={`${healthBadgeCount} warning${healthBadgeCount !== 1 ? "s" : ""}${healthHasCritical ? " (critical)" : ""}`}
@@ -152,13 +156,15 @@ function SideRailContent({
 export function SideRail({
   healthBadgeCount = 0,
   healthHasCritical = false,
+  healthInfoOnly = false,
 }: {
   healthBadgeCount?: number;
   healthHasCritical?: boolean;
+  healthInfoOnly?: boolean;
 }) {
   return (
     <aside className="hidden w-[60px] shrink-0 sm:block">
-      <SideRailContent healthBadgeCount={healthBadgeCount} healthHasCritical={healthHasCritical} />
+      <SideRailContent healthBadgeCount={healthBadgeCount} healthHasCritical={healthHasCritical} healthInfoOnly={healthInfoOnly} />
     </aside>
   );
 }

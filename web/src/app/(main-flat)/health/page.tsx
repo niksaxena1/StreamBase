@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { formatDateISO } from "@/lib/format";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
+import { getActiveWarningSummary, normalizeKey } from "@/lib/health/activeWarnings";
 import { GlassTable, TableRow, TableCell, EmptyState } from "@/components/ui/GlassTable";
 import { WarningRow } from "@/components/health/WarningRow";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
@@ -143,17 +144,12 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
         .order("playlist_key", { ascending: true })
     : { data: [], error: null };
 
-  // Build warnings query with filters
-  let warningsQuery = svc
-    .from("ingestion_warnings")
-    .select("severity,code,playlist_key,message,run_date,details_json")
-    .order("playlist_key", { ascending: true });
-
-  if (selectedRunDate) {
-    warningsQuery = warningsQuery.eq("run_date", selectedRunDate);
-  }
-
-  const { data: warnings, error: warnErr } = await warningsQuery.limit(200);
+  // Fetch filtered warnings via shared cached function (limit 2000, exclusions applied).
+  // The shared function applies the same suppression logic used by the badge components,
+  // ensuring badge count === displayed warning count.
+  const { warnings } = await getActiveWarningSummary(
+    selectedRunDate ?? undefined,
+  );
 
   function severityRank(severity: string) {
     switch ((severity ?? "").trim()) {
@@ -192,7 +188,7 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
     Object.fromEntries(playlistMetaByKey.entries());
 
   // Fetch non-catalog tracks for warnings of type "non_catalog_tracks_present"
-  const nonCatalogWarnings = (warnings ?? []).filter(
+  const nonCatalogWarnings = warnings.filter(
     (w) => w.code === "non_catalog_tracks_present" && w.playlist_key && selectedRunDate
   );
 
@@ -248,7 +244,7 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
   }
 
   // Fetch added/removed tracks for track_count_swing warnings
-  const trackCountSwingWarnings = (warnings ?? []).filter(
+  const trackCountSwingWarnings = warnings.filter(
     (w) => w.code === "track_count_swing" && w.playlist_key && selectedRunDate
   );
 
@@ -331,7 +327,7 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
   }
 
   // Fetch missing enrichment tracks for warnings
-  const missingEnrichmentWarnings = (warnings ?? []).filter(
+  const missingEnrichmentWarnings = warnings.filter(
     (w) => w.code === "tracks_missing_enrichment" && w.playlist_key && selectedRunDate
   );
 
@@ -450,7 +446,7 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
     }> | null
   >();
 
-  const catalogMissingSnapshotWarnings = (warnings ?? []).filter(
+  const catalogMissingSnapshotWarnings = warnings.filter(
     (w) => w.code === "catalog_missing_stream_snapshots" && selectedRunDate
   );
 
@@ -522,7 +518,7 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
     }> | null
   >();
 
-  const catalogStreamsMissingPrevNonzeroWarnings = (warnings ?? []).filter(
+  const catalogStreamsMissingPrevNonzeroWarnings = warnings.filter(
     (w) => w.code === "catalog_streams_missing_prev_nonzero" && selectedRunDate
   );
 
@@ -619,8 +615,9 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
       }>;
     }
   >();
+  let entityDistroDriftLoaded = false;
 
-  const entityDistroDriftWarnings = (warnings ?? []).filter(
+  const entityDistroDriftWarnings = warnings.filter(
     (w) => w.code === "entity_distro_drift" && w.playlist_key && selectedRunDate
   );
 
@@ -630,9 +627,9 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
       run_date: selectedRunDate,
     });
 
-    if (!driftErr && driftRows) {
-      // Group by entity_playlist_key
-      for (const row of driftRows as Array<{
+    if (!driftErr) {
+      entityDistroDriftLoaded = true;
+      const rows = (driftRows ?? []) as Array<{
         entity_playlist_key: string;
         drift_type: string;
         isrc: string;
@@ -641,8 +638,12 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
         artist_names: string[] | null;
         artist_ids: string[] | null;
         album_image_url: string | null;
-      }>) {
-        const key = row.entity_playlist_key ?? "";
+      }>;
+
+      // Group by entity_playlist_key
+      for (const row of rows) {
+        const key = normalizeKey(row.entity_playlist_key);
+        if (!key) continue;
         if (!entityDistroDriftMap.has(key)) {
           entityDistroDriftMap.set(key, { extra: [], missing: [] });
         }
@@ -653,7 +654,9 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
           artist_names: row.artist_names ?? null,
           artist_ids: row.artist_ids ?? null,
           album_image_url: row.album_image_url ?? null,
-          source_playlist_key: row.source_playlist_key ?? null,
+          source_playlist_key: (row.source_playlist_key ?? null)
+            ? String(row.source_playlist_key).trim()
+            : null,
         };
         if (row.drift_type === "extra_in_distro") {
           entry.extra.push(track);
@@ -701,45 +704,18 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
     }
   }
 
-  const displayedWarnings = (warnings ?? [])
-    .filter((w) => {
-      // If exclusions are configured and *all* non-catalog tracks for a warning are excluded,
-      // hide that warning row in the UI (the next ingestion run will also stop generating it).
-      if (w.code === "non_catalog_tracks_present" && w.playlist_key) {
-        if (!exclusionsEnabled) return true;
-        const tracks = nonCatalogTracksMap.get(w.playlist_key) ?? [];
-        return tracks.length > 0;
-      }
-
-      if (w.code === "tracks_missing_enrichment" && w.playlist_key) {
-        const tracks = missingEnrichmentTracksMap.get(w.playlist_key);
-        // Suppress the warning if all tracks have since been enriched (or excluded).
-        // The DB query already re-checks spotify_artist_ids IS NULL at render time.
-        if (Array.isArray(tracks)) return tracks.length > 0;
-        return true;
-      }
-
-      if (w.code === "entity_distro_drift" && w.playlist_key) {
-        const drift = entityDistroDriftMap.get(w.playlist_key);
-        // Suppress the warning if there is no current mismatch.
-        // The stored warning message reflects ingestion-time counts and can go stale.
-        if (drift) return drift.extra.length > 0 || drift.missing.length > 0;
-        return true;
-      }
-
-      return true;
-    })
-    .sort((a, b) => {
-      const r = severityRank(a.severity) - severityRank(b.severity);
-      if (r !== 0) return r;
-      const ap = (a.playlist_key ?? "").trim();
-      const bp = (b.playlist_key ?? "").trim();
-      if (ap !== bp) return ap.localeCompare(bp);
-      const ac = (a.code ?? "").trim();
-      const bc = (b.code ?? "").trim();
-      if (ac !== bc) return ac.localeCompare(bc);
-      return (a.message ?? "").localeCompare(b.message ?? "");
-    });
+  // Warnings are already filtered by getActiveWarningSummary(); just sort for display.
+  const displayedWarnings = [...warnings].sort((a, b) => {
+    const r = severityRank(a.severity) - severityRank(b.severity);
+    if (r !== 0) return r;
+    const ap = normalizeKey(a.playlist_key);
+    const bp = normalizeKey(b.playlist_key);
+    if (ap !== bp) return ap.localeCompare(bp);
+    const ac = normalizeKey(a.code);
+    const bc = normalizeKey(b.code);
+    if (ac !== bc) return ac.localeCompare(bc);
+    return (a.message ?? "").localeCompare(b.message ?? "");
+  });
 
   // Override stale warning messages with actual current counts.
   // The stored messages reflect ingestion-time counts; tracks may have been enriched
@@ -758,15 +734,39 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
       }
     }
     if (w.code === "entity_distro_drift" && w.playlist_key) {
-      const drift = entityDistroDriftMap.get(w.playlist_key);
-      if (drift) {
-        const plName = playlistMetaByKey.get(w.playlist_key)?.name ?? w.playlist_key;
+      const pk = normalizeKey(w.playlist_key);
+      const drift = entityDistroDriftMap.get(pk) ?? { extra: [], missing: [] };
+      if (entityDistroDriftLoaded) {
+        const plName = playlistMetaByKey.get(pk)?.name ?? pk;
         const extra = drift.extra.length;
         const missing = drift.missing.length;
         return {
           ...w,
           message: `Entity/Distro mismatch for ${plName}: ${extra} extra in Distro, ${missing} missing from Distro`,
         };
+      }
+    }
+    if (w.code === "track_count_swing" && w.playlist_key) {
+      const swing = trackCountSwingTracksMap.get(w.playlist_key);
+      if (swing) {
+        return {
+          ...w,
+          message: `Track count swing: ${swing.added.length} added, ${swing.removed.length} removed`,
+        };
+      }
+    }
+    if (w.code === "catalog_missing_stream_snapshots") {
+      const key = String(w.playlist_key ?? "global");
+      const tracks = catalogMissingStreamSnapshotTracksByKey.get(key);
+      if (Array.isArray(tracks)) {
+        return { ...w, message: `${tracks.length} catalog track(s) are missing stream snapshots today` };
+      }
+    }
+    if (w.code === "catalog_streams_missing_prev_nonzero") {
+      const key = String(w.playlist_key ?? "global");
+      const tracks = catalogStreamsMissingPrevNonzeroTracksByKey.get(key);
+      if (Array.isArray(tracks)) {
+        return { ...w, message: `${tracks.length} catalog track(s) have zero streams today but had streams previously` };
       }
     }
     return w;
@@ -776,16 +776,20 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
     <div className="space-y-4">
       <PageHeader
         title="System Health"
-        subtitle="Recent ingestion runs and anomaly warnings."
+        subtitle={
+          latestRunDate
+            ? `Recent ingestion runs and anomaly warnings. Last ingested: ${dataDateFromRunDate(latestRunDate)}`
+            : "Recent ingestion runs and anomaly warnings."
+        }
         actions={<RefreshButton />}
       />
 
-      {(runsErr || warnErr || exportsErr) && (
+      {(runsErr || exportsErr) && (
         <Alert
           variant="error"
           title="Query error"
         >
-          {runsErr?.message ?? exportsErr?.message ?? warnErr?.message ?? "unknown error"}
+          {runsErr?.message ?? exportsErr?.message ?? "unknown error"}
         </Alert>
       )}
 
@@ -846,7 +850,7 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
               enrichmentWarning={w.code === "tracks_missing_enrichment" ? w.details_json : undefined}
               entityDistroDrift={
                 w.code === "entity_distro_drift" && w.playlist_key
-                  ? entityDistroDriftMap.get(w.playlist_key)
+                  ? entityDistroDriftMap.get(normalizeKey(w.playlist_key))
                   : undefined
               }
             />
