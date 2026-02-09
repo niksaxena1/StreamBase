@@ -10,17 +10,52 @@ This page is the canonical, **human-first** description of how SpotiBase works e
 If you’re looking for “how do I use the app?” start with **Quick “How do I…?”** and **What each page does**.
 The **SAI / chatbot** sections are optional and live near the bottom.
 
+---
+
+## What is SpotiBase?
+
+SpotiBase is a **daily ingestion + analytics app** for SpotOnTrack exports: it turns CSV snapshots into a queryable Postgres dataset and a web UI for tracking your catalog and playlists over time.
+
+What you use it for:
+
+- **Catalog analytics**: track/artist performance (streams + estimated revenue) and drilldowns.
+- **Operational playlists**: membership history (added/removed) + performance trends.
+- **Health & anomalies**: detect bad/missing exports, catalog drift, missing enrichment, and other “something broke” signals.
+
+Where the main pieces live in this repo:
+
+- **Automation scripts** (export/sync/ingest/enrich): `scripts/`
+- **Database migrations + RPCs** (apply in Supabase SQL editor): `migrations/`
+- **Web app** (Next.js App Router): `web/`
+
+---
+
 ## Daily automation schedule (GitHub Actions)
 
 GitHub Actions scheduled workflows use **UTC**. Below is the same schedule shown in **UTC** and **GMT+4** (GST / Asia/Abu_Dhabi).
 
 | Workflow | When (UTC) | When (GMT+4) | What it does |
 |---|---:|---:|---|
-| Dashboard sync (`sot_daily_dashboard_sync.yml`) | 09:00 | 13:00 | Keeps SpotOnTrack dashboards in sync with `config/playlists.csv` |
+| Dashboard sync (`sot_daily_dashboard_sync.yml`) | 09:00 + 09:30 (fallback) | 13:00 + 13:30 | Keeps SpotOnTrack dashboards in sync with `config/playlists.csv` |
 | Playlist refresh (`sot_daily_playlist_refresh.yml`) | 07:00 | 11:00 | Refreshes SpotOnTrack playlists |
 | Daily export (`sot_daily_export.yml`) | 10:00 (primary) + 11:00 (fallback) | 14:00 + 15:00 | Exports dashboards → uploads to Storage → ingests into Supabase (idempotent) |
 | Spotify enrichment (`spotify_enrich.yml`) | 12:00 | 16:00 | Enriches missing track metadata via Spotify |
 | Artist image cache refresh (`spotify_artist_image_refresh.yml`) | 17:00 (first Friday) | 21:00 (first Friday) | Refreshes cached Spotify artist images (monthly) |
+
+Notes:
+
+- The export workflow has a **sync gate**: it blocks if there is no **successful** Dashboard Sync run for the same UTC date (unless you manually override).
+- The export workflow also has an **idempotency pre-check**: if `ingestion_runs` already shows `status=success` for that run date, it exits early unless `force_reingest=true` is set on a manual dispatch.
+- There is also a manual-only workflow: `sot_debug_scan_tracks.yml` (use it when a specific dashboard/playlist needs debugging; it uploads screenshots/logs as artifacts).
+
+Common secrets used by workflows:
+
+- `SOT_EMAIL`, `SOT_PASSWORD` (SpotOnTrack automation)
+- `SOT_STORAGE_STATE_B64` (optional login/session state)
+- `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (upload + ingestion)
+- `SUPABASE_STORAGE_BUCKET`, `SUPABASE_STORAGE_PREFIX` (optional storage upload)
+- `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET` (Spotify enrichment/image refresh)
+- `NOTIFY_SMTP_PASSWORD` (email notifications on failures/anomalies)
 
 ---
 
@@ -121,22 +156,6 @@ Common causes:
 
 ---
 
-## What SpotiBase is (in 60 seconds)
-
-SpotiBase ingests **daily SpotOnTrack CSV exports** and turns them into a queryable analytics database + dashboards for:
-
-- **Catalog analytics** (tracks, artists)
-- **Operational playlists** (membership + performance)
-- **Health/anomaly detection** (missing exports, track count swings, missing enrichment, etc.)
-
-Repo overview:
-
-- Exporter + ingestion scripts: `scripts/`
-- DB migrations (run in Supabase SQL editor): `migrations/`
-- Web app (Next.js App Router): `web/`
-
----
-
 ## Key concepts (glossary)
 
 ### Track identity (uniqueness)
@@ -206,15 +225,16 @@ Implementation pointers:
 ### Web app layout
 
 - `(auth)` segment: login (`/login`)
-- `(main)` segment: authenticated pages + app shell
-- `/api/*`: server-only API routes (Next)
+- `(main-flat)` segment: primary authenticated app shell + dashboards (`/`, `/catalog`, `/playlists`, `/collectors`, `/health`, `/settings`, `/docs`)
+- `(main)` segment: compatibility redirects (e.g. `/tracks/<ISRC>`, `/artists/<spotify_artist_id>`) and legacy entrypoints
+- `/api/*`: server-only API routes (Next.js)
 
 ---
 
 ## Security & access model (how auth + RLS works here)
 
 <!-- tags: security, auth, rls, supabase -->
-<!-- sources: web/src/app/(main)/layout.tsx, web/src/lib/supabase/server.ts, web/src/lib/supabase/service.ts, web/src/lib/supabase/client.ts -->
+<!-- sources: web/src/app/(main-flat)/layout.tsx, web/src/lib/supabase/server.ts, web/src/lib/supabase/service.ts, web/src/lib/supabase/client.ts -->
 
 ### The 3 Supabase clients (and when to use each)
 
@@ -239,7 +259,7 @@ Implementation pointers:
 Next.js caching/revalidation can execute without the original request cookies.
 If a cached query depends on cookie-auth, revalidation can fail and you’ll serve stale data.
 
-So the pattern in `(main)` pages is:
+So the pattern in `(main-flat)` pages is:
 
 1) Verify a real session exists (`supabaseServer().auth.getUser()`), otherwise redirect to `/login`
 2) Verify admin capability (`sb.rpc("is_admin")`), otherwise redirect away
@@ -255,6 +275,12 @@ Defined in `web/env.example`:
 - `SPOTIFY_CLIENT_ID` (server-only)
 - `SPOTIFY_CLIENT_SECRET` (server-only)
 - `REVALIDATE_SECRET` (server-only; used by revalidation endpoints if/when enabled)
+- `CRON_SECRET` (server-only; Vercel Cron sends this as Bearer token for `/api/cron/ensure-partitions`)
+- `OPENAI_API_KEY` (optional, server-only; enables SAI embeddings + chat)
+- `OPENAI_EMBED_MODEL` (optional; default `text-embedding-3-small`)
+- `OPENAI_CHAT_MODEL` (optional; default `gpt-4o-mini`)
+- `SAI_EMBED_DIMS` (optional; default `1536`)
+- `SAI_ADMIN_TOKEN` (optional, server-only; secures admin-only SAI endpoints like reindex/diagnostics)
 
 ### Environment variables (ingestion)
 
@@ -296,7 +322,7 @@ Data:
 
 File:
 
-- `web/src/app/(main)/page.tsx`
+- `web/src/app/(main-flat)/page.tsx`
 
 ### Catalog (`/catalog`)
 
@@ -315,9 +341,14 @@ Important semantics:
 
 Implementation pointers:
 
-- Page (server): `web/src/app/(main)/catalog/page.tsx`
-- UI (client): `web/src/app/(main)/catalog/CatalogPageClient.tsx`
+- Page (server): `web/src/app/(main-flat)/catalog/page.tsx`
+- UI (client): `web/src/app/(main-flat)/catalog/CatalogPageClient.tsx`
 - RPCs: `migrations/add_catalog_artist_aggregate_rpcs.sql`
+
+Also note:
+
+- `/artists/<spotify_artist_id>` redirects to `/catalog?artist_id=<spotify_artist_id>`
+- `/tracks/<ISRC>` redirects to `/catalog?isrc=<ISRC>`
 
 ### Playlists (`/playlists`)
 
@@ -331,7 +362,7 @@ Implementation pointers:
 
 Implementation pointers:
 
-- Page: `web/src/app/(main)/playlists/page.tsx`
+- Page: `web/src/app/(main-flat)/playlists/page.tsx`
 - Fast tables RPCs: `migrations/add_playlists_fast_tables_rpcs.sql`
 
 ### Collectors (`/collectors`)
@@ -363,8 +394,8 @@ Where those collector tables come from:
 
 Files:
 
-- `web/src/app/(main)/collectors/page.tsx`
-- `web/src/app/(main)/collectors/CollectorsClient.tsx`
+- `web/src/app/(main-flat)/collectors/page.tsx`
+- `web/src/app/(main-flat)/collectors/CollectorsClient.tsx`
 
 ### Health (`/health`)
 
@@ -392,31 +423,76 @@ Core warning types you’ll see:
 
 Implementation pointers:
 
-- Page: `web/src/app/(main)/health/page.tsx`
+- Page: `web/src/app/(main-flat)/health/page.tsx`
 - Expandable row UI: `web/src/components/health/WarningRow.tsx`
 - Health summary API (polling): `web/src/app/api/health-summary/route.ts`
 - Health RPCs:
   - `migrations/add_health_missing_catalog_rpcs.sql`
   - `migrations/add_health_track_count_swing_rpc.sql`
   - `migrations/add_health_missing_enrichment_tracks_rpc.sql`
+  - `migrations/add_health_entity_distro_drift_rpc.sql`
+  - `migrations/add_health_distro_overlap_rpc.sql`
 
 ### Settings (`/settings`)
 
-- Purpose: operational controls (e.g., excluding intentional “non-catalog” tracks from warnings).
+- Purpose: operational controls, user preferences, and data repair tools.
 - What you can do:
-  - Add/remove track exclusions for health calculations
-  - Add/remove **manual stream overrides** for specific (run date, ISRC) to repair missing/incorrect SpotOnTrack snapshots (with an audit note)
+  - **Health exclusions**: add/remove track exclusions for `non_catalog_tracks_present` and `tracks_missing_enrichment` warnings
+  - **Manual stream overrides**: repair missing/incorrect SpotOnTrack snapshots for specific (run date, ISRC) with an audit note
+  - **Payout rate**: configure the USD-per-1000-streams rate used for revenue estimates across the app
+  - **Currency display**: choose how revenue numbers are formatted
+  - **Chart preferences**: week highlight day, chart start date, y-axis zoom behavior
+  - **Home dashboard filters**: toggle which scopes/sections appear on the Home page
+  - **SAI toggle**: enable/disable the AI assistant chat widget
 
 Files:
 
-- `web/src/app/(main)/settings/page.tsx`
-- `web/src/app/(main)/settings/TrackExclusionForm.tsx`
-- `web/src/app/(main)/settings/ManualStreamOverrideForm.tsx`
+- `web/src/app/(main-flat)/settings/page.tsx`
+- `web/src/app/(main-flat)/settings/TrackExclusionForm.tsx`
+- `web/src/app/(main-flat)/settings/ManualStreamOverrideForm.tsx`
 
-DB setup for manual overrides:
+DB setup:
 
+- Apply `migrations/add_user_settings_table.sql` (creates `user_settings` for per-user preferences)
 - Apply `migrations/add_track_daily_stream_overrides.sql` (creates `track_daily_stream_overrides` + effective views + recompute RPC)
 - Apply `migrations/adopt_track_daily_streams_effective.sql` (updates key RPCs to read the effective stream snapshots)
+
+### Catalog Config (`/catalog/config`)
+
+- Purpose: admin view of all artists and tracks in the system with stats.
+- What you can do:
+  - Browse all artists (with track counts and stream totals)
+  - Browse all tracks (with total/daily streams)
+  - Search/filter within each list
+
+Files:
+
+- `web/src/app/(main-flat)/catalog/config/page.tsx`
+
+### Playlists Config (`/playlists/config`)
+
+- Purpose: admin view of all playlists with operational metadata.
+- What you can do:
+  - See all playlists with track counts, streams, and thumbnails
+  - Trigger Spotify thumbnail refresh
+  - Navigate to per-playlist settings
+
+Files:
+
+- `web/src/app/(main-flat)/playlists/config/page.tsx`
+
+### Playlist Settings (`/playlists/config/settings`)
+
+- Purpose: edit operational metadata for a playlist.
+- What you can do:
+  - Set/change the **collector** assignment
+  - Set/change **playlist type** (Catalog, Label, Entity, Distro)
+  - Set/change **entity playlist key** (links a Distro playlist to its Entity)
+  - Set/change **Spotify playlist ID** and **display order**
+
+Files:
+
+- `web/src/app/(main-flat)/playlists/config/settings/page.tsx`
 
 ---
 
@@ -442,15 +518,27 @@ DB setup for manual overrides:
   - Operational metadata and diagnostics
 - `health_warning_exclusions`
   - Suppresses intentional “non-catalog tracks” warnings (global or per-playlist)
+- `health_unplayable_track_exclusions`
+  - Exclusions for unplayable/taken-down tracks in health checks
 - `spotify_artist_images`
   - Cache table for artist images (reduces Spotify API calls)
+- `user_settings`
+  - Per-user preferences (payout rate, currency, chart options, SAI toggle, home filters)
+- `track_daily_stream_overrides`
+  - Manual corrections to stream snapshots (with audit notes); consumed via effective views
+- `collector_monthly_actual_revenue`
+  - Monthly “actual revenue” overlays entered in the Collectors page
+- `track_daily_streams_effective` (view)
+  - Resolves `track_daily_streams` + manual overrides into a single effective snapshot
+- `track_daily_streams_effective_public` (view)
+  - Public-safe subset of the effective view (date, isrc, streams_cumulative only)
 
 ---
 
 ## Data dictionary (fields used by the app)
 
 <!-- tags: schema, data-dictionary, tables -->
-<!-- sources: scripts/ingest_exports_to_supabase.py, web/src/app/(main)/*, migrations/*.sql -->
+<!-- sources: scripts/ingest_exports_to_supabase.py, web/src/app/(main-flat)/*, web/src/app/(main)/*, migrations/*.sql -->
 
 This is a **practical schema snapshot**: it lists the fields that the current app code relies on most.
 Your DB may have additional columns; those are fine.
@@ -485,7 +573,8 @@ Your DB may have additional columns; those are fine.
 | `playlist_key` | text (PK) | Stable internal playlist identifier |
 | `display_name` | text | Name shown in UI |
 | `is_catalog` | boolean | Marks “catalog exports” vs operational playlists |
-| `playlist_type` | text/null | Optional classification |
+| `playlist_type` | text/null | Classification: Catalog, Label, Entity, Distro (used by entity/distro drift checks) |
+| `entity_playlist_key` | text/null | Links a Distro playlist to its parent Entity playlist (used by `entity_distro_drift` warning) |
 | `dashboard_url` | text/null | SpotOnTrack dashboard URL (pipeline config) |
 | `collector` | text/null | Assigns playlist to a “collector” bucket (Collectors page) |
 | `display_order` | int/null | Optional ordering in UI |
@@ -580,7 +669,7 @@ Your DB may have additional columns; those are fine.
 ## Warning code catalog (ingestion_warnings.code)
 
 <!-- tags: health, warnings, ingestion -->
-<!-- sources: scripts/ingest_exports_to_supabase.py, web/src/app/(main)/health/page.tsx, web/src/components/health/WarningRow.tsx -->
+<!-- sources: scripts/ingest_exports_to_supabase.py, web/src/app/(main-flat)/health/page.tsx, web/src/components/health/WarningRow.tsx -->
 
 These are the warning codes emitted by the ingestion script today:
 
@@ -591,6 +680,8 @@ These are the warning codes emitted by the ingestion script today:
 | `min_rows_failed` | critical | Configured minimum row threshold failed; ingestion aborted to protect integrity | ingestion script checks `Playlist.min_rows` | Fix exporter stability; only lower min_rows after confirming expected row counts |
 | `track_count_swing_hard_fail` | critical | Catalog playlist changed by ≥70% vs previous day; ingestion aborted | ingestion hard safety for catalog playlists | This usually means partial export; fix exporter/run again |
 | `track_count_swing` | warn/critical | Track count swing vs yesterday (warn), or catalog count dropped by > threshold (critical) | ingestion compares `playlist_daily_stats` day-over-day | Expand warning in UI to see changes; validate exports |
+| `entity_distro_drift` | warn | “Entity” playlist membership doesn’t match the union of its “Distro” playlists (extra/missing tracks) | ingestion compares membership sets for `playlist_type = 'Entity'` vs all related `playlist_type = 'Distro'` playlists using `entity_playlist_key` | Fix playlist mapping or membership; use Health expansion to see extra/missing tracks |
+| `distro_overlap` | warn | An ISRC appears in 2+ Distro playlists on the same day (should be exclusive) | ingestion checks overlapping membership across `playlist_type = 'Distro'` playlists | Fix distro assignment; use Health expansion / RPC to list overlapping tracks |
 | `high_zero_stream_rate` | warn | Catalog export has too many rows with 0 streams | ingestion computes zero-stream ratio for catalog playlists | Investigate SpotOnTrack data freshness; ensure correct dashboard/export format |
 | `catalog_streams_missing_prev_nonzero` | critical | SpotOnTrack export had missing/blank/non-numeric `spotify_streams_total` for track(s) that had non-zero cumulative streams yesterday. SpotiBase records these as “missing snapshots” for today (no `track_daily_streams` row) | ingestion detects missing stream values in catalog exports and checks yesterday’s `track_daily_streams` | Treat as source instability; inspect raw CSV; decide later whether to impute/carry-forward |
 | `catalog_missing_stream_snapshots` | critical | Explicit count of catalog tracks that appeared in catalog exports but did **not** get a valid `track_daily_streams` snapshot row today (missing/invalid stream totals) | ingestion compares “expected catalog ISRCs” vs today’s snapshot set | Treat as a data-quality break; inspect raw exports; consider re-ingest after fixing exporter |
@@ -624,6 +715,27 @@ Notes:
   - best-effort Spotify lookup by ISRC (for album image)
 - `/api/spotify-track-batch`
   - batch Spotify lookup by ISRC (bounded to 50 ISRCs, concurrency-limited)
+- `/api/cron/ensure-partitions`
+  - ops endpoint used by Vercel Cron to keep `track_daily_streams` monthly partitions created ahead of time
+  - requires `CRON_SECRET` (Authorization: Bearer)
+- `/api/user-settings/*`
+  - persisted per-user UI preferences (rate, currency display, chart zoom/start date, home filters/milestones, SAI toggle)
+- `/api/collectors/comparison-drilldown`
+  - paged drilldown data for Collectors comparison tables (tracks/artists/playlists)
+- `/api/collectors/monthly-revenue-forecast`
+  - reads/writes monthly “actual revenue” overlays when configured in DB
+- `/api/admin/spotify/refresh-playlist-thumbnails`
+  - admin-only maintenance endpoint for playlist thumbnail cache refresh
+- `/api/artists/options`, `/api/playlists/options`
+  - admin-only “options lists” used by config UIs (artist cache and playlist table)
+- `/api/playlists/memberships`
+  - admin-only membership snapshot export for one or more playlists on a date (paged internally to avoid PostgREST caps)
+- `/api/reports/playlist-streams-7d`
+  - admin-only XLSX report (last 7 days cumulative streams for key playlists)
+- `/api/sai/*` (optional)
+  - `/api/sai/chat`, `/api/sai/new`: chat endpoints
+  - `/api/sai/docs/reindex`: (admin token) builds embeddings index for `/docs`
+  - `/api/sai/diagnostics`: (admin token) environment + DB capability checks
 
 Files live under:
 
@@ -645,11 +757,22 @@ Key RPC sets:
 - Search: `migrations/add_search_all_rpc.sql`
 - Catalog artist aggregates: `migrations/add_catalog_artist_aggregate_rpcs.sql`
 - Playlists heavy tables: `migrations/add_playlists_fast_tables_rpcs.sql`
+- Home scatter: `home_track_scatter_points` (returns all catalog tracks + streams for a run date)
+- Collectors (paged drilldowns):
+  - `migrations/add_collector_tracks_rpc_paged.sql` (`collector_tracks_paged`)
+  - `migrations/add_collector_artists_stats_rpc_paged.sql` (`collector_artists_stats_paged`)
+  - `migrations/add_collector_artist_counts_rpc.sql` (`collector_artist_counts_for_date`)
 - Health drilldowns:
   - `migrations/add_health_missing_catalog_rpcs.sql`
   - `migrations/add_health_track_count_swing_rpc.sql`
   - `migrations/add_health_missing_enrichment_tracks_rpc.sql`
+  - `migrations/add_health_entity_distro_drift_rpc.sql` (`health_entity_distro_drift`)
+  - `migrations/add_health_distro_overlap_rpc.sql` (`health_distro_overlap_tracks`)
+  - `migrations/add_health_unplayable_candidates_rpc.sql` (`health_unplayable_candidates`)
 - Search hover stats: `migrations/add_search_stats_aggregate_rpcs.sql`
+- Stream override cascade: `spotibase_recompute_playlist_daily_stats_cascade`, `spotibase_remove_stream_override` (in `migrations/fix_data_integrity_constraints.sql`)
+- Playlists batch counts: `playlists_latest_track_counts`
+- Artist collaboration graph: `migrations/add_artist_collaboration_graph_rpc.sql` (`artist_collaboration_graph`)
 - System stats (Docs): `migrations/add_spotibase_system_stats_rpc.sql`
 
 ---
@@ -705,6 +828,20 @@ Without it: `/collectors` will error when querying `collector_daily_agg` / `coll
   - Enables `/docs` to display live system sizing stats (tracks/playlists/artists/etc).
   - Without it: the `/docs` stats box will show partial values.
 
+- `migrations/add_spotibase_docs_inventory_rpc.sql`
+  - Enables `/docs` “Inventory” box (repo migrations list + optional DB inventory JSON).
+  - Without it: the DB inventory section shows “—”.
+
+- `migrations/add_sai_docs_embeddings.sql` (optional, SAI)
+  - Enables docs embeddings storage (`sai_doc_chunks`) + the `sai_docs_search` RPC.
+  - Without it: SAI falls back to lexical docs search (or has no vector retrieval if enabled in code).
+
+### Optional (partitioning automation)
+
+- `migrations/add_ensure_track_daily_streams_partitions.sql`
+  - Adds `ensure_track_daily_streams_partitions(months_ahead)` which is used by `/api/cron/ensure-partitions`.
+  - If you have partitioned `track_daily_streams`, you should run this monthly (Vercel Cron recommended; set `CRON_SECRET` in `web/env.example`).
+
 ---
 
 ## Performance, scale, and “how much can it handle?”
@@ -743,11 +880,20 @@ These are conservative, based on:
 
 These are intentional guardrails to prevent the UI from trying to load “the entire database” at once.
 
+### Partitioning (already implemented)
+
+`track_daily_streams` is now **partitioned by month**. This means:
+
+- Queries that filter by date only touch the relevant monthly partition (partition pruning).
+- New partitions must exist before inserting data for a new month.
+- The helper `ensure_track_daily_streams_partitions(months_ahead)` creates missing partitions and is automated via `/api/cron/ensure-partitions` (Vercel Cron, 1st of every month). Set `CRON_SECRET` in your env.
+- See `docs/PARTITIONING-TRACK-DAILY-STREAMS.md` for the full details.
+
 ### If you outgrow the current scale, the next upgrades are
 
 - Add/verify indexes in migrations (especially GIN/trgm and snapshot date/isrc composite indexes).
 - Push more work into Postgres (RPCs/materialized views) so the app never scans large tables.
-- Consider partitioning `track_daily_streams` by date once it reaches tens of millions of rows.
+- Add materialized aggregates (artist/playlist rollups per day) if snapshot joins get slow.
 - Cache “hot paths” with run-date keyed cache keys (already used in search).
 
 ---
@@ -818,7 +964,7 @@ Checklist:
 ## Collectors admin guide (how to maintain collectors)
 
 <!-- tags: collectors, admin, playlists -->
-<!-- sources: web/src/app/(main)/collectors/page.tsx, migrations/add_collectors_aggregate_views.sql -->
+<!-- sources: web/src/app/(main-flat)/collectors/page.tsx, migrations/add_collectors_aggregate_views.sql -->
 
 ### What a collector is (in this codebase)
 
@@ -859,7 +1005,7 @@ Checklist:
 ## KPI & metric definitions (exact meaning of numbers you see)
 
 <!-- tags: kpis, metrics, semantics -->
-<!-- sources: scripts/ingest_exports_to_supabase.py, web/src/app/(main)/page.tsx, web/src/app/(main)/playlists/page.tsx, web/src/app/(main)/catalog/page.tsx, web/src/app/(main)/collectors/page.tsx -->
+<!-- sources: scripts/ingest_exports_to_supabase.py, web/src/app/(main-flat)/page.tsx, web/src/app/(main-flat)/playlists/page.tsx, web/src/app/(main-flat)/catalog/page.tsx, web/src/app/(main-flat)/collectors/page.tsx -->
 
 This section defines the “official meaning” of the most important metrics shown in the UI.
 
@@ -901,7 +1047,7 @@ This section defines the “official meaning” of the most important metrics sh
 ## UI label → KPI dictionary (exact on-screen text mapping)
 
 <!-- tags: kpis, ui, reference -->
-<!-- sources: web/src/app/(main)/page.tsx, web/src/app/(main)/playlists/PlaylistMetricsClient.tsx, web/src/app/(main)/collectors/CollectorsClient.tsx, web/src/app/(main)/health/page.tsx -->
+<!-- sources: web/src/app/(main-flat)/page.tsx, web/src/app/(main-flat)/playlists/PlaylistMetricsClient.tsx, web/src/app/(main-flat)/collectors/CollectorsClient.tsx, web/src/app/(main-flat)/health/page.tsx -->
 
 Use this when you (or SAI) want to map what you see on screen to the canonical definition.
 
@@ -1000,7 +1146,7 @@ These are “system rules” that future changes should preserve unless you inte
 ## Data freshness & “what is the latest day?”
 
 <!-- tags: freshness, dates, lag -->
-<!-- sources: web/src/lib/sotDates.ts, web/src/app/(main)/health/page.tsx, web/src/app/(main)/page.tsx, web/src/app/api/search-stats/route.ts -->
+<!-- sources: web/src/lib/sotDates.ts, web/src/app/(main-flat)/health/page.tsx, web/src/app/(main-flat)/page.tsx, web/src/app/api/search-stats/route.ts -->
 
 ### SpotOnTrack lag (run date vs data date)
 
@@ -1042,11 +1188,10 @@ When performance regresses, it’s usually one of:
 
 ### First table to outgrow
 
-`track_daily_streams` tends to dominate growth.
+`track_daily_streams` dominates growth. **Partitioning by month is already in place** (see the [Partitioning (already implemented)](#partitioning-already-implemented) section above).
 
-If it reaches “tens of millions” of rows:
+If performance still regresses at scale, next steps would be:
 
-- partition by date
 - ensure all heavy queries are date-bounded
 - add materialized aggregates (artist/playlist rollups per day)
 
@@ -1055,7 +1200,7 @@ If it reaches “tens of millions” of rows:
 ## Backup / recovery & “bad data” playbook
 
 <!-- tags: recovery, ops, ingestion -->
-<!-- sources: scripts/ingest_exports_to_supabase.py, web/src/app/(main)/health/page.tsx -->
+<!-- sources: scripts/ingest_exports_to_supabase.py, web/src/app/(main-flat)/health/page.tsx -->
 
 ### If ingestion wrote bad data for a day
 
@@ -1141,7 +1286,7 @@ Changing what “whole catalog” means requires updating ingestion logic + any 
 ## Query param & URL reference (quick lookup)
 
 <!-- tags: urls, reference -->
-<!-- sources: web/src/app/(main)/catalog/page.tsx, web/src/app/(main)/playlists/page.tsx, web/src/app/(main)/collectors/page.tsx, web/src/components/shell/SearchBar.tsx, web/src/app/(main)/health/page.tsx -->
+<!-- sources: web/src/app/(main-flat)/catalog/page.tsx, web/src/app/(main-flat)/playlists/page.tsx, web/src/app/(main-flat)/collectors/page.tsx, web/src/components/shell/SearchBar.tsx, web/src/app/(main-flat)/health/page.tsx -->
 
 | Page | Key params | Meaning |
 |---|---|---|
@@ -1271,9 +1416,9 @@ If you want SAI to be reliable, enforce answer structure.
 
 ## Changelog
 
-- 2026-01-31: Added `/docs` page + initial architecture docs.
-- 2026-01-31: Added cookbook, per-page actions, collectors definition, scale guidance, and docs search/collapse UI.
- - 2026-01-31: Added security/access model, data dictionary, warning catalog, ops runbook, collectors admin guide, API batch lookup docs, and FAQ.
- - 2026-01-31: Added migrations checklist, SAI ingestion spec, optional system stats RPC, and per-section tags/sources UI.
+- 2026-02-09: Major docs refresh: expanded Settings page (8 features), added config pages (`/catalog/config`, `/playlists/config`, `/playlists/config/settings`), updated performance section (partitioning is now implemented), added SAI/CRON env vars, expanded data dictionary (6 new tables/views), added 10+ missing RPCs, updated `playlists` table fields (`entity_playlist_key`, `playlist_type` semantics), route layout (`(main-flat)` primary), expanded API routes list, new health warning codes (`entity_distro_drift`, `distro_overlap`), GitHub Actions schedule/notes, and fixed SAI docs indexing path.
 - 2026-02-01: Added ingestion health warnings for missing/invalid SpotOnTrack stream totals (`catalog_streams_missing_prev_nonzero`, `catalog_missing_stream_snapshots`) and a critical check for day-over-day decreases in playlist total streams (`total_streams_decreased`).
-
+- 2026-01-31: Added migrations checklist, SAI ingestion spec, optional system stats RPC, and per-section tags/sources UI.
+- 2026-01-31: Added security/access model, data dictionary, warning catalog, ops runbook, collectors admin guide, API batch lookup docs, and FAQ.
+- 2026-01-31: Added cookbook, per-page actions, collectors definition, scale guidance, and docs search/collapse UI.
+- 2026-01-31: Added `/docs` page + initial architecture docs.

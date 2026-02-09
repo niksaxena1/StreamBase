@@ -102,7 +102,8 @@ function splitIntoChunks(md: string): Chunk[] {
 }
 
 async function readDocsMarkdown(): Promise<string> {
-  const p = path.join(process.cwd(), "src", "app", "(main)", "docs", "docs.md");
+  // Canonical docs live under `(main-flat)` and are rendered at `/docs`.
+  const p = path.join(process.cwd(), "src", "app", "(main-flat)", "docs", "docs.md");
   return await readFile(p, "utf8");
 }
 

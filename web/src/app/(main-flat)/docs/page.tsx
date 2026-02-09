@@ -6,8 +6,8 @@ import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { cachedQuery } from "@/lib/supabase/cache";
 
-// This page lives under `(main)` which requires Supabase session cookies.
-// Mark it dynamic so the auth guard in `web/src/app/(main)/layout.tsx` is evaluated per-request,
+// This page lives under `(main-flat)` which requires Supabase session cookies.
+// Mark it dynamic so the auth guard in `web/src/app/(main-flat)/layout.tsx` is evaluated per-request,
 // rather than being statically rendered/cached as "logged out".
 export const dynamic = "force-dynamic";
 

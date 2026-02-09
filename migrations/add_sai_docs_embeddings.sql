@@ -74,7 +74,7 @@ as $$
     c.sources,
     (1 - (c.embedding <=> (query_embedding::vector(1536))))::double precision as score
   from public.sai_doc_chunks c
-  where c.doc_path = 'web/src/app/(main)/docs/docs.md'
+  where c.doc_path = 'web/src/app/(main-flat)/docs/docs.md'
   order by c.embedding <=> (query_embedding::vector(1536))
   limit greatest(1, least(match_count, 8));
 $$;

@@ -54,7 +54,8 @@ function parseMeta(md: string): { tags: string[]; sources: string[]; mdClean: st
 
 async function readDocsMarkdown(): Promise<string> {
   // Next runs from `web/`
-  const p = path.join(process.cwd(), "src", "app", "(main)", "docs", "docs.md");
+  // Canonical docs live under `(main-flat)` and are rendered at `/docs`.
+  const p = path.join(process.cwd(), "src", "app", "(main-flat)", "docs", "docs.md");
   return await readFile(p, "utf8");
 }
 
