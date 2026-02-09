@@ -84,6 +84,11 @@ export async function PlaylistTracksSection(props: {
   playlistKey: string;
   latestRunDate: string | null;
   prevRunDate: string | null;
+  /**
+   * Cache-buster for re-ingestions/backfills that reuse the same run_date.
+   * Prefer passing `playlist_daily_stats.source_run_id` for the latest run.
+   */
+  cacheBuster?: string | null;
 }) {
   const svc = supabaseService();
 
@@ -105,7 +110,7 @@ export async function PlaylistTracksSection(props: {
 
   // NOTE: This cache stores *both data and errors*. When we change playlist RPCs,
   // we must bump this version to avoid serving stale cached error payloads.
-  const cacheKeyBase = `playlist-tables-v2-${props.playlistKey}-${props.latestRunDate}-${props.prevRunDate ?? "none"}`;
+  const cacheKeyBase = `playlist-tables-v3-${props.playlistKey}-${props.latestRunDate}-${props.prevRunDate ?? "none"}-${props.cacheBuster ?? "none"}`;
 
   const results = await cachedQueries<{
     top: PlaylistTopTrackRow[];

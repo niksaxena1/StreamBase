@@ -40,6 +40,7 @@ type PlaylistDailyStatsRow = {
   est_revenue_total: number | null;
   est_revenue_daily_net: number | null;
   missing_streams_track_count?: number | null;
+  source_run_id?: string | null;
 };
 
 type TrackOverrideRow = {
@@ -179,7 +180,9 @@ export default async function PlaylistsPage({
       async () => {
         let q = svc
           .from("playlist_daily_stats")
-          .select("date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net")
+          .select(
+            "date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net,source_run_id",
+          )
           .eq("playlist_key", playlistKey);
         if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
         return await q
@@ -255,6 +258,7 @@ export default async function PlaylistsPage({
     : null;
 
   const latestDate = (latest as PlaylistDailyStatsRow | null)?.date ?? null;
+  const latestSourceRunId = (latest as PlaylistDailyStatsRow | null)?.source_run_id ?? null;
   const prevDate = (prev as { date: string } | null)?.date ?? null;
 
   const hist = (history ?? []) as PlaylistDailyStatsRow[];
@@ -371,7 +375,7 @@ export default async function PlaylistsPage({
         playlist_key: playlistKey,
         limit_rows: 500,
       }),
-    `playlist-removed-rows-v1-${playlistKey}-${latestDate ?? "none"}`,
+    `playlist-removed-rows-v2-${playlistKey}-${latestDate ?? "none"}-${latestSourceRunId ?? "none"}`,
     86400,
   );
   const removedTracksCount = Array.isArray(removedRows) ? removedRows.length : 0;
@@ -503,7 +507,12 @@ export default async function PlaylistsPage({
             </div>
           }
         >
-          <PlaylistTracksSection playlistKey={playlistKey} latestRunDate={latestDate} prevRunDate={prevDate} />
+          <PlaylistTracksSection
+            playlistKey={playlistKey}
+            latestRunDate={latestDate}
+            prevRunDate={prevDate}
+            cacheBuster={latestSourceRunId}
+          />
         </Suspense>
 
         <PlaylistHistory30dDetails rows={hist as unknown as PlaylistHistoryRow[]} />
