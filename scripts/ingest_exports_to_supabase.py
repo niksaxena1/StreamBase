@@ -979,6 +979,46 @@ def main():
             # Don't block ingestion if drift check fails
             print(f"  ⚠ Entity-distro drift check failed: {drift_err}")
 
+        # --- Distro overlap check ---
+        # Find ISRCs that appear in 2+ Distro playlists on the same day.
+        # Each track should only be distributed through one Distro playlist at a time.
+        try:
+            distro_keys = [p.playlist_key for p in playlists if p.playlist_type == "Distro"]
+            if len(distro_keys) >= 2:
+                isrc_to_distro_playlists: Dict[str, List[str]] = {}
+                for dk in distro_keys:
+                    for isrc in playlist_to_isrcs.get(dk, set()):
+                        isrc_to_distro_playlists.setdefault(isrc, []).append(dk)
+                overlapping = {
+                    isrc: sorted(pls)
+                    for isrc, pls in isrc_to_distro_playlists.items()
+                    if len(pls) >= 2
+                }
+                if overlapping:
+                    warn_rows.append(
+                        {
+                            "run_id": run_id,
+                            "run_date": run_date.isoformat(),
+                            "playlist_key": None,
+                            "severity": "warn",
+                            "code": "distro_overlap",
+                            "message": f"{len(overlapping)} track(s) appear in multiple Distro playlists",
+                            "details_json": {
+                                "overlap_count": len(overlapping),
+                                "overlapping_isrcs_sample": [
+                                    {"isrc": isrc, "playlist_keys": pls}
+                                    for isrc, pls in sorted(overlapping.items())[:100]
+                                ],
+                            },
+                        }
+                    )
+                    print(
+                        f"  ⚠ Distro overlap: {len(overlapping)} track(s) in multiple Distro playlists"
+                    )
+        except Exception as overlap_err:
+            # Don't block ingestion if overlap check fails
+            print(f"  ⚠ Distro overlap check failed: {overlap_err}")
+
         pg.upsert("playlist_daily_stats", stats_rows, on_conflict="date,playlist_key")
         if warn_rows:
             pg.insert("ingestion_warnings", warn_rows)

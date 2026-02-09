@@ -170,7 +170,7 @@ export function TracksList({ tracks, searchQuery, sortBy = "name", sortAsc = tru
             <TableCell mono className="text-xs" style={{ color: "var(--sb-muted)" }}>
               {track.isrc}
             </TableCell>
-            <TableCell className="text-xs">
+            <TableCell className="text-xs" style={{ color: "var(--sb-muted)" }}>
               {track.release_date ?? "—"}
             </TableCell>
             <TableCell className="text-xs">

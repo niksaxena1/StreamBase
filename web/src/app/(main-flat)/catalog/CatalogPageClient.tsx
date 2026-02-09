@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import type { ReactNode } from "react";
+import { useMemo, useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ExternalLink, User, ChevronRight, Download, List } from "lucide-react";
@@ -46,6 +47,7 @@ type TopTrack = {
   albumImageUrl: string | null;
   artistNames?: string[] | null;
   artistIds?: string[] | null;
+  releaseDate?: string | null;
 };
 type TrackSeriesPoint = { date: string; value: number };
 type TrackDailyPoint = { date: string; daily: number | null; ma7?: number | null };
@@ -121,6 +123,93 @@ export function CatalogPageClient(props: {
     topTracksMode === "revenue"
       ? ({ color: "#10b981" } as const) // emerald-500
       : ({ color: "var(--sb-accent-stroke)" } as const);
+
+  type TopSortKey = "name" | "release" | "total" | "daily";
+  type SortState = { key: TopSortKey; asc: boolean } | null;
+
+  const [topTotalSort, setTopTotalSort] = useState<SortState>(null);
+  const [topDailySort, setTopDailySort] = useState<SortState>(null);
+
+  function toggleSort(setter: (next: SortState) => void, current: SortState, key: TopSortKey) {
+    const defaultAsc = key === "name" ? true : key === "release" ? false : false;
+    if (!current || current.key !== key) {
+      setter({ key, asc: defaultAsc });
+      return;
+    }
+    setter({ key, asc: !current.asc });
+  }
+
+  function cmpNullableName(a: string | null | undefined, b: string | null | undefined, aIsrc: string, bIsrc: string) {
+    const aa = ((a ?? "").trim() || aIsrc).toLowerCase();
+    const bb = ((b ?? "").trim() || bIsrc).toLowerCase();
+    return aa.localeCompare(bb);
+  }
+
+  function sortTopTracks(rows: TopTrack[], state: SortState, mode: "total" | "daily") {
+    if (!state) return rows;
+    // Extra guard: keep behavior predictable if a mismatched key ever sneaks in.
+    if (mode === "total" && state.key === "daily") return rows;
+    if (mode === "daily" && state.key === "total") return rows;
+
+    const out = [...rows];
+    out.sort((a, b) => {
+      let c = 0;
+      if (state.key === "name") {
+        c = cmpNullableName(a.name, b.name, a.isrc, b.isrc);
+      } else if (state.key === "release") {
+        const aa = (a.releaseDate ?? "").trim();
+        const bb = (b.releaseDate ?? "").trim();
+        const aNull = !aa;
+        const bNull = !bb;
+        if (aNull || bNull) return aNull === bNull ? 0 : aNull ? 1 : -1; // nulls last always
+        c = aa.localeCompare(bb);
+      } else if (state.key === "total") {
+        const av = a.total;
+        const bv = b.total;
+        const aNull = av == null || !Number.isFinite(av);
+        const bNull = bv == null || !Number.isFinite(bv);
+        if (aNull || bNull) return aNull === bNull ? 0 : aNull ? 1 : -1; // nulls last always
+        c = av - bv;
+      } else if (state.key === "daily") {
+        const av = a.daily;
+        const bv = b.daily;
+        const aNull = av == null || !Number.isFinite(av);
+        const bNull = bv == null || !Number.isFinite(bv);
+        if (aNull || bNull) return aNull === bNull ? 0 : aNull ? 1 : -1; // nulls last always
+        c = av - bv;
+      }
+
+      // Stable-ish tie-break: keep deterministic order by ISRC.
+      if (c === 0) c = a.isrc.localeCompare(b.isrc);
+
+      return state.asc ? c : -c;
+    });
+
+    return out;
+  }
+
+  const topByCumulativeSorted = useMemo(
+    () => sortTopTracks(props.topByCumulative, topTotalSort, "total"),
+    [props.topByCumulative, topTotalSort],
+  );
+  const topByDailySorted = useMemo(
+    () => sortTopTracks(props.topByDaily, topDailySort, "daily"),
+    [props.topByDaily, topDailySort],
+  );
+
+  function SilentSortHeader(props: { label: ReactNode; onClick: () => void }) {
+    return (
+      <button
+        type="button"
+        onClick={props.onClick}
+        className="w-full text-left select-none cursor-default uppercase"
+        // Intentionally no hover/active styles: "hidden" power-user feature.
+        style={{ color: "inherit" }}
+      >
+        {typeof props.label === "string" ? props.label.toUpperCase() : props.label}
+      </button>
+    );
+  }
 
   function downloadTopTracksAsCsv(data: TopTrack[], filename: string, isDaily: boolean) {
     downloadCsv({
@@ -310,7 +399,7 @@ export function CatalogPageClient(props: {
                   <button
                     type="button"
                     onClick={() => downloadTopTracksAsCsv(
-                      props.topByCumulative,
+                      topByCumulativeSorted,
                       `top-tracks-total-${slugifyForFilename(props.artistName)}-${todayIsoDate()}.csv`,
                       false
                     )}
@@ -325,17 +414,37 @@ export function CatalogPageClient(props: {
               <GlassTable
                 headers={[
                   "",
-                  "Track",
+                  {
+                    label: (
+                      <SilentSortHeader
+                        label="TRACK"
+                        onClick={() => toggleSort(setTopTotalSort, topTotalSort, "name")}
+                      />
+                    ),
+                  },
                   "ISRC",
                   {
-                    label: topTracksMode === "revenue" ? "Total revenue" : "Total streams",
+                    label: (
+                      <SilentSortHeader
+                        label="RELEASE"
+                        onClick={() => toggleSort(setTopTotalSort, topTotalSort, "release")}
+                      />
+                    ),
+                  },
+                  {
+                    label: (
+                      <SilentSortHeader
+                        label={topTracksMode === "revenue" ? "TOTAL REVENUE" : "TOTAL STREAMS"}
+                        onClick={() => toggleSort(setTopTotalSort, topTotalSort, "total")}
+                      />
+                    ),
                     align: "right",
                   },
                 ]}
                 maxBodyHeightClassName="max-h-56"
                 bodyClassName="overflow-x-hidden"
               >
-                {props.topByCumulative.map((t) => (
+                {topByCumulativeSorted.map((t) => (
                   <TableRow key={t.isrc}>
                     <TableCell>
                       {t.albumImageUrl ? (
@@ -371,6 +480,9 @@ export function CatalogPageClient(props: {
                     <TableCell mono className="text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>
                       {t.isrc}
                     </TableCell>
+                    <TableCell mono className="text-xs" style={{ color: "var(--sb-muted)" }}>
+                      {t.releaseDate ? formatDateISO(t.releaseDate) : null}
+                    </TableCell>
                     <TableCell numeric className="font-medium" style={topTracksNumberStyle}>
                       {t.total === null
                         ? null
@@ -381,7 +493,7 @@ export function CatalogPageClient(props: {
                   </TableRow>
                 ))}
                 {!props.topByCumulative.length && (
-                  <EmptyState colSpan={4} message="No track totals found" />
+                  <EmptyState colSpan={5} message="No track totals found" />
                 )}
               </GlassTable>
             </div>
@@ -393,7 +505,7 @@ export function CatalogPageClient(props: {
                   <button
                     type="button"
                     onClick={() => downloadTopTracksAsCsv(
-                      props.topByDaily,
+                      topByDailySorted,
                       `top-tracks-daily-${slugifyForFilename(props.artistName)}-${todayIsoDate()}.csv`,
                       true
                     )}
@@ -408,17 +520,37 @@ export function CatalogPageClient(props: {
               <GlassTable
                 headers={[
                   "",
-                  "Track",
+                  {
+                    label: (
+                      <SilentSortHeader
+                        label="TRACK"
+                        onClick={() => toggleSort(setTopDailySort, topDailySort, "name")}
+                      />
+                    ),
+                  },
                   "ISRC",
                   {
-                    label: topTracksMode === "revenue" ? "Daily revenue" : "Daily streams",
+                    label: (
+                      <SilentSortHeader
+                        label="RELEASE"
+                        onClick={() => toggleSort(setTopDailySort, topDailySort, "release")}
+                      />
+                    ),
+                  },
+                  {
+                    label: (
+                      <SilentSortHeader
+                        label={topTracksMode === "revenue" ? "DAILY REVENUE" : "DAILY STREAMS"}
+                        onClick={() => toggleSort(setTopDailySort, topDailySort, "daily")}
+                      />
+                    ),
                     align: "right",
                   },
                 ]}
                 maxBodyHeightClassName="max-h-56"
                 bodyClassName="overflow-x-hidden"
               >
-                {props.topByDaily.map((t) => (
+                {topByDailySorted.map((t) => (
                   <TableRow key={t.isrc}>
                     <TableCell>
                       {t.albumImageUrl ? (
@@ -454,6 +586,9 @@ export function CatalogPageClient(props: {
                     <TableCell mono className="text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>
                       {t.isrc}
                     </TableCell>
+                    <TableCell mono className="text-xs" style={{ color: "var(--sb-muted)" }}>
+                      {t.releaseDate ? formatDateISO(t.releaseDate) : null}
+                    </TableCell>
                     <TableCell numeric className="font-medium" style={topTracksNumberStyle}>
                       {t.daily === null
                         ? null
@@ -464,7 +599,7 @@ export function CatalogPageClient(props: {
                   </TableRow>
                 ))}
                 {!props.topByDaily.length && (
-                  <EmptyState colSpan={4} message="No daily deltas found" />
+                  <EmptyState colSpan={5} message="No daily deltas found" />
                 )}
               </GlassTable>
             </div>
@@ -663,7 +798,7 @@ export function CatalogPageClient(props: {
           </div>
         </div>
 
-        <GlassTable headers={["", "Playlist", "Key", "Type", "Added", "Removed"]} maxBodyHeightClassName="max-h-80">
+        <GlassTable headers={["", "PLAYLIST", "KEY", "TYPE", "ADDED", "REMOVED"]} maxBodyHeightClassName="max-h-80">
           {(props.isrc ? props.selectedTrackPlaylistMemberships : []).map((m) => (
             <TableRow key={m.playlistKey}>
               <TableCell>

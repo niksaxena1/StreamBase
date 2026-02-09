@@ -81,6 +81,14 @@ type WarningRowProps = {
       album_image_url?: string | null;
     }>;
   };
+  distroOverlapTracks?: Array<{
+    isrc: string;
+    name: string | null;
+    artist_names?: string[] | null;
+    artist_ids?: string[] | null;
+    album_image_url?: string | null;
+    distro_playlist_keys: string[];
+  }> | null;
   /** Full playlist key→meta map so drift sections can resolve display names + thumbnails. */
   allPlaylistMeta?: Record<string, { name: string; imageUrl: string | null }>;
 };
@@ -89,6 +97,7 @@ function formatCodeLabel(code: string) {
   const raw = (code ?? "").trim();
   if (!raw) return "—";
   if (raw === "entity_distro_drift") return "Entity Distro Mismatch";
+  if (raw === "distro_overlap") return "Distro Overlap";
   return raw
     .split("_")
     .filter(Boolean)
@@ -148,6 +157,7 @@ export function WarningRow({
   missingEnrichmentTracks,
   enrichmentWarning,
   entityDistroDrift,
+  distroOverlapTracks,
   allPlaylistMeta,
 }: WarningRowProps) {
   const [expanded, setExpanded] = useState(false);
@@ -170,13 +180,17 @@ export function WarningRow({
   );
   const hasEntityDistroDrift = entityDistroDrift &&
     (entityDistroDrift.extra.length > 0 || entityDistroDrift.missing.length > 0);
+  const hasDistroOverlap = distroOverlapTracks !== undefined &&
+    ((Array.isArray(distroOverlapTracks) && distroOverlapTracks.length > 0) ||
+      distroOverlapTracks === null);
   const canExpand = (warning.code === "non_catalog_tracks_present" && hasTracks) ||
                    (warning.code === "track_count_swing" && hasSwingTracks) ||
                    (warning.code === "tracks_missing_enrichment" && hasMissingEnrichmentTracks) ||
                    (warning.code === "catalog_missing_stream_snapshots" && hasCatalogMissingSnapshotTracks) ||
                    (warning.code === "catalog_streams_missing_prev_nonzero" &&
                      hasCatalogStreamsMissingPrevNonzeroTracks) ||
-                   (warning.code === "entity_distro_drift" && hasEntityDistroDrift);
+                   (warning.code === "entity_distro_drift" && hasEntityDistroDrift) ||
+                   (warning.code === "distro_overlap" && hasDistroOverlap);
 
   const missingThumbIsrcs = useMemo(() => {
     if (!expanded) return [];
@@ -803,6 +817,75 @@ export function WarningRow({
                         </div>
                       ))}
                     </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {warning.code === "distro_overlap" && hasDistroOverlap && (
+              <div className="space-y-2">
+                {Array.isArray(distroOverlapTracks) && distroOverlapTracks.length > 0 ? (
+                  <>
+                    <div className="text-xs font-medium opacity-70 mb-3 flex items-center gap-2">
+                      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium bg-orange-500/20 text-orange-700 dark:bg-orange-500/30 dark:text-orange-300">
+                        Overlap
+                      </span>
+                      <span>Tracks active in 2+ Distro playlists ({distroOverlapTracks.length}):</span>
+                    </div>
+                    <div className="space-y-1">
+                      {distroOverlapTracks.map((track) => (
+                        <div key={track.isrc} className="flex items-start gap-3 text-xs rounded-lg px-2.5 py-2" style={{ backgroundColor: "var(--sb-surface)" }}>
+                          {track.album_image_url ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={track.album_image_url}
+                              alt="Album cover"
+                              className="h-10 w-10 rounded object-cover sb-ring flex-shrink-0"
+                            />
+                          ) : (
+                            <div className="h-10 w-10 rounded sb-ring bg-white/60 flex-shrink-0" />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <div className="truncate">
+                              <Link
+                                href={`/tracks/${track.isrc}`}
+                                className="font-medium hover:underline"
+                                style={{ color: "var(--sb-text)" }}
+                              >
+                                {track.name || track.isrc}
+                              </Link>
+                            </div>
+                            {track.artist_names && track.artist_names.length > 0 && (
+                              <div className="opacity-60 truncate mt-0.5">
+                                <ArtistLinks artistNames={track.artist_names} artistIds={track.artist_ids ?? undefined} />
+                              </div>
+                            )}
+                            <div className="mt-0.5">
+                              <Link
+                                href={`/tracks/${track.isrc}`}
+                                className="font-mono text-[10px] sb-positive underline hover:opacity-80"
+                              >
+                                {track.isrc}
+                              </Link>
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap gap-1 flex-shrink-0 ml-2">
+                            {track.distro_playlist_keys.map((pk) => (
+                              <DriftPlaylistChip
+                                key={pk}
+                                playlistKey={pk}
+                                meta={allPlaylistMeta?.[pk]}
+                                label="in"
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-xs opacity-60">
+                    <p>Track details not available. Run the migration for <code>health_distro_overlap_tracks</code> to enable detailed display.</p>
                   </div>
                 )}
               </div>

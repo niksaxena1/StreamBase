@@ -359,6 +359,7 @@ export type TopPlaylistRow = {
 export type CollectorTrackRow = {
   isrc: string;
   name: string | null;
+  release_date: string | null;
   album_image_url: string | null;
   artist_names: string[] | null;
   artist_ids: string[] | null;
@@ -980,12 +981,22 @@ export function CollectorsClient(props: {
     }
 
     const safeNum = (n: number | null | undefined) => (n == null || Number.isNaN(n) ? null : Number(n));
+    const safeDateMs = (iso: string | null | undefined) => {
+      const s = String(iso ?? "").trim();
+      if (!s) return null;
+      const ms = new Date(`${s}T00:00:00Z`).getTime();
+      return Number.isFinite(ms) ? ms : null;
+    };
 
     rows = [...rows].sort((a, b) => {
       const aDeltaStreams = safeNum(a.daily_streams_delta);
       const bDeltaStreams = safeNum(b.daily_streams_delta);
       const aTotalStreams = safeNum(a.total_streams_cumulative);
       const bTotalStreams = safeNum(b.total_streams_cumulative);
+      const aRelease = safeDateMs(a.release_date);
+      const bRelease = safeDateMs(b.release_date);
+      const aDistroCount = (a.distro_playlist_keys ?? []).length;
+      const bDistroCount = (b.distro_playlist_keys ?? []).length;
 
       const toValue = (n: number | null) =>
         n == null ? null : tracksTableMetric === "revenue" ? n * payoutPerStreamUsd : n;
@@ -1013,10 +1024,18 @@ export function CollectorsClient(props: {
           return cmpNum(aTotal, bTotal, "desc") || cmpNum(aDelta, bDelta, "desc") || aName.localeCompare(bName);
         case "total_asc":
           return cmpNum(aTotal, bTotal, "asc") || cmpNum(aDelta, bDelta, "desc") || aName.localeCompare(bName);
+        case "release_desc":
+          return cmpNum(aRelease, bRelease, "desc") || cmpNum(aTotal, bTotal, "desc") || aName.localeCompare(bName);
+        case "release_asc":
+          return cmpNum(aRelease, bRelease, "asc") || cmpNum(aTotal, bTotal, "desc") || aName.localeCompare(bName);
         case "name_asc":
           return aName.localeCompare(bName) || cmpNum(aTotal, bTotal, "desc");
         case "name_desc":
           return bName.localeCompare(aName) || cmpNum(aTotal, bTotal, "desc");
+        case "distro_desc":
+          return (bDistroCount - aDistroCount) || cmpNum(aTotal, bTotal, "desc") || aName.localeCompare(bName);
+        case "distro_asc":
+          return (aDistroCount - bDistroCount) || cmpNum(aTotal, bTotal, "desc") || aName.localeCompare(bName);
         default:
           return 0;
       }
@@ -1024,6 +1043,46 @@ export function CollectorsClient(props: {
 
     return rows;
   }, [props.collectorTracks, trackQuery, trackSort, tracksTableMetric, payoutPerStreamUsd]);
+
+  const trackHeaderButton = useCallback(
+    (args: {
+      label: string;
+      asc: TrackSort;
+      desc: TrackSort;
+      defaultDir: "asc" | "desc";
+      align?: "left" | "right";
+      title?: string;
+    }) => {
+      const isActiveAsc = trackSort === args.asc;
+      const isActiveDesc = trackSort === args.desc;
+      const arrow = isActiveAsc ? "↑" : isActiveDesc ? "↓" : "";
+      const labelUpper = String(args.label ?? "").toUpperCase();
+
+      return {
+        label: (
+          <button
+            type="button"
+            className={[
+              "w-full whitespace-nowrap",
+              args.align === "right" ? "text-right" : "text-left",
+              "transition sb-link-hover",
+            ].join(" ")}
+            title={args.title ?? `Sort by ${labelUpper}`}
+            onClick={() => {
+              if (isActiveAsc) setTrackSort(args.desc);
+              else if (isActiveDesc) setTrackSort(args.asc);
+              else setTrackSort(args.defaultDir === "asc" ? args.asc : args.desc);
+            }}
+          >
+            {labelUpper}
+            {arrow ? <span className="ml-1 opacity-80">{arrow}</span> : null}
+          </button>
+        ),
+        align: args.align,
+      } as const;
+    },
+    [trackSort],
+  );
 
   const playlistMetaByKey = useMemo(() => {
     return new Map(props.selectedPlaylistsMeta.map((p) => [p.playlist_key, p]));
@@ -2077,13 +2136,19 @@ export function CollectorsClient(props: {
               <GlassTable
                 headers={[
                   "",
-                  "Track",
+                  trackHeaderButton({ label: "TRACK", asc: "name_asc", desc: "name_desc", defaultDir: "asc" }),
                   "ISRC",
-                  tracksTableTotalLabel,
-                  <span key="d1" title="Today minus yesterday (based on cumulative streams).">
-                    {tracksTableDailyLabel}
-                  </span>,
-                  "Distro",
+                  trackHeaderButton({ label: "RELEASE DATE", asc: "release_asc", desc: "release_desc", defaultDir: "desc" }),
+                  trackHeaderButton({ label: tracksTableTotalLabel.toUpperCase(), asc: "total_asc", desc: "total_desc", defaultDir: "desc", align: "right" }),
+                  trackHeaderButton({
+                    label: tracksTableDailyLabel.toUpperCase(),
+                    asc: "delta_asc",
+                    desc: "delta_desc",
+                    defaultDir: "desc",
+                    align: "right",
+                    title: "Today minus yesterday (based on cumulative streams). Click to sort.",
+                  }),
+                  trackHeaderButton({ label: "DISTRO", asc: "distro_asc", desc: "distro_desc", defaultDir: "desc" }),
                 ]}
                 maxBodyHeightClassName="max-h-[520px]"
               >
@@ -2124,6 +2189,15 @@ export function CollectorsClient(props: {
                     </TableCell>
                     <TableCell mono className="text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>
                       {t.isrc}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {t.release_date ? (
+                        <span className="font-mono text-[11px] opacity-70" style={{ color: "var(--sb-text)" }}>
+                          {formatDateISO(t.release_date)}
+                        </span>
+                      ) : (
+                        <span className="opacity-30">—</span>
+                      )}
                     </TableCell>
                     <TableCell
                       className={tracksTableIsRevenue ? "font-medium" : "sb-positive font-medium"}
@@ -2206,7 +2280,7 @@ export function CollectorsClient(props: {
               })}
               {!filteredSortedTracks.length ? (
                 <TableRow>
-                  <TableCell className="py-8 text-center opacity-50" colSpan={6}>
+                  <TableCell className="py-8 text-center opacity-50" colSpan={7}>
                     No matching tracks.
                   </TableCell>
                 </TableRow>

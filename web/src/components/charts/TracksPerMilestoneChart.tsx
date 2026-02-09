@@ -120,78 +120,99 @@ function computeMilestoneData(
   bucketMode: "cumulative" | "exclusive",
 ): MilestoneDataPoint[] {
   // Sort milestones ascending (lowest first for display, left to right)
-  const sorted = [...milestones].sort((a, b) => a - b);
+  const sortedAsc = [...milestones].sort((a, b) => a - b);
 
+  const makeMilestoneLabel = (milestone: number) =>
+    mode === "revenue"
+      ? formatRevenueMilestoneLabel(milestone, payoutPerStreamUsd)
+      : formatMilestoneLabel(milestone);
+
+  // ── Artist mode: aggregate total streams per artist, then bucket by aggregate ──
+  if (countMode === "artists") {
+    const artistStreams = new Map<string, number>();
+    for (const t of tracks) {
+      const total = Number(t?.total_streams_cumulative ?? 0);
+      if (!Number.isFinite(total) || total <= 0) continue;
+      const ids = t.artist_ids ?? [];
+      for (const id of ids) {
+        if (!id) continue;
+        artistStreams.set(id, (artistStreams.get(id) ?? 0) + total);
+      }
+    }
+
+    if (bucketMode === "exclusive") {
+      const sortedDesc = [...sortedAsc].sort((a, b) => b - a);
+      const artistCounts = new Map<number, number>();
+      for (const m of sortedAsc) artistCounts.set(m, 0);
+
+      for (const [, aggTotal] of artistStreams) {
+        for (const m of sortedDesc) {
+          if (aggTotal >= m) {
+            artistCounts.set(m, (artistCounts.get(m) ?? 0) + 1);
+            break;
+          }
+        }
+      }
+
+      return sortedAsc.map((milestone) => ({
+        milestone,
+        milestoneLabel: makeMilestoneLabel(milestone),
+        unique_tracks: 0,
+        unique_artists: artistCounts.get(milestone) ?? 0,
+      }));
+    }
+
+    // Cumulative artist mode
+    return sortedAsc.map((milestone) => {
+      let count = 0;
+      for (const [, aggTotal] of artistStreams) {
+        if (aggTotal >= milestone) count++;
+      }
+      return {
+        milestone,
+        milestoneLabel: makeMilestoneLabel(milestone),
+        unique_tracks: 0,
+        unique_artists: count,
+      };
+    });
+  }
+
+  // ── Track mode ──
   if (bucketMode === "exclusive") {
     // Bucket each track into the highest milestone it reaches.
+    // IMPORTANT: to find the highest reached threshold, iterate milestones DESC.
+    const sortedDesc = [...sortedAsc].sort((a, b) => b - a);
+
     const trackCounts = new Map<number, number>();
-    const artistSets = new Map<number, Set<string>>();
 
     for (const t of tracks) {
       const total = Number(t?.total_streams_cumulative ?? 0);
       if (!Number.isFinite(total) || total <= 0) continue;
 
-      let bucket: number | null = null;
-      for (const m of sorted) {
+      for (const m of sortedDesc) {
         if (total >= m) {
-          bucket = m;
+          trackCounts.set(m, (trackCounts.get(m) ?? 0) + 1);
           break;
         }
       }
-      if (bucket == null) continue;
-
-      trackCounts.set(bucket, (trackCounts.get(bucket) ?? 0) + 1);
-
-      if (countMode === "artists") {
-        let set = artistSets.get(bucket);
-        if (!set) {
-          set = new Set<string>();
-          artistSets.set(bucket, set);
-        }
-        const ids = t.artist_ids ?? [];
-        for (const id of ids) {
-          if (id) set.add(id);
-        }
-      }
     }
 
-    return sorted.map((milestone) => {
-      const uniqueTracks = trackCounts.get(milestone) ?? 0;
-      const uniqueArtists = countMode === "artists" ? (artistSets.get(milestone)?.size ?? 0) : 0;
-      return {
-        milestone,
-        milestoneLabel:
-          mode === "revenue"
-            ? formatRevenueMilestoneLabel(milestone, payoutPerStreamUsd)
-            : formatMilestoneLabel(milestone),
-        unique_tracks: uniqueTracks,
-        unique_artists: uniqueArtists,
-      };
-    });
+    return sortedAsc.map((milestone) => ({
+      milestone,
+      milestoneLabel: makeMilestoneLabel(milestone),
+      unique_tracks: trackCounts.get(milestone) ?? 0,
+      unique_artists: 0,
+    }));
   }
 
   // Default: cumulative / inclusive (≥ milestone)
-  return sorted.map((milestone) => {
+  return sortedAsc.map((milestone) => {
     const qualifying = tracks.filter((t) => (t.total_streams_cumulative ?? 0) >= milestone);
-    const uniqueTracks = qualifying.length;
-    const artistSet = new Set<string>();
-    if (countMode === "artists") {
-      for (const t of qualifying) {
-        const ids = t.artist_ids ?? [];
-        for (const id of ids) {
-          if (id) artistSet.add(id);
-        }
-      }
-    }
-    const uniqueArtists = countMode === "artists" ? artistSet.size : 0;
     return {
       milestone,
-      milestoneLabel:
-        mode === "revenue"
-          ? formatRevenueMilestoneLabel(milestone, payoutPerStreamUsd)
-          : formatMilestoneLabel(milestone),
-      unique_tracks: uniqueTracks,
-      unique_artists: uniqueArtists,
+      milestoneLabel: makeMilestoneLabel(milestone),
+      unique_tracks: qualifying.length,
+      unique_artists: 0,
     };
   });
 }

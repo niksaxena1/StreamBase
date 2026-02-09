@@ -26,6 +26,7 @@ type PlaylistTopTrackRow = {
   valid_from: string;
   total: number | null;
   daily: number | null;
+  release_date?: string | null;
 };
 
 type PlaylistAddedRow = {
@@ -35,6 +36,7 @@ type PlaylistAddedRow = {
   artist_names: string[] | null;
   artist_ids: string[] | null;
   valid_from: string;
+  release_date?: string | null;
 };
 
 type PlaylistRemovedRow = {
@@ -45,6 +47,7 @@ type PlaylistRemovedRow = {
   artist_ids: string[] | null;
   valid_from: string;
   valid_to: string | null;
+  release_date?: string | null;
 };
 
 type DebugCounts = {
@@ -94,6 +97,75 @@ export function PlaylistTracksSectionClient(props: {
 
   const [artistsOpen, setArtistsOpen] = useState(true);
   const [artistImagesById, setArtistImagesById] = useState<Map<string, string | null>>(new Map());
+
+  type SortState<K extends string> = { key: K; asc: boolean } | null;
+  type CurrentSortKey = "track" | "release" | "daily" | "total" | "added";
+  type AddedSortKey = "track" | "release" | "added";
+  type RemovedSortKey = "track" | "release" | "removed" | "added";
+  type ArtistSortKey = "artist" | "tracks" | "total" | "daily";
+
+  const [currentSort, setCurrentSort] = useState<SortState<CurrentSortKey>>(null);
+  const [addedSort, setAddedSort] = useState<SortState<AddedSortKey>>(null);
+  const [removedSort, setRemovedSort] = useState<SortState<RemovedSortKey>>(null);
+  const [artistSort, setArtistSort] = useState<SortState<ArtistSortKey>>(null);
+
+  function toggleSort<K extends string>(
+    setter: (next: SortState<K>) => void,
+    current: SortState<K>,
+    key: K,
+    defaultAsc: boolean,
+  ) {
+    if (!current || current.key !== key) {
+      setter({ key, asc: defaultAsc });
+      return;
+    }
+    setter({ key, asc: !current.asc });
+  }
+
+  function SilentSortHeader(props: { label: React.ReactNode; onClick: () => void; align?: "left" | "right" }) {
+    return (
+      <button
+        type="button"
+        onClick={props.onClick}
+        className={[
+          "w-full select-none cursor-default uppercase",
+          props.align === "right" ? "text-right" : "text-left",
+        ].join(" ")}
+        // Intentionally no hover/active styles: hidden power-user feature.
+        style={{ color: "inherit" }}
+      >
+        {typeof props.label === "string" ? props.label.toUpperCase() : props.label}
+      </button>
+    );
+  }
+
+  function cmpString(a: string, b: string) {
+    return a.localeCompare(b);
+  }
+
+  function cmpNullableIso(a: string | null | undefined, b: string | null | undefined) {
+    const aa = String(a ?? "").trim();
+    const bb = String(b ?? "").trim();
+    const aNull = !aa;
+    const bNull = !bb;
+    if (aNull || bNull) return aNull === bNull ? 0 : aNull ? 1 : -1; // nulls last
+    return cmpString(aa, bb);
+  }
+
+  function cmpNullableNumber(a: number | null | undefined, b: number | null | undefined) {
+    const av = a == null || !Number.isFinite(a) ? null : Number(a);
+    const bv = b == null || !Number.isFinite(b) ? null : Number(b);
+    const aNull = av == null;
+    const bNull = bv == null;
+    if (aNull || bNull) return aNull === bNull ? 0 : aNull ? 1 : -1; // nulls last
+    return av - bv;
+  }
+
+  function cmpTrackName(a: { name: string | null; isrc: string }, b: { name: string | null; isrc: string }) {
+    const aa = (String(a.name ?? "").trim() || a.isrc).toLowerCase();
+    const bb = (String(b.name ?? "").trim() || b.isrc).toLowerCase();
+    return cmpString(aa, bb);
+  }
 
   useEffect(() => {
     setArtistsOpen(readStoredBool(PLAYLIST_TRACKS_STORAGE.artistsOpen, true));
@@ -171,10 +243,76 @@ export function PlaylistTracksSectionClient(props: {
     }
 
     const rows = [...byKey.values()];
-    rows.sort((a, b) => b.value_total - a.value_total);
-
     return rows;
   }, [props.currentRows, mode, streamPayoutPerStreamUsd]);
+
+  const artistRowsSorted = useMemo(() => {
+    const rows = [...artistRows];
+    const state = artistSort;
+    if (!state) {
+      rows.sort((a, b) => b.value_total - a.value_total);
+      return rows;
+    }
+
+    rows.sort((a, b) => {
+      let c = 0;
+      if (state.key === "artist") c = a.artist_name.localeCompare(b.artist_name);
+      else if (state.key === "tracks") c = a.tracks - b.tracks;
+      else if (state.key === "total") c = a.value_total - b.value_total;
+      else if (state.key === "daily") c = a.value_daily - b.value_daily;
+      if (c === 0) c = (a.artist_id ?? a.artist_name).localeCompare(b.artist_id ?? b.artist_name);
+      return state.asc ? c : -c;
+    });
+    return rows;
+  }, [artistRows, artistSort]);
+
+  const currentRowsSorted = useMemo(() => {
+    const rows = [...props.currentRows];
+    const state = currentSort;
+    if (!state) return rows;
+    rows.sort((a, b) => {
+      let c = 0;
+      if (state.key === "track") c = cmpTrackName(a, b);
+      else if (state.key === "release") c = cmpNullableIso(a.release_date, b.release_date);
+      else if (state.key === "daily") c = cmpNullableNumber(a.daily, b.daily);
+      else if (state.key === "total") c = cmpNullableNumber(a.total, b.total);
+      else if (state.key === "added") c = cmpNullableIso(a.valid_from, b.valid_from);
+      if (c === 0) c = a.isrc.localeCompare(b.isrc);
+      return state.asc ? c : -c;
+    });
+    return rows;
+  }, [props.currentRows, currentSort]);
+
+  const addedRowsSorted = useMemo(() => {
+    const rows = [...props.addedLast7Days];
+    const state = addedSort;
+    if (!state) return rows;
+    rows.sort((a, b) => {
+      let c = 0;
+      if (state.key === "track") c = cmpTrackName(a, b);
+      else if (state.key === "release") c = cmpNullableIso(a.release_date, b.release_date);
+      else if (state.key === "added") c = cmpNullableIso(a.valid_from, b.valid_from);
+      if (c === 0) c = a.isrc.localeCompare(b.isrc);
+      return state.asc ? c : -c;
+    });
+    return rows;
+  }, [props.addedLast7Days, addedSort]);
+
+  const removedRowsSorted = useMemo(() => {
+    const rows = [...props.removed];
+    const state = removedSort;
+    if (!state) return rows;
+    rows.sort((a, b) => {
+      let c = 0;
+      if (state.key === "track") c = cmpTrackName(a, b);
+      else if (state.key === "release") c = cmpNullableIso(a.release_date, b.release_date);
+      else if (state.key === "removed") c = cmpNullableIso(a.valid_to, b.valid_to);
+      else if (state.key === "added") c = cmpNullableIso(a.valid_from, b.valid_from);
+      if (c === 0) c = a.isrc.localeCompare(b.isrc);
+      return state.asc ? c : -c;
+    });
+    return rows;
+  }, [props.removed, removedSort]);
 
   const exportArtists = () => {
     const rows = artistRows.map((a) => ({
@@ -192,7 +330,7 @@ export function PlaylistTracksSectionClient(props: {
   };
 
   const exportCurrentTracks = () => {
-    const rows = props.currentRows.map((t) => {
+    const rows = currentRowsSorted.map((t) => {
       const daily =
         mode === "revenue"
           ? t.daily === null
@@ -208,6 +346,7 @@ export function PlaylistTracksSectionClient(props: {
 
       return {
         ISRC: t.isrc,
+        Release: t.release_date ?? "",
         Track: t.name ?? "",
         Artists: t.artist_names ?? [],
         Added: t.valid_from,
@@ -223,8 +362,9 @@ export function PlaylistTracksSectionClient(props: {
   };
 
   const exportAddedTracks = () => {
-    const rows = props.addedLast7Days.map((t) => ({
+    const rows = addedRowsSorted.map((t) => ({
       ISRC: t.isrc,
+      Release: t.release_date ?? "",
       Track: t.name ?? "",
       Artists: t.artist_names ?? [],
       Added: t.valid_from,
@@ -237,8 +377,9 @@ export function PlaylistTracksSectionClient(props: {
   };
 
   const exportRemovedTracks = () => {
-    const rows = props.removed.map((t) => ({
+    const rows = removedRowsSorted.map((t) => ({
       ISRC: t.isrc,
+      Release: t.release_date ?? "",
       Track: t.name ?? "",
       Artists: t.artist_names ?? [],
       Removed: t.valid_to ?? "",
@@ -287,13 +428,63 @@ export function PlaylistTracksSectionClient(props: {
               </div>
             </details>
           ) : null}
-          <GlassTable headers={["", "Track", "ISRC", dailyLabel, totalLabel, "Added"]}>
+          <GlassTable
+            headers={[
+              "",
+              {
+                label: (
+                  <SilentSortHeader
+                    label="Track"
+                    onClick={() => toggleSort(setCurrentSort, currentSort, "track", true)}
+                  />
+                ),
+              },
+              {
+                label: (
+                  <SilentSortHeader
+                    label="Release"
+                    onClick={() => toggleSort(setCurrentSort, currentSort, "release", false)}
+                  />
+                ),
+              },
+              {
+                label: (
+                  <SilentSortHeader
+                    label={dailyLabel}
+                    onClick={() => toggleSort(setCurrentSort, currentSort, "daily", false)}
+                    align="right"
+                  />
+                ),
+                align: "right",
+              },
+              {
+                label: (
+                  <SilentSortHeader
+                    label={totalLabel}
+                    onClick={() => toggleSort(setCurrentSort, currentSort, "total", false)}
+                    align="right"
+                  />
+                ),
+                align: "right",
+              },
+              {
+                label: (
+                  <SilentSortHeader
+                    label="Added"
+                    onClick={() => toggleSort(setCurrentSort, currentSort, "added", false)}
+                    align="right"
+                  />
+                ),
+                align: "right",
+              },
+            ]}
+          >
             {!hasStatsDate ? (
               <EmptyState colSpan={6} message="No stats date available yet" />
             ) : props.topErrMessage ? (
               <EmptyState colSpan={6} message={`Error loading current tracks: ${props.topErrMessage}`} />
             ) : null}
-            {props.currentRows.map((t) => (
+            {currentRowsSorted.map((t) => (
               <TableRow key={t.isrc}>
                 <TableCell>
                   {t.album_image_url ? (
@@ -312,8 +503,8 @@ export function PlaylistTracksSectionClient(props: {
                     </div>
                   ) : null}
                 </TableCell>
-                <TableCell mono className="text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>
-                  {t.isrc}
+                <TableCell mono className="text-xs" style={{ color: "var(--sb-muted)" }}>
+                  {formatDateISO(t.release_date)}
                 </TableCell>
                 <TableCell className="font-medium" style={numberStyle}>
                   {t.daily === null ? "—" : fmtDelta({ mode, value: t.daily, streamPayoutPerStreamUsd })}
@@ -350,11 +541,42 @@ export function PlaylistTracksSectionClient(props: {
                 Based on membership added date.
               </div>
             </div>
-            <GlassTable headers={["", "Track", "ISRC", "Added"]} maxBodyHeightClassName="max-h-[260px]">
+            <GlassTable
+              headers={[
+                "",
+                {
+                  label: (
+                    <SilentSortHeader
+                      label="Track"
+                      onClick={() => toggleSort(setAddedSort, addedSort, "track", true)}
+                    />
+                  ),
+                },
+                {
+                  label: (
+                    <SilentSortHeader
+                      label="Release"
+                      onClick={() => toggleSort(setAddedSort, addedSort, "release", false)}
+                    />
+                  ),
+                },
+                {
+                  label: (
+                    <SilentSortHeader
+                      label="Added"
+                      onClick={() => toggleSort(setAddedSort, addedSort, "added", false)}
+                      align="right"
+                    />
+                  ),
+                  align: "right",
+                },
+              ]}
+              maxBodyHeightClassName="max-h-[260px]"
+            >
               {props.addedErrMessage ? (
                 <EmptyState colSpan={4} message={`Error loading added tracks: ${props.addedErrMessage}`} />
               ) : null}
-              {props.addedLast7Days.map((m, idx) => (
+              {addedRowsSorted.map((m, idx) => (
                 <TableRow key={`${m.isrc}-${m.valid_from}-${idx}`}>
                   <TableCell>
                     {m.album_image_url ? (
@@ -379,8 +601,8 @@ export function PlaylistTracksSectionClient(props: {
                       </div>
                     ) : null}
                   </TableCell>
-                  <TableCell mono className="text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>
-                    {m.isrc}
+                  <TableCell mono className="text-xs" style={{ color: "var(--sb-muted)" }}>
+                    {formatDateISO(m.release_date)}
                   </TableCell>
                   <TableCell mono className="text-xs">{formatDateISO(m.valid_from)}</TableCell>
                 </TableRow>
@@ -414,12 +636,50 @@ export function PlaylistTracksSectionClient(props: {
               className="flex-1"
               bodyClassName="flex-1"
               maxBodyHeightClassName="flex-1"
-              headers={["", "Track", "ISRC", "Removed", "Added"]}
+              headers={[
+                "",
+                {
+                  label: (
+                    <SilentSortHeader
+                      label="Track"
+                      onClick={() => toggleSort(setRemovedSort, removedSort, "track", true)}
+                    />
+                  ),
+                },
+                {
+                  label: (
+                    <SilentSortHeader
+                      label="Release"
+                      onClick={() => toggleSort(setRemovedSort, removedSort, "release", false)}
+                    />
+                  ),
+                },
+                {
+                  label: (
+                    <SilentSortHeader
+                      label="Removed"
+                      onClick={() => toggleSort(setRemovedSort, removedSort, "removed", false)}
+                      align="right"
+                    />
+                  ),
+                  align: "right",
+                },
+                {
+                  label: (
+                    <SilentSortHeader
+                      label="Added"
+                      onClick={() => toggleSort(setRemovedSort, removedSort, "added", false)}
+                      align="right"
+                    />
+                  ),
+                  align: "right",
+                },
+              ]}
             >
               {props.removedErrMessage ? (
                 <EmptyState colSpan={5} message={`Error loading removed tracks: ${props.removedErrMessage}`} />
               ) : null}
-              {props.removed.map((m, idx) => (
+              {removedRowsSorted.map((m, idx) => (
                 <TableRow key={`${m.isrc}-${m.valid_from}-${idx}`}>
                   <TableCell>
                     {m.album_image_url ? (
@@ -438,8 +698,8 @@ export function PlaylistTracksSectionClient(props: {
                       </div>
                     ) : null}
                   </TableCell>
-                  <TableCell mono className="text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>
-                    {m.isrc}
+                  <TableCell mono className="text-xs" style={{ color: "var(--sb-muted)" }}>
+                    {formatDateISO(m.release_date)}
                   </TableCell>
                   <TableCell mono className="text-xs">{m.valid_to ? formatDateISO(m.valid_to) : "—"}</TableCell>
                   <TableCell mono className="text-xs">{formatDateISO(m.valid_from)}</TableCell>
@@ -495,10 +755,44 @@ export function PlaylistTracksSectionClient(props: {
         <div className="mt-3">
           <GlassTable
             headers={[
-              { label: "Artist" },
-              { label: "Tracks", align: "right" },
-              { label: mode === "revenue" ? "Total revenue" : "Total streams", align: "right" },
-              { label: mode === "revenue" ? "Daily revenue" : "Daily streams", align: "right" },
+              {
+                label: (
+                  <SilentSortHeader
+                    label="Artist"
+                    onClick={() => toggleSort(setArtistSort, artistSort, "artist", true)}
+                  />
+                ),
+              },
+              {
+                label: (
+                  <SilentSortHeader
+                    label="Tracks"
+                    onClick={() => toggleSort(setArtistSort, artistSort, "tracks", false)}
+                    align="right"
+                  />
+                ),
+                align: "right",
+              },
+              {
+                label: (
+                  <SilentSortHeader
+                    label={mode === "revenue" ? "Total revenue" : "Total streams"}
+                    onClick={() => toggleSort(setArtistSort, artistSort, "total", false)}
+                    align="right"
+                  />
+                ),
+                align: "right",
+              },
+              {
+                label: (
+                  <SilentSortHeader
+                    label={mode === "revenue" ? "Daily revenue" : "Daily streams"}
+                    onClick={() => toggleSort(setArtistSort, artistSort, "daily", false)}
+                    align="right"
+                  />
+                ),
+                align: "right",
+              },
             ]}
             maxBodyHeightClassName="max-h-[320px] overflow-auto"
           >
@@ -508,7 +802,7 @@ export function PlaylistTracksSectionClient(props: {
               <EmptyState colSpan={4} message={`Error loading artists: ${props.topErrMessage}`} />
             ) : null}
 
-            {artistRows.slice(0, 60).map((a) => (
+            {artistRowsSorted.slice(0, 60).map((a) => (
               <TableRow key={a.artist_id ?? a.artist_name}>
                 <TableCell>
                   <div className="flex items-center gap-2">
@@ -557,11 +851,11 @@ export function PlaylistTracksSectionClient(props: {
               </TableRow>
             ))}
 
-            {hasStatsDate && !props.topErrMessage && !artistRows.length && (
+            {hasStatsDate && !props.topErrMessage && !artistRowsSorted.length && (
               <EmptyState colSpan={4} message="No artists found" />
             )}
-            {artistRows.length > 60 ? (
-              <EmptyState colSpan={4} message={`Showing top 60 of ${formatInt(artistRows.length)} artists`} />
+            {artistRowsSorted.length > 60 ? (
+              <EmptyState colSpan={4} message={`Showing top 60 of ${formatInt(artistRowsSorted.length)} artists`} />
             ) : null}
           </GlassTable>
         </div>

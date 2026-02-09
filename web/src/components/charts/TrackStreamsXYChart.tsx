@@ -56,6 +56,13 @@ const CustomTooltip = ({
   const title = (p.name ?? "").trim() || p.isrc;
   const artistNames = p.artist_names ?? [];
   const artistIds = p.artist_ids ?? [];
+  const releaseDate = useMemo(() => {
+    const raw = String(p.release_date ?? "").trim();
+    if (!raw) return null;
+    // Prefer a compact YYYY-MM-DD if present (handles ISO-ish strings too).
+    const m = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+    return m ? m[1] : raw;
+  }, [p.release_date]);
 
   const dailyStreams = p.daily_streams_delta;
   const totalStreams = p.total_streams_cumulative;
@@ -184,8 +191,15 @@ const CustomTooltip = ({
               </span>
             </div>
             {showRich ? (
-              <div className="opacity-60">
-                ISRC: <span className="font-mono">{p.isrc}</span>
+              <div className="space-y-0.5 opacity-60">
+                <div>
+                  ISRC: <span className="font-mono">{p.isrc}</span>
+                </div>
+                {releaseDate ? (
+                  <div>
+                    Release: <span className="font-mono">{releaseDate}</span>
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </div>

@@ -90,21 +90,37 @@ async function fetchTrackScatterPoints(
   svc: ReturnType<typeof supabaseService>,
   args: { runDate: string; prevDate: string },
 ) {
-  // The RPC returns up to ~10K rows (one per track), paginated to avoid PostgREST cap.
+  // Supabase/PostgREST commonly applies a server-side max-rows cap (often 1000).
+  // To avoid silently truncating the home scatter dataset, explicitly paginate
+  // the RPC results using `.range()`.
   const pageSize = 1000;
-  const hardCap = 25_000;
+  const hardCap = 100_000; // safety cap to avoid huge payloads on very large catalogs
+
   const out: any[] = [];
+  const seenIsrc = new Set<string>();
 
   for (let offset = 0; offset < hardCap; offset += pageSize) {
-    const { data, error } = await svc.rpc("home_track_scatter_points", {
-      p_run_date: args.runDate,
-      p_prev_date: args.prevDate,
-    });
+    const { data, error } = await svc
+      .rpc("home_track_scatter_points", {
+        p_run_date: args.runDate,
+        p_prev_date: args.prevDate,
+      })
+      .range(offset, offset + pageSize - 1);
+
     if (error) throw error;
     const rows = (data ?? []) as any[];
-    // RPC returns full result set (not paginated by PostgREST range), so take all.
-    out.push(...rows);
-    break; // RPC returns all rows in one call
+    if (!rows.length) break;
+
+    for (const r of rows) {
+      const isrc = String((r as any)?.isrc ?? "").trim();
+      if (!isrc) continue;
+      if (seenIsrc.has(isrc)) continue;
+      seenIsrc.add(isrc);
+      out.push(r);
+    }
+
+    // Last page (or server-side cap below our page size)
+    if (rows.length < pageSize) break;
   }
 
   return out;
@@ -234,7 +250,7 @@ export default async function Home({
     : latestRunDate;
 
   // Bump cache key when scatter point shape changes.
-  const scatterCacheKey = `home-track-scatter-v5-${selectedRunDate ?? "none"}`;
+  const scatterCacheKey = `home-track-scatter-v6-${selectedRunDate ?? "none"}`;
   const { data: trackScatterPoints, error: trackScatterErr } = await cachedQuery(
     async () => {
       if (!selectedRunDate) return { data: [] as any[], error: null as any };

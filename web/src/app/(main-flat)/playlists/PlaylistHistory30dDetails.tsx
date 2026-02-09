@@ -24,6 +24,65 @@ export function PlaylistHistory30dDetails(props: { rows: PlaylistHistoryRow[] })
   const { streamPayoutPerStreamUsd } = usePayoutRate();
   const rows30 = useMemo(() => (props.rows ?? []).slice(0, 30), [props.rows]);
 
+  type SortKey = "date" | "tracks" | "total" | "daily" | "revenue" | "missing";
+  type SortState = { key: SortKey; asc: boolean } | null;
+  const [sort, setSort] = useState<SortState>(null);
+
+  function toggleSort(key: SortKey, defaultAsc: boolean) {
+    if (!sort || sort.key !== key) {
+      setSort({ key, asc: defaultAsc });
+      return;
+    }
+    setSort({ key, asc: !sort.asc });
+  }
+
+  function SilentSortHeader(props: { label: React.ReactNode; onClick: () => void; align?: "left" | "right" }) {
+    return (
+      <button
+        type="button"
+        onClick={props.onClick}
+        className={[
+          "w-full select-none cursor-default uppercase",
+          props.align === "right" ? "text-right" : "text-left",
+        ].join(" ")}
+        style={{ color: "inherit" }}
+      >
+        {typeof props.label === "string" ? props.label.toUpperCase() : props.label}
+      </button>
+    );
+  }
+
+  // Keep deltas meaningful: compute deltas based on date-desc order only.
+  const trackDeltaByDate = useMemo(() => {
+    const arr = [...rows30].sort((a, b) => String(b.date ?? "").localeCompare(String(a.date ?? "")));
+    const map = new Map<string, number>();
+    for (let idx = 0; idx < arr.length; idx++) {
+      const r = arr[idx]!;
+      const prev = idx < arr.length - 1 ? arr[idx + 1]! : null;
+      const delta = prev ? Number(r.track_count ?? 0) - Number(prev.track_count ?? 0) : 0;
+      map.set(r.date, delta);
+    }
+    return map;
+  }, [rows30]);
+
+  const rows30Sorted = useMemo(() => {
+    const out = [...rows30];
+    const state = sort;
+    if (!state) return out;
+    out.sort((a, b) => {
+      let c = 0;
+      if (state.key === "date") c = String(a.date ?? "").localeCompare(String(b.date ?? ""));
+      else if (state.key === "tracks") c = Number(a.track_count ?? 0) - Number(b.track_count ?? 0);
+      else if (state.key === "total") c = Number(a.total_streams_cumulative ?? 0) - Number(b.total_streams_cumulative ?? 0);
+      else if (state.key === "daily") c = Number(a.daily_streams_net ?? 0) - Number(b.daily_streams_net ?? 0);
+      else if (state.key === "revenue") c = Number(a.total_streams_cumulative ?? 0) - Number(b.total_streams_cumulative ?? 0);
+      else if (state.key === "missing") c = Number(a.missing_streams_track_count ?? 0) - Number(b.missing_streams_track_count ?? 0);
+      if (c === 0) c = String(a.date ?? "").localeCompare(String(b.date ?? ""));
+      return state.asc ? c : -c;
+    });
+    return out;
+  }, [rows30, sort]);
+
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -59,20 +118,19 @@ export function PlaylistHistory30dDetails(props: { rows: PlaylistHistoryRow[] })
       <div className="mt-3">
         <GlassTable
           headers={[
-            { label: "Date" },
-            { label: "Tracks", align: "right" },
+            { label: <SilentSortHeader label="Date" onClick={() => toggleSort("date", false)} /> },
+            { label: <SilentSortHeader label="Tracks" onClick={() => toggleSort("tracks", false)} align="right" />, align: "right" },
             { label: "" }, // Invisible column for track delta
-            { label: "Total Streams", align: "right" },
-            { label: "Daily", align: "right" },
-            { label: "Est. Rev", align: "right" },
-            { label: "Missing", align: "right" },
+            { label: <SilentSortHeader label="Total Streams" onClick={() => toggleSort("total", false)} align="right" />, align: "right" },
+            { label: <SilentSortHeader label="Daily" onClick={() => toggleSort("daily", false)} align="right" />, align: "right" },
+            { label: <SilentSortHeader label="Est. Rev" onClick={() => toggleSort("revenue", false)} align="right" />, align: "right" },
+            { label: <SilentSortHeader label="Missing" onClick={() => toggleSort("missing", false)} align="right" />, align: "right" },
           ]}
           // Constrain height so the panel stays tidy; scroll for more.
           maxBodyHeightClassName="max-h-[320px] overflow-auto"
         >
-          {rows30.map((r, idx) => {
-            const prev = idx < rows30.length - 1 ? rows30[idx + 1] : null;
-            const trackDelta = prev ? Number(r.track_count ?? 0) - Number(prev.track_count ?? 0) : 0;
+          {rows30Sorted.map((r) => {
+            const trackDelta = trackDeltaByDate.get(r.date) ?? 0;
 
             return (
               <TableRow key={r.date}>

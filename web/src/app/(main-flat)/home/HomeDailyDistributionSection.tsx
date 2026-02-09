@@ -12,7 +12,7 @@ import { GlassTable, TableRow, TableCell, EmptyState } from "@/components/ui/Gla
 import { Modal } from "@/components/ui/Modal";
 import { DailyStreamsDistributionChart, DEFAULT_DAILY_BUCKETS } from "@/components/charts/DailyStreamsDistributionChart";
 import { type TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChart";
-import { formatInt, formatUsd } from "@/lib/format";
+import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
 import { foldForSearch } from "@/lib/searchFold";
 import { readStoredBool, writeStoredBool, readStoredString, writeStoredString, removeStoredItem } from "@/lib/storage";
 import { HOME_DETAILS_STORAGE, HOME_DAILY_BUCKETS_STORAGE, parseDailyBucketsText } from "./homeUtils";
@@ -122,18 +122,14 @@ export function HomeDailyDistributionSection(props: {
     daily_streams_delta: number;
   };
 
-  // Drill-down artists
+  // Drill-down artists — aggregate daily streams per artist, then filter by aggregate
   const dailyDistDrillArtists = useMemo((): DailyDistDrillArtistRow[] => {
     const bucket = dailyDistDrillBucket;
     if (!bucket) return [];
 
+    // First pass: aggregate all tracks per artist (no bucket filter yet)
     const map = new Map<string, DailyDistDrillArtistRow>();
     for (const p of props.trackScatterPoints ?? []) {
-      const daily = Number(p?.daily_streams_delta ?? 0);
-      if (!Number.isFinite(daily) || daily < 0) continue;
-      const inBucket = bucket.max === null ? daily >= bucket.min : daily >= bucket.min && daily < bucket.max;
-      if (!inBucket) continue;
-
       const artistNames = p?.artist_names ?? [];
       const artistIds = p?.artist_ids ?? [];
       const perTrackSeen = new Set<string>();
@@ -163,8 +159,16 @@ export function HomeDailyDistributionSection(props: {
       }
     }
 
+    // Second pass: filter artists by their aggregate daily streams
+    let out: DailyDistDrillArtistRow[] = [];
+    for (const [, agg] of map) {
+      const aggDaily = agg.daily_streams_delta;
+      const inBucket = bucket.max === null ? aggDaily >= bucket.min : aggDaily >= bucket.min && aggDaily < bucket.max;
+      if (!inBucket) continue;
+      out.push(agg);
+    }
+
     const q = foldForSearch(deferredDailyDistDrillQuery ?? "");
-    let out = Array.from(map.values());
     if (q) {
       out = out.filter((a) => foldForSearch(a.artist_name).includes(q) || (a.artist_id ? foldForSearch(a.artist_id).includes(q) : false));
     }
@@ -344,7 +348,16 @@ export function HomeDailyDistributionSection(props: {
           </div>
 
           {dailyDistDrillView === "tracks" ? (
-            <GlassTable headers={[{ label: "Track" }, { label: "Artists" }, { label: metric === "revenue" ? "Daily Revenue" : "Daily Streams", align: "right" }, { label: metric === "revenue" ? "Total Revenue" : "Total Streams", align: "right" }]} maxBodyHeightClassName="max-h-[60vh] overflow-auto">
+            <GlassTable
+              headers={[
+                { label: "Track" },
+                { label: "Artists" },
+                { label: "Release" },
+                { label: metric === "revenue" ? "Daily Revenue" : "Daily Streams", align: "right" },
+                { label: metric === "revenue" ? "Total Revenue" : "Total Streams", align: "right" },
+              ]}
+              maxBodyHeightClassName="max-h-[60vh] overflow-auto"
+            >
               {drillTrackPageItems.map((p) => {
                 const title = String(p?.name ?? "").trim() || String(p?.isrc ?? "");
                 const artists = (p?.artist_names ?? []).filter(Boolean);
@@ -376,12 +389,15 @@ export function HomeDailyDistributionSection(props: {
                         </div>
                       ) : <span className="text-sm opacity-60" style={{ color: "var(--sb-muted)" }}>—</span>}
                     </TableCell>
+                    <TableCell className="whitespace-nowrap text-sm font-mono opacity-70" style={{ color: "var(--sb-muted)" }}>
+                      {formatDateISO((p as any)?.release_date ?? null)}
+                    </TableCell>
                     <TableCell numeric className={cls} style={metric === "revenue" ? { color: "#10b981" } : undefined}>{metric === "revenue" ? formatUsd(dailyValue) : formatInt(dailyValue)}</TableCell>
                     <TableCell numeric className={cls} style={metric === "revenue" ? { color: "#10b981" } : undefined}>{metric === "revenue" ? formatUsd(totalValue) : formatInt(totalValue)}</TableCell>
                   </TableRow>
                 );
               })}
-              {!drillTrackPageItems.length && <EmptyState colSpan={4} message={dailyDistDrillTracks.length ? "No tracks match your filter." : "No tracks found for this bucket."} />}
+              {!drillTrackPageItems.length && <EmptyState colSpan={5} message={dailyDistDrillTracks.length ? "No tracks match your filter." : "No tracks found for this bucket."} />}
             </GlassTable>
           ) : (
             <GlassTable headers={[{ label: "Artist" }, { label: "Tracks", align: "right" }, { label: metric === "revenue" ? "Daily Revenue" : "Daily Streams", align: "right" }, { label: metric === "revenue" ? "Total Revenue" : "Total Streams", align: "right" }]} maxBodyHeightClassName="max-h-[60vh] overflow-auto">

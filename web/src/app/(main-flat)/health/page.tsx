@@ -14,6 +14,7 @@ import { PageHeader } from "@/components/shell/PageHeader";
 import { addDaysISO, dataDateFromRunDate, SOT_DATA_LAG_DAYS } from "@/lib/sotDates";
 import { Alert } from "@/components/ui/Alert";
 import { SectionHeader } from "@/components/ui/SectionHeader";
+import { CollapsibleSection } from "@/components/ui/CollapsibleSection";
 
 export const revalidate = 60; // Revalidate every 60 seconds for fresher health data
 
@@ -667,6 +668,48 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
     }
   }
 
+  // Fetch distro overlap tracks (ISRCs active in 2+ Distro playlists)
+  let distroOverlapTracks: Array<{
+    isrc: string;
+    name: string | null;
+    artist_names: string[] | null;
+    artist_ids: string[] | null;
+    album_image_url: string | null;
+    distro_playlist_keys: string[];
+  }> | null = null;
+
+  const distroOverlapWarnings = warnings.filter(
+    (w) => w.code === "distro_overlap"
+  );
+
+  if (distroOverlapWarnings.length > 0 && selectedRunDate) {
+    try {
+      const { data: rows, error } = await svc.rpc("health_distro_overlap_tracks", {
+        run_date: selectedRunDate,
+      });
+
+      if (error) {
+        console.error("health_distro_overlap_tracks RPC failed:", error);
+      } else {
+        distroOverlapTracks = (rows ?? []).map((t: unknown) => {
+          const row = (t ?? {}) as Record<string, unknown>;
+          return {
+            isrc: String(row.isrc ?? "").trim().toUpperCase(),
+            name: (row.name ?? null) as string | null,
+            artist_names: (row.artist_names ?? null) as string[] | null,
+            artist_ids: (row.artist_ids ?? null) as string[] | null,
+            album_image_url: (row.album_image_url ?? null) as string | null,
+            distro_playlist_keys: Array.isArray(row.distro_playlist_keys)
+              ? (row.distro_playlist_keys as string[])
+              : [],
+          };
+        });
+      }
+    } catch {
+      // Don't block page render if RPC is not yet deployed
+    }
+  }
+
   // Fetch ALL tracks missing from catalog across all playlists for the selected date
   let allMissingTracks: Array<{
     isrc: string;
@@ -769,6 +812,9 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
         return { ...w, message: `${tracks.length} catalog track(s) have zero streams today but had streams previously` };
       }
     }
+    if (w.code === "distro_overlap" && Array.isArray(distroOverlapTracks)) {
+      return { ...w, message: `${distroOverlapTracks.length} track(s) appear in multiple Distro playlists` };
+    }
     return w;
   });
 
@@ -853,6 +899,11 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
                   ? entityDistroDriftMap.get(normalizeKey(w.playlist_key))
                   : undefined
               }
+              distroOverlapTracks={
+                w.code === "distro_overlap"
+                  ? distroOverlapTracks
+                  : undefined
+              }
             />
           ))}
           {!displayedWarningsPatched.length && (
@@ -861,7 +912,7 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
         </GlassTable>
       </div>
 
-      {selectedRunDate && (
+      {selectedRunDate && allMissingTracks.length > 0 && (
         <div className="space-y-2">
           <SectionHeader
             title={
@@ -872,78 +923,76 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
             }
             subtitle="Tracks in playlists that don't have stream data in the catalog snapshot for this day"
             actions={
-              allMissingTracks.length > 0 ? (
-                <>
-                  <span className="text-xs opacity-60">{allMissingTracks.length} tracks</span>
-                  <ExportMissingTracksButton tracks={allMissingTracks} date={selectedDataDate ?? "—"} />
-                </>
-              ) : null
+              <>
+                <span className="text-xs opacity-60">{allMissingTracks.length} tracks</span>
+                <ExportMissingTracksButton tracks={allMissingTracks} date={selectedDataDate ?? "—"} />
+              </>
             }
           />
           <GlassTable headers={["Track", "Artists", "Playlists"]}>
-            {allMissingTracks.length > 0 ? (
-              allMissingTracks.map((track) => (
-                <TableRow key={track.isrc}>
-                  <TableCell>
-                    <div className="flex items-center gap-3">
-                      {track.album_image_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={track.album_image_url}
-                          alt="Album cover"
-                          className="h-10 w-10 rounded object-cover sb-ring flex-shrink-0"
-                        />
-                      ) : (
-                        <div className="h-10 w-10 rounded sb-ring bg-white/60 flex-shrink-0" />
-                      )}
-                      <div className="flex-1 min-w-0">
+            {allMissingTracks.map((track) => (
+              <TableRow key={track.isrc}>
+                <TableCell>
+                  <div className="flex items-center gap-3">
+                    {track.album_image_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={track.album_image_url}
+                        alt="Album cover"
+                        className="h-10 w-10 rounded object-cover sb-ring flex-shrink-0"
+                      />
+                    ) : (
+                      <div className="h-10 w-10 rounded sb-ring bg-white/60 flex-shrink-0" />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <Link
+                        href={`/tracks/${track.isrc}`}
+                        className="font-medium hover:underline"
+                        style={{ color: "var(--sb-text)" }}
+                      >
+                        {track.name || track.isrc}
+                      </Link>
+                      <div className="mt-0.5">
                         <Link
                           href={`/tracks/${track.isrc}`}
-                          className="font-medium hover:underline"
-                          style={{ color: "var(--sb-text)" }}
+                          className="font-mono text-[10px] text-lime-600 dark:text-lime-400 underline hover:opacity-80"
                         >
-                          {track.name || track.isrc}
+                          {track.isrc}
                         </Link>
-                        <div className="mt-0.5">
-                          <Link
-                            href={`/tracks/${track.isrc}`}
-                            className="font-mono text-[10px] text-lime-600 dark:text-lime-400 underline hover:opacity-80"
-                          >
-                            {track.isrc}
-                          </Link>
-                        </div>
                       </div>
                     </div>
-                  </TableCell>
-                  <TableCell>
-                    {track.artist_names && track.artist_names.length > 0 ? (
-                      <ArtistLinks artistNames={track.artist_names} artistIds={track.artist_ids ?? undefined} />
-                    ) : (
-                      <span className="opacity-30">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex flex-wrap gap-1">
-                      {track.playlists.map((pl) => (
-                        <Link
-                          key={pl}
-                          href={`/playlists?playlist_key=${encodeURIComponent(String(pl))}`}
-                          className="font-mono text-[10px] underline hover:text-lime-600 dark:hover:text-lime-400"
-                        >
-                          {pl}
-                        </Link>
-                      ))}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
-            ) : <EmptyState colSpan={3} message={`No missing catalog tracks found for ${selectedDataDate}.`} />}
+                  </div>
+                </TableCell>
+                <TableCell>
+                  {track.artist_names && track.artist_names.length > 0 ? (
+                    <ArtistLinks artistNames={track.artist_names} artistIds={track.artist_ids ?? undefined} />
+                  ) : (
+                    <span className="opacity-30">—</span>
+                  )}
+                </TableCell>
+                <TableCell>
+                  <div className="flex flex-wrap gap-1">
+                    {track.playlists.map((pl) => (
+                      <Link
+                        key={pl}
+                        href={`/playlists?playlist_key=${encodeURIComponent(String(pl))}`}
+                        className="font-mono text-[10px] underline hover:text-lime-600 dark:hover:text-lime-400"
+                      >
+                        {pl}
+                      </Link>
+                    ))}
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
           </GlassTable>
         </div>
       )}
 
-      <div className="space-y-2">
-        <SectionHeader title="Ingestion Runs (30d)" />
+      <CollapsibleSection
+        title="Ingestion Runs (30d)"
+        storageKey="sb:health:details:ingestion_runs"
+      >
         <GlassTable headers={["Run Date", "Status", "Logs"]} maxBodyHeightClassName="max-h-[260px]">
           {(runs ?? []).map((r) => (
             <TableRow key={r.run_date}>
@@ -978,18 +1027,17 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
           ))}
           {!runs?.length && <EmptyState colSpan={3} message="No ingestion runs yet." />}
         </GlassTable>
-      </div>
+      </CollapsibleSection>
 
-      <div className="space-y-2">
-        <SectionHeader
-          title={
-            <>
-              Raw Exports{" "}
-              {selectedDataDate ? <span className="text-xs font-normal opacity-60">({selectedDataDate})</span> : null}
-            </>
-          }
-          actions={undefined}
-        />
+      <CollapsibleSection
+        title={
+          <>
+            Raw Exports{" "}
+            {selectedDataDate ? <span className="text-[10px] font-normal normal-case tracking-normal opacity-40">({selectedDataDate})</span> : null}
+          </>
+        }
+        storageKey="sb:health:details:raw_exports"
+      >
         <GlassTable
           headers={[
             { label: "Playlist" },
@@ -1056,7 +1104,7 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
           ))}
           {!exportsForLatest?.length && <EmptyState colSpan={4} message="No raw exports found for this run." />}
         </GlassTable>
-      </div>
+      </CollapsibleSection>
     </div>
   );
 }

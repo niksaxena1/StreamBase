@@ -1,21 +1,10 @@
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
-
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
-import { getArtists } from "@/lib/spotify";
-import { ArtistsList } from "./ArtistsList";
+import { getArtistsCached } from "@/lib/spotify";
 import { ArtistsConfigClient } from "./ArtistsConfigClient";
 import { TracksConfigClient } from "./TracksConfigClient";
 
 export const revalidate = 86400; // 24h ISR - catalog config uses daily snapshots
-
-type TrackRow = {
-  isrc: string;
-  name: string | null;
-  spotify_artist_ids: string[] | null;
-  spotify_artist_names: string[] | null;
-};
 
 type TrackDailyRow = {
   date: string;
@@ -23,7 +12,7 @@ type TrackDailyRow = {
   streams_cumulative: number | null;
 };
 
-function deriveArtists(rows: TrackRow[]) {
+function deriveArtists(rows: { spotify_artist_ids: string[] | null; spotify_artist_names: string[] | null }[]) {
   const byId = new Map<string, string>();
   for (const t of rows) {
     const ids = t.spotify_artist_ids ?? [];
@@ -38,38 +27,6 @@ function deriveArtists(rows: TrackRow[]) {
   return Array.from(byId.entries())
     .map(([id, name]) => ({ id, name }))
     .sort((a, b) => a.name.localeCompare(b.name));
-}
-
-async function fetchAllTracksMeta(
-  sb: Awaited<ReturnType<typeof supabaseServer>>,
-  maxRows = 5000,
-): Promise<TrackRow[]> {
-  const pageSize = 1000;
-  const out: TrackRow[] = [];
-  let from = 0;
-
-  while (from < maxRows) {
-    const to = from + pageSize - 1;
-    const { data, error } = await sb
-      .from("tracks")
-      .select("isrc,name,spotify_artist_ids,spotify_artist_names")
-      .not("spotify_artist_ids", "is", null)
-      .order("last_seen", { ascending: false })
-      .range(from, to);
-
-    if (error) {
-      console.error("Error fetching tracks:", error);
-      break;
-    }
-
-    const rows = (data ?? []) as TrackRow[];
-    if (!rows.length) break;
-    out.push(...rows);
-    if (rows.length < pageSize) break;
-    from += pageSize;
-  }
-
-  return out;
 }
 
 // Fetch the latest two days of track streams for daily calculation
@@ -151,12 +108,18 @@ export default async function CatalogConfigPage() {
   const sb = await supabaseServer();
   const svc = supabaseService();
 
-  const trackMetaRows = await fetchAllTracksMeta(sb, 5000);
-  const artists = deriveArtists(trackMetaRows);
+  // Fetch tracks and daily streams in parallel (independent queries)
+  const [trackRows, trackDailyStreams] = await Promise.all([
+    fetchAllTracksForTable(sb, 5000),
+    fetchTrackDailyStreams(svc, 2),
+  ]);
 
-  // Fetch artist data from Spotify API
+  // Derive unique artists from the tracks we already fetched
+  const artists = deriveArtists(trackRows);
+
+  // Fetch artist data using DB-cached Spotify lookups (avoids live API round-trips)
   const artistIds = artists.map((a) => a.id);
-  const artistDataMap = await getArtists(artistIds);
+  const artistDataMap = await getArtistsCached(svc, artistIds);
 
   // Prepare artist data with images and external URLs
   const artistsWithData = artists.map((artist) => {
@@ -168,12 +131,6 @@ export default async function CatalogConfigPage() {
       externalUrl: artistData?.externalUrl ?? `https://open.spotify.com/artist/${artist.id}`,
     };
   });
-
-  // Fetch all tracks for the tracks table
-  const trackRows = await fetchAllTracksForTable(sb, 5000);
-  
-  // Fetch track daily streams for stats
-  const trackDailyStreams = await fetchTrackDailyStreams(svc, 2);
   
   // Group by date to get latest two dates
   const streamsByDate = new Map<string, Map<string, number>>();

@@ -12,7 +12,7 @@ import { GlassTable, TableRow, TableCell, EmptyState } from "@/components/ui/Gla
 import { Modal } from "@/components/ui/Modal";
 import { TracksPerMilestoneChart } from "@/components/charts/TracksPerMilestoneChart";
 import { type TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChart";
-import { formatInt, formatUsd } from "@/lib/format";
+import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
 import { foldForSearch } from "@/lib/searchFold";
 import { readStoredBool, writeStoredBool, readStoredString, writeStoredString, removeStoredItem } from "@/lib/storage";
 import {
@@ -139,6 +139,14 @@ export function HomeMilestonesSection(props: {
     return [...activeMilestonesForEditing].sort((a, b) => b - a);
   }, [activeMilestonesForEditing]);
 
+  const milestoneDrillUpperExclusive = useMemo(() => {
+    if (milestoneBucketMode !== "exclusive") return null;
+    const m = milestoneDrillMilestone;
+    if (!m || m <= 0) return null;
+    const idx = activeMilestonesSortedDesc.indexOf(m);
+    return idx > 0 ? activeMilestonesSortedDesc[idx - 1] : null;
+  }, [activeMilestonesSortedDesc, milestoneBucketMode, milestoneDrillMilestone]);
+
   const minActiveMilestone = useMemo(() => {
     if (!activeMilestonesForEditing.length) return 100_000;
     return Math.max(100_000, Math.min(...activeMilestonesForEditing));
@@ -147,25 +155,32 @@ export function HomeMilestonesSection(props: {
   const belowMilestoneStats = useMemo(() => {
     const threshold = minActiveMilestone;
     let trackCount = 0;
-    const artistsBelow = new Set<string>();
-    const allArtists = new Set<string>();
 
+    // Aggregate total streams per artist across all tracks
+    const artistStreams = new Map<string, number>();
     for (const p of props.trackScatterPoints ?? []) {
-      const ids = p.artist_ids ?? [];
-      for (const id of ids) { if (id) allArtists.add(id); }
-
       const n = Number(p?.total_streams_cumulative ?? 0);
+      const ids = p.artist_ids ?? [];
+      for (const id of ids) {
+        if (!id) continue;
+        artistStreams.set(id, (artistStreams.get(id) ?? 0) + (Number.isFinite(n) ? n : 0));
+      }
+
       if (Number.isFinite(n) && n < threshold) {
         trackCount += 1;
-        for (const id of ids) { if (id) artistsBelow.add(id); }
       }
+    }
+
+    let artistsBelowCount = 0;
+    for (const [, aggTotal] of artistStreams) {
+      if (aggTotal < threshold) artistsBelowCount += 1;
     }
 
     return {
       trackCount,
-      artistCount: artistsBelow.size,
+      artistCount: artistsBelowCount,
       totalTracks: (props.trackScatterPoints ?? []).length,
-      totalArtists: allArtists.size,
+      totalArtists: artistStreams.size,
     };
   }, [minActiveMilestone, props.trackScatterPoints]);
 
@@ -232,12 +247,11 @@ export function HomeMilestonesSection(props: {
     daily_streams_delta: number;
   };
 
-  // Drill-down artists
+  // Drill-down artists — aggregate total streams per artist, then filter by aggregate
   const milestoneDrillArtists = useMemo((): MilestoneDrillArtistRow[] => {
     const milestone = milestoneDrillMilestone;
     if (!milestone || milestone <= 0) return [];
 
-    const map = new Map<string, MilestoneDrillArtistRow>();
     const upperExclusive =
       milestoneBucketMode === "exclusive"
         ? (() => {
@@ -246,11 +260,9 @@ export function HomeMilestonesSection(props: {
           })()
         : null;
 
+    // First pass: aggregate all tracks per artist (no milestone filter yet)
+    const map = new Map<string, MilestoneDrillArtistRow>();
     for (const p of props.trackScatterPoints ?? []) {
-      const total = Number(p?.total_streams_cumulative ?? 0);
-      if (!Number.isFinite(total) || total < milestone) continue;
-      if (upperExclusive != null && total >= upperExclusive) continue;
-
       const artistNames = p?.artist_names ?? [];
       const artistIds = p?.artist_ids ?? [];
       const perTrackSeen = new Set<string>();
@@ -280,8 +292,16 @@ export function HomeMilestonesSection(props: {
       }
     }
 
+    // Second pass: filter artists by their aggregate total streams
+    let out: MilestoneDrillArtistRow[] = [];
+    for (const [, agg] of map) {
+      const aggTotal = agg.total_streams_cumulative;
+      if (aggTotal < milestone) continue;
+      if (upperExclusive != null && aggTotal >= upperExclusive) continue;
+      out.push(agg);
+    }
+
     const q = foldForSearch(deferredMilestoneDrillQuery ?? "");
-    let out = Array.from(map.values());
     if (q) {
       out = out.filter((a) => {
         const nameL = foldForSearch(a.artist_name);
@@ -449,13 +469,34 @@ export function HomeMilestonesSection(props: {
         title={milestoneDrillMilestone ? (
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span>{milestoneDrillView === "artists" ? "Artists" : "Tracks"} at</span>
-            <span className="font-mono">{formatMilestoneHeaderLabel(milestoneDrillMilestone, milestoneMode, streamPayoutPerStreamUsd)}</span>
-            <span className="opacity-70" style={{ color: "var(--sb-muted)" }}>+</span>
+            <span className="font-mono">
+              {formatMilestoneHeaderLabel(milestoneDrillMilestone, milestoneMode, streamPayoutPerStreamUsd)}
+            </span>
+            {milestoneBucketMode === "exclusive" && milestoneDrillUpperExclusive ? (
+              <>
+                <span className="opacity-70" style={{ color: "var(--sb-muted)" }}>–</span>
+                <span className="font-mono">
+                  {formatMilestoneHeaderLabel(milestoneDrillUpperExclusive, milestoneMode, streamPayoutPerStreamUsd)}
+                </span>
+              </>
+            ) : (
+              <span className="opacity-70" style={{ color: "var(--sb-muted)" }}>+</span>
+            )}
           </div>
         ) : "Milestone drilldown"}
         subtitle={milestoneDrillMilestone ? (
           <span>
-            Total streams ≥ <span className="font-mono">{formatInt(milestoneDrillMilestone)}</span>{" "}
+            Total streams{" "}
+            {milestoneBucketMode === "exclusive" && milestoneDrillUpperExclusive ? (
+              <>
+                ≥ <span className="font-mono">{formatInt(milestoneDrillMilestone)}</span> and{" "}
+                {"<"} <span className="font-mono">{formatInt(milestoneDrillUpperExclusive)}</span>
+              </>
+            ) : (
+              <>
+                ≥ <span className="font-mono">{formatInt(milestoneDrillMilestone)}</span>
+              </>
+            )}{" "}
             <span className="opacity-70" style={{ color: "var(--sb-muted)" }}>•</span>{" "}
             {formatInt(drillTotalCount)} {milestoneDrillView === "artists" ? "artists" : "tracks"}
           </span>
@@ -496,7 +537,16 @@ export function HomeMilestonesSection(props: {
           </div>
 
           {milestoneDrillView === "tracks" ? (
-            <GlassTable headers={[{ label: "Track" }, { label: "Artists" }, { label: metric === "revenue" ? "Total Revenue" : "Total Streams", align: "right" }, { label: metric === "revenue" ? "Daily Revenue" : "Daily Streams", align: "right" }]} maxBodyHeightClassName="max-h-[60vh] overflow-auto">
+            <GlassTable
+              headers={[
+                { label: "Track" },
+                { label: "Artists" },
+                { label: "Release" },
+                { label: metric === "revenue" ? "Total Revenue" : "Total Streams", align: "right" },
+                { label: metric === "revenue" ? "Daily Revenue" : "Daily Streams", align: "right" },
+              ]}
+              maxBodyHeightClassName="max-h-[60vh] overflow-auto"
+            >
               {drillTrackPageItems.map((p) => {
                 const title = String(p?.name ?? "").trim() || String(p?.isrc ?? "");
                 const artists = (p?.artist_names ?? []).filter(Boolean);
@@ -528,12 +578,15 @@ export function HomeMilestonesSection(props: {
                         </div>
                       ) : <span className="text-sm opacity-60" style={{ color: "var(--sb-muted)" }}>—</span>}
                     </TableCell>
+                    <TableCell className="whitespace-nowrap text-sm font-mono opacity-70" style={{ color: "var(--sb-muted)" }}>
+                      {formatDateISO((p as any)?.release_date ?? null)}
+                    </TableCell>
                     <TableCell numeric className={cls} style={metric === "revenue" ? { color: "#10b981" } : undefined}>{metric === "revenue" ? formatUsd(totalValue) : formatInt(totalValue)}</TableCell>
                     <TableCell numeric className={cls} style={metric === "revenue" ? { color: "#10b981" } : undefined}>{metric === "revenue" ? formatUsd(dailyValue) : formatInt(dailyValue)}</TableCell>
                   </TableRow>
                 );
               })}
-              {!drillTrackPageItems.length && <EmptyState colSpan={4} message={milestoneDrillTracks.length ? "No tracks match your filter." : "No tracks found for this milestone."} />}
+              {!drillTrackPageItems.length && <EmptyState colSpan={5} message={milestoneDrillTracks.length ? "No tracks match your filter." : "No tracks found for this milestone."} />}
             </GlassTable>
           ) : (
             <GlassTable headers={[{ label: "Artist" }, { label: "Tracks", align: "right" }, { label: metric === "revenue" ? "Total Revenue" : "Total Streams", align: "right" }, { label: metric === "revenue" ? "Daily Revenue" : "Daily Streams", align: "right" }]} maxBodyHeightClassName="max-h-[60vh] overflow-auto">

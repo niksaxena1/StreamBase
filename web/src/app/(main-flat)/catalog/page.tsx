@@ -28,6 +28,7 @@ type TrackRow = {
   spotify_artist_ids: string[] | null;
   spotify_artist_names: string[] | null;
   spotify_album_image_url: string | null;
+  release_date?: string | null;
 };
 
 type TrackDailyRow = {
@@ -326,11 +327,12 @@ export default async function CatalogPage({
     async () =>
       await svc
         .from("tracks")
-        .select("isrc,name,spotify_artist_ids,spotify_artist_names,spotify_album_image_url")
+        .select("isrc,name,spotify_artist_ids,spotify_artist_names,spotify_album_image_url,release_date")
         .contains("spotify_artist_ids", [artistId])
         .order("last_seen", { ascending: false })
         .limit(800),
-    `artist-tracks-v2-${artistId}`,
+    // Bump cache version when selected columns change (release_date added).
+    `artist-tracks-v3-${artistId}`,
     3600,
   );
 
@@ -470,7 +472,7 @@ export default async function CatalogPage({
   if (missingTopIsrcs.length) {
     const { data: metaRows, error } = await svc
       .from("tracks")
-      .select("isrc,spotify_artist_ids,spotify_artist_names")
+      .select("isrc,spotify_artist_ids,spotify_artist_names,release_date")
       .in("isrc", missingTopIsrcs);
     if (error) {
       console.warn("Error fetching top-track artist metadata:", error);
@@ -479,6 +481,7 @@ export default async function CatalogPage({
         isrc: string;
         spotify_artist_ids: string[] | null;
         spotify_artist_names: string[] | null;
+        release_date: string | null;
       }>) {
         if (!r?.isrc) continue;
         trackMetaByIsrc.set(r.isrc, {
@@ -487,6 +490,7 @@ export default async function CatalogPage({
           spotify_artist_ids: r.spotify_artist_ids ?? null,
           spotify_artist_names: r.spotify_artist_names ?? null,
           spotify_album_image_url: null,
+          release_date: r.release_date ?? null,
         });
       }
     }
@@ -502,6 +506,7 @@ export default async function CatalogPage({
       albumImageUrl: r.album_image_url ?? null,
       artistNames: meta?.spotify_artist_names ?? null,
       artistIds: meta?.spotify_artist_ids ?? null,
+      releaseDate: (meta?.release_date ?? "").trim() || null,
     };
   });
 
@@ -515,6 +520,7 @@ export default async function CatalogPage({
       albumImageUrl: r.album_image_url ?? null,
       artistNames: meta?.spotify_artist_names ?? null,
       artistIds: meta?.spotify_artist_ids ?? null,
+      releaseDate: (meta?.release_date ?? "").trim() || null,
     };
   });
 

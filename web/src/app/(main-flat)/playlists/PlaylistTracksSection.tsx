@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { supabaseService } from "@/lib/supabase/service";
-import { cachedQueries } from "@/lib/supabase/cache";
+import { cachedQueries, cachedQuery } from "@/lib/supabase/cache";
 import { PlaylistTracksSectionClient } from "./PlaylistTracksSectionClient";
 
 function errorMessage(err: unknown): string {
@@ -20,6 +20,7 @@ type PlaylistTopTrackRow = {
   valid_from: string;
   total: number | null;
   daily: number | null;
+  release_date?: string | null;
 };
 
 type PlaylistAddedRow = {
@@ -29,6 +30,7 @@ type PlaylistAddedRow = {
   artist_names: string[] | null;
   artist_ids: string[] | null;
   valid_from: string;
+  release_date?: string | null;
 };
 
 type PlaylistRemovedRow = {
@@ -39,6 +41,7 @@ type PlaylistRemovedRow = {
   artist_ids: string[] | null;
   valid_from: string;
   valid_to: string | null;
+  release_date?: string | null;
 };
 
 type DebugCounts = {
@@ -141,6 +144,49 @@ export async function PlaylistTracksSection(props: {
   const addedErr = results.added.error;
   const removedErr = results.removed.error;
 
+  // Add track release dates (UI wants release dates instead of ISRC).
+  // Do this as a single batched query (avoids touching DB RPCs).
+  const releaseDateByIsrc = await (async () => {
+    const all = [...currentRows, ...addedLast7Days, ...removed];
+    const isrcs = Array.from(new Set(all.map((r) => String((r as any)?.isrc ?? "").trim()).filter(Boolean)));
+    if (!isrcs.length) return new Map<string, string | null>();
+
+    const sorted = [...isrcs].sort((a, b) => a.localeCompare(b));
+    const sig = `${sorted.length}:${sorted.slice(0, 3).join(",")}:${sorted.slice(-3).join(",")}`;
+
+    const { data } = await cachedQuery(
+      async () =>
+        await svc
+          .from("tracks")
+          .select("isrc,release_date")
+          .in("isrc", isrcs)
+          .limit(5000),
+      `playlist-track-release-dates-v1-${props.playlistKey}-${props.latestRunDate}-${sig}`,
+      86400,
+    );
+
+    const map = new Map<string, string | null>();
+    for (const r of (data ?? []) as Array<{ isrc: string; release_date: string | null }>) {
+      const key = String(r?.isrc ?? "").trim();
+      if (!key) continue;
+      map.set(key, (r?.release_date ?? null) as string | null);
+    }
+    return map;
+  })();
+
+  const currentRowsWithRelease = currentRows.map((r) => ({
+    ...r,
+    release_date: releaseDateByIsrc.get(r.isrc) ?? null,
+  }));
+  const addedLast7DaysWithRelease = addedLast7Days.map((r) => ({
+    ...r,
+    release_date: releaseDateByIsrc.get(r.isrc) ?? null,
+  }));
+  const removedWithRelease = removed.map((r) => ({
+    ...r,
+    release_date: releaseDateByIsrc.get(r.isrc) ?? null,
+  }));
+
   const debug: DebugCounts | null = await (async () => {
     // Only compute when something looks wrong (keeps page fast).
     if (!topErr && currentRows.length) return null;
@@ -199,9 +245,9 @@ export async function PlaylistTracksSection(props: {
     <PlaylistTracksSectionClient
       playlistKey={props.playlistKey}
       latestRunDate={props.latestRunDate}
-      currentRows={currentRows}
-      addedLast7Days={addedLast7Days}
-      removed={removed}
+      currentRows={currentRowsWithRelease}
+      addedLast7Days={addedLast7DaysWithRelease}
+      removed={removedWithRelease}
       topErrMessage={topErr ? errorMessage(topErr) : null}
       addedErrMessage={addedErr ? errorMessage(addedErr) : null}
       removedErrMessage={removedErr ? errorMessage(removedErr) : null}

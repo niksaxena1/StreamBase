@@ -45,6 +45,7 @@ type PlaylistRow = {
 type CollectorTrackRow = {
   isrc: string;
   name: string | null;
+  release_date: string | null;
   album_image_url: string | null;
   artist_names: string[] | null;
   artist_ids: string[] | null;
@@ -454,6 +455,7 @@ export default async function CollectorsPage({
   const collectorTracks = ((results.collectorTracks.data ?? []) as any[]).map((r): CollectorTrackRow => ({
     isrc: String(r.isrc),
     name: r.name == null ? null : String(r.name),
+    release_date: r.release_date == null ? null : String(r.release_date),
     album_image_url: r.album_image_url == null ? null : String(r.album_image_url),
     artist_names: (r.artist_names ?? null) as string[] | null,
     artist_ids: (r.artist_ids ?? null) as string[] | null,

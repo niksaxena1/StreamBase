@@ -281,6 +281,27 @@ async function computeActiveWarnings(
     }
   }
 
+  // 4d. distro_overlap – call RPC to check if overlaps still exist
+  const overlapWarnings = allWarnings.filter(
+    (w) => w.code === "distro_overlap",
+  );
+  let overlapActive = true;
+  let overlapLoaded = false;
+  if (overlapWarnings.length > 0) {
+    try {
+      const { data: overlapRows, error: overlapErr } = await svc.rpc(
+        "health_distro_overlap_tracks",
+        { run_date: targetRunDate },
+      );
+      if (!overlapErr) {
+        overlapLoaded = true;
+        overlapActive = (overlapRows ?? []).length > 0;
+      }
+    } catch {
+      // RPC may not exist yet – keep warning.
+    }
+  }
+
   // 5. Build filtered list ----------------------------------------------------
   const active = allWarnings.filter((w) => {
     if (w.code === "non_catalog_tracks_present" && w.playlist_key) {
@@ -293,6 +314,9 @@ async function computeActiveWarnings(
       return driftLoaded
         ? driftActiveKeys.has(normalizeKey(w.playlist_key))
         : true;
+    }
+    if (w.code === "distro_overlap") {
+      return overlapLoaded ? overlapActive : true;
     }
     return true;
   });

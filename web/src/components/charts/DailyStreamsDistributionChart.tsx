@@ -167,25 +167,68 @@ function computeBucketData(
   countMode: "tracks" | "artists",
   bucketMode: "cumulative" | "exclusive" = "cumulative",
 ): BucketDataPoint[] {
-  if (bucketMode === "exclusive") {
-    // Bucket each track into its specific bucket only
-    const trackCounts = new Map<string, number>();
-    const artistSets = new Map<string, Set<string>>();
-
-    // Initialize all buckets
-    for (const bucket of buckets) {
-      trackCounts.set(bucket.label, 0);
-      if (countMode === "artists") {
-        artistSets.set(bucket.label, new Set());
+  // ── Artist mode: aggregate daily streams per artist, then bucket by aggregate ──
+  if (countMode === "artists") {
+    const artistDaily = new Map<string, number>();
+    for (const t of tracks) {
+      const daily = Number(t?.daily_streams ?? 0);
+      if (!Number.isFinite(daily) || daily < 0) continue;
+      const ids = t.artist_ids ?? [];
+      for (const id of ids) {
+        if (!id) continue;
+        artistDaily.set(id, (artistDaily.get(id) ?? 0) + daily);
       }
     }
 
-    // Bucket each track
+    if (bucketMode === "exclusive") {
+      const artistCounts = new Map<string, number>();
+      for (const b of buckets) artistCounts.set(b.label, 0);
+
+      for (const [, aggDaily] of artistDaily) {
+        for (const b of buckets) {
+          const inBucket = b.max === null ? aggDaily >= b.min : aggDaily >= b.min && aggDaily < b.max;
+          if (inBucket) {
+            artistCounts.set(b.label, (artistCounts.get(b.label) ?? 0) + 1);
+            break;
+          }
+        }
+      }
+
+      return buckets.map((b) => ({
+        bucketMin: b.min,
+        bucketMax: b.max,
+        bucketLabel: b.label,
+        unique_tracks: 0,
+        unique_artists: artistCounts.get(b.label) ?? 0,
+      }));
+    }
+
+    // Cumulative artist mode
+    return buckets.map((b) => {
+      let count = 0;
+      for (const [, aggDaily] of artistDaily) {
+        if (aggDaily >= b.min) count++;
+      }
+      return {
+        bucketMin: b.min,
+        bucketMax: b.max,
+        bucketLabel: b.label,
+        unique_tracks: 0,
+        unique_artists: count,
+      };
+    });
+  }
+
+  // ── Track mode ──
+  if (bucketMode === "exclusive") {
+    // Bucket each track into its specific bucket only
+    const trackCounts = new Map<string, number>();
+    for (const bucket of buckets) trackCounts.set(bucket.label, 0);
+
     for (const t of tracks) {
       const daily = Number(t?.daily_streams ?? 0);
       if (!Number.isFinite(daily) || daily < 0) continue;
 
-      // Find the bucket this track belongs to
       for (const bucket of buckets) {
         const inBucket = bucket.max === null
           ? daily >= bucket.min
@@ -193,15 +236,7 @@ function computeBucketData(
 
         if (inBucket) {
           trackCounts.set(bucket.label, (trackCounts.get(bucket.label) ?? 0) + 1);
-
-          if (countMode === "artists") {
-            const set = artistSets.get(bucket.label)!;
-            const ids = t.artist_ids ?? [];
-            for (const id of ids) {
-              if (id) set.add(id);
-            }
-          }
-          break; // Track can only be in one bucket
+          break;
         }
       }
     }
@@ -211,50 +246,24 @@ function computeBucketData(
       bucketMax: bucket.max,
       bucketLabel: bucket.label,
       unique_tracks: trackCounts.get(bucket.label) ?? 0,
-      unique_artists: countMode === "artists" ? (artistSets.get(bucket.label)?.size ?? 0) : 0,
+      unique_artists: 0,
     }));
   }
 
-  // Cumulative mode: count all tracks/artists that meet or exceed the bucket minimum
-  const trackCounts = new Map<string, number>();
-  const artistSets = new Map<string, Set<string>>();
-
-  // Initialize all buckets
-  for (const bucket of buckets) {
-    trackCounts.set(bucket.label, 0);
-    if (countMode === "artists") {
-      artistSets.set(bucket.label, new Set());
-    }
-  }
-
-  // For each bucket, count tracks that have daily_streams >= bucket.min
-  for (const bucket of buckets) {
+  // Cumulative track mode: count all tracks that meet or exceed the bucket minimum
+  return buckets.map((bucket) => {
     const qualifying = tracks.filter((t) => {
       const daily = Number(t?.daily_streams ?? 0);
       return Number.isFinite(daily) && daily >= bucket.min;
     });
-
-    trackCounts.set(bucket.label, qualifying.length);
-
-    if (countMode === "artists") {
-      const set = new Set<string>();
-      for (const t of qualifying) {
-        const ids = t.artist_ids ?? [];
-        for (const id of ids) {
-          if (id) set.add(id);
-        }
-      }
-      artistSets.set(bucket.label, set);
-    }
-  }
-
-  return buckets.map((bucket) => ({
-    bucketMin: bucket.min,
-    bucketMax: bucket.max,
-    bucketLabel: bucket.label,
-    unique_tracks: trackCounts.get(bucket.label) ?? 0,
-    unique_artists: countMode === "artists" ? (artistSets.get(bucket.label)?.size ?? 0) : 0,
-  }));
+    return {
+      bucketMin: bucket.min,
+      bucketMax: bucket.max,
+      bucketLabel: bucket.label,
+      unique_tracks: qualifying.length,
+      unique_artists: 0,
+    };
+  });
 }
 
 export type DailyStreamsDistributionChartProps = {

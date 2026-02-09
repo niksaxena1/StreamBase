@@ -7,16 +7,24 @@ export type TrackSort =
   | "delta_asc"
   | "total_desc"
   | "total_asc"
+  | "release_desc"
+  | "release_asc"
   | "name_asc"
-  | "name_desc";
+  | "name_desc"
+  | "distro_desc"
+  | "distro_asc";
 
 const SORTS: Array<{ value: TrackSort; label: string }> = [
   { value: "delta_desc", label: "Daily ↓" },
   { value: "delta_asc", label: "Daily ↑" },
   { value: "total_desc", label: "Total ↓" },
   { value: "total_asc", label: "Total ↑" },
+  { value: "release_desc", label: "Release ↓" },
+  { value: "release_asc", label: "Release ↑" },
   { value: "name_asc", label: "Name ↑" },
   { value: "name_desc", label: "Name ↓" },
+  { value: "distro_desc", label: "Distro ↓" },
+  { value: "distro_asc", label: "Distro ↑" },
 ];
 
 export function TrackSortSelect({
