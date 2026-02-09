@@ -7,9 +7,11 @@ import {
   useRef,
   useState,
 } from "react";
+import type { ForwardRefExoticComponent, RefAttributes } from "react";
 import dynamic from "next/dynamic";
 import type {
   ForceGraphMethods,
+  ForceGraphProps,
   NodeObject,
   LinkObject,
 } from "react-force-graph-2d";
@@ -20,14 +22,19 @@ import type { GraphNode, GraphEdge, SharedTrack } from "./page";
 // Force-graph uses Canvas/WebGL — must skip SSR.
 const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), {
   ssr: false,
-});
+}) as unknown as ForwardRefExoticComponent<
+  ForceGraphProps<GraphNode, GraphEdge> &
+    RefAttributes<ForceGraphMethods<GraphNode, GraphEdge>>
+>;
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
 
-type FGNode = NodeObject<GraphNode>;
-type FGLink = LinkObject<GraphNode, GraphEdge>;
+type FGNode = GraphNode;
+type FGLink = GraphEdge;
+type FGNodeObj = NodeObject<FGNode>;
+type FGLinkObj = LinkObject<FGNode, FGLink>;
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -87,7 +94,7 @@ interface Props {
 
 export function ArtistChainsClient({ nodes, edges }: Props) {
   const colors = useThemeColors();
-  const fgRef = useRef<ForceGraphMethods<FGNode, FGLink> | undefined>(undefined);
+  const fgRef = useRef<ForceGraphMethods<FGNode, FGLink> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Controls
@@ -98,8 +105,8 @@ export function ArtistChainsClient({ nodes, edges }: Props) {
 
   // Interaction state
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [hoveredNode, setHoveredNode] = useState<FGNode | null>(null);
-  const [hoveredLink, setHoveredLink] = useState<FGLink | null>(null);
+  const [hoveredNode, setHoveredNode] = useState<FGNodeObj | null>(null);
+  const [hoveredLink, setHoveredLink] = useState<FGLinkObj | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
 
   // Container sizing
@@ -171,10 +178,10 @@ export function ArtistChainsClient({ nodes, edges }: Props) {
 
   // Is a link highlighted?
   const isLinkHighlighted = useCallback(
-    (link: FGLink) => {
+    (link: FGLinkObj) => {
       if (!selectedNodeId) return true;
-      const srcId = typeof link.source === "object" ? (link.source as FGNode).id : link.source;
-      const tgtId = typeof link.target === "object" ? (link.target as FGNode).id : link.target;
+      const srcId = typeof link.source === "object" ? (link.source as FGNodeObj).id : link.source;
+      const tgtId = typeof link.target === "object" ? (link.target as FGNodeObj).id : link.target;
       return srcId === selectedNodeId || tgtId === selectedNodeId;
     },
     [selectedNodeId],
@@ -183,7 +190,7 @@ export function ArtistChainsClient({ nodes, edges }: Props) {
   /* -------- Node rendering -------- */
 
   const nodeVal = useCallback(
-    (node: FGNode) => {
+    (node: FGNodeObj) => {
       if (!scaleByTracks) return 2;
       return scaleLinear(node.track_count ?? 1, minTrackCount, maxTrackCount, 1, 12);
     },
@@ -191,7 +198,7 @@ export function ArtistChainsClient({ nodes, edges }: Props) {
   );
 
   const nodeCanvasObject = useCallback(
-    (node: FGNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
+    (node: FGNodeObj, ctx: CanvasRenderingContext2D, globalScale: number) => {
       const id = node.id as string;
       const highlighted = isHighlighted(id);
       const alpha = highlighted ? 1 : 0.12;
@@ -269,7 +276,7 @@ export function ArtistChainsClient({ nodes, edges }: Props) {
 
   // Hit area for pointer
   const nodePointerAreaPaint = useCallback(
-    (node: FGNode, color: string, ctx: CanvasRenderingContext2D) => {
+    (node: FGNodeObj, color: string, ctx: CanvasRenderingContext2D) => {
       const size = scaleByTracks
         ? scaleLinear(node.track_count ?? 1, minTrackCount, maxTrackCount, 3, 16)
         : 5;
@@ -285,7 +292,7 @@ export function ArtistChainsClient({ nodes, edges }: Props) {
   /* -------- Link rendering -------- */
 
   const linkWidth = useCallback(
-    (link: FGLink) => {
+    (link: FGLinkObj) => {
       const w = (link as unknown as GraphEdge).weight ?? 1;
       return Math.min(w * 0.8, 6);
     },
@@ -293,7 +300,7 @@ export function ArtistChainsClient({ nodes, edges }: Props) {
   );
 
   const linkColor = useCallback(
-    (link: FGLink) => {
+    (link: FGLinkObj) => {
       const hl = isLinkHighlighted(link);
       if (!hl) return colors.isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.03)";
       const w = (link as unknown as GraphEdge).weight ?? 1;
@@ -308,7 +315,7 @@ export function ArtistChainsClient({ nodes, edges }: Props) {
   /* -------- Interactions -------- */
 
   const handleNodeClick = useCallback(
-    (node: FGNode) => {
+    (node: FGNodeObj) => {
       const id = node.id as string;
       if (selectedNodeId === id) {
         // Deselect
@@ -328,7 +335,7 @@ export function ArtistChainsClient({ nodes, edges }: Props) {
   }, []);
 
   const handleNodeHover = useCallback(
-    (node: FGNode | null, _prev: FGNode | null) => {
+    (node: FGNodeObj | null, _prev: FGNodeObj | null) => {
       setHoveredNode(node);
       if (!node) {
         setTooltipPos(null);
@@ -338,7 +345,7 @@ export function ArtistChainsClient({ nodes, edges }: Props) {
   );
 
   const handleLinkHover = useCallback(
-    (link: FGLink | null, _prev: FGLink | null) => {
+    (link: FGLinkObj | null, _prev: FGLinkObj | null) => {
       setHoveredLink(link);
       if (!link) {
         setTooltipPos(null);
@@ -368,7 +375,12 @@ export function ArtistChainsClient({ nodes, edges }: Props) {
       setSelectedNodeId(artistId);
       setSearchQuery("");
       setSearchOpen(false);
-      fgRef.current?.centerAt(node.x, node.y, 800);
+      // `react-force-graph-2d` injects simulation coordinates (`x`, `y`) at runtime.
+      // Our `GraphNode` type doesn't include them, so we cast to the force-graph node type.
+      const fgNode = node as unknown as FGNodeObj;
+      const x = typeof fgNode.x === "number" ? fgNode.x : 0;
+      const y = typeof fgNode.y === "number" ? fgNode.y : 0;
+      fgRef.current?.centerAt(x, y, 800);
       fgRef.current?.zoom(4, 800);
     },
     [graphData.nodes],
@@ -413,10 +425,10 @@ export function ArtistChainsClient({ nodes, edges }: Props) {
     if (hoveredLink) {
       const link = hoveredLink as unknown as GraphEdge;
       const srcNode = typeof hoveredLink.source === "object"
-        ? (hoveredLink.source as FGNode)
+        ? (hoveredLink.source as FGNodeObj)
         : null;
       const tgtNode = typeof hoveredLink.target === "object"
-        ? (hoveredLink.target as FGNode)
+        ? (hoveredLink.target as FGNodeObj)
         : null;
       const srcName = srcNode?.name ?? link.source;
       const tgtName = tgtNode?.name ?? link.target;
@@ -591,7 +603,7 @@ export function ArtistChainsClient({ nodes, edges }: Props) {
       {/* Graph container */}
       <div ref={containerRef} className="flex-1 relative overflow-hidden">
         <ForceGraph2D
-          ref={fgRef as React.MutableRefObject<ForceGraphMethods<FGNode, FGLink> | undefined>}
+          ref={fgRef}
           graphData={graphData}
           width={dimensions.width}
           height={dimensions.height}
