@@ -2190,14 +2190,12 @@ export function CollectorsClient(props: {
                     <TableCell mono className="text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>
                       {t.isrc}
                     </TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      {t.release_date ? (
-                        <span className="font-mono text-[11px] opacity-70" style={{ color: "var(--sb-text)" }}>
-                          {formatDateISO(t.release_date)}
-                        </span>
-                      ) : (
-                        <span className="opacity-30">—</span>
-                      )}
+                    <TableCell
+                      mono
+                      className="whitespace-nowrap text-xs opacity-40"
+                      style={{ color: "var(--sb-muted)" }}
+                    >
+                      {t.release_date ? formatDateISO(t.release_date) : <span className="opacity-30">—</span>}
                     </TableCell>
                     <TableCell
                       className={tracksTableIsRevenue ? "font-medium" : "sb-positive font-medium"}

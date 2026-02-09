@@ -6,6 +6,11 @@
 -- Usage:
 --   select * from public.collector_tracks_paged('TG', '2026-01-31', '2026-01-30', 0, 1000);
 --
+-- NOTE: Postgres does not allow changing a function's return type via
+-- CREATE OR REPLACE. Adding `release_date` changes the row type, so we must
+-- DROP the existing function before recreating it.
+DROP FUNCTION IF EXISTS public.collector_tracks_paged(TEXT, DATE, DATE, INT, INT);
+
 CREATE OR REPLACE FUNCTION public.collector_tracks_paged(
   collector TEXT,
   run_date DATE,
