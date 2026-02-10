@@ -99,7 +99,7 @@ export function StaleTrackThresholdSetting() {
             Stale Track Detection Threshold
           </h3>
           <p className="mt-1 text-xs opacity-70">
-            Minimum cumulative streams for a track to be flagged when its
+            Minimum total streams for a track to be flagged when its
             stream count doesn&apos;t change day-over-day. Set to{" "}
             <span className="font-mono">0</span> to flag all tracks with
             zero daily growth.
@@ -136,7 +136,7 @@ export function StaleTrackThresholdSetting() {
           placeholder="2000"
           className="sb-ring h-9 w-40 rounded-lg bg-white/60 px-3 text-sm dark:bg-white/10"
           disabled={loading || saving || !configured}
-          aria-label="Stale track minimum cumulative streams"
+          aria-label="Stale track minimum total streams"
         />
 
         <button

@@ -187,6 +187,7 @@ export default async function SettingsPage() {
   // Health exclusions (best-effort; table may not exist yet).
   const exclusionCode = "non_catalog_tracks_present";
   const enrichmentExclusionCode = "tracks_missing_enrichment";
+  const staleExclusionCode = "individual_tracks_stale";
   let exclusions: Array<{
     id: number;
     playlist_key: string | null;
@@ -238,6 +239,14 @@ export default async function SettingsPage() {
     // ignore
   }
 
+  let staleExclusions: Array<{
+    id: number;
+    playlist_key: string | null;
+    isrc: string;
+    note: string | null;
+    created_at: string | null;
+  }> = [];
+
   try {
     const { data: exRows, error: exErr } = await svc
       .from("health_warning_exclusions")
@@ -246,6 +255,18 @@ export default async function SettingsPage() {
       .order("created_at", { ascending: false })
       .limit(500);
     if (!exErr) enrichmentExclusions = (exRows ?? []) as any;
+  } catch {
+    // ignore
+  }
+
+  try {
+    const { data: exRows, error: exErr } = await svc
+      .from("health_warning_exclusions")
+      .select("id,playlist_key,isrc,note,created_at")
+      .eq("code", staleExclusionCode)
+      .order("created_at", { ascending: false })
+      .limit(500);
+    if (!exErr) staleExclusions = (exRows ?? []) as any;
   } catch {
     // ignore
   }
@@ -368,6 +389,68 @@ export default async function SettingsPage() {
   }
 
   async function removeEnrichmentExclusion(formData: FormData) {
+    "use server";
+
+    await requireAdmin();
+    const id = Number(formData.get("id") ?? 0);
+    if (!id || Number.isNaN(id)) return;
+
+    const svc = supabaseService();
+    const { error: delErr } = await svc.from("health_warning_exclusions").delete().eq("id", id);
+    if (delErr) throw new Error(delErr.message);
+
+    revalidatePath("/health");
+    revalidatePath("/settings");
+  }
+
+  async function addStaleExclusion(formData: FormData) {
+    "use server";
+
+    await requireAdmin();
+    const playlist_key_raw = String(formData.get("playlist_key") ?? "").trim();
+    const playlist_key = playlist_key_raw ? playlist_key_raw : null;
+
+    const isrcsRaw = String(formData.get("isrcs") ?? "").trim();
+    const isrcs = isrcsRaw
+      ? (JSON.parse(isrcsRaw) as unknown[])
+          .map((x) => String(x ?? "").trim().toUpperCase().replace(/\s+/g, ""))
+          .filter(Boolean)
+      : [
+          String(formData.get("isrc") ?? "")
+            .trim()
+            .toUpperCase()
+            .replace(/\s+/g, ""),
+        ].filter(Boolean);
+    const note = String(formData.get("note") ?? "").trim() || null;
+
+    const svc = supabaseService();
+    const errors: string[] = [];
+
+    for (const isrc of isrcs) {
+      if (!/^[A-Z0-9]{12}$/.test(isrc)) {
+        errors.push(`Invalid ISRC: ${isrc}`);
+        continue;
+      }
+
+      const { error: insErr } = await svc
+        .from("health_warning_exclusions")
+        .insert([{ code: staleExclusionCode, playlist_key, isrc, note }]);
+
+      // Ignore duplicates (unique index).
+      if (insErr && !String(insErr.message || "").toLowerCase().includes("duplicate")) {
+        errors.push(insErr.message);
+      }
+    }
+
+    if (errors.length) {
+      throw new Error(errors[0] ?? "Failed to add exclusions");
+    }
+
+    revalidatePath("/health");
+    revalidatePath("/settings");
+  }
+
+  async function removeStaleExclusion(formData: FormData) {
     "use server";
 
     await requireAdmin();
@@ -631,6 +714,78 @@ export default async function SettingsPage() {
             );
           })}
           {!enrichmentExclusions.length && <EmptyState colSpan={4} message="No enrichment exclusions yet." />}
+        </GlassTable>
+      </div>
+
+      <div className="space-y-2">
+        <SectionHeader
+          title="Stale track exclusions"
+          subtitle={
+            <div className="space-y-1">
+              <div>
+                Exclude tracks from the{" "}
+                <span className="font-mono">individual_tracks_stale</span> Health warning.
+                Excluded tracks will not be flagged even if their daily streams show zero growth.
+              </div>
+              <div className="opacity-70">
+                Exclusions take effect on the next ingestion run.
+              </div>
+            </div>
+          }
+        />
+
+        <TrackExclusionForm
+          addHealthExclusion={addStaleExclusion}
+          tracks={allTracks}
+          playlists={allPlaylists}
+          notePlaceholder="Intentional: this track's streams may not update daily"
+          allowMulti
+          submitLabel="Exclude selected"
+        />
+
+        <GlassTable headers={["Scope", "Track", "Note", ""]}>
+          {staleExclusions.map((e) => {
+            const isrc = String(e.isrc ?? "").trim().toUpperCase();
+            const track = allTracks.find((t) => t.isrc === isrc);
+            const name = track?.name ?? isrc;
+            const imageUrl = track?.spotify_album_image_url ?? null;
+            return (
+              <TableRow key={`stale-${e.id}`}>
+                <TableCell mono className="text-xs">
+                  {e.playlist_key ?? "all"}
+                </TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-2">
+                    {imageUrl ? (
+                      <Image
+                        src={imageUrl}
+                        alt={name}
+                        width={32}
+                        height={32}
+                        className="h-8 w-8 rounded-lg object-cover sb-ring flex-shrink-0"
+                      />
+                    ) : (
+                      <div className="h-8 w-8 rounded-lg sb-ring bg-white/60 dark:bg-white/10 flex-shrink-0" />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium truncate">{name}</div>
+                      <div className="font-mono text-[10px] opacity-60 truncate">{isrc}</div>
+                    </div>
+                  </div>
+                </TableCell>
+                <TableCell className="text-xs">{e.note ?? "—"}</TableCell>
+                <TableCell className="text-right">
+                  <form action={removeStaleExclusion}>
+                    <input type="hidden" name="id" value={String(e.id)} />
+                    <button type="submit" className="text-xs underline opacity-70 hover:opacity-100">
+                      remove
+                    </button>
+                  </form>
+                </TableCell>
+              </TableRow>
+            );
+          })}
+          {!staleExclusions.length && <EmptyState colSpan={4} message="No stale track exclusions yet." />}
         </GlassTable>
       </div>
 

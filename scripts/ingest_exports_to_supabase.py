@@ -648,8 +648,28 @@ def main():
             # Table/column may not exist yet; use default.
             pass
 
+        # Fetch ISRCs excluded from stale track detection.
+        stale_excluded_isrcs: set = set()
+        try:
+            excl_rows = pg.select_all(
+                "health_warning_exclusions",
+                "isrc",
+                "code=eq.individual_tracks_stale&order=id",
+            )
+            for r in excl_rows:
+                ex_isrc = str(r.get("isrc", "")).strip().upper()
+                if ex_isrc:
+                    stale_excluded_isrcs.add(ex_isrc)
+            if stale_excluded_isrcs:
+                print(f"  ℹ Stale track detection: {len(stale_excluded_isrcs)} excluded ISRC(s)")
+        except Exception:
+            # Table may not exist yet; no exclusions.
+            pass
+
         stale_tracks: List[dict] = []
         for isrc in common_isrcs:
+            if isrc.strip().upper() in stale_excluded_isrcs:
+                continue
             today_val = catalog_streams_today.get(isrc)
             prev_val = prev_streams.get(isrc)
             if today_val is not None and prev_val is not None:
@@ -668,7 +688,7 @@ def main():
                         "severity": "critical",
                         "code": "individual_tracks_stale",
                         "message": (
-                            f"{len(stale_tracks)} track(s) with >={stale_track_threshold:,} cumulative streams "
+                            f"{len(stale_tracks)} track(s) with >={stale_track_threshold:,} total streams "
                             f"had zero daily growth (streams identical to yesterday)"
                         ),
                         "details_json": {
@@ -680,7 +700,7 @@ def main():
                 ],
             )
             print(
-                f"  ⚠ Per-track stale: {len(stale_tracks)} track(s) with >={stale_track_threshold:,} streams "
+                f"  ⚠ Per-track stale: {len(stale_tracks)} track(s) with >={stale_track_threshold:,} total streams "
                 f"had zero daily growth"
             )
 

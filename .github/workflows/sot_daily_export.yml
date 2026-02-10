@@ -242,7 +242,7 @@ jobs:
             fi
             if [ "$STALE_TRACKS_COUNT" != "0" ]; then
               echo "${STALE_TRACKS_COUNT} track(s) had zero daily stream growth despite"
-              echo "having significant cumulative streams. Check the Health page for the"
+              echo "having significant total streams. Check the Health page for the"
               echo "individual_tracks_stale warning to see which tracks were affected."
               echo ""
             fi

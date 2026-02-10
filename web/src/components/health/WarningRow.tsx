@@ -968,7 +968,7 @@ export function WarningRow({
                                   )}
                                   {cumulative !== null && (
                                     <span className="opacity-60">
-                                      · cumulative: <span className="font-mono">{cumulative.toLocaleString()}</span>
+                                      · total: <span className="font-mono">{cumulative.toLocaleString()}</span>
                                     </span>
                                   )}
                                 </div>
