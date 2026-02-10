@@ -81,6 +81,14 @@ type WarningRowProps = {
       album_image_url?: string | null;
     }>;
   };
+  individualTracksStaleTracks?: Array<{
+    isrc: string;
+    name: string | null;
+    artist_names?: string[] | null;
+    artist_ids?: string[] | null;
+    album_image_url?: string | null;
+    streams_cumulative?: number | null;
+  }> | null;
   distroOverlapTracks?: Array<{
     isrc: string;
     name: string | null;
@@ -97,6 +105,7 @@ function formatCodeLabel(code: string) {
   const raw = (code ?? "").trim();
   if (!raw) return "—";
   if (raw === "entity_distro_drift") return "Entity Distro Mismatch";
+  if (raw === "individual_tracks_stale") return "Stale Tracks";
   if (raw === "distro_overlap") return "Distro Overlap";
   return raw
     .split("_")
@@ -157,6 +166,7 @@ export function WarningRow({
   missingEnrichmentTracks,
   enrichmentWarning,
   entityDistroDrift,
+  individualTracksStaleTracks,
   distroOverlapTracks,
   allPlaylistMeta,
 }: WarningRowProps) {
@@ -180,6 +190,10 @@ export function WarningRow({
   );
   const hasEntityDistroDrift = entityDistroDrift &&
     (entityDistroDrift.extra.length > 0 || entityDistroDrift.missing.length > 0);
+  const hasIndividualTracksStaleTracks =
+    individualTracksStaleTracks !== undefined &&
+    ((Array.isArray(individualTracksStaleTracks) && individualTracksStaleTracks.length > 0) ||
+      individualTracksStaleTracks === null);
   const hasDistroOverlap = distroOverlapTracks !== undefined &&
     ((Array.isArray(distroOverlapTracks) && distroOverlapTracks.length > 0) ||
       distroOverlapTracks === null);
@@ -190,6 +204,7 @@ export function WarningRow({
                    (warning.code === "catalog_streams_missing_prev_nonzero" &&
                      hasCatalogStreamsMissingPrevNonzeroTracks) ||
                    (warning.code === "entity_distro_drift" && hasEntityDistroDrift) ||
+                   (warning.code === "individual_tracks_stale" && hasIndividualTracksStaleTracks) ||
                    (warning.code === "distro_overlap" && hasDistroOverlap);
 
   const missingThumbIsrcs = useMemo(() => {
@@ -197,7 +212,8 @@ export function WarningRow({
     const wantsThumbsForCode =
       warning.code === "tracks_missing_enrichment" ||
       warning.code === "catalog_missing_stream_snapshots" ||
-      warning.code === "catalog_streams_missing_prev_nonzero";
+      warning.code === "catalog_streams_missing_prev_nonzero" ||
+      warning.code === "individual_tracks_stale";
     if (!wantsThumbsForCode) return [];
 
     const src =
@@ -205,7 +221,9 @@ export function WarningRow({
         ? missingEnrichmentTracks
         : warning.code === "catalog_missing_stream_snapshots"
           ? catalogMissingStreamSnapshotTracks
-          : catalogStreamsMissingPrevNonzeroTracks;
+          : warning.code === "individual_tracks_stale"
+            ? individualTracksStaleTracks
+            : catalogStreamsMissingPrevNonzeroTracks;
 
     if (!Array.isArray(src)) return [];
     const need = src
@@ -220,6 +238,7 @@ export function WarningRow({
     missingEnrichmentTracks,
     catalogMissingStreamSnapshotTracks,
     catalogStreamsMissingPrevNonzeroTracks,
+    individualTracksStaleTracks,
   ]);
 
   useEffect(() => {
@@ -890,6 +909,94 @@ export function WarningRow({
                 )}
               </div>
             )}
+
+            {warning.code === "individual_tracks_stale" &&
+              hasIndividualTracksStaleTracks && (
+                <div className="space-y-2">
+                  {Array.isArray(individualTracksStaleTracks) &&
+                  individualTracksStaleTracks.length > 0 ? (
+                    <>
+                      <div className="text-xs font-medium opacity-70 mb-2">
+                        Tracks with stale streams (
+                        {individualTracksStaleTracks.length}):
+                      </div>
+                      <div className="space-y-2">
+                        {individualTracksStaleTracks.map((track) => {
+                          const isrc = (track.isrc ?? "").trim().toUpperCase();
+                          const fetchedUrl = thumbByIsrc[isrc];
+                          const hasThumb =
+                            fetchedUrl !== undefined
+                              ? fetchedUrl !== null
+                              : !!track.album_image_url;
+                          const imageUrl =
+                            fetchedUrl !== undefined ? fetchedUrl : track.album_image_url;
+                          const cumulative =
+                            typeof track.streams_cumulative === "number" &&
+                            Number.isFinite(track.streams_cumulative)
+                              ? track.streams_cumulative
+                              : null;
+
+                          return (
+                            <div key={track.isrc} className="flex items-center gap-3 text-xs">
+                              {hasThumb && imageUrl ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={imageUrl}
+                                  alt="Album cover"
+                                  className="h-10 w-10 rounded object-cover sb-ring flex-shrink-0"
+                                />
+                              ) : (
+                                <div className="h-10 w-10 rounded sb-ring bg-white/60 flex-shrink-0" />
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <Link
+                                    href={`/tracks/${track.isrc}`}
+                                    className="font-medium hover:underline"
+                                    style={{ color: "var(--sb-text)" }}
+                                  >
+                                    {track.name || track.isrc}
+                                  </Link>
+                                  {track.artist_names && track.artist_names.length > 0 && (
+                                    <span className="opacity-60">
+                                      by{" "}
+                                      <ArtistLinks
+                                        artistNames={track.artist_names}
+                                        artistIds={track.artist_ids ?? undefined}
+                                      />
+                                    </span>
+                                  )}
+                                  {cumulative !== null && (
+                                    <span className="opacity-60">
+                                      · cumulative: <span className="font-mono">{cumulative.toLocaleString()}</span>
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="mt-0.5">
+                                  <Link
+                                    href={`/tracks/${track.isrc}`}
+                                    className="font-mono text-[10px] sb-positive underline hover:opacity-80"
+                                  >
+                                    {track.isrc}
+                                  </Link>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-xs opacity-60">
+                      <p className="mb-2">Track details not available in current warning record.</p>
+                      <p>
+                        {warning.details_json?.note ??
+                          "Tracks with stale stream data were detected during ingestion. Check the Health page after the next run for details."}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
 
             {warning.code === "catalog_streams_missing_prev_nonzero" &&
               hasCatalogStreamsMissingPrevNonzeroTracks && (

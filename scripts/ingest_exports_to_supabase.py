@@ -631,6 +631,59 @@ def main():
                     f"({identical_count}/{len(common_isrcs)} tracks)"
                 )
 
+        # --- Per-track stale detection ---
+        # Flag individual tracks whose cumulative streams didn't change day-over-day,
+        # above a configurable minimum threshold (from user_settings).
+        individual_tracks_stale_count = 0
+        stale_track_threshold = 2000  # default
+        try:
+            settings_rows = pg.select(
+                "user_settings",
+                "stale_track_min_streams",
+                "limit=1",
+            )
+            if settings_rows:
+                stale_track_threshold = int(settings_rows[0].get("stale_track_min_streams", 2000) or 2000)
+        except Exception:
+            # Table/column may not exist yet; use default.
+            pass
+
+        stale_tracks: List[dict] = []
+        for isrc in common_isrcs:
+            today_val = catalog_streams_today.get(isrc)
+            prev_val = prev_streams.get(isrc)
+            if today_val is not None and prev_val is not None:
+                if today_val == prev_val and prev_val >= stale_track_threshold:
+                    stale_tracks.append({"isrc": isrc, "streams_cumulative": today_val})
+
+        individual_tracks_stale_count = len(stale_tracks)
+        if stale_tracks:
+            pg.insert(
+                "ingestion_warnings",
+                [
+                    {
+                        "run_id": run_id,
+                        "run_date": run_date.isoformat(),
+                        "playlist_key": "all_catalog",
+                        "severity": "critical",
+                        "code": "individual_tracks_stale",
+                        "message": (
+                            f"{len(stale_tracks)} track(s) with >={stale_track_threshold:,} cumulative streams "
+                            f"had zero daily growth (streams identical to yesterday)"
+                        ),
+                        "details_json": {
+                            "threshold_min_streams": stale_track_threshold,
+                            "affected_count": len(stale_tracks),
+                            "affected_tracks": sorted(stale_tracks, key=lambda t: t["streams_cumulative"], reverse=True),
+                        },
+                    }
+                ],
+            )
+            print(
+                f"  ⚠ Per-track stale: {len(stale_tracks)} track(s) with >={stale_track_threshold:,} streams "
+                f"had zero daily growth"
+            )
+
         # If any configured minimum row thresholds fail, abort BEFORE mutating memberships/stats.
         if hard_fail_warnings:
             pg.insert("ingestion_warnings", hard_fail_warnings)
@@ -1032,6 +1085,7 @@ def main():
             "run_date": run_date.isoformat(),
             "run_id": run_id,
             "stale_data_detected": stale_data_detected,
+            "individual_tracks_stale_count": individual_tracks_stale_count,
         }
         summary_path = Path(".artifacts") / "ingestion_summary.json"
         summary_path.parent.mkdir(parents=True, exist_ok=True)

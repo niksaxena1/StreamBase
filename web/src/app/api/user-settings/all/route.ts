@@ -24,7 +24,7 @@ export async function GET() {
   const { data: settings, error } = await svc
     .from("user_settings")
     .select(
-      "stream_payout_rate_per_k_usd,currency_display,home_filters_enabled,home_custom_milestones_streams,chart_week_highlight_day,chart_start_date,chart_zoom_daily_y_axis,chart_zoom_daily_y_axis_collector_comparison,sai_enabled",
+      "stream_payout_rate_per_k_usd,currency_display,home_filters_enabled,home_custom_milestones_streams,chart_week_highlight_day,chart_start_date,chart_zoom_daily_y_axis,chart_zoom_daily_y_axis_collector_comparison,sai_enabled,stale_track_min_streams",
     )
     .eq("user_id", user.id)
     .maybeSingle();
@@ -51,6 +51,7 @@ export async function GET() {
       chart_zoom_daily_y_axis: row.chart_zoom_daily_y_axis ?? true,
       chart_zoom_daily_y_axis_collector_comparison: row.chart_zoom_daily_y_axis_collector_comparison ?? true,
       sai_enabled: row.sai_enabled ?? true,
+      stale_track_min_streams: row.stale_track_min_streams ?? 2000,
     },
     { status: 200 },
   );

@@ -14,6 +14,7 @@ import { WeekHighlightDaySetting } from "./WeekHighlightDaySetting";
 import { ChartStartDateSetting } from "./ChartStartDateSetting";
 import { ChartAxisZoomSetting } from "./ChartAxisZoomSetting";
 import { CurrencyDisplaySetting } from "./CurrencyDisplaySetting";
+import { StaleTrackThresholdSetting } from "./StaleTrackThresholdSetting";
 import { ManualStreamOverrideForm } from "./ManualStreamOverrideForm";
 import { StreamOverridesTable, StreamOverridesTableDownloadButton } from "./StreamOverridesTable";
 import { SectionHeader } from "@/components/ui/SectionHeader";
@@ -491,6 +492,11 @@ export default async function SettingsPage() {
         <WeekHighlightDaySetting />
         <ChartStartDateSetting />
         <ChartAxisZoomSetting />
+      </div>
+
+      <div className="space-y-2">
+        <SectionHeader title="Health" subtitle="Configure data-quality detection thresholds used during daily ingestion." />
+        <StaleTrackThresholdSetting />
       </div>
 
       <div className="space-y-2">

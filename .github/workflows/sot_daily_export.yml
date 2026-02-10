@@ -209,11 +209,17 @@ jobs:
           fi
 
           # Check for stale source data (ingestion succeeded but Spotify didn't update).
+          STALE_TRACKS_COUNT="0"
           if [ -f ".artifacts/ingestion_summary.json" ]; then
             STALE=$(python3 -c "import json; d=json.load(open('.artifacts/ingestion_summary.json')); print('true' if d.get('stale_data_detected') else 'false')" 2>/dev/null || echo "false")
+            STALE_TRACKS_COUNT=$(python3 -c "import json; d=json.load(open('.artifacts/ingestion_summary.json')); print(d.get('individual_tracks_stale_count', 0))" 2>/dev/null || echo "0")
             if [ "$STALE" = "true" ]; then
               SHOULD_NOTIFY="true"
               SUBJECT="${SUBJECT:-[SpotiBase] Daily Export: stale source data detected}"
+            fi
+            if [ "$STALE_TRACKS_COUNT" != "0" ]; then
+              SHOULD_NOTIFY="true"
+              SUBJECT="${SUBJECT:-[SpotiBase] Daily Export: ${STALE_TRACKS_COUNT} track(s) with stale streams}"
             fi
           fi
 
@@ -226,11 +232,18 @@ jobs:
             echo "  Export step: ${EXPORT_OUTCOME:-skipped}"
             echo "  Ingest step: ${INGEST_OUTCOME:-skipped}"
             echo "  Stale source data: ${STALE}"
+            echo "  Stale tracks (per-track): ${STALE_TRACKS_COUNT}"
             echo ""
             if [ "$STALE" = "true" ]; then
               echo "Spotify likely did not update stream counts. Data was ingested as-is."
               echo "Check the Health page for the stale_source_data warning and use"
               echo "manual overrides if correction is needed."
+              echo ""
+            fi
+            if [ "$STALE_TRACKS_COUNT" != "0" ]; then
+              echo "${STALE_TRACKS_COUNT} track(s) had zero daily stream growth despite"
+              echo "having significant cumulative streams. Check the Health page for the"
+              echo "individual_tracks_stale warning to see which tracks were affected."
               echo ""
             fi
             echo "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"

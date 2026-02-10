@@ -22,6 +22,7 @@ export type UserSettingsBundle = {
   chart_zoom_daily_y_axis: boolean;
   chart_zoom_daily_y_axis_collector_comparison: boolean;
   sai_enabled: boolean;
+  stale_track_min_streams: number;
 };
 
 let pending: Promise<UserSettingsBundle> | null = null;
