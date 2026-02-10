@@ -213,6 +213,7 @@ jobs:
           if [ -f ".artifacts/ingestion_summary.json" ]; then
             STALE=$(python3 -c "import json; d=json.load(open('.artifacts/ingestion_summary.json')); print('true' if d.get('stale_data_detected') else 'false')" 2>/dev/null || echo "false")
             STALE_TRACKS_COUNT=$(python3 -c "import json; d=json.load(open('.artifacts/ingestion_summary.json')); print(d.get('individual_tracks_stale_count', 0))" 2>/dev/null || echo "0")
+            ZEROED_COUNT=$(python3 -c "import json; d=json.load(open('.artifacts/ingestion_summary.json')); print(d.get('excluded_tracks_zeroed_count', 0))" 2>/dev/null || echo "0")
             if [ "$STALE" = "true" ]; then
               SHOULD_NOTIFY="true"
               SUBJECT="${SUBJECT:-[SpotiBase] Daily Export: stale source data detected}"
@@ -220,6 +221,10 @@ jobs:
             if [ "$STALE_TRACKS_COUNT" != "0" ]; then
               SHOULD_NOTIFY="true"
               SUBJECT="${SUBJECT:-[SpotiBase] Daily Export: ${STALE_TRACKS_COUNT} track(s) with stale streams}"
+            fi
+            if [ "$ZEROED_COUNT" != "0" ]; then
+              SHOULD_NOTIFY="true"
+              SUBJECT="${SUBJECT:-[SpotiBase] Daily Export: ${ZEROED_COUNT} excluded track(s) streams zeroed}"
             fi
           fi
 
@@ -233,6 +238,7 @@ jobs:
             echo "  Ingest step: ${INGEST_OUTCOME:-skipped}"
             echo "  Stale source data: ${STALE}"
             echo "  Stale tracks (per-track): ${STALE_TRACKS_COUNT}"
+            echo "  Excluded tracks zeroed: ${ZEROED_COUNT}"
             echo ""
             if [ "$STALE" = "true" ]; then
               echo "Spotify likely did not update stream counts. Data was ingested as-is."
@@ -244,6 +250,12 @@ jobs:
               echo "${STALE_TRACKS_COUNT} track(s) had zero daily stream growth despite"
               echo "having significant total streams. Check the Health page for the"
               echo "individual_tracks_stale warning to see which tracks were affected."
+              echo ""
+            fi
+            if [ "$ZEROED_COUNT" != "0" ]; then
+              echo "${ZEROED_COUNT} excluded (taken-down) track(s) had their total streams"
+              echo "drop to zero. This likely indicates a data-source glitch. Check the"
+              echo "Health page for the excluded_track_streams_zeroed warning for details."
               echo ""
             fi
             echo "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"

@@ -704,6 +704,48 @@ def main():
                 f"had zero daily growth"
             )
 
+        # --- Excluded track streams zeroed detection ---
+        # For tracks in the stale exclusion list, check if their total streams dropped to zero.
+        # These tracks are expected to have frozen (non-changing) streams, so a drop to zero
+        # signals a data-source glitch rather than a real change.
+        excluded_tracks_zeroed: List[dict] = []
+        for isrc in stale_excluded_isrcs:
+            today_val = catalog_streams_today.get(isrc)
+            prev_val = prev_streams.get(isrc)
+            if today_val is not None and prev_val is not None:
+                if today_val == 0 and prev_val > 0:
+                    excluded_tracks_zeroed.append({"isrc": isrc, "prev_streams": prev_val})
+
+        excluded_tracks_zeroed_count = len(excluded_tracks_zeroed)
+        if excluded_tracks_zeroed:
+            pg.insert(
+                "ingestion_warnings",
+                [
+                    {
+                        "run_id": run_id,
+                        "run_date": run_date.isoformat(),
+                        "playlist_key": "all_catalog",
+                        "severity": "critical",
+                        "code": "excluded_track_streams_zeroed",
+                        "message": (
+                            f"{len(excluded_tracks_zeroed)} excluded track(s) had their total streams drop to zero"
+                        ),
+                        "details_json": {
+                            "affected_count": len(excluded_tracks_zeroed),
+                            "affected_tracks": sorted(
+                                excluded_tracks_zeroed,
+                                key=lambda t: t["prev_streams"],
+                                reverse=True,
+                            ),
+                        },
+                    }
+                ],
+            )
+            print(
+                f"  ⚠ Excluded track zeroed: {len(excluded_tracks_zeroed)} excluded track(s) "
+                f"had total streams drop to zero"
+            )
+
         # If any configured minimum row thresholds fail, abort BEFORE mutating memberships/stats.
         if hard_fail_warnings:
             pg.insert("ingestion_warnings", hard_fail_warnings)
@@ -1106,6 +1148,7 @@ def main():
             "run_id": run_id,
             "stale_data_detected": stale_data_detected,
             "individual_tracks_stale_count": individual_tracks_stale_count,
+            "excluded_tracks_zeroed_count": excluded_tracks_zeroed_count,
         }
         summary_path = Path(".artifacts") / "ingestion_summary.json"
         summary_path.parent.mkdir(parents=True, exist_ok=True)
