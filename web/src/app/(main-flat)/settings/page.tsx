@@ -15,6 +15,7 @@ import { ChartStartDateSetting } from "./ChartStartDateSetting";
 import { ChartAxisZoomSetting } from "./ChartAxisZoomSetting";
 import { CurrencyDisplaySetting } from "./CurrencyDisplaySetting";
 import { StaleTrackThresholdSetting } from "./StaleTrackThresholdSetting";
+import { RapidApiFallbackSetting } from "./RapidApiFallbackSetting";
 import { ManualStreamOverrideForm } from "./ManualStreamOverrideForm";
 import { StreamOverridesTable, StreamOverridesTableDownloadButton } from "./StreamOverridesTable";
 import { SectionHeader } from "@/components/ui/SectionHeader";
@@ -580,6 +581,7 @@ export default async function SettingsPage() {
       <div className="space-y-2">
         <SectionHeader title="Health" subtitle="Configure data-quality detection thresholds used during daily ingestion." />
         <StaleTrackThresholdSetting />
+        <RapidApiFallbackSetting />
       </div>
 
       <div className="space-y-2">

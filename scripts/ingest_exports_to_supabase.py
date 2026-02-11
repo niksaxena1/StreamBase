@@ -9,17 +9,8 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 import requests
-import time
 
 STREAM_PAYOUT_USD = 0.002
-
-# Optional RapidAPI fallback for per-track total stream counts when SpotOnTrack
-# omits values for some tracks. This endpoint is *not* required for ingestion;
-# if RAPIDAPI_KEY is unset, the fallback is skipped entirely.
-RAPIDAPI_STREAMS_ENDPOINT = (
-    "https://spotify-track-streams-playback-count1.p.rapidapi.com"
-    "/tracks/spotify_track_streams"
-)
 
 # Warning thresholds (tune later)
 TRACK_COUNT_SWING_WARN_RATIO = 0.30  # 30% day-over-day swing
@@ -203,18 +194,6 @@ def main():
 
     run_date = date.fromisoformat(args.run_date) if args.run_date else utc_today()
     prev_date = run_date - timedelta(days=1)
-
-    # Optional RapidAPI config (used only for limited per-track fallback when
-    # SpotOnTrack omits stream totals for some tracks). If the key is not set,
-    # or the max-per-run is 0, the fallback is skipped.
-    rapidapi_key = os.environ.get("RAPIDAPI_KEY", "").strip()
-    rapidapi_max_calls_raw = os.environ.get("RAPIDAPI_MAX_CALLS_PER_RUN", "").strip()
-    try:
-        rapidapi_max_calls = int(rapidapi_max_calls_raw) if rapidapi_max_calls_raw else 20
-    except ValueError:
-        rapidapi_max_calls = 20
-    if rapidapi_max_calls < 0:
-        rapidapi_max_calls = 0
 
     playlists = load_playlists_csv(args.config)
     if not any(p.playlist_key == "all_catalog" for p in playlists):
@@ -520,60 +499,6 @@ def main():
                 # Count as 0 for today.
                 catalog_streams_today[isrc] = 0
                 missing_prev_zero_or_unknown.append(isrc)
-
-        # Optional: limited RapidAPI fallback for tracks that had non-zero
-        # cumulative streams yesterday but are missing/blank in today's export.
-        # This is intended for small-scale correction while testing the API and
-        # respecting low free-tier limits.
-        if rapidapi_key and rapidapi_max_calls > 0 and missing_prev_nonzero:
-            total_missing_before = len(missing_prev_nonzero)
-            # Prioritize tracks with the largest previous totals first.
-            sorted_candidates = sorted(
-                missing_prev_nonzero,
-                key=lambda d: int(d.get("prev_streams_cumulative") or 0),
-                reverse=True,
-            )
-            fixed_isrcs: Set[str] = set()
-            attempts = 0
-            successes = 0
-            for d in sorted_candidates:
-                if attempts >= rapidapi_max_calls:
-                    break
-                isrc = d["isrc"]
-                prev_val = int(d.get("prev_streams_cumulative") or 0)
-                attempts += 1
-                try:
-                    headers = {
-                        "x-rapidapi-host": "spotify-track-streams-playback-count1.p.rapidapi.com",
-                        "x-rapidapi-key": rapidapi_key,
-                    }
-                    params = {"isrc": isrc}
-                    r = requests.get(RAPIDAPI_STREAMS_ENDPOINT, headers=headers, params=params, timeout=30)
-                    r.raise_for_status()
-                    payload = r.json()
-                    api_streams = payload.get("streams")
-                    if payload.get("result") != "success" or api_streams is None:
-                        raise RuntimeError(f"non-success result: {payload!r}")
-                    api_val = int(api_streams)
-                    # Guardrail: cumulative streams should not go backwards.
-                    if api_val < prev_val:
-                        raise RuntimeError(
-                            f"RapidAPI streams {api_val} < prev cumulative {prev_val} for {isrc}"
-                        )
-                    catalog_streams_today[isrc] = api_val
-                    fixed_isrcs.add(isrc)
-                    successes += 1
-                except Exception as e:
-                    print(f"  ⚠ RapidAPI fallback failed for {isrc}: {e}")
-                # Free tier: 1 req/sec. Keep a small buffer.
-                time.sleep(1.1)
-
-            if successes:
-                missing_prev_nonzero = [d for d in missing_prev_nonzero if d["isrc"] not in fixed_isrcs]
-                print(
-                    f\"  ℹ RapidAPI fallback: repaired {successes} of {total_missing_before} "
-                    f\"missing track(s) (attempted {attempts}, max {rapidapi_max_calls})\"
-                )
 
         if missing_prev_nonzero:
             # Map affected ISRCs to the playlists they appear in today.
