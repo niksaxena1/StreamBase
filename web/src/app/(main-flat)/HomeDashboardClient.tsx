@@ -132,7 +132,7 @@ function HomeDashboardInner(props: {
         if (idx >= rowsDesc.length - 1) return null;
         const cur = safeNum(r?.total_streams_cumulative);
         const prev = safeNum(rowsDesc[idx + 1]?.total_streams_cumulative);
-        return Math.max(0, cur - prev);
+        return cur - prev;
       });
 
     if (metric === "revenue") {
@@ -147,7 +147,7 @@ function HomeDashboardInner(props: {
       }));
       const dailyValue =
         desc.length >= 2
-          ? Math.max(0, safeNum(desc[0]?.total_streams_cumulative) - safeNum(desc[1]?.total_streams_cumulative)) *
+          ? (safeNum(desc[0]?.total_streams_cumulative) - safeNum(desc[1]?.total_streams_cumulative)) *
             streamPayoutPerStreamUsd
           : 0;
       return {
@@ -206,7 +206,7 @@ function HomeDashboardInner(props: {
     }));
     const dailyValue =
       desc.length >= 2
-        ? Math.max(0, safeNum(desc[0]?.total_streams_cumulative) - safeNum(desc[1]?.total_streams_cumulative))
+        ? safeNum(desc[0]?.total_streams_cumulative) - safeNum(desc[1]?.total_streams_cumulative)
         : 0;
     return {
       daily: computeRollingAvg7(dailyDesc),
@@ -235,7 +235,7 @@ function HomeDashboardInner(props: {
       const cur = Number(hist[i]?.total_streams_cumulative ?? 0);
       const prev = Number(hist[i + 1]?.total_streams_cumulative ?? 0);
       if (!Number.isFinite(cur) || !Number.isFinite(prev)) continue;
-      deltas.push(Math.max(0, cur - prev));
+      deltas.push(cur - prev);
     }
     if (!deltas.length) return null;
     return deltas.reduce((a, b) => a + b, 0) / deltas.length;
