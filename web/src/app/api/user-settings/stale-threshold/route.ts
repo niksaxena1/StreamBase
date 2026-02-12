@@ -7,13 +7,14 @@ import { isSchemaMissing } from "@/lib/supabase/schemaMissing";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const DEFAULT_THRESHOLD = 2000;
+const DEFAULT_MIN_STREAMS = 2000;
+const DEFAULT_MIN_AVG_DAILY = 10;
 
-function parseThreshold(raw: unknown): number {
+function parseNonNegativeInt(raw: unknown, label: string): number {
   const n = typeof raw === "string" ? Number(raw) : Number(raw);
   if (!Number.isFinite(n) || !Number.isInteger(n))
-    throw new Error("Threshold must be a whole number.");
-  if (n < 0) throw new Error("Threshold must be non-negative.");
+    throw new Error(`${label} must be a whole number.`);
+  if (n < 0) throw new Error(`${label} must be non-negative.`);
   return n;
 }
 
@@ -28,26 +29,32 @@ export async function GET() {
   const svc = supabaseService();
   const { data: settings, error } = await svc
     .from("user_settings")
-    .select("stale_track_min_streams")
+    .select("stale_track_min_streams,stale_track_min_avg_daily")
     .eq("user_id", user.id)
     .maybeSingle();
 
   if (error) {
     if (isSchemaMissing(error)) {
       return NextResponse.json(
-        { stale_track_min_streams: DEFAULT_THRESHOLD, configured: false },
+        {
+          stale_track_min_streams: DEFAULT_MIN_STREAMS,
+          stale_track_min_avg_daily: DEFAULT_MIN_AVG_DAILY,
+          configured: false,
+        },
         { status: 200 },
       );
     }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  const val = Number(
-    (settings as any)?.stale_track_min_streams ?? DEFAULT_THRESHOLD,
-  );
+  const row = (settings ?? {}) as Record<string, unknown>;
+  const minStreams = Number(row.stale_track_min_streams ?? DEFAULT_MIN_STREAMS);
+  const minAvgDaily = Number(row.stale_track_min_avg_daily ?? DEFAULT_MIN_AVG_DAILY);
+
   return NextResponse.json(
     {
-      stale_track_min_streams: Number.isFinite(val) ? val : DEFAULT_THRESHOLD,
+      stale_track_min_streams: Number.isFinite(minStreams) ? minStreams : DEFAULT_MIN_STREAMS,
+      stale_track_min_avg_daily: Number.isFinite(minAvgDaily) ? minAvgDaily : DEFAULT_MIN_AVG_DAILY,
       configured: true,
     },
     { status: 200 },
@@ -62,17 +69,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "not authenticated" }, { status: 401 });
   }
 
-  const body = await request.json().catch(() => ({}));
-  let threshold: number;
+  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+
+  let minStreams: number;
+  let minAvgDaily: number;
   try {
-    threshold = parseThreshold(
-      (body as any)?.stale_track_min_streams ??
-        (body as any)?.threshold ??
-        (body as any)?.value,
+    minStreams = parseNonNegativeInt(
+      body.stale_track_min_streams ?? body.threshold ?? body.value,
+      "Min total streams",
+    );
+    minAvgDaily = parseNonNegativeInt(
+      body.stale_track_min_avg_daily ?? DEFAULT_MIN_AVG_DAILY,
+      "Min avg daily streams",
     );
   } catch (e) {
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Invalid threshold." },
+      { error: e instanceof Error ? e.message : "Invalid value." },
       { status: 400 },
     );
   }
@@ -81,10 +93,14 @@ export async function POST(request: NextRequest) {
   const { data: upserted, error } = await svc
     .from("user_settings")
     .upsert(
-      [{ user_id: user.id, stale_track_min_streams: threshold }],
+      [{
+        user_id: user.id,
+        stale_track_min_streams: minStreams,
+        stale_track_min_avg_daily: minAvgDaily,
+      }],
       { onConflict: "user_id" },
     )
-    .select("stale_track_min_streams")
+    .select("stale_track_min_streams,stale_track_min_avg_daily")
     .maybeSingle();
 
   if (error) {
@@ -92,7 +108,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           error:
-            "Stale threshold setting isn't configured in the database yet. Apply migrations, then retry.",
+            "Stale threshold settings aren't configured in the database yet. Apply migrations, then retry.",
         },
         { status: 503 },
       );
@@ -100,12 +116,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  const saved = Number(
-    (upserted as any)?.stale_track_min_streams ?? threshold,
-  );
+  const row = (upserted ?? {}) as Record<string, unknown>;
+  const savedMinStreams = Number(row.stale_track_min_streams ?? minStreams);
+  const savedMinAvgDaily = Number(row.stale_track_min_avg_daily ?? minAvgDaily);
+
   return NextResponse.json(
     {
-      stale_track_min_streams: Number.isFinite(saved) ? saved : threshold,
+      stale_track_min_streams: Number.isFinite(savedMinStreams) ? savedMinStreams : minStreams,
+      stale_track_min_avg_daily: Number.isFinite(savedMinAvgDaily) ? savedMinAvgDaily : minAvgDaily,
       configured: true,
     },
     { status: 200 },

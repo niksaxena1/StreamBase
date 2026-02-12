@@ -634,16 +634,20 @@ def main():
         # --- Per-track stale detection ---
         # Flag individual tracks whose cumulative streams didn't change day-over-day,
         # above a configurable minimum threshold (from user_settings).
+        # Additionally, only flag tracks whose 7-day average daily streams meet a
+        # minimum threshold, to avoid false positives on low-streaming tracks.
         individual_tracks_stale_count = 0
         stale_track_threshold = 2000  # default
+        stale_track_min_avg_daily = 10  # default
         try:
             settings_rows = pg.select(
                 "user_settings",
-                "stale_track_min_streams",
+                "stale_track_min_streams,stale_track_min_avg_daily",
                 "limit=1",
             )
             if settings_rows:
                 stale_track_threshold = int(settings_rows[0].get("stale_track_min_streams", 2000) or 2000)
+                stale_track_min_avg_daily = int(settings_rows[0].get("stale_track_min_avg_daily", 10) or 10)
         except Exception:
             # Table/column may not exist yet; use default.
             pass
@@ -666,7 +670,9 @@ def main():
             # Table may not exist yet; no exclusions.
             pass
 
-        stale_tracks: List[dict] = []
+        # Phase 1: find candidate stale tracks (cumulative threshold only).
+        candidate_stale_isrcs: List[str] = []
+        candidate_stale_map: dict = {}
         for isrc in common_isrcs:
             if isrc.strip().upper() in stale_excluded_isrcs:
                 continue
@@ -674,7 +680,66 @@ def main():
             prev_val = prev_streams.get(isrc)
             if today_val is not None and prev_val is not None:
                 if today_val == prev_val and prev_val >= stale_track_threshold:
-                    stale_tracks.append({"isrc": isrc, "streams_cumulative": today_val})
+                    candidate_stale_isrcs.append(isrc)
+                    candidate_stale_map[isrc] = today_val
+
+        # Phase 2: compute 7-day average daily streams for candidates and filter.
+        stale_tracks: List[dict] = []
+        if candidate_stale_isrcs and stale_track_min_avg_daily > 0:
+            # Look back 8 days to compute 7 daily deltas.
+            lookback_date = (run_date - datetime.timedelta(days=8)).isoformat()
+            avg_daily_map: dict = {}  # isrc -> avg daily streams
+            try:
+                # Fetch historical streams for candidate ISRCs in batches.
+                BATCH = 200
+                for i in range(0, len(candidate_stale_isrcs), BATCH):
+                    batch_isrcs = candidate_stale_isrcs[i : i + BATCH]
+                    isrc_csv = ",".join(batch_isrcs)
+                    hist_rows = pg.select_all(
+                        "track_daily_streams",
+                        "isrc,date,streams_cumulative",
+                        f"isrc=in.({isrc_csv})&date=gte.{lookback_date}&order=isrc,date",
+                    )
+                    # Group by ISRC and compute avg.
+                    from collections import defaultdict
+                    isrc_history: dict = defaultdict(list)
+                    for r in hist_rows:
+                        h_isrc = str(r.get("isrc", "")).strip().upper()
+                        h_cum = int(r.get("streams_cumulative", 0) or 0)
+                        h_date = str(r.get("date", ""))
+                        if h_isrc and h_date:
+                            isrc_history[h_isrc].append((h_date, h_cum))
+                    for h_isrc, points in isrc_history.items():
+                        if len(points) < 2:
+                            avg_daily_map[h_isrc] = 0
+                            continue
+                        points.sort(key=lambda p: p[0])
+                        earliest_cum = points[0][1]
+                        latest_cum = points[-1][1]
+                        num_days = len(points) - 1
+                        avg_daily = (latest_cum - earliest_cum) / num_days if num_days > 0 else 0
+                        avg_daily_map[h_isrc] = avg_daily
+            except Exception as e:
+                print(f"  ⚠ Could not compute avg daily streams for stale candidates: {e}")
+                # Fall back to including all candidates.
+                avg_daily_map = {isrc: stale_track_min_avg_daily for isrc in candidate_stale_isrcs}
+
+            for isrc in candidate_stale_isrcs:
+                avg = avg_daily_map.get(isrc.strip().upper(), 0)
+                if avg >= stale_track_min_avg_daily:
+                    stale_tracks.append({
+                        "isrc": isrc,
+                        "streams_cumulative": candidate_stale_map[isrc],
+                        "avg_daily_7d": round(avg, 1),
+                    })
+            print(
+                f"  ℹ Per-track stale: {len(candidate_stale_isrcs)} candidates, "
+                f"{len(stale_tracks)} above avg-daily threshold ({stale_track_min_avg_daily})"
+            )
+        elif candidate_stale_isrcs:
+            # min_avg_daily is 0 → flag all candidates (no avg filter).
+            for isrc in candidate_stale_isrcs:
+                stale_tracks.append({"isrc": isrc, "streams_cumulative": candidate_stale_map[isrc]})
 
         individual_tracks_stale_count = len(stale_tracks)
         if stale_tracks:
@@ -689,10 +754,12 @@ def main():
                         "code": "individual_tracks_stale",
                         "message": (
                             f"{len(stale_tracks)} track(s) with >={stale_track_threshold:,} total streams "
+                            f"and >={stale_track_min_avg_daily} avg daily streams "
                             f"had zero daily growth (streams identical to yesterday)"
                         ),
                         "details_json": {
                             "threshold_min_streams": stale_track_threshold,
+                            "threshold_min_avg_daily": stale_track_min_avg_daily,
                             "affected_count": len(stale_tracks),
                             "affected_tracks": sorted(stale_tracks, key=lambda t: t["streams_cumulative"], reverse=True),
                         },
@@ -701,7 +768,7 @@ def main():
             )
             print(
                 f"  ⚠ Per-track stale: {len(stale_tracks)} track(s) with >={stale_track_threshold:,} total streams "
-                f"had zero daily growth"
+                f"and >={stale_track_min_avg_daily} avg daily had zero daily growth"
             )
 
         # --- Excluded track streams zeroed detection ---
