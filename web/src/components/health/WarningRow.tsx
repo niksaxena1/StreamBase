@@ -1,10 +1,147 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ChevronDown, ChevronRight, Music } from "lucide-react";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { TableCell, TableRow } from "@/components/ui/GlassTable";
+import { useRouter } from "next/navigation";
+
+/* ---------- Inline quick-action helpers ---------- */
+
+function ExcludeStaleButton({ isrc }: { isrc: string }) {
+  const router = useRouter();
+  const [state, setState] = useState<"idle" | "loading" | "done" | "error">("idle");
+
+  const handleClick = useCallback(async () => {
+    setState("loading");
+    try {
+      const res = await fetch("/api/health-actions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "exclude_stale", isrc }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error((d as any)?.error ?? "Failed");
+      }
+      setState("done");
+      router.refresh();
+    } catch {
+      setState("error");
+    }
+  }, [isrc, router]);
+
+  if (state === "done") return <span className="text-[10px] text-green-500">Excluded</span>;
+  if (state === "error") return <span className="text-[10px] text-red-400">Failed</span>;
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      disabled={state === "loading"}
+      className="text-[10px] px-1.5 py-0.5 rounded sb-ring bg-white/60 dark:bg-white/10 hover:bg-white/80 dark:hover:bg-white/20 opacity-70 hover:opacity-100 transition disabled:opacity-40"
+    >
+      {state === "loading" ? "..." : "Exclude"}
+    </button>
+  );
+}
+
+function QuickOverrideButton({ isrc, date }: { isrc: string; date: string }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [streams, setStreams] = useState("");
+  const [note, setNote] = useState("Quick override from Health page");
+  const [state, setState] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [errMsg, setErrMsg] = useState("");
+
+  const handleSubmit = useCallback(async () => {
+    const n = Number(streams);
+    if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0) {
+      setErrMsg("Enter a valid number");
+      return;
+    }
+    if (!note.trim()) {
+      setErrMsg("Note is required");
+      return;
+    }
+    setState("loading");
+    setErrMsg("");
+    try {
+      const res = await fetch("/api/health-actions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "quick_override",
+          isrc,
+          date,
+          streams_cumulative: n,
+          note: note.trim(),
+        }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error((d as any)?.error ?? "Failed");
+      }
+      setState("done");
+      setOpen(false);
+      router.refresh();
+    } catch (e) {
+      setState("error");
+      setErrMsg(e instanceof Error ? e.message : "Failed");
+    }
+  }, [isrc, date, streams, note, router]);
+
+  if (state === "done") return <span className="text-[10px] text-green-500">Overridden</span>;
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="text-[10px] px-1.5 py-0.5 rounded sb-ring bg-white/60 dark:bg-white/10 hover:bg-white/80 dark:hover:bg-white/20 opacity-70 hover:opacity-100 transition"
+      >
+        Override
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap mt-1">
+      <input
+        type="text"
+        inputMode="numeric"
+        value={streams}
+        onChange={(e) => { setStreams(e.target.value); setErrMsg(""); }}
+        placeholder="Cumulative streams"
+        className="sb-ring h-6 w-32 rounded px-2 text-[10px] bg-white/60 dark:bg-white/10"
+      />
+      <input
+        type="text"
+        value={note}
+        onChange={(e) => { setNote(e.target.value); setErrMsg(""); }}
+        placeholder="Note (required)"
+        className="sb-ring h-6 w-48 rounded px-2 text-[10px] bg-white/60 dark:bg-white/10"
+      />
+      <button
+        type="button"
+        onClick={handleSubmit}
+        disabled={state === "loading"}
+        className="text-[10px] px-1.5 py-0.5 rounded sb-ring bg-black text-white dark:bg-white dark:text-black hover:opacity-80 transition disabled:opacity-40"
+      >
+        {state === "loading" ? "..." : "Save"}
+      </button>
+      <button
+        type="button"
+        onClick={() => setOpen(false)}
+        className="text-[10px] px-1.5 py-0.5 rounded opacity-60 hover:opacity-100"
+      >
+        Cancel
+      </button>
+      {errMsg && <span className="text-[10px] text-red-400">{errMsg}</span>}
+    </div>
+  );
+}
 
 type WarningRowProps = {
   warning: {
@@ -107,6 +244,8 @@ type WarningRowProps = {
   }> | null;
   /** Full playlist key→meta map so drift sections can resolve display names + thumbnails. */
   allPlaylistMeta?: Record<string, { name: string; imageUrl: string | null }>;
+  /** Data date (YYYY-MM-DD) for the current warning set — used by quick-override buttons. */
+  dataDate?: string | null;
 };
 
 function formatCodeLabel(code: string) {
@@ -179,6 +318,7 @@ export function WarningRow({
   excludedTracksZeroedTracks,
   distroOverlapTracks,
   allPlaylistMeta,
+  dataDate,
 }: WarningRowProps) {
   const [expanded, setExpanded] = useState(false);
   const [thumbByIsrc, setThumbByIsrc] = useState<Record<string, string | null>>({});
@@ -710,13 +850,16 @@ export function WarningRow({
                                   </span>
                                 )}
                               </div>
-                              <div className="mt-0.5">
+                              <div className="mt-0.5 flex items-center gap-2">
                                 <Link
                                   href={`/tracks/${track.isrc}`}
                                   className="font-mono text-[10px] sb-positive underline hover:opacity-80"
                                 >
                                   {track.isrc}
                                 </Link>
+                                {dataDate && (
+                                  <QuickOverrideButton isrc={isrc} date={dataDate} />
+                                )}
                               </div>
                             </div>
                           </div>
@@ -990,14 +1133,21 @@ export function WarningRow({
                                       · total: <span className="font-mono">{cumulative.toLocaleString()}</span>
                                     </span>
                                   )}
+                                  {typeof track.avg_daily_7d === "number" &&
+                                    Number.isFinite(track.avg_daily_7d) && (
+                                      <span className="opacity-60">
+                                        · avg/day: <span className="font-mono">{track.avg_daily_7d.toLocaleString(undefined, { maximumFractionDigits: 1 })}</span>
+                                      </span>
+                                    )}
                                 </div>
-                                <div className="mt-0.5">
+                                <div className="mt-0.5 flex items-center gap-2">
                                   <Link
                                     href={`/tracks/${track.isrc}`}
                                     className="font-mono text-[10px] sb-positive underline hover:opacity-80"
                                   >
                                     {track.isrc}
                                   </Link>
+                                  <ExcludeStaleButton isrc={isrc} />
                                 </div>
                               </div>
                             </div>
@@ -1167,13 +1317,16 @@ export function WarningRow({
                                     </span>
                                   )}
                                 </div>
-                                <div className="mt-0.5">
+                                <div className="mt-0.5 flex items-center gap-2">
                                   <Link
                                     href={`/tracks/${track.isrc}`}
                                     className="font-mono text-[10px] sb-positive underline hover:opacity-80"
                                   >
                                     {track.isrc}
                                   </Link>
+                                  {dataDate && (
+                                    <QuickOverrideButton isrc={isrc} date={dataDate} />
+                                  )}
                                 </div>
                               </div>
                             </div>

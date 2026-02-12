@@ -10,6 +10,8 @@ import { WarningRow } from "@/components/health/WarningRow";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { ExportMissingTracksButton } from "@/components/health/ExportMissingTracksButton";
 import { RefreshButton } from "@/components/health/RefreshButton";
+import { BatchInterpolateTool } from "@/components/health/BatchInterpolateTool";
+import { WarningHistoryChart } from "@/components/health/WarningHistoryChart";
 import { PageHeader } from "@/components/shell/PageHeader";
 import { addDaysISO, dataDateFromRunDate, SOT_DATA_LAG_DAYS } from "@/lib/sotDates";
 import { Alert } from "@/components/ui/Alert";
@@ -1094,12 +1096,18 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
                   ? distroOverlapTracks
                   : undefined
               }
+              dataDate={selectedDataDate}
             />
           ))}
           {!displayedWarningsPatched.length && (
             <EmptyState colSpan={4} message="No warnings found for the selected filters." />
           )}
         </GlassTable>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <BatchInterpolateTool />
+        <WarningHistoryChart />
       </div>
 
       {selectedRunDate && allMissingTracks.length > 0 && (
