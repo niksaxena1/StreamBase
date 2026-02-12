@@ -177,10 +177,10 @@ export function WarningHistoryChart() {
                 fontSize: 11,
               }}
               labelFormatter={(v) => `${String(v)} (click to view)`}
-              formatter={(value: number, name: string) => [
-                value,
-                CODE_LABELS[name] ?? name,
-              ]}
+              formatter={(value: number | undefined, name: string | undefined) => {
+                const key = name ?? "";
+                return [value ?? 0, CODE_LABELS[key] ?? key] as const;
+              }}
             />
             <Legend
               iconSize={8}

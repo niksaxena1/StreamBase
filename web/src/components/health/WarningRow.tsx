@@ -225,6 +225,7 @@ type WarningRowProps = {
     artist_ids?: string[] | null;
     album_image_url?: string | null;
     streams_cumulative?: number | null;
+    avg_daily_7d?: number | null;
   }> | null;
   excludedTracksZeroedTracks?: Array<{
     isrc: string;
