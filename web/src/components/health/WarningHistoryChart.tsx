@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   BarChart,
   Bar,
@@ -49,7 +50,15 @@ const CODE_COLORS: Record<string, string> = {
   ingestion_exception: "#b91c1c",
 };
 
+/** Convert run_date (YYYY-MM-DD) to data_date by subtracting SOT lag (2 days). */
+function runDateToDataDate(runDate: string): string {
+  const d = new Date(runDate + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() - 2);
+  return d.toISOString().slice(0, 10);
+}
+
 export function WarningHistoryChart() {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [dates, setDates] = useState<HistoryEntry[]>([]);
   const [codes, setCodes] = useState<string[]>([]);
@@ -71,6 +80,18 @@ export function WarningHistoryChart() {
       }
     })();
   }, []);
+
+  // Navigate to /health?date=<dataDate> when a bar is clicked, and scroll to top
+  const handleBarClick = useCallback(
+    (data: any) => {
+      const runDate = data?.date ?? data?.activeLabel;
+      if (!runDate || typeof runDate !== "string") return;
+      const dataDate = runDateToDataDate(runDate);
+      router.push(`/health?date=${dataDate}`);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    },
+    [router],
+  );
 
   if (loading) {
     return (
@@ -110,11 +131,20 @@ export function WarningHistoryChart() {
       <h3 className="text-sm font-semibold mb-1">Warning History</h3>
       <p className="text-xs opacity-70 mb-3">
         Warning counts per day over the past 30 days (critical/warn only).
+        Click a bar to view that day&apos;s warnings.
       </p>
 
-      <div className="w-full" style={{ height: 220 }}>
+      <div className="w-full cursor-pointer" style={{ height: 220 }}>
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={chartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+          <BarChart
+            data={chartData}
+            margin={{ top: 4, right: 4, left: 0, bottom: 0 }}
+            onClick={(state) => {
+              if (state?.activeLabel) {
+                handleBarClick({ date: state.activeLabel });
+              }
+            }}
+          >
             <CartesianGrid
               strokeDasharray="3 3"
               vertical={false}
@@ -146,7 +176,7 @@ export function WarningHistoryChart() {
                 borderRadius: 8,
                 fontSize: 11,
               }}
-              labelFormatter={(v) => String(v)}
+              labelFormatter={(v) => `${String(v)} (click to view)`}
               formatter={(value: number, name: string) => [
                 value,
                 CODE_LABELS[name] ?? name,
