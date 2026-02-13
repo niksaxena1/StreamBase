@@ -6,6 +6,15 @@ type SpotifyToken = {
   expires_in: number;
 };
 
+function normIsrcForLookup(isrc: string): string {
+  // Spotify search expects canonical 12-char alphanumeric ISRCs.
+  // SpotOnTrack sometimes exports hyphenated ISRCs (e.g. "GB-SMU-30-65473").
+  return String(isrc ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+}
+
 type TokenCache = {
   token: string;
   expiresAtMs: number;
@@ -80,7 +89,9 @@ export type SpotifyTrackLookup = {
 };
 
 export async function findTrackByIsrc(isrc: string): Promise<SpotifyTrackLookup | null> {
-  const q = encodeURIComponent(`isrc:${isrc}`);
+  const isrcNorm = normIsrcForLookup(isrc);
+  if (!isrcNorm) return null;
+  const q = encodeURIComponent(`isrc:${isrcNorm}`);
   type SearchResp = {
     tracks?: {
       items: Array<{

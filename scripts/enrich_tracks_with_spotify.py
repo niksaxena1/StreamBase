@@ -1,6 +1,7 @@
 import argparse
 import base64
 import os
+import re
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -13,6 +14,19 @@ def require_env(name: str) -> str:
     if not v:
         raise SystemExit(f"Missing env var: {name}")
     return v
+
+
+def norm_isrc_for_lookup(s: str) -> str:
+    """
+    Normalize an ISRC into Spotify's expected canonical form:
+    - uppercase
+    - remove hyphens/spaces/any non-alphanumeric characters
+    Example: "GB-SMU-30-65473" -> "GBSMU3065473"
+    """
+    raw = (s or "").strip().upper()
+    if not raw:
+        return ""
+    return re.sub(r"[^A-Z0-9]", "", raw)
 
 
 class Postgrest:
@@ -87,9 +101,23 @@ class Spotify:
         raise RuntimeError(f"Spotify API still rate-limited after 5 retries")
 
     def find_track_by_isrc(self, isrc: str) -> Optional[Dict[str, Any]]:
-        q = requests.utils.quote(f"isrc:{isrc}")
-        resp = self.get(f"/search?q={q}&type=track&limit=1")
-        item = ((resp.get("tracks") or {}).get("items") or [None])[0]
+        # Spotify search expects canonical 12-char alphanumeric ISRCs.
+        # SpotOnTrack sometimes exports hyphenated ISRCs (e.g. "GB-SMU-30-65473").
+        isrc_norm = norm_isrc_for_lookup(isrc)
+        if not isrc_norm:
+            return None
+
+        # Try normalized first; if that misses, fall back to raw for safety.
+        for query_isrc in (isrc_norm, (isrc or "").strip()):
+            if not query_isrc:
+                continue
+            q = requests.utils.quote(f"isrc:{query_isrc}")
+            resp = self.get(f"/search?q={q}&type=track&limit=1")
+            item = ((resp.get("tracks") or {}).get("items") or [None])[0]
+            if item:
+                break
+        else:
+            item = None
         if not item:
             return None
         images = ((item.get("album") or {}).get("images") or [])
@@ -146,21 +174,22 @@ def main():
     fail = 0
 
     for row in candidates:
-        isrc = (row.get("isrc") or "").strip()
-        if not isrc:
+        isrc_db = (row.get("isrc") or "").strip()
+        if not isrc_db:
             continue
         try:
-            hit = sp.find_track_by_isrc(isrc)
+            hit = sp.find_track_by_isrc(isrc_db)
             if not hit:
                 miss += 1
                 continue
-            pg.patch("tracks", hit, f"isrc=eq.{isrc}")
+            # Patch the row using the ISRC as stored in the DB, even if it's non-canonical.
+            pg.patch("tracks", hit, f"isrc=eq.{isrc_db}")
             ok += 1
             if ok % 20 == 0:
                 print(f"Enriched {ok} tracks...")
         except Exception as e:
             fail += 1
-            print(f"FAIL {isrc}: {e}")
+            print(f"FAIL {isrc_db}: {e}")
 
     print(f"Done. ok={ok} miss={miss} fail={fail}")
 
