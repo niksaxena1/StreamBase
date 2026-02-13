@@ -16,6 +16,7 @@ import { memo, useId } from "react";
 import { formatInt, formatUsd } from "@/lib/format";
 import {
   computePaddedDomain,
+  computeWeekendDipMap,
   filterDailySeriesFromIsoDate,
   getSundayAccentColor,
   isHighlightDayDateUtc,
@@ -27,6 +28,7 @@ import { useThemeColors } from "@/components/charts/useThemeColors";
 import { useWeekHighlight } from "@/components/charts/WeekHighlightContext";
 import { useChartStartDate } from "@/components/charts/ChartStartDateContext";
 import { useChartAxisZoom } from "@/components/charts/ChartAxisZoomContext";
+import { useWeekendDip } from "@/components/charts/WeekendDipContext";
 import { DailySeriesTooltip } from "@/components/charts/DailySeriesTooltip";
 import { makeHighlightDayDotRenderers } from "@/components/charts/rechartsRenderers";
 
@@ -81,7 +83,11 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
   const { weekHighlightDayUtc } = useWeekHighlight();
   const { chartStartDateIso } = useChartStartDate();
   const { zoomDailyYAxis } = useChartAxisZoom();
-  
+  const { showWeekendDip } = useWeekendDip();
+
+  // Weekend dip applies to daily (non-cumulative) charts, except Tracks
+  const enableWeekendDip = showWeekendDip && !isCumulative && valueLabel !== "Tracks";
+
   // Use theme-aware colors from CSS variables
   const effectiveColor = color ?? themeColors.accentStroke;
   const effectiveMaColor = maColor ?? (themeColors.isDark ? "#ffffff" : "#000000");
@@ -98,6 +104,9 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
   const filteredData = filterDailySeriesFromIsoDate(data ?? [], chartStartDateIso);
 
   // Reverse data if it's in descending order (newest first) -> charts usually need ascending
+  // Compute weekend dip % when enabled (daily charts, not Tracks)
+  const weekendDipMap = enableWeekendDip ? computeWeekendDipMap(filteredData) : null;
+
   const chartData = [...filteredData].reverse().map((d) => ({
     ...d,
     _overrideItems: (annItemsByDate.get(d.date) ?? null)?.map((a) => ({
@@ -105,6 +114,7 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
       title: a.title,
       imageUrl: a.imageUrl ?? null,
     })) ?? null,
+    _weekendDipPct: weekendDipMap?.get(d.date) ?? null,
   }));
   const hasMA7 = showMA7 && chartData.some((d) => d.ma7 !== null && d.ma7 !== undefined);
   const chartDates = new Set(chartData.map((d) => d.date));
@@ -141,6 +151,7 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
     baseColor: effectiveColor,
     highlightColor: sundayColor,
     highlightWeekdayUtc: weekHighlightDayUtc,
+    showWeekendDipLabels: enableWeekendDip,
   });
 
   return (

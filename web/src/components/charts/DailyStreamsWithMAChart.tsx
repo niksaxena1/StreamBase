@@ -16,6 +16,7 @@ import { useId } from "react";
 import { formatInt, formatUsd } from "@/lib/format";
 import {
   computePaddedDomain,
+  computeWeekendDipMap,
   filterDailySeriesFromIsoDate,
   getSundayAccentColor,
   isHighlightDayDateUtc,
@@ -27,6 +28,7 @@ import { useThemeColors } from "@/components/charts/useThemeColors";
 import { useWeekHighlight } from "@/components/charts/WeekHighlightContext";
 import { useChartStartDate } from "@/components/charts/ChartStartDateContext";
 import { useChartAxisZoom } from "@/components/charts/ChartAxisZoomContext";
+import { useWeekendDip } from "@/components/charts/WeekendDipContext";
 import { DailySeriesTooltip } from "@/components/charts/DailySeriesTooltip";
 import { makeHighlightDayDotRenderers } from "@/components/charts/rechartsRenderers";
 
@@ -77,7 +79,11 @@ export function DailyStreamsWithMAChart({
   const { weekHighlightDayUtc } = useWeekHighlight();
   const { chartStartDateIso } = useChartStartDate();
   const { zoomDailyYAxis } = useChartAxisZoom();
-  
+  const { showWeekendDip } = useWeekendDip();
+
+  // Weekend dip: always a daily chart, skip for Tracks metric
+  const enableWeekendDip = showWeekendDip && valueLabel !== "Tracks";
+
   // Use theme-aware colors from CSS variables
   const effectiveDailyColor = dailyColor ?? themeColors.accentStroke;
   const effectiveMaColor = maColor ?? (themeColors.isDark ? "#ffffff" : "#000000");
@@ -94,6 +100,9 @@ export function DailyStreamsWithMAChart({
 
   const filteredData = filterDailySeriesFromIsoDate(data ?? [], chartStartDateIso);
 
+  // Compute weekend dip % when enabled
+  const weekendDipMap = enableWeekendDip ? computeWeekendDipMap(filteredData) : null;
+
   const chartData = [...filteredData].reverse().map((d) => ({
     ...d,
     _overrideItems: (annItemsByDate.get(d.date) ?? null)?.map((a) => ({
@@ -101,6 +110,7 @@ export function DailyStreamsWithMAChart({
       title: a.title,
       imageUrl: a.imageUrl ?? null,
     })) ?? null,
+    _weekendDipPct: weekendDipMap?.get(d.date) ?? null,
   }));
   const chartDates = new Set(chartData.map((d) => d.date));
   const annotationDates = [...annItemsByDate.keys()].filter((d) => chartDates.has(d));
@@ -131,6 +141,7 @@ export function DailyStreamsWithMAChart({
     baseColor: effectiveDailyColor,
     highlightColor: sundayColor,
     highlightWeekdayUtc: weekHighlightDayUtc,
+    showWeekendDipLabels: enableWeekendDip,
   });
 
   return (

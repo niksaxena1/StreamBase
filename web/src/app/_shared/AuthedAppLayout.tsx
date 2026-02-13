@@ -5,6 +5,7 @@ import { KeyboardShortcutsHelp, KeyboardShortcutsProvider } from "@/components/k
 import { ChartAxisZoomProvider } from "@/components/charts/ChartAxisZoomContext";
 import { ChartStartDateProvider } from "@/components/charts/ChartStartDateContext";
 import { WeekHighlightProvider } from "@/components/charts/WeekHighlightContext";
+import { WeekendDipProvider } from "@/components/charts/WeekendDipContext";
 import { CurrencyDisplayProvider } from "@/components/currency/CurrencyDisplayContext";
 import { MetricProvider } from "@/components/metrics/MetricContext";
 import { PayoutRateProvider } from "@/components/payout/PayoutRateContext";
@@ -36,12 +37,14 @@ export async function AuthedAppLayout({
           <CurrencyDisplayProvider>
             <ChartStartDateProvider>
               <ChartAxisZoomProvider>
-                <MetricProvider defaultMetric="streams">
-                  <RollbackProvider>
-                    <AppShell {...appShellProps}>{children}</AppShell>
-                    <KeyboardShortcutsHelp />
-                  </RollbackProvider>
-                </MetricProvider>
+                <WeekendDipProvider>
+                  <MetricProvider defaultMetric="streams">
+                    <RollbackProvider>
+                      <AppShell {...appShellProps}>{children}</AppShell>
+                      <KeyboardShortcutsHelp />
+                    </RollbackProvider>
+                  </MetricProvider>
+                </WeekendDipProvider>
               </ChartAxisZoomProvider>
             </ChartStartDateProvider>
           </CurrencyDisplayProvider>

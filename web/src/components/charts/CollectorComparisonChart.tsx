@@ -15,6 +15,8 @@ import { useId, useMemo } from "react";
 import { formatInt, formatUsd2 } from "@/lib/format";
 import {
   computePaddedDomain,
+  computeWeekendDipMap,
+  extractWeekendDipFromRechartsPayload,
   filterBucketedSeriesFromIsoDate,
   formatKmbTick,
   formatUsdCompact,
@@ -27,6 +29,7 @@ import { useThemeColors } from "@/components/charts/useThemeColors";
 import { useWeekHighlight } from "@/components/charts/WeekHighlightContext";
 import { useChartStartDate } from "@/components/charts/ChartStartDateContext";
 import { useChartAxisZoom } from "@/components/charts/ChartAxisZoomContext";
+import { useWeekendDip } from "@/components/charts/WeekendDipContext";
 import { makeHighlightDayDotRenderers } from "@/components/charts/rechartsRenderers";
 
 export const COLLECTOR_COLORS: Record<string, string> = {
@@ -107,6 +110,7 @@ function CustomTooltip({
   mode,
   metric,
   granularity = "daily",
+  showWeekendDip = false,
 }: {
   active?: boolean;
   label?: string;
@@ -114,6 +118,7 @@ function CustomTooltip({
   mode: ComparisonMode;
   metric: ComparisonMetric;
   granularity?: Granularity;
+  showWeekendDip?: boolean;
 }) {
   if (!active || !payload || payload.length === 0) return null;
 
@@ -122,6 +127,8 @@ function CustomTooltip({
     if (metric === "revenue") return formatUsd2(n);
     return formatInt(n);
   };
+
+  const weekendDipPct = showWeekendDip ? extractWeekendDipFromRechartsPayload(payload) : null;
 
   return (
     <ViewportAwareTooltip>
@@ -156,6 +163,20 @@ function CustomTooltip({
             </div>
           );
         })}
+        {weekendDipPct != null && (
+          <div
+            className="text-xs mt-1.5 pt-1.5 border-t"
+            style={{ borderColor: "var(--sb-border)" }}
+          >
+            <span style={{ color: "var(--sb-muted)" }}>
+              vs weekday avg:{" "}
+              <span className="font-semibold" style={{ color: "var(--sb-muted)" }}>
+                {weekendDipPct > 0 ? "+" : ""}
+                {weekendDipPct.toFixed(1)}%
+              </span>
+            </span>
+          </div>
+        )}
       </div>
     </ViewportAwareTooltip>
   );
@@ -184,6 +205,10 @@ export function CollectorComparisonChart({
   const { weekHighlightDayUtc } = useWeekHighlight();
   const { chartStartDateIso } = useChartStartDate();
   const { zoomDailyYAxis, zoomDailyYAxisCollectorComparison } = useChartAxisZoom();
+  const { showWeekendDip } = useWeekendDip();
+
+  // Weekend dip: only for daily granularity, non-percentage, non-tracks
+  const enableWeekendDip = showWeekendDip && granularity === "daily" && mode !== "percentage" && metric !== "tracks";
 
   // Process data into chart format
   const chartData = useMemo(() => {
@@ -274,6 +299,29 @@ export function CollectorComparisonChart({
     return filterBucketedSeriesFromIsoDate(result, granularity, chartStartDateIso);
   }, [data, selectedCollectors, mode, metric, granularity, streamPayoutPerStreamUsd, chartStartDateIso]);
 
+  // Compute weekend dip % and enrich chart data
+  const enrichedChartData = useMemo(() => {
+    if (!enableWeekendDip || !chartData.length) return chartData;
+
+    // For combined mode, dip is based on the combined value.
+    // For individual mode, dip is based on the total across all selected collectors.
+    const dipSource = chartData.map((d) => {
+      let val: number;
+      if (mode === "combined") {
+        val = Number(d["combined"] ?? 0);
+      } else {
+        val = selectedCollectors.reduce((sum, c) => sum + Number(d[c] ?? 0), 0);
+      }
+      return { date: d.date, value: val };
+    });
+    const dipMap = computeWeekendDipMap(dipSource);
+
+    return chartData.map((d) => ({
+      ...d,
+      _weekendDipPct: dipMap.get(d.date) ?? null,
+    }));
+  }, [chartData, enableWeekendDip, mode, selectedCollectors]);
+
   const formatYTick = (n: number) => {
     if (mode === "percentage") return `${n.toFixed(0)}%`;
     if (metric === "revenue") return formatUsdCompact(n, formatUsd2);
@@ -340,10 +388,11 @@ export function CollectorComparisonChart({
       highlightColor: highlight,
       highlightWeekdayUtc: weekHighlightDayUtc,
       enabled: granularity === "daily",
+      showWeekendDipLabels: enableWeekendDip,
     });
   })();
 
-  if (!chartData.length) {
+  if (!enrichedChartData.length) {
     return (
       <div
         className="flex items-center justify-center text-sm"
@@ -357,7 +406,7 @@ export function CollectorComparisonChart({
   return (
     <div className="w-full">
       <ResponsiveContainer width="100%" height={heightPx} minWidth={0}>
-        <ComposedChart data={chartData} margin={{ top: 6, right: 6, left: 0, bottom: 0 }}>
+        <ComposedChart data={enrichedChartData} margin={{ top: 6, right: 6, left: 0, bottom: 0 }}>
           <defs>
             {areaKey ? (
               <linearGradient id={`${gid}-area`} x1="0" y1="0" x2="0" y2="1">
@@ -430,6 +479,7 @@ export function CollectorComparisonChart({
                 mode={mode}
                 metric={metric}
                 granularity={granularity}
+                showWeekendDip={enableWeekendDip}
               />
             )}
             cursor={{

@@ -13,6 +13,7 @@ import { PayoutRateSetting } from "./PayoutRateSetting";
 import { WeekHighlightDaySetting } from "./WeekHighlightDaySetting";
 import { ChartStartDateSetting } from "./ChartStartDateSetting";
 import { ChartAxisZoomSetting } from "./ChartAxisZoomSetting";
+import { WeekendDipSetting } from "./WeekendDipSetting";
 import { CurrencyDisplaySetting } from "./CurrencyDisplaySetting";
 import { StaleTrackThresholdSetting } from "./StaleTrackThresholdSetting";
 import { RapidApiFallbackSetting } from "./RapidApiFallbackSetting";
@@ -576,6 +577,7 @@ export default async function SettingsPage() {
         <WeekHighlightDaySetting />
         <ChartStartDateSetting />
         <ChartAxisZoomSetting />
+        <WeekendDipSetting />
       </div>
 
       <div className="space-y-2">

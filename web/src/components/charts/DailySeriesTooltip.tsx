@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import Image from "next/image";
 
-import { extractOverrideItemsFromRechartsPayload, formatTooltipDateDaily } from "@/components/charts/chartUtils";
+import { extractOverrideItemsFromRechartsPayload, extractWeekendDipFromRechartsPayload, formatTooltipDateDaily } from "@/components/charts/chartUtils";
 import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
 import type { TooltipCopyValues } from "@/components/charts/useChartCopyToClipboard";
 
@@ -58,6 +58,7 @@ export function DailySeriesTooltip({
   const ma7Num = maEntry ? toNum(maEntry.value) : null;
   const ma7ValueFormatted = ma7Num == null ? null : fmtValue(Math.round(ma7Num));
   const overrideItems = extractOverrideItemsFromRechartsPayload(safePayload);
+  const weekendDipPct = extractWeekendDipFromRechartsPayload(safePayload);
 
   useEffect(() => {
     if (!active) return;
@@ -108,6 +109,21 @@ export function DailySeriesTooltip({
             </div>
           );
         })}
+
+        {weekendDipPct != null && (
+          <div
+            className="text-xs mt-1.5 pt-1.5 border-t"
+            style={{ borderColor: "var(--sb-border)" }}
+          >
+            <span style={{ color: "var(--sb-muted)" }}>
+              vs weekday avg:{" "}
+              <span className="font-semibold" style={{ color: "var(--sb-muted)" }}>
+                {weekendDipPct > 0 ? "+" : ""}
+                {weekendDipPct.toFixed(1)}%
+              </span>
+            </span>
+          </div>
+        )}
 
         {overrideItems?.length ? (
           <div className="mt-2 border-t pt-2" style={{ borderColor: "var(--sb-border)" }}>

@@ -285,6 +285,83 @@ export function extractOverrideItemsFromRechartsPayload(payload: unknown): Manua
 }
 
 // ============================================================================
+// Weekend Dip % (vs preceding Mon–Fri average)
+// ============================================================================
+
+/**
+ * For every Saturday/Sunday data point, compute the percentage change
+ * relative to the average of the preceding Mon–Fri values in the same
+ * ISO week.
+ *
+ *   dipPct = ((weekendValue – weekdayAvg) / weekdayAvg) × 100
+ *
+ * Returns a Map keyed by ISO date string → dipPct.
+ * Points with fewer than 3 available weekday values are omitted to
+ * avoid misleading averages from partial weeks.
+ */
+export function computeWeekendDipMap(
+  data: { date: string; value?: number | null | undefined; daily?: number | null | undefined }[],
+): Map<string, number> {
+  // Build fast lookup: date → value (supports both `value` and `daily` fields)
+  const valMap = new Map<string, number>();
+  for (const d of data) {
+    const v = Number(d.value ?? d.daily);
+    if (Number.isFinite(v)) valMap.set(d.date, v);
+  }
+
+  const dipMap = new Map<string, number>();
+
+  for (const d of data) {
+    const dt = isIsoDateString(d.date) ? isoDateToNoonUtc(d.date) : new Date(d.date);
+    const dow = dt.getUTCDay(); // 0 = Sun, 6 = Sat
+    if (dow !== 0 && dow !== 6) continue;
+
+    const val = valMap.get(d.date);
+    if (val == null) continue;
+
+    // Find the Monday of the same ISO week.
+    // Sat (6): Monday is 5 days back.  Sun (0): Monday is 6 days back.
+    const daysToMon = dow === 6 ? 5 : 6;
+    const mon = new Date(dt);
+    mon.setUTCDate(mon.getUTCDate() - daysToMon);
+
+    // Collect Mon–Fri values
+    const weekdayVals: number[] = [];
+    for (let i = 0; i < 5; i++) {
+      const wd = new Date(mon);
+      wd.setUTCDate(wd.getUTCDate() + i);
+      const key = wd.toISOString().slice(0, 10);
+      const wv = valMap.get(key);
+      if (wv != null && Number.isFinite(wv)) weekdayVals.push(wv);
+    }
+
+    // Need at least 3 weekday values for a meaningful average
+    if (weekdayVals.length < 3) continue;
+
+    const avg = weekdayVals.reduce((a, b) => a + b, 0) / weekdayVals.length;
+    if (avg <= 0) continue;
+
+    dipMap.set(d.date, ((val - avg) / avg) * 100);
+  }
+
+  return dipMap;
+}
+
+/**
+ * Extract `_weekendDipPct` from a Recharts tooltip payload entry.
+ * Returns the dip percentage or null if the hovered point isn't a weekend.
+ */
+export function extractWeekendDipFromRechartsPayload(payload: unknown): number | null {
+  if (!Array.isArray(payload) || payload.length === 0) return null;
+  const first = payload[0];
+  if (!first || typeof first !== "object") return null;
+  const inner = (first as Record<string, unknown>).payload;
+  if (!inner || typeof inner !== "object") return null;
+  const dip = (inner as Record<string, unknown>)._weekendDipPct;
+  return typeof dip === "number" && Number.isFinite(dip) ? dip : null;
+}
+
+// ============================================================================
 // Chart Downsampling (for long date ranges)
 // ============================================================================
 
