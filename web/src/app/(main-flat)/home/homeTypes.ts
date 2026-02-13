@@ -15,3 +15,29 @@ export type ManualOverrideAnnotation = {
 };
 
 export type ChartPoint = { date: string; value: number | null; ma7?: number | null };
+
+export type ArtistWeekendDipRow = {
+  artist_id: string;
+  artist_name: string | null;
+  image_url: string | null;
+  track_count: number;
+  weekday_avg: number;
+  sat_streams: number | null;
+  sun_streams: number | null;
+  sat_dip_pct: number | null;
+  sun_dip_pct: number | null;
+  avg_dip_pct: number | null;
+};
+
+export type TrackWeekendDipRow = {
+  isrc: string;
+  name: string | null;
+  album_image_url: string | null;
+  artist_name: string | null;
+  weekday_avg: number;
+  sat_streams: number | null;
+  sun_streams: number | null;
+  sat_dip_pct: number | null;
+  sun_dip_pct: number | null;
+  avg_dip_pct: number | null;
+};

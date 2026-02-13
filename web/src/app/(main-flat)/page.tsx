@@ -6,6 +6,7 @@ import { cachedQuery } from "@/lib/supabase/cache";
 import { SOT_DATA_LAG_DAYS, addDaysISO, dataDateFromRunDate } from "@/lib/sotDates";
 import { getRollbackDate, rollbackDataDateToRunDate } from "@/lib/rollback";
 import { HomeDashboardClient } from "./HomeDashboardClient";
+import type { ArtistWeekendDipRow, TrackWeekendDipRow } from "./home/homeTypes";
 
 type PlaylistDailyStatsRow = {
   date: string;
@@ -378,6 +379,30 @@ export default async function Home({
     return out;
   })();
 
+  // Fetch artist weekend dips for the latest week
+  const { data: artistWeekendDips } = await cachedQuery(
+    async () => {
+      return await svc.rpc("home_artist_weekend_dips", {
+        p_min_weekday_avg: 0,
+        p_anchor_data_date: latestDataDate ?? null,
+      });
+    },
+    `home-artist-weekend-dips-${playlistKey}-${latestDataDate ?? "none"}-${session.user.id}`,
+    3600, // 1 hour
+  );
+
+  // Fetch track weekend dips for the latest week
+  const { data: trackWeekendDips } = await cachedQuery(
+    async () => {
+      return await svc.rpc("home_track_weekend_dips", {
+        p_min_weekday_avg: 0,
+        p_anchor_data_date: latestDataDate ?? null,
+      });
+    },
+    `home-track-weekend-dips-${playlistKey}-${latestDataDate ?? "none"}-${session.user.id}`,
+    3600, // 1 hour
+  );
+
   return (
     <HomeDashboardClient
       sp={sp}
@@ -394,6 +419,8 @@ export default async function Home({
       latestRunDate={latestRunDate}
       latestDataDate={latestDataDate}
       overrideAnnotations={overrideAnnotations}
+      artistWeekendDips={(artistWeekendDips as ArtistWeekendDipRow[] | null) ?? []}
+      trackWeekendDips={(trackWeekendDips as TrackWeekendDipRow[] | null) ?? []}
     />
   );
 }

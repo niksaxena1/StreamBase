@@ -16,13 +16,14 @@ import { type TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChar
 import { computeRollingAvg7 } from "@/components/charts/chartUtils";
 import { useCurrencyDisplay } from "@/components/currency/CurrencyDisplayContext";
 
-import type { PlaylistDailyStatsRow, ManualOverrideAnnotation, ChartPoint } from "./home/homeTypes";
+import type { PlaylistDailyStatsRow, ManualOverrideAnnotation, ChartPoint, ArtistWeekendDipRow, TrackWeekendDipRow } from "./home/homeTypes";
 import { rollSum } from "./home/homeUtils";
 import { HomeScatterSection } from "./home/HomeScatterSection";
 import { HomeMilestonesSection } from "./home/HomeMilestonesSection";
 import { HomeDailyDistributionSection } from "./home/HomeDailyDistributionSection";
 import { HomeHistorySection } from "./home/HomeHistorySection";
 import { HomeFilterBuilderSection } from "./home/HomeFilterBuilderSection";
+import { HomeWeekendDipsSection } from "./home/HomeWeekendDipsSection";
 
 // ============================================================================
 // Helpers (header-only)
@@ -75,6 +76,8 @@ function HomeDashboardInner(props: {
   latestRunDate: string | null;
   latestDataDate: string | null;
   overrideAnnotations?: ManualOverrideAnnotation[];
+  artistWeekendDips: ArtistWeekendDipRow[];
+  trackWeekendDips: TrackWeekendDipRow[];
 }) {
   const { metric } = useMetric();
   // Subscribe so money values re-render when currency setting changes.
@@ -378,6 +381,11 @@ function HomeDashboardInner(props: {
 
       <HomeHistorySection history={props.history} />
 
+      <HomeWeekendDipsSection
+        artistWeekendDips={props.artistWeekendDips}
+        trackWeekendDips={props.trackWeekendDips}
+      />
+
       {homeFiltersConfigured && homeFiltersEnabled ? (
         <HomeFilterBuilderSection
           trackScatterPoints={props.trackScatterPoints}
@@ -403,6 +411,8 @@ export function HomeDashboardClient(props: {
   latestRunDate: string | null;
   latestDataDate: string | null;
   overrideAnnotations?: ManualOverrideAnnotation[];
+  artistWeekendDips: ArtistWeekendDipRow[];
+  trackWeekendDips: TrackWeekendDipRow[];
 }) {
   return <HomeDashboardInner {...props} />;
 }
