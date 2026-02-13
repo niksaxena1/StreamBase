@@ -25,7 +25,7 @@ import {
 } from "@/components/charts/chartUtils";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
-import { useThemeColors } from "@/components/charts/useThemeColors";
+import { useThemeColors, getChartColor } from "@/components/charts/useThemeColors";
 import { useWeekHighlight } from "@/components/charts/WeekHighlightContext";
 import { useChartStartDate } from "@/components/charts/ChartStartDateContext";
 import { useChartAxisZoom } from "@/components/charts/ChartAxisZoomContext";
@@ -352,7 +352,7 @@ export function CollectorComparisonChart({
 
   // Determine which lines to render
   const lineKeys = mode === "combined" ? ["combined"] : selectedCollectors;
-  const combinedColor = themeColors.accentStroke;
+  const combinedColor = getChartColor(metric, themeColors);
 
   const getLineColor = (key: string) => {
     if (key === "combined") return combinedColor;

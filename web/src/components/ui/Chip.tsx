@@ -7,9 +7,7 @@ function cx(...parts: Array<string | false | null | undefined>) {
 export function Chip(
   props: ButtonHTMLAttributes<HTMLButtonElement> & { selected?: boolean; segmented?: boolean },
 ) {
-  const selected = Boolean(props.selected);
-  const segmented = Boolean(props.segmented);
-  const { className, ...rest } = props;
+  const { className, selected, segmented, ...rest } = props;
   return (
     <button
       type="button"

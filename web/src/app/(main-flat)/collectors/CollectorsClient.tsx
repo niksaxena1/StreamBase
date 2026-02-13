@@ -701,28 +701,29 @@ export function CollectorsClient(props: {
 
   const payoutPerStreamUsd = streamPayoutPerStreamUsd;
 
+  // Comparison table "Value" column is stream-based when global metric is "tracks"
+  // (since we already have a dedicated Tracks column).
+  const comparisonTableMetric: "streams" | "revenue" = metric === "revenue" ? "revenue" : "streams";
+  const comparisonTableMetricLabel = comparisonTableMetric === "revenue" ? "Est. revenue" : "Streams";
+  const comparisonTableHeaderLabel = comparisonTableMetric === "revenue" ? "REVENUE" : "STREAMS";
+  const comparisonTableValueCellColor = comparisonTableMetric === "revenue" ? "#10b981" : "var(--sb-accent)";
+
   const computeComparisonRow = useCallback(
     (r: CollectorSummaryRow) => {
       const value =
-        metric === "revenue"
+        comparisonTableMetric === "revenue"
           ? Number(r.daily_streams_net ?? 0) * payoutPerStreamUsd
-          : metric === "streams"
-            ? Number(r.daily_streams_net ?? 0)
-            : Number(r.track_count ?? 0);
+          : Number(r.daily_streams_net ?? 0);
 
       const deltaYday =
-        metric === "revenue"
+        comparisonTableMetric === "revenue"
           ? (r.daily_streams_delta_yday == null ? null : Number(r.daily_streams_delta_yday) * payoutPerStreamUsd)
-          : metric === "streams"
-            ? r.daily_streams_delta_yday
-            : r.track_count_delta_yday;
+          : r.daily_streams_delta_yday;
 
       const deltaMa7 =
-        metric === "revenue"
+        comparisonTableMetric === "revenue"
           ? (r.daily_streams_delta_ma7 == null ? null : Number(r.daily_streams_delta_ma7) * payoutPerStreamUsd)
-          : metric === "streams"
-            ? r.daily_streams_delta_ma7
-            : r.track_count_delta_ma7;
+          : r.daily_streams_delta_ma7;
 
       // Calculate actual values from deltas
       const ydayValue = deltaYday != null ? value - deltaYday : null;
@@ -730,16 +731,14 @@ export function CollectorsClient(props: {
 
       const sparkFromDailySeries = sparkByCollector.get(r.collector);
       const spark =
-        metric === "revenue"
+        comparisonTableMetric === "revenue"
           ? (sparkFromDailySeries?.revenue ?? null)
-          : metric === "streams"
-            ? (sparkFromDailySeries?.streams ?? null)
-            : (sparkFromDailySeries?.tracks ?? null);
+          : (sparkFromDailySeries?.streams ?? null);
 
-      const fmtValue = metric === "revenue" ? formatUsd2(value) : formatInt(value);
+      const fmtValue = comparisonTableMetric === "revenue" ? formatUsd2(value) : formatInt(value);
 
       const fmtYdayOrMa7 =
-        metric === "revenue"
+        comparisonTableMetric === "revenue"
           ? (n: number | null | undefined) => (n == null ? "—" : formatUsd2(n))
           : (n: number | null | undefined) => (n == null ? "—" : formatInt(n));
 
@@ -758,7 +757,7 @@ export function CollectorsClient(props: {
         isSelectedCollector,
       } as const;
     },
-    [metric, payoutPerStreamUsd, sparkByCollector, props.rangeDays, props.selectedCollector],
+    [comparisonTableMetric, payoutPerStreamUsd, sparkByCollector, props.rangeDays, props.selectedCollector],
   );
 
   const [trackQuery, setTrackQuery] = useState("");
@@ -1196,7 +1195,7 @@ export function CollectorsClient(props: {
                 Comparison Table
               </div>
               <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
-                Showing {metricLabel.toLowerCase()} on data date{" "}
+                Showing {comparisonTableMetricLabel.toLowerCase()} on data date{" "}
                 {props.latestDate ? formatDateISO(props.latestDate) : "—"}
               </div>
             </div>
@@ -1215,7 +1214,7 @@ export function CollectorsClient(props: {
                 { label: "Pl", className: "w-[70px] text-right" },
                 { label: "Artists", className: "w-[84px] text-right" },
                 { label: "Tracks", className: "w-[84px] text-right" },
-                { label: "Value", className: "w-[110px] text-right font-medium" },
+                { label: comparisonTableHeaderLabel, className: "w-[110px] text-right font-medium" },
                 {
                   label: (
                     <button
@@ -1312,7 +1311,7 @@ export function CollectorsClient(props: {
                     <TableCell
                       numeric
                       className="font-medium"
-                      style={metric === "tracks" ? undefined : { color: valueCellColor }}
+                      style={{ color: comparisonTableValueCellColor }}
                     >
                       {row.fmtValue}
                     </TableCell>
@@ -1324,7 +1323,7 @@ export function CollectorsClient(props: {
                         <Sparkline
                           data={row.spark ?? undefined}
                           trend="neutral"
-                          upColor={metric === "revenue" ? valueCellColor : undefined}
+                          upColor={comparisonTableMetric === "revenue" ? comparisonTableValueCellColor : undefined}
                         />
                       </div>
                     </TableCell>
