@@ -687,7 +687,7 @@ def main():
         stale_tracks: List[dict] = []
         if candidate_stale_isrcs and stale_track_min_avg_daily > 0:
             # Look back 8 days to compute 7 daily deltas.
-            lookback_date = (run_date - datetime.timedelta(days=8)).isoformat()
+            lookback_date = (run_date - timedelta(days=8)).isoformat()
             avg_daily_map: dict = {}  # isrc -> avg daily streams
             try:
                 # Fetch historical streams for candidate ISRCs in batches.
