@@ -379,12 +379,12 @@ function HomeDashboardInner(props: {
 
       <HomeDailyDistributionSection trackScatterPoints={props.trackScatterPoints} />
 
-      <HomeHistorySection history={props.history} />
-
       <HomeWeekendDipsSection
         artistWeekendDips={props.artistWeekendDips}
         trackWeekendDips={props.trackWeekendDips}
       />
+
+      <HomeHistorySection history={props.history} />
 
       {homeFiltersConfigured && homeFiltersEnabled ? (
         <HomeFilterBuilderSection

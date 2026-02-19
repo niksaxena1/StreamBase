@@ -124,6 +124,12 @@ export function HomeWeekendDipsSection(props: {
         : "text-black/70 hover:bg-white/70 dark:text-white/70 dark:hover:bg-white/20",
     ].join(" ");
 
+  const sectionTitle = viewMode === "tracks" ? "TRACKS WEEKEND DIP" : "ARTISTS WEEKEND DIP";
+  const sectionSubtitle =
+    viewMode === "tracks"
+      ? "Latest week: tracks ranked by Sat & Sun vs Mon–Fri average"
+      : "Latest week: artists ranked by Sat & Sun vs Mon–Fri average";
+
   return (
     <details
       open={open}
@@ -142,11 +148,11 @@ export function HomeWeekendDipsSection(props: {
             </span>
             <div className="min-w-0">
               <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
-                ARTIST WEEKEND DIP
+                {sectionTitle}
               </div>
               {open ? (
                 <div className="mt-0.5 text-[10px] opacity-40">
-                  Latest week: artists ranked by Sat &amp; Sun vs Mon–Fri average
+                  {sectionSubtitle}
                 </div>
               ) : null}
             </div>
@@ -234,7 +240,7 @@ export function HomeWeekendDipsSection(props: {
           maxBodyHeightClassName="max-h-[600px]"
         >
           {filtered.length === 0 ? (
-            <EmptyState colSpan={6} message="No artists found" />
+            <EmptyState colSpan={6} message={viewMode === "tracks" ? "No tracks found" : "No artists found"} />
           ) : (
             viewMode === "tracks"
               ? (filtered as TrackWeekendDipRow[]).map((t) => (

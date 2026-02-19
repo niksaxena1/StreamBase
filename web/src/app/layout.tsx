@@ -42,6 +42,11 @@ export default function RootLayout({
   return (
     <html lang="en" data-theme="dark" suppressHydrationWarning>
       <head>
+        {/* Favicon: default for browsers that don't support media on link */}
+        <link rel="icon" href="/favicon-dark.ico" type="image/x-icon" />
+        {/* Favicon per color scheme (browser/OS light or dark mode) */}
+        <link rel="icon" href="/favicon-light.ico" type="image/x-icon" media="(prefers-color-scheme: light)" />
+        <link rel="icon" href="/favicon-dark.ico" type="image/x-icon" media="(prefers-color-scheme: dark)" />
         {/* Theme initialization script - runs synchronously before hydration to prevent flash */}
         <script
           dangerouslySetInnerHTML={{
