@@ -3,6 +3,7 @@ import csv
 import hashlib
 import json
 import os
+import re
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -94,7 +95,10 @@ def iter_csv_rows(path: Path) -> Iterable[dict]:
 
 
 def norm_isrc(s: str) -> str:
-    return (s or "").strip().upper()
+    raw = (s or "").strip().upper()
+    if not raw:
+        return ""
+    return re.sub(r"[^A-Z0-9]", "", raw)
 
 
 class Postgrest:
@@ -750,7 +754,7 @@ def main():
                         "run_id": run_id,
                         "run_date": run_date.isoformat(),
                         "playlist_key": "all_catalog",
-                        "severity": "critical",
+                        "severity": "critical" if len(stale_tracks) >= 25 else "warn",
                         "code": "individual_tracks_stale",
                         "message": (
                             f"{len(stale_tracks)} track(s) with >={stale_track_threshold:,} total streams "
@@ -966,6 +970,18 @@ def main():
             # Critical health check: cumulative total streams should not decrease day-over-day.
             # If it does, something is wrong with today's export (missing/blank values, parsing, or source bug).
             if prev_total is not None and total < prev_total:
+                decreased_tracks = []
+                for isrc in todays_isrcs:
+                    today_val = int(catalog_streams_today.get(isrc, 0))
+                    prev_val = int(prev_streams.get(isrc, 0))
+                    if today_val < prev_val:
+                        decreased_tracks.append({
+                            "isrc": isrc,
+                            "prev_streams": prev_val,
+                            "today_streams": today_val,
+                            "delta": today_val - prev_val,
+                        })
+                decreased_tracks.sort(key=lambda t: t["delta"])
                 warn_rows.append(
                     {
                         "run_id": run_id,
@@ -979,6 +995,8 @@ def main():
                             "today_total_streams_cumulative": total,
                             "delta": int(total - prev_total),
                             "missing_streams_track_count": missing,
+                            "decreased_tracks": decreased_tracks[:200],
+                            "decreased_tracks_total": len(decreased_tracks),
                             "note": "Totals should be monotonic; investigate missing/invalid stream totals in source export.",
                         },
                     }

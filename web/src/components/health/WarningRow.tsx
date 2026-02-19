@@ -243,6 +243,16 @@ type WarningRowProps = {
     album_image_url?: string | null;
     distro_playlist_keys: string[];
   }> | null;
+  totalStreamsDecreasedTracks?: Array<{
+    isrc: string;
+    name: string | null;
+    artist_names?: string[] | null;
+    artist_ids?: string[] | null;
+    album_image_url?: string | null;
+    prev_streams?: number | null;
+    today_streams?: number | null;
+    delta?: number | null;
+  }> | null;
   /** Full playlist key→meta map so drift sections can resolve display names + thumbnails. */
   allPlaylistMeta?: Record<string, { name: string; imageUrl: string | null }>;
   /** Data date (YYYY-MM-DD) for the current warning set — used by quick-override buttons. */
@@ -254,6 +264,7 @@ function formatCodeLabel(code: string) {
   if (!raw) return "—";
   if (raw === "entity_distro_drift") return "Entity Distro Mismatch";
   if (raw === "individual_tracks_stale") return "Stale Tracks";
+  if (raw === "total_streams_decreased") return "Total Streams Decreased";
   if (raw === "excluded_track_streams_zeroed") return "Excluded Track Zeroed";
   if (raw === "distro_overlap") return "Distro Overlap";
   return raw
@@ -318,6 +329,7 @@ export function WarningRow({
   individualTracksStaleTracks,
   excludedTracksZeroedTracks,
   distroOverlapTracks,
+  totalStreamsDecreasedTracks,
   allPlaylistMeta,
   dataDate,
 }: WarningRowProps) {
@@ -352,6 +364,9 @@ export function WarningRow({
   const hasDistroOverlap = distroOverlapTracks !== undefined &&
     ((Array.isArray(distroOverlapTracks) && distroOverlapTracks.length > 0) ||
       distroOverlapTracks === null);
+  const hasTotalStreamsDecreased = totalStreamsDecreasedTracks !== undefined &&
+    ((Array.isArray(totalStreamsDecreasedTracks) && totalStreamsDecreasedTracks.length > 0) ||
+      totalStreamsDecreasedTracks === null);
   const canExpand = (warning.code === "non_catalog_tracks_present" && hasTracks) ||
                    (warning.code === "track_count_swing" && hasSwingTracks) ||
                    (warning.code === "tracks_missing_enrichment" && hasMissingEnrichmentTracks) ||
@@ -361,7 +376,8 @@ export function WarningRow({
                    (warning.code === "entity_distro_drift" && hasEntityDistroDrift) ||
                    (warning.code === "individual_tracks_stale" && hasIndividualTracksStaleTracks) ||
                    (warning.code === "excluded_track_streams_zeroed" && hasExcludedTracksZeroedTracks) ||
-                   (warning.code === "distro_overlap" && hasDistroOverlap);
+                   (warning.code === "distro_overlap" && hasDistroOverlap) ||
+                   (warning.code === "total_streams_decreased" && hasTotalStreamsDecreased);
 
   const missingThumbIsrcs = useMemo(() => {
     if (!expanded) return [];
@@ -874,6 +890,93 @@ export function WarningRow({
                     <p>
                       {warning.details_json?.note ??
                         "These tracks appeared in a catalog export but had missing/invalid stream totals and were not written to track_daily_streams."}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {warning.code === "total_streams_decreased" && hasTotalStreamsDecreased && (
+              <div className="space-y-2">
+                {Array.isArray(totalStreamsDecreasedTracks) &&
+                totalStreamsDecreasedTracks.length > 0 ? (
+                  <>
+                    <div className="text-xs font-medium opacity-70 mb-2">
+                      Tracks with decreased streams ({totalStreamsDecreasedTracks.length}):
+                    </div>
+                    <div className="space-y-2">
+                      {totalStreamsDecreasedTracks.map((track) => {
+                        const prev =
+                          typeof track.prev_streams === "number" && Number.isFinite(track.prev_streams)
+                            ? track.prev_streams : null;
+                        const today =
+                          typeof track.today_streams === "number" && Number.isFinite(track.today_streams)
+                            ? track.today_streams : null;
+                        const delta =
+                          typeof track.delta === "number" && Number.isFinite(track.delta)
+                            ? track.delta : null;
+
+                        return (
+                          <div key={track.isrc} className="flex items-center gap-3 text-xs">
+                            {track.album_image_url ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={track.album_image_url}
+                                alt="Album cover"
+                                className="h-10 w-10 rounded object-cover sb-ring flex-shrink-0"
+                              />
+                            ) : (
+                              <div className="h-10 w-10 rounded sb-ring bg-white/60 flex-shrink-0" />
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <Link
+                                  href={`/tracks/${track.isrc}`}
+                                  className="font-medium hover:underline"
+                                  style={{ color: "var(--sb-text)" }}
+                                >
+                                  {track.name || track.isrc}
+                                </Link>
+                                {track.artist_names && track.artist_names.length > 0 && (
+                                  <span className="opacity-60">
+                                    by{" "}
+                                    <ArtistLinks
+                                      artistNames={track.artist_names}
+                                      artistIds={track.artist_ids ?? undefined}
+                                    />
+                                  </span>
+                                )}
+                              </div>
+                              <div className="mt-0.5 flex items-center gap-2 flex-wrap">
+                                <Link
+                                  href={`/tracks/${track.isrc}`}
+                                  className="font-mono text-[10px] sb-positive underline hover:opacity-80"
+                                >
+                                  {track.isrc}
+                                </Link>
+                                {prev !== null && today !== null && (
+                                  <span className="font-mono text-[10px] opacity-70">
+                                    {prev.toLocaleString()} → {today.toLocaleString()}
+                                  </span>
+                                )}
+                                {delta !== null && (
+                                  <span className="font-mono text-[10px] text-red-500 dark:text-red-400 font-medium">
+                                    {delta.toLocaleString()}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-xs opacity-60">
+                    <p className="mb-2">Track details not available in current warning record.</p>
+                    <p>
+                      {warning.details_json?.note ??
+                        "Total streams decreased day-over-day. This may indicate Spotify removed artificial streams or a data source issue."}
                     </p>
                   </div>
                 )}

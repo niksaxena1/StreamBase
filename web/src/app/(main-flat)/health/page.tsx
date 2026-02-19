@@ -777,6 +777,106 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
     }
   }
 
+  // Fetch tracks for warning `total_streams_decreased`
+  // This warning contains { isrc, prev_streams, today_streams, delta } under `decreased_tracks` in details_json.
+  const totalStreamsDecreasedByKey = new Map<
+    string,
+    Array<{
+      isrc: string;
+      name: string | null;
+      artist_names?: string[] | null;
+      artist_ids?: string[] | null;
+      album_image_url?: string | null;
+      prev_streams?: number | null;
+      today_streams?: number | null;
+      delta?: number | null;
+    }> | null
+  >();
+
+  const totalStreamsDecreasedWarnings = warnings.filter(
+    (w) => w.code === "total_streams_decreased" && selectedRunDate
+  );
+
+  if (totalStreamsDecreasedWarnings.length > 0) {
+    for (const w of totalStreamsDecreasedWarnings) {
+      const key = String(w.playlist_key ?? "global");
+      const raw = (w as any)?.details_json?.decreased_tracks;
+      const rows = Array.isArray(raw) ? (raw as unknown[]) : [];
+
+      const sample = rows
+        .map((r) => {
+          const row = (r ?? {}) as Record<string, unknown>;
+          const isrc = String(row.isrc ?? "").trim().toUpperCase().replace(/\s+/g, "");
+          const prev = Number(row.prev_streams ?? NaN);
+          const today = Number(row.today_streams ?? NaN);
+          const delta = Number(row.delta ?? NaN);
+          return {
+            isrc,
+            prev_streams: Number.isFinite(prev) ? prev : null,
+            today_streams: Number.isFinite(today) ? today : null,
+            delta: Number.isFinite(delta) ? delta : null,
+          };
+        })
+        .filter((r) => Boolean(r.isrc))
+        .slice(0, 200);
+
+      const isrcs = sample.map((s) => s.isrc);
+      if (isrcs.length === 0) {
+        totalStreamsDecreasedByKey.set(key, null);
+        continue;
+      }
+
+      const { data: trackRows, error } = await svc
+        .from("tracks")
+        .select("isrc,name,spotify_artist_names,spotify_artist_ids,spotify_album_image_url")
+        .in("isrc", isrcs);
+
+      if (error) {
+        console.error("Failed to fetch total_streams_decreased tracks:", error);
+        totalStreamsDecreasedByKey.set(key, null);
+        continue;
+      }
+
+      const metaByIsrc = new Map<
+        string,
+        {
+          isrc: string;
+          name: string | null;
+          artist_names: string[] | null;
+          artist_ids: string[] | null;
+          album_image_url: string | null;
+        }
+      >(
+        (trackRows ?? []).map((t: any) => [
+          String(t?.isrc ?? "").trim().toUpperCase(),
+          {
+            isrc: String(t?.isrc ?? "").trim().toUpperCase(),
+            name: (t?.name ?? null) as string | null,
+            artist_names: (t?.spotify_artist_names ?? null) as string[] | null,
+            artist_ids: (t?.spotify_artist_ids ?? null) as string[] | null,
+            album_image_url: (t?.spotify_album_image_url ?? null) as string | null,
+          },
+        ]),
+      );
+
+      const tracks = sample.map((s) => {
+        const meta = metaByIsrc.get(s.isrc) ?? null;
+        return {
+          isrc: s.isrc,
+          name: meta?.name ?? null,
+          artist_names: meta?.artist_names ?? null,
+          artist_ids: meta?.artist_ids ?? null,
+          album_image_url: meta?.album_image_url ?? null,
+          prev_streams: s.prev_streams ?? null,
+          today_streams: s.today_streams ?? null,
+          delta: s.delta ?? null,
+        };
+      });
+
+      totalStreamsDecreasedByKey.set(key, tracks);
+    }
+  }
+
   // Fetch entity-distro drift warnings
   const entityDistroDriftMap = new Map<
     string,
@@ -997,6 +1097,19 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
     if (w.code === "distro_overlap" && Array.isArray(distroOverlapTracks)) {
       return { ...w, message: `${distroOverlapTracks.length} track(s) appear in multiple Distro playlists` };
     }
+    if (w.code === "total_streams_decreased") {
+      const key = String(w.playlist_key ?? "global");
+      const tracks = totalStreamsDecreasedByKey.get(key);
+      const delta = w.details_json?.delta;
+      const prevTotal = w.details_json?.prev_total_streams_cumulative;
+      const todayTotal = w.details_json?.today_total_streams_cumulative;
+      const trackCount = Array.isArray(tracks) ? tracks.length : (w.details_json?.decreased_tracks_total ?? 0);
+      const deltaStr = typeof delta === "number" ? delta.toLocaleString() : "?";
+      return {
+        ...w,
+        message: `Total streams decreased ${deltaStr} (${typeof prevTotal === "number" ? prevTotal.toLocaleString() : "?"} → ${typeof todayTotal === "number" ? todayTotal.toLocaleString() : "?"}) — ${trackCount} track(s) decreased`,
+      };
+    }
     return w;
   });
 
@@ -1094,6 +1207,11 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
               distroOverlapTracks={
                 w.code === "distro_overlap"
                   ? distroOverlapTracks
+                  : undefined
+              }
+              totalStreamsDecreasedTracks={
+                w.code === "total_streams_decreased"
+                  ? totalStreamsDecreasedByKey.get(String(w.playlist_key ?? "global"))
                   : undefined
               }
               dataDate={selectedDataDate}
