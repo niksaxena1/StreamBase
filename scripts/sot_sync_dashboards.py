@@ -767,7 +767,13 @@ def run_sync(
 
             print("—" * 72)
             print(f"🧹 Extra in dashboard (remove): {len(to_remove)}")
+            if to_remove:
+                for u in sorted(to_remove):
+                    print(f"   - {u}")
             print(f"➕ Missing from dashboard (add): {len(to_add)}")
+            if to_add:
+                for u in sorted(to_add):
+                    print(f"   + {u}")
 
             # SAFETY: prevent catastrophic dashboard wipes when playlist scan is incomplete.
             # If the playlist appears much smaller than the dashboard, it's often due to a scan
