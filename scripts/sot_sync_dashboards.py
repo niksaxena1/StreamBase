@@ -3,6 +3,7 @@ import csv
 import json
 import os
 import random
+import re
 import shutil
 import sys
 import time
@@ -10,6 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Iterable, List, Optional, Sequence, Set, Tuple
+from urllib.parse import urlparse
 
 from playwright.sync_api import TimeoutError as PWTimeout
 from playwright.sync_api import sync_playwright
@@ -273,6 +275,36 @@ def ensure_logged_in(page, email: str, password: str) -> bool:
     return not is_logged_out(page)
 
 
+def _normalize_track_url(url: str) -> str:
+    """Canonicalize track URLs so that relative/absolute variants and trailing
+    slashes / query params all compare equal."""
+    if not url:
+        return ""
+    try:
+        u = urlparse(url)
+        if u.scheme and u.netloc:
+            return f"{u.scheme}://{u.netloc}{u.path}".rstrip("/")
+        if url.startswith("/"):
+            return (SOT_BASE + url).rstrip("/")
+    except Exception:
+        pass
+    return url.rstrip("/")
+
+
+_TRACK_PATH_RE = re.compile(r"^/tracks/[^/]+$")
+
+
+def _is_individual_track_url(href: str) -> bool:
+    """Return True only for URLs pointing to an individual track page
+    (/tracks/{id}), filtering out non-track URLs that merely *contain*
+    the substring '/tracks/' (e.g. /playlists/…/tracks)."""
+    try:
+        path = urlparse(href).path.rstrip("/")
+        return bool(_TRACK_PATH_RE.match(path))
+    except Exception:
+        return False
+
+
 def extract_unique_hrefs(page, selectors: Sequence[str]) -> List[str]:
     seen: Set[str] = set()
     unique: List[str] = []
@@ -280,9 +312,12 @@ def extract_unique_hrefs(page, selectors: Sequence[str]) -> List[str]:
         try:
             hrefs = page.eval_on_selector_all(sel, "els => els.map(e => e.href).filter(Boolean)")
             for h in hrefs:
-                if h not in seen:
-                    seen.add(h)
-                    unique.append(h)
+                if not _is_individual_track_url(h):
+                    continue
+                norm = _normalize_track_url(h)
+                if norm not in seen:
+                    seen.add(norm)
+                    unique.append(norm)
         except Exception:
             pass
     return unique
