@@ -251,7 +251,8 @@ type WarningRowProps = {
   playlistMeta: PlaylistMeta | null;
   expandedData: WarningExpandedData;
   allPlaylistMeta: Record<string, PlaylistMeta>;
-  dataDate?: string | null;
+  /** Run date (= ingestion snapshot date) for stream overrides. */
+  runDate?: string | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -263,7 +264,7 @@ export function WarningRow({
   playlistMeta,
   expandedData,
   allPlaylistMeta,
-  dataDate,
+  runDate,
 }: WarningRowProps) {
   const [expanded, setExpanded] = useState(false);
   const [thumbByIsrc, setThumbByIsrc] = useState<
@@ -507,7 +508,7 @@ export function WarningRow({
               data={expandedData}
               thumbByIsrc={thumbByIsrc}
               allPlaylistMeta={allPlaylistMeta}
-              dataDate={dataDate}
+              runDate={runDate}
               playlistKey={warning.playlist_key}
             />
           </TableCell>
@@ -525,13 +526,13 @@ function ExpandedContent({
   data,
   thumbByIsrc,
   allPlaylistMeta,
-  dataDate,
+  runDate,
   playlistKey,
 }: {
   data: NonNullable<WarningExpandedData>;
   thumbByIsrc: Record<string, string | null>;
   allPlaylistMeta: Record<string, PlaylistMeta>;
-  dataDate?: string | null;
+  runDate?: string | null;
   playlistKey: string | null;
 }) {
   switch (data.type) {
@@ -594,10 +595,10 @@ function ExpandedContent({
               track={t}
               thumbOverrides={thumbByIsrc}
               actions={
-                dataDate ? (
+                runDate ? (
                   <QuickOverrideButton
                     isrc={t.isrc.trim().toUpperCase()}
-                    date={dataDate}
+                    date={runDate}
                   />
                 ) : undefined
               }
@@ -631,10 +632,10 @@ function ExpandedContent({
                 ) : undefined
               }
               actions={
-                dataDate ? (
+                runDate ? (
                   <QuickOverrideButton
                     isrc={t.isrc.trim().toUpperCase()}
-                    date={dataDate}
+                    date={runDate}
                   />
                 ) : undefined
               }

@@ -518,6 +518,31 @@ async function fetchOverlapTracks(
 }
 
 // ---------------------------------------------------------------------------
+// Stream override loader — ISRCs with manual overrides for a given data date
+// ---------------------------------------------------------------------------
+
+async function loadOverriddenIsrcs(
+  svc: Svc,
+  dataDate: string,
+): Promise<Set<string>> {
+  const overridden = new Set<string>();
+  try {
+    const { data: rows } = await svc
+      .from("track_daily_stream_overrides")
+      .select("isrc")
+      .eq("date", dataDate)
+      .limit(5000);
+    for (const r of (rows ?? []) as Array<Record<string, unknown>>) {
+      const isrc = normalizeIsrc(r.isrc);
+      if (isrc) overridden.add(isrc);
+    }
+  } catch {
+    // Table may not exist yet
+  }
+  return overridden;
+}
+
+// ---------------------------------------------------------------------------
 // Message patching — builds the final user-visible message from live data
 // ---------------------------------------------------------------------------
 
@@ -528,6 +553,7 @@ function patchMessage(
   enrichMap: Map<string, TrackBase[] | null>,
   catalogMissingMap: Map<string, Array<TrackBase & Record<string, unknown>> | null>,
   prevNonzeroMap: Map<string, Array<TrackBase & Record<string, unknown>> | null>,
+  staleMap: Map<string, Array<TrackBase & Record<string, unknown>> | null>,
   driftResult: { map: Map<string, DriftData>; loaded: boolean },
   overlapTracks: OverlapTrack[] | null,
   decreasedMap: Map<string, Array<TrackBase & Record<string, unknown>> | null>,
@@ -565,6 +591,13 @@ function patchMessage(
     const tracks = prevNonzeroMap.get(key);
     if (Array.isArray(tracks))
       return `${tracks.length} catalog track(s) have zero streams today but had streams previously`;
+  }
+  if (w.code === "individual_tracks_stale") {
+    const key = String(w.playlist_key ?? "global");
+    const tracks = staleMap.get(key);
+    if (Array.isArray(tracks)) {
+      return `${tracks.length} track(s) with stale stream data`;
+    }
   }
   if (w.code === "distro_overlap" && Array.isArray(overlapTracks)) {
     return `${overlapTracks.length} track(s) appear in multiple Distro playlists`;
@@ -775,17 +808,19 @@ export async function fetchDisplayedWarnings(
   const overlapW = warnings.filter((w) => w.code === "distro_overlap");
 
   // #4: Run ALL fetchers in parallel
+  // track_daily_streams.date stores the run date, so overrides use the same convention.
   const [
     ncMap,
     swingMap,
     enrichMap,
     catalogMissingMap,
     prevNonzeroMap,
-    staleMap,
+    staleMapRaw,
     excludedZeroedMap,
     decreasedMap,
     driftResult,
     overlapTracks,
+    overriddenIsrcs,
   ] = await Promise.all([
     fetchNonCatalogTracks(svc, ncW, runDate, excl),
     fetchSwingTracks(svc, swingW, runDate),
@@ -797,7 +832,21 @@ export async function fetchDisplayedWarnings(
     fetchDetailsTracks(svc, decreasedW, extractDecreased),
     fetchDriftData(svc, driftW, runDate),
     fetchOverlapTracks(svc, overlapW, runDate),
+    loadOverriddenIsrcs(svc, runDate),
   ]);
+
+  // Filter overridden ISRCs out of stale track results
+  const staleMap = new Map<string, Array<TrackBase & Record<string, unknown>> | null>();
+  for (const [key, tracks] of staleMapRaw) {
+    if (!tracks || overriddenIsrcs.size === 0) {
+      staleMap.set(key, tracks);
+    } else {
+      const filtered = tracks.filter(
+        (t) => !overriddenIsrcs.has(normalizeIsrc(t.isrc)),
+      );
+      staleMap.set(key, filtered.length > 0 ? filtered : null);
+    }
+  }
 
   // Sort & build DisplayedWarning[]
   const sorted = [...warnings].sort((a, b) => {
@@ -824,6 +873,7 @@ export async function fetchDisplayedWarnings(
       enrichMap,
       catalogMissingMap,
       prevNonzeroMap,
+      staleMap,
       driftResult,
       overlapTracks,
       decreasedMap,

@@ -1,7 +1,7 @@
 import { unstable_cache } from "next/cache";
 import { supabaseService } from "@/lib/supabase/service";
 import { normalizeKey, normalizeIsrc } from "./types";
-import type { WarningRow } from "./types";
+import type { WarningRow, IndividualTracksStaleDetailsJson } from "./types";
 
 // Re-export for backward compatibility
 export { normalizeKey } from "./types";
@@ -156,6 +156,23 @@ async function computeActiveWarnings(
     return Boolean(s && s.has(isrc));
   }
 
+  // 3b. Load stream overrides for run date (to suppress resolved stale warnings).
+  // track_daily_streams.date stores the run date, and overrides match that convention.
+  const overriddenIsrcs = new Set<string>();
+  try {
+    const { data: overrideRows } = await svc
+      .from("track_daily_stream_overrides")
+      .select("isrc")
+      .eq("date", targetRunDate)
+      .limit(5000);
+    for (const r of (overrideRows ?? []) as Array<Record<string, unknown>>) {
+      const isrc = normalizeIsrc(r.isrc);
+      if (isrc) overriddenIsrcs.add(isrc);
+    }
+  } catch {
+    // Table may not exist yet – proceed without overrides.
+  }
+
   // 4. Determine which warnings are still "active" ---------------------------
 
   // 4a. non_catalog_tracks_present – call per-playlist RPC
@@ -292,6 +309,16 @@ async function computeActiveWarnings(
     }
     if (w.code === "distro_overlap") {
       return overlapLoaded ? overlapActive : true;
+    }
+    if (w.code === "individual_tracks_stale" && overriddenIsrcs.size > 0) {
+      const details = w.details_json as IndividualTracksStaleDetailsJson | null;
+      const affected = details?.affected_tracks;
+      if (Array.isArray(affected) && affected.length > 0) {
+        const remaining = affected.filter(
+          (t) => !overriddenIsrcs.has(normalizeIsrc(t.isrc)),
+        );
+        return remaining.length > 0;
+      }
     }
     return true;
   });

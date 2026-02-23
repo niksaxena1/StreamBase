@@ -60,7 +60,7 @@ export async function WarningsSection({
             playlistMeta={w.playlistMeta}
             expandedData={w.expandedData}
             allPlaylistMeta={playlistMeta}
-            dataDate={dataDate}
+            runDate={runDate}
           />
         ))}
         {!displayed.length && (
