@@ -31,6 +31,7 @@ import { useChartStartDate } from "@/components/charts/ChartStartDateContext";
 import { useChartAxisZoom } from "@/components/charts/ChartAxisZoomContext";
 import { useWeekendDip } from "@/components/charts/WeekendDipContext";
 import { makeHighlightDayDotRenderers } from "@/components/charts/rechartsRenderers";
+import { useLongPress } from "@/components/charts/useLongPress";
 
 export const COLLECTOR_COLORS: Record<string, string> = {
   // Individuals (softer)
@@ -111,7 +112,6 @@ function CustomTooltip({
   metric,
   granularity = "daily",
   showWeekendDip = false,
-  clickable = false,
   onActiveDate,
 }: {
   active?: boolean;
@@ -121,7 +121,6 @@ function CustomTooltip({
   metric: ComparisonMetric;
   granularity?: Granularity;
   showWeekendDip?: boolean;
-  clickable?: boolean;
   onActiveDate?: (date: string | null) => void;
 }) {
   const dateStr = active && label ? String(label) : null;
@@ -520,11 +519,34 @@ export function CollectorComparisonChart({
   const handleActiveDate = useCallback((date: string | null) => {
     activeDateRef.current = date;
   }, []);
-  const handleChartClick = useCallback(() => {
+
+  const onLongPress = useCallback(() => {
     if (!isClickable) return;
     const date = activeDateRef.current;
     if (date) onDateClick!(date);
   }, [isClickable, onDateClick]);
+
+  const {
+    onPointerDown: handlePointerDown,
+    onPointerMove: handlePointerMove,
+    onPointerUp: handlePointerUp,
+    onPointerCancel: handlePointerCancel,
+    lastPointerTypeRef,
+  } = useLongPress({
+    enabled: isClickable,
+    onLongPress,
+  });
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+  };
+
+  const handleChartClick = () => {
+    if (!isClickable) return;
+    if (lastPointerTypeRef.current === "touch" || lastPointerTypeRef.current === "pen") return;
+    const date = activeDateRef.current;
+    if (date) onDateClick!(date);
+  };
 
   if (!enrichedChartData.length) {
     return (
@@ -542,13 +564,16 @@ export function CollectorComparisonChart({
       className="w-full overflow-visible outline-none"
       style={{
         outline: "none",
-        ...(isClickable ? {
-          cursor: "pointer",
-          WebkitTapHighlightColor: "transparent",
-          WebkitUserSelect: "none",
-          userSelect: "none",
-        } : {}),
+        WebkitTapHighlightColor: "transparent",
+        WebkitUserSelect: "none",
+        userSelect: "none",
+        ...(isClickable ? { cursor: "pointer" } : {}),
       }}
+      onMouseDown={handleMouseDown}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
       onClick={handleChartClick}
     >
       <ResponsiveContainer width="100%" height={heightPx} minWidth={0}>
@@ -630,7 +655,6 @@ export function CollectorComparisonChart({
                 metric={metric}
                 granularity={granularity}
                 showWeekendDip={enableWeekendDip}
-                clickable={isClickable}
                 onActiveDate={handleActiveDate}
               />
             )}
