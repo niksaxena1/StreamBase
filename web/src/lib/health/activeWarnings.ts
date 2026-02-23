@@ -1,19 +1,11 @@
 import { unstable_cache } from "next/cache";
 import { supabaseService } from "@/lib/supabase/service";
+import { normalizeKey, normalizeIsrc } from "./types";
+import type { WarningRow } from "./types";
 
-// ---------------------------------------------------------------------------
-// Shared types
-// ---------------------------------------------------------------------------
-
-export type WarningRow = {
-  severity: string;
-  code: string;
-  playlist_key: string | null;
-  message: string;
-  run_date: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  details_json: any;
-};
+// Re-export for backward compatibility
+export { normalizeKey } from "./types";
+export type { WarningRow } from "./types";
 
 export type ActiveWarningSummary = {
   runDate: string | null;
@@ -26,23 +18,6 @@ export type ActiveWarningSummary = {
   /** True when every active warning is severity "info" (no warn/critical). */
   infoOnly: boolean;
 };
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/** Normalize a key string for consistent Map / Set lookups. */
-export function normalizeKey(key: string | null | undefined): string {
-  return String(key ?? "").trim();
-}
-
-/** Normalize an ISRC for consistent comparisons. */
-function normalizeIsrc(raw: unknown): string {
-  return String(raw ?? "")
-    .trim()
-    .toUpperCase()
-    .replace(/\s+/g, "");
-}
 
 // ---------------------------------------------------------------------------
 // Core computation (un-cached)
@@ -101,13 +76,13 @@ async function computeActiveWarnings(
     .order("playlist_key", { ascending: true })
     .limit(2000);
 
-  const allWarnings: WarningRow[] = (rawWarnings ?? []).map((w: any) => ({
+  const allWarnings: WarningRow[] = (rawWarnings ?? []).map((w: Record<string, unknown>) => ({
     severity: String(w.severity ?? ""),
     code: String(w.code ?? ""),
     playlist_key: w.playlist_key ? String(w.playlist_key) : null,
     message: String(w.message ?? ""),
     run_date: String(w.run_date ?? ""),
-    details_json: w.details_json ?? null,
+    details_json: (w.details_json ?? null) as Record<string, unknown> | null,
   }));
 
   // 3. Load exclusion sets (best-effort) --------------------------------------
@@ -221,7 +196,7 @@ async function computeActiveWarnings(
     await Promise.all(
       enrWarnings.map(async (w) => {
         if (!w.playlist_key) return;
-        const isrcList = w.details_json?.isrc_list ?? [];
+        const isrcList = (w.details_json?.isrc_list as unknown[] | undefined) ?? [];
         if (!Array.isArray(isrcList) || isrcList.length === 0) {
           // No ISRC list – can't verify, keep warning.
           enrActive.add(w.playlist_key!);
