@@ -59,23 +59,51 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: aggError.message }, { status: 500 });
   }
 
-  const collectorData: Record<
-    string,
-    {
-      daily_streams: number;
-      avg7_streams: number;
-      delta_pct: number | null;
-      top_tracks: Array<{
-        isrc: string;
-        name: string | null;
-        album_image_url: string | null;
-        artist_names: string[] | null;
-        artist_ids: string[] | null;
-        daily_streams_delta: number | null;
-        total_streams_cumulative: number | null;
-      }>;
+  type TrackInfo = {
+    isrc: string;
+    name: string | null;
+    album_image_url: string | null;
+    artist_names: string[] | null;
+    artist_ids: string[] | null;
+    daily_streams_delta: number | null;
+    total_streams_cumulative: number | null;
+  };
+
+  type RosterEntry = TrackInfo & { cumulative_streams: number };
+
+  type CollectorBreakdown = {
+    daily_streams: number;
+    avg7_streams: number;
+    delta_pct: number | null;
+    top_tracks: TrackInfo[];
+    roster_additions: RosterEntry[];
+    roster_removals: RosterEntry[];
+    roster_cumulative_impact: number;
+  };
+
+  async function getAllCollectorTracks(
+    collector: string,
+    runDate: string,
+    prevDate: string,
+  ): Promise<any[]> {
+    const all: any[] = [];
+    for (let offset = 0; ; offset += 500) {
+      const { data, error } = await svc.rpc("collector_tracks_paged", {
+        collector,
+        run_date: runDate,
+        prev_date: prevDate,
+        offset_rows: offset,
+        limit_rows: 500,
+      });
+      if (error) throw new Error(error.message);
+      if (!data?.length) break;
+      all.push(...data);
+      if (data.length < 500) break;
     }
-  > = {};
+    return all;
+  }
+
+  const collectorData: Record<string, CollectorBreakdown> = {};
 
   for (const collector of collectors) {
     const rows = (aggRows ?? []).filter(
@@ -93,6 +121,7 @@ export async function POST(req: NextRequest) {
 
     const deltaPct = avg7 > 0 ? ((dailyStreams - avg7) / avg7) * 100 : null;
 
+    // Top tracks by daily delta
     const { data: trackRows, error: trackError } = await svc.rpc("collector_tracks_paged", {
       collector,
       run_date: runDate,
@@ -105,7 +134,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: trackError.message }, { status: 500 });
     }
 
-    const topTracks = ((trackRows ?? []) as any[])
+    const topTracks: TrackInfo[] = ((trackRows ?? []) as any[])
       .map((r: any) => ({
         isrc: String(r.isrc ?? ""),
         name: (r.name ?? null) as string | null,
@@ -117,11 +146,74 @@ export async function POST(req: NextRequest) {
       }))
       .filter((t) => t.isrc);
 
+    // Roster change detection: compare full track sets between the two dates
+    let rosterAdditions: RosterEntry[] = [];
+    let rosterRemovals: RosterEntry[] = [];
+    let rosterCumulativeImpact = 0;
+
+    try {
+      const prevPrevDate = addDaysIso(prevRunDate, -1);
+      const [todayTracks, yesterdayTracks] = await Promise.all([
+        getAllCollectorTracks(collector, runDate, prevRunDate),
+        getAllCollectorTracks(collector, prevRunDate, prevPrevDate),
+      ]);
+
+      const todayMap = new Map<string, any>();
+      for (const t of todayTracks) todayMap.set(t.isrc, t);
+
+      const yesterdayIsrcs = new Set<string>();
+      for (const t of yesterdayTracks) yesterdayIsrcs.add(t.isrc);
+
+      // Additions: in today but not yesterday
+      for (const t of todayTracks) {
+        if (!yesterdayIsrcs.has(t.isrc)) {
+          const cumulative = Number(t.total_streams_cumulative ?? 0);
+          rosterAdditions.push({
+            isrc: String(t.isrc ?? ""),
+            name: (t.name ?? null) as string | null,
+            album_image_url: (t.album_image_url ?? null) as string | null,
+            artist_names: (t.artist_names ?? null) as string[] | null,
+            artist_ids: (t.artist_ids ?? null) as string[] | null,
+            daily_streams_delta: t.daily_streams_delta == null ? null : Number(t.daily_streams_delta),
+            total_streams_cumulative: t.total_streams_cumulative == null ? null : Number(t.total_streams_cumulative),
+            cumulative_streams: cumulative,
+          });
+          rosterCumulativeImpact += cumulative;
+        }
+      }
+
+      // Removals: in yesterday but not today
+      for (const t of yesterdayTracks) {
+        if (!todayMap.has(t.isrc)) {
+          const cumulative = Number(t.total_streams_cumulative ?? 0);
+          rosterRemovals.push({
+            isrc: String(t.isrc ?? ""),
+            name: (t.name ?? null) as string | null,
+            album_image_url: (t.album_image_url ?? null) as string | null,
+            artist_names: (t.artist_names ?? null) as string[] | null,
+            artist_ids: (t.artist_ids ?? null) as string[] | null,
+            daily_streams_delta: null,
+            total_streams_cumulative: t.total_streams_cumulative == null ? null : Number(t.total_streams_cumulative),
+            cumulative_streams: cumulative,
+          });
+          rosterCumulativeImpact -= cumulative;
+        }
+      }
+
+      rosterAdditions.sort((a, b) => b.cumulative_streams - a.cumulative_streams);
+      rosterRemovals.sort((a, b) => b.cumulative_streams - a.cumulative_streams);
+    } catch {
+      // Non-fatal: roster detection failed, continue without it
+    }
+
     collectorData[collector] = {
       daily_streams: dailyStreams,
       avg7_streams: avg7,
       delta_pct: deltaPct,
       top_tracks: topTracks,
+      roster_additions: rosterAdditions,
+      roster_removals: rosterRemovals,
+      roster_cumulative_impact: rosterCumulativeImpact,
     };
   }
 

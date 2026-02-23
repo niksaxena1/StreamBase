@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Activity, Search, X, TrendingUp, TrendingDown } from "lucide-react";
+import { Activity, Search, X, TrendingUp, TrendingDown, ArrowRightLeft } from "lucide-react";
 
 import { GlassTable, TableCell, TableRow } from "@/components/ui/GlassTable";
 import { SpotlightCard } from "@/components/ui/SpotlightCard";
@@ -421,12 +421,7 @@ export function CollectorsClient(props: {
       const fromUrl = urlCollectors.split(",").filter((c) => COLLECTOR_ORDER.includes(c as any));
       if (fromUrl.length) return fromUrl;
     }
-    const stored = readStoredString(COLLECTORS_COMPARISON_STORAGE.collectors);
-    if (stored) {
-      const fromStored = stored.split(",").filter((c) => COLLECTOR_ORDER.includes(c as any));
-      if (fromStored.length) return fromStored;
-    }
-    return ["PL", "TG"]; // Default to PL and TG
+    return ["PL", "TG"];
   });
   
   const [comparisonMode, setComparisonMode] = useState<ComparisonMode>(() => {
@@ -434,11 +429,7 @@ export function CollectorsClient(props: {
     if (urlMode === "combined" || urlMode === "individual" || urlMode === "percentage") {
       return urlMode;
     }
-    const storedMode = readStoredString(COLLECTORS_COMPARISON_STORAGE.mode);
-    if (storedMode === "combined" || storedMode === "individual" || storedMode === "percentage") {
-      return storedMode;
-    }
-    return "individual"; // Default to individual
+    return "individual";
   });
 
   const [granularity, setGranularity] = useState<Granularity>(() => {
@@ -446,12 +437,44 @@ export function CollectorsClient(props: {
     if (GRANULARITIES.includes(urlGranularity as Granularity)) {
       return urlGranularity as Granularity;
     }
-    const storedGranularity = readStoredString(COLLECTORS_COMPARISON_STORAGE.granularity);
-    if (GRANULARITIES.includes(storedGranularity as Granularity)) {
-      return storedGranularity as Granularity;
-    }
-    return "daily"; // Default to daily
+    return "daily";
   });
+
+  // Restore comparison settings from localStorage after mount (only when URL
+  // didn't already specify them) to avoid SSR/client hydration mismatches.
+  useEffect(() => {
+    let changed = false;
+
+    if (!searchParams.get("mode")) {
+      const stored = readStoredString(COLLECTORS_COMPARISON_STORAGE.mode);
+      if (stored === "combined" || stored === "individual" || stored === "percentage") {
+        setComparisonMode(stored);
+        changed = true;
+      }
+    }
+
+    if (!searchParams.get("granularity")) {
+      const stored = readStoredString(COLLECTORS_COMPARISON_STORAGE.granularity);
+      if (GRANULARITIES.includes(stored as Granularity)) {
+        setGranularity(stored as Granularity);
+        changed = true;
+      }
+    }
+
+    if (!searchParams.get("collectors")) {
+      const stored = readStoredString(COLLECTORS_COMPARISON_STORAGE.collectors);
+      if (stored) {
+        const fromStored = stored.split(",").filter((c) => COLLECTOR_ORDER.includes(c as any));
+        if (fromStored.length) {
+          setComparisonCollectors(fromStored);
+          changed = true;
+        }
+      }
+    }
+
+    void changed;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Restore collapsible state (best-effort).
   // This runs after mount, which avoids SSR accessing localStorage.
@@ -771,19 +794,24 @@ export function CollectorsClient(props: {
   const tracksTableDailyLabel = tracksTableIsRevenue ? "Est. revenue (daily)" : "Streams (daily)";
 
   // Date breakdown modal state (click-to-drill-down on chart)
+  type DateBreakdownTrack = {
+    isrc: string;
+    name: string | null;
+    album_image_url: string | null;
+    artist_names: string[] | null;
+    artist_ids: string[] | null;
+    daily_streams_delta: number | null;
+    total_streams_cumulative: number | null;
+  };
+  type DateBreakdownRosterEntry = DateBreakdownTrack & { cumulative_streams: number };
   type DateBreakdownCollector = {
     daily_streams: number;
     avg7_streams: number;
     delta_pct: number | null;
-    top_tracks: Array<{
-      isrc: string;
-      name: string | null;
-      album_image_url: string | null;
-      artist_names: string[] | null;
-      artist_ids: string[] | null;
-      daily_streams_delta: number | null;
-      total_streams_cumulative: number | null;
-    }>;
+    top_tracks: DateBreakdownTrack[];
+    roster_additions: DateBreakdownRosterEntry[];
+    roster_removals: DateBreakdownRosterEntry[];
+    roster_cumulative_impact: number;
   };
   const [breakdownOpen, setBreakdownOpen] = useState(false);
   const [breakdownDate, setBreakdownDate] = useState<string | null>(null);
@@ -1911,6 +1939,143 @@ export function CollectorsClient(props: {
                   );
                 })}
               </div>
+
+              {/* Roster changes (tracks added/removed from collector) */}
+              {(() => {
+                const hasRosterChanges = comparisonCollectors.some((c) => {
+                  const d = breakdownData[c];
+                  return d && ((d.roster_additions?.length ?? 0) > 0 || (d.roster_removals?.length ?? 0) > 0);
+                });
+                if (!hasRosterChanges) return null;
+
+                return comparisonCollectors.map((collector) => {
+                  const d = breakdownData[collector];
+                  if (!d) return null;
+                  const additions = d.roster_additions ?? [];
+                  const removals = d.roster_removals ?? [];
+                  if (!additions.length && !removals.length) return null;
+
+                  const impact = d.roster_cumulative_impact ?? 0;
+                  const isPositive = impact >= 0;
+
+                  return (
+                    <div
+                      key={`roster-${collector}`}
+                      className="rounded-xl border p-3"
+                      style={{
+                        borderColor: isPositive ? "rgba(245,158,11,0.4)" : "rgba(239,68,68,0.4)",
+                        background: isPositive ? "rgba(245,158,11,0.06)" : "rgba(239,68,68,0.06)",
+                      }}
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        <ArrowRightLeft className="h-3.5 w-3.5" style={{ color: "#F59E0B" }} />
+                        <span
+                          className="inline-block h-2.5 w-2.5 rounded-full"
+                          style={{ backgroundColor: COLLECTOR_COLORS[collector] ?? "var(--sb-muted)" }}
+                        />
+                        <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--sb-text)" }}>
+                          {collector} — Roster changes
+                        </span>
+                      </div>
+
+                      <div className="text-xs mb-2" style={{ color: "var(--sb-muted)" }}>
+                        {additions.length > 0 && (
+                          <span>
+                            <span style={{ color: "#22c55e" }}>+{additions.length} track{additions.length !== 1 ? "s" : ""} added</span>
+                            {removals.length > 0 && <span> · </span>}
+                          </span>
+                        )}
+                        {removals.length > 0 && (
+                          <span style={{ color: "#ef4444" }}>−{removals.length} track{removals.length !== 1 ? "s" : ""} removed</span>
+                        )}
+                        <span> — cumulative impact: </span>
+                        <span
+                          className="font-semibold"
+                          style={{ color: isPositive ? "#22c55e" : "#ef4444" }}
+                        >
+                          {isPositive ? "+" : "−"}
+                          {metric === "revenue"
+                            ? formatUsd2(Math.abs(impact) * streamPayoutPerStreamUsd)
+                            : formatInt(Math.abs(impact))}
+                        </span>
+                      </div>
+
+                      {additions.length > 0 && (
+                        <div className="space-y-1.5">
+                          {additions.map((t) => (
+                            <div key={t.isrc} className="flex items-center gap-2">
+                              {t.album_image_url ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={String(t.album_image_url)}
+                                  alt="Album"
+                                  className="h-6 w-6 rounded-md object-cover sb-ring flex-none"
+                                />
+                              ) : (
+                                <div className="h-6 w-6 rounded-md sb-ring bg-white/60 dark:bg-white/10 flex-none" />
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <Link
+                                  href={`/tracks/${encodeURIComponent(t.isrc)}`}
+                                  className="text-xs font-medium sb-link-hover truncate block"
+                                >
+                                  {t.name ?? t.isrc}
+                                </Link>
+                                {t.artist_names?.length ? (
+                                  <div className="text-[10px] opacity-50 truncate">
+                                    <ArtistLinks artistNames={t.artist_names} artistIds={t.artist_ids} />
+                                  </div>
+                                ) : null}
+                              </div>
+                              <div className="text-right flex-none">
+                                <div className="text-xs font-semibold" style={{ color: "#22c55e" }}>
+                                  +{metric === "revenue"
+                                    ? formatUsd2(t.cumulative_streams * streamPayoutPerStreamUsd)
+                                    : formatInt(t.cumulative_streams)}
+                                </div>
+                                <div className="text-[10px]" style={{ color: "var(--sb-muted)" }}>
+                                  accumulated
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {removals.length > 0 && (
+                        <div className="space-y-1.5 mt-2">
+                          {removals.map((t) => (
+                            <div key={t.isrc} className="flex items-center gap-2 opacity-60">
+                              {t.album_image_url ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={String(t.album_image_url)}
+                                  alt="Album"
+                                  className="h-6 w-6 rounded-md object-cover sb-ring flex-none"
+                                />
+                              ) : (
+                                <div className="h-6 w-6 rounded-md sb-ring bg-white/60 dark:bg-white/10 flex-none" />
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <span className="text-xs font-medium truncate block" style={{ color: "var(--sb-text)" }}>
+                                  {t.name ?? t.isrc}
+                                </span>
+                              </div>
+                              <div className="text-right flex-none">
+                                <div className="text-xs font-semibold" style={{ color: "#ef4444" }}>
+                                  −{metric === "revenue"
+                                    ? formatUsd2(t.cumulative_streams * streamPayoutPerStreamUsd)
+                                    : formatInt(t.cumulative_streams)}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                });
+              })()}
 
               {/* Top tracks per collector */}
               {comparisonCollectors.map((collector) => {

@@ -238,14 +238,6 @@ function CustomTooltip({
             </span>
           </div>
         )}
-        {clickable && (
-          <div
-            className="text-[10px] mt-1.5 pt-1.5 border-t opacity-40"
-            style={{ borderColor: "var(--sb-border)" }}
-          >
-            Click for breakdown
-          </div>
-        )}
       </div>
     </ViewportAwareTooltip>
   );
@@ -377,6 +369,7 @@ export function CollectorComparisonChart({
 
     if (mode === "percentage") {
       const ANOMALY_LOOKBACK = 14;
+      const detectAnomalies = metric !== "tracks";
       return chartData.map((point, i) => {
         const enriched = { ...point } as Record<string, any>;
 
@@ -386,6 +379,11 @@ export function CollectorComparisonChart({
           const absValues = window.map((d) => Number(d[`_abs_${collector}`] ?? 0));
           enriched[`_avg7_${collector}`] =
             absValues.reduce((s, v) => s + v, 0) / absValues.length;
+        }
+
+        if (!detectAnomalies) {
+          enriched._anomaly = 0;
+          return enriched as ChartDataPoint;
         }
 
         const lookStart = Math.max(0, i - ANOMALY_LOOKBACK);
@@ -444,7 +442,7 @@ export function CollectorComparisonChart({
       ...d,
       _weekendDipPct: dipMap.get(d.date) ?? null,
     }));
-  }, [chartData, enableWeekendDip, mode, selectedCollectors]);
+  }, [chartData, enableWeekendDip, metric, mode, selectedCollectors]);
 
   const formatYTick = (n: number) => {
     if (mode === "percentage") return `${n.toFixed(0)}%`;
