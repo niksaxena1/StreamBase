@@ -1,12 +1,9 @@
 import { redirect } from "next/navigation";
 import { revalidatePath, revalidateTag } from "next/cache";
-import Image from "next/image";
 
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { PageHeader } from "@/components/shell/PageHeader";
-import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/GlassTable";
-import { TrackExclusionForm } from "./TrackExclusionForm";
 import { SAISettingsToggle } from "./SAISettingsToggle";
 import { HomeFiltersToggle } from "./HomeFiltersToggle";
 import { PayoutRateSetting } from "./PayoutRateSetting";
@@ -20,6 +17,9 @@ import { RapidApiFallbackSetting } from "./RapidApiFallbackSetting";
 import { ManualStreamOverrideForm } from "./ManualStreamOverrideForm";
 import { StreamOverridesTable, StreamOverridesTableDownloadButton } from "./StreamOverridesTable";
 import { SectionHeader } from "@/components/ui/SectionHeader";
+import { CollapsibleSection } from "@/components/ui/CollapsibleSection";
+import { HealthExclusionsSection, type ExclusionTabConfig } from "./HealthExclusionsSection";
+import { SettingsNav } from "./SettingsNav";
 
 export const revalidate = 86400; // 24h ISR - admin config changes are infrequent
 
@@ -300,30 +300,6 @@ export default async function SettingsPage() {
     // ignore
   }
 
-  const exclusionIsrcs = Array.from(
-    new Set(
-      exclusions
-        .map((e) => String(e.isrc ?? "").trim().toUpperCase())
-        .filter(Boolean),
-    ),
-  );
-  const isrcToName = new Map<string, string | null>();
-  if (exclusionIsrcs.length > 0) {
-    try {
-      const { data: trackRows, error: trackErr } = await svc
-        .from("tracks")
-        .select("isrc,name")
-        .in("isrc", exclusionIsrcs);
-      if (!trackErr) {
-        for (const t of trackRows ?? []) {
-          isrcToName.set(String((t as any).isrc), (t as any).name ?? null);
-        }
-      }
-    } catch {
-      // ignore
-    }
-  }
-
   async function addHealthExclusion(formData: FormData) {
     "use server";
 
@@ -576,275 +552,197 @@ export default async function SettingsPage() {
     revalidatePath("/catalog");
   }
 
+  const totalExclusions = exclusions.length + enrichmentExclusions.length + staleExclusions.length;
+
+  const exclusionTabs: ExclusionTabConfig[] = [
+    {
+      key: "non_catalog",
+      label: "Non-catalog",
+      description: (
+        <>
+          Exclude intentional non-catalog tracks from the Health warning{" "}
+          <span className="font-mono">non_catalog_tracks_present</span> and from the &ldquo;All Missing Catalog Tracks&rdquo; list.
+        </>
+      ),
+      exclusions,
+      addAction: addHealthExclusion,
+      removeAction: removeHealthExclusion,
+      formTracks: allTracks,
+      notePlaceholder: "Intentional non-catalog track",
+    },
+    {
+      key: "enrichment",
+      label: "Enrichment",
+      description: (
+        <div className="space-y-1">
+          <div>
+            Suppress the Health warning{" "}
+            <span className="font-mono">tracks_missing_enrichment</span> for tracks where enrichment has been intentionally skipped.
+          </div>
+          <div className="opacity-70">
+            The Track combobox only lists tracks currently detected as missing enrichment (no Spotify artist IDs).
+          </div>
+        </div>
+      ),
+      exclusions: enrichmentExclusions,
+      addAction: addEnrichmentExclusion,
+      removeAction: removeEnrichmentExclusion,
+      formTracks: unenrichedTracks,
+      notePlaceholder: "Intentional: skip enrichment for this track",
+      allowMulti: true,
+      submitLabel: "Exclude selected",
+    },
+    {
+      key: "stale",
+      label: "Stale tracks",
+      description: (
+        <div className="space-y-1">
+          <div>
+            Exclude tracks from the{" "}
+            <span className="font-mono">individual_tracks_stale</span> Health warning.
+            Excluded tracks will not be flagged even if their daily streams show zero growth.
+          </div>
+          <div className="opacity-70">
+            Exclusions take effect on the next ingestion run.
+          </div>
+        </div>
+      ),
+      exclusions: staleExclusions,
+      addAction: addStaleExclusion,
+      removeAction: removeStaleExclusion,
+      formTracks: allTracks,
+      notePlaceholder: "Intentional: this track's streams may not update daily",
+      allowMulti: true,
+      submitLabel: "Exclude selected",
+    },
+  ];
+
+  // Section definitions for jump links
+  const sections = [
+    { id: "ai", label: "AI" },
+    { id: "home", label: "Home" },
+    { id: "revenue", label: "Revenue" },
+    { id: "charts", label: "Charts" },
+    { id: "health", label: "Health" },
+    { id: "exclusions", label: `Exclusions (${totalExclusions})` },
+    { id: "overrides", label: `Overrides (${streamOverrides.length})` },
+  ];
+
+  const lastRefreshed = new Date().toLocaleString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="Settings"
-        subtitle="Admin settings for SpotiBase."
+        subtitle={
+          <>
+            Admin settings for SpotiBase.{" "}
+            <span className="opacity-50">Data as of {lastRefreshed}</span>
+          </>
+        }
       />
 
-      <div className="space-y-2">
-        <SectionHeader title="AI Assistant" />
-        <SAISettingsToggle />
+      <SettingsNav sections={sections} />
+
+      {/* Quick settings — 2-column card grid on wider screens */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div
+          id="ai"
+          className="scroll-mt-14 space-y-2 rounded-xl border p-4"
+          style={{ borderColor: "var(--sb-border)" }}
+        >
+          <SectionHeader title="AI Assistant" />
+          <SAISettingsToggle />
+        </div>
+
+        <div
+          id="home"
+          className="scroll-mt-14 space-y-2 rounded-xl border p-4"
+          style={{ borderColor: "var(--sb-border)" }}
+        >
+          <SectionHeader title="Home" subtitle="Customize what appears on the Home dashboard." />
+          <HomeFiltersToggle />
+        </div>
+
+        <div
+          id="revenue"
+          className="scroll-mt-14 space-y-2 rounded-xl border p-4"
+          style={{ borderColor: "var(--sb-border)" }}
+        >
+          <SectionHeader title="Revenue" subtitle="Configure how estimated revenue is calculated from streams." />
+          <PayoutRateSetting />
+          <CurrencyDisplaySetting />
+        </div>
+
+        <div
+          id="charts"
+          className="scroll-mt-14 space-y-2 rounded-xl border p-4"
+          style={{ borderColor: "var(--sb-border)" }}
+        >
+          <SectionHeader title="Charts" subtitle="Visual preferences for time-series charts." />
+          <WeekHighlightDaySetting />
+          <ChartStartDateSetting />
+          <ChartAxisZoomSetting />
+          <WeekendDipSetting />
+        </div>
+
+        <div
+          id="health"
+          className="scroll-mt-14 space-y-2 rounded-xl border p-4"
+          style={{ borderColor: "var(--sb-border)" }}
+        >
+          <SectionHeader title="Health" subtitle="Configure data-quality detection thresholds used during daily ingestion." />
+          <StaleTrackThresholdSetting />
+          <RapidApiFallbackSetting />
+        </div>
       </div>
 
-      <div className="space-y-2">
-        <SectionHeader title="Home" subtitle="Customize what appears on the Home dashboard." />
-        <HomeFiltersToggle />
+      <div id="exclusions" className="scroll-mt-14">
+        <CollapsibleSection
+          title={<>Health exclusions <span className="ml-1.5 tabular-nums opacity-80">{totalExclusions}</span></>}
+          subtitle="Manage non-catalog, enrichment, and stale track exclusions."
+          storageKey="sb-settings-exclusions"
+          defaultOpen={false}
+        >
+          <HealthExclusionsSection
+            tabs={exclusionTabs}
+            playlists={allPlaylists}
+            allTracks={allTracks}
+          />
+        </CollapsibleSection>
       </div>
 
-      <div className="space-y-2">
-        <SectionHeader title="Revenue" subtitle="Configure how estimated revenue is calculated from streams." />
-        <PayoutRateSetting />
-        <CurrencyDisplaySetting />
-      </div>
-
-      <div className="space-y-2">
-        <SectionHeader title="Charts" subtitle="Visual preferences for time-series charts." />
-        <WeekHighlightDaySetting />
-        <ChartStartDateSetting />
-        <ChartAxisZoomSetting />
-        <WeekendDipSetting />
-      </div>
-
-      <div className="space-y-2">
-        <SectionHeader title="Health" subtitle="Configure data-quality detection thresholds used during daily ingestion." />
-        <StaleTrackThresholdSetting />
-        <RapidApiFallbackSetting />
-      </div>
-
-      <div className="space-y-2">
-        <SectionHeader
-          title="Health warning exclusions"
-          subtitle={
-            <>
-              Exclude intentional non-catalog tracks from the Health warning{" "}
-              <span className="font-mono">non_catalog_tracks_present</span> and from the "All Missing Catalog Tracks" list.
-            </>
-          }
-        />
-
-        <TrackExclusionForm
-          addHealthExclusion={addHealthExclusion}
-          tracks={allTracks}
-          playlists={allPlaylists}
-          notePlaceholder="Intentional non-catalog track"
-        />
-
-        <GlassTable headers={["Scope", "Track", "Note", ""]}>
-          {exclusions.map((e) => {
-            const isrc = String(e.isrc ?? "").trim().toUpperCase();
-            const track = allTracks.find((t) => t.isrc === isrc);
-            const name = track?.name ?? isrc;
-            const imageUrl = track?.spotify_album_image_url ?? null;
-            return (
-              <TableRow key={e.id}>
-                <TableCell mono className="text-xs">
-                  {e.playlist_key ?? "all"}
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    {imageUrl ? (
-                      <Image
-                        src={imageUrl}
-                        alt={name}
-                        width={32}
-                        height={32}
-                        className="h-8 w-8 rounded-lg object-cover sb-ring flex-shrink-0"
-                      />
-                    ) : (
-                      <div className="h-8 w-8 rounded-lg sb-ring bg-white/60 dark:bg-white/10 flex-shrink-0" />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium truncate">{name}</div>
-                      <div className="font-mono text-[10px] opacity-60 truncate">{isrc}</div>
-                    </div>
-                  </div>
-                </TableCell>
-                <TableCell className="text-xs">{e.note ?? "—"}</TableCell>
-                <TableCell className="text-right">
-                  <form action={removeHealthExclusion}>
-                    <input type="hidden" name="id" value={String(e.id)} />
-                    <button type="submit" className="text-xs underline opacity-70 hover:opacity-100">
-                      remove
-                    </button>
-                  </form>
-                </TableCell>
-              </TableRow>
-            );
-          })}
-          {!exclusions.length && <EmptyState colSpan={4} message="No exclusions yet." />}
-        </GlassTable>
-      </div>
-
-      <div className="space-y-2">
-        <SectionHeader
-          title="Enrichment warning exclusions"
-          subtitle={
-            <div className="space-y-1">
-              <div>
-                Suppress the Health warning{" "}
-                <span className="font-mono">tracks_missing_enrichment</span> for specific tracks (tracks where enrichment has been intentionally skipped).
-              </div>
-              <div className="opacity-70">
-                The Track combobox only lists tracks currently detected as missing enrichment (no Spotify artist IDs).
-              </div>
-            </div>
-          }
-        />
-
-        <TrackExclusionForm
-          addHealthExclusion={addEnrichmentExclusion}
-          tracks={unenrichedTracks}
-          playlists={allPlaylists}
-          notePlaceholder="Intentional: skip enrichment for this track"
-          allowMulti
-          submitLabel="Exclude selected"
-        />
-
-        <GlassTable headers={["Scope", "Track", "Note", ""]}>
-          {enrichmentExclusions.map((e) => {
-            const isrc = String(e.isrc ?? "").trim().toUpperCase();
-            const track = allTracks.find((t) => t.isrc === isrc);
-            const name = track?.name ?? isrc;
-            const imageUrl = track?.spotify_album_image_url ?? null;
-            return (
-              <TableRow key={`enrich-${e.id}`}>
-                <TableCell mono className="text-xs">
-                  {e.playlist_key ?? "all"}
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    {imageUrl ? (
-                      <Image
-                        src={imageUrl}
-                        alt={name}
-                        width={32}
-                        height={32}
-                        className="h-8 w-8 rounded-lg object-cover sb-ring flex-shrink-0"
-                      />
-                    ) : (
-                      <div className="h-8 w-8 rounded-lg sb-ring bg-white/60 dark:bg-white/10 flex-shrink-0" />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium truncate">{name}</div>
-                      <div className="font-mono text-[10px] opacity-60 truncate">{isrc}</div>
-                    </div>
-                  </div>
-                </TableCell>
-                <TableCell className="text-xs">{e.note ?? "—"}</TableCell>
-                <TableCell className="text-right">
-                  <form action={removeEnrichmentExclusion}>
-                    <input type="hidden" name="id" value={String(e.id)} />
-                    <button type="submit" className="text-xs underline opacity-70 hover:opacity-100">
-                      remove
-                    </button>
-                  </form>
-                </TableCell>
-              </TableRow>
-            );
-          })}
-          {!enrichmentExclusions.length && <EmptyState colSpan={4} message="No enrichment exclusions yet." />}
-        </GlassTable>
-      </div>
-
-      <div className="space-y-2">
-        <SectionHeader
-          title="Stale track exclusions"
-          subtitle={
-            <div className="space-y-1">
-              <div>
-                Exclude tracks from the{" "}
-                <span className="font-mono">individual_tracks_stale</span> Health warning.
-                Excluded tracks will not be flagged even if their daily streams show zero growth.
-              </div>
-              <div className="opacity-70">
-                Exclusions take effect on the next ingestion run.
-              </div>
-            </div>
-          }
-        />
-
-        <TrackExclusionForm
-          addHealthExclusion={addStaleExclusion}
-          tracks={allTracks}
-          playlists={allPlaylists}
-          notePlaceholder="Intentional: this track's streams may not update daily"
-          allowMulti
-          submitLabel="Exclude selected"
-        />
-
-        <GlassTable headers={["Scope", "Track", "Note", ""]}>
-          {staleExclusions.map((e) => {
-            const isrc = String(e.isrc ?? "").trim().toUpperCase();
-            const track = allTracks.find((t) => t.isrc === isrc);
-            const name = track?.name ?? isrc;
-            const imageUrl = track?.spotify_album_image_url ?? null;
-            return (
-              <TableRow key={`stale-${e.id}`}>
-                <TableCell mono className="text-xs">
-                  {e.playlist_key ?? "all"}
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    {imageUrl ? (
-                      <Image
-                        src={imageUrl}
-                        alt={name}
-                        width={32}
-                        height={32}
-                        className="h-8 w-8 rounded-lg object-cover sb-ring flex-shrink-0"
-                      />
-                    ) : (
-                      <div className="h-8 w-8 rounded-lg sb-ring bg-white/60 dark:bg-white/10 flex-shrink-0" />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium truncate">{name}</div>
-                      <div className="font-mono text-[10px] opacity-60 truncate">{isrc}</div>
-                    </div>
-                  </div>
-                </TableCell>
-                <TableCell className="text-xs">{e.note ?? "—"}</TableCell>
-                <TableCell className="text-right">
-                  <form action={removeStaleExclusion}>
-                    <input type="hidden" name="id" value={String(e.id)} />
-                    <button type="submit" className="text-xs underline opacity-70 hover:opacity-100">
-                      remove
-                    </button>
-                  </form>
-                </TableCell>
-              </TableRow>
-            );
-          })}
-          {!staleExclusions.length && <EmptyState colSpan={4} message="No stale track exclusions yet." />}
-        </GlassTable>
-      </div>
-
-      <div className="space-y-2">
-        <SectionHeader
-          title="Manual stream fixes (overrides)"
-          subtitle={
-            <>
-              Manually override a track's cumulative stream snapshot for a specific{" "}
-              <span className="font-mono">run_date</span>. Overrides are stored separately for auditability, and the app can read through an "effective" view.
-            </>
-          }
+      <div id="overrides" className="scroll-mt-14">
+        <CollapsibleSection
+          title={<>Manual stream overrides <span className="ml-1.5 tabular-nums opacity-80">{streamOverrides.length}</span></>}
+          subtitle="Override cumulative stream snapshots for specific run dates."
+          storageKey="sb-settings-overrides"
+          defaultOpen={false}
           actions={<StreamOverridesTableDownloadButton overrides={streamOverrides} tracks={allTracks} />}
-        />
+        >
+          <ManualStreamOverrideForm
+            addStreamOverride={addStreamOverride}
+            tracks={allTracks}
+            defaultRunDate={latestRunDate}
+            runDateOptions={runDateOptions}
+            suggestions={overrideSuggestions}
+          />
 
-        <ManualStreamOverrideForm
-          addStreamOverride={addStreamOverride}
-          tracks={allTracks}
-          defaultRunDate={latestRunDate}
-          runDateOptions={runDateOptions}
-          suggestions={overrideSuggestions}
-        />
-
-        <StreamOverridesTable
-          overrides={streamOverrides}
-          tracks={allTracks}
-          removeStreamOverride={removeStreamOverride}
-        />
+          <div className="mt-3">
+            <StreamOverridesTable
+              overrides={streamOverrides}
+              tracks={allTracks}
+              removeStreamOverride={removeStreamOverride}
+            />
+          </div>
+        </CollapsibleSection>
       </div>
     </div>
   );

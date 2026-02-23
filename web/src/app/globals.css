@@ -141,6 +141,7 @@ html[data-theme="dark"] {
 html {
   /* Global density dial (smaller dashboard UI without browser zoom hacks) */
   font-size: 14px;
+  scroll-behavior: smooth;
 }
 
 body {

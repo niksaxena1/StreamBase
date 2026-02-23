@@ -7,6 +7,7 @@ import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { InlineDatePicker } from "@/components/ui/InlineDatePicker";
+import { showToast } from "@/lib/toast";
 
 type Track = {
   isrc: string;
@@ -113,6 +114,7 @@ export function ManualStreamOverrideForm({
       formData.set("recompute", recompute ? "true" : "false");
 
       await addStreamOverride(formData);
+      showToast("Override saved");
 
       // Reset input fields (keep runDate for convenience).
       setSelectedIsrc("");

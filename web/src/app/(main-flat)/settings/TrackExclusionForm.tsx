@@ -6,6 +6,7 @@ import { Alert } from "@/components/ui/Alert";
 import { Button, IconButton } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Chip } from "@/components/ui/Chip";
+import { showToast } from "@/lib/toast";
 
 type Track = {
   isrc: string;
@@ -103,6 +104,7 @@ export function TrackExclusionForm({
       if (note) formData.set("note", note);
 
       await addHealthExclusion(formData);
+      showToast(allowMulti ? `${isrcs.length} exclusion${isrcs.length !== 1 ? "s" : ""} added` : "Exclusion added");
 
       // Reset form
       setSelectedPlaylistKey("");

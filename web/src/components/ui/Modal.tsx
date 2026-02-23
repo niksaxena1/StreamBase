@@ -55,13 +55,13 @@ export function Modal({
 
       <div
         className={[
-          "relative w-full overflow-hidden sb-glass shadow-2xl animate-[modal-scale-in_150ms_ease-out]",
+          "relative w-full max-h-full flex flex-col overflow-hidden sb-glass shadow-2xl animate-[modal-scale-in_150ms_ease-out]",
           maxWidthClassName ?? "max-w-5xl",
         ].join(" ")}
         onMouseDown={(e) => e.stopPropagation()}
       >
         {(title || subtitle) && (
-          <div className="flex items-start justify-between gap-3 border-b px-4 py-3" style={{ borderColor: "var(--sb-border)" }}>
+          <div className="flex-none flex items-start justify-between gap-3 border-b px-4 py-3" style={{ borderColor: "var(--sb-border)" }}>
             <div>
               {title ? (
                 <div className="font-display text-base font-semibold tracking-tight" style={{ color: "var(--sb-text)" }}>
@@ -87,7 +87,7 @@ export function Modal({
           </div>
         )}
 
-        <div className="px-4 py-4">{children}</div>
+        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4">{children}</div>
       </div>
     </div>,
     document.body,

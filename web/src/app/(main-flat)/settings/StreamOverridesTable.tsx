@@ -8,6 +8,7 @@ import { MenuSelect } from "@/components/ui/MenuSelect";
 import { IconButton } from "@/components/ui/Button";
 import { InlineDatePicker } from "@/components/ui/InlineDatePicker";
 import { downloadCsv, todayIsoDate } from "@/lib/csv";
+import { showToast } from "@/lib/toast";
 
 interface StreamOverride {
   id: number;
@@ -334,10 +335,15 @@ export function StreamOverridesTable({
                       <td className="px-4 py-3 text-sm truncate max-w-xs">{o.note ?? "—"}</td>
                       <td className="px-4 py-3 text-right">
                         <form
-                          action={removeStreamOverride}
-                          onSubmit={(e) => {
-                            if (!confirm("Remove this override?")) {
-                              e.preventDefault();
+                          onSubmit={async (e) => {
+                            e.preventDefault();
+                            if (!confirm("Remove this override?")) return;
+                            const fd = new FormData(e.currentTarget);
+                            try {
+                              await removeStreamOverride(fd);
+                              showToast("Override removed");
+                            } catch {
+                              showToast("Failed to remove override", "error");
                             }
                           }}
                         >

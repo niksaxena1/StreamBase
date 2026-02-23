@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Activity, Search, X } from "lucide-react";
+import { Activity, Search, X, TrendingUp, TrendingDown } from "lucide-react";
 
 import { GlassTable, TableCell, TableRow } from "@/components/ui/GlassTable";
 import { SpotlightCard } from "@/components/ui/SpotlightCard";
@@ -12,7 +12,7 @@ import { DailyStreamsWithMAChart } from "@/components/charts/DailyStreamsWithMAC
 import { MonthlyBarChart } from "@/components/charts/MonthlyBarChart";
 import { Sparkline } from "@/components/charts/Sparkline";
 import { StatCard } from "@/components/StatCard";
-import { formatDateISO, formatInt, formatUsd2 } from "@/lib/format";
+import { formatDateISO, formatDateOrdinalDMonYYYY, formatInt, formatUsd2 } from "@/lib/format";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
 import { slugifyForFilename, todayIsoDate } from "@/lib/csv";
 import {
@@ -770,6 +770,70 @@ export function CollectorsClient(props: {
   const tracksTableTotalLabel = tracksTableIsRevenue ? "Est. revenue (total)" : "Streams (total)";
   const tracksTableDailyLabel = tracksTableIsRevenue ? "Est. revenue (daily)" : "Streams (daily)";
 
+  // Date breakdown modal state (click-to-drill-down on chart)
+  type DateBreakdownCollector = {
+    daily_streams: number;
+    avg7_streams: number;
+    delta_pct: number | null;
+    top_tracks: Array<{
+      isrc: string;
+      name: string | null;
+      album_image_url: string | null;
+      artist_names: string[] | null;
+      artist_ids: string[] | null;
+      daily_streams_delta: number | null;
+      total_streams_cumulative: number | null;
+    }>;
+  };
+  const [breakdownOpen, setBreakdownOpen] = useState(false);
+  const [breakdownDate, setBreakdownDate] = useState<string | null>(null);
+  const [breakdownData, setBreakdownData] = useState<Record<string, DateBreakdownCollector> | null>(null);
+  const [breakdownLoading, setBreakdownLoading] = useState(false);
+  const [breakdownError, setBreakdownError] = useState<string | null>(null);
+
+  const handleDateClick = useCallback((date: string) => {
+    setBreakdownDate(date);
+    setBreakdownData(null);
+    setBreakdownError(null);
+    setBreakdownOpen(true);
+  }, []);
+
+  useEffect(() => {
+    if (!breakdownOpen || !breakdownDate) return;
+    let cancelled = false;
+
+    async function load() {
+      setBreakdownLoading(true);
+      setBreakdownError(null);
+      try {
+        const res = await fetch("/api/collectors/date-breakdown", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            data_date: breakdownDate,
+            collectors: comparisonCollectors,
+          }),
+        });
+        const json: unknown = await res.json().catch(() => null);
+        const obj = json && typeof json === "object" ? (json as Record<string, unknown>) : null;
+        if (!res.ok || obj?.ok !== true) {
+          const err = obj?.error;
+          throw new Error(typeof err === "string" ? err : `Request failed (${res.status})`);
+        }
+        if (!cancelled) {
+          setBreakdownData((obj?.collectors ?? null) as Record<string, DateBreakdownCollector> | null);
+        }
+      } catch (e) {
+        if (!cancelled) setBreakdownError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (!cancelled) setBreakdownLoading(false);
+      }
+    }
+
+    void load();
+    return () => { cancelled = true; };
+  }, [breakdownOpen, breakdownDate, comparisonCollectors]);
+
   type DrillKind = "playlists" | "artists" | "tracks";
   const [drillOpen, setDrillOpen] = useState(false);
   const [drillKind, setDrillKind] = useState<DrillKind>("tracks");
@@ -1177,6 +1241,7 @@ export function CollectorsClient(props: {
                 metric={metric}
                 heightPx={260}
                 granularity={granularity}
+                onDateClick={granularity === "daily" ? handleDateClick : undefined}
               />
             </div>
           </div>
@@ -1758,6 +1823,180 @@ export function CollectorsClient(props: {
               {forecastSaving ? "Saving…" : "Save"}
             </button>
           </div>
+        </div>
+      </Modal>
+
+      {/* Date breakdown modal (click-to-drill-down) */}
+      <Modal
+        open={breakdownOpen}
+        onClose={() => {
+          setBreakdownOpen(false);
+          setBreakdownData(null);
+          setBreakdownError(null);
+        }}
+        title={
+          breakdownDate
+            ? `Breakdown for ${formatDateOrdinalDMonYYYY(breakdownDate)}`
+            : "Date Breakdown"
+        }
+        subtitle={`Showing ${metric === "revenue" ? "revenue" : "streams"} collected on this date vs. the prior 7-day average`}
+        maxWidthClassName="max-w-4xl"
+      >
+        <div className="space-y-4">
+          {breakdownError ? (
+            <div className="text-xs text-red-600 dark:text-red-400">{breakdownError}</div>
+          ) : breakdownLoading ? (
+            <div className="text-center text-xs opacity-60 py-8" style={{ color: "var(--sb-muted)" }}>
+              Loading breakdown…
+            </div>
+          ) : breakdownData ? (
+            <>
+              {/* Per-collector summary cards */}
+              <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${comparisonCollectors.length}, minmax(0, 1fr))` }}>
+                {comparisonCollectors.map((collector) => {
+                  const d = breakdownData[collector];
+                  if (!d) return null;
+                  const deltaPct = d.delta_pct;
+                  const isUp = deltaPct != null && deltaPct >= 0;
+                  const absValue = metric === "revenue"
+                    ? formatUsd2(d.daily_streams * streamPayoutPerStreamUsd)
+                    : formatInt(d.daily_streams);
+                  const avg7Formatted = metric === "revenue"
+                    ? formatUsd2(d.avg7_streams * streamPayoutPerStreamUsd)
+                    : formatInt(Math.round(d.avg7_streams));
+
+                  return (
+                    <div
+                      key={collector}
+                      className="rounded-xl border p-3"
+                      style={{ borderColor: "var(--sb-border)", background: "var(--sb-surface)" }}
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        <span
+                          className="inline-block h-2.5 w-2.5 rounded-full"
+                          style={{ backgroundColor: COLLECTOR_COLORS[collector] ?? "var(--sb-muted)" }}
+                        />
+                        <span className="text-sm font-semibold" style={{ color: "var(--sb-text)" }}>
+                          {collector}
+                        </span>
+                      </div>
+                      <div className="text-lg font-bold" style={{ color: "var(--sb-text)" }}>
+                        {absValue}
+                      </div>
+                      <div className="text-[10px] mt-0.5 uppercase tracking-wider" style={{ color: "var(--sb-muted)" }}>
+                        {metric === "revenue" ? "revenue on this date" : "streams on this date"}
+                      </div>
+                      <div className="text-xs mt-1.5" style={{ color: "var(--sb-muted)" }}>
+                        7-day avg: {avg7Formatted}
+                      </div>
+                      {deltaPct != null && (
+                        <div className="flex items-center gap-1 mt-1.5">
+                          {isUp ? (
+                            <TrendingUp className="h-3.5 w-3.5" style={{ color: "#22c55e" }} />
+                          ) : (
+                            <TrendingDown className="h-3.5 w-3.5" style={{ color: "#ef4444" }} />
+                          )}
+                          <span
+                            className="text-xs font-semibold"
+                            style={{ color: isUp ? "#22c55e" : "#ef4444" }}
+                          >
+                            {isUp ? "+" : ""}{deltaPct.toFixed(1)}%
+                          </span>
+                          <span className="text-[10px] opacity-50" style={{ color: "var(--sb-muted)" }}>
+                            vs 7d avg
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Top tracks per collector */}
+              {comparisonCollectors.map((collector) => {
+                const d = breakdownData[collector];
+                if (!d?.top_tracks?.length) return null;
+
+                return (
+                  <div key={collector}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span
+                        className="inline-block h-2 w-2 rounded-full"
+                        style={{ backgroundColor: COLLECTOR_COLORS[collector] ?? "var(--sb-muted)" }}
+                      />
+                      <span className="text-xs font-medium uppercase tracking-wide opacity-70">
+                        {collector} — Top tracks
+                      </span>
+                    </div>
+                    <GlassTable
+                      headers={[
+                        "",
+                        "Track",
+                        { label: metric === "revenue" ? "Daily Revenue" : "Daily Streams", align: "right" },
+                        { label: metric === "revenue" ? "Total Revenue" : "Total Streams", align: "right" },
+                      ]}
+                    >
+                      {d.top_tracks.map((t) => {
+                        const dailyStreams = Number(t.daily_streams_delta ?? 0);
+                        const totalStreams = Number(t.total_streams_cumulative ?? 0);
+                        const dailyFormatted = metric === "revenue"
+                          ? formatUsd2(dailyStreams * streamPayoutPerStreamUsd)
+                          : formatInt(dailyStreams);
+                        const totalFormatted = metric === "revenue"
+                          ? formatUsd2(totalStreams * streamPayoutPerStreamUsd)
+                          : formatInt(totalStreams);
+
+                        return (
+                          <TableRow key={t.isrc}>
+                            <TableCell>
+                              {t.album_image_url ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={String(t.album_image_url)}
+                                  alt="Album"
+                                  className="h-7 w-7 rounded-lg object-cover sb-ring"
+                                />
+                              ) : (
+                                <div className="h-7 w-7 rounded-lg sb-ring bg-white/60 dark:bg-white/10" />
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <Link
+                                href={`/tracks/${encodeURIComponent(t.isrc)}`}
+                                className="font-medium transition-colors sb-link-hover text-sm"
+                              >
+                                {t.name ?? t.isrc}
+                              </Link>
+                              {t.artist_names?.length ? (
+                                <div className="text-xs opacity-60 truncate">
+                                  <ArtistLinks
+                                    artistNames={t.artist_names}
+                                    artistIds={t.artist_ids}
+                                  />
+                                </div>
+                              ) : null}
+                            </TableCell>
+                            <TableCell
+                              numeric
+                              className="font-medium"
+                              style={{
+                                color: metric === "revenue" ? "#10b981" : "var(--sb-accent)",
+                              }}
+                            >
+                              {dailyFormatted}
+                            </TableCell>
+                            <TableCell numeric className="opacity-60">
+                              {totalFormatted}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </GlassTable>
+                  </div>
+                );
+              })}
+            </>
+          ) : null}
         </div>
       </Modal>
 

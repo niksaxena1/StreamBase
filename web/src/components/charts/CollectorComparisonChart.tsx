@@ -11,7 +11,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { useId, useMemo } from "react";
+import { useCallback, useId, useMemo, useRef } from "react";
 import { formatInt, formatUsd2 } from "@/lib/format";
 import {
   computePaddedDomain,
@@ -111,15 +111,22 @@ function CustomTooltip({
   metric,
   granularity = "daily",
   showWeekendDip = false,
+  clickable = false,
+  onActiveDate,
 }: {
   active?: boolean;
   label?: string;
-  payload?: Array<{ name: string; value: number; dataKey: string; color: string }>;
+  payload?: Array<{ name: string; value: number; dataKey: string; color: string; payload?: Record<string, any> }>;
   mode: ComparisonMode;
   metric: ComparisonMetric;
   granularity?: Granularity;
   showWeekendDip?: boolean;
+  clickable?: boolean;
+  onActiveDate?: (date: string | null) => void;
 }) {
+  const dateStr = active && label ? String(label) : null;
+  if (onActiveDate) onActiveDate(dateStr);
+
   if (!active || !payload || payload.length === 0) return null;
 
   const formatValue = (n: number) => {
@@ -128,7 +135,15 @@ function CustomTooltip({
     return formatInt(n);
   };
 
+  const formatAbsValue = (n: number) => {
+    if (metric === "revenue") return formatUsd2(n);
+    return formatInt(n);
+  };
+
   const weekendDipPct = showWeekendDip ? extractWeekendDipFromRechartsPayload(payload) : null;
+  const dataPoint = payload[0]?.payload;
+  const isPercentageMode = mode === "percentage" && !!dataPoint;
+  const isAnomaly = isPercentageMode && dataPoint?._anomaly === 1;
 
   return (
     <ViewportAwareTooltip>
@@ -136,17 +151,63 @@ function CustomTooltip({
         className="rounded-lg border p-3"
         style={{
           backgroundColor: "var(--sb-card)",
-          borderColor: "var(--sb-border)",
+          borderColor: isAnomaly ? "#F59E0B" : "var(--sb-border)",
           boxShadow: "var(--sb-shadow-compact)",
           color: "var(--sb-text)",
         }}
       >
         {label && (
-          <div className="mb-2 text-xs font-medium">{formatTooltipDate(label, granularity)}</div>
+          <div className="mb-2 text-xs font-medium">
+            {formatTooltipDate(label, granularity)}
+            {isAnomaly && (
+              <span className="ml-2 text-[10px] font-semibold" style={{ color: "#F59E0B" }}>
+                Anomaly
+              </span>
+            )}
+          </div>
         )}
         {payload.map((entry, index) => {
           const collectorName = entry.dataKey === "combined" ? "Combined Total" : entry.dataKey;
           const color = entry.color || COLLECTOR_COLORS[entry.dataKey] || "#888";
+
+          if (isPercentageMode) {
+            const absValue = Number(dataPoint[`_abs_${entry.dataKey}`] ?? 0);
+            const avg7Value = Number(dataPoint[`_avg7_${entry.dataKey}`] ?? 0);
+            const deltaPct = avg7Value > 0 ? ((absValue - avg7Value) / avg7Value) * 100 : null;
+
+            return (
+              <div key={index} className="text-xs mb-1.5 last:mb-0">
+                <div className="flex items-center gap-2">
+                  <span
+                    className="inline-block w-2 h-2 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: color }}
+                  />
+                  <span style={{ color: "var(--sb-text)" }}>
+                    {collectorName}:{" "}
+                    <span className="font-bold" style={{ color }}>
+                      {Number(entry.value ?? 0).toFixed(1)}%
+                    </span>
+                    <span className="ml-1 opacity-60">
+                      ({formatAbsValue(absValue)})
+                    </span>
+                  </span>
+                </div>
+                {deltaPct != null && (
+                  <div className="ml-4 text-[10px]" style={{ color: "var(--sb-muted)" }}>
+                    <span
+                      className="font-medium"
+                      style={{ color: deltaPct >= 0 ? "#22c55e" : "#ef4444" }}
+                    >
+                      {deltaPct >= 0 ? "+" : ""}
+                      {deltaPct.toFixed(1)}%
+                    </span>
+                    {" vs 7d avg "}
+                    <span className="opacity-70">({formatAbsValue(avg7Value)})</span>
+                  </div>
+                )}
+              </div>
+            );
+          }
 
           return (
             <div key={index} className="text-xs flex items-center gap-2">
@@ -177,6 +238,14 @@ function CustomTooltip({
             </span>
           </div>
         )}
+        {clickable && (
+          <div
+            className="text-[10px] mt-1.5 pt-1.5 border-t opacity-40"
+            style={{ borderColor: "var(--sb-border)" }}
+          >
+            Click for breakdown
+          </div>
+        )}
       </div>
     </ViewportAwareTooltip>
   );
@@ -191,6 +260,7 @@ export function CollectorComparisonChart({
   metric,
   heightPx = 300,
   granularity = "daily",
+  onDateClick,
 }: {
   data: CollectorDailyData[];
   selectedCollectors: string[];
@@ -198,6 +268,7 @@ export function CollectorComparisonChart({
   metric: ComparisonMetric;
   heightPx?: number;
   granularity?: Granularity;
+  onDateClick?: (date: string) => void;
 }) {
   const gid = useId();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
@@ -288,8 +359,8 @@ export function CollectorComparisonChart({
         }
       } else if (mode === "percentage") {
         for (const collector of selectedCollectors) {
-          // If total is 0, show 0% for all
           point[collector] = total === 0 ? 0 : (values[collector] / total) * 100;
+          point[`_abs_${collector}`] = values[collector];
         }
       }
 
@@ -299,12 +370,65 @@ export function CollectorComparisonChart({
     return filterBucketedSeriesFromIsoDate(result, granularity, chartStartDateIso);
   }, [data, selectedCollectors, mode, metric, granularity, streamPayoutPerStreamUsd, chartStartDateIso]);
 
-  // Compute weekend dip % and enrich chart data
+  // Enrich chart data: percentage mode gets 7d averages + anomaly detection;
+  // non-percentage modes get weekend dip enrichment.
   const enrichedChartData = useMemo(() => {
-    if (!enableWeekendDip || !chartData.length) return chartData;
+    if (!chartData.length) return chartData;
 
-    // For combined mode, dip is based on the combined value.
-    // For individual mode, dip is based on the total across all selected collectors.
+    if (mode === "percentage") {
+      const ANOMALY_LOOKBACK = 14;
+      return chartData.map((point, i) => {
+        const enriched = { ...point } as Record<string, any>;
+
+        for (const collector of selectedCollectors) {
+          const windowStart = Math.max(0, i - 6);
+          const window = chartData.slice(windowStart, i + 1);
+          const absValues = window.map((d) => Number(d[`_abs_${collector}`] ?? 0));
+          enriched[`_avg7_${collector}`] =
+            absValues.reduce((s, v) => s + v, 0) / absValues.length;
+        }
+
+        const lookStart = Math.max(0, i - ANOMALY_LOOKBACK);
+        const prevPoints = chartData.slice(lookStart, i);
+        let isAnomaly = false;
+
+        if (prevPoints.length >= 5) {
+          for (const collector of selectedCollectors) {
+            const pctValues = prevPoints.map((d) => Number(d[collector] ?? 0));
+
+            // Use MAD (median absolute deviation) — robust to prior outliers
+            const sorted = [...pctValues].sort((a, b) => a - b);
+            const mid = Math.floor(sorted.length / 2);
+            const median =
+              sorted.length % 2 === 1
+                ? sorted[mid]
+                : (sorted[mid - 1] + sorted[mid]) / 2;
+
+            const absDevs = pctValues
+              .map((v) => Math.abs(v - median))
+              .sort((a, b) => a - b);
+            const midD = Math.floor(absDevs.length / 2);
+            const mad =
+              absDevs.length % 2 === 1
+                ? absDevs[midD]
+                : (absDevs[midD - 1] + absDevs[midD]) / 2;
+
+            const scaledMad = Math.max(1.4826 * mad, 1);
+            const deviation = Math.abs(Number(point[collector] ?? 0) - median);
+            if (deviation > Math.max(2 * scaledMad, 8)) {
+              isAnomaly = true;
+              break;
+            }
+          }
+        }
+
+        enriched._anomaly = isAnomaly ? 1 : 0;
+        return enriched as ChartDataPoint;
+      });
+    }
+
+    if (!enableWeekendDip) return chartData;
+
     const dipSource = chartData.map((d) => {
       let val: number;
       if (mode === "combined") {
@@ -392,6 +516,18 @@ export function CollectorComparisonChart({
     });
   })();
 
+  const isClickable = !!onDateClick && granularity === "daily";
+
+  const activeDateRef = useRef<string | null>(null);
+  const handleActiveDate = useCallback((date: string | null) => {
+    activeDateRef.current = date;
+  }, []);
+  const handleChartClick = useCallback(() => {
+    if (!isClickable) return;
+    const date = activeDateRef.current;
+    if (date) onDateClick!(date);
+  }, [isClickable, onDateClick]);
+
   if (!enrichedChartData.length) {
     return (
       <div
@@ -404,9 +540,25 @@ export function CollectorComparisonChart({
   }
 
   return (
-    <div className="w-full">
+    <div
+      className="w-full overflow-visible outline-none"
+      style={{
+        outline: "none",
+        ...(isClickable ? {
+          cursor: "pointer",
+          WebkitTapHighlightColor: "transparent",
+          WebkitUserSelect: "none",
+          userSelect: "none",
+        } : {}),
+      }}
+      onClick={handleChartClick}
+    >
       <ResponsiveContainer width="100%" height={heightPx} minWidth={0}>
-        <ComposedChart data={enrichedChartData} margin={{ top: 6, right: 6, left: 0, bottom: 0 }}>
+        <ComposedChart
+          data={enrichedChartData}
+          margin={{ top: 6, right: 6, left: 0, bottom: 0 }}
+          style={{ outline: "none" }}
+        >
           <defs>
             {areaKey ? (
               <linearGradient id={`${gid}-area`} x1="0" y1="0" x2="0" y2="1">
@@ -475,11 +627,13 @@ export function CollectorComparisonChart({
               <CustomTooltip
                 active={active}
                 label={label as string}
-                payload={payload as Array<{ name: string; value: number; dataKey: string; color: string }>}
+                payload={payload as any}
                 mode={mode}
                 metric={metric}
                 granularity={granularity}
                 showWeekendDip={enableWeekendDip}
+                clickable={isClickable}
+                onActiveDate={handleActiveDate}
               />
             )}
             cursor={{
@@ -520,17 +674,49 @@ export function CollectorComparisonChart({
           ) : null}
 
           {lineKeys.map((key) => {
-            // If the area is being drawn for this key, skip the separate line to avoid double-stroking.
             if (areaKey && key === areaKey) return null;
 
             const color = getLineColor(key);
             const sunday = getSundayAccentColor(color, { isDark: themeColors.isDark, bgColor: themeColors.bg });
-            const { dot, activeDot } = makeHighlightDayDotRenderers({
-              baseColor: color,
-              highlightColor: sunday,
-              highlightWeekdayUtc: weekHighlightDayUtc,
-              enabled: granularity === "daily",
-            });
+
+            const isPercentageDaily = mode === "percentage" && granularity === "daily";
+
+            let dotFn: any;
+            let activeDotFn: any;
+
+            if (isPercentageDaily) {
+              const makeAnomalyDot = (baseR: number) => (props: any) => {
+                const { cx, cy, payload: pl } = props ?? {};
+                const x = Number(cx);
+                const y = Number(cy);
+                if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+
+                if (pl?._anomaly === 1) {
+                  return (
+                    <g>
+                      <circle cx={x} cy={y} r={baseR + 3} fill="none" stroke="#F59E0B" strokeWidth={1.5} strokeOpacity={0.5} />
+                      <circle cx={x} cy={y} r={baseR} fill="#F59E0B" fillOpacity={0.85} stroke="var(--sb-bg)" strokeWidth={1.5} />
+                    </g>
+                  );
+                }
+
+                return (
+                  <circle cx={x} cy={y} r={baseR} fill={color} stroke="var(--sb-bg)" strokeWidth={1.5} />
+                );
+              };
+              dotFn = makeAnomalyDot(3);
+              activeDotFn = makeAnomalyDot(4);
+            } else {
+              const r = makeHighlightDayDotRenderers({
+                baseColor: color,
+                highlightColor: sunday,
+                highlightWeekdayUtc: weekHighlightDayUtc,
+                enabled: granularity === "daily",
+              });
+              dotFn = r.dot;
+              activeDotFn = r.activeDot;
+            }
+
             return (
               <Line
                 key={key}
@@ -538,8 +724,8 @@ export function CollectorComparisonChart({
                 dataKey={key}
                 stroke={color}
                 strokeWidth={2}
-                dot={dot}
-                activeDot={activeDot}
+                dot={dotFn}
+                activeDot={activeDotFn}
                 isAnimationActive={true}
               />
             );
