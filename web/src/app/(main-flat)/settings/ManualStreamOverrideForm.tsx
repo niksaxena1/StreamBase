@@ -6,6 +6,7 @@ import { Combobox, type ComboboxOption } from "@/components/ui/Combobox";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { InlineDatePicker } from "@/components/ui/InlineDatePicker";
 
 type Track = {
   isrc: string;
@@ -18,6 +19,8 @@ type ManualStreamOverrideFormProps = {
   addStreamOverride: (formData: FormData) => Promise<void>;
   tracks: Track[];
   defaultRunDate?: string | null;
+  /** Optional: if provided, only these run dates are selectable. */
+  runDateOptions?: string[];
   suggestions?: Array<{
     isrc: string;
     code: "catalog_streams_missing_prev_nonzero" | "catalog_missing_stream_snapshots";
@@ -30,6 +33,7 @@ export function ManualStreamOverrideForm({
   addStreamOverride,
   tracks,
   defaultRunDate,
+  runDateOptions,
   suggestions,
 }: ManualStreamOverrideFormProps) {
   const [runDate, setRunDate] = useState<string>(defaultRunDate ?? "");
@@ -201,12 +205,18 @@ export function ManualStreamOverrideForm({
       <form onSubmit={handleSubmit} className="grid gap-2 sm:grid-cols-12">
         <div className="sm:col-span-3">
           <label className="block text-[11px] font-medium opacity-70">Run date (UTC)</label>
-          <Input
-            type="date"
-            value={runDate}
-            onChange={(e) => setRunDate(e.target.value)}
-            className="mt-1"
-          />
+          <div className="mt-1">
+            <InlineDatePicker
+              value={runDate}
+              onChange={setRunDate}
+              placeholder="Pick run date"
+              className="w-full"
+              min={runDateOptions && runDateOptions.length ? runDateOptions[runDateOptions.length - 1] : undefined}
+              max={runDateOptions && runDateOptions.length ? runDateOptions[0] : undefined}
+              markedDates={runDateOptions}
+              restrictToMarked={Boolean(runDateOptions && runDateOptions.length)}
+            />
+          </div>
           <div className="mt-1 text-[11px] opacity-60">
             This is the ingestion snapshot date (not “data date”).
           </div>

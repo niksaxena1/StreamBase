@@ -24,6 +24,7 @@ export function MenuSelect({
   menuClassName,
   align = "left",
   matchTriggerWidth = true,
+  openUp = false,
 }: {
   value: string;
   options: MenuSelectOption[];
@@ -36,6 +37,8 @@ export function MenuSelect({
   menuClassName?: string;
   align?: "left" | "right";
   matchTriggerWidth?: boolean;
+  /** Open the menu above the trigger instead of below. */
+  openUp?: boolean;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -115,7 +118,8 @@ export function MenuSelect({
       {isOpen && !disabled && (
         <div
           className={cx(
-            "absolute top-full z-50 mt-2 rounded-[var(--sb-radius)] border p-1 shadow-lg",
+            "absolute z-50 rounded-[var(--sb-radius)] border p-1 shadow-lg",
+            openUp ? "bottom-full mb-2" : "top-full mt-2",
             align === "right" ? "right-0" : "left-0",
             menuClassName,
           )}

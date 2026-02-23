@@ -47,6 +47,23 @@ export default async function SettingsPage() {
     .maybeSingle();
   const latestRunDate = (latestRun?.run_date as string | null) ?? null;
 
+  // Run date options for date pickers (limit to recent history for perf/UX).
+  let runDateOptions: string[] = [];
+  try {
+    const { data: runRows, error: runErr } = await svc
+      .from("ingestion_runs")
+      .select("run_date")
+      .order("run_date", { ascending: false })
+      .limit(730);
+    if (!runErr) {
+      runDateOptions = (runRows ?? [])
+        .map((r) => String((r as any)?.run_date ?? "").trim())
+        .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d));
+    }
+  } catch {
+    // ignore
+  }
+
   // Fetch all tracks for combobox (with artist names)
   const allTracks: Array<{
     isrc: string;
@@ -219,6 +236,7 @@ export default async function SettingsPage() {
   }
 
   // Manual stream overrides (best-effort; table may not exist yet).
+  // Paginate to fetch ALL overrides — batch interpolation can easily exceed 500 rows.
   let streamOverrides: Array<{
     id: number;
     date: string;
@@ -230,13 +248,22 @@ export default async function SettingsPage() {
   }> = [];
 
   try {
-    const { data: rows, error } = await svc
-      .from("track_daily_stream_overrides")
-      .select("id,date,isrc,streams_cumulative_override,note,created_by,created_at")
-      .order("date", { ascending: false })
-      .order("created_at", { ascending: false })
-      .limit(500);
-    if (!error) streamOverrides = (rows ?? []) as any;
+    const pageSize = 1000;
+    let from = 0;
+    while (true) {
+      const to = from + pageSize - 1;
+      const { data: rows, error } = await svc
+        .from("track_daily_stream_overrides")
+        .select("id,date,isrc,streams_cumulative_override,note,created_by,created_at")
+        .order("date", { ascending: false })
+        .order("created_at", { ascending: false })
+        .range(from, to);
+
+      if (error || !rows || rows.length === 0) break;
+      streamOverrides.push(...(rows as any));
+      if (rows.length < pageSize) break;
+      from += pageSize;
+    }
   } catch {
     // ignore
   }
@@ -809,6 +836,7 @@ export default async function SettingsPage() {
           addStreamOverride={addStreamOverride}
           tracks={allTracks}
           defaultRunDate={latestRunDate}
+          runDateOptions={runDateOptions}
           suggestions={overrideSuggestions}
         />
 
