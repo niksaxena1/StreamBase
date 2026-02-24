@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ChevronDown, ChevronRight, Music } from "lucide-react";
 import { TableCell, TableRow } from "@/components/ui/GlassTable";
 import { TrackListItem } from "@/components/health/TrackListItem";
+import { StaleTrackResolver } from "@/components/health/StaleTrackResolver";
 import { useRouter } from "next/navigation";
 import type {
   PlaylistMeta,
@@ -20,48 +21,6 @@ import type {
 // ---------------------------------------------------------------------------
 // Inline quick-action helpers
 // ---------------------------------------------------------------------------
-
-function ExcludeStaleButton({ isrc }: { isrc: string }) {
-  const router = useRouter();
-  const [state, setState] = useState<"idle" | "loading" | "done" | "error">(
-    "idle",
-  );
-
-  const handleClick = useCallback(async () => {
-    setState("loading");
-    try {
-      const res = await fetch("/api/health-actions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "exclude_stale", isrc }),
-      });
-      if (!res.ok) {
-        const d = await res.json().catch(() => ({}));
-        throw new Error((d as Record<string, unknown>)?.error as string ?? "Failed");
-      }
-      setState("done");
-      router.refresh();
-    } catch {
-      setState("error");
-    }
-  }, [isrc, router]);
-
-  if (state === "done")
-    return <span className="text-[10px] text-green-500">Excluded</span>;
-  if (state === "error")
-    return <span className="text-[10px] text-red-400">Failed</span>;
-
-  return (
-    <button
-      type="button"
-      onClick={handleClick}
-      disabled={state === "loading"}
-      className="text-[10px] px-1.5 py-0.5 rounded sb-ring bg-white/60 dark:bg-white/10 hover:bg-white/80 dark:hover:bg-white/20 opacity-70 hover:opacity-100 transition disabled:opacity-40"
-    >
-      {state === "loading" ? "..." : "Exclude"}
-    </button>
-  );
-}
 
 function QuickOverrideButton({
   isrc,
@@ -648,53 +607,56 @@ function ExpandedContent({
 
     case "individual_tracks_stale":
       return Array.isArray(data.tracks) && data.tracks.length > 0 ? (
-        <TrackSection
-          label="Tracks with stale streams"
-          count={data.tracks.length}
-        >
-          {(data.tracks as StaleTrack[]).map((t) => {
-            const cumulative =
-              typeof t.streams_cumulative === "number" &&
-              Number.isFinite(t.streams_cumulative)
-                ? t.streams_cumulative
-                : null;
-            return (
-              <TrackListItem
-                key={t.isrc}
-                track={t}
-                thumbOverrides={thumbByIsrc}
-                inlineExtra={
-                  <>
-                    {cumulative !== null && (
-                      <span className="opacity-60">
-                        · total:{" "}
-                        <span className="font-mono">
-                          {cumulative.toLocaleString()}
-                        </span>
-                      </span>
-                    )}
-                    {typeof t.avg_daily_7d === "number" &&
-                      Number.isFinite(t.avg_daily_7d) && (
+        runDate ? (
+          <StaleTrackResolver
+            tracks={data.tracks as StaleTrack[]}
+            thumbOverrides={thumbByIsrc}
+            runDate={runDate}
+          />
+        ) : (
+          <TrackSection
+            label="Tracks with stale streams"
+            count={data.tracks.length}
+          >
+            {(data.tracks as StaleTrack[]).map((t) => {
+              const cumulative =
+                typeof t.streams_cumulative === "number" &&
+                Number.isFinite(t.streams_cumulative)
+                  ? t.streams_cumulative
+                  : null;
+              return (
+                <TrackListItem
+                  key={t.isrc}
+                  track={t}
+                  thumbOverrides={thumbByIsrc}
+                  inlineExtra={
+                    <>
+                      {cumulative !== null && (
                         <span className="opacity-60">
-                          · avg/day:{" "}
+                          · total:{" "}
                           <span className="font-mono">
-                            {t.avg_daily_7d.toLocaleString(undefined, {
-                              maximumFractionDigits: 1,
-                            })}
+                            {cumulative.toLocaleString()}
                           </span>
                         </span>
                       )}
-                  </>
-                }
-                actions={
-                  <ExcludeStaleButton
-                    isrc={t.isrc.trim().toUpperCase()}
-                  />
-                }
-              />
-            );
-          })}
-        </TrackSection>
+                      {typeof t.avg_daily_7d === "number" &&
+                        Number.isFinite(t.avg_daily_7d) && (
+                          <span className="opacity-60">
+                            · avg/day:{" "}
+                            <span className="font-mono">
+                              {t.avg_daily_7d.toLocaleString(undefined, {
+                                maximumFractionDigits: 1,
+                              })}
+                            </span>
+                          </span>
+                        )}
+                    </>
+                  }
+                />
+              );
+            })}
+          </TrackSection>
+        )
       ) : (
         <FallbackNote note={data.note} />
       );
