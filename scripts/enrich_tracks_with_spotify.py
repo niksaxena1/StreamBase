@@ -134,31 +134,50 @@ class Spotify:
         }
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--limit", type=int, default=5000, help="Max tracks to enrich per run")
-    ap.add_argument(
-        "--only-missing",
-        action="store_true",
-        help="Only enrich tracks missing spotify_artist_ids (default: true)",
-    )
-    args = ap.parse_args()
+ENRICHMENT_FIELDS = {
+    "spotify_track_id": None,
+    "spotify_album_id": None,
+    "spotify_album_name": None,
+    "spotify_album_image_url": None,
+    "spotify_artist_ids": None,
+    "spotify_artist_names": None,
+    "spotify_last_fetched_at": None,
+}
 
-    supabase_url = require_env("SUPABASE_URL")
-    service_key = require_env("SUPABASE_SERVICE_ROLE_KEY")
-    spotify_id = require_env("SPOTIFY_CLIENT_ID")
-    spotify_secret = require_env("SPOTIFY_CLIENT_SECRET")
 
-    pg = Postgrest(supabase_url=supabase_url, service_role_key=service_key)
-    sp = Spotify(client_id=spotify_id, client_secret=spotify_secret)
+def enrich_single(pg: Postgrest, sp: Spotify, isrc: str):
+    """Clear enrichment for a single ISRC and re-fetch from Spotify."""
+    isrc = isrc.strip()
+    if not isrc:
+        raise SystemExit("--isrc value cannot be empty")
 
-    # Fetch candidate tracks.
-    # Unenriched tracks (spotify_artist_ids IS NULL) come first so they're always
-    # processed within the limit. Already-enriched tracks fill the remaining capacity
-    # to catch artist-name changes over time.
+    rows = pg.select("tracks", "isrc,name", f"isrc=eq.{isrc}&limit=1")
+    if not rows:
+        raise SystemExit(f"No track found in DB with ISRC {isrc}")
+
+    name = rows[0].get("name") or isrc
+    print(f"Target: {name} ({isrc})")
+
+    print("Clearing stale enrichment fields...")
+    pg.patch("tracks", dict(ENRICHMENT_FIELDS), f"isrc=eq.{isrc}")
+
+    print("Searching Spotify...")
+    hit = sp.find_track_by_isrc(isrc)
+    if not hit:
+        print(f"No Spotify match found for ISRC {isrc}. Enrichment fields left cleared.")
+        return
+
+    pg.patch("tracks", hit, f"isrc=eq.{isrc}")
+    sp_name = hit.get("spotify_album_name") or "?"
+    sp_artists = ", ".join(hit.get("spotify_artist_names") or []) or "?"
+    print(f"Re-enriched: {sp_artists} – {sp_name} (track {hit.get('spotify_track_id')})")
+
+
+def enrich_batch(pg: Postgrest, sp: Spotify, limit: int):
+    """Bulk-enrich tracks, prioritising unenriched rows."""
     filters = [
         "order=spotify_artist_ids.nullsfirst,last_seen.desc",
-        f"limit={int(args.limit)}",
+        f"limit={int(limit)}",
     ]
 
     candidates = pg.select("tracks", "isrc,name,spotify_artist_ids,spotify_last_fetched_at", "&".join(filters))
@@ -182,7 +201,6 @@ def main():
             if not hit:
                 miss += 1
                 continue
-            # Patch the row using the ISRC as stored in the DB, even if it's non-canonical.
             pg.patch("tracks", hit, f"isrc=eq.{isrc_db}")
             ok += 1
             if ok % 20 == 0:
@@ -192,6 +210,36 @@ def main():
             print(f"FAIL {isrc_db}: {e}")
 
     print(f"Done. ok={ok} miss={miss} fail={fail}")
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--limit", type=int, default=5000, help="Max tracks to enrich per run")
+    ap.add_argument(
+        "--only-missing",
+        action="store_true",
+        help="Only enrich tracks missing spotify_artist_ids (default: true)",
+    )
+    ap.add_argument(
+        "--isrc",
+        type=str,
+        default=None,
+        help="Re-enrich a single track by ISRC (clears stale data first)",
+    )
+    args = ap.parse_args()
+
+    supabase_url = require_env("SUPABASE_URL")
+    service_key = require_env("SUPABASE_SERVICE_ROLE_KEY")
+    spotify_id = require_env("SPOTIFY_CLIENT_ID")
+    spotify_secret = require_env("SPOTIFY_CLIENT_SECRET")
+
+    pg = Postgrest(supabase_url=supabase_url, service_role_key=service_key)
+    sp = Spotify(client_id=spotify_id, client_secret=spotify_secret)
+
+    if args.isrc:
+        enrich_single(pg, sp, args.isrc)
+    else:
+        enrich_batch(pg, sp, args.limit)
 
 
 if __name__ == "__main__":

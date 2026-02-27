@@ -1,5 +1,6 @@
 param(
-  [int]$Limit = 200
+  [int]$Limit = 200,
+  [string]$Isrc = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -29,5 +30,11 @@ if (-not $env:SUPABASE_URL -and $env:NEXT_PUBLIC_SUPABASE_URL) {
   $env:SUPABASE_URL = $env:NEXT_PUBLIC_SUPABASE_URL
 }
 
-python (Join-Path $PSScriptRoot "enrich_tracks_with_spotify.py") --limit $Limit
+$pyArgs = @((Join-Path $PSScriptRoot "enrich_tracks_with_spotify.py"))
+if ($Isrc) {
+  $pyArgs += "--isrc", $Isrc
+} else {
+  $pyArgs += "--limit", $Limit
+}
+python @pyArgs
 
