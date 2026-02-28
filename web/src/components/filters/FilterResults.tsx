@@ -14,6 +14,8 @@ import { GlassTable, TableRow, TableCell, EmptyState } from "@/components/ui/Gla
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { formatInt, formatDateISO } from "@/lib/format";
+import { todayIsoDate } from "@/lib/csv";
+import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
 import type { 
   EntityType, 
   TrackFilterResult, 
@@ -214,13 +216,36 @@ export function FilterResults({ entityType, results, isLoading, error, totalCoun
     }
   };
   
+  const csvRows = useMemo(
+    () =>
+      sortedResults.map((r) => {
+        const row = r as Record<string, unknown>;
+        const out: Record<string, unknown> = { ...row };
+        if (Array.isArray(out.spotify_artist_names)) {
+          out.artists = (out.spotify_artist_names as string[]).join(" | ");
+          delete out.spotify_artist_names;
+        }
+        if (Array.isArray(out.spotify_artist_ids)) {
+          out.artist_ids = (out.spotify_artist_ids as string[]).join(" | ");
+          delete out.spotify_artist_ids;
+        }
+        return out;
+      }),
+    [sortedResults]
+  );
+
   return (
     <div className="mt-4 space-y-4">
-      {/* Results count */}
-      <div className="flex items-center justify-between">
+      {/* Results count and download */}
+      <div className="flex items-center justify-between gap-2">
         <p className="text-sm" style={{ color: "var(--sb-muted)" }}>
           Showing {paginatedResults.length} of {totalCount ?? results.length} results
         </p>
+        <ChartCsvDownloadButton
+          filename={`filter-results-${entityType}-${todayIsoDate()}.csv`}
+          rows={csvRows}
+          title="Download results as CSV"
+        />
       </div>
       
       {/* Table */}

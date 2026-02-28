@@ -302,6 +302,13 @@ export function FilterBuilder({
     setResults([]);
     setHasApplied(false);
     setError(null);
+    // Auto-apply when loading a saved preset that has active conditions
+    const hasActiveConditions = filter?.groups?.some((g) =>
+      g.conditions?.some((c) => c?.enabled)
+    );
+    if (hasActiveConditions) {
+      setTimeout(() => handleApply(), 0);
+    }
   }
   
   // Save current filter
