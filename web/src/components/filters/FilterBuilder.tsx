@@ -466,9 +466,20 @@ export function FilterBuilder({
               }))
             : trackDataWithPlaylists;
 
+          // Flag tracks that share their title with another track
+          const titleCounts = new Map<string, number>();
+          for (const t of trackDataWithMovements) {
+            const key = (t.name ?? "").toLowerCase();
+            titleCounts.set(key, (titleCounts.get(key) ?? 0) + 1);
+          }
+          const trackDataWithTitles = trackDataWithMovements.map((t) => ({
+            ...t,
+            _has_duplicate_title: (titleCounts.get((t.name ?? "").toLowerCase()) ?? 0) > 1,
+          }));
+
           // Pre-compute estimated revenue fields using the configured payout rate
           const rate = streamPayoutPerStreamUsd;
-          const finalTrackData = trackDataWithMovements.map((t) => ({
+          const finalTrackData = trackDataWithTitles.map((t) => ({
             ...t,
             est_total_revenue: (t.total_streams_cumulative ?? 0) * rate,
             est_daily_revenue: (t.daily_streams ?? 0) * rate,

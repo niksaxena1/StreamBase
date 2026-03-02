@@ -14,7 +14,7 @@ export type EntityType = "tracks" | "artists" | "playlists" | "dates";
 export type FieldType = "number" | "date" | "text" | "select" | "multi-select" | "boolean";
 
 export type NumberOperator = "eq" | "neq" | "gt" | "gte" | "lt" | "lte" | "between";
-export type DateOperator = "eq" | "before" | "after" | "between" | "month_is" | "year_is";
+export type DateOperator = "eq" | "before" | "after" | "between" | "month_is" | "year_is" | "last_n_days";
 export type TextOperator = "eq" | "neq" | "contains" | "not_contains" | "starts_with" | "ends_with";
 export type SelectOperator = "eq" | "neq" | "in" | "not_in";
 export type BooleanOperator = "eq";
@@ -108,6 +108,7 @@ export type TrackFilterResult = {
   name: string;
   release_date: string | null;
   first_seen: string | null;
+  last_seen: string | null;
   spotify_artist_names: string[];
   spotify_artist_ids: string[];
   total_streams: number;
@@ -118,6 +119,7 @@ export type TrackFilterResult = {
   in_multiple_entity: boolean;
   moved_distro_playlists: { name: string; imageUrl: string | null }[] | null;
   moved_entity_playlists: { name: string; imageUrl: string | null }[] | null;
+  has_duplicate_title: boolean;
 };
 
 export type ArtistFilterResult = {
@@ -128,6 +130,8 @@ export type ArtistFilterResult = {
   daily_streams: number | null;
   avg_streams_per_track: number;
   image_url: string | null;
+  first_seen: string | null;
+  last_seen: string | null;
 };
 
 export type PlaylistFilterResult = {

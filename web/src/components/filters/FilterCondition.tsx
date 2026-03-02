@@ -214,10 +214,12 @@ export function ConditionSummary({
       .slice(0, 2);
     const more = condition.value.length - 2;
     valueLabel = labels.join(", ") + (more > 0 ? ` +${more}` : "");
+  } else if (condition.operator === "last_n_days") {
+    valueLabel = `${condition.value} days`;
   } else {
     valueLabel = String(condition.value);
   }
-  
+
   return (
     <span
       className={cx(

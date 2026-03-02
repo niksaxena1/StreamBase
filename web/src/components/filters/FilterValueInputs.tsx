@@ -177,6 +177,29 @@ export function DateInput({ value, operator, fieldDef, onChange }: DateInputProp
     );
   }
   
+  // "In the last N days" operator — takes a number
+  if (operator === "last_n_days") {
+    const numValue = typeof value === "number" ? value : typeof value === "string" ? Number(value) || "" : "";
+    return (
+      <div className="flex items-center gap-2">
+        <input
+          type="number"
+          min={1}
+          step={1}
+          value={numValue}
+          onChange={(e) => {
+            const v = e.target.value;
+            onChange(v === "" ? "" : Number(v));
+          }}
+          placeholder="7"
+          className="sb-ring w-20 rounded-xl bg-white/70 px-3 py-2 text-sm outline-none dark:bg-white/5"
+          style={{ color: "var(--sb-text)" }}
+        />
+        <span className="text-sm" style={{ color: "var(--sb-muted)" }}>days</span>
+      </div>
+    );
+  }
+
   // Date range for "between" operator
   if (operator === "between") {
     const rangeValue = (value && typeof value === "object" && "start" in value)

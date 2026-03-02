@@ -26,6 +26,7 @@ export type TrackDataPoint = {
   name: string;
   release_date: string | null;
   first_seen?: string | null;
+  last_seen?: string | null;
   spotify_artist_names: string[];
   spotify_artist_ids: string[];
   total_streams_cumulative: number;
@@ -40,6 +41,7 @@ export type TrackDataPoint = {
   _moved_entity?: boolean;
   _moved_distro_playlists?: { name: string; imageUrl: string | null }[];
   _moved_entity_playlists?: { name: string; imageUrl: string | null }[];
+  _has_duplicate_title?: boolean;
 };
 
 export type ArtistDataPoint = {
@@ -52,6 +54,8 @@ export type ArtistDataPoint = {
   playlist_keys?: string[];
   _collectors?: string[];
   track_names?: string[];
+  first_seen?: string | null;
+  last_seen?: string | null;
 };
 
 export type PlaylistDataPoint = {
@@ -103,6 +107,7 @@ export function filterTracksClientSide(
     name: t.name,
     release_date: t.release_date,
     first_seen: t.first_seen ?? null,
+    last_seen: t.last_seen ?? null,
     spotify_artist_names: t.spotify_artist_names,
     spotify_artist_ids: t.spotify_artist_ids,
     total_streams: t.total_streams_cumulative,
@@ -113,6 +118,7 @@ export function filterTracksClientSide(
     in_multiple_entity: (t._entity_count ?? 0) > 1,
     moved_distro_playlists: t._moved_distro_playlists ?? null,
     moved_entity_playlists: t._moved_entity_playlists ?? null,
+    has_duplicate_title: t._has_duplicate_title ?? false,
   }));
 }
 
@@ -133,6 +139,8 @@ export function filterArtistsClientSide(
     daily_streams: a.daily_streams ?? null,
     avg_streams_per_track: a.track_count > 0 ? Math.round(a.total_streams / a.track_count) : 0,
     image_url: a.image_url,
+    first_seen: a.first_seen ?? null,
+    last_seen: a.last_seen ?? null,
   }));
 }
 
@@ -203,6 +211,8 @@ export function aggregateTracksToArtistData(
     playlist_keys: Set<string>;
     collectors: Set<string>;
     track_names: string[];
+    first_seen: string | null;
+    last_seen: string | null;
   }>();
   
   for (const track of tracks) {
@@ -227,6 +237,8 @@ export function aggregateTracksToArtistData(
           playlist_keys: new Set<string>(),
           collectors: new Set<string>(),
           track_names: [],
+          first_seen: null,
+          last_seen: null,
         });
       }
       
@@ -237,6 +249,10 @@ export function aggregateTracksToArtistData(
       entry.track_names.push(track.name);
       for (const pk of pkeys) entry.playlist_keys.add(pk);
       for (const c of tcollectors) entry.collectors.add(c);
+      const fs = track.first_seen;
+      if (fs && (!entry.first_seen || fs < entry.first_seen)) entry.first_seen = fs;
+      const ls = track.last_seen;
+      if (ls && (!entry.last_seen || ls > entry.last_seen)) entry.last_seen = ls;
     }
   }
   
@@ -250,6 +266,8 @@ export function aggregateTracksToArtistData(
     playlist_keys: Array.from(a.playlist_keys),
     _collectors: Array.from(a.collectors),
     track_names: a.track_names,
+    first_seen: a.first_seen,
+    last_seen: a.last_seen,
   }));
 }
 
@@ -350,7 +368,9 @@ function evaluateCondition(row: DataRow, condition: FilterCondition, entityType:
       return compareDateMonth(rowValue, value);
     case "year_is":
       return compareDateYear(rowValue, value);
-    
+    case "last_n_days":
+      return compareDateLastNDays(rowValue, value);
+
     // Text operators
     case "contains":
       return compareContains(rowValue, value);
@@ -406,6 +426,30 @@ function getRowValue(row: DataRow, field: string, entityType: string): unknown {
   }
   if (field === "moved_entity") {
     return (row["_moved_entity"] as boolean | undefined) ?? false;
+  }
+
+  // --- Duplicate title ---
+  if (field === "has_duplicate_title") {
+    return (row["_has_duplicate_title"] as boolean | undefined) ?? false;
+  }
+
+  // --- Track computed fields ---
+  if (field === "artist_count") {
+    const ids = row["spotify_artist_ids"] as string[] | undefined;
+    return Array.isArray(ids) ? ids.length : 0;
+  }
+  if (field === "days_since_release") {
+    const rd = row["release_date"] as string | undefined;
+    if (!rd) return null;
+    const released = new Date(rd + "T00:00:00");
+    if (isNaN(released.getTime())) return null;
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    return Math.floor((now.getTime() - released.getTime()) / 86400000);
+  }
+  if (field === "in_any_playlist") {
+    const keys = row["playlist_keys"] as string[] | undefined;
+    return Array.isArray(keys) && keys.length > 0;
   }
 
   // --- Computed fields (entity-independent) ---
@@ -529,6 +573,19 @@ function compareDateYear(rowValue: unknown, filterValue: FilterValue): boolean {
   const dateStr = String(rowValue);
   const year = parseInt(dateStr.split("-")[0] ?? "0", 10);
   return year === parseInt(filterValue, 10);
+}
+
+function compareDateLastNDays(rowValue: unknown, filterValue: FilterValue): boolean {
+  if (rowValue == null) return false;
+  const n = typeof filterValue === "number" ? filterValue : Number(filterValue);
+  if (!n || n <= 0) return false;
+  const dateStr = String(rowValue);
+  const rowDate = new Date(dateStr + "T00:00:00");
+  if (isNaN(rowDate.getTime())) return false;
+  const cutoff = new Date();
+  cutoff.setHours(0, 0, 0, 0);
+  cutoff.setDate(cutoff.getDate() - n);
+  return rowDate >= cutoff;
 }
 
 function compareContains(rowValue: unknown, filterValue: FilterValue): boolean {

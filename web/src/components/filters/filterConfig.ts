@@ -35,6 +35,7 @@ export const DATE_OPERATOR_LABELS: Record<DateOperator, string> = {
   between: "between",
   month_is: "month is",
   year_is: "year is",
+  last_n_days: "in the last",
 };
 
 export const TEXT_OPERATOR_LABELS: Record<TextOperator, string> = {
@@ -123,8 +124,24 @@ const TRACK_FIELDS: FilterFieldDefinition[] = [
     key: "release_date",
     label: "Release Date",
     type: "date",
-    operators: ["eq", "before", "after", "between", "month_is", "year_is"],
+    operators: ["eq", "before", "after", "between", "last_n_days", "month_is", "year_is"],
     description: "When the track was released",
+    placeholder: "YYYY-MM-DD",
+  },
+  {
+    key: "first_seen",
+    label: "First Seen",
+    type: "date",
+    operators: ["eq", "before", "after", "between", "last_n_days", "month_is", "year_is"],
+    description: "When the track first appeared in the catalog",
+    placeholder: "YYYY-MM-DD",
+  },
+  {
+    key: "last_seen",
+    label: "Last Seen",
+    type: "date",
+    operators: ["eq", "before", "after", "between", "last_n_days", "month_is", "year_is"],
+    description: "When the track was last seen in the catalog",
     placeholder: "YYYY-MM-DD",
   },
   {
@@ -270,6 +287,43 @@ const TRACK_FIELDS: FilterFieldDefinition[] = [
     ],
     helpText: "Uses the movement date range; default is all-time",
   },
+  {
+    key: "has_duplicate_title",
+    label: "Has Duplicate Title",
+    type: "boolean",
+    operators: ["eq"],
+    description: "Track shares its exact title (case-insensitive) with another track in the catalog",
+    options: [
+      { value: "true", label: "Yes" },
+      { value: "false", label: "No" },
+    ],
+  },
+  {
+    key: "artist_count",
+    label: "Number of Artists",
+    type: "number",
+    operators: ["eq", "gt", "gte", "lt", "lte"],
+    description: "Number of credited artists (1 = solo, 2+ = collaboration)",
+  },
+  {
+    key: "days_since_release",
+    label: "Days Since Release",
+    type: "number",
+    operators: ["eq", "gt", "gte", "lt", "lte", "between"],
+    description: "Number of days since the track was released",
+  },
+  {
+    key: "in_any_playlist",
+    label: "In Any Playlist",
+    type: "boolean",
+    operators: ["eq"],
+    description: "Whether the track is currently in at least one playlist",
+    options: [
+      { value: "true", label: "Yes" },
+      { value: "false", label: "No" },
+    ],
+    helpText: "Useful for finding orphaned tracks not assigned to any playlist",
+  },
 ];
 
 // ============================================================================
@@ -377,6 +431,22 @@ const ARTIST_FIELDS: FilterFieldDefinition[] = [
     min: 0,
     placeholder: "e.g., 50",
     helpText: "Uses your configured payout rate (Settings)",
+  },
+  {
+    key: "first_seen",
+    label: "First Seen",
+    type: "date",
+    operators: ["eq", "before", "after", "between", "last_n_days", "month_is", "year_is"],
+    description: "Earliest first-seen date across the artist's tracks",
+    placeholder: "YYYY-MM-DD",
+  },
+  {
+    key: "last_seen",
+    label: "Last Seen",
+    type: "date",
+    operators: ["eq", "before", "after", "between", "last_n_days", "month_is", "year_is"],
+    description: "Latest last-seen date across the artist's tracks",
+    placeholder: "YYYY-MM-DD",
   },
 ];
 

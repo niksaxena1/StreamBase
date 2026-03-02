@@ -20,6 +20,7 @@ export function HomeFilterBuilderSection({
   const [dateData, setDateData] = useState<DateDataPoint[]>([]);
   const [dateScopePlaylistKey, setDateScopePlaylistKey] = useState("all_catalog");
   const [artistImagesById, setArtistImagesById] = useState<Map<string, string | null>>(new Map());
+  const [trackDatesMap, setTrackDatesMap] = useState<Map<string, { first_seen: string | null; last_seen: string | null }>>(new Map());
 
   useEffect(() => {
     let cancelled = false;
@@ -159,6 +160,32 @@ export function HomeFilterBuilderSection({
     let cancelled = false;
     async function load() {
       try {
+        const res = await fetch("/api/tracks/dates");
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) return;
+        const rows = Array.isArray((json as any)?.rows) ? ((json as any).rows as any[]) : [];
+        const map = new Map<string, { first_seen: string | null; last_seen: string | null }>();
+        for (const r of rows) {
+          const isrc = String(r?.isrc ?? "");
+          if (!isrc) continue;
+          map.set(isrc, {
+            first_seen: (r?.first_seen ?? null) as string | null,
+            last_seen: (r?.last_seen ?? null) as string | null,
+          });
+        }
+        if (!cancelled) setTrackDatesMap(map);
+      } catch {
+        // ignore
+      }
+    }
+    void load();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
         const res = await fetch("/api/artists/options");
         const json = await res.json().catch(() => ({}));
         if (!res.ok) return;
@@ -180,20 +207,24 @@ export function HomeFilterBuilderSection({
 
   // Transform trackScatterPoints to TrackDataPoint format for FilterBuilder
   const trackData: TrackDataPoint[] = useMemo(() => {
-    return (trackScatterPoints ?? []).map((p) => ({
-      isrc: p.isrc,
-      name: p.name ?? "",
-      release_date: (p as any)?.release_date ?? null,
-      first_seen: null,
-      spotify_artist_names: p.artist_names ?? [],
-      spotify_artist_ids: p.artist_ids ?? [],
-      total_streams_cumulative: p.total_streams_cumulative,
-      daily_streams: p.daily_streams_delta,
-      spotify_track_id: p.spotify_track_id ?? ((p.artist_ids?.length ?? 0) > 0 ? "enriched" : null),
-      spotify_album_image_url: p.album_image_url,
-      playlist_keys: [],
-    }));
-  }, [trackScatterPoints]);
+    return (trackScatterPoints ?? []).map((p) => {
+      const dates = trackDatesMap.get(p.isrc);
+      return {
+        isrc: p.isrc,
+        name: p.name ?? "",
+        release_date: (p as any)?.release_date ?? null,
+        first_seen: dates?.first_seen ?? null,
+        last_seen: dates?.last_seen ?? null,
+        spotify_artist_names: p.artist_names ?? [],
+        spotify_artist_ids: p.artist_ids ?? [],
+        total_streams_cumulative: p.total_streams_cumulative,
+        daily_streams: p.daily_streams_delta,
+        spotify_track_id: p.spotify_track_id ?? ((p.artist_ids?.length ?? 0) > 0 ? "enriched" : null),
+        spotify_album_image_url: p.album_image_url,
+        playlist_keys: [],
+      };
+    });
+  }, [trackScatterPoints, trackDatesMap]);
 
   // Extract unique artists from tracks for the artist selector
   const artistOptions = useMemo(() => {
