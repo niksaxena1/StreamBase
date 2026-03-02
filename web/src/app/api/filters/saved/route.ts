@@ -54,9 +54,20 @@ export async function POST(req: NextRequest) {
 
   const now = new Date().toISOString();
 
+  function toFilterResponse(row: any) {
+    return {
+      id: row.id,
+      name: row.name,
+      entityType: row.entity_type,
+      groups: (row.config as any)?.groups ?? [],
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  // Try to update if an id was provided
   if (id) {
-    // Update existing — RLS ensures ownership
-    const { data, error } = await sb
+    const { data: updated, error: updateErr } = await sb
       .from("saved_filters")
       .update({
         name,
@@ -65,26 +76,20 @@ export async function POST(req: NextRequest) {
         updated_at: now,
       })
       .eq("id", id)
-      .select("id,name,entity_type,config,created_at,updated_at")
-      .single();
+      .select("id,name,entity_type,config,created_at,updated_at");
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    if (updateErr) {
+      return NextResponse.json({ error: updateErr.message }, { status: 500 });
     }
 
-    return NextResponse.json({
-      filter: {
-        id: data.id,
-        name: data.name,
-        entityType: data.entity_type,
-        groups: (data.config as any)?.groups ?? [],
-        createdAt: data.created_at,
-        updatedAt: data.updated_at,
-      },
-    });
+    // If the id matched an existing row, return the updated record
+    if (updated && updated.length > 0) {
+      return NextResponse.json({ filter: toFilterResponse(updated[0]) });
+    }
+    // Otherwise the id was client-generated and doesn't exist yet — fall through to insert
   }
 
-  // Create new
+  // Create new (server generates the UUID)
   const { data, error } = await sb
     .from("saved_filters")
     .insert({
@@ -102,16 +107,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({
-    filter: {
-      id: data.id,
-      name: data.name,
-      entityType: data.entity_type,
-      groups: (data.config as any)?.groups ?? [],
-      createdAt: data.created_at,
-      updatedAt: data.updated_at,
-    },
-  });
+  return NextResponse.json({ filter: toFilterResponse(data) });
 }
 
 /** DELETE /api/filters/saved?id=<uuid> — delete a saved filter */
