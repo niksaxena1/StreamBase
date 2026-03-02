@@ -59,6 +59,8 @@ function extractValuesFromFilter(f: FilterConfig | null, fieldName: string): str
           const s = String(v ?? "").trim();
           if (s) out.add(s);
         }
+      } else if (c.value != null && c.value !== "") {
+        out.add(String(c.value).trim());
       }
     }
   }
@@ -67,6 +69,16 @@ function extractValuesFromFilter(f: FilterConfig | null, fieldName: string): str
 
 function extractPlaylistKeysFromFilter(f: FilterConfig | null): string[] {
   return extractValuesFromFilter(f, "playlist");
+}
+
+function filterUsesAnyField(f: FilterConfig | null, ...fieldNames: string[]): boolean {
+  if (!f) return false;
+  for (const g of f.groups ?? []) {
+    for (const c of g.conditions ?? []) {
+      if (c?.enabled && fieldNames.includes(c.field)) return true;
+    }
+  }
+  return false;
 }
 
 type FilterBuilderProps = {
@@ -83,7 +95,7 @@ type FilterBuilderProps = {
   artistImages: Map<string, { name: string; image_url: string | null }>;
   // Dynamic options for select fields
   artistOptions: Array<{ value: string; label: string; imageUrl?: string | null }>;
-  playlistOptions: Array<{ value: string; label: string; imageUrl?: string | null }>;
+  playlistOptions: Array<{ value: string; label: string; imageUrl?: string | null; isAllCatalog?: boolean }>;
   asOfRunDate?: string | null;
 };
 
@@ -113,6 +125,10 @@ export function FilterBuilder({
   const [error, setError] = useState<string | null>(null);
   const [hasApplied, setHasApplied] = useState(false);
   const pendingAutoApply = useRef(false);
+
+  // Movement date range for moved_distro / moved_entity fields
+  const [movementStartDate, setMovementStartDate] = useState<string>("");
+  const [movementEndDate, setMovementEndDate] = useState<string>("");
   
   // Load open state from localStorage
   useEffect(() => {
@@ -203,6 +219,10 @@ export function FilterBuilder({
     tracks: trackOptions,
   }), [artistOptions, playlistOptions, trackOptions]);
   
+  // Whether the current filter uses movement fields
+  const showMovementDateRange = currentFilter?.entityType === "tracks" &&
+    filterUsesAnyField(currentFilter, "moved_distro", "moved_entity");
+
   // Count active conditions
   const activeConditionCount = currentFilter ? countActiveConditions(currentFilter) : 0;
   
@@ -259,25 +279,81 @@ export function FilterBuilder({
     setTimeout(() => {
         (async () => {
           const playlistKeys = extractPlaylistKeysFromFilter(currentFilter);
-          let memberships = membershipByPlaylistKey;
-          if (playlistKeys.length && asOfRunDate) {
-            memberships = await ensurePlaylistMemberships(playlistKeys);
+
+          // Resolve collector conditions to playlist keys
+          const collectorValues = extractValuesFromFilter(currentFilter, "collector");
+          const collectorPlaylistMap = new Map<string, string[]>();
+          if (collectorValues.length) {
+            for (const cv of collectorValues) {
+              const keys = playlistData
+                .filter((p) => p.collector === cv)
+                .map((p) => p.playlist_key);
+              collectorPlaylistMap.set(cv, keys);
+            }
+          }
+          const collectorPlaylistKeys = Array.from(collectorPlaylistMap.values()).flat();
+
+          // Determine if filter references distro/entity playlist fields
+          const needsDistroEntity = filterUsesAnyField(
+            currentFilter,
+            "in_multiple_distro", "in_multiple_entity",
+          );
+
+          let distroKeys: string[] = [];
+          let entityKeys: string[] = [];
+          if (needsDistroEntity) {
+            distroKeys = playlistData.filter((p) => p.playlist_type === "Distro").map((p) => p.playlist_key);
+            entityKeys = playlistData.filter((p) => p.playlist_type === "Entity").map((p) => p.playlist_key);
           }
 
-          // Annotate trackData with playlist_keys for selected playlists
-          const trackDataWithPlaylists: TrackDataPoint[] = playlistKeys.length
+          // Merge all playlist keys that need membership lookups
+          const allPlaylistKeys = [...new Set([...playlistKeys, ...collectorPlaylistKeys, ...distroKeys, ...entityKeys])];
+
+          let memberships = membershipByPlaylistKey;
+          if (allPlaylistKeys.length && asOfRunDate) {
+            memberships = await ensurePlaylistMemberships(allPlaylistKeys);
+          }
+
+          // Build reverse lookups
+          const playlistCollectorMap = new Map<string, string>();
+          for (const p of playlistData) {
+            if (p.collector) playlistCollectorMap.set(p.playlist_key, p.collector);
+          }
+          const distroKeySet = new Set(distroKeys);
+          const entityKeySet = new Set(entityKeys);
+
+          // Annotate trackData with playlist_keys, _collectors, and distro/entity resolution
+          const needsPlaylistAnnotation = allPlaylistKeys.length > 0;
+          const trackDataWithPlaylists: TrackDataPoint[] = needsPlaylistAnnotation
             ? trackData.map((t) => {
                 const keys: string[] = [];
-                for (const pk of playlistKeys) {
+                const collectors = new Set<string>();
+                const distroMatches: string[] = [];
+                const entityMatches: string[] = [];
+                for (const pk of allPlaylistKeys) {
                   const set = memberships.get(pk);
-                  if (set && set.has(t.isrc)) keys.push(pk);
+                  if (set && set.has(t.isrc)) {
+                    keys.push(pk);
+                    const col = playlistCollectorMap.get(pk);
+                    if (col) collectors.add(col);
+                    if (distroKeySet.has(pk)) distroMatches.push(pk);
+                    if (entityKeySet.has(pk)) entityMatches.push(pk);
+                  }
                 }
-                return { ...t, playlist_keys: keys };
+                return {
+                  ...t,
+                  playlist_keys: keys,
+                  _collectors: Array.from(collectors),
+                  ...(needsDistroEntity ? {
+                    _distro_count: distroMatches.length,
+                    _entity_count: entityMatches.length,
+                  } : {}),
+                };
               })
             : trackData;
 
-          // Derive artist data from annotated tracks (so playlist filter works for artists too)
-          const artistData = playlistKeys.length
+          // Derive artist data from annotated tracks (so playlist/collector filter works for artists too)
+          const artistData = needsPlaylistAnnotation
             ? aggregateTracksToArtistData(trackDataWithPlaylists, artistImages)
             : baseArtistData;
 
@@ -320,9 +396,72 @@ export function FilterBuilder({
             }
           }
 
+          // Resolve movement fields via API (moved_distro / moved_entity)
+          const needsMovedDistro = filterUsesAnyField(currentFilter, "moved_distro");
+          const needsMovedEntity = filterUsesAnyField(currentFilter, "moved_entity");
+          type PlaylistRef = { name: string; imageUrl: string | null };
+          type MovementMap = Map<string, PlaylistRef[]>;
+          let distroMovements: MovementMap = new Map();
+          let entityMovements: MovementMap = new Map();
+
+          function parseMovementResponse(json: any, target: MovementMap) {
+            const mv = json?.movements;
+            if (mv && typeof mv === "object") {
+              for (const [isrc, detail] of Object.entries(mv)) {
+                const d = detail as { playlists: PlaylistRef[] };
+                if (Array.isArray(d?.playlists)) target.set(isrc, d.playlists);
+              }
+            }
+          }
+
+          const movementFetches: Promise<void>[] = [];
+          if (needsMovedDistro) {
+            movementFetches.push(
+              fetch("/api/tracks/playlist-movements", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  type: "Distro",
+                  start_date: movementStartDate || undefined,
+                  end_date: movementEndDate || undefined,
+                }),
+              })
+                .then((r) => r.json())
+                .then((json: any) => parseMovementResponse(json, distroMovements)),
+            );
+          }
+          if (needsMovedEntity) {
+            movementFetches.push(
+              fetch("/api/tracks/playlist-movements", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  type: "Entity",
+                  start_date: movementStartDate || undefined,
+                  end_date: movementEndDate || undefined,
+                }),
+              })
+                .then((r) => r.json())
+                .then((json: any) => parseMovementResponse(json, entityMovements)),
+            );
+          }
+          if (movementFetches.length) await Promise.all(movementFetches);
+
+          // Annotate tracks with movement flags and playlist paths
+          const needsMovementAnnotation = needsMovedDistro || needsMovedEntity;
+          const trackDataWithMovements: TrackDataPoint[] = needsMovementAnnotation
+            ? trackDataWithPlaylists.map((t) => ({
+                ...t,
+                _moved_distro: needsMovedDistro ? distroMovements.has(t.isrc) : undefined,
+                _moved_entity: needsMovedEntity ? entityMovements.has(t.isrc) : undefined,
+                _moved_distro_playlists: distroMovements.get(t.isrc),
+                _moved_entity_playlists: entityMovements.get(t.isrc),
+              }))
+            : trackDataWithPlaylists;
+
           // Pre-compute estimated revenue fields using the configured payout rate
           const rate = streamPayoutPerStreamUsd;
-          const finalTrackData = trackDataWithPlaylists.map((t) => ({
+          const finalTrackData = trackDataWithMovements.map((t) => ({
             ...t,
             est_total_revenue: (t.total_streams_cumulative ?? 0) * rate,
             est_daily_revenue: (t.daily_streams ?? 0) * rate,
@@ -331,6 +470,13 @@ export function FilterBuilder({
             ...a,
             est_total_revenue: (a.total_streams ?? 0) * rate,
             est_daily_revenue: (a.daily_streams ?? 0) * rate,
+          }));
+
+          const finalPlaylistData = playlistDataForFilter.map((p) => ({
+            ...p,
+            est_total_revenue: (p.total_streams ?? 0) * rate,
+            est_daily_revenue: p.daily_streams != null ? p.daily_streams * rate : null,
+            est_monthly_revenue: p.daily_streams != null ? p.daily_streams * rate * 30 : null,
           }));
 
           let filteredResults: FilterResult[];
@@ -343,7 +489,7 @@ export function FilterBuilder({
               filteredResults = filterArtistsClientSide(finalArtistData, currentFilter);
               break;
             case "playlists":
-              filteredResults = filterPlaylistsClientSide(playlistDataForFilter, currentFilter);
+              filteredResults = filterPlaylistsClientSide(finalPlaylistData, currentFilter);
               break;
             case "dates":
               filteredResults = filterDatesClientSide(dateData, currentFilter);
@@ -368,7 +514,7 @@ export function FilterBuilder({
             setIsLoading(false);
           });
     }, 10);
-  }, [currentFilter, trackData, playlistData, dateData, asOfRunDate, membershipByPlaylistKey, artistImages, baseArtistData, streamPayoutPerStreamUsd]);
+  }, [currentFilter, trackData, playlistData, dateData, asOfRunDate, membershipByPlaylistKey, artistImages, baseArtistData, streamPayoutPerStreamUsd, movementStartDate, movementEndDate]);
 
   // Auto-apply after loading a saved filter (runs after re-render so handleApply has fresh state)
   useEffect(() => {
@@ -491,6 +637,47 @@ export function FilterBuilder({
                     showThumbnails
                   />
                 </div>
+              </div>
+            )}
+
+            {/* Movement date range (shown when moved_distro / moved_entity is used) */}
+            {showMovementDateRange && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs" style={{ color: "var(--sb-muted)" }}>
+                  Movement period:
+                </span>
+                <input
+                  type="date"
+                  value={movementStartDate}
+                  onChange={(e) => setMovementStartDate(e.target.value)}
+                  className="sb-ring rounded-lg bg-white/70 px-2 py-1.5 text-xs dark:bg-white/5"
+                  style={{ color: "var(--sb-text)" }}
+                  placeholder="Start"
+                />
+                <span className="text-xs opacity-40">–</span>
+                <input
+                  type="date"
+                  value={movementEndDate}
+                  onChange={(e) => setMovementEndDate(e.target.value)}
+                  className="sb-ring rounded-lg bg-white/70 px-2 py-1.5 text-xs dark:bg-white/5"
+                  style={{ color: "var(--sb-text)" }}
+                  placeholder="End"
+                />
+                {(movementStartDate || movementEndDate) && (
+                  <button
+                    type="button"
+                    onClick={() => { setMovementStartDate(""); setMovementEndDate(""); }}
+                    className="text-xs px-2 py-1 rounded-lg hover:bg-white/10 transition"
+                    style={{ color: "var(--sb-muted)" }}
+                  >
+                    All time
+                  </button>
+                )}
+                {!movementStartDate && !movementEndDate && (
+                  <span className="text-xs opacity-50" style={{ color: "var(--sb-muted)" }}>
+                    All time
+                  </span>
+                )}
               </div>
             )}
             

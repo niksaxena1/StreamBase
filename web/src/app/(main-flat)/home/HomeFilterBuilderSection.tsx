@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { type TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChart";
 import { FilterBuilder, type TrackDataPoint, type PlaylistDataPoint, type DateDataPoint } from "@/components/filters";
-import { addDaysISO, SOT_DATA_LAG_DAYS } from "@/lib/sotDates";
+import { addDaysISO, dataDateFromRunDate, SOT_DATA_LAG_DAYS } from "@/lib/sotDates";
 
 export function HomeFilterBuilderSection({
   trackScatterPoints,
@@ -14,7 +14,7 @@ export function HomeFilterBuilderSection({
   trackScatterDataDate: string | null;
 }) {
   const [playlistOptions, setPlaylistOptions] = useState<
-    Array<{ value: string; label: string; imageUrl?: string | null }>
+    Array<{ value: string; label: string; imageUrl?: string | null; isAllCatalog?: boolean }>
   >([]);
   const [playlistData, setPlaylistData] = useState<PlaylistDataPoint[]>([]);
   const [dateData, setDateData] = useState<DateDataPoint[]>([]);
@@ -31,11 +31,15 @@ export function HomeFilterBuilderSection({
         const rows = Array.isArray((json as any)?.playlists) ? ((json as any).playlists as any[]) : [];
         if (!cancelled) {
           setPlaylistOptions(
-            rows.map((r) => ({
-              value: String(r?.playlist_key ?? ""),
-              label: String(r?.display_name ?? r?.playlist_key ?? ""),
-              imageUrl: (r?.spotify_image_url ?? null) as string | null,
-            })),
+            rows.map((r) => {
+              const key = String(r?.playlist_key ?? "");
+              return {
+                value: key,
+                label: String(r?.display_name ?? r?.playlist_key ?? ""),
+                imageUrl: (r?.spotify_playlist_image_url ?? null) as string | null,
+                isAllCatalog: key === "all_catalog",
+              };
+            }),
           );
         }
       } catch {
@@ -91,18 +95,23 @@ export function HomeFilterBuilderSection({
         if (!res.ok) return;
         const rows = Array.isArray((json as any)?.rows) ? ((json as any).rows as any[]) : [];
         if (!cancelled) {
-          // First pass: basic fields
-          const base = rows.map((r) => ({
-            date: String(r?.date ?? ""),
-            daily_streams: Number(r?.daily_streams ?? 0),
-            cumulative_streams: Number(r?.cumulative_streams ?? 0),
-            track_count: Number(r?.track_count ?? 0),
-            growth_pct: r?.growth_pct != null ? Number(r.growth_pct) : null,
-            tracks_added: Number(r?.tracks_added ?? 0),
-            day_of_week: Number(r?.day_of_week ?? 0),
-            est_daily_revenue: r?.est_daily_revenue != null ? Number(r.est_daily_revenue) : null,
-            missing_streams_count: Number(r?.missing_streams_count ?? 0),
-          }));
+          // First pass: basic fields (convert run dates to data dates)
+          const base = rows.map((r) => {
+            const runDate = String(r?.date ?? "");
+            const dataDate = dataDateFromRunDate(runDate);
+            const dayOfWeek = new Date(`${dataDate}T12:00:00Z`).getUTCDay();
+            return {
+              date: dataDate,
+              daily_streams: Number(r?.daily_streams ?? 0),
+              cumulative_streams: Number(r?.cumulative_streams ?? 0),
+              track_count: Number(r?.track_count ?? 0),
+              growth_pct: r?.growth_pct != null ? Number(r.growth_pct) : null,
+              tracks_added: Number(r?.tracks_added ?? 0),
+              day_of_week: dayOfWeek,
+              est_daily_revenue: r?.est_daily_revenue != null ? Number(r.est_daily_revenue) : null,
+              missing_streams_count: Number(r?.missing_streams_count ?? 0),
+            };
+          });
 
           // Second pass: derived statistical fields
           setDateData(

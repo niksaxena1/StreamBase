@@ -8,7 +8,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
-import { Calendar, Check, ChevronDown, X } from "lucide-react";
+import { Calendar, Check, ChevronDown, Music, X } from "lucide-react";
 import { Input } from "@/components/ui/Input";
 import { Combobox, type ComboboxOption } from "@/components/ui/Combobox";
 import { foldForSearch } from "@/lib/searchFold";
@@ -300,7 +300,7 @@ type MultiSelectInputProps = {
   value: FilterValue;
   operator: FilterOperator;
   fieldDef: FilterFieldDefinition;
-  options: Array<{ value: string; label: string; imageUrl?: string | null }>;
+  options: Array<{ value: string; label: string; imageUrl?: string | null; isAllCatalog?: boolean }>;
   onChange: (value: FilterValue) => void;
   imageShape?: "circle" | "square";
 };
@@ -314,10 +314,13 @@ export function MultiSelectInput({ value, fieldDef, options, onChange, imageShap
   // Ensure value is an array
   const selectedValues: string[] = Array.isArray(value) ? value : [];
   
-  // Get selected option labels
-  const selectedLabels = useMemo(() => {
+  // Get selected option labels (with imageUrl for pill thumbnails)
+  const selectedItems = useMemo(() => {
     return selectedValues
-      .map(v => options.find(o => o.value === v)?.label ?? v)
+      .map(v => {
+        const opt = options.find(o => o.value === v);
+        return { label: opt?.label ?? v, imageUrl: opt?.imageUrl ?? null, isAllCatalog: opt?.isAllCatalog ?? false };
+      })
       .slice(0, 3);
   }, [selectedValues, options]);
   
@@ -391,12 +394,31 @@ export function MultiSelectInput({ value, fieldDef, options, onChange, imageShap
             </span>
           ) : (
             <>
-              {selectedLabels.map((label, i) => (
+              {selectedItems.map((item, i) => (
                 <span
                   key={i}
-                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-xs bg-black/10 dark:bg-white/10 truncate max-w-[120px]"
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-xs bg-black/10 dark:bg-white/10 truncate max-w-[140px]"
                 >
-                  <span className="truncate">{label}</span>
+                  {item.isAllCatalog ? (
+                    <span
+                      className="h-3.5 w-3.5 rounded-full flex items-center justify-center shrink-0"
+                      style={{ background: "var(--sb-accent)" }}
+                    >
+                      <Music className="h-2 w-2" style={{ color: "black" }} />
+                    </span>
+                  ) : item.imageUrl ? (
+                    <Image
+                      src={item.imageUrl}
+                      alt=""
+                      width={14}
+                      height={14}
+                      className={[
+                        "h-3.5 w-3.5 object-cover shrink-0",
+                        imageShape === "square" ? "rounded-sm" : "rounded-full",
+                      ].join(" ")}
+                    />
+                  ) : null}
+                  <span className="truncate">{item.label}</span>
                   <X
                     className="h-3 w-3 shrink-0 cursor-pointer hover:opacity-70"
                     onClick={(e) => removeOption(selectedValues[i], e)}
@@ -484,7 +506,14 @@ export function MultiSelectInput({ value, fieldDef, options, onChange, imageShap
                     }}
                   >
                     <div className="flex items-center gap-2 min-w-0">
-                      {opt.imageUrl && (
+                      {opt.isAllCatalog ? (
+                        <span
+                          className={`h-5 w-5 ${imageShape === "square" ? "rounded-lg" : "rounded-full"} flex items-center justify-center shrink-0`}
+                          style={{ background: "var(--sb-accent)" }}
+                        >
+                          <Music className="h-3 w-3" style={{ color: "black" }} />
+                        </span>
+                      ) : opt.imageUrl ? (
                         <Image
                           src={opt.imageUrl}
                           alt=""
@@ -495,7 +524,7 @@ export function MultiSelectInput({ value, fieldDef, options, onChange, imageShap
                             imageShape === "square" ? "rounded-lg" : "rounded-full",
                           ].join(" ")}
                         />
-                      )}
+                      ) : null}
                       <span className="truncate">{opt.label}</span>
                     </div>
                     {isSelected && (

@@ -33,6 +33,13 @@ export type TrackDataPoint = {
   spotify_track_id: string | null;
   spotify_album_image_url: string | null;
   playlist_keys?: string[];
+  _collectors?: string[];
+  _distro_count?: number;
+  _entity_count?: number;
+  _moved_distro?: boolean;
+  _moved_entity?: boolean;
+  _moved_distro_playlists?: { name: string; imageUrl: string | null }[];
+  _moved_entity_playlists?: { name: string; imageUrl: string | null }[];
 };
 
 export type ArtistDataPoint = {
@@ -43,6 +50,7 @@ export type ArtistDataPoint = {
   daily_streams?: number;
   image_url: string | null;
   playlist_keys?: string[];
+  _collectors?: string[];
   track_names?: string[];
 };
 
@@ -56,6 +64,9 @@ export type PlaylistDataPoint = {
   playlist_type: string | null;
   collector: string | null;
   spotify_playlist_image_url: string | null;
+  est_total_revenue?: number;
+  est_daily_revenue?: number | null;
+  est_monthly_revenue?: number | null;
 };
 
 export type DateDataPoint = {
@@ -98,6 +109,10 @@ export function filterTracksClientSide(
     daily_streams: t.daily_streams ?? null,
     spotify_track_id: t.spotify_track_id,
     spotify_album_image_url: t.spotify_album_image_url,
+    in_multiple_distro: (t._distro_count ?? 0) > 1,
+    in_multiple_entity: (t._entity_count ?? 0) > 1,
+    moved_distro_playlists: t._moved_distro_playlists ?? null,
+    moved_entity_playlists: t._moved_entity_playlists ?? null,
   }));
 }
 
@@ -139,6 +154,9 @@ export function filterPlaylistsClientSide(
     is_catalog: p.is_catalog,
     playlist_type: p.playlist_type,
     spotify_playlist_image_url: p.spotify_playlist_image_url,
+    est_total_revenue: p.est_total_revenue ?? 0,
+    est_daily_revenue: p.est_daily_revenue ?? null,
+    est_monthly_revenue: p.est_monthly_revenue ?? null,
   }));
 }
 
@@ -183,6 +201,7 @@ export function aggregateTracksToArtistData(
     track_count: number;
     image_url: string | null;
     playlist_keys: Set<string>;
+    collectors: Set<string>;
     track_names: string[];
   }>();
   
@@ -190,6 +209,7 @@ export function aggregateTracksToArtistData(
     const ids = track.spotify_artist_ids ?? [];
     const names = track.spotify_artist_names ?? [];
     const pkeys = Array.isArray(track.playlist_keys) ? track.playlist_keys : [];
+    const tcollectors = Array.isArray(track._collectors) ? track._collectors : [];
     
     for (let i = 0; i < ids.length; i++) {
       const id = ids[i];
@@ -205,6 +225,7 @@ export function aggregateTracksToArtistData(
           track_count: 0,
           image_url: imageInfo?.image_url ?? null,
           playlist_keys: new Set<string>(),
+          collectors: new Set<string>(),
           track_names: [],
         });
       }
@@ -215,6 +236,7 @@ export function aggregateTracksToArtistData(
       entry.track_count += 1;
       entry.track_names.push(track.name);
       for (const pk of pkeys) entry.playlist_keys.add(pk);
+      for (const c of tcollectors) entry.collectors.add(c);
     }
   }
   
@@ -226,6 +248,7 @@ export function aggregateTracksToArtistData(
     track_count: a.track_count,
     image_url: a.image_url,
     playlist_keys: Array.from(a.playlist_keys),
+    _collectors: Array.from(a.collectors),
     track_names: a.track_names,
   }));
 }
@@ -364,6 +387,27 @@ function getRowValue(row: DataRow, field: string, entityType: string): unknown {
     return (row["track_names"] as string[] | undefined) ?? [];
   }
 
+  // --- Collector field (derived from playlist memberships) ---
+  if (field === "collector" && (entityType === "tracks" || entityType === "artists")) {
+    return (row["_collectors"] as string[] | undefined) ?? [];
+  }
+
+  // --- Distro/Entity playlist error-detection fields ---
+  if (field === "in_multiple_distro") {
+    return ((row["_distro_count"] as number | undefined) ?? 0) > 1;
+  }
+  if (field === "in_multiple_entity") {
+    return ((row["_entity_count"] as number | undefined) ?? 0) > 1;
+  }
+
+  // --- Movement fields (resolved via /api/tracks/playlist-movements) ---
+  if (field === "moved_distro") {
+    return (row["_moved_distro"] as boolean | undefined) ?? false;
+  }
+  if (field === "moved_entity") {
+    return (row["_moved_entity"] as boolean | undefined) ?? false;
+  }
+
   // --- Computed fields (entity-independent) ---
   if (field === "has_spotify_id") {
     const id = row["spotify_track_id"];
@@ -398,6 +442,11 @@ function getRowValue(row: DataRow, field: string, entityType: string): unknown {
 
 function compareEqual(rowValue: unknown, filterValue: FilterValue): boolean {
   if (rowValue == null) return false;
+
+  // Array-valued fields (e.g., _collectors): match if any element equals the filter value
+  if (Array.isArray(rowValue)) {
+    return rowValue.some((v) => String(v) === String(filterValue));
+  }
   
   // Handle boolean comparisons
   if (filterValue === "true") return rowValue === true;
@@ -523,6 +572,11 @@ function compareIn(rowValue: unknown, filterValue: FilterValue, row: DataRow, fi
     const playlistKeys = row["playlist_keys"] as string[] | undefined;
     if (!Array.isArray(playlistKeys)) return false;
     return filterValue.some(v => playlistKeys.includes(v));
+  }
+
+  // Array-valued row fields (e.g., _collectors): match if any element is in the filter values
+  if (Array.isArray(rowValue)) {
+    return filterValue.some(v => (rowValue as string[]).includes(v));
   }
   
   // Default: check if rowValue is in the filter array

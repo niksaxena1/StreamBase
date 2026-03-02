@@ -24,7 +24,7 @@ function cx(...parts: Array<string | false | null | undefined>) {
 type FilterGroupProps = {
   group: FilterGroupType;
   entityType: EntityType;
-  dynamicOptions: Record<string, Array<{ value: string; label: string; imageUrl?: string | null }>>;
+  dynamicOptions: Record<string, Array<{ value: string; label: string; imageUrl?: string | null; isAllCatalog?: boolean }>>;
   groupIndex: number;
   totalGroups: number;
   onChange: (group: FilterGroupType) => void;

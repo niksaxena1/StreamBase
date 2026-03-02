@@ -25,7 +25,7 @@ function cx(...parts: Array<string | false | null | undefined>) {
 type FilterConditionProps = {
   condition: FilterConditionType;
   entityType: EntityType;
-  dynamicOptions: Record<string, Array<{ value: string; label: string; imageUrl?: string | null }>>;
+  dynamicOptions: Record<string, Array<{ value: string; label: string; imageUrl?: string | null; isAllCatalog?: boolean }>>;
   onChange: (condition: FilterConditionType) => void;
   onRemove: () => void;
   canRemove: boolean;

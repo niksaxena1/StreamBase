@@ -114,6 +114,10 @@ export type TrackFilterResult = {
   daily_streams: number | null;
   spotify_track_id: string | null;
   spotify_album_image_url: string | null;
+  in_multiple_distro: boolean;
+  in_multiple_entity: boolean;
+  moved_distro_playlists: { name: string; imageUrl: string | null }[] | null;
+  moved_entity_playlists: { name: string; imageUrl: string | null }[] | null;
 };
 
 export type ArtistFilterResult = {
@@ -135,6 +139,9 @@ export type PlaylistFilterResult = {
   is_catalog: boolean;
   playlist_type: string | null;
   spotify_playlist_image_url: string | null;
+  est_total_revenue: number;
+  est_daily_revenue: number | null;
+  est_monthly_revenue: number | null;
 };
 
 export type DateFilterResult = {

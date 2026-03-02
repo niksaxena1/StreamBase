@@ -293,6 +293,24 @@ export function FilterResults({ entityType, results, isLoading, error }: FilterR
 // Tracks Table
 // ============================================================================
 
+function MovementPath({ playlists }: { playlists: { name: string; imageUrl: string | null }[] }) {
+  return (
+    <span className="inline-flex items-center gap-0.5 text-xs flex-wrap" style={{ color: "var(--sb-muted)" }}>
+      {playlists.map((pl, i) => (
+        <span key={i} className="inline-flex items-center gap-1">
+          {i > 0 && <span className="mx-1 opacity-50">{"\u2192"}</span>}
+          {pl.imageUrl ? (
+            <Image src={pl.imageUrl} alt="" width={16} height={16} className="h-4 w-4 rounded-sm object-cover shrink-0" />
+          ) : (
+            <span className="h-4 w-4 rounded-sm bg-white/10 shrink-0" />
+          )}
+          <span className={i === playlists.length - 1 ? "font-medium" : "opacity-70"}>{pl.name}</span>
+        </span>
+      ))}
+    </span>
+  );
+}
+
 function TracksTable({
   results,
   sortHeader: SortHeader,
@@ -304,6 +322,9 @@ function TracksTable({
     align?: "left" | "right";
   }>;
 }) {
+  const hasDistroMovements = results.some((t) => t.moved_distro_playlists && t.moved_distro_playlists.length > 1);
+  const hasEntityMovements = results.some((t) => t.moved_entity_playlists && t.moved_entity_playlists.length > 1);
+
   return (
     <GlassTable
       headers={[
@@ -311,7 +332,8 @@ function TracksTable({
         { label: <SortHeader columnKey="total_streams" align="right">Total Streams</SortHeader>, align: "right" },
         { label: <SortHeader columnKey="daily_streams" align="right">Daily</SortHeader>, align: "right" },
         { label: <SortHeader columnKey="release_date">Release</SortHeader> },
-        { label: "" },
+        ...(hasDistroMovements ? [{ label: "Distro Movement" }] : []),
+        ...(hasEntityMovements ? [{ label: "Entity Movement" }] : []),
       ]}
       maxBodyHeightClassName="max-h-[440px] overflow-auto"
     >
@@ -360,18 +382,20 @@ function TracksTable({
           <TableCell empty={track.release_date == null} emptyFallback="—" style={{ color: "var(--sb-muted)" }}>
             {track.release_date ? formatDateISO(track.release_date) : null}
           </TableCell>
-          <TableCell className="w-10">
-            {track.spotify_track_id ? (
-              <a
-                href={`https://open.spotify.com/track/${track.spotify_track_id}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="opacity-50 hover:opacity-100 transition"
-              >
-                <ExternalLink className="h-4 w-4" />
-              </a>
-            ) : null}
-          </TableCell>
+          {hasDistroMovements && (
+            <TableCell empty={!track.moved_distro_playlists} emptyFallback="—">
+              {track.moved_distro_playlists && track.moved_distro_playlists.length > 1 ? (
+                <MovementPath playlists={track.moved_distro_playlists} />
+              ) : null}
+            </TableCell>
+          )}
+          {hasEntityMovements && (
+            <TableCell empty={!track.moved_entity_playlists} emptyFallback="—">
+              {track.moved_entity_playlists && track.moved_entity_playlists.length > 1 ? (
+                <MovementPath playlists={track.moved_entity_playlists} />
+              ) : null}
+            </TableCell>
+          )}
         </TableRow>
       ))}
     </GlassTable>
@@ -473,6 +497,9 @@ function PlaylistsTable({
         { label: <SortHeader columnKey="track_count" align="right">Tracks</SortHeader>, align: "right" },
         { label: <SortHeader columnKey="total_streams" align="right">Total Streams</SortHeader>, align: "right" },
         { label: <SortHeader columnKey="daily_streams" align="right">Daily</SortHeader>, align: "right" },
+        { label: <SortHeader columnKey="est_total_revenue" align="right">Est. Rev</SortHeader>, align: "right" },
+        { label: <SortHeader columnKey="est_daily_revenue" align="right">Daily Rev</SortHeader>, align: "right" },
+        { label: <SortHeader columnKey="est_monthly_revenue" align="right">Mo. Rev</SortHeader>, align: "right" },
         { label: "" },
       ]}
       maxBodyHeightClassName="max-h-[440px] overflow-auto"
@@ -515,6 +542,19 @@ function PlaylistsTable({
           <TableCell numeric mono>{formatInt(playlist.total_streams)}</TableCell>
           <TableCell numeric mono empty={playlist.daily_streams == null} emptyFallback="—" style={{ color: "var(--sb-muted)" }}>
             {playlist.daily_streams != null ? formatInt(playlist.daily_streams) : null}
+          </TableCell>
+          <TableCell numeric mono style={{ color: "var(--sb-muted)" }}>
+            {formatMoney(playlist.est_total_revenue, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </TableCell>
+          <TableCell numeric mono empty={playlist.est_daily_revenue == null} emptyFallback="—" style={{ color: "var(--sb-muted)" }}>
+            {playlist.est_daily_revenue != null
+              ? formatMoney(playlist.est_daily_revenue, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+              : null}
+          </TableCell>
+          <TableCell numeric mono empty={playlist.est_monthly_revenue == null} emptyFallback="—" style={{ color: "var(--sb-muted)" }}>
+            {playlist.est_monthly_revenue != null
+              ? formatMoney(playlist.est_monthly_revenue, { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+              : null}
           </TableCell>
           <TableCell className="w-10">{null}</TableCell>
         </TableRow>
