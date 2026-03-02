@@ -86,16 +86,10 @@ export type FilterFieldDefinition = {
   // For number fields
   min?: number;
   max?: number;
-  step?: number;
-  // For date fields
-  minDate?: string;
-  maxDate?: string;
   // Placeholder text
   placeholder?: string;
   // Help text shown below the input
   helpText?: string;
-  // Label to show when the global metric is set to "revenue"
-  revenueLabel?: string;
 };
 
 export type EntityFieldConfig = {
@@ -152,23 +146,14 @@ export type DateFilterResult = {
   tracks_added: number;
   day_of_week: number;
   est_daily_revenue: number | null;
+  streams_per_track: number | null;
+  is_weekend: boolean;
+  moving_avg_7d: number | null;
+  wow_growth_pct: number | null;
+  missing_streams_count: number;
 };
 
 export type FilterResult = TrackFilterResult | ArtistFilterResult | PlaylistFilterResult | DateFilterResult;
-
-// ============================================================================
-// UI State Types
-// ============================================================================
-
-export type FilterBuilderState = {
-  isOpen: boolean;
-  activeFilter: FilterConfig | null;
-  savedFilters: FilterConfig[];
-  results: FilterResult[];
-  isLoading: boolean;
-  error: string | null;
-  resultsCount: number | null;
-};
 
 // ============================================================================
 // Utility Types

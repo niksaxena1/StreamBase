@@ -14,7 +14,6 @@ import type {
   ArtistFilterResult,
   PlaylistFilterResult,
   DateFilterResult,
-  FilterResult,
 } from "./filterTypes";
 import { foldForSearch } from "@/lib/searchFold";
 
@@ -68,6 +67,11 @@ export type DateDataPoint = {
   tracks_added: number;
   day_of_week: number;
   est_daily_revenue: number | null;
+  streams_per_track: number | null;
+  is_weekend: boolean;
+  moving_avg_7d: number | null;
+  wow_growth_pct: number | null;
+  missing_streams_count: number;
 };
 
 // ============================================================================
@@ -156,6 +160,11 @@ export function filterDatesClientSide(
     tracks_added: d.tracks_added,
     day_of_week: d.day_of_week,
     est_daily_revenue: d.est_daily_revenue,
+    streams_per_track: d.streams_per_track,
+    is_weekend: d.is_weekend,
+    moving_avg_7d: d.moving_avg_7d,
+    wow_growth_pct: d.wow_growth_pct,
+    missing_streams_count: d.missing_streams_count,
   }));
 }
 

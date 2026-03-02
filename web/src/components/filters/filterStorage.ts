@@ -89,7 +89,7 @@ export function deleteFilter(filterId: string): FilterConfig[] {
 /**
  * Get a single filter by ID
  */
-export function getFilterById(filterId: string): FilterConfig | null {
+function getFilterById(filterId: string): FilterConfig | null {
   const filters = loadSavedFilters();
   return filters.find(f => f.id === filterId) ?? null;
 }
@@ -187,11 +187,3 @@ export function markFilterAsRecent(filterId: string): void {
   }
 }
 
-export function getRecentFilters(): FilterConfig[] {
-  const recentIds = getRecentFilterIds();
-  const allFilters = loadSavedFilters();
-  
-  return recentIds
-    .map(id => allFilters.find(f => f.id === id))
-    .filter((f): f is FilterConfig => f != null);
-}

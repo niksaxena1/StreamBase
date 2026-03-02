@@ -6,13 +6,11 @@
  * Main collapsible section for building and applying dynamic filters
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { 
-  Filter, 
   Play, 
   Plus, 
   RotateCcw, 
-  X,
   Sparkles,
 } from "lucide-react";
 import { Button, IconButton } from "@/components/ui/Button";
@@ -24,7 +22,7 @@ import type {
   FilterResult,
 } from "./filterTypes";
 import { createEmptyFilter, createEmptyGroup } from "./filterTypes";
-import { ENTITY_CONFIGS, STREAM_DATA_FIELDS } from "./filterConfig";
+import { ENTITY_CONFIGS } from "./filterConfig";
 import { FilterGroup, GroupSummary } from "./FilterGroup";
 import { SavedFilters } from "./SavedFilters";
 import { FilterResults } from "./FilterResults";
@@ -41,7 +39,6 @@ import {
   type DateDataPoint,
 } from "./filterQuery";
 import { markFilterAsRecent } from "./filterStorage";
-import { useMetric } from "@/components/metrics/MetricContext";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 
 function cx(...parts: Array<string | false | null | undefined>) {
@@ -50,13 +47,38 @@ function cx(...parts: Array<string | false | null | undefined>) {
 
 const STORAGE_KEY_OPEN = "sb:filters:section_open";
 
+function extractValuesFromFilter(f: FilterConfig | null, fieldName: string): string[] {
+  if (!f) return [];
+  const out = new Set<string>();
+  for (const g of f.groups ?? []) {
+    for (const c of g.conditions ?? []) {
+      if (!c?.enabled) continue;
+      if (c.field !== fieldName) continue;
+      if (Array.isArray(c.value)) {
+        for (const v of c.value) {
+          const s = String(v ?? "").trim();
+          if (s) out.add(s);
+        }
+      }
+    }
+  }
+  return Array.from(out);
+}
+
+function extractPlaylistKeysFromFilter(f: FilterConfig | null): string[] {
+  return extractValuesFromFilter(f, "playlist");
+}
+
 type FilterBuilderProps = {
   // Track data from home page (for client-side filtering)
   trackData: TrackDataPoint[];
   // Playlist data 
   playlistData: PlaylistDataPoint[];
-  // Date data (catalog daily aggregates)
+  // Date data (per-playlist or catalog-wide daily aggregates)
   dateData: DateDataPoint[];
+  // Current playlist scope for dates entity
+  dateScopePlaylistKey?: string;
+  onDateScopeChange?: (key: string) => void;
   // Artist image map
   artistImages: Map<string, { name: string; image_url: string | null }>;
   // Dynamic options for select fields
@@ -65,37 +87,18 @@ type FilterBuilderProps = {
   asOfRunDate?: string | null;
 };
 
-function multiplyStreamFields<T extends Record<string, unknown>>(
-  data: T[],
-  fields: string[],
-  multiplier: number,
-): T[] {
-  if (multiplier === 1) return data;
-  return data.map((row) => {
-    const copy = { ...row };
-    for (const f of fields) {
-      const v = copy[f];
-      if (v != null && typeof v === "number") {
-        (copy as Record<string, unknown>)[f] = v * multiplier;
-      }
-    }
-    return copy as T;
-  });
-}
-
 export function FilterBuilder({
   trackData,
   playlistData,
   dateData,
+  dateScopePlaylistKey = "all_catalog",
+  onDateScopeChange,
   artistImages,
   artistOptions,
   playlistOptions,
   asOfRunDate = null,
 }: FilterBuilderProps) {
-  const { metric } = useMetric();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
-  const isRevenueMode = metric === "revenue";
-  const streamMultiplier = isRevenueMode ? streamPayoutPerStreamUsd : 1;
 
   // Section open/closed state (persisted)
   const [isOpen, setIsOpen] = useState(false);
@@ -109,6 +112,7 @@ export function FilterBuilder({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasApplied, setHasApplied] = useState(false);
+  const pendingAutoApply = useRef(false);
   
   // Load open state from localStorage
   useEffect(() => {
@@ -155,33 +159,11 @@ export function FilterBuilder({
     }
   }, [asOfRunDate, membershipDate]);
 
-  function extractValuesFromFilter(f: FilterConfig | null, fieldName: string): string[] {
-    if (!f) return [];
-    const out = new Set<string>();
-    for (const g of f.groups ?? []) {
-      for (const c of g.conditions ?? []) {
-        if (!c?.enabled) continue;
-        if (c.field !== fieldName) continue;
-        if (Array.isArray(c.value)) {
-          for (const v of c.value) {
-            const s = String(v ?? "").trim();
-            if (s) out.add(s);
-          }
-        }
-      }
-    }
-    return Array.from(out);
-  }
-
-  function extractPlaylistKeysFromFilter(f: FilterConfig | null): string[] {
-    return extractValuesFromFilter(f, "playlist");
-  }
-
-  async function ensurePlaylistMemberships(playlistKeys: string[]) {
+  async function ensurePlaylistMemberships(playlistKeys: string[]): Promise<Map<string, Set<string>>> {
     const date = asOfRunDate;
-    if (!date) return;
+    if (!date) return membershipByPlaylistKey;
     const missing = playlistKeys.filter((k) => !membershipByPlaylistKey.has(k));
-    if (missing.length === 0) return;
+    if (missing.length === 0) return membershipByPlaylistKey;
 
     const res = await fetch("/api/playlists/memberships", {
       method: "POST",
@@ -202,6 +184,7 @@ export function FilterBuilder({
       if (set) set.add(isrc);
     }
     setMembershipByPlaylistKey(next);
+    return next;
   }
   
   // Build track options for the "Contains Track" multi-select on playlists
@@ -274,11 +257,11 @@ export function FilterBuilder({
     
     // Use setTimeout to allow UI to update before potentially heavy filtering
     setTimeout(() => {
-      try {
         (async () => {
           const playlistKeys = extractPlaylistKeysFromFilter(currentFilter);
+          let memberships = membershipByPlaylistKey;
           if (playlistKeys.length && asOfRunDate) {
-            await ensurePlaylistMemberships(playlistKeys);
+            memberships = await ensurePlaylistMemberships(playlistKeys);
           }
 
           // Annotate trackData with playlist_keys for selected playlists
@@ -286,7 +269,7 @@ export function FilterBuilder({
             ? trackData.map((t) => {
                 const keys: string[] = [];
                 for (const pk of playlistKeys) {
-                  const set = membershipByPlaylistKey.get(pk);
+                  const set = memberships.get(pk);
                   if (set && set.has(t.isrc)) keys.push(pk);
                 }
                 return { ...t, playlist_keys: keys };
@@ -337,33 +320,22 @@ export function FilterBuilder({
             }
           }
 
-          // When revenue mode is active, multiply stream fields by payout rate
-          // so the user's filter values (in $) compare against revenue figures.
-          const entity = currentFilter.entityType;
-          const finalTrackData = multiplyStreamFields(
-            trackDataWithPlaylists,
-            STREAM_DATA_FIELDS["tracks"] ?? [],
-            streamMultiplier,
-          );
-          const finalArtistData = multiplyStreamFields(
-            artistData,
-            STREAM_DATA_FIELDS["artists"] ?? [],
-            streamMultiplier,
-          );
-          const finalPlaylistData = multiplyStreamFields(
-            playlistDataForFilter,
-            STREAM_DATA_FIELDS["playlists"] ?? [],
-            streamMultiplier,
-          );
-          const finalDateData = multiplyStreamFields(
-            dateData,
-            STREAM_DATA_FIELDS["dates"] ?? [],
-            streamMultiplier,
-          );
+          // Pre-compute estimated revenue fields using the configured payout rate
+          const rate = streamPayoutPerStreamUsd;
+          const finalTrackData = trackDataWithPlaylists.map((t) => ({
+            ...t,
+            est_total_revenue: (t.total_streams_cumulative ?? 0) * rate,
+            est_daily_revenue: (t.daily_streams ?? 0) * rate,
+          }));
+          const finalArtistData = artistData.map((a) => ({
+            ...a,
+            est_total_revenue: (a.total_streams ?? 0) * rate,
+            est_daily_revenue: (a.daily_streams ?? 0) * rate,
+          }));
 
           let filteredResults: FilterResult[];
         
-          switch (entity) {
+          switch (currentFilter.entityType) {
             case "tracks":
               filteredResults = filterTracksClientSide(finalTrackData, currentFilter);
               break;
@@ -371,10 +343,10 @@ export function FilterBuilder({
               filteredResults = filterArtistsClientSide(finalArtistData, currentFilter);
               break;
             case "playlists":
-              filteredResults = filterPlaylistsClientSide(finalPlaylistData, currentFilter);
+              filteredResults = filterPlaylistsClientSide(playlistDataForFilter, currentFilter);
               break;
             case "dates":
-              filteredResults = filterDatesClientSide(finalDateData, currentFilter);
+              filteredResults = filterDatesClientSide(dateData, currentFilter);
               break;
             default:
               filteredResults = [];
@@ -395,13 +367,16 @@ export function FilterBuilder({
           .finally(() => {
             setIsLoading(false);
           });
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "An error occurred while filtering");
-        setResults([]);
-        setIsLoading(false);
-      }
     }, 10);
-  }, [currentFilter, trackData, playlistData, dateData, asOfRunDate, membershipByPlaylistKey, artistImages, baseArtistData, streamMultiplier]);
+  }, [currentFilter, trackData, playlistData, dateData, asOfRunDate, membershipByPlaylistKey, artistImages, baseArtistData, streamPayoutPerStreamUsd]);
+
+  // Auto-apply after loading a saved filter (runs after re-render so handleApply has fresh state)
+  useEffect(() => {
+    if (pendingAutoApply.current) {
+      pendingAutoApply.current = false;
+      handleApply();
+    }
+  }, [handleApply]);
   
   // Load a saved filter
   function handleLoadFilter(filter: FilterConfig) {
@@ -409,12 +384,8 @@ export function FilterBuilder({
     setResults([]);
     setHasApplied(false);
     setError(null);
-    // Auto-apply when loading a saved preset that has active conditions
-    const hasActiveConditions = filter?.groups?.some((g) =>
-      g.conditions?.some((c) => c?.enabled)
-    );
-    if (hasActiveConditions) {
-      setTimeout(() => handleApply(), 0);
+    if (hasActiveConditions(filter)) {
+      pendingAutoApply.current = true;
     }
   }
   
@@ -423,13 +394,6 @@ export function FilterBuilder({
     setCurrentFilter(filter);
   }
   
-  // Create new filter
-  function handleNewFilter(entityType: EntityType) {
-    setCurrentFilter(createEmptyFilter(entityType));
-    setResults([]);
-    setHasApplied(false);
-    setError(null);
-  }
   
   // Get data count for current entity type
   const dataCount = currentFilter?.entityType === "tracks" 
@@ -447,6 +411,11 @@ export function FilterBuilder({
         label: config.label,
       })),
     [],
+  );
+
+  const dateScopeOptions: ComboboxOption[] = useMemo(
+    () => playlistOptions.map((p) => ({ value: p.value, label: p.label, imageUrl: p.imageUrl })),
+    [playlistOptions],
   );
   
   return (
@@ -486,7 +455,6 @@ export function FilterBuilder({
               currentFilter={currentFilter}
               onLoad={handleLoadFilter}
               onSave={handleSaveFilter}
-              onNew={handleNewFilter}
             />
             
             {/* Entity type selector */}
@@ -507,6 +475,24 @@ export function FilterBuilder({
                 ({dataCount.toLocaleString()} total)
               </span>
             </div>
+
+            {/* Playlist scope selector (only for Dates entity) */}
+            {currentFilter.entityType === "dates" && onDateScopeChange && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs" style={{ color: "var(--sb-muted)" }}>
+                  Scope:
+                </span>
+                <div className="sb-ring min-w-[180px] rounded-xl bg-white/70 px-3 py-2 dark:bg-white/5">
+                  <Combobox
+                    value={dateScopePlaylistKey}
+                    options={dateScopeOptions}
+                    ariaLabel="Select playlist scope"
+                    onChange={(v) => onDateScopeChange(v)}
+                    showThumbnails
+                  />
+                </div>
+              </div>
+            )}
             
             {/* Spacer */}
             <div className="flex-1" />
@@ -572,7 +558,6 @@ export function FilterBuilder({
                     dynamicOptions={dynamicOptions}
                     groupIndex={index}
                     totalGroups={currentFilter.groups.length}
-                    isRevenueMode={isRevenueMode}
                     onChange={(g) => handleGroupChange(index, g)}
                     onRemove={() => handleGroupRemove(index)}
                   />
@@ -614,7 +599,6 @@ export function FilterBuilder({
                       group={group}
                       entityType={currentFilter.entityType}
                       dynamicOptions={dynamicOptions}
-                      isRevenueMode={isRevenueMode}
                     />
                   </div>
                 ))}
@@ -629,8 +613,6 @@ export function FilterBuilder({
               results={results}
               isLoading={isLoading}
               error={error}
-              totalCount={results.length}
-              isRevenueMode={isRevenueMode}
             />
           )}
           

@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { type TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChart";
 import { FilterBuilder, type TrackDataPoint, type PlaylistDataPoint, type DateDataPoint } from "@/components/filters";
 import { addDaysISO, SOT_DATA_LAG_DAYS } from "@/lib/sotDates";
@@ -14,8 +13,6 @@ export function HomeFilterBuilderSection({
   trackScatterPoints: TrackStreamsXYPoint[];
   trackScatterDataDate: string | null;
 }) {
-  const { streamPayoutPerStreamUsd } = usePayoutRate();
-
   const [playlistOptions, setPlaylistOptions] = useState<
     Array<{ value: string; label: string; imageUrl?: string | null }>
   >([]);
@@ -94,17 +91,51 @@ export function HomeFilterBuilderSection({
         if (!res.ok) return;
         const rows = Array.isArray((json as any)?.rows) ? ((json as any).rows as any[]) : [];
         if (!cancelled) {
+          // First pass: basic fields
+          const base = rows.map((r) => ({
+            date: String(r?.date ?? ""),
+            daily_streams: Number(r?.daily_streams ?? 0),
+            cumulative_streams: Number(r?.cumulative_streams ?? 0),
+            track_count: Number(r?.track_count ?? 0),
+            growth_pct: r?.growth_pct != null ? Number(r.growth_pct) : null,
+            tracks_added: Number(r?.tracks_added ?? 0),
+            day_of_week: Number(r?.day_of_week ?? 0),
+            est_daily_revenue: r?.est_daily_revenue != null ? Number(r.est_daily_revenue) : null,
+            missing_streams_count: Number(r?.missing_streams_count ?? 0),
+          }));
+
+          // Second pass: derived statistical fields
           setDateData(
-            rows.map((r) => ({
-              date: String(r?.date ?? ""),
-              daily_streams: Number(r?.daily_streams ?? 0),
-              cumulative_streams: Number(r?.cumulative_streams ?? 0),
-              track_count: Number(r?.track_count ?? 0),
-              growth_pct: r?.growth_pct != null ? Number(r.growth_pct) : null,
-              tracks_added: Number(r?.tracks_added ?? 0),
-              day_of_week: Number(r?.day_of_week ?? 0),
-              est_daily_revenue: r?.est_daily_revenue != null ? Number(r.est_daily_revenue) : null,
-            })),
+            base.map((row, idx) => {
+              const tc = row.track_count;
+              const streamsPerTrack = tc > 0 ? row.daily_streams / tc : null;
+              const isWeekend = row.day_of_week === 0 || row.day_of_week === 6;
+
+              // 7-day moving average (centered on current day, using up to 7 trailing days)
+              let movingAvg: number | null = null;
+              if (idx >= 6) {
+                let sum = 0;
+                for (let j = idx - 6; j <= idx; j++) sum += base[j].daily_streams;
+                movingAvg = Math.round((sum / 7) * 100) / 100;
+              }
+
+              // Week-over-week growth % (compare to same day 7 days ago)
+              let wowGrowth: number | null = null;
+              if (idx >= 7) {
+                const prev7 = base[idx - 7].daily_streams;
+                if (prev7 > 0) {
+                  wowGrowth = Math.round(((row.daily_streams - prev7) / prev7) * 10000) / 100;
+                }
+              }
+
+              return {
+                ...row,
+                streams_per_track: streamsPerTrack != null ? Math.round(streamsPerTrack * 100) / 100 : null,
+                is_weekend: isWeekend,
+                moving_avg_7d: movingAvg,
+                wow_growth_pct: wowGrowth,
+              };
+            }),
           );
         }
       } catch {
@@ -149,7 +180,7 @@ export function HomeFilterBuilderSection({
       spotify_artist_ids: p.artist_ids ?? [],
       total_streams_cumulative: p.total_streams_cumulative,
       daily_streams: p.daily_streams_delta,
-      spotify_track_id: null,
+      spotify_track_id: p.spotify_track_id ?? ((p.artist_ids?.length ?? 0) > 0 ? "enriched" : null),
       spotify_album_image_url: p.album_image_url,
       playlist_keys: [],
     }));

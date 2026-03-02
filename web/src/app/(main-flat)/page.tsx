@@ -290,6 +290,7 @@ export default async function Home({
             total_streams_cumulative: total,
             daily_streams_delta: Number(r.daily_streams_delta ?? 0),
             has_prev_day: Boolean(r.has_prev_day),
+            spotify_track_id: r.spotify_track_id ?? null,
           };
         })
         .filter(Boolean);

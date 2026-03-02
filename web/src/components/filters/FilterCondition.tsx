@@ -6,14 +6,13 @@
  * A single condition row: Field selector -> Operator selector -> Value input
  */
 
-import { Trash2, GripVertical, ToggleLeft, ToggleRight } from "lucide-react";
+import { Trash2, ToggleLeft, ToggleRight } from "lucide-react";
 import { Combobox, type ComboboxOption } from "@/components/ui/Combobox";
 import { IconButton } from "@/components/ui/Button";
 import type { FilterCondition as FilterConditionType, FilterOperator, FilterValue, EntityType } from "./filterTypes";
 import { 
   getFieldsForEntity, 
   getFieldDefinition, 
-  getFieldLabel,
   getDefaultOperator, 
   getOperatorLabel 
 } from "./filterConfig";
@@ -27,7 +26,6 @@ type FilterConditionProps = {
   condition: FilterConditionType;
   entityType: EntityType;
   dynamicOptions: Record<string, Array<{ value: string; label: string; imageUrl?: string | null }>>;
-  isRevenueMode?: boolean;
   onChange: (condition: FilterConditionType) => void;
   onRemove: () => void;
   canRemove: boolean;
@@ -37,7 +35,6 @@ export function FilterCondition({
   condition,
   entityType,
   dynamicOptions,
-  isRevenueMode = false,
   onChange,
   onRemove,
   canRemove,
@@ -47,7 +44,7 @@ export function FilterCondition({
 
   const fieldOptionsForCombobox: ComboboxOption[] = fields.map((f) => ({
     value: f.key,
-    label: getFieldLabel(f, isRevenueMode),
+    label: f.label,
   }));
   
   // Get options for this field (either static or dynamic)
@@ -108,11 +105,6 @@ export function FilterCondition({
         !condition.enabled && "opacity-50"
       )}
     >
-      {/* Drag handle (visual only for now) */}
-      <div className="hidden lg:block cursor-grab opacity-30 hover:opacity-60 transition">
-        <GripVertical className="h-4 w-4" />
-      </div>
-      
       {/* Field selector */}
       <div className="sb-ring w-full lg:min-w-[180px] lg:max-w-[220px] rounded-xl bg-white/70 px-3 py-2 dark:bg-white/5">
         <Combobox
@@ -129,7 +121,7 @@ export function FilterCondition({
       {fieldDef && (
         <div className="sb-ring w-full lg:min-w-[160px] lg:max-w-[200px] rounded-xl bg-white/70 px-3 py-2 dark:bg-white/5">
           <Combobox
-            value={String(condition.operator || "") || null}
+            value={condition.operator}
             options={operatorOptionsForCombobox}
             placeholder="Operator…"
             ariaLabel="Select operator"
@@ -194,12 +186,10 @@ export function ConditionSummary({
   condition,
   entityType,
   dynamicOptions,
-  isRevenueMode = false,
 }: {
   condition: FilterConditionType;
   entityType: EntityType;
   dynamicOptions: Record<string, Array<{ value: string; label: string }>>;
-  isRevenueMode?: boolean;
 }) {
   const fieldDef = condition.field ? getFieldDefinition(entityType, condition.field) : undefined;
   if (!fieldDef) return null;
@@ -236,7 +226,7 @@ export function ConditionSummary({
         !condition.enabled && "opacity-50 line-through"
       )}
     >
-      <span className="font-medium">{getFieldLabel(fieldDef, isRevenueMode)}</span>
+      <span className="font-medium">{fieldDef.label}</span>
       <span style={{ color: "var(--sb-muted)" }}>{operatorLabel}</span>
       <span className="font-medium">{valueLabel}</span>
     </span>

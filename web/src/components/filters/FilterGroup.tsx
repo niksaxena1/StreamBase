@@ -27,7 +27,6 @@ type FilterGroupProps = {
   dynamicOptions: Record<string, Array<{ value: string; label: string; imageUrl?: string | null }>>;
   groupIndex: number;
   totalGroups: number;
-  isRevenueMode?: boolean;
   onChange: (group: FilterGroupType) => void;
   onRemove: () => void;
 };
@@ -38,7 +37,6 @@ export function FilterGroup({
   dynamicOptions,
   groupIndex,
   totalGroups,
-  isRevenueMode = false,
   onChange,
   onRemove,
 }: FilterGroupProps) {
@@ -162,7 +160,6 @@ export function FilterGroup({
               condition={condition}
               entityType={entityType}
               dynamicOptions={dynamicOptions}
-              isRevenueMode={isRevenueMode}
               onChange={(c) => handleConditionChange(index, c)}
               onRemove={() => handleConditionRemove(index)}
               canRemove={canRemoveCondition}
@@ -194,12 +191,10 @@ export function GroupSummary({
   group,
   entityType,
   dynamicOptions,
-  isRevenueMode = false,
 }: {
   group: FilterGroupType;
   entityType: EntityType;
   dynamicOptions: Record<string, Array<{ value: string; label: string }>>;
-  isRevenueMode?: boolean;
 }) {
   const activeConditions = group.conditions.filter(c => c.enabled && c.field);
   
@@ -227,7 +222,6 @@ export function GroupSummary({
             condition={condition}
             entityType={entityType}
             dynamicOptions={dynamicOptions}
-            isRevenueMode={isRevenueMode}
           />
         </span>
       ))}

@@ -20,6 +20,7 @@ export type TrackStreamsXYPoint = {
   total_streams_cumulative: number;
   daily_streams_delta: number;
   has_prev_day: boolean;
+  spotify_track_id?: string | null;
 };
 
 type Mode = "streams" | "revenue";

@@ -12,18 +12,14 @@ import {
   ChevronDown, 
   Copy, 
   Download, 
-  Plus, 
   Save, 
   Trash2, 
   Upload,
-  Clock,
-  X,
 } from "lucide-react";
 import { Button, IconButton } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
-import type { FilterConfig, EntityType } from "./filterTypes";
-import { createEmptyFilter } from "./filterTypes";
+import type { FilterConfig } from "./filterTypes";
 import { ENTITY_CONFIGS } from "./filterConfig";
 import {
   loadSavedFilters,
@@ -32,7 +28,6 @@ import {
   duplicateFilter,
   exportFilterAsJson,
   importFilterFromJson,
-  getRecentFilters,
   markFilterAsRecent,
 } from "./filterStorage";
 
@@ -59,13 +54,11 @@ type SavedFiltersProps = {
   currentFilter: FilterConfig | null;
   onLoad: (filter: FilterConfig) => void;
   onSave: (filter: FilterConfig) => void;
-  onNew: (entityType: EntityType) => void;
 };
 
-export function SavedFilters({ currentFilter, onLoad, onSave, onNew }: SavedFiltersProps) {
+export function SavedFilters({ currentFilter, onLoad, onSave }: SavedFiltersProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [savedFilters, setSavedFilters] = useState<FilterConfig[]>([]);
-  const [recentFilters, setRecentFilters] = useState<FilterConfig[]>([]);
   const [saveModalOpen, setSaveModalOpen] = useState(false);
   const [saveAsName, setSaveAsName] = useState("");
   const [importModalOpen, setImportModalOpen] = useState(false);
@@ -78,7 +71,6 @@ export function SavedFilters({ currentFilter, onLoad, onSave, onNew }: SavedFilt
   useEffect(() => {
     if (isOpen) {
       setSavedFilters(loadSavedFilters());
-      setRecentFilters(getRecentFilters());
     }
   }, [isOpen]);
   
@@ -138,7 +130,6 @@ export function SavedFilters({ currentFilter, onLoad, onSave, onNew }: SavedFilt
   function handleDelete(filterId: string) {
     deleteFilter(filterId);
     setSavedFilters(loadSavedFilters());
-    setRecentFilters(getRecentFilters());
     setDeleteConfirmId(null);
   }
   
@@ -209,56 +200,7 @@ export function SavedFilters({ currentFilter, onLoad, onSave, onNew }: SavedFilt
             backdropFilter: "blur(var(--sb-blur))",
           }}
         >
-          {/* New filter section */}
-          <div className="p-2 border-b" style={{ borderColor: "var(--sb-border)" }}>
-            <div className="text-xs font-medium mb-2 px-2" style={{ color: "var(--sb-muted)" }}>
-              Create New
-            </div>
-            <div className="flex flex-wrap gap-1">
-              {Object.values(ENTITY_CONFIGS).map((config) => (
-                <Button
-                  key={config.entityType}
-                  variant="ghost"
-                  size="sm"
-                  leftIcon={<Plus className="h-3 w-3" />}
-                  onClick={() => {
-                    onNew(config.entityType);
-                    setIsOpen(false);
-                  }}
-                >
-                  {config.label}
-                </Button>
-              ))}
-            </div>
-          </div>
-          
-          {/* Recent filters */}
-          {recentFilters.length > 0 && (
-            <div className="p-2 border-b" style={{ borderColor: "var(--sb-border)" }}>
-              <div className="flex items-center gap-1 text-xs font-medium mb-2 px-2" style={{ color: "var(--sb-muted)" }}>
-                <Clock className="h-3 w-3" />
-                Recent
-              </div>
-              <div className="space-y-1">
-                {recentFilters.slice(0, 3).map((filter) => (
-                  <FilterListItem
-                    key={filter.id}
-                    filter={filter}
-                    isActive={currentFilter?.id === filter.id}
-                    onLoad={() => handleLoadFilter(filter)}
-                    onDuplicate={() => handleDuplicate(filter.id)}
-                    onExport={() => handleExport(filter)}
-                    onDelete={() => setDeleteConfirmId(filter.id)}
-                    deleteConfirmId={deleteConfirmId}
-                    onDeleteConfirm={() => handleDelete(filter.id)}
-                    onDeleteCancel={() => setDeleteConfirmId(null)}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-          
-          {/* All saved filters */}
+          {/* Saved filters */}
           <div className="p-2">
             <div className="text-xs font-medium mb-2 px-2" style={{ color: "var(--sb-muted)" }}>
               Saved Filters ({savedFilters.length})

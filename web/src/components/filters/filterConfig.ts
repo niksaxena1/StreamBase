@@ -102,7 +102,6 @@ const TRACK_FIELDS: FilterFieldDefinition[] = [
   {
     key: "total_streams",
     label: "Total Streams",
-    revenueLabel: "Total Revenue",
     type: "number",
     operators: ["gt", "gte", "lt", "lte", "between", "eq"],
     description: "Cumulative streams for the track",
@@ -113,7 +112,6 @@ const TRACK_FIELDS: FilterFieldDefinition[] = [
   {
     key: "daily_streams",
     label: "Daily Streams",
-    revenueLabel: "Daily Revenue",
     type: "number",
     operators: ["gt", "gte", "lt", "lte", "between", "eq"],
     description: "Most recent daily stream count",
@@ -127,14 +125,6 @@ const TRACK_FIELDS: FilterFieldDefinition[] = [
     type: "date",
     operators: ["eq", "before", "after", "between", "month_is", "year_is"],
     description: "When the track was released",
-    placeholder: "YYYY-MM-DD",
-  },
-  {
-    key: "first_seen",
-    label: "First Seen",
-    type: "date",
-    operators: ["eq", "before", "after", "between"],
-    description: "When the track was first ingested",
     placeholder: "YYYY-MM-DD",
   },
   {
@@ -195,6 +185,26 @@ const TRACK_FIELDS: FilterFieldDefinition[] = [
       { value: "false", label: "No" },
     ],
   },
+  {
+    key: "est_total_revenue",
+    label: "Est. Total Revenue",
+    type: "number",
+    operators: ["gt", "gte", "lt", "lte", "between", "eq"],
+    description: "Estimated cumulative revenue based on payout rate",
+    min: 0,
+    placeholder: "e.g., 500",
+    helpText: "Uses your configured payout rate (Settings)",
+  },
+  {
+    key: "est_daily_revenue",
+    label: "Est. Daily Revenue",
+    type: "number",
+    operators: ["gt", "gte", "lt", "lte", "between", "eq"],
+    description: "Estimated daily revenue based on payout rate",
+    min: 0,
+    placeholder: "e.g., 10",
+    helpText: "Uses your configured payout rate (Settings)",
+  },
 ];
 
 // ============================================================================
@@ -205,7 +215,6 @@ const ARTIST_FIELDS: FilterFieldDefinition[] = [
   {
     key: "total_streams",
     label: "Total Streams",
-    revenueLabel: "Total Revenue",
     type: "number",
     operators: ["gt", "gte", "lt", "lte", "between", "eq"],
     description: "Sum of streams across all artist's tracks",
@@ -232,7 +241,6 @@ const ARTIST_FIELDS: FilterFieldDefinition[] = [
   {
     key: "daily_streams",
     label: "Daily Streams",
-    revenueLabel: "Daily Revenue",
     type: "number",
     operators: ["gt", "gte", "lt", "lte", "between", "eq"],
     description: "Sum of daily streams across all artist's tracks",
@@ -252,7 +260,6 @@ const ARTIST_FIELDS: FilterFieldDefinition[] = [
   {
     key: "avg_streams_per_track",
     label: "Avg Streams / Track",
-    revenueLabel: "Avg Revenue / Track",
     type: "number",
     operators: ["gt", "gte", "lt", "lte", "between", "eq"],
     description: "Average cumulative streams per track for the artist",
@@ -268,6 +275,26 @@ const ARTIST_FIELDS: FilterFieldDefinition[] = [
     description: "Filter artists who have a track matching this name",
     placeholder: "Search track name...",
     helpText: "Matches if any of the artist's tracks match",
+  },
+  {
+    key: "est_total_revenue",
+    label: "Est. Total Revenue",
+    type: "number",
+    operators: ["gt", "gte", "lt", "lte", "between", "eq"],
+    description: "Estimated total revenue across all tracks",
+    min: 0,
+    placeholder: "e.g., 2000",
+    helpText: "Uses your configured payout rate (Settings)",
+  },
+  {
+    key: "est_daily_revenue",
+    label: "Est. Daily Revenue",
+    type: "number",
+    operators: ["gt", "gte", "lt", "lte", "between", "eq"],
+    description: "Estimated daily revenue across all tracks",
+    min: 0,
+    placeholder: "e.g., 50",
+    helpText: "Uses your configured payout rate (Settings)",
   },
 ];
 
@@ -288,7 +315,6 @@ const PLAYLIST_FIELDS: FilterFieldDefinition[] = [
   {
     key: "total_streams",
     label: "Total Streams",
-    revenueLabel: "Total Revenue",
     type: "number",
     operators: ["gt", "gte", "lt", "lte", "between", "eq"],
     description: "Sum of streams for all tracks",
@@ -298,7 +324,6 @@ const PLAYLIST_FIELDS: FilterFieldDefinition[] = [
   {
     key: "daily_streams",
     label: "Daily Streams",
-    revenueLabel: "Daily Revenue",
     type: "number",
     operators: ["gt", "gte", "lt", "lte", "between", "eq"],
     description: "Daily stream delta",
@@ -383,7 +408,6 @@ const DATE_FIELDS: FilterFieldDefinition[] = [
   {
     key: "daily_streams",
     label: "Daily Streams",
-    revenueLabel: "Daily Revenue",
     type: "number",
     operators: ["gt", "gte", "lt", "lte", "between", "eq"],
     description: "Total daily stream delta across catalog",
@@ -420,7 +444,6 @@ const DATE_FIELDS: FilterFieldDefinition[] = [
   {
     key: "cumulative_streams",
     label: "Cumulative Streams",
-    revenueLabel: "Cumulative Revenue",
     type: "number",
     operators: ["gt", "gte", "lt", "lte", "between"],
     description: "Total cumulative streams across catalog on this date",
@@ -436,6 +459,56 @@ const DATE_FIELDS: FilterFieldDefinition[] = [
     min: 0,
     placeholder: "e.g., 100",
     helpText: "Based on the configured payout rate",
+  },
+  {
+    key: "streams_per_track",
+    label: "Streams per Track",
+    type: "number",
+    operators: ["gt", "gte", "lt", "lte", "between", "eq"],
+    description: "Average daily streams per active track",
+    min: 0,
+    placeholder: "e.g., 250",
+    helpText: "Daily streams divided by track count",
+  },
+  {
+    key: "moving_avg_7d",
+    label: "7-Day Moving Avg",
+    type: "number",
+    operators: ["gt", "gte", "lt", "lte", "between"],
+    description: "Trailing 7-day moving average of daily streams",
+    min: 0,
+    placeholder: "e.g., 40000",
+    helpText: "Smooths out day-to-day noise; null for the first 6 days",
+  },
+  {
+    key: "wow_growth_pct",
+    label: "Week-over-Week Growth %",
+    type: "number",
+    operators: ["gt", "gte", "lt", "lte", "between"],
+    description: "Change vs same day 7 days ago",
+    placeholder: "e.g., 15",
+    helpText: "More meaningful than day-over-day for spotting real trends",
+  },
+  {
+    key: "is_weekend",
+    label: "Is Weekend",
+    type: "boolean",
+    operators: ["eq"],
+    description: "Saturday or Sunday",
+    options: [
+      { value: "true", label: "Yes" },
+      { value: "false", label: "No" },
+    ],
+  },
+  {
+    key: "missing_streams_count",
+    label: "Missing Streams Count",
+    type: "number",
+    operators: ["gt", "gte", "lt", "lte", "between", "eq"],
+    description: "Number of tracks with missing stream data on this date",
+    min: 0,
+    placeholder: "e.g., 5",
+    helpText: "Higher values may indicate incomplete data ingestion",
   },
   {
     key: "day_of_week",
@@ -499,21 +572,6 @@ export function getFieldDefinition(entityType: string, fieldKey: string): Filter
 export function getDefaultOperator(fieldDef: FilterFieldDefinition): string {
   return fieldDef.operators[0] ?? "eq";
 }
-
-export function getFieldLabel(fieldDef: FilterFieldDefinition, isRevenueMode: boolean): string {
-  return (isRevenueMode && fieldDef.revenueLabel) ? fieldDef.revenueLabel : fieldDef.label;
-}
-
-/**
- * Data-level field names (per entity) that represent stream counts and should
- * be multiplied by the payout rate when the global metric is "revenue".
- */
-export const STREAM_DATA_FIELDS: Record<string, string[]> = {
-  tracks: ["total_streams_cumulative", "daily_streams"],
-  artists: ["total_streams", "daily_streams"],
-  playlists: ["total_streams", "daily_streams"],
-  dates: ["daily_streams", "cumulative_streams"],
-};
 
 // ============================================================================
 // Value Parsing Utilities

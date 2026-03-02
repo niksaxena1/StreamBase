@@ -25,6 +25,7 @@ export async function GET() {
   const { data, error } = await svc
     .from("playlists")
     .select("playlist_key,display_name,spotify_playlist_image_url")
+    .order("display_order", { ascending: true, nullsFirst: false })
     .order("display_name", { ascending: true });
 
   if (error) {
