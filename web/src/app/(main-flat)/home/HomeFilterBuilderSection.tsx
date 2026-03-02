@@ -21,6 +21,7 @@ export function HomeFilterBuilderSection({
   >([]);
   const [playlistData, setPlaylistData] = useState<PlaylistDataPoint[]>([]);
   const [dateData, setDateData] = useState<DateDataPoint[]>([]);
+  const [dateScopePlaylistKey, setDateScopePlaylistKey] = useState("all_catalog");
   const [artistImagesById, setArtistImagesById] = useState<Map<string, string | null>>(new Map());
 
   useEffect(() => {
