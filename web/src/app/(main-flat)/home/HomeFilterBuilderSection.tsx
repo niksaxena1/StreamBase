@@ -86,7 +86,10 @@ export function HomeFilterBuilderSection({
     let cancelled = false;
     async function load() {
       try {
-        const res = await fetch("/api/dates/catalog-stats");
+        const url = dateScopePlaylistKey && dateScopePlaylistKey !== "all_catalog"
+          ? `/api/dates/catalog-stats?playlist_key=${encodeURIComponent(dateScopePlaylistKey)}`
+          : "/api/dates/catalog-stats";
+        const res = await fetch(url);
         const json = await res.json().catch(() => ({}));
         if (!res.ok) return;
         const rows = Array.isArray((json as any)?.rows) ? ((json as any).rows as any[]) : [];
@@ -110,7 +113,7 @@ export function HomeFilterBuilderSection({
     }
     void load();
     return () => { cancelled = true; };
-  }, []);
+  }, [dateScopePlaylistKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -203,6 +206,8 @@ export function HomeFilterBuilderSection({
       trackData={trackData}
       playlistData={playlistData}
       dateData={dateData}
+      dateScopePlaylistKey={dateScopePlaylistKey}
+      onDateScopeChange={setDateScopePlaylistKey}
       artistImages={artistImages}
       artistOptions={artistOptions}
       playlistOptions={playlistOptions}
