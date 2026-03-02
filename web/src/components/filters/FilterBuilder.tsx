@@ -38,7 +38,6 @@ import {
   type PlaylistDataPoint,
   type DateDataPoint,
 } from "./filterQuery";
-import { markFilterAsRecent } from "./filterStorage";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 
 function cx(...parts: Array<string | false | null | undefined>) {
@@ -501,10 +500,6 @@ export function FilterBuilder({
           setResults(filteredResults);
           setHasApplied(true);
         
-          // Mark as recent if filter has a name
-          if (currentFilter.name) {
-            markFilterAsRecent(currentFilter.id);
-          }
         })()
           .catch((err) => {
             setError(err instanceof Error ? err.message : "An error occurred while filtering");

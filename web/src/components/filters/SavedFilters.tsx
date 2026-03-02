@@ -2,18 +2,20 @@
 
 /**
  * Saved Filters Component
- * 
- * Dropdown to load, save, delete, and manage saved filters
+ *
+ * Dropdown to load, save, delete, and manage saved filters.
+ * Filters are persisted server-side (Supabase) so they sync across devices.
  */
 
-import { useEffect, useRef, useState } from "react";
-import { 
-  Bookmark, 
-  ChevronDown, 
-  Copy, 
-  Download, 
-  Save, 
-  Trash2, 
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Bookmark,
+  ChevronDown,
+  Copy,
+  Download,
+  Loader2,
+  Save,
+  Trash2,
   Upload,
 } from "lucide-react";
 import { Button, IconButton } from "@/components/ui/Button";
@@ -28,7 +30,6 @@ import {
   duplicateFilter,
   exportFilterAsJson,
   importFilterFromJson,
-  markFilterAsRecent,
 } from "./filterStorage";
 
 function cx(...parts: Array<string | false | null | undefined>) {
@@ -42,7 +43,7 @@ function formatRelativeTime(isoDate: string): string {
   const diffMins = Math.floor(diffMs / 60000);
   const diffHours = Math.floor(diffMs / 3600000);
   const diffDays = Math.floor(diffMs / 86400000);
-  
+
   if (diffMins < 1) return "just now";
   if (diffMins < 60) return `${diffMins}m ago`;
   if (diffHours < 24) return `${diffHours}h ago`;
@@ -59,6 +60,8 @@ type SavedFiltersProps = {
 export function SavedFilters({ currentFilter, onLoad, onSave }: SavedFiltersProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [savedFilters, setSavedFilters] = useState<FilterConfig[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [saveModalOpen, setSaveModalOpen] = useState(false);
   const [saveAsName, setSaveAsName] = useState("");
   const [importModalOpen, setImportModalOpen] = useState(false);
@@ -66,14 +69,21 @@ export function SavedFilters({ currentFilter, onLoad, onSave }: SavedFiltersProp
   const [importError, setImportError] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
-  
+
+  const refreshFilters = useCallback(async () => {
+    setLoading(true);
+    const filters = await loadSavedFilters();
+    setSavedFilters(filters);
+    setLoading(false);
+  }, []);
+
   // Load saved filters on mount and when dropdown opens
   useEffect(() => {
     if (isOpen) {
-      setSavedFilters(loadSavedFilters());
+      refreshFilters();
     }
-  }, [isOpen]);
-  
+  }, [isOpen, refreshFilters]);
+
   // Close on click outside
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -84,55 +94,58 @@ export function SavedFilters({ currentFilter, onLoad, onSave }: SavedFiltersProp
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
-  
+
   function handleLoadFilter(filter: FilterConfig) {
-    markFilterAsRecent(filter.id);
     onLoad(filter);
     setIsOpen(false);
   }
-  
-  function handleSaveClick() {
+
+  async function handleSaveClick() {
     if (!currentFilter) return;
-    
-    // If filter has no name, show save modal
+
     if (!currentFilter.name) {
       setSaveAsName("");
       setSaveModalOpen(true);
     } else {
-      // Update existing filter
-      saveFilter(currentFilter);
-      onSave(currentFilter);
+      setSaving(true);
+      const saved = await saveFilter(currentFilter);
+      setSaving(false);
+      if (saved) onSave(saved);
     }
   }
-  
-  function handleSaveAs() {
+
+  async function handleSaveAs() {
     if (!currentFilter || !saveAsName.trim()) return;
-    
-    const updated = {
+
+    const toSave: FilterConfig = {
       ...currentFilter,
       name: saveAsName.trim(),
     };
-    
-    saveFilter(updated);
-    markFilterAsRecent(updated.id);
-    onSave(updated);
-    setSaveModalOpen(false);
-    setSaveAsName("");
-  }
-  
-  function handleDuplicate(filterId: string) {
-    const dup = duplicateFilter(filterId);
-    if (dup) {
-      setSavedFilters(loadSavedFilters());
+
+    setSaving(true);
+    const saved = await saveFilter(toSave);
+    setSaving(false);
+
+    if (saved) {
+      onSave(saved);
+      setSaveModalOpen(false);
+      setSaveAsName("");
     }
   }
-  
-  function handleDelete(filterId: string) {
-    deleteFilter(filterId);
-    setSavedFilters(loadSavedFilters());
+
+  async function handleDuplicate(filterId: string) {
+    const dup = await duplicateFilter(filterId, savedFilters);
+    if (dup) {
+      await refreshFilters();
+    }
+  }
+
+  async function handleDelete(filterId: string) {
+    await deleteFilter(filterId);
+    setSavedFilters((prev) => prev.filter((f) => f.id !== filterId));
     setDeleteConfirmId(null);
   }
-  
+
   function handleExport(filter: FilterConfig) {
     const json = exportFilterAsJson(filter);
     const blob = new Blob([json], { type: "application/json" });
@@ -143,25 +156,31 @@ export function SavedFilters({ currentFilter, onLoad, onSave }: SavedFiltersProp
     a.click();
     URL.revokeObjectURL(url);
   }
-  
-  function handleImport() {
+
+  async function handleImport() {
     setImportError(null);
     const filter = importFilterFromJson(importJson);
-    
+
     if (!filter) {
       setImportError("Invalid filter JSON. Please check the format.");
       return;
     }
-    
-    saveFilter(filter);
-    markFilterAsRecent(filter.id);
-    onLoad(filter);
-    setImportModalOpen(false);
-    setImportJson("");
+
+    setSaving(true);
+    const saved = await saveFilter(filter);
+    setSaving(false);
+
+    if (saved) {
+      onLoad(saved);
+      setImportModalOpen(false);
+      setImportJson("");
+    } else {
+      setImportError("Failed to save the imported filter.");
+    }
   }
-  
+
   const hasUnsavedChanges = currentFilter && !currentFilter.name;
-  
+
   return (
     <div ref={rootRef} className="relative">
       {/* Trigger button */}
@@ -170,12 +189,19 @@ export function SavedFilters({ currentFilter, onLoad, onSave }: SavedFiltersProp
           variant="secondary"
           size="sm"
           leftIcon={<Bookmark className="h-4 w-4" />}
-          rightIcon={<ChevronDown className={cx("h-3 w-3 transition-transform", isOpen && "rotate-180")} />}
+          rightIcon={
+            <ChevronDown
+              className={cx(
+                "h-3 w-3 transition-transform",
+                isOpen && "rotate-180",
+              )}
+            />
+          }
           onClick={() => setIsOpen(!isOpen)}
         >
           {currentFilter?.name || "Saved Filters"}
         </Button>
-        
+
         {/* Quick save button */}
         {currentFilter && (
           <IconButton
@@ -183,12 +209,17 @@ export function SavedFilters({ currentFilter, onLoad, onSave }: SavedFiltersProp
             onClick={handleSaveClick}
             title={hasUnsavedChanges ? "Save as..." : "Save changes"}
             className={hasUnsavedChanges ? "text-[var(--sb-accent)]" : undefined}
+            disabled={saving}
           >
-            <Save className="h-4 w-4" />
+            {saving ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4" />
+            )}
           </IconButton>
         )}
       </div>
-      
+
       {/* Dropdown */}
       {isOpen && (
         <div
@@ -202,11 +233,24 @@ export function SavedFilters({ currentFilter, onLoad, onSave }: SavedFiltersProp
         >
           {/* Saved filters */}
           <div className="p-2">
-            <div className="text-xs font-medium mb-2 px-2" style={{ color: "var(--sb-muted)" }}>
+            <div
+              className="text-xs font-medium mb-2 px-2"
+              style={{ color: "var(--sb-muted)" }}
+            >
               Saved Filters ({savedFilters.length})
             </div>
-            {savedFilters.length === 0 ? (
-              <div className="px-3 py-4 text-center text-sm" style={{ color: "var(--sb-muted)" }}>
+            {loading ? (
+              <div className="flex items-center justify-center py-6">
+                <Loader2
+                  className="h-5 w-5 animate-spin"
+                  style={{ color: "var(--sb-muted)" }}
+                />
+              </div>
+            ) : savedFilters.length === 0 ? (
+              <div
+                className="px-3 py-4 text-center text-sm"
+                style={{ color: "var(--sb-muted)" }}
+              >
                 No saved filters yet.
                 <br />
                 Build a filter and save it for reuse.
@@ -230,9 +274,12 @@ export function SavedFilters({ currentFilter, onLoad, onSave }: SavedFiltersProp
               </div>
             )}
           </div>
-          
+
           {/* Import button */}
-          <div className="p-2 border-t" style={{ borderColor: "var(--sb-border)" }}>
+          <div
+            className="p-2 border-t"
+            style={{ borderColor: "var(--sb-border)" }}
+          >
             <Button
               variant="ghost"
               size="sm"
@@ -249,7 +296,7 @@ export function SavedFilters({ currentFilter, onLoad, onSave }: SavedFiltersProp
           </div>
         </div>
       )}
-      
+
       {/* Save As Modal */}
       <Modal
         open={saveModalOpen}
@@ -258,7 +305,10 @@ export function SavedFilters({ currentFilter, onLoad, onSave }: SavedFiltersProp
       >
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium mb-2" style={{ color: "var(--sb-text)" }}>
+            <label
+              className="block text-sm font-medium mb-2"
+              style={{ color: "var(--sb-text)" }}
+            >
               Filter Name
             </label>
             <Input
@@ -270,20 +320,23 @@ export function SavedFilters({ currentFilter, onLoad, onSave }: SavedFiltersProp
             />
           </div>
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setSaveModalOpen(false)}>
+            <Button
+              variant="ghost"
+              onClick={() => setSaveModalOpen(false)}
+            >
               Cancel
             </Button>
             <Button
               variant="primary"
               onClick={handleSaveAs}
-              disabled={!saveAsName.trim()}
+              disabled={!saveAsName.trim() || saving}
             >
-              Save
+              {saving ? "Saving…" : "Save"}
             </Button>
           </div>
         </div>
       </Modal>
-      
+
       {/* Import Modal */}
       <Modal
         open={importModalOpen}
@@ -292,7 +345,10 @@ export function SavedFilters({ currentFilter, onLoad, onSave }: SavedFiltersProp
       >
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium mb-2" style={{ color: "var(--sb-text)" }}>
+            <label
+              className="block text-sm font-medium mb-2"
+              style={{ color: "var(--sb-text)" }}
+            >
               Paste filter JSON
             </label>
             <textarea
@@ -307,15 +363,18 @@ export function SavedFilters({ currentFilter, onLoad, onSave }: SavedFiltersProp
             )}
           </div>
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setImportModalOpen(false)}>
+            <Button
+              variant="ghost"
+              onClick={() => setImportModalOpen(false)}
+            >
               Cancel
             </Button>
             <Button
               variant="primary"
               onClick={handleImport}
-              disabled={!importJson.trim()}
+              disabled={!importJson.trim() || saving}
             >
-              Import
+              {saving ? "Importing…" : "Import"}
             </Button>
           </div>
         </div>
@@ -352,14 +411,14 @@ function FilterListItem({
   const isDeleting = deleteConfirmId === filter.id;
   const entityConfig = ENTITY_CONFIGS[filter.entityType];
   const conditionCount = filter.groups.reduce(
-    (acc, g) => acc + g.conditions.filter(c => c.enabled && c.field).length,
-    0
+    (acc, g) => acc + g.conditions.filter((c) => c.enabled && c.field).length,
+    0,
   );
-  
+
   if (isDeleting) {
     return (
       <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-red-500/10">
-        <span className="text-sm">Delete "{filter.name}"?</span>
+        <span className="text-sm">Delete &ldquo;{filter.name}&rdquo;?</span>
         <div className="flex items-center gap-1">
           <Button variant="ghost" size="sm" onClick={onDeleteCancel}>
             Cancel
@@ -371,14 +430,14 @@ function FilterListItem({
       </div>
     );
   }
-  
+
   return (
     <div
       className={cx(
         "group flex items-center justify-between px-3 py-2 rounded-xl cursor-pointer transition",
         isActive
           ? "bg-[var(--sb-accent)]/20"
-          : "hover:bg-[color:var(--sb-surface)]"
+          : "hover:bg-[color:var(--sb-surface)]",
       )}
       onClick={onLoad}
     >
@@ -396,15 +455,20 @@ function FilterListItem({
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2 text-xs" style={{ color: "var(--sb-muted)" }}>
+        <div
+          className="flex items-center gap-2 text-xs"
+          style={{ color: "var(--sb-muted)" }}
+        >
           <span>{entityConfig?.label ?? filter.entityType}</span>
-          <span>•</span>
-          <span>{conditionCount} condition{conditionCount !== 1 ? "s" : ""}</span>
-          <span>•</span>
+          <span>&bull;</span>
+          <span>
+            {conditionCount} condition{conditionCount !== 1 ? "s" : ""}
+          </span>
+          <span>&bull;</span>
           <span>{formatRelativeTime(filter.updatedAt)}</span>
         </div>
       </div>
-      
+
       {/* Action buttons */}
       <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition">
         <IconButton

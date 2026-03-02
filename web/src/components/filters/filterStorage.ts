@@ -1,135 +1,97 @@
 /**
  * Filter Storage Utilities
- * 
- * Handles saving and loading filters from localStorage.
+ *
+ * Persists saved filters via the /api/filters/saved endpoint (Supabase-backed).
+ * All CRUD operations are async.
  */
 
 import type { FilterConfig } from "./filterTypes";
 
-const STORAGE_KEY = "sb:filters:saved_v1";
+const API_BASE = "/api/filters/saved";
 
-function isClient(): boolean {
-  return typeof window !== "undefined";
-}
+// ---------------------------------------------------------------------------
+// CRUD
+// ---------------------------------------------------------------------------
 
-/**
- * Load all saved filters from localStorage
- */
-export function loadSavedFilters(): FilterConfig[] {
-  if (!isClient()) return [];
-  
+/** Fetch all saved filters for the current user. */
+export async function loadSavedFilters(): Promise<FilterConfig[]> {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    
-    // Validate each filter has required fields
-    return parsed.filter((f: unknown): f is FilterConfig => {
-      if (!f || typeof f !== "object") return false;
-      const obj = f as Record<string, unknown>;
-      return (
-        typeof obj.id === "string" &&
-        typeof obj.name === "string" &&
-        typeof obj.entityType === "string" &&
-        Array.isArray(obj.groups)
-      );
-    });
+    const res = await fetch(API_BASE);
+    if (!res.ok) return [];
+    const json = await res.json();
+    return Array.isArray(json?.filters) ? json.filters : [];
   } catch {
     return [];
   }
 }
 
-/**
- * Save all filters to localStorage
- */
-export function saveAllFilters(filters: FilterConfig[]): void {
-  if (!isClient()) return;
-  
+/** Create or update a saved filter. Returns the persisted filter. */
+export async function saveFilter(filter: FilterConfig): Promise<FilterConfig | null> {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(filters));
+    const res = await fetch(API_BASE, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: filter.id,
+        name: filter.name,
+        entityType: filter.entityType,
+        groups: filter.groups,
+      }),
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    return json?.filter ?? null;
   } catch {
-    // Ignore storage errors (private mode, quota exceeded, etc.)
+    return null;
   }
 }
 
-/**
- * Save or update a single filter
- */
-export function saveFilter(filter: FilterConfig): FilterConfig[] {
-  const existing = loadSavedFilters();
-  const idx = existing.findIndex(f => f.id === filter.id);
-  
-  const updated = {
-    ...filter,
-    updatedAt: new Date().toISOString(),
-  };
-  
-  if (idx >= 0) {
-    existing[idx] = updated;
-  } else {
-    existing.push(updated);
+/** Delete a filter by ID. Returns true on success. */
+export async function deleteFilter(filterId: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_BASE}?id=${encodeURIComponent(filterId)}`, {
+      method: "DELETE",
+    });
+    return res.ok;
+  } catch {
+    return false;
   }
-  
-  saveAllFilters(existing);
-  return existing;
 }
 
-/**
- * Delete a filter by ID
- */
-export function deleteFilter(filterId: string): FilterConfig[] {
-  const existing = loadSavedFilters();
-  const filtered = existing.filter(f => f.id !== filterId);
-  saveAllFilters(filtered);
-  return filtered;
-}
-
-/**
- * Get a single filter by ID
- */
-function getFilterById(filterId: string): FilterConfig | null {
-  const filters = loadSavedFilters();
-  return filters.find(f => f.id === filterId) ?? null;
-}
-
-/**
- * Duplicate a filter with a new ID and name
- */
-export function duplicateFilter(filterId: string, newName?: string): FilterConfig | null {
-  const original = getFilterById(filterId);
+/** Duplicate a filter with a new server-generated ID. */
+export async function duplicateFilter(
+  filterId: string,
+  allFilters: FilterConfig[],
+  newName?: string,
+): Promise<FilterConfig | null> {
+  const original = allFilters.find((f) => f.id === filterId);
   if (!original) return null;
-  
+
   const duplicate: FilterConfig = {
-    ...original,
-    id: crypto.randomUUID(),
+    id: "",
     name: newName ?? `${original.name} (copy)`,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    // Deep clone groups to avoid reference issues
+    entityType: original.entityType,
     groups: JSON.parse(JSON.stringify(original.groups)),
+    createdAt: "",
+    updatedAt: "",
   };
-  
-  saveFilter(duplicate);
-  return duplicate;
+
+  return saveFilter(duplicate);
 }
 
-/**
- * Export a filter as JSON string (for sharing)
- */
+// ---------------------------------------------------------------------------
+// Import / Export (client-only, no API needed)
+// ---------------------------------------------------------------------------
+
+/** Export a filter as a formatted JSON string for sharing. */
 export function exportFilterAsJson(filter: FilterConfig): string {
   return JSON.stringify(filter, null, 2);
 }
 
-/**
- * Import a filter from JSON string
- */
+/** Parse a JSON string into a FilterConfig (assigns no id — server will create one). */
 export function importFilterFromJson(json: string): FilterConfig | null {
   try {
     const parsed = JSON.parse(json);
-    
-    // Validate structure
     if (
       !parsed ||
       typeof parsed !== "object" ||
@@ -138,52 +100,15 @@ export function importFilterFromJson(json: string): FilterConfig | null {
     ) {
       return null;
     }
-    
-    // Assign new ID and timestamps
-    const imported: FilterConfig = {
+
+    return {
       ...parsed,
-      id: crypto.randomUUID(),
+      id: "",
       name: parsed.name || "Imported Filter",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    
-    return imported;
+      createdAt: "",
+      updatedAt: "",
+    } as FilterConfig;
   } catch {
     return null;
   }
 }
-
-// ============================================================================
-// Recent Filters (last used order)
-// ============================================================================
-
-const RECENT_KEY = "sb:filters:recent_v1";
-const MAX_RECENT = 10;
-
-export function getRecentFilterIds(): string[] {
-  if (!isClient()) return [];
-  
-  try {
-    const raw = localStorage.getItem(RECENT_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter(id => typeof id === "string") : [];
-  } catch {
-    return [];
-  }
-}
-
-export function markFilterAsRecent(filterId: string): void {
-  if (!isClient()) return;
-  
-  try {
-    const recent = getRecentFilterIds().filter(id => id !== filterId);
-    recent.unshift(filterId);
-    const trimmed = recent.slice(0, MAX_RECENT);
-    localStorage.setItem(RECENT_KEY, JSON.stringify(trimmed));
-  } catch {
-    // Ignore
-  }
-}
-

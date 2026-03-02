@@ -2,8 +2,9 @@ import { describe, it, expect } from "vitest";
 import { exportFilterAsJson, importFilterFromJson } from "./filterStorage";
 import type { FilterConfig } from "./filterTypes";
 
-// Note: Most filterStorage functions depend on localStorage (browser only).
-// We test the pure functions that don't require a DOM environment.
+// Note: CRUD functions (loadSavedFilters, saveFilter, deleteFilter) hit the
+// server and are tested via integration tests.  Here we only test the pure
+// client-side helpers that don't require network access.
 
 // ============================================================================
 // exportFilterAsJson
@@ -75,10 +76,8 @@ describe("importFilterFromJson", () => {
     expect(result).not.toBeNull();
     expect(result!.name).toBe("Imported");
     expect(result!.entityType).toBe("tracks");
-    // Should get a NEW id, not the old one
-    expect(result!.id).not.toBe("old-id");
-    // Should get fresh timestamps
-    expect(result!.createdAt).not.toBe("2025-01-01");
+    // id is blank so the server generates a new one on save
+    expect(result!.id).toBe("");
   });
 
   it("assigns default name for unnamed filters", () => {
