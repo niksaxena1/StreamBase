@@ -180,18 +180,24 @@ export function FilterBuilder({
     const missing = playlistKeys.filter((k) => !membershipByPlaylistKey.has(k));
     if (missing.length === 0) return membershipByPlaylistKey;
 
-    const res = await fetch("/api/playlists/memberships", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ date, playlist_keys: missing }),
-    });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error((json as any)?.error ?? "Failed to load playlist memberships");
+    const BATCH = 25;
+    const allRows: any[] = [];
+    for (let i = 0; i < missing.length; i += BATCH) {
+      const chunk = missing.slice(i, i + BATCH);
+      const res = await fetch("/api/playlists/memberships", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date, playlist_keys: chunk }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((json as any)?.error ?? "Failed to load playlist memberships");
+      const rows = Array.isArray((json as any)?.rows) ? ((json as any).rows as any[]) : [];
+      allRows.push(...rows);
+    }
 
-    const rows = Array.isArray((json as any)?.rows) ? ((json as any).rows as any[]) : [];
     const next = new Map(membershipByPlaylistKey);
     for (const k of missing) next.set(k, new Set<string>());
-    for (const r of rows) {
+    for (const r of allRows) {
       const pk = String(r?.playlist_key ?? "").trim();
       const isrc = String(r?.isrc ?? "").trim().toUpperCase();
       if (!pk || !isrc) continue;
@@ -376,18 +382,20 @@ export function FilterBuilder({
             allIsrcs = [...new Set(allIsrcs)];
 
             if (allIsrcs.length > 0) {
-              const res = await fetch("/api/playlists/containing", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ date: asOfRunDate, isrcs: allIsrcs }),
-              });
-              const json = await res.json().catch(() => ({}));
-              if (!res.ok) throw new Error((json as any)?.error ?? "Failed to look up playlist memberships");
-
-              const matchingKeys = new Set<string>(
-                Array.isArray((json as any)?.playlist_keys) ? (json as any).playlist_keys : [],
-              );
-              // Annotate each playlist with whether it matches the containment filter
+              const BATCH = 500;
+              const matchingKeys = new Set<string>();
+              for (let i = 0; i < allIsrcs.length; i += BATCH) {
+                const chunk = allIsrcs.slice(i, i + BATCH);
+                const res = await fetch("/api/playlists/containing", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ date: asOfRunDate, isrcs: chunk }),
+                });
+                const json = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error((json as any)?.error ?? "Failed to look up playlist memberships");
+                const keys: string[] = Array.isArray((json as any)?.playlist_keys) ? (json as any).playlist_keys : [];
+                for (const k of keys) matchingKeys.add(k);
+              }
               playlistDataForFilter = playlistData.map((p) => ({
                 ...p,
                 _contains_match: matchingKeys.has(p.playlist_key),
