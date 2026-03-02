@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
@@ -7,13 +7,13 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Returns daily aggregate stats for the whole catalog (all_catalog playlist).
+ * Returns daily aggregate stats for a playlist (defaults to all_catalog).
  * Each row = one date with streams, track counts, growth, etc.
  *
- * GET /api/dates/catalog-stats
- * Returns { rows: DateStatRow[] }
+ * GET /api/dates/catalog-stats?playlist_key=<key>
+ * Returns { rows: DateStatRow[], playlist_key: string }
  */
-export async function GET() {
+export async function GET(req: NextRequest) {
   const sb = await supabaseServer();
   const { data: userData } = await sb.auth.getUser();
   if (!userData.user) {
@@ -28,6 +28,9 @@ export async function GET() {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
+  const playlistKey =
+    req.nextUrl.searchParams.get("playlist_key")?.trim() || "all_catalog";
+
   const svc = supabaseService();
 
   const { data, error } = await svc
@@ -35,7 +38,7 @@ export async function GET() {
     .select(
       "date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_daily_net,missing_streams_track_count",
     )
-    .eq("playlist_key", "all_catalog")
+    .eq("playlist_key", playlistKey)
     .order("date", { ascending: true });
 
   if (error) {
@@ -83,5 +86,5 @@ export async function GET() {
     };
   });
 
-  return NextResponse.json({ rows }, { status: 200 });
+  return NextResponse.json({ rows, playlist_key: playlistKey }, { status: 200 });
 }

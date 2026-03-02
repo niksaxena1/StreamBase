@@ -63,6 +63,11 @@ jobs:
 
           echo "should_notify=$SHOULD_NOTIFY" >> "$GITHUB_OUTPUT"
           echo "subject=${SUBJECT}" >> "$GITHUB_OUTPUT"
+          TRACK_DETAILS=""
+          if [ -f ".artifacts/stale_fix_summary.json" ]; then
+            TRACK_DETAILS=$(python3 -c "import json,sys; d=json.load(open('.artifacts/stale_fix_summary.json')); [print('  %s: %s -> %s  (+%s)' % (t['isrc'], '{:,}'.format(t['stale']), '{:,}'.format(t['new']), '{:,}'.format(t['new']-t['stale']))) for t in d.get('tracks',[])]" 2>/dev/null || echo "")
+          fi
+
           {
             echo 'body<<ENDOFBODY'
             echo "RapidAPI Stale Track Fix results for ${RUN_DATE}:"
@@ -70,18 +75,10 @@ jobs:
             echo "  Attempted: ${ATTEMPTED}"
             echo "  Fixed: ${FIXED}"
             echo ""
-            if [ -f ".artifacts/stale_fix_summary.json" ]; then
-              python3 <<'PYEOF'
-import json
-d = json.load(open(".artifacts/stale_fix_summary.json"))
-for t in d.get("tracks", []):
-    isrc = t["isrc"]
-    old = t["stale"]
-    new = t["new"]
-    print(f"  {isrc}: {old:,} -> {new:,}  (+{new-old:,})")
-PYEOF
+            if [ -n "$TRACK_DETAILS" ]; then
+              echo "$TRACK_DETAILS"
+              echo ""
             fi
-            echo ""
             echo "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             echo 'ENDOFBODY'
           } >> "$GITHUB_OUTPUT"
