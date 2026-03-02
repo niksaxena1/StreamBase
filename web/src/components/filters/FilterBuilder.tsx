@@ -24,7 +24,7 @@ import type {
   FilterResult,
 } from "./filterTypes";
 import { createEmptyFilter, createEmptyGroup } from "./filterTypes";
-import { ENTITY_CONFIGS } from "./filterConfig";
+import { ENTITY_CONFIGS, STREAM_DATA_FIELDS } from "./filterConfig";
 import { FilterGroup, GroupSummary } from "./FilterGroup";
 import { SavedFilters } from "./SavedFilters";
 import { FilterResults } from "./FilterResults";
@@ -32,13 +32,17 @@ import {
   filterTracksClientSide, 
   filterArtistsClientSide, 
   filterPlaylistsClientSide,
+  filterDatesClientSide,
   aggregateTracksToArtistData,
   hasActiveConditions,
   countActiveConditions,
   type TrackDataPoint,
   type PlaylistDataPoint,
+  type DateDataPoint,
 } from "./filterQuery";
 import { markFilterAsRecent } from "./filterStorage";
+import { useMetric } from "@/components/metrics/MetricContext";
+import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 
 function cx(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
@@ -51,24 +55,48 @@ type FilterBuilderProps = {
   trackData: TrackDataPoint[];
   // Playlist data 
   playlistData: PlaylistDataPoint[];
+  // Date data (catalog daily aggregates)
+  dateData: DateDataPoint[];
   // Artist image map
   artistImages: Map<string, { name: string; image_url: string | null }>;
   // Dynamic options for select fields
   artistOptions: Array<{ value: string; label: string; imageUrl?: string | null }>;
   playlistOptions: Array<{ value: string; label: string; imageUrl?: string | null }>;
-  collectorOptions?: Array<{ value: string; label: string }>;
   asOfRunDate?: string | null;
 };
+
+function multiplyStreamFields<T extends Record<string, unknown>>(
+  data: T[],
+  fields: string[],
+  multiplier: number,
+): T[] {
+  if (multiplier === 1) return data;
+  return data.map((row) => {
+    const copy = { ...row };
+    for (const f of fields) {
+      const v = copy[f];
+      if (v != null && typeof v === "number") {
+        (copy as Record<string, unknown>)[f] = v * multiplier;
+      }
+    }
+    return copy as T;
+  });
+}
 
 export function FilterBuilder({
   trackData,
   playlistData,
+  dateData,
   artistImages,
   artistOptions,
   playlistOptions,
-  collectorOptions = [],
   asOfRunDate = null,
 }: FilterBuilderProps) {
+  const { metric } = useMetric();
+  const { streamPayoutPerStreamUsd } = usePayoutRate();
+  const isRevenueMode = metric === "revenue";
+  const streamMultiplier = isRevenueMode ? streamPayoutPerStreamUsd : 1;
+
   // Section open/closed state (persisted)
   const [isOpen, setIsOpen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(true); // Filter editor expanded vs collapsed
@@ -127,13 +155,13 @@ export function FilterBuilder({
     }
   }, [asOfRunDate, membershipDate]);
 
-  function extractPlaylistKeysFromFilter(f: FilterConfig | null): string[] {
+  function extractValuesFromFilter(f: FilterConfig | null, fieldName: string): string[] {
     if (!f) return [];
     const out = new Set<string>();
     for (const g of f.groups ?? []) {
       for (const c of g.conditions ?? []) {
         if (!c?.enabled) continue;
-        if (c.field !== "playlist") continue;
+        if (c.field !== fieldName) continue;
         if (Array.isArray(c.value)) {
           for (const v of c.value) {
             const s = String(v ?? "").trim();
@@ -143,6 +171,10 @@ export function FilterBuilder({
       }
     }
     return Array.from(out);
+  }
+
+  function extractPlaylistKeysFromFilter(f: FilterConfig | null): string[] {
+    return extractValuesFromFilter(f, "playlist");
   }
 
   async function ensurePlaylistMemberships(playlistKeys: string[]) {
@@ -172,12 +204,21 @@ export function FilterBuilder({
     setMembershipByPlaylistKey(next);
   }
   
+  // Build track options for the "Contains Track" multi-select on playlists
+  const trackOptions = useMemo(() => {
+    return trackData.map((t) => ({
+      value: t.isrc,
+      label: `${t.name} — ${t.spotify_artist_names?.join(", ") ?? "Unknown"}`,
+      imageUrl: t.spotify_album_image_url,
+    }));
+  }, [trackData]);
+
   // Dynamic options map for FilterCondition
   const dynamicOptions = useMemo(() => ({
     artists: artistOptions,
     playlists: playlistOptions,
-    collectors: collectorOptions,
-  }), [artistOptions, playlistOptions, collectorOptions]);
+    tracks: trackOptions,
+  }), [artistOptions, playlistOptions, trackOptions]);
   
   // Count active conditions
   const activeConditionCount = currentFilter ? countActiveConditions(currentFilter) : 0;
@@ -257,17 +298,83 @@ export function FilterBuilder({
             ? aggregateTracksToArtistData(trackDataWithPlaylists, artistImages)
             : baseArtistData;
 
+          // For playlist containment filters, resolve which playlists match
+          let playlistDataForFilter = playlistData;
+          if (currentFilter.entityType === "playlists" && asOfRunDate) {
+            const containsTrackIsrcs = extractValuesFromFilter(currentFilter, "contains_track");
+            const containsArtistIds = extractValuesFromFilter(currentFilter, "contains_artist");
+
+            // Resolve artist IDs to ISRCs
+            let allIsrcs = [...containsTrackIsrcs];
+            if (containsArtistIds.length > 0) {
+              for (const t of trackData) {
+                const ids = t.spotify_artist_ids ?? [];
+                if (ids.some((id) => containsArtistIds.includes(id))) {
+                  allIsrcs.push(t.isrc);
+                }
+              }
+            }
+            // Deduplicate
+            allIsrcs = [...new Set(allIsrcs)];
+
+            if (allIsrcs.length > 0) {
+              const res = await fetch("/api/playlists/containing", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ date: asOfRunDate, isrcs: allIsrcs }),
+              });
+              const json = await res.json().catch(() => ({}));
+              if (!res.ok) throw new Error((json as any)?.error ?? "Failed to look up playlist memberships");
+
+              const matchingKeys = new Set<string>(
+                Array.isArray((json as any)?.playlist_keys) ? (json as any).playlist_keys : [],
+              );
+              // Annotate each playlist with whether it matches the containment filter
+              playlistDataForFilter = playlistData.map((p) => ({
+                ...p,
+                _contains_match: matchingKeys.has(p.playlist_key),
+              }));
+            }
+          }
+
+          // When revenue mode is active, multiply stream fields by payout rate
+          // so the user's filter values (in $) compare against revenue figures.
+          const entity = currentFilter.entityType;
+          const finalTrackData = multiplyStreamFields(
+            trackDataWithPlaylists,
+            STREAM_DATA_FIELDS["tracks"] ?? [],
+            streamMultiplier,
+          );
+          const finalArtistData = multiplyStreamFields(
+            artistData,
+            STREAM_DATA_FIELDS["artists"] ?? [],
+            streamMultiplier,
+          );
+          const finalPlaylistData = multiplyStreamFields(
+            playlistDataForFilter,
+            STREAM_DATA_FIELDS["playlists"] ?? [],
+            streamMultiplier,
+          );
+          const finalDateData = multiplyStreamFields(
+            dateData,
+            STREAM_DATA_FIELDS["dates"] ?? [],
+            streamMultiplier,
+          );
+
           let filteredResults: FilterResult[];
         
-          switch (currentFilter.entityType) {
+          switch (entity) {
             case "tracks":
-              filteredResults = filterTracksClientSide(trackDataWithPlaylists, currentFilter);
+              filteredResults = filterTracksClientSide(finalTrackData, currentFilter);
               break;
             case "artists":
-              filteredResults = filterArtistsClientSide(artistData, currentFilter);
+              filteredResults = filterArtistsClientSide(finalArtistData, currentFilter);
               break;
             case "playlists":
-              filteredResults = filterPlaylistsClientSide(playlistData, currentFilter);
+              filteredResults = filterPlaylistsClientSide(finalPlaylistData, currentFilter);
+              break;
+            case "dates":
+              filteredResults = filterDatesClientSide(finalDateData, currentFilter);
               break;
             default:
               filteredResults = [];
@@ -294,7 +401,7 @@ export function FilterBuilder({
         setIsLoading(false);
       }
     }, 10);
-  }, [currentFilter, trackData, playlistData, asOfRunDate, membershipByPlaylistKey, artistImages, baseArtistData]);
+  }, [currentFilter, trackData, playlistData, dateData, asOfRunDate, membershipByPlaylistKey, artistImages, baseArtistData, streamMultiplier]);
   
   // Load a saved filter
   function handleLoadFilter(filter: FilterConfig) {
@@ -329,6 +436,8 @@ export function FilterBuilder({
     ? trackData.length 
     : currentFilter?.entityType === "artists"
     ? baseArtistData.length
+    : currentFilter?.entityType === "dates"
+    ? dateData.length
     : playlistData.length;
 
   const entityOptions: ComboboxOption[] = useMemo(
@@ -463,6 +572,7 @@ export function FilterBuilder({
                     dynamicOptions={dynamicOptions}
                     groupIndex={index}
                     totalGroups={currentFilter.groups.length}
+                    isRevenueMode={isRevenueMode}
                     onChange={(g) => handleGroupChange(index, g)}
                     onRemove={() => handleGroupRemove(index)}
                   />
@@ -504,6 +614,7 @@ export function FilterBuilder({
                       group={group}
                       entityType={currentFilter.entityType}
                       dynamicOptions={dynamicOptions}
+                      isRevenueMode={isRevenueMode}
                     />
                   </div>
                 ))}
@@ -519,6 +630,7 @@ export function FilterBuilder({
               isLoading={isLoading}
               error={error}
               totalCount={results.length}
+              isRevenueMode={isRevenueMode}
             />
           )}
           
@@ -541,4 +653,4 @@ export function FilterBuilder({
 // Export for use in page
 // ============================================================================
 
-export { type TrackDataPoint, type PlaylistDataPoint } from "./filterQuery";
+export { type TrackDataPoint, type PlaylistDataPoint, type DateDataPoint } from "./filterQuery";

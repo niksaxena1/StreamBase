@@ -9,11 +9,11 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, User, Disc3, ListMusic } from "lucide-react";
+import { ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, User, Disc3, ListMusic, CalendarDays } from "lucide-react";
 import { GlassTable, TableRow, TableCell, EmptyState } from "@/components/ui/GlassTable";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
-import { formatInt, formatDateISO } from "@/lib/format";
+import { formatInt, formatDateISO, formatMoney } from "@/lib/format";
 import { todayIsoDate } from "@/lib/csv";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
 import type { 
@@ -21,6 +21,7 @@ import type {
   TrackFilterResult, 
   ArtistFilterResult, 
   PlaylistFilterResult,
+  DateFilterResult,
   FilterResult,
 } from "./filterTypes";
 
@@ -70,11 +71,17 @@ type FilterResultsProps = {
   isLoading: boolean;
   error: string | null;
   totalCount: number | null;
+  isRevenueMode?: boolean;
 };
 
 const PAGE_SIZE = 25;
 
-export function FilterResults({ entityType, results, isLoading, error, totalCount }: FilterResultsProps) {
+function fmtStream(n: number | null | undefined, isRevenueMode: boolean): string {
+  if (n == null) return "—";
+  return isRevenueMode ? formatMoney(n, { maximumFractionDigits: 2 }) : formatInt(n);
+}
+
+export function FilterResults({ entityType, results, isLoading, error, totalCount, isRevenueMode = false }: FilterResultsProps) {
   const [sort, setSort] = useState<SortConfig>({ key: "", direction: null });
   const [page, setPage] = useState(1);
   
@@ -179,7 +186,7 @@ export function FilterResults({ entityType, results, isLoading, error, totalCoun
   
   // Empty state
   if (results.length === 0) {
-    const EmptyIcon = entityType === "tracks" ? <Disc3 className="h-6 w-6" style={{ color: "var(--sb-muted)" }} /> : entityType === "artists" ? <User className="h-6 w-6" style={{ color: "var(--sb-muted)" }} /> : <ListMusic className="h-6 w-6" style={{ color: "var(--sb-muted)" }} />;
+    const EmptyIcon = entityType === "tracks" ? <Disc3 className="h-6 w-6" style={{ color: "var(--sb-muted)" }} /> : entityType === "artists" ? <User className="h-6 w-6" style={{ color: "var(--sb-muted)" }} /> : entityType === "dates" ? <CalendarDays className="h-6 w-6" style={{ color: "var(--sb-muted)" }} /> : <ListMusic className="h-6 w-6" style={{ color: "var(--sb-muted)" }} />;
     return (
       <div className="mt-4">
         <GlassTable headers={[{ label: "Results" }]} maxBodyHeightClassName="max-h-[240px] overflow-auto">
@@ -197,6 +204,7 @@ export function FilterResults({ entityType, results, isLoading, error, totalCoun
           <TracksTable
             results={paginatedResults as TrackFilterResult[]}
             sortHeader={SortHeader}
+            isRevenueMode={isRevenueMode}
           />
         );
       case "artists":
@@ -204,6 +212,7 @@ export function FilterResults({ entityType, results, isLoading, error, totalCoun
           <ArtistsTable
             results={paginatedResults as ArtistFilterResult[]}
             sortHeader={SortHeader}
+            isRevenueMode={isRevenueMode}
           />
         );
       case "playlists":
@@ -211,6 +220,15 @@ export function FilterResults({ entityType, results, isLoading, error, totalCoun
           <PlaylistsTable
             results={paginatedResults as PlaylistFilterResult[]}
             sortHeader={SortHeader}
+            isRevenueMode={isRevenueMode}
+          />
+        );
+      case "dates":
+        return (
+          <DatesTable
+            results={paginatedResults as DateFilterResult[]}
+            sortHeader={SortHeader}
+            isRevenueMode={isRevenueMode}
           />
         );
     }
@@ -286,6 +304,7 @@ export function FilterResults({ entityType, results, isLoading, error, totalCoun
 function TracksTable({
   results,
   sortHeader: SortHeader,
+  isRevenueMode = false,
 }: {
   results: TrackFilterResult[];
   sortHeader: React.ComponentType<{
@@ -293,14 +312,18 @@ function TracksTable({
     children: React.ReactNode;
     align?: "left" | "right";
   }>;
+  isRevenueMode?: boolean;
 }) {
+  const totalLabel = isRevenueMode ? "Total Revenue" : "Total Streams";
+  const dailyLabel = isRevenueMode ? "Daily Rev" : "Daily";
   return (
     <GlassTable
       headers={[
         { label: "Track" },
-        { label: <SortHeader columnKey="total_streams" align="right">Total Streams</SortHeader>, align: "right" },
-        { label: <SortHeader columnKey="daily_streams" align="right">Daily</SortHeader>, align: "right" },
+        { label: <SortHeader columnKey="total_streams" align="right">{totalLabel}</SortHeader>, align: "right" },
+        { label: <SortHeader columnKey="daily_streams" align="right">{dailyLabel}</SortHeader>, align: "right" },
         { label: <SortHeader columnKey="release_date">Release</SortHeader> },
+        { label: <SortHeader columnKey="first_seen">First Seen</SortHeader> },
         { label: "" },
       ]}
       maxBodyHeightClassName="max-h-[440px] overflow-auto"
@@ -343,12 +366,15 @@ function TracksTable({
               </div>
             </div>
           </TableCell>
-          <TableCell numeric mono>{formatInt(track.total_streams)}</TableCell>
+          <TableCell numeric mono>{fmtStream(track.total_streams, isRevenueMode)}</TableCell>
           <TableCell numeric mono empty={track.daily_streams == null} emptyFallback="—" style={{ color: "var(--sb-muted)" }}>
-            {track.daily_streams != null ? formatInt(track.daily_streams) : null}
+            {track.daily_streams != null ? fmtStream(track.daily_streams, isRevenueMode) : null}
           </TableCell>
           <TableCell empty={track.release_date == null} emptyFallback="—" style={{ color: "var(--sb-muted)" }}>
             {track.release_date ? formatDateISO(track.release_date) : null}
+          </TableCell>
+          <TableCell empty={track.first_seen == null} emptyFallback="—" style={{ color: "var(--sb-muted)" }}>
+            {track.first_seen ? formatDateISO(track.first_seen) : null}
           </TableCell>
           <TableCell className="w-10">
             {track.spotify_track_id ? (
@@ -375,6 +401,7 @@ function TracksTable({
 function ArtistsTable({
   results,
   sortHeader: SortHeader,
+  isRevenueMode = false,
 }: {
   results: ArtistFilterResult[];
   sortHeader: React.ComponentType<{
@@ -382,12 +409,16 @@ function ArtistsTable({
     children: React.ReactNode;
     align?: "left" | "right";
   }>;
+  isRevenueMode?: boolean;
 }) {
+  const totalLabel = isRevenueMode ? "Total Revenue" : "Total Streams";
+  const dailyLabel = isRevenueMode ? "Daily Rev" : "Daily";
   return (
     <GlassTable
       headers={[
         { label: "Artist" },
-        { label: <SortHeader columnKey="total_streams" align="right">Total Streams</SortHeader>, align: "right" },
+        { label: <SortHeader columnKey="total_streams" align="right">{totalLabel}</SortHeader>, align: "right" },
+        { label: <SortHeader columnKey="daily_streams" align="right">{dailyLabel}</SortHeader>, align: "right" },
         { label: <SortHeader columnKey="track_count" align="right">Tracks</SortHeader>, align: "right" },
         { label: "" },
       ]}
@@ -419,7 +450,10 @@ function ArtistsTable({
               </Link>
             </div>
           </TableCell>
-          <TableCell numeric mono>{formatInt(artist.total_streams)}</TableCell>
+          <TableCell numeric mono>{fmtStream(artist.total_streams, isRevenueMode)}</TableCell>
+          <TableCell numeric mono empty={artist.daily_streams == null} emptyFallback="—" style={{ color: "var(--sb-muted)" }}>
+            {artist.daily_streams != null ? fmtStream(artist.daily_streams, isRevenueMode) : null}
+          </TableCell>
           <TableCell numeric mono style={{ color: "var(--sb-muted)" }}>{formatInt(artist.track_count)}</TableCell>
           <TableCell className="w-10">
             <a
@@ -444,6 +478,7 @@ function ArtistsTable({
 function PlaylistsTable({
   results,
   sortHeader: SortHeader,
+  isRevenueMode = false,
 }: {
   results: PlaylistFilterResult[];
   sortHeader: React.ComponentType<{
@@ -451,14 +486,17 @@ function PlaylistsTable({
     children: React.ReactNode;
     align?: "left" | "right";
   }>;
+  isRevenueMode?: boolean;
 }) {
+  const totalLabel = isRevenueMode ? "Total Revenue" : "Total Streams";
+  const dailyLabel = isRevenueMode ? "Daily Rev" : "Daily";
   return (
     <GlassTable
       headers={[
         { label: "Playlist" },
         { label: <SortHeader columnKey="track_count" align="right">Tracks</SortHeader>, align: "right" },
-        { label: <SortHeader columnKey="total_streams" align="right">Total Streams</SortHeader>, align: "right" },
-        { label: <SortHeader columnKey="daily_streams" align="right">Daily</SortHeader>, align: "right" },
+        { label: <SortHeader columnKey="total_streams" align="right">{totalLabel}</SortHeader>, align: "right" },
+        { label: <SortHeader columnKey="daily_streams" align="right">{dailyLabel}</SortHeader>, align: "right" },
         { label: "" },
       ]}
       maxBodyHeightClassName="max-h-[440px] overflow-auto"
@@ -498,13 +536,110 @@ function PlaylistsTable({
             </div>
           </TableCell>
           <TableCell numeric mono>{formatInt(playlist.track_count)}</TableCell>
-          <TableCell numeric mono>{formatInt(playlist.total_streams)}</TableCell>
+          <TableCell numeric mono>{fmtStream(playlist.total_streams, isRevenueMode)}</TableCell>
           <TableCell numeric mono empty={playlist.daily_streams == null} emptyFallback="—" style={{ color: "var(--sb-muted)" }}>
-            {playlist.daily_streams != null ? formatInt(playlist.daily_streams) : null}
+            {playlist.daily_streams != null ? fmtStream(playlist.daily_streams, isRevenueMode) : null}
           </TableCell>
           <TableCell className="w-10">{null}</TableCell>
         </TableRow>
       ))}
+    </GlassTable>
+  );
+}
+
+// ============================================================================
+// Dates Table
+// ============================================================================
+
+const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+
+function DatesTable({
+  results,
+  sortHeader: SortHeader,
+  isRevenueMode = false,
+}: {
+  results: DateFilterResult[];
+  sortHeader: React.ComponentType<{
+    columnKey: string;
+    children: React.ReactNode;
+    align?: "left" | "right";
+  }>;
+  isRevenueMode?: boolean;
+}) {
+  const dailyLabel = isRevenueMode ? "Daily Revenue" : "Daily Streams";
+  return (
+    <GlassTable
+      headers={[
+        { label: <SortHeader columnKey="date">Date</SortHeader> },
+        { label: <SortHeader columnKey="daily_streams" align="right">{dailyLabel}</SortHeader>, align: "right" },
+        { label: <SortHeader columnKey="growth_pct" align="right">Growth %</SortHeader>, align: "right" },
+        { label: <SortHeader columnKey="track_count" align="right">Tracks</SortHeader>, align: "right" },
+        { label: <SortHeader columnKey="tracks_added" align="right">Added</SortHeader>, align: "right" },
+        ...(!isRevenueMode
+          ? [{ label: <SortHeader columnKey="est_daily_revenue" align="right">Est. Rev</SortHeader>, align: "right" as const }]
+          : []),
+      ]}
+      maxBodyHeightClassName="max-h-[440px] overflow-auto"
+    >
+      {results.map((row) => {
+        const growthColor =
+          row.growth_pct == null
+            ? "var(--sb-muted)"
+            : row.growth_pct > 0
+              ? "var(--sb-success, #22c55e)"
+              : row.growth_pct < 0
+                ? "var(--sb-danger, #ef4444)"
+                : "var(--sb-muted)";
+        const addedColor =
+          row.tracks_added > 0
+            ? "var(--sb-success, #22c55e)"
+            : row.tracks_added < 0
+              ? "var(--sb-danger, #ef4444)"
+              : "var(--sb-muted)";
+
+        return (
+          <TableRow key={row.date}>
+            <TableCell className="min-w-[140px]">
+              <div className="flex items-center gap-2">
+                <CalendarDays className="h-4 w-4 opacity-40 shrink-0" />
+                <div>
+                  <span className="text-sm font-medium" style={{ color: "var(--sb-text)" }}>
+                    {formatDateISO(row.date)}
+                  </span>
+                  <span className="text-xs ml-2" style={{ color: "var(--sb-muted)" }}>
+                    {DAY_NAMES[row.day_of_week] ?? ""}
+                  </span>
+                </div>
+              </div>
+            </TableCell>
+            <TableCell numeric mono>{fmtStream(row.daily_streams, isRevenueMode)}</TableCell>
+            <TableCell numeric mono empty={row.growth_pct == null} emptyFallback="—">
+              {row.growth_pct != null ? (
+                <span style={{ color: growthColor }}>
+                  {row.growth_pct > 0 ? "+" : ""}{row.growth_pct.toFixed(1)}%
+                </span>
+              ) : null}
+            </TableCell>
+            <TableCell numeric mono style={{ color: "var(--sb-muted)" }}>
+              {formatInt(row.track_count)}
+            </TableCell>
+            <TableCell numeric mono>
+              {row.tracks_added !== 0 ? (
+                <span style={{ color: addedColor }}>
+                  {row.tracks_added > 0 ? "+" : ""}{row.tracks_added}
+                </span>
+              ) : null}
+            </TableCell>
+            {!isRevenueMode && (
+              <TableCell numeric mono empty={row.est_daily_revenue == null} emptyFallback="—" style={{ color: "var(--sb-muted)" }}>
+                {row.est_daily_revenue != null
+                  ? `$${row.est_daily_revenue.toFixed(2)}`
+                  : null}
+              </TableCell>
+            )}
+          </TableRow>
+        );
+      })}
     </GlassTable>
   );
 }

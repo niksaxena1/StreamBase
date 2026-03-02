@@ -238,9 +238,9 @@ export default async function Home({
         )
         .eq("playlist_key", playlistKey);
       if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
-      return await q.order("date", { ascending: false }).limit(rangeDays);
+      return await q.order("date", { ascending: false }).limit(rangeDays + 7);
     },
-    `home-playlist-stats-v2-${playlistKey}-${rangeDays}-${session.user.id}-ov${overrideBuster}-rb${rollbackDate ?? "live"}`,
+    `home-playlist-stats-v2-${playlistKey}-${rangeDays + 7}-${session.user.id}-ov${overrideBuster}-rb${rollbackDate ?? "live"}`,
     3600, // 1 hour
   );
 

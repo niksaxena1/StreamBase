@@ -6,7 +6,7 @@
 
 // Main component
 export { FilterBuilder } from "./FilterBuilder";
-export type { TrackDataPoint, PlaylistDataPoint } from "./FilterBuilder";
+export type { TrackDataPoint, PlaylistDataPoint, DateDataPoint } from "./FilterBuilder";
 
 // Types
 export type {
@@ -19,6 +19,7 @@ export type {
   TrackFilterResult,
   ArtistFilterResult,
   PlaylistFilterResult,
+  DateFilterResult,
   FilterResult,
 } from "./filterTypes";
 

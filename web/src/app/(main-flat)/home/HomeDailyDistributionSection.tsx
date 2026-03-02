@@ -11,10 +11,12 @@ import { Button, IconButton } from "@/components/ui/Button";
 import { GlassTable, TableRow, TableCell, EmptyState } from "@/components/ui/GlassTable";
 import { Modal } from "@/components/ui/Modal";
 import { DailyStreamsDistributionChart, DEFAULT_DAILY_BUCKETS } from "@/components/charts/DailyStreamsDistributionChart";
+import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
 import { type TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChart";
 import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
 import { foldForSearch } from "@/lib/searchFold";
 import { readStoredBool, writeStoredBool, readStoredString, writeStoredString, removeStoredItem } from "@/lib/storage";
+import { slugifyForFilename, todayIsoDate } from "@/lib/csv";
 import { HOME_DETAILS_STORAGE, HOME_DAILY_BUCKETS_STORAGE, parseDailyBucketsText } from "./homeUtils";
 
 export function HomeDailyDistributionSection(props: {
@@ -304,14 +306,6 @@ export function HomeDailyDistributionSection(props: {
             <span>daily streams</span>
           </div>
         ) : "Daily streams drilldown"}
-        subtitle={dailyDistDrillBucket ? (
-          <span>
-            Daily streams{" "}
-            {dailyDistDrillBucket.max === null ? (<>≥ <span className="font-mono">{formatInt(dailyDistDrillBucket.min)}</span></>) : (<><span className="font-mono">{formatInt(dailyDistDrillBucket.min)}</span> – <span className="font-mono">{formatInt(dailyDistDrillBucket.max)}</span></>)}{" "}
-            <span className="opacity-70" style={{ color: "var(--sb-muted)" }}>•</span>{" "}
-            {formatInt(drillTotalCount)} {dailyDistDrillView === "artists" ? "artists" : "tracks"}
-          </span>
-        ) : null}
         maxWidthClassName="max-w-6xl"
       >
         <div className="space-y-3">
@@ -344,6 +338,25 @@ export function HomeDailyDistributionSection(props: {
               <Button type="button" variant="ghost" disabled={drillSafePage <= 1} onClick={() => setDailyDistDrillPage((p) => Math.max(1, p - 1))}>Prev</Button>
               <div className="text-xs" style={{ color: "var(--sb-muted)" }}><span className="font-mono">{drillSafePage}</span> / <span className="font-mono">{drillTotalPages}</span></div>
               <Button type="button" variant="ghost" disabled={drillSafePage >= drillTotalPages} onClick={() => setDailyDistDrillPage((p) => Math.min(drillTotalPages, p + 1))}>Next</Button>
+              <ChartCsvDownloadButton
+                rows={dailyDistDrillView === "artists" ? dailyDistDrillArtists.map((a) => ({
+                  artist_name: a.artist_name,
+                  artist_id: a.artist_id,
+                  track_count: a.track_count,
+                  total_streams_cumulative: a.total_streams_cumulative,
+                  daily_streams_delta: a.daily_streams_delta,
+                })) : dailyDistDrillTracks.map((t) => ({
+                  isrc: t.isrc,
+                  name: t.name,
+                  artist_names: t.artist_names,
+                  artist_ids: t.artist_ids,
+                  release_date: t.release_date,
+                  total_streams_cumulative: t.total_streams_cumulative,
+                  daily_streams_delta: t.daily_streams_delta,
+                }))}
+                filename={`home-daily-distribution-${slugifyForFilename(dailyDistDrillBucket?.label ?? "unknown")}-${dailyDistDrillView}-${todayIsoDate()}.csv`}
+                title="Download CSV"
+              />
             </div>
           </div>
 

@@ -13,6 +13,7 @@ import type {
   TrackFilterResult,
   ArtistFilterResult,
   PlaylistFilterResult,
+  DateFilterResult,
   FilterResult,
 } from "./filterTypes";
 import { foldForSearch } from "@/lib/searchFold";
@@ -43,6 +44,7 @@ export type ArtistDataPoint = {
   daily_streams?: number;
   image_url: string | null;
   playlist_keys?: string[];
+  track_names?: string[];
 };
 
 export type PlaylistDataPoint = {
@@ -55,6 +57,17 @@ export type PlaylistDataPoint = {
   playlist_type: string | null;
   collector: string | null;
   spotify_playlist_image_url: string | null;
+};
+
+export type DateDataPoint = {
+  date: string;
+  daily_streams: number;
+  cumulative_streams: number;
+  track_count: number;
+  growth_pct: number | null;
+  tracks_added: number;
+  day_of_week: number;
+  est_daily_revenue: number | null;
 };
 
 // ============================================================================
@@ -74,6 +87,7 @@ export function filterTracksClientSide(
     isrc: t.isrc,
     name: t.name,
     release_date: t.release_date,
+    first_seen: t.first_seen ?? null,
     spotify_artist_names: t.spotify_artist_names,
     spotify_artist_ids: t.spotify_artist_ids,
     total_streams: t.total_streams_cumulative,
@@ -97,6 +111,8 @@ export function filterArtistsClientSide(
     artist_name: a.artist_name,
     total_streams: a.total_streams,
     track_count: a.track_count,
+    daily_streams: a.daily_streams ?? null,
+    avg_streams_per_track: a.track_count > 0 ? Math.round(a.total_streams / a.track_count) : 0,
     image_url: a.image_url,
   }));
 }
@@ -123,6 +139,27 @@ export function filterPlaylistsClientSide(
 }
 
 /**
+ * Filter dates client-side
+ */
+export function filterDatesClientSide(
+  dates: DateDataPoint[],
+  filter: FilterConfig
+): DateFilterResult[] {
+  const filtered = dates.filter(d => evaluateFilter(d, filter, "dates"));
+
+  return filtered.map(d => ({
+    date: d.date,
+    daily_streams: d.daily_streams,
+    cumulative_streams: d.cumulative_streams,
+    track_count: d.track_count,
+    growth_pct: d.growth_pct,
+    tracks_added: d.tracks_added,
+    day_of_week: d.day_of_week,
+    est_daily_revenue: d.est_daily_revenue,
+  }));
+}
+
+/**
  * Aggregate tracks into artist data points
  */
 export function aggregateTracksToArtistData(
@@ -137,6 +174,7 @@ export function aggregateTracksToArtistData(
     track_count: number;
     image_url: string | null;
     playlist_keys: Set<string>;
+    track_names: string[];
   }>();
   
   for (const track of tracks) {
@@ -158,6 +196,7 @@ export function aggregateTracksToArtistData(
           track_count: 0,
           image_url: imageInfo?.image_url ?? null,
           playlist_keys: new Set<string>(),
+          track_names: [],
         });
       }
       
@@ -165,6 +204,7 @@ export function aggregateTracksToArtistData(
       entry.total_streams += track.total_streams_cumulative;
       entry.daily_streams += track.daily_streams ?? 0;
       entry.track_count += 1;
+      entry.track_names.push(track.name);
       for (const pk of pkeys) entry.playlist_keys.add(pk);
     }
   }
@@ -177,6 +217,7 @@ export function aggregateTracksToArtistData(
     track_count: a.track_count,
     image_url: a.image_url,
     playlist_keys: Array.from(a.playlist_keys),
+    track_names: a.track_names,
   }));
 }
 
@@ -230,6 +271,25 @@ function evaluateCondition(row: DataRow, condition: FilterCondition, entityType:
   if (value === null || value === undefined || value === "") {
     return true; // Incomplete condition matches everything
   }
+
+  // Array-valued fields (e.g., has_track_named): match if ANY element satisfies the operator
+  if (Array.isArray(rowValue)) {
+    const compareFn = (item: unknown) => {
+      switch (operator) {
+        case "eq": return compareEqual(item, value);
+        case "neq": return !compareEqual(item, value);
+        case "contains": return compareContains(item, value);
+        case "not_contains": return !compareContains(item, value);
+        case "starts_with": return compareStartsWith(item, value);
+        case "ends_with": return compareEndsWith(item, value);
+        default: return false;
+      }
+    };
+    if (operator === "neq" || operator === "not_contains") {
+      return rowValue.every(compareFn);
+    }
+    return rowValue.some(compareFn);
+  }
   
   // Dispatch to appropriate comparator
   switch (operator) {
@@ -281,22 +341,46 @@ function evaluateCondition(row: DataRow, condition: FilterCondition, entityType:
 }
 
 /**
- * Get the value from a row for a given field, handling field name mappings
+ * Get the value from a row for a given field, handling field name mappings.
+ * Computed/derived fields are resolved here so they never need to be stored on the row.
  */
 function getRowValue(row: DataRow, field: string, entityType: string): unknown {
-  // Handle field name differences between filter config and data
-  const fieldMappings: Record<string, string> = {
-    // Track fields
-    "total_streams": "total_streams_cumulative",
-    "track_name": "name",
-    // Artist fields
-    "artist_name": "artist_name",
-    // Playlist fields
-    "display_name": "display_name",
-  };
-  
-  const mappedField = fieldMappings[field] ?? field;
-  return row[mappedField];
+  // --- Playlist containment fields (resolved server-side, flag on the row) ---
+  if (field === "contains_track" || field === "contains_artist") {
+    return row["_contains_match"] === true ? "__match__" : "__no_match__";
+  }
+
+  // --- Array-valued lookup fields ---
+  if (field === "has_track_named") {
+    return (row["track_names"] as string[] | undefined) ?? [];
+  }
+
+  // --- Computed fields (entity-independent) ---
+  if (field === "has_spotify_id") {
+    const id = row["spotify_track_id"];
+    return id != null && id !== "";
+  }
+  if (field === "is_collaboration") {
+    const ids = row["spotify_artist_ids"] as string[] | undefined;
+    return Array.isArray(ids) && ids.length > 1;
+  }
+  if (field === "avg_streams_per_track") {
+    const total = Number(row["total_streams"] ?? 0);
+    const count = Number(row["track_count"] ?? 1);
+    return count > 0 ? total / count : 0;
+  }
+
+  // --- Track-specific field name mappings ---
+  if (entityType === "tracks") {
+    const trackMappings: Record<string, string> = {
+      "total_streams": "total_streams_cumulative",
+      "track_name": "name",
+    };
+    return row[trackMappings[field] ?? field];
+  }
+
+  // --- All other entities: direct field access ---
+  return row[field];
 }
 
 // ============================================================================
@@ -412,6 +496,11 @@ function compareEndsWith(rowValue: unknown, filterValue: FilterValue): boolean {
 
 function compareIn(rowValue: unknown, filterValue: FilterValue, row: DataRow, field: string): boolean {
   if (!Array.isArray(filterValue) || filterValue.length === 0) return true;
+
+  // Containment fields: the server-side lookup already resolved the match
+  if (field === "contains_track" || field === "contains_artist") {
+    return row["_contains_match"] === true;
+  }
   
   // Special handling for artist field (check spotify_artist_ids array)
   if (field === "artist") {

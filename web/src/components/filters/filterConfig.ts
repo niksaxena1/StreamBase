@@ -102,6 +102,7 @@ const TRACK_FIELDS: FilterFieldDefinition[] = [
   {
     key: "total_streams",
     label: "Total Streams",
+    revenueLabel: "Total Revenue",
     type: "number",
     operators: ["gt", "gte", "lt", "lte", "between", "eq"],
     description: "Cumulative streams for the track",
@@ -112,6 +113,7 @@ const TRACK_FIELDS: FilterFieldDefinition[] = [
   {
     key: "daily_streams",
     label: "Daily Streams",
+    revenueLabel: "Daily Revenue",
     type: "number",
     operators: ["gt", "gte", "lt", "lte", "between", "eq"],
     description: "Most recent daily stream count",
@@ -162,6 +164,37 @@ const TRACK_FIELDS: FilterFieldDefinition[] = [
     optionsSource: "playlists",
     placeholder: "Select playlists...",
   },
+  {
+    key: "isrc",
+    label: "ISRC",
+    type: "text",
+    operators: ["eq", "contains", "starts_with"],
+    description: "International Standard Recording Code",
+    placeholder: "e.g., USRC12345678",
+    helpText: "Exact match or partial search on the track ISRC",
+  },
+  {
+    key: "has_spotify_id",
+    label: "Has Spotify Link",
+    type: "boolean",
+    operators: ["eq"],
+    description: "Whether the track has been enriched with a Spotify ID",
+    options: [
+      { value: "true", label: "Yes" },
+      { value: "false", label: "No" },
+    ],
+  },
+  {
+    key: "is_collaboration",
+    label: "Is Collaboration",
+    type: "boolean",
+    operators: ["eq"],
+    description: "Tracks credited to two or more artists",
+    options: [
+      { value: "true", label: "Yes" },
+      { value: "false", label: "No" },
+    ],
+  },
 ];
 
 // ============================================================================
@@ -172,6 +205,7 @@ const ARTIST_FIELDS: FilterFieldDefinition[] = [
   {
     key: "total_streams",
     label: "Total Streams",
+    revenueLabel: "Total Revenue",
     type: "number",
     operators: ["gt", "gte", "lt", "lte", "between", "eq"],
     description: "Sum of streams across all artist's tracks",
@@ -198,6 +232,7 @@ const ARTIST_FIELDS: FilterFieldDefinition[] = [
   {
     key: "daily_streams",
     label: "Daily Streams",
+    revenueLabel: "Daily Revenue",
     type: "number",
     operators: ["gt", "gte", "lt", "lte", "between", "eq"],
     description: "Sum of daily streams across all artist's tracks",
@@ -213,6 +248,26 @@ const ARTIST_FIELDS: FilterFieldDefinition[] = [
     optionsSource: "playlists",
     placeholder: "Select playlists...",
     helpText: "Matches artists if any of their tracks are (or are not) in these playlists",
+  },
+  {
+    key: "avg_streams_per_track",
+    label: "Avg Streams / Track",
+    revenueLabel: "Avg Revenue / Track",
+    type: "number",
+    operators: ["gt", "gte", "lt", "lte", "between", "eq"],
+    description: "Average cumulative streams per track for the artist",
+    min: 0,
+    placeholder: "e.g., 500000",
+    helpText: "Total streams divided by number of tracks",
+  },
+  {
+    key: "has_track_named",
+    label: "Has Track Named",
+    type: "text",
+    operators: ["contains", "starts_with", "eq", "neq"],
+    description: "Filter artists who have a track matching this name",
+    placeholder: "Search track name...",
+    helpText: "Matches if any of the artist's tracks match",
   },
 ];
 
@@ -233,6 +288,7 @@ const PLAYLIST_FIELDS: FilterFieldDefinition[] = [
   {
     key: "total_streams",
     label: "Total Streams",
+    revenueLabel: "Total Revenue",
     type: "number",
     operators: ["gt", "gte", "lt", "lte", "between", "eq"],
     description: "Sum of streams for all tracks",
@@ -242,6 +298,7 @@ const PLAYLIST_FIELDS: FilterFieldDefinition[] = [
   {
     key: "daily_streams",
     label: "Daily Streams",
+    revenueLabel: "Daily Revenue",
     type: "number",
     operators: ["gt", "gte", "lt", "lte", "between", "eq"],
     description: "Daily stream delta",
@@ -257,23 +314,17 @@ const PLAYLIST_FIELDS: FilterFieldDefinition[] = [
     placeholder: "Search playlist name...",
   },
   {
-    key: "is_catalog",
-    label: "Is Catalog",
-    type: "boolean",
-    operators: ["eq"],
-    description: "Whether this is a catalog playlist",
-    options: [
-      { value: "true", label: "Yes" },
-      { value: "false", label: "No" },
-    ],
-  },
-  {
     key: "playlist_type",
     label: "Playlist Type",
     type: "select",
     operators: ["eq", "neq", "in"],
     description: "The playlist classification",
-    optionsSource: "collectors", // Will load playlist_type values
+    options: [
+      { value: "Catalog", label: "Catalog" },
+      { value: "Label", label: "Label" },
+      { value: "Entity", label: "Entity" },
+      { value: "Distro", label: "Distro" },
+    ],
     placeholder: "Select type...",
   },
   {
@@ -282,8 +333,126 @@ const PLAYLIST_FIELDS: FilterFieldDefinition[] = [
     type: "select",
     operators: ["eq", "neq", "in"],
     description: "The collector bucket",
-    optionsSource: "collectors",
+    options: [
+      { value: "A", label: "A" },
+      { value: "K", label: "K" },
+      { value: "N", label: "N" },
+      { value: "PL", label: "PL" },
+      { value: "TG", label: "TG" },
+      { value: "NL", label: "NL" },
+    ],
     placeholder: "Select collector...",
+  },
+  {
+    key: "contains_track",
+    label: "Contains Track",
+    type: "multi-select",
+    operators: ["in", "not_in"],
+    description: "Filter playlists that contain (or don't contain) specific tracks",
+    optionsSource: "tracks",
+    placeholder: "Select tracks...",
+    helpText: "Requires an active data date; searches memberships on that date",
+  },
+  {
+    key: "contains_artist",
+    label: "Contains Artist",
+    type: "multi-select",
+    operators: ["in", "not_in"],
+    description: "Filter playlists that contain tracks by specific artists",
+    optionsSource: "artists",
+    placeholder: "Select artists...",
+    helpText: "Matches playlists containing any track credited to these artists",
+  },
+];
+
+// ============================================================================
+// Date Fields (daily catalog-wide aggregates)
+// ============================================================================
+
+export const DAY_OF_WEEK_OPTIONS = [
+  { value: "0", label: "Sunday" },
+  { value: "1", label: "Monday" },
+  { value: "2", label: "Tuesday" },
+  { value: "3", label: "Wednesday" },
+  { value: "4", label: "Thursday" },
+  { value: "5", label: "Friday" },
+  { value: "6", label: "Saturday" },
+];
+
+const DATE_FIELDS: FilterFieldDefinition[] = [
+  {
+    key: "daily_streams",
+    label: "Daily Streams",
+    revenueLabel: "Daily Revenue",
+    type: "number",
+    operators: ["gt", "gte", "lt", "lte", "between", "eq"],
+    description: "Total daily stream delta across catalog",
+    min: 0,
+    placeholder: "e.g., 50000",
+  },
+  {
+    key: "growth_pct",
+    label: "Daily Growth %",
+    type: "number",
+    operators: ["gt", "gte", "lt", "lte", "between"],
+    description: "Percentage change in daily streams vs previous day",
+    placeholder: "e.g., 10",
+    helpText: "Positive = growth, negative = decline. 10 means +10%",
+  },
+  {
+    key: "track_count",
+    label: "Track Count",
+    type: "number",
+    operators: ["gt", "gte", "lt", "lte", "between", "eq"],
+    description: "Total active tracks in catalog on this date",
+    min: 0,
+    placeholder: "e.g., 200",
+  },
+  {
+    key: "tracks_added",
+    label: "Tracks Added / Removed",
+    type: "number",
+    operators: ["gt", "gte", "lt", "lte", "between", "eq"],
+    description: "Net change in track count from previous day",
+    placeholder: "e.g., 5",
+    helpText: "Positive = tracks added, negative = tracks removed",
+  },
+  {
+    key: "cumulative_streams",
+    label: "Cumulative Streams",
+    revenueLabel: "Cumulative Revenue",
+    type: "number",
+    operators: ["gt", "gte", "lt", "lte", "between"],
+    description: "Total cumulative streams across catalog on this date",
+    min: 0,
+    placeholder: "e.g., 10000000",
+  },
+  {
+    key: "est_daily_revenue",
+    label: "Est. Daily Revenue",
+    type: "number",
+    operators: ["gt", "gte", "lt", "lte", "between"],
+    description: "Estimated daily revenue in USD",
+    min: 0,
+    placeholder: "e.g., 100",
+    helpText: "Based on the configured payout rate",
+  },
+  {
+    key: "day_of_week",
+    label: "Day of Week",
+    type: "select",
+    operators: ["eq", "neq", "in"],
+    options: DAY_OF_WEEK_OPTIONS,
+    description: "Filter by day of week",
+    placeholder: "Select day...",
+  },
+  {
+    key: "date",
+    label: "Date",
+    type: "date",
+    operators: ["eq", "before", "after", "between"],
+    description: "Filter to a specific date range",
+    placeholder: "YYYY-MM-DD",
   },
 ];
 
@@ -310,6 +479,12 @@ export const ENTITY_CONFIGS: Record<string, EntityFieldConfig> = {
     description: "Filter playlists by metrics and properties",
     fields: PLAYLIST_FIELDS,
   },
+  dates: {
+    entityType: "dates",
+    label: "Dates",
+    description: "Filter days by catalog-wide daily metrics, growth, and track changes",
+    fields: DATE_FIELDS,
+  },
 };
 
 export function getFieldsForEntity(entityType: string): FilterFieldDefinition[] {
@@ -324,6 +499,21 @@ export function getFieldDefinition(entityType: string, fieldKey: string): Filter
 export function getDefaultOperator(fieldDef: FilterFieldDefinition): string {
   return fieldDef.operators[0] ?? "eq";
 }
+
+export function getFieldLabel(fieldDef: FilterFieldDefinition, isRevenueMode: boolean): string {
+  return (isRevenueMode && fieldDef.revenueLabel) ? fieldDef.revenueLabel : fieldDef.label;
+}
+
+/**
+ * Data-level field names (per entity) that represent stream counts and should
+ * be multiplied by the payout rate when the global metric is "revenue".
+ */
+export const STREAM_DATA_FIELDS: Record<string, string[]> = {
+  tracks: ["total_streams_cumulative", "daily_streams"],
+  artists: ["total_streams", "daily_streams"],
+  playlists: ["total_streams", "daily_streams"],
+  dates: ["daily_streams", "cumulative_streams"],
+};
 
 // ============================================================================
 // Value Parsing Utilities

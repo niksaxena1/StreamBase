@@ -11,9 +11,11 @@ import { Button, IconButton } from "@/components/ui/Button";
 import { GlassTable, TableRow, TableCell, EmptyState } from "@/components/ui/GlassTable";
 import { Modal } from "@/components/ui/Modal";
 import { TracksPerMilestoneChart } from "@/components/charts/TracksPerMilestoneChart";
+import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
 import { type TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChart";
 import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
 import { foldForSearch } from "@/lib/searchFold";
+import { slugifyForFilename, todayIsoDate } from "@/lib/csv";
 import { readStoredBool, writeStoredBool, readStoredString, writeStoredString, removeStoredItem } from "@/lib/storage";
 import {
   HOME_DETAILS_STORAGE,
@@ -482,25 +484,9 @@ export function HomeMilestonesSection(props: {
             ) : (
               <span className="opacity-70" style={{ color: "var(--sb-muted)" }}>+</span>
             )}
+            <span>{milestoneMode === "revenue" ? "total revenue" : "total streams"}</span>
           </div>
         ) : "Milestone drilldown"}
-        subtitle={milestoneDrillMilestone ? (
-          <span>
-            Total streams{" "}
-            {milestoneBucketMode === "exclusive" && milestoneDrillUpperExclusive ? (
-              <>
-                ≥ <span className="font-mono">{formatInt(milestoneDrillMilestone)}</span> and{" "}
-                {"<"} <span className="font-mono">{formatInt(milestoneDrillUpperExclusive)}</span>
-              </>
-            ) : (
-              <>
-                ≥ <span className="font-mono">{formatInt(milestoneDrillMilestone)}</span>
-              </>
-            )}{" "}
-            <span className="opacity-70" style={{ color: "var(--sb-muted)" }}>•</span>{" "}
-            {formatInt(drillTotalCount)} {milestoneDrillView === "artists" ? "artists" : "tracks"}
-          </span>
-        ) : null}
         maxWidthClassName="max-w-6xl"
       >
         <div className="space-y-3">
@@ -533,6 +519,25 @@ export function HomeMilestonesSection(props: {
               <Button type="button" variant="ghost" disabled={drillSafePage <= 1} onClick={() => setMilestoneDrillPage((p) => Math.max(1, p - 1))}>Prev</Button>
               <div className="text-xs" style={{ color: "var(--sb-muted)" }}><span className="font-mono">{drillSafePage}</span> / <span className="font-mono">{drillTotalPages}</span></div>
               <Button type="button" variant="ghost" disabled={drillSafePage >= drillTotalPages} onClick={() => setMilestoneDrillPage((p) => Math.min(drillTotalPages, p + 1))}>Next</Button>
+              <ChartCsvDownloadButton
+                rows={milestoneDrillView === "artists" ? milestoneDrillArtists.map((a) => ({
+                  artist_name: a.artist_name,
+                  artist_id: a.artist_id,
+                  track_count: a.track_count,
+                  total_streams_cumulative: a.total_streams_cumulative,
+                  daily_streams_delta: a.daily_streams_delta,
+                })) : milestoneDrillTracks.map((t) => ({
+                  isrc: t.isrc,
+                  name: t.name,
+                  artist_names: t.artist_names,
+                  artist_ids: t.artist_ids,
+                  release_date: t.release_date,
+                  total_streams_cumulative: t.total_streams_cumulative,
+                  daily_streams_delta: t.daily_streams_delta,
+                }))}
+                filename={`home-milestone-${slugifyForFilename(formatMilestoneForInput(milestoneDrillMilestone ?? 0))}-${milestoneDrillView}-${todayIsoDate()}.csv`}
+                title="Download CSV"
+              />
             </div>
           </div>
 

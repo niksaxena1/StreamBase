@@ -154,8 +154,8 @@ function HomeDashboardInner(props: {
             streamPayoutPerStreamUsd
           : 0;
       return {
-        daily: computeRollingAvg7(dailyDesc),
-        total: totalDesc,
+        daily: computeRollingAvg7(dailyDesc).slice(0, props.rangeDays),
+        total: totalDesc.slice(0, props.rangeDays),
         dailyValue,
         totalValue: safeNum(props.latest?.total_streams_cumulative) * streamPayoutPerStreamUsd,
         dailyTitle: "Revenue (Daily)",
@@ -183,8 +183,8 @@ function HomeDashboardInner(props: {
           ? Number(desc[0]?.track_count ?? 0) - Number(desc[1]?.track_count ?? 0)
           : 0;
       return {
-        daily: computeRollingAvg7(dailyDeltaDesc),
-        total: totalDesc,
+        daily: computeRollingAvg7(dailyDeltaDesc).slice(0, props.rangeDays),
+        total: totalDesc.slice(0, props.rangeDays),
         dailyValue,
         totalValue: Number(props.latest?.track_count ?? 0),
         dailyTitle: "Track Change (Daily)",
@@ -212,8 +212,8 @@ function HomeDashboardInner(props: {
         ? safeNum(desc[0]?.total_streams_cumulative) - safeNum(desc[1]?.total_streams_cumulative)
         : 0;
     return {
-      daily: computeRollingAvg7(dailyDesc),
-      total: totalDesc,
+      daily: computeRollingAvg7(dailyDesc).slice(0, props.rangeDays),
+      total: totalDesc.slice(0, props.rangeDays),
       dailyValue,
       totalValue: safeNum(props.latest?.total_streams_cumulative),
       dailyTitle: "Daily Streams",
@@ -384,7 +384,7 @@ function HomeDashboardInner(props: {
         trackWeekendDips={props.trackWeekendDips}
       />
 
-      <HomeHistorySection history={props.history} />
+      <HomeHistorySection history={props.history.slice(0, props.rangeDays)} />
 
       {homeFiltersConfigured && homeFiltersEnabled ? (
         <HomeFilterBuilderSection

@@ -575,6 +575,17 @@ export function FilterValueInput({ value, operator, fieldDef, options = [], onCh
       return <TextInput value={value} operator={operator} fieldDef={fieldDef} onChange={onChange} />;
     
     case "select":
+      if (operator === "in" || operator === "not_in") {
+        return (
+          <MultiSelectInput
+            value={value}
+            operator={operator}
+            fieldDef={fieldDef}
+            options={options}
+            onChange={onChange}
+          />
+        );
+      }
       return <SelectInput value={value} operator={operator} fieldDef={fieldDef} options={options} onChange={onChange} />;
     
     case "multi-select":
@@ -585,7 +596,7 @@ export function FilterValueInput({ value, operator, fieldDef, options = [], onCh
           fieldDef={fieldDef}
           options={options}
           onChange={onChange}
-          imageShape={fieldDef.key === "playlist" ? "square" : "circle"}
+          imageShape={fieldDef.key === "playlist" || fieldDef.key === "contains_track" ? "square" : "circle"}
         />
       );
     

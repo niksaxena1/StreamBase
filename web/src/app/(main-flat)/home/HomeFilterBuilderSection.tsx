@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { type TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChart";
-import { FilterBuilder, type TrackDataPoint, type PlaylistDataPoint } from "@/components/filters";
+import { FilterBuilder, type TrackDataPoint, type PlaylistDataPoint, type DateDataPoint } from "@/components/filters";
 import { addDaysISO, SOT_DATA_LAG_DAYS } from "@/lib/sotDates";
 
 export function HomeFilterBuilderSection({
@@ -19,6 +19,8 @@ export function HomeFilterBuilderSection({
   const [playlistOptions, setPlaylistOptions] = useState<
     Array<{ value: string; label: string; imageUrl?: string | null }>
   >([]);
+  const [playlistData, setPlaylistData] = useState<PlaylistDataPoint[]>([]);
+  const [dateData, setDateData] = useState<DateDataPoint[]>([]);
   const [artistImagesById, setArtistImagesById] = useState<Map<string, string | null>>(new Map());
 
   useEffect(() => {
@@ -35,6 +37,69 @@ export function HomeFilterBuilderSection({
               value: String(r?.playlist_key ?? ""),
               label: String(r?.display_name ?? r?.playlist_key ?? ""),
               imageUrl: (r?.spotify_image_url ?? null) as string | null,
+            })),
+          );
+        }
+      } catch {
+        // ignore
+      }
+    }
+    void load();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const res = await fetch("/api/playlists/with-stats");
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) return;
+        const rows = Array.isArray((json as any)?.playlists)
+          ? ((json as any).playlists as any[])
+          : [];
+        if (!cancelled) {
+          setPlaylistData(
+            rows.map((r) => ({
+              playlist_key: String(r?.playlist_key ?? ""),
+              display_name: String(r?.display_name ?? ""),
+              track_count: Number(r?.track_count ?? 0),
+              total_streams: Number(r?.total_streams ?? 0),
+              daily_streams: r?.daily_streams != null ? Number(r.daily_streams) : null,
+              is_catalog: Boolean(r?.is_catalog),
+              playlist_type: (r?.playlist_type ?? null) as string | null,
+              collector: (r?.collector ?? null) as string | null,
+              spotify_playlist_image_url: (r?.spotify_playlist_image_url ?? null) as string | null,
+            })),
+          );
+        }
+      } catch {
+        // ignore
+      }
+    }
+    void load();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const res = await fetch("/api/dates/catalog-stats");
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) return;
+        const rows = Array.isArray((json as any)?.rows) ? ((json as any).rows as any[]) : [];
+        if (!cancelled) {
+          setDateData(
+            rows.map((r) => ({
+              date: String(r?.date ?? ""),
+              daily_streams: Number(r?.daily_streams ?? 0),
+              cumulative_streams: Number(r?.cumulative_streams ?? 0),
+              track_count: Number(r?.track_count ?? 0),
+              growth_pct: r?.growth_pct != null ? Number(r.growth_pct) : null,
+              tracks_added: Number(r?.tracks_added ?? 0),
+              day_of_week: Number(r?.day_of_week ?? 0),
+              est_daily_revenue: r?.est_daily_revenue != null ? Number(r.est_daily_revenue) : null,
             })),
           );
         }
@@ -127,7 +192,6 @@ export function HomeFilterBuilderSection({
     return map;
   }, [artistOptions]);
 
-  const playlistData: PlaylistDataPoint[] = useMemo(() => [], []);
   const asOfRunDate = useMemo(() => {
     if (!trackScatterDataDate) return null;
     return addDaysISO(trackScatterDataDate, SOT_DATA_LAG_DAYS);
@@ -137,10 +201,10 @@ export function HomeFilterBuilderSection({
     <FilterBuilder
       trackData={trackData}
       playlistData={playlistData}
+      dateData={dateData}
       artistImages={artistImages}
       artistOptions={artistOptions}
       playlistOptions={playlistOptions}
-      collectorOptions={[]}
       asOfRunDate={asOfRunDate}
     />
   );

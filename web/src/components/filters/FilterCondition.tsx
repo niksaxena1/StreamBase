@@ -13,6 +13,7 @@ import type { FilterCondition as FilterConditionType, FilterOperator, FilterValu
 import { 
   getFieldsForEntity, 
   getFieldDefinition, 
+  getFieldLabel,
   getDefaultOperator, 
   getOperatorLabel 
 } from "./filterConfig";
@@ -26,6 +27,7 @@ type FilterConditionProps = {
   condition: FilterConditionType;
   entityType: EntityType;
   dynamicOptions: Record<string, Array<{ value: string; label: string; imageUrl?: string | null }>>;
+  isRevenueMode?: boolean;
   onChange: (condition: FilterConditionType) => void;
   onRemove: () => void;
   canRemove: boolean;
@@ -35,6 +37,7 @@ export function FilterCondition({
   condition,
   entityType,
   dynamicOptions,
+  isRevenueMode = false,
   onChange,
   onRemove,
   canRemove,
@@ -44,7 +47,7 @@ export function FilterCondition({
 
   const fieldOptionsForCombobox: ComboboxOption[] = fields.map((f) => ({
     value: f.key,
-    label: f.label,
+    label: getFieldLabel(f, isRevenueMode),
   }));
   
   // Get options for this field (either static or dynamic)
@@ -191,10 +194,12 @@ export function ConditionSummary({
   condition,
   entityType,
   dynamicOptions,
+  isRevenueMode = false,
 }: {
   condition: FilterConditionType;
   entityType: EntityType;
   dynamicOptions: Record<string, Array<{ value: string; label: string }>>;
+  isRevenueMode?: boolean;
 }) {
   const fieldDef = condition.field ? getFieldDefinition(entityType, condition.field) : undefined;
   if (!fieldDef) return null;
@@ -231,7 +236,7 @@ export function ConditionSummary({
         !condition.enabled && "opacity-50 line-through"
       )}
     >
-      <span className="font-medium">{fieldDef.label}</span>
+      <span className="font-medium">{getFieldLabel(fieldDef, isRevenueMode)}</span>
       <span style={{ color: "var(--sb-muted)" }}>{operatorLabel}</span>
       <span className="font-medium">{valueLabel}</span>
     </span>

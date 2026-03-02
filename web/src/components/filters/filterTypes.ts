@@ -9,7 +9,7 @@
 // Core Filter Types
 // ============================================================================
 
-export type EntityType = "tracks" | "artists" | "playlists";
+export type EntityType = "tracks" | "artists" | "playlists" | "dates";
 
 export type FieldType = "number" | "date" | "text" | "select" | "multi-select" | "boolean";
 
@@ -82,7 +82,7 @@ export type FilterFieldDefinition = {
   // For select/multi-select fields
   options?: Array<{ value: string; label: string }>;
   // For async options (e.g., artists loaded from data)
-  optionsSource?: "artists" | "playlists" | "collectors";
+  optionsSource?: "artists" | "playlists" | "tracks";
   // For number fields
   min?: number;
   max?: number;
@@ -94,6 +94,8 @@ export type FilterFieldDefinition = {
   placeholder?: string;
   // Help text shown below the input
   helpText?: string;
+  // Label to show when the global metric is set to "revenue"
+  revenueLabel?: string;
 };
 
 export type EntityFieldConfig = {
@@ -111,6 +113,7 @@ export type TrackFilterResult = {
   isrc: string;
   name: string;
   release_date: string | null;
+  first_seen: string | null;
   spotify_artist_names: string[];
   spotify_artist_ids: string[];
   total_streams: number;
@@ -124,6 +127,8 @@ export type ArtistFilterResult = {
   artist_name: string;
   total_streams: number;
   track_count: number;
+  daily_streams: number | null;
+  avg_streams_per_track: number;
   image_url: string | null;
 };
 
@@ -138,7 +143,18 @@ export type PlaylistFilterResult = {
   spotify_playlist_image_url: string | null;
 };
 
-export type FilterResult = TrackFilterResult | ArtistFilterResult | PlaylistFilterResult;
+export type DateFilterResult = {
+  date: string;
+  daily_streams: number;
+  cumulative_streams: number;
+  track_count: number;
+  growth_pct: number | null;
+  tracks_added: number;
+  day_of_week: number;
+  est_daily_revenue: number | null;
+};
+
+export type FilterResult = TrackFilterResult | ArtistFilterResult | PlaylistFilterResult | DateFilterResult;
 
 // ============================================================================
 // UI State Types

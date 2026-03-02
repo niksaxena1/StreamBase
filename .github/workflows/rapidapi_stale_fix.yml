@@ -71,12 +71,15 @@ jobs:
             echo "  Fixed: ${FIXED}"
             echo ""
             if [ -f ".artifacts/stale_fix_summary.json" ]; then
-              python3 -c "
+              python3 <<'PYEOF'
 import json
-d = json.load(open('.artifacts/stale_fix_summary.json'))
-for t in d.get('tracks', []):
-    print(f\"  {t['isrc']}: {t['stale']:,} -> {t['new']:,}  (+{t['new']-t['stale']:,})\")
-" 2>/dev/null || true
+d = json.load(open(".artifacts/stale_fix_summary.json"))
+for t in d.get("tracks", []):
+    isrc = t["isrc"]
+    old = t["stale"]
+    new = t["new"]
+    print(f"  {isrc}: {old:,} -> {new:,}  (+{new-old:,})")
+PYEOF
             fi
             echo ""
             echo "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
