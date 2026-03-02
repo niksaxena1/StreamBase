@@ -14,6 +14,7 @@ import { WeekendDipSetting } from "./WeekendDipSetting";
 import { CurrencyDisplaySetting } from "./CurrencyDisplaySetting";
 import { StaleTrackThresholdSetting } from "./StaleTrackThresholdSetting";
 import { RapidApiFallbackSetting } from "./RapidApiFallbackSetting";
+import { HideStaleAnnotationsSetting } from "./HideStaleAnnotationsSetting";
 import { ManualStreamOverrideForm } from "./ManualStreamOverrideForm";
 import { StreamOverridesTable, StreamOverridesTableDownloadButton } from "./StreamOverridesTable";
 import { SectionHeader } from "@/components/ui/SectionHeader";
@@ -691,6 +692,7 @@ export default async function SettingsPage() {
           <ChartStartDateSetting />
           <ChartAxisZoomSetting />
           <WeekendDipSetting />
+          <HideStaleAnnotationsSetting />
         </div>
 
         <div

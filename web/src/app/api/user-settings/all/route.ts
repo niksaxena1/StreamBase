@@ -24,7 +24,7 @@ export async function GET() {
   const { data: settings, error } = await svc
     .from("user_settings")
     .select(
-      "stream_payout_rate_per_k_usd,currency_display,home_filters_enabled,home_custom_milestones_streams,chart_week_highlight_day,chart_start_date,chart_zoom_daily_y_axis,chart_zoom_daily_y_axis_collector_comparison,sai_enabled,stale_track_min_streams,stale_track_min_avg_daily",
+      "stream_payout_rate_per_k_usd,currency_display,home_filters_enabled,home_custom_milestones_streams,chart_week_highlight_day,chart_start_date,chart_zoom_daily_y_axis,chart_zoom_daily_y_axis_collector_comparison,sai_enabled,stale_track_min_streams,stale_track_min_avg_daily,hide_stale_override_annotations",
     )
     .eq("user_id", user.id)
     .maybeSingle();
@@ -53,6 +53,7 @@ export async function GET() {
       sai_enabled: row.sai_enabled ?? true,
       stale_track_min_streams: row.stale_track_min_streams ?? 2000,
       stale_track_min_avg_daily: row.stale_track_min_avg_daily ?? 10,
+      hide_stale_override_annotations: row.hide_stale_override_annotations ?? false,
     },
     { status: 200 },
   );

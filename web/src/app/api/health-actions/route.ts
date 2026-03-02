@@ -204,7 +204,7 @@ export async function POST(request: NextRequest) {
     }
 
     const svc = supabaseService();
-    const note = `RapidAPI fallback (${date})`;
+    const note = "stale-fix: RapidAPI manual";
 
     const rows = validated.map((v) => ({
       date,

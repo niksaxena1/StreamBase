@@ -1,0 +1,92 @@
+name: RapidAPI Stale Track Fix
+
+permissions:
+  contents: read
+
+on:
+  schedule:
+    - cron: "15 11 * * *" # 11:15 UTC daily (~1h15m after ingestion)
+  workflow_dispatch: {}
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Run stale-fix script
+        id: fix
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
+        run: python scripts/rapidapi_stale_fix.py
+
+      - name: Check results for notification
+        id: notify_check
+        if: always()
+        shell: bash
+        run: |
+          SHOULD_NOTIFY="false"
+          SUBJECT=""
+          BODY=""
+
+          if [ ! -f ".artifacts/stale_fix_summary.json" ]; then
+            echo "should_notify=false" >> "$GITHUB_OUTPUT"
+            echo "subject=" >> "$GITHUB_OUTPUT"
+            {
+              echo 'body<<ENDOFBODY'
+              echo 'No summary file found.'
+              echo 'ENDOFBODY'
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          FIXED=$(python3 -c "import json; d=json.load(open('.artifacts/stale_fix_summary.json')); print(d.get('fixed', 0))" 2>/dev/null || echo "0")
+          ATTEMPTED=$(python3 -c "import json; d=json.load(open('.artifacts/stale_fix_summary.json')); print(d.get('attempted', 0))" 2>/dev/null || echo "0")
+          RUN_DATE=$(python3 -c "import json; d=json.load(open('.artifacts/stale_fix_summary.json')); print(d.get('run_date', '?'))" 2>/dev/null || echo "?")
+
+          if [ "$FIXED" != "0" ]; then
+            SHOULD_NOTIFY="true"
+            SUBJECT="[SpotiBase] Auto-fix: ${FIXED} stale track(s) corrected via RapidAPI"
+          fi
+
+          echo "should_notify=$SHOULD_NOTIFY" >> "$GITHUB_OUTPUT"
+          echo "subject=${SUBJECT}" >> "$GITHUB_OUTPUT"
+          {
+            echo 'body<<ENDOFBODY'
+            echo "RapidAPI Stale Track Fix results for ${RUN_DATE}:"
+            echo ""
+            echo "  Attempted: ${ATTEMPTED}"
+            echo "  Fixed: ${FIXED}"
+            echo ""
+            if [ -f ".artifacts/stale_fix_summary.json" ]; then
+              python3 -c "
+import json
+d = json.load(open('.artifacts/stale_fix_summary.json'))
+for t in d.get('tracks', []):
+    print(f\"  {t['isrc']}: {t['stale']:,} -> {t['new']:,}  (+{t['new']-t['stale']:,})\")
+" 2>/dev/null || true
+            fi
+            echo ""
+            echo "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo 'ENDOFBODY'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Send notification email
+        if: always() && steps.notify_check.outputs.should_notify == 'true'
+        uses: ./.github/actions/notify-email
+        with:
+          password: ${{ secrets.NOTIFY_SMTP_PASSWORD }}
+          subject: ${{ steps.notify_check.outputs.subject }}
+          body: ${{ steps.notify_check.outputs.body }}

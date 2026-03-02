@@ -179,6 +179,18 @@ export default async function Home({
   // for cached reads so cache revalidation can't fail due to missing cookies.
   const svc = supabaseService();
 
+  let hideStaleAnnotations = false;
+  try {
+    const { data: uSettings } = await sb
+      .from("user_settings")
+      .select("hide_stale_override_annotations")
+      .eq("user_id", session.user.id)
+      .maybeSingle();
+    hideStaleAnnotations = Boolean((uSettings as Record<string, unknown> | null)?.hide_stale_override_annotations);
+  } catch {
+    // graceful fallback
+  }
+
   // Cache-buster: include count + max(id) in cache keys so both additions AND
   // removals of overrides invalidate stale playlist_daily_stats caches.
   let overrideBuster = "0";
@@ -298,15 +310,16 @@ export default async function Home({
     if (!startRunDate || !endRunDate) return [];
 
     const { data: overrideRowsRaw } = await cachedQuery(
-      async () =>
-        await svc
+      async () => {
+        let q = svc
           .from("track_daily_stream_overrides")
           .select("date,isrc,note")
           .gte("date", startRunDate)
-          .lte("date", endRunDate)
-          .order("date", { ascending: false })
-          .limit(500),
-      `home-overrides-range-${playlistKey}-${startRunDate}-${endRunDate}`,
+          .lte("date", endRunDate);
+        if (hideStaleAnnotations) q = q.not("note", "like", "stale-fix:%");
+        return await q.order("date", { ascending: false }).limit(500);
+      },
+      `home-overrides-range-${playlistKey}-${startRunDate}-${endRunDate}-stale${hideStaleAnnotations ? "1" : "0"}`,
       3600,
     );
 

@@ -754,7 +754,7 @@ def main():
                         "run_id": run_id,
                         "run_date": run_date.isoformat(),
                         "playlist_key": "all_catalog",
-                        "severity": "critical" if len(stale_tracks) >= 25 else "warn",
+                        "severity": "critical" if len(stale_tracks) >= 15 else "warn",
                         "code": "individual_tracks_stale",
                         "message": (
                             f"{len(stale_tracks)} track(s) with >={stale_track_threshold:,} total streams "
@@ -1227,12 +1227,14 @@ def main():
         print(f"✅ Ingestion complete for {run_date} (run_id={run_id})")
 
         # Write machine-readable summary for CI notification workflow.
+        individual_tracks_stale_severity = "critical" if individual_tracks_stale_count >= 15 else ("warn" if individual_tracks_stale_count > 0 else None)
         ingestion_summary = {
             "status": "success",
             "run_date": run_date.isoformat(),
             "run_id": run_id,
             "stale_data_detected": stale_data_detected,
             "individual_tracks_stale_count": individual_tracks_stale_count,
+            "individual_tracks_stale_severity": individual_tracks_stale_severity,
             "excluded_tracks_zeroed_count": excluded_tracks_zeroed_count,
         }
         summary_path = Path(".artifacts") / "ingestion_summary.json"

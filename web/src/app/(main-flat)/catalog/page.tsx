@@ -232,6 +232,18 @@ export default async function CatalogPage({
     // access is still gated above.
     const svc = supabaseService();
 
+    let hideStaleAnnotations = false;
+    try {
+      const { data: uSettings } = await sb
+        .from("user_settings")
+        .select("hide_stale_override_annotations")
+        .eq("user_id", userData.user.id)
+        .maybeSingle();
+      hideStaleAnnotations = Boolean((uSettings as Record<string, unknown> | null)?.hide_stale_override_annotations);
+    } catch {
+      // graceful fallback
+    }
+
     // Cache-buster: include count + max(id) in cache keys so both additions AND
     // removals of overrides invalidate stale catalog aggregate caches.
     let overrideBuster = "0";
@@ -534,15 +546,17 @@ export default async function CatalogPage({
     isrc && latestRunDate && startRunDate
       ? (
           await cachedQuery(
-            async () =>
-              await svc
+            async () => {
+              let q = svc
                 .from("track_daily_stream_overrides")
                 .select("date,note")
                 .eq("isrc", isrc)
                 .gte("date", startRunDate)
-                .lte("date", latestRunDate)
-                .order("date", { ascending: false }),
-            `track-overrides-${isrc}-${startRunDate}-${latestRunDate}-ov${overrideBuster}`,
+                .lte("date", latestRunDate);
+              if (hideStaleAnnotations) q = q.not("note", "like", "stale-fix:%");
+              return await q.order("date", { ascending: false });
+            },
+            `track-overrides-${isrc}-${startRunDate}-${latestRunDate}-ov${overrideBuster}-stale${hideStaleAnnotations ? "1" : "0"}`,
             3600,
           )
         ).data
@@ -606,16 +620,17 @@ export default async function CatalogPage({
       if (!isrcChunk.length) continue;
 
       const { data: rowsRaw } = await cachedQuery(
-        async () =>
-          await svc
+        async () => {
+          let q = svc
             .from("track_daily_stream_overrides")
             .select("date,isrc,note")
             .in("isrc", isrcChunk)
             .gte("date", startRunDate)
-            .lte("date", latestRunDate)
-            .order("date", { ascending: false })
-            .limit(500),
-        `catalog-artist-overrides-${artistId}-${startRunDate}-${latestRunDate}-c${i}-ov${overrideBuster}`,
+            .lte("date", latestRunDate);
+          if (hideStaleAnnotations) q = q.not("note", "like", "stale-fix:%");
+          return await q.order("date", { ascending: false }).limit(500);
+        },
+        `catalog-artist-overrides-${artistId}-${startRunDate}-${latestRunDate}-c${i}-ov${overrideBuster}-stale${hideStaleAnnotations ? "1" : "0"}`,
         3600,
       );
 
