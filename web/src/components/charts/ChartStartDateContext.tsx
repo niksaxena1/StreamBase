@@ -66,6 +66,7 @@ export function ChartStartDateProvider({ children }: { children: ReactNode }) {
     }
     window.addEventListener("sb:chart-start-date-updated", onUpdated as any);
     return () => window.removeEventListener("sb:chart-start-date-updated", onUpdated as any);
+    // Intentional: register listener once; refetch function is stale by design
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

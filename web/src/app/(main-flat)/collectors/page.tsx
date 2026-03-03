@@ -9,12 +9,13 @@ import { cachedQueries, cachedQuery } from "@/lib/supabase/cache";
 import { DateRangePicker } from "@/components/ui/DateRangePicker";
 import { dataDateFromRunDate, SOT_DATA_LAG_DAYS, addDaysISO } from "@/lib/sotDates";
 import { getRollbackDate, rollbackDataDateToRunDate } from "@/lib/rollback";
-import {
-  CollectorsClient,
-  type CollectorSeriesPoint,
-  type CollectorSummaryRow,
-  type TopPlaylistRow,
-} from "./CollectorsClient";
+import { CollectorsClient } from "./CollectorsClient";
+import type {
+  CollectorSeriesPoint,
+  CollectorSummaryRow,
+  CollectorTrackRow,
+  TopPlaylistRow,
+} from "./collectorsTypes";
 import { CollectorsPageHeader } from "./CollectorsPageHeader";
 
 export const revalidate = 86400; // 24h ISR - data updates daily
@@ -42,20 +43,6 @@ type PlaylistRow = {
   spotify_playlist_image_url: string | null;
 };
 
-type CollectorTrackRow = {
-  isrc: string;
-  name: string | null;
-  release_date: string | null;
-  album_image_url: string | null;
-  artist_names: string[] | null;
-  artist_ids: string[] | null;
-  playlist_keys: string[] | null;
-  playlist_names: string[] | null;
-  distro_playlist_keys: string[] | null;
-  distro_playlist_names: string[] | null;
-  total_streams_cumulative: number | null;
-  daily_streams_delta: number | null;
-};
 
 export default async function CollectorsPage({
   searchParams,
@@ -86,7 +73,7 @@ export default async function CollectorsPage({
       .order("id", { ascending: false })
       .limit(1)
       .maybeSingle();
-    const maxId = Number((latestOverride as any)?.id ?? 0);
+    const maxId = Number((latestOverride as { id: number } | null)?.id ?? 0);
     const total = Number(count ?? 0);
     overrideBuster = `${total}-${maxId}`;
   } catch {
@@ -290,7 +277,7 @@ export default async function CollectorsPage({
         const pageSize = 1000;
         const hardCap = 50_000; // safety guard to avoid runaway payloads
 
-        const all: any[] = [];
+        const all: Record<string, unknown>[] = [];
         for (let offset = 0; offset < hardCap; offset += pageSize) {
           const { data, error } = await svc.rpc("collector_tracks_paged", {
             collector: selectedCollector,
@@ -301,7 +288,7 @@ export default async function CollectorsPage({
           });
 
           if (error) throw error;
-          const rows = (data ?? []) as any[];
+          const rows = (data ?? []) as Record<string, unknown>[];
           all.push(...rows);
           if (rows.length < pageSize) break;
         }
@@ -323,8 +310,8 @@ export default async function CollectorsPage({
     playlistCountByCollector.set(c, (playlistCountByCollector.get(c) ?? 0) + 1);
   }
 
-  const compareRows = (results.compareToday.data ?? []) as any[];
-  const sparkRows = (results.spark14.data ?? []) as any[];
+  const compareRows = (results.compareToday.data ?? []) as Record<string, unknown>[];
+  const sparkRows = (results.spark14.data ?? []) as Record<string, unknown>[];
   const artistCountRows = (results.artistCounts.data ?? []) as Array<{ collector: string; artist_count: number }>;
 
   const sparkByCollector = new Map<string, { rev: number[]; streams: number[]; tracks: number[] }>();
@@ -343,7 +330,7 @@ export default async function CollectorsPage({
   for (const r of artistCountRows) {
     const c = String(r.collector ?? "").toUpperCase();
     if (!artistCountByCollector.has(c)) continue;
-    artistCountByCollector.set(c, Number((r as any).artist_count ?? 0));
+    artistCountByCollector.set(c, Number(r.artist_count ?? 0));
   }
 
   const summary: CollectorSummaryRow[] = COLLECTORS.map((c) => {
@@ -428,7 +415,7 @@ export default async function CollectorsPage({
           600,
         );
 
-        return ((topRows ?? []) as any[]).map((r) => ({
+        return ((topRows ?? []) as Record<string, unknown>[]).map((r) => ({
           playlist_key: String(r.playlist_key),
           display_name: String(nameByKey.get(String(r.playlist_key)) ?? r.playlist_key),
           est_revenue_daily_net: r.est_revenue_daily_net == null ? null : Number(r.est_revenue_daily_net),
@@ -452,7 +439,7 @@ export default async function CollectorsPage({
     return keys.map((k) => String(nameByKey.get(String(k)) ?? k));
   };
 
-  const collectorTracks = ((results.collectorTracks.data ?? []) as any[]).map((r): CollectorTrackRow => ({
+  const collectorTracks = ((results.collectorTracks.data ?? []) as Record<string, unknown>[]).map((r): CollectorTrackRow => ({
     isrc: String(r.isrc),
     name: r.name == null ? null : String(r.name),
     release_date: r.release_date == null ? null : String(r.release_date),

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
 import { cachedQuery } from "@/lib/supabase/cache";
+import { CACHE_TTL_5MIN, CACHE_TTL_24H } from "@/lib/constants";
+import { logError } from "@/lib/logger";
 
 // This route is querystring-driven and therefore dynamic; cache via cachedQuery keyed by latest run.
 export const dynamic = "force-dynamic";
@@ -28,7 +30,7 @@ export async function GET(request: NextRequest) {
           .limit(1)
           .maybeSingle(),
       "search-stats-latest-run-date",
-      300,
+      CACHE_TTL_5MIN,
     );
     const latestRunDate = (latestRun as { date?: string } | null)?.date ?? null;
 
@@ -70,14 +72,14 @@ export async function GET(request: NextRequest) {
         return { data: null, error: new Error("Invalid type") };
       },
       cacheKey,
-      86400,
+      CACHE_TTL_24H,
     );
 
     if (payload) return NextResponse.json(payload);
 
     return NextResponse.json({ error: "Invalid type" }, { status: 400 });
   } catch (error) {
-    console.error("Search stats error:", error);
+    logError("Search stats error", error);
     return NextResponse.json({ error: "Failed to fetch stats" }, { status: 500 });
   }
 }

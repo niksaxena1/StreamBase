@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { SAVED_FEEDBACK_MS } from "@/lib/constants";
 
 export function SAISettingsToggle() {
   const [saiEnabled, setSaiEnabled] = useState(true);
@@ -47,7 +48,7 @@ export function SAISettingsToggle() {
       }
 
       setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
+      setTimeout(() => setSaved(false), SAVED_FEEDBACK_MS);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update setting");
       setSaiEnabled(!newValue); // Revert on error

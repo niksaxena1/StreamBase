@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Activity, Search, X, TrendingUp, TrendingDown, ArrowRightLeft } from "lucide-react";
+import { Activity, Search, X } from "lucide-react";
 
 import { GlassTable, TableCell, TableRow } from "@/components/ui/GlassTable";
 import { SpotlightCard } from "@/components/ui/SpotlightCard";
@@ -12,7 +12,7 @@ import { DailyStreamsWithMAChart } from "@/components/charts/DailyStreamsWithMAC
 import { MonthlyBarChart } from "@/components/charts/MonthlyBarChart";
 import { Sparkline } from "@/components/charts/Sparkline";
 import { StatCard } from "@/components/StatCard";
-import { formatDateISO, formatDateOrdinalDMonYYYY, formatInt, formatUsd2 } from "@/lib/format";
+import { formatDateISO, formatInt, formatUsd2 } from "@/lib/format";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
 import { slugifyForFilename, todayIsoDate } from "@/lib/csv";
 import {
@@ -31,110 +31,10 @@ import { IconButton } from "@/components/ui/Button";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { useMetric } from "@/components/metrics/MetricContext";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
-import { Modal } from "@/components/ui/Modal";
 import { useChartStartDate } from "@/components/charts/ChartStartDateContext";
 import { filterDailySeriesFromIsoDate } from "@/components/charts/chartUtils";
+import { computeDailyRollingAvg7, computeRollingAvg7 } from "@/components/charts/chartUtils";
 import { useLongPress } from "@/components/charts/useLongPress";
-
-type Metric = "streams" | "revenue" | "tracks";
-
-const COLLECTOR_ORDER = ["A", "K", "N", "PL", "TG", "NL"] as const;
-
-const GRANULARITIES = ["daily", "weekly", "monthly", "quarterly", "yearly"] as const;
-
-const COLLECTORS_DETAILS_STORAGE = {
-  playlistsOpen: "sb:collectors:details:playlists_open",
-  tracksOpen: "sb:collectors:details:tracks_open",
-} as const;
-
-type DrillPlaylistItem = {
-  playlist_key: string;
-  display_name: string;
-  spotify_playlist_image_url: string | null;
-  playlist_type: string | null;
-  track_count: number;
-  total_streams_cumulative: number | null;
-  daily_streams_net: number | null;
-  est_revenue_total: number | null;
-  est_revenue_daily_net: number | null;
-};
-type DrillArtistItem = {
-  artist_id: string;
-  name: string | null;
-  image_url: string | null;
-  track_count: number;
-  total_streams_cumulative: number;
-  daily_streams_delta: number;
-};
-type DrillTrackItem = {
-  isrc: string;
-  name: string | null;
-  album_image_url: string | null;
-  artist_names: string[] | null;
-  artist_ids: string[] | null;
-  total_streams_cumulative: number | null;
-  daily_streams_delta: number | null;
-};
-
-function parseDrillPlaylistItem(x: unknown): DrillPlaylistItem | null {
-  if (!x || typeof x !== "object") return null;
-  const o = x as Record<string, unknown>;
-  const key = String(o.playlist_key ?? "").trim();
-  if (!key) return null;
-  return {
-    playlist_key: key,
-    display_name: String(o.display_name ?? key),
-    spotify_playlist_image_url: (o.spotify_playlist_image_url ?? null) as string | null,
-    playlist_type: (o.playlist_type ?? null) as string | null,
-    track_count: Number(o.track_count ?? 0) || 0,
-    total_streams_cumulative: o.total_streams_cumulative == null ? null : Number(o.total_streams_cumulative),
-    daily_streams_net: o.daily_streams_net == null ? null : Number(o.daily_streams_net),
-    est_revenue_total: o.est_revenue_total == null ? null : Number(o.est_revenue_total),
-    est_revenue_daily_net: o.est_revenue_daily_net == null ? null : Number(o.est_revenue_daily_net),
-  };
-}
-
-function parseDrillArtistItem(x: unknown): DrillArtistItem | null {
-  if (!x || typeof x !== "object") return null;
-  const o = x as Record<string, unknown>;
-  const id = String(o.artist_id ?? "").trim();
-  if (!id) return null;
-  return {
-    artist_id: id,
-    name: (o.name ?? null) as string | null,
-    image_url: (o.image_url ?? null) as string | null,
-    track_count: Number(o.track_count ?? 0) || 0,
-    total_streams_cumulative: Number(o.total_streams_cumulative ?? 0) || 0,
-    daily_streams_delta: Number(o.daily_streams_delta ?? 0) || 0,
-  };
-}
-
-function parseDrillTrackItem(x: unknown): DrillTrackItem | null {
-  if (!x || typeof x !== "object") return null;
-  const o = x as Record<string, unknown>;
-  const isrc = String(o.isrc ?? "").trim();
-  if (!isrc) return null;
-  return {
-    isrc,
-    name: (o.name ?? null) as string | null,
-    album_image_url: (o.album_image_url ?? null) as string | null,
-    artist_names: (o.artist_names ?? null) as string[] | null,
-    artist_ids: (o.artist_ids ?? null) as string[] | null,
-    total_streams_cumulative: o.total_streams_cumulative == null ? null : Number(o.total_streams_cumulative),
-    daily_streams_delta: o.daily_streams_delta == null ? null : Number(o.daily_streams_delta),
-  };
-}
-
-const COLLECTORS_COMPARISON_STORAGE = {
-  collectors: "sb:collectors:comparison:collectors",
-  mode: "sb:collectors:comparison:mode",
-  granularity: "sb:collectors:comparison:granularity",
-} as const;
-
-const COLLECTORS_MONTHLY_ACTUAL_REVENUE_STORAGE = {
-  visible: "sb:collectors:monthly:actual_revenue_visible",
-} as const;
-
 import {
   readStoredBool,
   writeStoredBool,
@@ -142,236 +42,47 @@ import {
   writeStoredString,
 } from "@/lib/storage";
 
-// Helper to get ISO week number (weeks start Monday)
-function getISOWeek(date: Date): { year: number; week: number } {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  const dayNum = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  const weekNo = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
-  return { year: d.getUTCFullYear(), week: weekNo };
-}
+import {
+  COLLECTOR_ORDER,
+  GRANULARITIES,
+  COLLECTORS_DETAILS_STORAGE,
+  COLLECTORS_COMPARISON_STORAGE,
+  COLLECTORS_MONTHLY_ACTUAL_REVENUE_STORAGE,
+  DRILL_PAGE_SIZE,
+  isCollectorKey,
+  type Metric,
+  type DrillKind,
+  type DrillPlaylistItem,
+  type DrillArtistItem,
+  type DrillTrackItem,
+  type DateBreakdownCollector,
+} from "./collectorsTypes";
 
-// Helper to get quarter from date
-function getQuarter(date: Date): { year: number; quarter: number } {
-  return { year: date.getFullYear(), quarter: Math.floor(date.getMonth() / 3) + 1 };
-}
+export type {
+  CollectorSummaryRow,
+  CollectorSeriesPoint,
+  TopPlaylistRow,
+  CollectorTrackRow,
+} from "./collectorsTypes";
 
-// Aggregate daily data into buckets based on granularity
-function aggregateByGranularity(
-  data: CollectorDailyData[],
-  granularity: Granularity,
-  selectedCollectors: string[],
-  payoutPerStreamUsd: number,
-): CollectorDailyData[] {
-  if (granularity === "daily") return data;
+import type {
+  CollectorSummaryRow,
+  CollectorSeriesPoint,
+  TopPlaylistRow,
+  CollectorTrackRow,
+} from "./collectorsTypes";
 
-  // Group by collector and bucket
-  const buckets = new Map<string, Map<string, { streams: number; revenue: number; firstTrackCount: number; lastTrackCount: number; lastDate: string }>>();
+import {
+  parseDrillPlaylistItem,
+  parseDrillArtistItem,
+  parseDrillTrackItem,
+  aggregateByGranularity,
+  aggregateMonthlyDelta,
+} from "./collectorsUtils";
 
-  for (const row of data) {
-    if (!selectedCollectors.includes(row.collector)) continue;
-
-    const date = new Date(row.date);
-    let bucketKey: string;
-
-    switch (granularity) {
-      case "weekly": {
-        const { year, week } = getISOWeek(date);
-        bucketKey = `${year}-W${String(week).padStart(2, "0")}`;
-        break;
-      }
-      case "monthly":
-        bucketKey = row.date.substring(0, 7); // yyyy-mm
-        break;
-      case "quarterly": {
-        const { year, quarter } = getQuarter(date);
-        bucketKey = `Q${quarter} ${year}`;
-        break;
-      }
-      case "yearly":
-        bucketKey = row.date.substring(0, 4); // yyyy
-        break;
-      default:
-        bucketKey = row.date;
-    }
-
-    const collectorKey = `${row.collector}|${bucketKey}`;
-
-    if (!buckets.has(collectorKey)) {
-      buckets.set(collectorKey, new Map());
-    }
-
-    const existing = buckets.get(collectorKey)!.get(bucketKey);
-    if (!existing) {
-      buckets.get(collectorKey)!.set(bucketKey, {
-        streams: Number(row.daily_streams_net ?? 0),
-        revenue: Number(row.daily_streams_net ?? 0) * payoutPerStreamUsd,
-        firstTrackCount: Number(row.track_count ?? 0),
-        lastTrackCount: Number(row.track_count ?? 0),
-        lastDate: row.date,
-      });
-    } else {
-      existing.streams += Number(row.daily_streams_net ?? 0);
-      existing.revenue += Number(row.daily_streams_net ?? 0) * payoutPerStreamUsd;
-      // Update last track count if this date is later
-      if (row.date > existing.lastDate) {
-        existing.lastTrackCount = Number(row.track_count ?? 0);
-        existing.lastDate = row.date;
-      }
-    }
-  }
-
-  // Convert buckets back to CollectorDailyData format
-  const result: CollectorDailyData[] = [];
-
-  for (const [collectorKey, bucketMap] of buckets) {
-    const collector = collectorKey.split("|")[0];
-
-    for (const [bucketKey, values] of bucketMap) {
-      result.push({
-        date: bucketKey, // Use bucket key as the "date" for display
-        collector,
-        daily_streams_net: values.streams,
-        est_revenue_daily_net: values.revenue,
-        track_count: values.lastTrackCount - values.firstTrackCount, // Net track change in bucket
-      });
-    }
-  }
-
-  // Sort by date/bucket key ascending
-  result.sort((a, b) => a.date.localeCompare(b.date));
-
-  return result;
-}
-
-import { computeDailyRollingAvg7, computeRollingAvg7 } from "@/components/charts/chartUtils";
-
-function aggregateMonthlyDelta(
-  seriesDesc: CollectorSeriesPoint[],
-  metric: "revenue" | "streams" | "tracks",
-  payoutPerStreamUsd: number,
-): Array<{ month: string; value: number; projectedExtra?: number; projectedTotal?: number; daysWithData?: number; totalDaysInMonth?: number }> {
-  // seriesDesc is newest-first, so reverse to get oldest-first for easier aggregation
-  const asc = [...seriesDesc].reverse();
-
-  const monthlyMap = new Map<string, number>();
-  const daysPerMonth = new Map<string, Set<string>>();
-
-  for (let i = 0; i < asc.length; i++) {
-    const cur = asc[i];
-    // `CollectorsPage` already shifts DB run dates → data dates before passing into this client.
-    // So `cur.date` here is the *data date* (YYYY-MM-DD).
-    const curDataDate = cur.date;
-    const curMonth = curDataDate.substring(0, 7); // yyyy-mm from data date
-
-    // Track unique dates per month for projection calculation
-    if (!daysPerMonth.has(curMonth)) daysPerMonth.set(curMonth, new Set());
-    daysPerMonth.get(curMonth)!.add(curDataDate);
-
-    const prev = i > 0 ? asc[i - 1] : null;
-
-    // Get the delta for this day
-    let delta = 0;
-    if (metric === "revenue") {
-      const curTotal = Number(cur.total_streams_cumulative ?? 0);
-      const prevTotal = prev ? Number(prev.total_streams_cumulative ?? 0) : curTotal;
-      const dailyStreams = i > 0 ? Math.max(0, curTotal - prevTotal) : 0;
-      delta = dailyStreams * payoutPerStreamUsd;
-    } else if (metric === "streams") {
-      const curTotal = Number(cur.total_streams_cumulative ?? 0);
-      const prevTotal = prev ? Number(prev.total_streams_cumulative ?? 0) : curTotal;
-      delta = i > 0 ? Math.max(0, curTotal - prevTotal) : 0;
-    } else if (metric === "tracks") {
-      // For tracks, calculate the delta from previous day
-      const curTracks = Number(cur.track_count ?? 0);
-      const prevTracks = prev ? Number(prev.track_count ?? 0) : 0;
-      delta = curTracks - prevTracks;
-    }
-
-    // Add to the month's total
-    const current = monthlyMap.get(curMonth) ?? 0;
-    monthlyMap.set(curMonth, current + delta);
-  }
-
-  // Convert to array and sort by month
-  const result: Array<{ month: string; value: number; projectedExtra?: number; projectedTotal?: number; daysWithData?: number; totalDaysInMonth?: number }> = Array.from(monthlyMap.entries())
-    .map(([month, value]) => ({ month, value }))
-    .sort((a, b) => a.month.localeCompare(b.month));
-
-  // Compute projection for the latest (current/incomplete) month via linear extrapolation
-  // Skip projection for tracks metric (only show for revenue/streams)
-  if (metric !== "tracks" && result.length > 0) {
-    const last = result[result.length - 1];
-    const [yearStr, monthStr] = last.month.split("-");
-    const totalDays = new Date(Number(yearStr), Number(monthStr), 0).getDate();
-    const daysWithData = daysPerMonth.get(last.month)?.size ?? 0;
-
-    if (daysWithData > 0 && daysWithData < totalDays && last.value > 0) {
-      const projected = (last.value / daysWithData) * totalDays;
-      last.projectedExtra = Math.max(0, projected - last.value);
-      last.projectedTotal = projected;
-      last.daysWithData = daysWithData;
-      last.totalDaysInMonth = totalDays;
-    }
-  }
-
-  return result;
-}
-
-export type CollectorSummaryRow = {
-  collector: string;
-  playlists: number;
-  artist_count: number;
-  track_count: number;
-  total_streams_cumulative: number;
-  daily_streams_net: number;
-  est_revenue_total: number;
-  est_revenue_daily_net: number;
-  // comparison deltas for ranking view
-  daily_streams_delta_yday: number | null;
-  daily_streams_delta_ma7: number | null;
-  est_revenue_daily_delta_yday: number | null;
-  est_revenue_daily_delta_ma7: number | null;
-  track_count_delta_yday: number | null;
-  track_count_delta_ma7: number | null;
-  // sparkline data (newest-first)
-  spark_rev_daily?: number[];
-  spark_streams_daily?: number[];
-  spark_tracks?: number[];
-};
-
-export type CollectorSeriesPoint = {
-  date: string; // ISO yyyy-mm-dd
-  track_count: number;
-  total_streams_cumulative: number;
-  daily_streams_net: number;
-  est_revenue_total: number;
-  est_revenue_daily_net: number;
-};
-
-export type TopPlaylistRow = {
-  playlist_key: string;
-  display_name: string;
-  est_revenue_daily_net: number | null;
-  daily_streams_net: number | null;
-  missing_streams_track_count: number | null;
-};
-
-export type CollectorTrackRow = {
-  isrc: string;
-  name: string | null;
-  release_date: string | null;
-  album_image_url: string | null;
-  artist_names: string[] | null;
-  artist_ids: string[] | null;
-  playlist_keys: string[] | null;
-  playlist_names: string[] | null;
-  distro_playlist_keys: string[] | null;
-  distro_playlist_names: string[] | null;
-  total_streams_cumulative: number | null;
-  daily_streams_delta: number | null;
-};
+import { CollectorDrilldownModal } from "./CollectorDrilldownModal";
+import { CollectorForecastModal } from "./CollectorForecastModal";
+import { CollectorDateBreakdownModal } from "./CollectorDateBreakdownModal";
 
 export function CollectorsClient(props: {
   latestDate: string | null;
@@ -379,16 +90,16 @@ export function CollectorsClient(props: {
   selectedCollector: string;
   rangeDays: number;
   summary: CollectorSummaryRow[];
-  seriesDesc: CollectorSeriesPoint[]; // newest-first
-  topPlaylists: TopPlaylistRow[]; // for latestDate
+  seriesDesc: CollectorSeriesPoint[];
+  topPlaylists: TopPlaylistRow[];
   selectedPlaylistsMeta: Array<{
     playlist_key: string;
     display_name: string;
     spotify_playlist_image_url: string | null;
   }>;
-  collectorTracks: CollectorTrackRow[]; // for latestDate (all tracks for selected collector)
-  allCollectorsSeries: CollectorDailyData[]; // for comparison chart (date-range filtered)
-  allCollectorsAllTime: CollectorDailyData[]; // for comparison chart (all-time, for non-daily granularities)
+  collectorTracks: CollectorTrackRow[];
+  allCollectorsSeries: CollectorDailyData[];
+  allCollectorsAllTime: CollectorDailyData[];
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -414,13 +125,10 @@ export function CollectorsClient(props: {
   const [forecastSaving, setForecastSaving] = useState(false);
   const [forecastError, setForecastError] = useState<string | null>(null);
 
-  // Metric is global now (top bar toggle); legacy `metric` query param is ignored.
-  
-  // Comparison chart state - initialize from URL or defaults
   const [comparisonCollectors, setComparisonCollectors] = useState<string[]>(() => {
     const urlCollectors = searchParams.get("collectors");
     if (urlCollectors) {
-      const fromUrl = urlCollectors.split(",").filter((c) => COLLECTOR_ORDER.includes(c as any));
+      const fromUrl = urlCollectors.split(",").filter(isCollectorKey);
       if (fromUrl.length) return fromUrl;
     }
     return ["PL", "TG"];
@@ -436,17 +144,15 @@ export function CollectorsClient(props: {
 
   const [granularity, setGranularity] = useSharedGranularity(COLLECTORS_COMPARISON_STORAGE.granularity);
 
-  // If URL has a granularity param, override the localStorage value on first mount.
   useEffect(() => {
     const urlGranularity = searchParams.get("granularity");
     if (urlGranularity && GRANULARITIES.includes(urlGranularity as Granularity)) {
       setGranularity(urlGranularity as Granularity);
     }
+    // Intentional: sync URL param on mount; don't re-run on setGranularity changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Restore comparison settings from localStorage after mount (only when URL
-  // didn't already specify them) to avoid SSR/client hydration mismatches.
   useEffect(() => {
     let changed = false;
 
@@ -461,7 +167,7 @@ export function CollectorsClient(props: {
     if (!searchParams.get("collectors")) {
       const stored = readStoredString(COLLECTORS_COMPARISON_STORAGE.collectors);
       if (stored) {
-        const fromStored = stored.split(",").filter((c) => COLLECTOR_ORDER.includes(c as any));
+        const fromStored = stored.split(",").filter(isCollectorKey);
         if (fromStored.length) {
           setComparisonCollectors(fromStored);
           changed = true;
@@ -470,17 +176,15 @@ export function CollectorsClient(props: {
     }
 
     void changed;
+    // Intentional: restore storage on mount; don't use setters as dependencies (would loop)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Restore collapsible state (best-effort).
-  // This runs after mount, which avoids SSR accessing localStorage.
   useEffect(() => {
     setOpenPlaylists(readStoredBool(COLLECTORS_DETAILS_STORAGE.playlistsOpen, true));
     setOpenTracks(readStoredBool(COLLECTORS_DETAILS_STORAGE.tracksOpen, true));
   }, []);
 
-  // Persist collapsible state.
   useEffect(() => {
     writeStoredBool(COLLECTORS_DETAILS_STORAGE.playlistsOpen, openPlaylists);
   }, [openPlaylists]);
@@ -489,7 +193,6 @@ export function CollectorsClient(props: {
     writeStoredBool(COLLECTORS_DETAILS_STORAGE.tracksOpen, openTracks);
   }, [openTracks]);
   
-  // Update URL when comparison settings change.
   // NOTE: searchParams and router are intentionally omitted from deps to avoid a
   // self-triggering loop (router.replace updates searchParams which re-fires this effect).
   useEffect(() => {
@@ -507,7 +210,6 @@ export function CollectorsClient(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [comparisonCollectors, comparisonMode, granularity]);
 
-  // Actual monthly revenue (overlay markers + editable values).
   useEffect(() => {
     if (metric !== "revenue") return;
     let cancelled = false;
@@ -522,11 +224,13 @@ export function CollectorsClient(props: {
         const obj = json && typeof json === "object" ? (json as Record<string, unknown>) : null;
         if (!res.ok || obj?.ok !== true) return;
 
-        const items = Array.isArray(obj?.items) ? (obj?.items as any[]) : [];
+        const items = Array.isArray(obj?.items) ? (obj.items as unknown[]) : [];
         const next: Record<string, number> = {};
         for (const it of items) {
-          const month = String(it?.month ?? "").trim();
-          const amount = Number(it?.amount_usd);
+          if (!it || typeof it !== "object") continue;
+          const rec = it as Record<string, unknown>;
+          const month = String(rec.month ?? "").trim();
+          const amount = Number(rec.amount_usd);
           if (!/^\d{4}-\d{2}$/.test(month)) continue;
           if (!Number.isFinite(amount)) continue;
           next[month] = amount;
@@ -543,14 +247,11 @@ export function CollectorsClient(props: {
     };
   }, [metric, props.selectedCollector]);
 
-  // Compute aggregated data based on granularity
   const comparisonChartData = useMemo(() => {
-    // For daily, use the date-range filtered data; for others, use all-time
     const sourceData = granularity === "daily" ? props.allCollectorsSeries : props.allCollectorsAllTime;
     return aggregateByGranularity(sourceData, granularity, comparisonCollectors, streamPayoutPerStreamUsd);
   }, [granularity, props.allCollectorsSeries, props.allCollectorsAllTime, comparisonCollectors, streamPayoutPerStreamUsd]);
 
-  // Remember last collector (like playlist dashboard)
   useEffect(() => {
     try {
       localStorage.setItem("sb:last_collector", props.selectedCollector);
@@ -561,11 +262,9 @@ export function CollectorsClient(props: {
 
   const ranked = useMemo(() => {
     const rows = [...props.summary];
-    // Sort by fixed collector order
     rows.sort((a, b) => {
-      const aIndex = COLLECTOR_ORDER.indexOf(a.collector as any);
-      const bIndex = COLLECTOR_ORDER.indexOf(b.collector as any);
-      // If collector not in order list, put at end
+      const aIndex = (COLLECTOR_ORDER as readonly string[]).indexOf(a.collector);
+      const bIndex = (COLLECTOR_ORDER as readonly string[]).indexOf(b.collector);
       if (aIndex === -1 && bIndex === -1) return 0;
       if (aIndex === -1) return 1;
       if (bIndex === -1) return -1;
@@ -578,8 +277,8 @@ export function CollectorsClient(props: {
     const filtered = filterDailySeriesFromIsoDate(props.allCollectorsSeries ?? [], chartStartDateIso);
     const byCollector = new Map<string, CollectorDailyData[]>();
     for (const row of filtered) {
-      const c = String((row as any)?.collector ?? "").trim();
-      const d = String((row as any)?.date ?? "").trim();
+      const c = String(row.collector ?? "").trim();
+      const d = String(row.date ?? "").trim();
       if (!c || !d) continue;
       const arr = byCollector.get(c) ?? [];
       arr.push(row);
@@ -594,20 +293,19 @@ export function CollectorsClient(props: {
       const rows = byCollector.get(collector) ?? [];
       if (!rows.length) return { streams: null as number[] | null, revenue: null as number[] | null, tracks: null as number[] | null };
 
-      const streams = rows.map((r) => Number((r as any)?.daily_streams_net ?? 0)).filter((n) => Number.isFinite(n));
+      const streams = rows.map((r) => Number(r.daily_streams_net ?? 0)).filter((n) => Number.isFinite(n));
       const revenue = rows
         .map((r) => {
-          const v = (r as any)?.est_revenue_daily_net;
-          const n = v == null ? Number((r as any)?.daily_streams_net ?? 0) * streamPayoutPerStreamUsd : Number(v);
+          const v = r.est_revenue_daily_net;
+          const n = v == null ? Number(r.daily_streams_net ?? 0) * streamPayoutPerStreamUsd : Number(v);
           return Number.isFinite(n) ? n : null;
         })
         .filter((n): n is number => n !== null);
 
-      // Daily track change (delta) from track_count totals
       const tracksDelta: number[] = [];
       for (let i = 1; i < rows.length; i++) {
-        const cur = Number((rows[i] as any)?.track_count ?? 0);
-        const prev = Number((rows[i - 1] as any)?.track_count ?? 0);
+        const cur = Number(rows[i].track_count ?? 0);
+        const prev = Number(rows[i - 1].track_count ?? 0);
         const d = Number.isFinite(cur) && Number.isFinite(prev) ? cur - prev : 0;
         tracksDelta.push(d);
       }
@@ -624,7 +322,6 @@ export function CollectorsClient(props: {
     for (const c of COLLECTOR_ORDER) {
       out.set(c, build(c));
     }
-    // Also include any non-standard collector keys present.
     for (const c of byCollector.keys()) {
       if (!out.has(c)) out.set(c, build(c));
     }
@@ -667,7 +364,6 @@ export function CollectorsClient(props: {
     const tracksDailyDeltaDesc = datesDesc.map((d, i) => {
       const cur = Number(props.seriesDesc[i]?.track_count ?? 0);
       const prev = Number(props.seriesDesc[i + 1]?.track_count ?? 0);
-      // oldest->newest diff is more intuitive, but we keep newest-first: compare to next older day
       return { date: d, daily: i + 1 < props.seriesDesc.length ? cur - prev : 0 };
     });
 
@@ -684,12 +380,10 @@ export function CollectorsClient(props: {
         cumulative: computeRollingAvg7(tracksTotalDesc),
         daily: computeDailyRollingAvg7(tracksDailyDeltaDesc),
       },
-    } as const;
+    };
   }, [props.seriesDesc, streamPayoutPerStreamUsd]);
 
   const monthlyData = useMemo(() => {
-    // Get all available historical data (not limited by range selection)
-    // This uses the full seriesDesc for unfiltered monthly aggregation
     return {
       revenue: aggregateMonthlyDelta(props.seriesDesc, "revenue", streamPayoutPerStreamUsd),
       streams: aggregateMonthlyDelta(props.seriesDesc, "streams", streamPayoutPerStreamUsd),
@@ -712,14 +406,12 @@ export function CollectorsClient(props: {
   const cumulativeLabel =
     metric === "revenue" ? "Est. revenue (cumulative)" : metric === "streams" ? "Streams (total)" : "Tracks";
 
-  const valueFormat = metric === "revenue" ? "usd" : "int";
-  const yTickFormat = metric === "revenue" ? "usd_compact" : metric === "streams" ? "k" : "int";
+  const valueFormat: "int" | "usd" = metric === "revenue" ? "usd" : "int";
+  const yTickFormat: "k" | "int" | "usd_compact" = metric === "revenue" ? "usd_compact" : metric === "streams" ? "k" : "int";
   const chartColor = metric === "tracks" ? "#3b82f6" : metric === "revenue" ? "#10b981" : "var(--sb-accent)";
 
   const payoutPerStreamUsd = streamPayoutPerStreamUsd;
 
-  // Comparison table "Value" column is stream-based when global metric is "tracks"
-  // (since we already have a dedicated Tracks column).
   const comparisonTableMetric: "streams" | "revenue" = metric === "revenue" ? "revenue" : "streams";
   const comparisonTableMetricLabel = comparisonTableMetric === "revenue" ? "Est. revenue" : "Streams";
   const comparisonTableHeaderLabel = comparisonTableMetric === "revenue" ? "REVENUE" : "STREAMS";
@@ -742,7 +434,6 @@ export function CollectorsClient(props: {
           ? (r.daily_streams_delta_ma7 == null ? null : Number(r.daily_streams_delta_ma7) * payoutPerStreamUsd)
           : r.daily_streams_delta_ma7;
 
-      // Calculate actual values from deltas
       const ydayValue = deltaYday != null ? value - deltaYday : null;
       const ma7Value = deltaMa7 != null ? value - deltaMa7 : null;
 
@@ -780,8 +471,6 @@ export function CollectorsClient(props: {
   const [trackQuery, setTrackQuery] = useState("");
   const [trackSort, setTrackSort] = useState<TrackSort>("delta_desc");
 
-  // On mobile, ISRC column is hidden and the Release Date column toggles
-  // between Release date and ISRC via long press.
   const [showIsrcOnMobile, setShowIsrcOnMobile] = useState(false);
   const lpFiredRef = useRef(false);
 
@@ -797,33 +486,13 @@ export function CollectorsClient(props: {
     onPointerCancel: releaseLpCancel,
   } = useLongPress({ onLongPress: toggleIsrcRelease });
 
-  // Tracks table (in the collector details section) is stream-based data. When the global
-  // metric is "tracks", we still show streams here (values + colors), matching other drilldowns.
   const tracksTableMetric: "streams" | "revenue" = metric === "revenue" ? "revenue" : "streams";
   const tracksTableIsRevenue = tracksTableMetric === "revenue";
   const tracksTableTotalLabel = tracksTableIsRevenue ? "Est. revenue (total)" : "Streams (total)";
   const tracksTableDailyLabel = tracksTableIsRevenue ? "Est. revenue (daily)" : "Streams (daily)";
 
-  // Date breakdown modal state (click-to-drill-down on chart)
-  type DateBreakdownTrack = {
-    isrc: string;
-    name: string | null;
-    album_image_url: string | null;
-    artist_names: string[] | null;
-    artist_ids: string[] | null;
-    daily_streams_delta: number | null;
-    total_streams_cumulative: number | null;
-  };
-  type DateBreakdownRosterEntry = DateBreakdownTrack & { cumulative_streams: number };
-  type DateBreakdownCollector = {
-    daily_streams: number;
-    avg7_streams: number;
-    delta_pct: number | null;
-    top_tracks: DateBreakdownTrack[];
-    roster_additions: DateBreakdownRosterEntry[];
-    roster_removals: DateBreakdownRosterEntry[];
-    roster_cumulative_impact: number;
-  };
+  /* ── Date breakdown modal state ──────────────────────────────── */
+
   const [breakdownOpen, setBreakdownOpen] = useState(false);
   const [breakdownDate, setBreakdownDate] = useState<string | null>(null);
   const [breakdownData, setBreakdownData] = useState<Record<string, DateBreakdownCollector> | null>(null);
@@ -873,7 +542,8 @@ export function CollectorsClient(props: {
     return () => { cancelled = true; };
   }, [breakdownOpen, breakdownDate, comparisonCollectors]);
 
-  type DrillKind = "playlists" | "artists" | "tracks";
+  /* ── Drilldown modal state ───────────────────────────────────── */
+
   const [drillOpen, setDrillOpen] = useState(false);
   const [drillKind, setDrillKind] = useState<DrillKind>("tracks");
   const [drillCollector, setDrillCollector] = useState<string | null>(null);
@@ -884,24 +554,6 @@ export function CollectorsClient(props: {
   const [drillOffset, setDrillOffset] = useState(0);
   const [drillItems, setDrillItems] = useState<unknown[]>([]);
 
-  const DRILL_PAGE_SIZE = 200;
-
-  // Effective metric for drilldowns:
-  // - For Tracks drilldown, global "tracks" behaves like "streams" (values + colors).
-  // - For Playlists/Artists drilldowns, global "tracks" shows track counts.
-  const drillEffectiveMetric: Metric = drillKind === "tracks" && metric === "tracks" ? "streams" : metric;
-  const drillIsTracksMetric = drillEffectiveMetric === "tracks";
-  const drillIsRevenueMetric = drillEffectiveMetric === "revenue";
-  const drillIsStreamsMetric = drillEffectiveMetric === "streams";
-  const drillTracksColorClass = "text-blue-600 dark:text-blue-400 font-medium";
-  const drillStreamsNumberClass = "sb-positive font-medium";
-  const drillRevenueNumberClass = "font-medium";
-  const drillMetricNumberClass = drillIsRevenueMetric
-    ? drillRevenueNumberClass
-    : drillIsStreamsMetric
-      ? drillStreamsNumberClass
-      : drillTracksColorClass;
-
   function openDrill(collector: string, kind: DrillKind) {
     setDrillCollector(collector);
     setDrillKind(kind);
@@ -911,13 +563,6 @@ export function CollectorsClient(props: {
     setDrillOffset(0);
     setDrillDone(false);
     setDrillOpen(true);
-  }
-
-  function formatMonthLong(monthKey: string): string {
-    // monthKey: YYYY-MM
-    const d = new Date(`${monthKey}-01T00:00:00Z`);
-    if (!Number.isFinite(d.getTime())) return monthKey;
-    return d.toLocaleDateString("en-US", { month: "long", year: "numeric" });
   }
 
   function openRevenueForecast(monthKey: string) {
@@ -996,7 +641,7 @@ export function CollectorsClient(props: {
           const err = obj?.error;
           throw new Error(typeof err === "string" ? err : `Request failed (${res.status})`);
         }
-        const newItems = Array.isArray(obj?.items) ? (obj?.items as unknown[]) : [];
+        const newItems = Array.isArray(obj?.items) ? (obj.items as unknown[]) : [];
         if (!cancelled) {
           setDrillItems((prev) => (drillOffset === 0 ? newItems : [...prev, ...newItems]));
           setDrillDone(Boolean(obj?.done) || newItems.length < DRILL_PAGE_SIZE);
@@ -1027,7 +672,6 @@ export function CollectorsClient(props: {
           return name.includes(q) || key.includes(q);
         });
       }
-      // Sort by metric value (desc) while keeping deterministic ties.
       items = [...items].sort((a, b) => {
         const cmpNum = (x: number | null, y: number | null) => (y ?? -Infinity) - (x ?? -Infinity);
         if (effectiveMetric === "tracks") return (b.track_count ?? 0) - (a.track_count ?? 0) || a.playlist_key.localeCompare(b.playlist_key);
@@ -1054,7 +698,6 @@ export function CollectorsClient(props: {
       return items;
     }
 
-    // tracks
     let items = drillItems.map(parseDrillTrackItem).filter(Boolean) as DrillTrackItem[];
     if (q) {
       items = items.filter((t) => {
@@ -1064,8 +707,6 @@ export function CollectorsClient(props: {
         return name.includes(q) || isrc.includes(q) || artists.includes(q);
       });
     }
-    // When the global metric is "tracks", we still treat this drilldown as streams,
-    // so keep the API-provided ordering (daily delta desc) instead of name sorting.
     return items;
   }, [drillItems, drillKind, drillQuery, metric]);
 
@@ -1112,7 +753,7 @@ export function CollectorsClient(props: {
 
       const cmpNum = (x: number | null, y: number | null, dir: "asc" | "desc") => {
         if (x == null && y == null) return 0;
-        if (x == null) return 1; // nulls last
+        if (x == null) return 1;
         if (y == null) return -1;
         return dir === "asc" ? x - y : y - x;
       };
@@ -1214,7 +855,7 @@ export function CollectorsClient(props: {
 
   return (
     <div className="space-y-6">
-      {/* Middle card: comparison chart + table */}
+      {/* Comparison chart + table */}
       <div className="sb-card p-4 space-y-4">
         <SpotlightCard className="relative p-3 overflow-visible">
           <div className="flex flex-col gap-3">
@@ -1232,7 +873,6 @@ export function CollectorsClient(props: {
               </div>
 
               <div className="flex flex-col items-end gap-2">
-                {/* Mode toggle */}
                 <ChipGroup segmented>
                   {(["combined", "individual", "percentage"] as const).map((m) => (
                     <Chip key={m} segmented selected={comparisonMode === m} onClick={() => setComparisonMode(m)}>
@@ -1241,7 +881,6 @@ export function CollectorsClient(props: {
                   ))}
                 </ChipGroup>
 
-                {/* Dropdowns */}
                 <div className="flex flex-wrap items-center" style={{ gap: "0.2rem" }}>
                   <CollectorMultiSelect selected={comparisonCollectors} onChange={setComparisonCollectors} />
                   <GranularitySelect value={granularity} onChange={setGranularity} />
@@ -1249,7 +888,6 @@ export function CollectorsClient(props: {
               </div>
             </div>
 
-            {/* Legend + note */}
             <div className="flex flex-wrap items-center justify-between gap-2">
               {comparisonMode !== "combined" && comparisonCollectors.length > 0 && (
                 <div className="flex flex-wrap items-center gap-3">
@@ -1271,7 +909,6 @@ export function CollectorsClient(props: {
               )}
             </div>
 
-            {/* Chart */}
             <div className="mt-2 min-h-[260px]">
               <CollectorComparisonChart
                 data={comparisonChartData}
@@ -1284,7 +921,6 @@ export function CollectorsClient(props: {
               />
             </div>
           </div>
-          {/* Decorative background glow (subtle) */}
           <div
             className="pointer-events-none absolute -right-14 -top-14 h-40 w-40 rounded-full opacity-15 blur-3xl"
             style={{ background: "var(--sb-accent)" }}
@@ -1305,7 +941,6 @@ export function CollectorsClient(props: {
             </div>
           </div>
 
-          {/* Table (mobile-friendly): horizontal scroll + sticky first column */}
           <GlassTable
             tableLayout="fixed"
             className="relative"
@@ -1438,7 +1073,9 @@ export function CollectorsClient(props: {
         </div>
       </div>
 
-      <Modal
+      {/* ── Modals ────────────────────────────────────────────── */}
+
+      <CollectorDrilldownModal
         open={drillOpen}
         onClose={() => {
           setDrillOpen(false);
@@ -1448,733 +1085,53 @@ export function CollectorsClient(props: {
           setDrillOffset(0);
           setDrillDone(false);
         }}
-        title={
-          drillCollector ? (
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span className="font-medium">{drillCollector}</span>
-              <span className="opacity-60" style={{ color: "var(--sb-muted)" }}>
-                •
-              </span>
-              <span className="font-medium">
-                {drillKind === "playlists" ? "Playlists" : drillKind === "artists" ? "Artists" : "Tracks"}
-              </span>
-            </div>
-          ) : (
-            "Drilldown"
-          )
-        }
-        subtitle={
-          props.latestDate ? (
-            <span>
-              Data date {formatDateISO(props.latestDate)}{" "}
-              <span className="opacity-60" style={{ color: "var(--sb-muted)" }}>
-                •
-              </span>{" "}
-              Run date <span className="font-mono">{props.latestRunDate}</span>
-            </span>
-          ) : (
-            <span>
-              Run date <span className="font-mono">{props.latestRunDate}</span>
-            </span>
-          )
-        }
-        maxWidthClassName="max-w-6xl"
-      >
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex min-w-[240px] flex-1 items-center gap-2">
-              <div className="relative w-full">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 opacity-60" />
-                <Input
-                  type="text"
-                  value={drillQuery}
-                  onChange={(e) => setDrillQuery(e.target.value)}
-                  placeholder={
-                    drillKind === "playlists"
-                      ? "Filter playlists…"
-                      : drillKind === "artists"
-                        ? "Filter artists…"
-                        : "Filter tracks / artists / ISRC…"
-                  }
-                  className="pl-10 pr-9 py-2 text-sm"
-                />
-                {drillQuery.trim() ? (
-                  <IconButton
-                    type="button"
-                    aria-label="Clear filter"
-                    title="Clear filter"
-                    className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 rounded-md"
-                    onClick={() => setDrillQuery("")}
-                  >
-                    <X className="h-4 w-4" style={{ color: "var(--sb-muted)" }} />
-                  </IconButton>
-                ) : null}
-              </div>
-            </div>
+        drillCollector={drillCollector}
+        drillKind={drillKind}
+        latestDate={props.latestDate}
+        latestRunDate={props.latestRunDate}
+        drillQuery={drillQuery}
+        setDrillQuery={setDrillQuery}
+        filteredSortedDrillItems={filteredSortedDrillItems}
+        drillItemsCount={drillItems.length}
+        drillError={drillError}
+        drillLoading={drillLoading}
+        drillDone={drillDone}
+        onLoadMore={() => setDrillOffset((n) => n + DRILL_PAGE_SIZE)}
+        metric={metric}
+        payoutPerStreamUsd={payoutPerStreamUsd}
+      />
 
-            <div className="text-xs whitespace-nowrap" style={{ color: "var(--sb-muted)" }}>
-              {formatInt(filteredSortedDrillItems.length)} shown{drillQuery.trim() ? ` (filtered from ${formatInt(drillItems.length)})` : ""}
-            </div>
-          </div>
-
-          {drillError ? (
-            <div className="text-xs text-red-600 dark:text-red-400">{drillError}</div>
-          ) : null}
-
-          {drillKind === "playlists" ? (
-            <GlassTable
-              headers={
-                drillIsTracksMetric
-                  ? ["Playlist", "Type", { label: "Tracks", align: "right" }]
-                  : [
-                      "Playlist",
-                      "Type",
-                      { label: drillIsRevenueMetric ? "Total Revenue" : "Total Streams", align: "right" },
-                      { label: drillIsRevenueMetric ? "Daily Revenue" : "Daily Streams", align: "right" },
-                    ]
-              }
-              maxBodyHeightClassName="max-h-[520px]"
-            >
-              {(filteredSortedDrillItems as DrillPlaylistItem[]).map((p) => {
-                const totalStreams = Number(p.total_streams_cumulative ?? 0);
-                const dailyStreams = Number(p.daily_streams_net ?? 0);
-                const totalValue = drillIsRevenueMetric
-                  ? Number(p.est_revenue_total ?? totalStreams * payoutPerStreamUsd)
-                  : totalStreams;
-                const dailyValue = drillIsRevenueMetric
-                  ? Number(p.est_revenue_daily_net ?? dailyStreams * payoutPerStreamUsd)
-                  : dailyStreams;
-
-                return (
-                <TableRow key={String(p.playlist_key)}>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      {p.spotify_playlist_image_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={String(p.spotify_playlist_image_url)}
-                          alt={String(p.display_name ?? p.playlist_key)}
-                          className="h-7 w-7 rounded-full object-cover sb-ring flex-shrink-0"
-                        />
-                      ) : (
-                        <div
-                          className="h-7 w-7 rounded-full sb-ring flex items-center justify-center text-[10px] font-bold flex-shrink-0"
-                          style={{ backgroundColor: "var(--sb-surface)", color: "var(--sb-muted)" }}
-                        >
-                          {String(p.display_name ?? p.playlist_key).trim().slice(0, 1).toUpperCase()}
-                        </div>
-                      )}
-                      <div className="min-w-0">
-                        <Link
-                          href={`/playlists?playlist_key=${encodeURIComponent(String(p.playlist_key))}`}
-                          className="font-medium transition-colors sb-link-hover block truncate"
-                        >
-                          {String(p.display_name ?? p.playlist_key)}
-                        </Link>
-                        <div className="font-mono text-[11px] opacity-50">{String(p.playlist_key)}</div>
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell>{p.playlist_type ? String(p.playlist_type) : <span className="opacity-30">—</span>}</TableCell>
-                  {drillIsTracksMetric ? (
-                    <TableCell numeric className={drillTracksColorClass}>{formatInt(Number(p.track_count ?? 0))}</TableCell>
-                  ) : (
-                    <>
-                      <TableCell numeric className={drillMetricNumberClass} style={drillIsRevenueMetric ? { color: "#10b981" } : undefined}>
-                        {drillIsRevenueMetric ? formatUsd2(totalValue) : formatInt(totalValue)}
-                      </TableCell>
-                      <TableCell numeric className={drillMetricNumberClass} style={drillIsRevenueMetric ? { color: "#10b981" } : undefined}>
-                        {drillIsRevenueMetric ? formatUsd2(dailyValue) : formatInt(dailyValue)}
-                      </TableCell>
-                    </>
-                  )}
-                </TableRow>
-                );
-              })}
-              {!(filteredSortedDrillItems as DrillPlaylistItem[]).length && !drillLoading ? (
-                <TableRow>
-                  <TableCell className="py-10 text-center opacity-50" colSpan={drillIsTracksMetric ? 3 : 4}>
-                    No playlists found.
-                  </TableCell>
-                </TableRow>
-              ) : null}
-            </GlassTable>
-          ) : drillKind === "artists" ? (
-            <GlassTable
-              headers={
-                drillIsTracksMetric
-                  ? [{ label: "Artist" }, { label: "Tracks", align: "right" }]
-                  : [
-                      { label: "Artist" },
-                      { label: "Tracks", align: "right" },
-                      { label: drillIsRevenueMetric ? "Total Revenue" : "Total Streams", align: "right" },
-                      { label: drillIsRevenueMetric ? "Daily Revenue" : "Daily Streams", align: "right" },
-                    ]
-              }
-              maxBodyHeightClassName="max-h-[520px]"
-            >
-              {(filteredSortedDrillItems as DrillArtistItem[]).map((a) => {
-                const totalStreams = Number(a.total_streams_cumulative ?? 0);
-                const dailyStreams = Number(a.daily_streams_delta ?? 0);
-                const totalValue = drillIsRevenueMetric ? totalStreams * payoutPerStreamUsd : totalStreams;
-                const dailyValue = drillIsRevenueMetric ? dailyStreams * payoutPerStreamUsd : dailyStreams;
-
-                return (
-                <TableRow key={String(a.artist_id)}>
-                  <TableCell>
-                    <div className="flex items-center gap-2 min-w-0">
-                      {a.image_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={String(a.image_url)}
-                          alt={String(a.name ?? a.artist_id)}
-                          className="h-7 w-7 rounded-full object-cover sb-ring flex-shrink-0"
-                        />
-                      ) : (
-                        <div className="h-7 w-7 rounded-full sb-ring bg-white/60 dark:bg-white/10 flex-shrink-0" />
-                      )}
-                      <div className="min-w-0">
-                        <Link
-                          href={`/catalog?artist_id=${encodeURIComponent(String(a.artist_id))}`}
-                          className="font-medium transition-colors sb-link-hover block truncate"
-                        >
-                          {String(a.name ?? a.artist_id)}
-                        </Link>
-                        <div className="font-mono text-[11px] opacity-50">{String(a.artist_id)}</div>
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell numeric className={drillIsTracksMetric ? drillTracksColorClass : "font-medium"}>
-                    {formatInt(Number(a.track_count ?? 0))}
-                  </TableCell>
-                  {drillIsTracksMetric ? null : (
-                    <>
-                      <TableCell numeric className={drillMetricNumberClass} style={drillIsRevenueMetric ? { color: "#10b981" } : undefined}>
-                        {drillIsRevenueMetric ? formatUsd2(totalValue) : formatInt(totalValue)}
-                      </TableCell>
-                      <TableCell numeric className={drillMetricNumberClass} style={drillIsRevenueMetric ? { color: "#10b981" } : undefined}>
-                        {drillIsRevenueMetric ? formatUsd2(dailyValue) : formatInt(dailyValue)}
-                      </TableCell>
-                    </>
-                  )}
-                </TableRow>
-                );
-              })}
-              {!(filteredSortedDrillItems as DrillArtistItem[]).length && !drillLoading ? (
-                <TableRow>
-                  <TableCell className="py-10 text-center opacity-50" colSpan={drillIsTracksMetric ? 2 : 4}>
-                    No artists found.
-                  </TableCell>
-                </TableRow>
-              ) : null}
-            </GlassTable>
-          ) : (
-            <GlassTable
-              headers={[
-                "",
-                "Track",
-                "Artists",
-                ...(drillIsTracksMetric
-                  ? []
-                  : [
-                      { label: drillIsRevenueMetric ? "Total Revenue" : "Total Streams", align: "right" as const },
-                      (
-                        <span key="d1" title="Today minus yesterday (based on cumulative streams).">
-                          {drillIsRevenueMetric ? "Daily Revenue" : "Daily Streams"}
-                        </span>
-                      ),
-                    ]),
-              ]}
-              maxBodyHeightClassName="max-h-[520px]"
-            >
-              {(filteredSortedDrillItems as DrillTrackItem[]).map((t) => {
-                const totalStreams = Number(t.total_streams_cumulative ?? 0);
-                const dailyStreams = Number(t.daily_streams_delta ?? 0);
-                const totalValue = drillIsRevenueMetric ? totalStreams * payoutPerStreamUsd : totalStreams;
-                const dailyValue = drillIsRevenueMetric ? dailyStreams * payoutPerStreamUsd : dailyStreams;
-
-                return (
-                <TableRow key={String(t.isrc)}>
-                  <TableCell>
-                    {t.album_image_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={String(t.album_image_url)}
-                        alt="Album cover"
-                        className="h-8 w-8 rounded-lg object-cover sb-ring"
-                      />
-                    ) : (
-                      <div className="h-8 w-8 rounded-lg sb-ring bg-white/60 dark:bg-white/10" />
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <Link
-                      href={`/tracks/${encodeURIComponent(String(t.isrc))}`}
-                      className="font-medium transition-colors sb-link-hover"
-                    >
-                      {String(t.name ?? t.isrc)}
-                    </Link>
-                  </TableCell>
-                  <TableCell className="min-w-[220px]">
-                    {Array.isArray(t.artist_names) && t.artist_names.length ? (
-                      <div className="truncate text-xs opacity-70" style={{ color: "var(--sb-text)" }}>
-                        <ArtistLinks artistNames={t.artist_names} artistIds={Array.isArray(t.artist_ids) ? t.artist_ids : null} />
-                      </div>
-                    ) : (
-                      <span className="opacity-30">—</span>
-                    )}
-                    <div className="font-mono text-[11px] opacity-40" style={{ color: "var(--sb-muted)" }}>
-                      {String(t.isrc)}
-                    </div>
-                  </TableCell>
-                  {drillIsTracksMetric ? null : (
-                    <>
-                      <TableCell numeric className={drillMetricNumberClass} style={drillIsRevenueMetric ? { color: "#10b981" } : undefined}>
-                        {drillIsRevenueMetric ? formatUsd2(totalValue) : formatInt(totalValue)}
-                      </TableCell>
-                      <TableCell
-                        numeric
-                        className={
-                          drillIsRevenueMetric
-                            ? drillMetricNumberClass
-                            : Number(t.daily_streams_delta ?? 0) < 0
-                              ? "text-red-600 dark:text-red-400 font-medium"
-                              : drillStreamsNumberClass
-                        }
-                        style={drillIsRevenueMetric ? { color: "#10b981" } : undefined}
-                      >
-                        {drillIsRevenueMetric
-                          ? formatUsd2(dailyValue)
-                          : `${formatInt(dailyStreams)}`}
-                      </TableCell>
-                    </>
-                  )}
-                </TableRow>
-                );
-              })}
-              {!(filteredSortedDrillItems as DrillTrackItem[]).length && !drillLoading ? (
-                <TableRow>
-                  <TableCell className="py-10 text-center opacity-50" colSpan={drillIsTracksMetric ? 3 : 5}>
-                    No tracks found.
-                  </TableCell>
-                </TableRow>
-              ) : null}
-            </GlassTable>
-          )}
-
-          {!drillDone && !drillLoading ? (
-            <div className="flex items-center justify-center pt-2">
-              <button
-                type="button"
-                className="sb-ring rounded-full bg-white/70 px-4 py-2 text-xs font-medium transition hover:bg-white dark:bg-white/10 dark:hover:bg-white/15"
-                style={{ color: "var(--sb-text)" }}
-                onClick={() => setDrillOffset((n) => n + DRILL_PAGE_SIZE)}
-              >
-                Load more
-              </button>
-            </div>
-          ) : null}
-
-          {drillLoading ? (
-            <div className="text-center text-xs opacity-60" style={{ color: "var(--sb-muted)" }}>
-              Loading…
-            </div>
-          ) : null}
-        </div>
-      </Modal>
-
-      <Modal
+      <CollectorForecastModal
         open={forecastOpen}
         onClose={() => {
           setForecastOpen(false);
           setForecastError(null);
         }}
-        title="Actual revenue"
-        subtitle={
-          forecastMonth ? (
-            <span>
-              {props.selectedCollector} • {formatMonthLong(forecastMonth)}
-            </span>
-          ) : (
-            <span>{props.selectedCollector}</span>
-          )
-        }
-        maxWidthClassName="max-w-lg"
-      >
-        <div className="space-y-3">
-          <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
-            Set the actual revenue for this month (USD). This is shown as a diamond marker on the chart (when enabled).
-          </div>
+        selectedCollector={props.selectedCollector}
+        forecastMonth={forecastMonth}
+        forecastValue={forecastValue}
+        setForecastValue={setForecastValue}
+        forecastError={forecastError}
+        forecastSaving={forecastSaving}
+        onSave={(month, amount) => void saveRevenueForecast(month, amount)}
+        onClear={(month) => void saveRevenueForecast(month, null)}
+      />
 
-          <div className="space-y-1">
-            <div className="text-xs font-medium" style={{ color: "var(--sb-text)" }}>
-              Amount (USD)
-            </div>
-            <Input
-              type="text"
-              inputMode="decimal"
-              value={forecastValue}
-              onChange={(e) => setForecastValue(e.target.value)}
-              placeholder="e.g. 1234.56"
-              className="text-sm"
-            />
-          </div>
-
-          {forecastError ? (
-            <div className="text-xs text-red-600 dark:text-red-400">{forecastError}</div>
-          ) : null}
-
-          <div className="flex items-center justify-end gap-2 pt-2">
-            <button
-              type="button"
-              className="sb-ring rounded-full bg-white/60 px-3 py-2 text-xs font-medium hover:bg-white/80 dark:bg-white/10 dark:hover:bg-white/15"
-              style={{ color: "var(--sb-text)" }}
-              disabled={forecastSaving || !forecastMonth}
-              onClick={() => {
-                if (!forecastMonth) return;
-                void saveRevenueForecast(forecastMonth, null);
-              }}
-              title="Clear actual revenue for this month"
-            >
-              Clear
-            </button>
-            <button
-              type="button"
-              className="sb-ring rounded-full bg-black px-4 py-2 text-xs font-medium text-white hover:bg-black/90 disabled:opacity-60 disabled:hover:bg-black dark:bg-white dark:text-black dark:hover:bg-white/90"
-              disabled={forecastSaving || !forecastMonth}
-              onClick={() => {
-                if (!forecastMonth) return;
-                const raw = forecastValue.trim();
-                const cleaned = raw.replace(/[$,]/g, "");
-                const n = Number(cleaned);
-                if (!cleaned) {
-                  setForecastError("Enter a USD amount, or click Clear to remove.");
-                  return;
-                }
-                if (!Number.isFinite(n) || n < 0) {
-                  setForecastError("Amount must be a number (>= 0).");
-                  return;
-                }
-                void saveRevenueForecast(forecastMonth, n);
-              }}
-              title="Save actual revenue"
-            >
-              {forecastSaving ? "Saving…" : "Save"}
-            </button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* Date breakdown modal (click-to-drill-down) */}
-      <Modal
+      <CollectorDateBreakdownModal
         open={breakdownOpen}
         onClose={() => {
           setBreakdownOpen(false);
           setBreakdownData(null);
           setBreakdownError(null);
         }}
-        title={
-          breakdownDate
-            ? `Breakdown for ${formatDateOrdinalDMonYYYY(breakdownDate)}`
-            : "Date Breakdown"
-        }
-        subtitle={`Showing ${metric === "revenue" ? "revenue" : "streams"} collected on this date vs. the prior 7-day average`}
-        maxWidthClassName="max-w-4xl"
-      >
-        <div className="space-y-4">
-          {breakdownError ? (
-            <div className="text-xs text-red-600 dark:text-red-400">{breakdownError}</div>
-          ) : breakdownLoading ? (
-            <div className="text-center text-xs opacity-60 py-8" style={{ color: "var(--sb-muted)" }}>
-              Loading breakdown…
-            </div>
-          ) : breakdownData ? (
-            <>
-              {/* Per-collector summary cards */}
-              <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${comparisonCollectors.length}, minmax(0, 1fr))` }}>
-                {comparisonCollectors.map((collector) => {
-                  const d = breakdownData[collector];
-                  if (!d) return null;
-                  const deltaPct = d.delta_pct;
-                  const isUp = deltaPct != null && deltaPct >= 0;
-                  const absValue = metric === "revenue"
-                    ? formatUsd2(d.daily_streams * streamPayoutPerStreamUsd)
-                    : formatInt(d.daily_streams);
-                  const avg7Formatted = metric === "revenue"
-                    ? formatUsd2(d.avg7_streams * streamPayoutPerStreamUsd)
-                    : formatInt(Math.round(d.avg7_streams));
-
-                  return (
-                    <div
-                      key={collector}
-                      className="rounded-xl border p-3"
-                      style={{ borderColor: "var(--sb-border)", background: "var(--sb-surface)" }}
-                    >
-                      <div className="flex items-center gap-2 mb-2">
-                        <span
-                          className="inline-block h-2.5 w-2.5 rounded-full"
-                          style={{ backgroundColor: COLLECTOR_COLORS[collector] ?? "var(--sb-muted)" }}
-                        />
-                        <span className="text-sm font-semibold" style={{ color: "var(--sb-text)" }}>
-                          {collector}
-                        </span>
-                      </div>
-                      <div className="text-lg font-bold" style={{ color: "var(--sb-text)" }}>
-                        {absValue}
-                      </div>
-                      <div className="text-[10px] mt-0.5 uppercase tracking-wider" style={{ color: "var(--sb-muted)" }}>
-                        {metric === "revenue" ? "revenue on this date" : "streams on this date"}
-                      </div>
-                      <div className="text-xs mt-1.5" style={{ color: "var(--sb-muted)" }}>
-                        7-day avg: {avg7Formatted}
-                      </div>
-                      {deltaPct != null && (
-                        <div className="flex items-center gap-1 mt-1.5">
-                          {isUp ? (
-                            <TrendingUp className="h-3.5 w-3.5" style={{ color: "#22c55e" }} />
-                          ) : (
-                            <TrendingDown className="h-3.5 w-3.5" style={{ color: "#ef4444" }} />
-                          )}
-                          <span
-                            className="text-xs font-semibold"
-                            style={{ color: isUp ? "#22c55e" : "#ef4444" }}
-                          >
-                            {isUp ? "+" : ""}{deltaPct.toFixed(1)}%
-                          </span>
-                          <span className="text-[10px] opacity-50" style={{ color: "var(--sb-muted)" }}>
-                            vs 7d avg
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Roster changes (tracks added/removed from collector) */}
-              {(() => {
-                const hasRosterChanges = comparisonCollectors.some((c) => {
-                  const d = breakdownData[c];
-                  return d && ((d.roster_additions?.length ?? 0) > 0 || (d.roster_removals?.length ?? 0) > 0);
-                });
-                if (!hasRosterChanges) return null;
-
-                return comparisonCollectors.map((collector) => {
-                  const d = breakdownData[collector];
-                  if (!d) return null;
-                  const additions = d.roster_additions ?? [];
-                  const removals = d.roster_removals ?? [];
-                  if (!additions.length && !removals.length) return null;
-
-                  const impact = d.roster_cumulative_impact ?? 0;
-                  const isPositive = impact >= 0;
-
-                  return (
-                    <div
-                      key={`roster-${collector}`}
-                      className="rounded-xl border p-3"
-                      style={{
-                        borderColor: isPositive ? "rgba(245,158,11,0.4)" : "rgba(239,68,68,0.4)",
-                        background: isPositive ? "rgba(245,158,11,0.06)" : "rgba(239,68,68,0.06)",
-                      }}
-                    >
-                      <div className="flex items-center gap-2 mb-2">
-                        <ArrowRightLeft className="h-3.5 w-3.5" style={{ color: "#F59E0B" }} />
-                        <span
-                          className="inline-block h-2.5 w-2.5 rounded-full"
-                          style={{ backgroundColor: COLLECTOR_COLORS[collector] ?? "var(--sb-muted)" }}
-                        />
-                        <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--sb-text)" }}>
-                          {collector} — Roster changes
-                        </span>
-                      </div>
-
-                      <div className="text-xs mb-2" style={{ color: "var(--sb-muted)" }}>
-                        {additions.length > 0 && (
-                          <span>
-                            <span style={{ color: "#22c55e" }}>+{additions.length} track{additions.length !== 1 ? "s" : ""} added</span>
-                            {removals.length > 0 && <span> · </span>}
-                          </span>
-                        )}
-                        {removals.length > 0 && (
-                          <span style={{ color: "#ef4444" }}>−{removals.length} track{removals.length !== 1 ? "s" : ""} removed</span>
-                        )}
-                        <span> — cumulative impact: </span>
-                        <span
-                          className="font-semibold"
-                          style={{ color: isPositive ? "#22c55e" : "#ef4444" }}
-                        >
-                          {isPositive ? "+" : "−"}
-                          {metric === "revenue"
-                            ? formatUsd2(Math.abs(impact) * streamPayoutPerStreamUsd)
-                            : formatInt(Math.abs(impact))}
-                        </span>
-                      </div>
-
-                      {additions.length > 0 && (
-                        <div className="space-y-1.5">
-                          {additions.map((t) => (
-                            <div key={t.isrc} className="flex items-center gap-2">
-                              {t.album_image_url ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img
-                                  src={String(t.album_image_url)}
-                                  alt="Album"
-                                  className="h-6 w-6 rounded-md object-cover sb-ring flex-none"
-                                />
-                              ) : (
-                                <div className="h-6 w-6 rounded-md sb-ring bg-white/60 dark:bg-white/10 flex-none" />
-                              )}
-                              <div className="flex-1 min-w-0">
-                                <Link
-                                  href={`/tracks/${encodeURIComponent(t.isrc)}`}
-                                  className="text-xs font-medium sb-link-hover truncate block"
-                                >
-                                  {t.name ?? t.isrc}
-                                </Link>
-                                {t.artist_names?.length ? (
-                                  <div className="text-[10px] opacity-50 truncate">
-                                    <ArtistLinks artistNames={t.artist_names} artistIds={t.artist_ids} />
-                                  </div>
-                                ) : null}
-                              </div>
-                              <div className="text-right flex-none">
-                                <div className="text-xs font-semibold" style={{ color: "#22c55e" }}>
-                                  +{metric === "revenue"
-                                    ? formatUsd2(t.cumulative_streams * streamPayoutPerStreamUsd)
-                                    : formatInt(t.cumulative_streams)}
-                                </div>
-                                <div className="text-[10px]" style={{ color: "var(--sb-muted)" }}>
-                                  accumulated
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {removals.length > 0 && (
-                        <div className="space-y-1.5 mt-2">
-                          {removals.map((t) => (
-                            <div key={t.isrc} className="flex items-center gap-2 opacity-60">
-                              {t.album_image_url ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img
-                                  src={String(t.album_image_url)}
-                                  alt="Album"
-                                  className="h-6 w-6 rounded-md object-cover sb-ring flex-none"
-                                />
-                              ) : (
-                                <div className="h-6 w-6 rounded-md sb-ring bg-white/60 dark:bg-white/10 flex-none" />
-                              )}
-                              <div className="flex-1 min-w-0">
-                                <span className="text-xs font-medium truncate block" style={{ color: "var(--sb-text)" }}>
-                                  {t.name ?? t.isrc}
-                                </span>
-                              </div>
-                              <div className="text-right flex-none">
-                                <div className="text-xs font-semibold" style={{ color: "#ef4444" }}>
-                                  −{metric === "revenue"
-                                    ? formatUsd2(t.cumulative_streams * streamPayoutPerStreamUsd)
-                                    : formatInt(t.cumulative_streams)}
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                });
-              })()}
-
-              {/* Top tracks per collector */}
-              {comparisonCollectors.map((collector) => {
-                const d = breakdownData[collector];
-                if (!d?.top_tracks?.length) return null;
-
-                return (
-                  <div key={collector}>
-                    <div className="flex items-center gap-2 mb-2">
-                      <span
-                        className="inline-block h-2 w-2 rounded-full"
-                        style={{ backgroundColor: COLLECTOR_COLORS[collector] ?? "var(--sb-muted)" }}
-                      />
-                      <span className="text-xs font-medium uppercase tracking-wide opacity-70">
-                        {collector} — Top tracks
-                      </span>
-                    </div>
-                    <GlassTable
-                      headers={[
-                        "",
-                        "Track",
-                        { label: metric === "revenue" ? "Daily Revenue" : "Daily Streams", align: "right" },
-                        { label: metric === "revenue" ? "Total Revenue" : "Total Streams", align: "right" },
-                      ]}
-                    >
-                      {d.top_tracks.map((t) => {
-                        const dailyStreams = Number(t.daily_streams_delta ?? 0);
-                        const totalStreams = Number(t.total_streams_cumulative ?? 0);
-                        const dailyFormatted = metric === "revenue"
-                          ? formatUsd2(dailyStreams * streamPayoutPerStreamUsd)
-                          : formatInt(dailyStreams);
-                        const totalFormatted = metric === "revenue"
-                          ? formatUsd2(totalStreams * streamPayoutPerStreamUsd)
-                          : formatInt(totalStreams);
-
-                        return (
-                          <TableRow key={t.isrc}>
-                            <TableCell>
-                              {t.album_image_url ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img
-                                  src={String(t.album_image_url)}
-                                  alt="Album"
-                                  className="h-7 w-7 rounded-lg object-cover sb-ring"
-                                />
-                              ) : (
-                                <div className="h-7 w-7 rounded-lg sb-ring bg-white/60 dark:bg-white/10" />
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              <Link
-                                href={`/tracks/${encodeURIComponent(t.isrc)}`}
-                                className="font-medium transition-colors sb-link-hover text-sm"
-                              >
-                                {t.name ?? t.isrc}
-                              </Link>
-                              {t.artist_names?.length ? (
-                                <div className="text-xs opacity-60 truncate">
-                                  <ArtistLinks
-                                    artistNames={t.artist_names}
-                                    artistIds={t.artist_ids}
-                                  />
-                                </div>
-                              ) : null}
-                            </TableCell>
-                            <TableCell
-                              numeric
-                              className="font-medium"
-                              style={{
-                                color: metric === "revenue" ? "#10b981" : "var(--sb-positive)",
-                              }}
-                            >
-                              {dailyFormatted}
-                            </TableCell>
-                            <TableCell numeric className="opacity-60">
-                              {totalFormatted}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </GlassTable>
-                  </div>
-                );
-              })}
-            </>
-          ) : null}
-        </div>
-      </Modal>
+        breakdownDate={breakdownDate}
+        breakdownData={breakdownData}
+        breakdownLoading={breakdownLoading}
+        breakdownError={breakdownError}
+        comparisonCollectors={comparisonCollectors}
+        metric={metric}
+        streamPayoutPerStreamUsd={streamPayoutPerStreamUsd}
+      />
 
       {/* Selected collector combined view */}
       <div className="sb-card p-4">
@@ -2211,10 +1168,10 @@ export function CollectorsClient(props: {
             </div>
             <div className="mt-2 min-h-[220px]">
               <DailyStreamsChart
-                data={series[metric].cumulative as any}
+                data={series[metric].cumulative}
                 valueLabel={metricLabel}
-                valueFormat={valueFormat as any}
-                yTickFormat={yTickFormat as any}
+                valueFormat={valueFormat}
+                yTickFormat={yTickFormat}
                 heightPx={220}
                 isCumulative={metric !== "tracks"}
                 showMA7={false}
@@ -2236,10 +1193,10 @@ export function CollectorsClient(props: {
             </div>
             <div className="mt-2 min-h-[220px]">
               <DailyStreamsWithMAChart
-                data={series[metric].daily as any}
+                data={series[metric].daily}
                 valueLabel={metric === "tracks" ? "Tracks" : metricLabel}
-                valueFormat={valueFormat as any}
-                yTickFormat={yTickFormat as any}
+                valueFormat={valueFormat}
+                yTickFormat={yTickFormat}
                 heightPx={220}
                 dailyColor={chartColor}
               />
@@ -2263,7 +1220,7 @@ export function CollectorsClient(props: {
                 </Chip>
               ) : null}
               <ChartCsvDownloadButton
-                rows={(metric === "revenue" ? (monthlyChartDataForMetric as any) : (monthlyData[metric] as any)) as Array<Record<string, unknown>>}
+                rows={(monthlyChartDataForMetric) as unknown as Array<Record<string, unknown>>}
                 filename={`collectors-${slugifyForFilename(`monthly-${metric}`)}-${todayIsoDate()}.csv`}
                 title="Download CSV"
               />
@@ -2274,10 +1231,10 @@ export function CollectorsClient(props: {
           </p>
           <div className="mt-3 min-h-[220px]">
             <MonthlyBarChart
-              data={monthlyChartDataForMetric as any}
+              data={monthlyChartDataForMetric}
               valueLabel={metricLabel}
-              valueFormat={valueFormat as any}
-              yTickFormat={yTickFormat as any}
+              valueFormat={valueFormat}
+              yTickFormat={yTickFormat}
               heightPx={220}
               color={chartColor}
               showActualRevenue={metric === "revenue" && showActualRevenue}
@@ -2418,7 +1375,7 @@ export function CollectorsClient(props: {
 
           <div className="mt-3 space-y-4">
             <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
-              Cumulative streams are totals from the DB on the data date. “Daily” is today minus yesterday (based on cumulative streams). Revenue is estimated from payout rate.
+              Cumulative streams are totals from the DB on the data date. &quot;Daily&quot; is today minus yesterday (based on cumulative streams). Revenue is estimated from payout rate.
             </div>
             {/* Quick summary */}
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">

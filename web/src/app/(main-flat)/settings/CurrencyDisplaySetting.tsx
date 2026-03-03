@@ -4,14 +4,15 @@ import { useEffect, useState } from "react";
 
 import { Chip, ChipGroup } from "@/components/ui/Chip";
 import type { CurrencyDisplay } from "@/lib/format";
+import { DEFAULT_CURRENCY, SAVED_FEEDBACK_MS } from "@/lib/constants";
 
 function parseCurrency(raw: unknown): CurrencyDisplay {
   const s = String(raw ?? "").trim().toUpperCase();
-  return s === "AED" ? "AED" : "USD";
+  return s === "AED" ? "AED" : DEFAULT_CURRENCY;
 }
 
 export function CurrencyDisplaySetting() {
-  const [value, setValue] = useState<CurrencyDisplay>("USD");
+  const [value, setValue] = useState<CurrencyDisplay>(DEFAULT_CURRENCY);
   const [loading, setLoading] = useState(true);
   const [configured, setConfigured] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -53,7 +54,7 @@ export function CurrencyDisplaySetting() {
 
       setValue(parseCurrency((data as any)?.currency_display));
       setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
+      setTimeout(() => setSaved(false), SAVED_FEEDBACK_MS);
 
       // Let the app update without a full reload (best-effort).
       window.dispatchEvent(new Event("sb:currency-display-updated"));
@@ -84,7 +85,7 @@ export function CurrencyDisplaySetting() {
           ) : saved ? (
             <div className="text-xs text-green-600 dark:text-green-400">Saved</div>
           ) : null}
-          <div className="text-[10px] opacity-60">Default: USD</div>
+          <div className="text-[10px] opacity-60">Default: {DEFAULT_CURRENCY}</div>
         </div>
       </div>
 

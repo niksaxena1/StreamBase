@@ -107,6 +107,7 @@ export function AnimatedCounter({
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
+    // Intentional: format function is excluded to avoid restart on every re-render
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [safeValue, durationMs, format]);
 

@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/shell/AppShell";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { KeyboardShortcutsHelp, KeyboardShortcutsProvider } from "@/components/keyboard";
 import { ChartAxisZoomProvider } from "@/components/charts/ChartAxisZoomContext";
 import { ChartStartDateProvider } from "@/components/charts/ChartStartDateContext";
@@ -40,7 +41,9 @@ export async function AuthedAppLayout({
                 <WeekendDipProvider>
                   <MetricProvider defaultMetric="streams">
                     <RollbackProvider>
-                      <AppShell {...appShellProps}>{children}</AppShell>
+                      <AppShell {...appShellProps}>
+                        <ErrorBoundary>{children}</ErrorBoundary>
+                      </AppShell>
                       <KeyboardShortcutsHelp />
                     </RollbackProvider>
                   </MetricProvider>

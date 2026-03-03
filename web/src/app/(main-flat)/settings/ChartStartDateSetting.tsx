@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { DEFAULT_CHART_START_DATE_ISO, normalizeIsoDateOrNull } from "@/components/charts/chartUtils";
+import { SAVED_FEEDBACK_MS } from "@/lib/constants";
 
 export function ChartStartDateSetting() {
   const [dateText, setDateText] = useState<string>(DEFAULT_CHART_START_DATE_ISO);
@@ -51,10 +52,11 @@ export function ChartStartDateSetting() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error((data as any)?.error ?? "Failed to update setting");
 
-      const savedDate = normalizeIsoDateOrNull((data as any)?.chart_start_date) ?? DEFAULT_CHART_START_DATE_ISO;
+      const savedDate =
+        normalizeIsoDateOrNull((data as any)?.chart_start_date) ?? DEFAULT_CHART_START_DATE_ISO;
       setDateText(savedDate);
       setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
+      setTimeout(() => setSaved(false), SAVED_FEEDBACK_MS);
 
       // Let charts update without a full reload (best-effort).
       window.dispatchEvent(new Event("sb:chart-start-date-updated"));

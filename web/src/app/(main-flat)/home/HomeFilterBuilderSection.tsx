@@ -29,15 +29,17 @@ export function HomeFilterBuilderSection({
         const res = await fetch("/api/playlists/options");
         const json = await res.json().catch(() => ({}));
         if (!res.ok) return;
-        const rows = Array.isArray((json as any)?.playlists) ? ((json as any).playlists as any[]) : [];
+        const obj = json && typeof json === "object" ? (json as Record<string, unknown>) : null;
+        const rows = Array.isArray(obj?.playlists) ? (obj.playlists as unknown[]) : [];
         if (!cancelled) {
           setPlaylistOptions(
             rows.map((r) => {
-              const key = String(r?.playlist_key ?? "");
+              const row = r as Record<string, unknown>;
+              const key = String(row?.playlist_key ?? "");
               return {
                 value: key,
-                label: String(r?.display_name ?? r?.playlist_key ?? ""),
-                imageUrl: (r?.spotify_playlist_image_url ?? null) as string | null,
+                label: String(row?.display_name ?? row?.playlist_key ?? ""),
+                imageUrl: (row?.spotify_playlist_image_url ?? null) as string | null,
                 isAllCatalog: key === "all_catalog",
               };
             }),
@@ -58,22 +60,24 @@ export function HomeFilterBuilderSection({
         const res = await fetch("/api/playlists/with-stats");
         const json = await res.json().catch(() => ({}));
         if (!res.ok) return;
-        const rows = Array.isArray((json as any)?.playlists)
-          ? ((json as any).playlists as any[])
-          : [];
+        const obj = json && typeof json === "object" ? (json as Record<string, unknown>) : null;
+        const rows = Array.isArray(obj?.playlists) ? (obj.playlists as unknown[]) : [];
         if (!cancelled) {
           setPlaylistData(
-            rows.map((r) => ({
-              playlist_key: String(r?.playlist_key ?? ""),
-              display_name: String(r?.display_name ?? ""),
-              track_count: Number(r?.track_count ?? 0),
-              total_streams: Number(r?.total_streams ?? 0),
-              daily_streams: r?.daily_streams != null ? Number(r.daily_streams) : null,
-              is_catalog: Boolean(r?.is_catalog),
-              playlist_type: (r?.playlist_type ?? null) as string | null,
-              collector: (r?.collector ?? null) as string | null,
-              spotify_playlist_image_url: (r?.spotify_playlist_image_url ?? null) as string | null,
-            })),
+            rows.map((r) => {
+              const row = r as Record<string, unknown>;
+              return {
+                playlist_key: String(row?.playlist_key ?? ""),
+                display_name: String(row?.display_name ?? ""),
+                track_count: Number(row?.track_count ?? 0),
+                total_streams: Number(row?.total_streams ?? 0),
+                daily_streams: row?.daily_streams != null ? Number(row.daily_streams) : null,
+                is_catalog: Boolean(row?.is_catalog),
+                playlist_type: (row?.playlist_type ?? null) as string | null,
+                collector: (row?.collector ?? null) as string | null,
+                spotify_playlist_image_url: (row?.spotify_playlist_image_url ?? null) as string | null,
+              };
+            }),
           );
         }
       } catch {
@@ -94,23 +98,25 @@ export function HomeFilterBuilderSection({
         const res = await fetch(url);
         const json = await res.json().catch(() => ({}));
         if (!res.ok) return;
-        const rows = Array.isArray((json as any)?.rows) ? ((json as any).rows as any[]) : [];
+        const obj = json && typeof json === "object" ? (json as Record<string, unknown>) : null;
+        const rows = Array.isArray(obj?.rows) ? (obj.rows as unknown[]) : [];
         if (!cancelled) {
           // First pass: basic fields (convert run dates to data dates)
           const base = rows.map((r) => {
-            const runDate = String(r?.date ?? "");
+            const row = r as Record<string, unknown>;
+            const runDate = String(row?.date ?? "");
             const dataDate = dataDateFromRunDate(runDate);
             const dayOfWeek = new Date(`${dataDate}T12:00:00Z`).getUTCDay();
             return {
               date: dataDate,
-              daily_streams: Number(r?.daily_streams ?? 0),
-              cumulative_streams: Number(r?.cumulative_streams ?? 0),
-              track_count: Number(r?.track_count ?? 0),
-              growth_pct: r?.growth_pct != null ? Number(r.growth_pct) : null,
-              tracks_added: Number(r?.tracks_added ?? 0),
+              daily_streams: Number(row?.daily_streams ?? 0),
+              cumulative_streams: Number(row?.cumulative_streams ?? 0),
+              track_count: Number(row?.track_count ?? 0),
+              growth_pct: row?.growth_pct != null ? Number(row.growth_pct) : null,
+              tracks_added: Number(row?.tracks_added ?? 0),
               day_of_week: dayOfWeek,
-              est_daily_revenue: r?.est_daily_revenue != null ? Number(r.est_daily_revenue) : null,
-              missing_streams_count: Number(r?.missing_streams_count ?? 0),
+              est_daily_revenue: row?.est_daily_revenue != null ? Number(row.est_daily_revenue) : null,
+              missing_streams_count: Number(row?.missing_streams_count ?? 0),
             };
           });
 
@@ -163,14 +169,16 @@ export function HomeFilterBuilderSection({
         const res = await fetch("/api/tracks/dates");
         const json = await res.json().catch(() => ({}));
         if (!res.ok) return;
-        const rows = Array.isArray((json as any)?.rows) ? ((json as any).rows as any[]) : [];
+        const obj = json && typeof json === "object" ? (json as Record<string, unknown>) : null;
+        const rows = Array.isArray(obj?.rows) ? (obj.rows as unknown[]) : [];
         const map = new Map<string, { first_seen: string | null; last_seen: string | null }>();
         for (const r of rows) {
-          const isrc = String(r?.isrc ?? "");
+          const row = r as Record<string, unknown>;
+          const isrc = String(row?.isrc ?? "");
           if (!isrc) continue;
           map.set(isrc, {
-            first_seen: (r?.first_seen ?? null) as string | null,
-            last_seen: (r?.last_seen ?? null) as string | null,
+            first_seen: (row?.first_seen ?? null) as string | null,
+            last_seen: (row?.last_seen ?? null) as string | null,
           });
         }
         if (!cancelled) setTrackDatesMap(map);
@@ -189,12 +197,14 @@ export function HomeFilterBuilderSection({
         const res = await fetch("/api/artists/options");
         const json = await res.json().catch(() => ({}));
         if (!res.ok) return;
-        const rows = Array.isArray((json as any)?.artists) ? ((json as any).artists as any[]) : [];
+        const obj = json && typeof json === "object" ? (json as Record<string, unknown>) : null;
+        const rows = Array.isArray(obj?.artists) ? (obj.artists as unknown[]) : [];
         const map = new Map<string, string | null>();
         for (const r of rows) {
-          const id = String(r?.artist_id ?? "");
+          const row = r as Record<string, unknown>;
+          const id = String(row?.artist_id ?? "");
           if (!id) continue;
-          map.set(id, (r?.image_url ?? null) as string | null);
+          map.set(id, (row?.image_url ?? null) as string | null);
         }
         if (!cancelled) setArtistImagesById(map);
       } catch {
@@ -212,7 +222,7 @@ export function HomeFilterBuilderSection({
       return {
         isrc: p.isrc,
         name: p.name ?? "",
-        release_date: (p as any)?.release_date ?? null,
+        release_date: p?.release_date ?? null,
         first_seen: dates?.first_seen ?? null,
         last_seen: dates?.last_seen ?? null,
         spotify_artist_names: p.artist_names ?? [],

@@ -23,6 +23,7 @@ import type {
   TotalStreamsDecreasedDetailsJson,
 } from "./types";
 import { normalizeIsrc, normalizeKey } from "./types";
+import { logError } from "@/lib/logger";
 
 type Svc = ReturnType<typeof supabaseService>;
 
@@ -319,7 +320,7 @@ async function fetchNonCatalogTracks(
           );
         result.set(w.playlist_key, tracks);
       } catch (e) {
-        console.error("health_playlist_missing_catalog_tracks RPC failed:", e);
+        logError("health_playlist_missing_catalog_tracks RPC failed", e);
       }
     }),
   );
@@ -358,7 +359,7 @@ async function fetchSwingTracks(
             .map(mapRow),
         });
       } catch (e) {
-        console.error("health_track_count_swing_tracks RPC failed:", e);
+        logError("health_track_count_swing_tracks RPC failed", e);
       }
     }),
   );
@@ -914,7 +915,7 @@ export async function fetchMissingCatalogTracks(
   });
 
   if (error) {
-    console.error("health_missing_catalog_tracks RPC failed:", error);
+    logError("health_missing_catalog_tracks RPC failed", error);
     return [];
   }
 

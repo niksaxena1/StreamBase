@@ -201,6 +201,7 @@ const DateRangePickerInner = forwardRef<DateRangePickerHandle, {
       }
       setIsOpen(true);
     },
+  // Intentional: useImperativeHandle doesn't use dependency arrays like useEffect (React.useMemo pattern)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [isOpen, range, maxDate, isSmallScreen]);
 
@@ -327,6 +328,7 @@ const DateRangePickerInner = forwardRef<DateRangePickerHandle, {
 
   useEffect(() => {
     checkPreset();
+    // Using .getTime() on optional dates as deps to avoid lint errors with object changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [range?.from?.getTime?.(), range?.to?.getTime?.(), maxDate.getTime()]);
 
@@ -430,10 +432,18 @@ const DateRangePickerInner = forwardRef<DateRangePickerHandle, {
                 }}
               >
                 {/* Header with inputs and close */}
-                <div className={[
-                  "flex items-center justify-between gap-2 border-b px-3 flex-shrink-0",
-                  isSmallScreen ? "py-3" : "py-2",
-                ].join(" ")} style={{ borderColor: "var(--sb-border)" }}>
+                <div
+                  className={[
+                    "flex items-center justify-between gap-2 border-b px-3 flex-shrink-0",
+                    isSmallScreen ? "pb-3" : "py-2",
+                  ].join(" ")}
+                  style={{
+                    borderColor: "var(--sb-border)",
+                    paddingTop: isSmallScreen
+                      ? "max(0.75rem, env(safe-area-inset-top))"
+                      : undefined,
+                  }}
+                >
                   <div className="flex items-center gap-2 flex-wrap">
                     <DateInput
                       key={range?.from ? formatYmd(range.from) : "from-none"}
@@ -569,7 +579,13 @@ const DateRangePickerInner = forwardRef<DateRangePickerHandle, {
                     </div>
 
                     {/* Footer with selection summary and actions */}
-                    <div className="flex items-center justify-between gap-3 border-t px-4 py-3 flex-shrink-0" style={{ borderColor: "var(--sb-border)" }}>
+                    <div
+                      className="flex items-center justify-between gap-3 border-t px-4 pt-3 flex-shrink-0"
+                      style={{
+                        borderColor: "var(--sb-border)",
+                        paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))",
+                      }}
+                    >
                       <div className="text-xs font-medium" style={{ color: "var(--sb-muted)" }}>
                         {range?.from && range.to
                           ? `${formatDisplay(range.from)} → ${formatDisplay(range.to)}`

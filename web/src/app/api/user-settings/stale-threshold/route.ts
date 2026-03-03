@@ -3,11 +3,12 @@ import { NextResponse, NextRequest } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { isSchemaMissing } from "@/lib/supabase/schemaMissing";
+import { DEFAULT_STALE_MIN_STREAMS } from "@/lib/constants";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const DEFAULT_MIN_STREAMS = 2000;
+const DEFAULT_MIN_STREAMS = DEFAULT_STALE_MIN_STREAMS;
 const DEFAULT_MIN_AVG_DAILY = 10;
 
 function parseNonNegativeInt(raw: unknown, label: string): number {

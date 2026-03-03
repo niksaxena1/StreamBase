@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { setCurrencyDisplay, type CurrencyDisplay } from "@/lib/format";
+import { DEFAULT_CURRENCY } from "@/lib/constants";
 import { fetchUserSettingsBundle, invalidateUserSettingsBundle } from "@/lib/userSettingsBundleFetch";
 
 type CurrencyDisplayState = {
@@ -17,13 +18,15 @@ const CurrencyDisplayContext = createContext<CurrencyDisplayState | null>(null);
 
 async function fetchCurrencyDisplay() {
   const data = await fetchUserSettingsBundle();
-  const raw = String(data.currency_display ?? "USD").toUpperCase();
-  const currencyDisplay: CurrencyDisplay = raw === "AED" ? "AED" : "USD";
+  const raw = String(data.currency_display ?? DEFAULT_CURRENCY).toUpperCase();
+  const currencyDisplay: CurrencyDisplay =
+    raw === "AED" ? "AED" : DEFAULT_CURRENCY;
   return { currencyDisplay, configured: data.configured !== false };
 }
 
 export function CurrencyDisplayProvider({ children }: { children: ReactNode }) {
-  const [currencyDisplay, setCurrencyDisplayState] = useState<CurrencyDisplay>("USD");
+  const [currencyDisplay, setCurrencyDisplayState] =
+    useState<CurrencyDisplay>(DEFAULT_CURRENCY);
   const [loading, setLoading] = useState(true);
   const [configured, setConfigured] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -70,6 +73,7 @@ export function CurrencyDisplayProvider({ children }: { children: ReactNode }) {
     }
     window.addEventListener("sb:currency-display-updated", onUpdated as any);
     return () => window.removeEventListener("sb:currency-display-updated", onUpdated as any);
+    // Intentional: register listener once; refetch function is stale by design
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

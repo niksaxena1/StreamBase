@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { SAVED_FEEDBACK_MS } from "@/lib/constants";
 
 function normalizeRateInput(raw: string) {
   const s = raw.trim();
@@ -67,7 +68,7 @@ export function PayoutRateSetting() {
       const savedRate = Number((data as any)?.stream_payout_rate_per_k_usd ?? parsed.value);
       setRateText(Number.isFinite(savedRate) ? String(savedRate) : String(parsed.value));
       setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
+      setTimeout(() => setSaved(false), SAVED_FEEDBACK_MS);
 
       // Notify the app to refetch rate-dependent calculations.
       window.dispatchEvent(new Event("sb:payout-rate-updated"));

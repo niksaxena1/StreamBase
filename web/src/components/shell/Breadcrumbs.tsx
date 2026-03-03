@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { logWarn } from "@/lib/logger";
 import { ChevronRight, Home } from "lucide-react";
 
 type BreadcrumbItem = {
@@ -32,7 +33,9 @@ export function Breadcrumbs() {
           if (!label) return;
           setCustomLabelsByPath((prev) => ({ ...prev, [pathname]: label }));
         })
-        .catch(() => {});
+        .catch((error) => {
+          logWarn("Breadcrumb artist fetch failed", error);
+        });
       return () => { alive = false; };
     }
 
@@ -52,7 +55,9 @@ export function Breadcrumbs() {
           if (!label) return;
           setCustomLabelsByPath((prev) => ({ ...prev, [pathname]: label }));
         })
-        .catch(() => {});
+        .catch((error) => {
+          logWarn("Breadcrumb track fetch failed", error);
+        });
       return () => { alive = false; };
     }
 

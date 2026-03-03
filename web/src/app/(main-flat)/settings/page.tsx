@@ -57,8 +57,9 @@ export default async function SettingsPage() {
       .order("run_date", { ascending: false })
       .limit(730);
     if (!runErr) {
-      runDateOptions = (runRows ?? [])
-        .map((r) => String((r as any)?.run_date ?? "").trim())
+      const rows = (runRows ?? []) as Record<string, unknown>[];
+      runDateOptions = rows
+        .map((r) => String(r?.run_date ?? "").trim())
         .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d));
     }
   } catch {
@@ -85,7 +86,7 @@ export default async function SettingsPage() {
         .range(from, to);
 
       if (error || !data || data.length === 0) break;
-      allTracks.push(...(data as any));
+      allTracks.push(...(data as typeof allTracks));
       if (data.length < pageSize) break;
       from += pageSize;
     }
@@ -113,16 +114,17 @@ export default async function SettingsPage() {
         .limit(50);
       if (!error) {
         const byIsrc = new Map<string, OverrideSuggestion>();
+        const rows = (warnRows ?? []) as Record<string, unknown>[];
 
-        for (const w of (warnRows ?? []) as any[]) {
+        for (const w of rows) {
           const code = String(w?.code ?? "") as OverrideSuggestion["code"];
-          const d = (w as any)?.details_json ?? {};
+          const d = (w?.details_json ?? {}) as Record<string, unknown>;
 
           if (code === "catalog_streams_missing_prev_nonzero") {
-            const rows = Array.isArray(d?.affected_isrcs_with_prev_sample)
-              ? (d.affected_isrcs_with_prev_sample as any[])
+            const affectedRows = Array.isArray(d?.affected_isrcs_with_prev_sample)
+              ? (d.affected_isrcs_with_prev_sample as Record<string, unknown>[])
               : [];
-            for (const r of rows) {
+            for (const r of affectedRows) {
               const isrc = String(r?.isrc ?? "").trim().toUpperCase();
               const prev = Number(r?.prev_streams_cumulative ?? NaN);
               if (!/^[A-Z0-9]{12}$/.test(isrc)) continue;
@@ -139,7 +141,7 @@ export default async function SettingsPage() {
           }
 
           if (code === "catalog_missing_stream_snapshots") {
-            const isrcs = Array.isArray(d?.missing_isrcs_sample) ? (d.missing_isrcs_sample as any[]) : [];
+            const isrcs = Array.isArray(d?.missing_isrcs_sample) ? (d.missing_isrcs_sample as unknown[]) : [];
             for (const raw of isrcs) {
               const isrc = String(raw ?? "").trim().toUpperCase();
               if (!/^[A-Z0-9]{12}$/.test(isrc)) continue;
@@ -178,7 +180,7 @@ export default async function SettingsPage() {
         .range(from, to);
 
       if (error || !data || data.length === 0) break;
-      unenrichedTracks.push(...(data as any));
+      unenrichedTracks.push(...(data as typeof unenrichedTracks));
       if (data.length < pageSize) break;
       from += pageSize;
     }
@@ -198,7 +200,7 @@ export default async function SettingsPage() {
       .select("playlist_key,display_name")
       .order("display_name", { ascending: true });
     if (!error && data) {
-      allPlaylists = (data as any);
+      allPlaylists = data as typeof allPlaylists;
     }
   } catch {
     // ignore
@@ -231,7 +233,7 @@ export default async function SettingsPage() {
       .eq("code", exclusionCode)
       .order("created_at", { ascending: false })
       .limit(500);
-    if (!exErr) exclusions = (exRows ?? []) as any;
+    if (!exErr) exclusions = (exRows ?? []) as typeof exclusions;
   } catch {
     // ignore
   }
@@ -261,7 +263,7 @@ export default async function SettingsPage() {
         .range(from, to);
 
       if (error || !rows || rows.length === 0) break;
-      streamOverrides.push(...(rows as any));
+      streamOverrides.push(...(rows as typeof streamOverrides));
       if (rows.length < pageSize) break;
       from += pageSize;
     }
@@ -284,7 +286,7 @@ export default async function SettingsPage() {
       .eq("code", enrichmentExclusionCode)
       .order("created_at", { ascending: false })
       .limit(500);
-    if (!exErr) enrichmentExclusions = (exRows ?? []) as any;
+    if (!exErr) enrichmentExclusions = (exRows ?? []) as typeof enrichmentExclusions;
   } catch {
     // ignore
   }
@@ -296,7 +298,7 @@ export default async function SettingsPage() {
       .eq("code", staleExclusionCode)
       .order("created_at", { ascending: false })
       .limit(500);
-    if (!exErr) staleExclusions = (exRows ?? []) as any;
+    if (!exErr) staleExclusions = (exRows ?? []) as typeof staleExclusions;
   } catch {
     // ignore
   }

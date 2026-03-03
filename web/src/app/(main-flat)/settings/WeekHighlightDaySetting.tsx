@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { SAVED_FEEDBACK_MS } from "@/lib/constants";
 
 const DAYS: Array<{ value: number; label: string }> = [
   { value: 0, label: "Sunday" },
@@ -61,7 +62,7 @@ export function WeekHighlightDaySetting() {
 
       setDay(normalizeDay((data as any)?.chart_week_highlight_day ?? nextDay));
       setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
+      setTimeout(() => setSaved(false), SAVED_FEEDBACK_MS);
 
       // Let charts update without a full reload (best-effort).
       window.dispatchEvent(new Event("sb:week-highlight-day-updated"));

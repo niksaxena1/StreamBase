@@ -95,6 +95,7 @@ export function SAIWidget() {
     if (!open) return;
     if (conversationId) return;
     void newChat();
+    // Intentional: newChat should not be a dependency (would loop infinitely); use open only
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -114,6 +115,7 @@ export function SAIWidget() {
     const next = queue[0];
     setQueue((q) => q.slice(1));
     void sendMessage(next.content);
+    // Intentional: sendMessage changes frequently and would cause loops; use isStreaming as trigger
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isStreaming]);
 

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
+import { logError } from "@/lib/logger";
 
 export const revalidate = 86400; // 24h ISR - artist labels change with daily data
 
@@ -25,6 +26,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ artistName });
   } catch (error) {
+    logError("Breadcrumb artist error", error);
     return NextResponse.json({ artistName: null }, { status: 500 });
   }
 }

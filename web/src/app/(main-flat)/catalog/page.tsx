@@ -11,9 +11,11 @@ import { computeDailyRollingAvg7 } from "@/components/charts/chartUtils";
 import { dataDateFromRunDate } from "@/lib/sotDates";
 import { getRollbackDate, rollbackDataDateToRunDate, capRunDate } from "@/lib/rollback";
 import { Alert } from "@/components/ui/Alert";
+import { CACHE_TTL_1H, API_LOOKUP_DROPDOWN_MAX, API_LOOKUP_THUMBNAILS_MAX, API_LOOKUP_PAGE_SIZE, API_LOOKUP_TRACK_MAX, API_LOOKUP_LIMIT_500 } from "@/lib/constants";
+import { logError, logWarn } from "@/lib/logger";
 
-const CATALOG_ARTIST_DROPDOWN_MAX_TRACKS = 10_000;
-const CATALOG_ARTIST_THUMBNAILS_MAX = 800;
+const CATALOG_ARTIST_DROPDOWN_MAX_TRACKS = API_LOOKUP_DROPDOWN_MAX;
+const CATALOG_ARTIST_THUMBNAILS_MAX = API_LOOKUP_THUMBNAILS_MAX;
 
 function sumLastNDays(desc: Array<{ date: string; daily: number | null }>, days: number) {
   return desc.slice(0, days).reduce((acc, r) => acc + Number(r.daily ?? 0), 0);
@@ -102,7 +104,7 @@ async function fetchRecentTracksMetaForArtists(sb: SupabaseClient, maxRows = 200
     .limit(maxRows);
 
   if (error) {
-    console.error("Error fetching recent tracks metadata:", error);
+    logError("Error fetching recent tracks metadata", error);
     return [];
   }
 
@@ -113,7 +115,7 @@ async function fetchAllTracksMeta(
   sb: SupabaseClient,
   maxRows = 5000,
 ): Promise<TrackRow[]> {
-  const pageSize = 1000;
+  const pageSize = API_LOOKUP_PAGE_SIZE;
   const out: TrackRow[] = [];
   let from = 0;
 
@@ -127,7 +129,7 @@ async function fetchAllTracksMeta(
       .range(from, to);
 
     if (error) {
-      console.error("Error fetching tracks metadata:", error);
+      logError("Error fetching tracks metadata", error);
       break;
     }
 
@@ -145,10 +147,10 @@ async function fetchAllTrackSeries(
   sb: SupabaseClient,
   args: { isrc: string; startDate: string; endDate: string; maxRows?: number },
 ) {
-  const pageSize = 1000;
+  const pageSize = API_LOOKUP_PAGE_SIZE;
   const out: Array<{ date: string; streams_cumulative: number | null }> = [];
   let from = 0;
-  const max = args.maxRows ?? 10000;
+  const max = args.maxRows ?? API_LOOKUP_TRACK_MAX;
 
   while (from < max) {
     const to = from + pageSize - 1;
@@ -260,7 +262,7 @@ export default async function CatalogPage({
         .order("id", { ascending: false })
         .limit(1)
         .maybeSingle();
-      const maxId = Number((latestOverride as any)?.id ?? 0);
+      const maxId = Number((latestOverride as { id: number } | null)?.id ?? 0);
       const total = Number(count ?? 0);
       overrideBuster = `${total}-${maxId}`;
     } catch {
@@ -281,7 +283,7 @@ export default async function CatalogPage({
             .eq("isrc", requestedIsrc)
             .maybeSingle(),
         `catalog-isrc-primary-artist-${requestedIsrc}`,
-        3600,
+        CACHE_TTL_1H,
       );
 
       const typed = (trackRow ?? null) as { spotify_artist_ids: string[] | null } | null;
@@ -310,11 +312,12 @@ export default async function CatalogPage({
             .limit(1)
             .maybeSingle(),
         "catalog-default-artist-v1",
-        3600,
+        CACHE_TTL_1H,
       );
 
-      const defaultArtistId = Array.isArray((recent as any)?.spotify_artist_ids)
-        ? String((recent as any).spotify_artist_ids?.[0] ?? "").trim()
+      const recentTyped = recent as { spotify_artist_ids?: string[] | null } | null;
+      const defaultArtistId = Array.isArray(recentTyped?.spotify_artist_ids)
+        ? String(recentTyped.spotify_artist_ids?.[0] ?? "").trim()
         : "";
 
       return (
@@ -333,10 +336,10 @@ export default async function CatalogPage({
     const trackMetaRows = await cachedQuery(
       async () => ({
         data: await fetchAllTracksMeta(svc, CATALOG_ARTIST_DROPDOWN_MAX_TRACKS),
-        error: null as any,
+        error: null,
       }),
       `catalog-artists-from-tracks-v2-${CATALOG_ARTIST_DROPDOWN_MAX_TRACKS}`,
-      3600,
+      CACHE_TTL_1H,
     );
     const artists = deriveArtists((trackMetaRows.data ?? []) as TrackRow[]);
 
@@ -351,11 +354,11 @@ export default async function CatalogPage({
         .limit(800),
     // Bump cache version when selected columns change (release_date added).
     `artist-tracks-v3-${artistId}`,
-    3600,
+    CACHE_TTL_1H,
   );
 
   if (tracksError) {
-    console.error("Error fetching artist tracks:", tracksError);
+    logError("Error fetching artist tracks", tracksError);
     // Return error state instead of crashing
     return (
       <div className="space-y-4">
@@ -392,7 +395,7 @@ export default async function CatalogPage({
         .maybeSingle();
     },
     `latest-date-all-catalog-rb${rollbackDate ?? "live"}`,
-    3600,
+    CACHE_TTL_1H,
   );
 
   const latestRunDate = (latestRun as PlaylistDailyStatsRow | null)?.date ?? null;
@@ -428,9 +431,9 @@ export default async function CatalogPage({
               end_date: latestRunDate,
             }),
           `catalog-artist-series-${artistId}-${startRunDate}-${latestRunDate}-ov${overrideBuster}`,
-          3600,
+          CACHE_TTL_1H,
         )
-      : Promise.resolve({ data: [] as any, error: null as any }),
+      : Promise.resolve({ data: [] as CatalogArtistSeriesRow[], error: null }),
     latestRunDate
       ? cachedQuery(
           async () =>
@@ -440,9 +443,9 @@ export default async function CatalogPage({
               limit_rows: 25,
             }),
           `catalog-artist-top-total-${artistId}-${latestRunDate}-ov${overrideBuster}`,
-          3600,
+          CACHE_TTL_1H,
         )
-      : Promise.resolve({ data: [] as any, error: null as any }),
+      : Promise.resolve({ data: [] as CatalogTopTrackRow[], error: null }),
     latestRunDate
       ? cachedQuery(
           async () =>
@@ -452,9 +455,9 @@ export default async function CatalogPage({
               limit_rows: 25,
             }),
           `catalog-artist-top-daily-${artistId}-${latestRunDate}-ov${overrideBuster}`,
-          3600,
+          CACHE_TTL_1H,
         )
-      : Promise.resolve({ data: [] as any, error: null as any }),
+      : Promise.resolve({ data: [] as CatalogTopTrackRow[], error: null }),
   ]);
 
   const cumSeriesAscRun = ((seriesRows ?? []) as CatalogArtistSeriesRow[])
@@ -493,7 +496,7 @@ export default async function CatalogPage({
       .select("isrc,spotify_artist_ids,spotify_artist_names,release_date")
       .in("isrc", missingTopIsrcs);
     if (error) {
-      console.warn("Error fetching top-track artist metadata:", error);
+      logWarn("Error fetching top-track artist metadata", error);
     } else {
       for (const r of (metaRows ?? []) as Array<{
         isrc: string;
@@ -545,7 +548,7 @@ export default async function CatalogPage({
   // Selected track panels (optional)
   const trackSeries =
     isrc && latestRunDate && startRunDate
-      ? await fetchAllTrackSeries(svc, { isrc, startDate: startRunDate, endDate: latestRunDate, maxRows: 5000 })
+      ? await fetchAllTrackSeries(svc, { isrc, startDate: startRunDate, endDate: latestRunDate, maxRows: API_LOOKUP_TRACK_MAX })
       : ([] as Array<{ date: string; streams_cumulative: number | null }>);
 
   const trackOverrideAnnotations =
@@ -563,7 +566,7 @@ export default async function CatalogPage({
               return await q.order("date", { ascending: false });
             },
             `track-overrides-${isrc}-${startRunDate}-${latestRunDate}-ov${overrideBuster}-stale${hideStaleAnnotations ? "1" : "0"}`,
-            3600,
+            CACHE_TTL_1H,
           )
         ).data
       : [];
@@ -634,10 +637,10 @@ export default async function CatalogPage({
             .gte("date", startRunDate)
             .lte("date", latestRunDate);
           if (hideStaleAnnotations) q = q.not("note", "like", "stale-fix:%");
-          return await q.order("date", { ascending: false }).limit(500);
+          return await q.order("date", { ascending: false }).limit(API_LOOKUP_LIMIT_500);
         },
         `catalog-artist-overrides-${artistId}-${startRunDate}-${latestRunDate}-c${i}-ov${overrideBuster}-stale${hideStaleAnnotations ? "1" : "0"}`,
-        3600,
+        CACHE_TTL_1H,
       );
 
       rowsAll.push(...(((rowsRaw ?? []) as TrackOverrideRowWithIsrc[]) ?? []));
@@ -713,7 +716,7 @@ export default async function CatalogPage({
           .eq("isrc", isrc)
           .maybeSingle(),
       `track-selected-${isrc}`,
-      3600,
+      CACHE_TTL_1H,
     );
     if (trackData) {
       const track = trackData as {
@@ -748,13 +751,13 @@ export default async function CatalogPage({
           .lte("valid_from", latestRunDate)
           .order("playlist_key", { ascending: true })
           .order("valid_from", { ascending: false })
-          .limit(5000),
+          .limit(API_LOOKUP_TRACK_MAX),
       `catalog-track-playlist-memberships-v1-${isrc}-${latestRunDate}`,
-      3600,
+      CACHE_TTL_1H,
     );
 
     if (membershipErr) {
-      console.warn("Error fetching track playlist memberships:", membershipErr);
+      logWarn("Error fetching track playlist memberships", membershipErr);
       return [];
     }
 
@@ -793,17 +796,17 @@ export default async function CatalogPage({
           .in("playlist_key", playlistKeys);
 
         if (fallback.error) {
-          console.warn("Error fetching playlist metadata (fallback):", fallback.error);
+          logWarn("Error fetching playlist metadata (fallback)", fallback.error);
         } else {
           playlistMetaRows = (fallback.data ?? []) as unknown[];
         }
       } else if (res.error) {
-        console.warn("Error fetching playlist metadata:", res.error);
+        logWarn("Error fetching playlist metadata", res.error);
       } else {
         playlistMetaRows = (res.data ?? []) as unknown[];
       }
     } catch (e) {
-      console.warn("Error fetching playlist metadata:", e);
+      logWarn("Error fetching playlist metadata", e);
     }
 
     const metaByKey = new Map<string, PlaylistMetaRow>();
@@ -898,7 +901,7 @@ export default async function CatalogPage({
         throw error;
       }
     }
-    console.error("Error in CatalogPage:", error);
+    logError("Error in CatalogPage", error);
     const errorMessage = error instanceof Error ? error.message : String(error);
     return (
       <div className="space-y-4">

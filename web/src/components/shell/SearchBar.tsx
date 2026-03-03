@@ -9,6 +9,7 @@ import { useMetric } from "@/components/metrics/MetricContext";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { useKeyboardShortcutsSafe } from "@/components/keyboard";
 import { triggerRouteLoadingBarStart } from "@/lib/navigation/loadingBar";
+import { logError } from "@/lib/logger";
 
 type SearchResult = {
   type: "track" | "artist" | "playlist";
@@ -304,7 +305,7 @@ export function SearchBar() {
       } catch (error) {
         // Ignore aborts; log others.
         if ((error as any)?.name !== "AbortError") {
-          console.error("Search error:", error);
+          logError("Search error", error);
         }
       } finally {
         setIsLoading(false);
@@ -422,7 +423,7 @@ export function SearchBar() {
       .then((data) => {
         setHoveredResultStats((prev) => ({ ...prev, [key]: data }));
       })
-      .catch((error) => console.error("Failed to fetch stats:", error))
+      .catch((error) => logError("Failed to fetch stats", error))
       .finally(() => {
         setLoadingStats((prev) => ({ ...prev, [key]: false }));
       });

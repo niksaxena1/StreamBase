@@ -3,6 +3,7 @@ import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { cachedQuery } from "@/lib/supabase/cache";
 import { getArtistsCached } from "@/lib/spotify";
+import { logError } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -98,7 +99,7 @@ export async function GET(request: NextRequest) {
     );
 
     if (error) {
-      console.error("[search] cached search failed:", error);
+      logError("[search] cached search failed", error);
       return NextResponse.json({ results: [] });
     }
 
@@ -106,7 +107,7 @@ export async function GET(request: NextRequest) {
       results: (payload as any)?.results ?? [],
     });
   } catch (error) {
-    console.error("Search error:", error);
+    logError("Search error", error);
     return NextResponse.json(
       { error: "Search failed" },
       { status: 500 }

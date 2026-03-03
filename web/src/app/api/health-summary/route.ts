@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getActiveWarningSummary } from "@/lib/health/activeWarnings";
+import { logError } from "@/lib/logger";
 
 // This route is time-sensitive (used for polling).
 export const dynamic = "force-dynamic";
@@ -38,7 +39,7 @@ export async function GET(request: NextRequest) {
       headers: { "Cache-Control": "no-store" },
     });
   } catch (e) {
-    console.error("[health-summary] error:", e);
+    logError("[health-summary] error", e);
     return NextResponse.json(
       { latestRun: null, criticalWarnings: 0 },
       { status: 200, headers: { "Cache-Control": "no-store" } },

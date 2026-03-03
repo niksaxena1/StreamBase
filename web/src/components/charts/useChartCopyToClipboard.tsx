@@ -5,6 +5,7 @@ import type { MouseEvent, PointerEvent } from "react";
 
 import { Modal } from "@/components/ui/Modal";
 import { formatTooltipDateSmart, showCopiedToast } from "./chartUtils";
+import { logError } from "@/lib/logger";
 
 export type TooltipCopyValues = {
   label: string | null;
@@ -51,7 +52,7 @@ export function useChartCopyToClipboard(args: { valueLabel: string }) {
       await navigator.clipboard.writeText(toCopy);
       showCopiedToast(message);
     } catch (err) {
-      console.error("Failed to copy:", err);
+      logError("Failed to copy", err);
     }
   }, []);
 

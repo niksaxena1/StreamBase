@@ -95,7 +95,8 @@ function NumberSingleInput({
     } else if (inputValue && !parseNumberValue(inputValue)) {
       // Keep invalid input as-is for user to fix
     }
-  }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [value]); // Intentional: only sync on external value changes, not on internal inputValue changes
+  // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleBlur() {
     const parsed = parseNumberValue(inputValue);

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { DEFAULT_STALE_MIN_STREAMS, SAVED_FEEDBACK_MS } from "@/lib/constants";
 
 function normalizeThresholdInput(raw: string) {
   const s = raw.trim();
@@ -16,7 +17,7 @@ function normalizeThresholdInput(raw: string) {
 }
 
 export function StaleTrackThresholdSetting() {
-  const [minStreamsText, setMinStreamsText] = useState("2000");
+  const [minStreamsText, setMinStreamsText] = useState(String(DEFAULT_STALE_MIN_STREAMS));
   const [minAvgDailyText, setMinAvgDailyText] = useState("10");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -40,9 +41,11 @@ export function StaleTrackThresholdSetting() {
       })
       .then((data) => {
         const d = data as any;
-        const minStreams = Number(d?.stale_track_min_streams ?? 2000);
+        const minStreams = Number(d?.stale_track_min_streams ?? DEFAULT_STALE_MIN_STREAMS);
         const minAvgDaily = Number(d?.stale_track_min_avg_daily ?? 10);
-        setMinStreamsText(Number.isFinite(minStreams) ? String(minStreams) : "2000");
+        setMinStreamsText(
+          Number.isFinite(minStreams) ? String(minStreams) : String(DEFAULT_STALE_MIN_STREAMS),
+        );
         setMinAvgDailyText(Number.isFinite(minAvgDaily) ? String(minAvgDaily) : "10");
         setConfigured(d?.configured !== false);
         setLoading(false);
@@ -84,12 +87,14 @@ export function StaleTrackThresholdSetting() {
         );
 
       const d = data as any;
-      const savedMinStreams = Number(d?.stale_track_min_streams ?? parsedMinStreams.value);
+      const savedMinStreams = Number(
+        d?.stale_track_min_streams ?? parsedMinStreams.value,
+      );
       const savedMinAvgDaily = Number(d?.stale_track_min_avg_daily ?? parsedMinAvgDaily.value);
       setMinStreamsText(Number.isFinite(savedMinStreams) ? String(savedMinStreams) : String(parsedMinStreams.value));
       setMinAvgDailyText(Number.isFinite(savedMinAvgDaily) ? String(savedMinAvgDaily) : String(parsedMinAvgDaily.value));
       setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
+      setTimeout(() => setSaved(false), SAVED_FEEDBACK_MS);
     } catch (e) {
       setError(
         e instanceof Error ? e.message : "Failed to update settings",
@@ -147,7 +152,7 @@ export function StaleTrackThresholdSetting() {
               setSaved(false);
               setMinStreamsText(e.target.value);
             }}
-            placeholder="2000"
+            placeholder={String(DEFAULT_STALE_MIN_STREAMS)}
             className="sb-ring h-9 w-28 rounded-lg bg-white/60 px-3 text-sm dark:bg-white/10"
             disabled={isDisabled}
             aria-label="Stale track minimum total streams"

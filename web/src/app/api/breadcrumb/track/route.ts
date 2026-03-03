@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
+import { logError } from "@/lib/logger";
 
 export const revalidate = 86400; // 24h ISR - track labels change with daily data
 
@@ -37,6 +38,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ trackLabel });
   } catch (error) {
+    logError("Breadcrumb track error", error);
     return NextResponse.json({ trackLabel: isrc }, { status: 500 });
   }
 }

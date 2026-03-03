@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { SAVED_FEEDBACK_MS } from "@/lib/constants";
 
 export function HideStaleAnnotationsSetting() {
   const [hidden, setHidden] = useState(false);
@@ -57,7 +58,7 @@ export function HideStaleAnnotationsSetting() {
 
       setHidden(Boolean(data.hide_stale_override_annotations ?? next));
       setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
+      setTimeout(() => setSaved(false), SAVED_FEEDBACK_MS);
     } catch (e) {
       setHidden(!next);
       setError(e instanceof Error ? e.message : "Failed to update setting");

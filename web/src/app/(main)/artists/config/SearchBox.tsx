@@ -25,6 +25,7 @@ export function SearchBox({ onSearchChange, placeholder = "Search…", className
         onSearchChange(urlQuery);
       }
     }
+    // Intentional: sync URL query on mount; don't re-run on onSearchChange changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

@@ -1,5 +1,6 @@
 import { getActiveWarningSummary } from "@/lib/health/activeWarnings";
 import { MobileNav } from "./MobileNav";
+import { logError } from "@/lib/logger";
 
 export async function MobileNavWithBadge() {
   let badgeCount = 0;
@@ -13,7 +14,7 @@ export async function MobileNavWithBadge() {
     infoOnly = summary.infoOnly;
   } catch (error) {
     // Silently fail - don't break navigation if badge fetch fails
-    console.error("[Health Badge] Failed to fetch health badge counts:", error);
+    logError("[Health Badge] Failed to fetch health badge counts", error);
   }
 
   return <MobileNav healthBadgeCount={badgeCount} healthHasCritical={hasCritical} healthInfoOnly={infoOnly} />;

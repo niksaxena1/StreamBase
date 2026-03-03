@@ -3,10 +3,12 @@ import { redirect } from "next/navigation";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { cachedQuery } from "@/lib/supabase/cache";
+import { CACHE_TTL_1H } from "@/lib/constants";
 import { SOT_DATA_LAG_DAYS, addDaysISO, dataDateFromRunDate } from "@/lib/sotDates";
 import { getRollbackDate, rollbackDataDateToRunDate } from "@/lib/rollback";
 import { HomeDashboardClient } from "./HomeDashboardClient";
 import type { ArtistWeekendDipRow, TrackWeekendDipRow } from "./home/homeTypes";
+import type { TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChart";
 
 type PlaylistDailyStatsRow = {
   date: string;
@@ -97,7 +99,7 @@ async function fetchTrackScatterPoints(
   const pageSize = 1000;
   const hardCap = 100_000; // safety cap to avoid huge payloads on very large catalogs
 
-  const out: any[] = [];
+  const out: Record<string, unknown>[] = [];
   const seenIsrc = new Set<string>();
 
   for (let offset = 0; offset < hardCap; offset += pageSize) {
@@ -109,11 +111,11 @@ async function fetchTrackScatterPoints(
       .range(offset, offset + pageSize - 1);
 
     if (error) throw error;
-    const rows = (data ?? []) as any[];
+    const rows = (data ?? []) as Record<string, unknown>[];
     if (!rows.length) break;
 
     for (const r of rows) {
-      const isrc = String((r as any)?.isrc ?? "").trim();
+      const isrc = String(r?.isrc ?? "").trim();
       if (!isrc) continue;
       if (seenIsrc.has(isrc)) continue;
       seenIsrc.add(isrc);
@@ -207,7 +209,7 @@ export default async function Home({
       .order("id", { ascending: false })
       .limit(1)
       .maybeSingle();
-    const maxId = Number((latestOverride as any)?.id ?? 0);
+    const maxId = Number((latestOverride as { id: number } | null)?.id ?? 0);
     const total = Number(count ?? 0);
     overrideBuster = `${total}-${maxId}`;
   } catch {
@@ -230,7 +232,7 @@ export default async function Home({
                 .eq("playlist_key", playlistKey)
                 .maybeSingle(),
             `home-playlist-image-${playlistKey}`,
-            3600,
+            CACHE_TTL_1H,
           )
         ).data?.spotify_playlist_image_url ?? null;
 
@@ -246,8 +248,10 @@ export default async function Home({
       if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
       return await q.order("date", { ascending: false }).limit(rangeDays + 7);
     },
-    `home-playlist-stats-v2-${playlistKey}-${rangeDays + 7}-${session.user.id}-ov${overrideBuster}-rb${rollbackDate ?? "live"}`,
-    3600, // 1 hour
+    `home-playlist-stats-v2-${playlistKey}-${rangeDays + 7}-${session.user.id}-ov${overrideBuster}-rb${
+      rollbackDate ?? "live"
+    }`,
+    CACHE_TTL_1H, // 1 hour
   );
 
   // Derive latest from first row of history (newest date)
@@ -272,7 +276,7 @@ export default async function Home({
   const scatterCacheKey = `home-track-scatter-v6-${selectedRunDate ?? "none"}`;
   const { data: trackScatterPoints, error: trackScatterErr } = await cachedQuery(
     async () => {
-      if (!selectedRunDate) return { data: [] as any[], error: null as any };
+      if (!selectedRunDate) return { data: [] as TrackStreamsXYPoint[], error: null };
 
       const prevRunDate = addDaysIso(selectedRunDate, -1);
 
@@ -283,28 +287,35 @@ export default async function Home({
       });
 
       const points = rows
-        .map((r: any) => {
+        .map((r: Record<string, unknown>) => {
           const total = Number(r.total_streams_cumulative ?? 0);
           if (!isFinite(total)) return null;
+          const isrc = String(r?.isrc ?? "").trim();
+          const name = typeof r?.name === "string" ? r.name : null;
+          const release_date = typeof r?.release_date === "string" ? r.release_date : null;
+          const artist_names = Array.isArray(r?.artist_names) ? (r.artist_names as string[]) : null;
+          const artist_ids = Array.isArray(r?.artist_ids) ? (r.artist_ids as string[]) : null;
+          const album_image_url = typeof r?.album_image_url === "string" ? r.album_image_url : null;
+          const spotify_track_id = typeof r?.spotify_track_id === "string" ? r.spotify_track_id : null;
           return {
-            isrc: r.isrc,
-            name: r.name ?? null,
-            release_date: r.release_date ?? null,
-            artist_names: r.artist_names ?? null,
-            artist_ids: r.artist_ids ?? null,
-            album_image_url: r.album_image_url ?? null,
+            isrc,
+            name,
+            release_date: release_date ?? undefined,
+            artist_names,
+            artist_ids,
+            album_image_url,
             total_streams_cumulative: total,
             daily_streams_delta: Number(r.daily_streams_delta ?? 0),
             has_prev_day: Boolean(r.has_prev_day),
-            spotify_track_id: r.spotify_track_id ?? null,
-          };
+            spotify_track_id: spotify_track_id ?? undefined,
+          } as TrackStreamsXYPoint;
         })
-        .filter(Boolean);
+        .filter((p): p is TrackStreamsXYPoint => p !== null);
 
-      return { data: points as any[], error: null as any };
+      return { data: points, error: null };
     },
     scatterCacheKey,
-    3600,
+    CACHE_TTL_1H,
   );
 
   // Manual stream override annotations for charts (run-date scoped; UI shows data-date).
@@ -326,8 +337,10 @@ export default async function Home({
         if (hideStaleAnnotations) q = q.not("note", "like", "stale-fix:%");
         return await q.order("date", { ascending: false }).limit(500);
       },
-      `home-overrides-range-${playlistKey}-${startRunDate}-${endRunDate}-stale${hideStaleAnnotations ? "1" : "0"}`,
-      3600,
+      `home-overrides-range-${playlistKey}-${startRunDate}-${endRunDate}-stale${
+        hideStaleAnnotations ? "1" : "0"
+      }`,
+      CACHE_TTL_1H,
     );
 
     const overrideRows = (overrideRowsRaw ?? []) as TrackOverrideRow[];
@@ -352,7 +365,7 @@ export default async function Home({
           .or(`valid_to.is.null,valid_to.gte.${startRunDate}`)
           .limit(5000),
       `home-memberships-for-overrides-${playlistKey}-${startRunDate}-${endRunDate}-${isrcs.length}`,
-      3600,
+      CACHE_TTL_1H,
     );
 
     const membershipRows = (membershipRowsRaw ?? []) as PlaylistMembershipRow[];
@@ -408,7 +421,7 @@ export default async function Home({
       });
     },
     `home-artist-weekend-dips-${playlistKey}-${latestDataDate ?? "none"}-${session.user.id}`,
-    3600, // 1 hour
+    CACHE_TTL_1H, // 1 hour
   );
 
   // Fetch track weekend dips for the latest week
@@ -420,7 +433,7 @@ export default async function Home({
       });
     },
     `home-track-weekend-dips-${playlistKey}-${latestDataDate ?? "none"}-${session.user.id}`,
-    3600, // 1 hour
+    CACHE_TTL_1H, // 1 hour
   );
 
   return (
@@ -433,7 +446,7 @@ export default async function Home({
       history={(history as PlaylistDailyStatsRow[] | null) ?? []}
       playlistImageUrl={playlistImageUrl}
       historyErrorMessage={historyErr?.message ?? null}
-      trackScatterPoints={(trackScatterPoints as any[]) ?? []}
+      trackScatterPoints={trackScatterPoints ?? []}
       trackScatterErrorMessage={trackScatterErr?.message ?? null}
       trackScatterDataDate={selectedDataDate}
       latestRunDate={latestRunDate}

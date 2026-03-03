@@ -32,6 +32,7 @@ export function MetricProvider({
     } catch {
       // ignore (private mode, disabled storage, etc.)
     }
+    // Intentional: restore from storage on mount; don't use metric as dependency
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

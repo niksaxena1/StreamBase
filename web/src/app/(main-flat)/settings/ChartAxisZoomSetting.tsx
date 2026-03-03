@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { SAVED_FEEDBACK_MS } from "@/lib/constants";
 
 export function ChartAxisZoomSetting() {
   const [zoomDaily, setZoomDaily] = useState(true);
@@ -49,9 +50,11 @@ export function ChartAxisZoomSetting() {
       if (!res.ok) throw new Error((data as any)?.error ?? "Failed to update setting");
 
       setZoomDaily(Boolean((data as any)?.chart_zoom_daily_y_axis ?? nextDaily));
-      setZoomCollector(Boolean((data as any)?.chart_zoom_daily_y_axis_collector_comparison ?? nextCollector));
+      setZoomCollector(
+        Boolean((data as any)?.chart_zoom_daily_y_axis_collector_comparison ?? nextCollector),
+      );
       setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
+      setTimeout(() => setSaved(false), SAVED_FEEDBACK_MS);
 
       window.dispatchEvent(new Event("sb:chart-axis-zoom-updated"));
     } catch (e) {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { SAVED_FEEDBACK_MS } from "@/lib/constants";
 
 export function HomeFiltersToggle() {
   const [enabled, setEnabled] = useState(true);
@@ -44,7 +45,7 @@ export function HomeFiltersToggle() {
       if (!res.ok) throw new Error((data as any)?.error ?? "Failed to update setting");
 
       setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
+      setTimeout(() => setSaved(false), SAVED_FEEDBACK_MS);
 
       // Let the home page react without a full reload (best-effort).
       window.dispatchEvent(new Event("sb:home-filters-setting-updated"));

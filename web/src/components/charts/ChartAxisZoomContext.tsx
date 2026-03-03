@@ -77,6 +77,7 @@ export function ChartAxisZoomProvider({ children }: { children: ReactNode }) {
     }
     window.addEventListener("sb:chart-axis-zoom-updated", onUpdated as any);
     return () => window.removeEventListener("sb:chart-axis-zoom-updated", onUpdated as any);
+    // Intentionally empty: refetch function is stale by design; should only register listener once on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

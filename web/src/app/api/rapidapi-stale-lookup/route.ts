@@ -1,11 +1,9 @@
 import { NextResponse, NextRequest } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
+import { RAPIDAPI_ENDPOINT, RAPIDAPI_HOST, RAPIDAPI_DELAY_MS } from "@/lib/rapidapi";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const RAPIDAPI_HOST = "spotify-track-streams-playback-count1.p.rapidapi.com";
-const RAPIDAPI_ENDPOINT = `https://${RAPIDAPI_HOST}/tracks/spotify_track_streams`;
 
 async function requireAdmin() {
   const sb = await supabaseServer();
@@ -86,7 +84,7 @@ export async function POST(request: NextRequest) {
   }
 
   const results: StaleLookupResult[] = [];
-  const delayMs = 1100;
+  const delayMs = RAPIDAPI_DELAY_MS;
 
   for (let i = 0; i < isrcs.length; i++) {
     const isrc = isrcs[i];

@@ -1,7 +1,8 @@
 import { unstable_cache } from "next/cache";
 import { logDebug } from "@/lib/logger";
+import { CACHE_TTL_24H, SB_TIMING_SLOW_MS_DEFAULT } from "@/lib/constants";
 
-const DEFAULT_REVALIDATE_SECONDS = 86400; // 24 hours - data updates daily
+const DEFAULT_REVALIDATE_SECONDS = CACHE_TTL_24H; // 24 hours - data updates daily
 
 function isTimingEnabled(): boolean {
   const v = (process.env.SB_TIMING ?? process.env.SOT_TIMING ?? "").toLowerCase();
@@ -9,7 +10,7 @@ function isTimingEnabled(): boolean {
 }
 
 function slowMsThreshold(): number {
-  const n = Number(process.env.SB_TIMING_SLOW_MS ?? "250") || 250;
+  const n = Number(process.env.SB_TIMING_SLOW_MS ?? String(SB_TIMING_SLOW_MS_DEFAULT)) || SB_TIMING_SLOW_MS_DEFAULT;
   return Math.max(0, n);
 }
 

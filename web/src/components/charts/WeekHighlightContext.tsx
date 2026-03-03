@@ -73,6 +73,7 @@ export function WeekHighlightProvider({ children }: { children: ReactNode }) {
     }
     window.addEventListener("sb:week-highlight-day-updated", onUpdated as any);
     return () => window.removeEventListener("sb:week-highlight-day-updated", onUpdated as any);
+    // Intentional: register listener once; refetch function is stale by design
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

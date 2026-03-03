@@ -1,12 +1,10 @@
 import { NextResponse, NextRequest } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
+import { RAPIDAPI_ENDPOINT, RAPIDAPI_HOST, RAPIDAPI_DELAY_MS } from "@/lib/rapidapi";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const RAPIDAPI_HOST = "spotify-track-streams-playback-count1.p.rapidapi.com";
-const RAPIDAPI_ENDPOINT = `https://${RAPIDAPI_HOST}/tracks/spotify_track_streams`;
 
 async function requireAdmin() {
   const sb = await supabaseServer();
@@ -168,7 +166,7 @@ export async function POST(request: NextRequest) {
     prev_streams_cumulative: number;
     new_streams_cumulative: number;
   }> = [];
-  const delayMs = 1100; // free tier 1 req/sec
+  const delayMs = RAPIDAPI_DELAY_MS; // free tier 1 req/sec
 
   for (let i = 0; i < toProcess.length; i++) {
     const { isrc, prev_streams_cumulative: prevVal } = toProcess[i];
