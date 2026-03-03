@@ -299,6 +299,22 @@ def main():
             # Table might not exist yet; ignore.
             pass
 
+        # Optional: ISRC alias map (remap wrong/old ISRCs to canonical ones).
+        isrc_alias_map: Dict[str, str] = {}
+        try:
+            alias_rows = pg.select_all(
+                "isrc_aliases", "old_isrc,canonical_isrc", "", page_size=1000
+            )
+            for r in alias_rows:
+                old = norm_isrc(r.get("old_isrc") or "")
+                canonical = norm_isrc(r.get("canonical_isrc") or "")
+                if old and canonical:
+                    isrc_alias_map[old] = canonical
+            if isrc_alias_map:
+                print(f"  ℹ Loaded {len(isrc_alias_map)} ISRC alias(es)")
+        except Exception:
+            pass
+
         # --- ingestion_runs ---
         gha_sha = os.environ.get("GITHUB_SHA", "")
         gha_repo = os.environ.get("GITHUB_REPOSITORY", "")
@@ -425,6 +441,7 @@ def main():
                 isrc = norm_isrc(row.get("isrc") or "")
                 if not isrc:
                     continue
+                isrc = isrc_alias_map.get(isrc, isrc)
                 isrcs.add(isrc)
 
                 name = (row.get("name") or "").strip() or None
