@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Activity, Search, X, TrendingUp, TrendingDown, ArrowRightLeft } from "lucide-react";
 
@@ -33,6 +33,7 @@ import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { Modal } from "@/components/ui/Modal";
 import { useChartStartDate } from "@/components/charts/ChartStartDateContext";
 import { filterDailySeriesFromIsoDate } from "@/components/charts/chartUtils";
+import { useLongPress } from "@/components/charts/useLongPress";
 
 type Metric = "streams" | "revenue" | "tracks";
 
@@ -785,6 +786,23 @@ export function CollectorsClient(props: {
 
   const [trackQuery, setTrackQuery] = useState("");
   const [trackSort, setTrackSort] = useState<TrackSort>("delta_desc");
+
+  // On mobile, ISRC column is hidden and the Release Date column toggles
+  // between Release date and ISRC via long press.
+  const [showIsrcOnMobile, setShowIsrcOnMobile] = useState(false);
+  const lpFiredRef = useRef(false);
+
+  const toggleIsrcRelease = useCallback(() => {
+    setShowIsrcOnMobile((prev) => !prev);
+    lpFiredRef.current = true;
+  }, []);
+
+  const {
+    onPointerDown: releaseLpDown,
+    onPointerMove: releaseLpMove,
+    onPointerUp: releaseLpUp,
+    onPointerCancel: releaseLpCancel,
+  } = useLongPress({ onLongPress: toggleIsrcRelease });
 
   // Tracks table (in the collector details section) is stream-based data. When the global
   // metric is "tracks", we still show streams here (values + colors), matching other drilldowns.
@@ -2540,8 +2558,30 @@ export function CollectorsClient(props: {
                 headers={[
                   "",
                   trackHeaderButton({ label: "TRACK", asc: "name_asc", desc: "name_desc", defaultDir: "asc" }),
-                  "ISRC",
-                  trackHeaderButton({ label: "RELEASE DATE", asc: "release_asc", desc: "release_desc", defaultDir: "desc" }),
+                  { label: "ISRC", className: "hidden sm:table-cell" },
+                  {
+                    label: (
+                      <div
+                        onPointerDown={releaseLpDown}
+                        onPointerMove={releaseLpMove}
+                        onPointerUp={releaseLpUp}
+                        onPointerCancel={releaseLpCancel}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (lpFiredRef.current) { lpFiredRef.current = false; return; }
+                            setTrackSort(trackSort === "release_asc" ? "release_desc" : "release_asc");
+                          }}
+                          className="w-full text-left select-none cursor-default uppercase"
+                          style={{ color: "inherit" }}
+                        >
+                          <span className="sm:hidden">{showIsrcOnMobile ? "ISRC" : "RELEASE DATE"}</span>
+                          <span className="hidden sm:inline">RELEASE DATE</span>
+                        </button>
+                      </div>
+                    ),
+                  },
                   trackHeaderButton({ label: tracksTableTotalLabel.toUpperCase(), asc: "total_asc", desc: "total_desc", defaultDir: "desc", align: "right" }),
                   trackHeaderButton({
                     label: tracksTableDailyLabel.toUpperCase(),
@@ -2590,7 +2630,7 @@ export function CollectorsClient(props: {
                         </div>
                       ) : null}
                     </TableCell>
-                    <TableCell mono className="text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>
+                    <TableCell mono className="text-xs opacity-40 hidden sm:table-cell" style={{ color: "var(--sb-muted)" }}>
                       {t.isrc}
                     </TableCell>
                     <TableCell
@@ -2598,7 +2638,7 @@ export function CollectorsClient(props: {
                       className="whitespace-nowrap text-xs opacity-40"
                       style={{ color: "var(--sb-muted)" }}
                     >
-                      {t.release_date ? formatDateISO(t.release_date) : <span className="opacity-30">—</span>}
+                      {showIsrcOnMobile ? t.isrc : (t.release_date ? formatDateISO(t.release_date) : <span className="opacity-30">—</span>)}
                     </TableCell>
                     <TableCell
                       className={tracksTableIsRevenue ? "font-medium" : "sb-positive font-medium"}

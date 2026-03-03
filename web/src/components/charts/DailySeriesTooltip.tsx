@@ -3,13 +3,14 @@
 import { useEffect, useRef } from "react";
 import Image from "next/image";
 
-import { extractOverrideItemsFromRechartsPayload, extractWeekendDipFromRechartsPayload, formatTooltipDateDaily } from "@/components/charts/chartUtils";
+import { extractOverrideItemsFromRechartsPayload, extractWeekendDipFromRechartsPayload, formatTooltipDateSmart } from "@/components/charts/chartUtils";
 import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
 import type { TooltipCopyValues } from "@/components/charts/useChartCopyToClipboard";
 
 type TooltipPayloadEntry = {
   value?: unknown;
   dataKey?: unknown;
+  payload?: Record<string, unknown>;
 };
 
 export function DailySeriesTooltip({
@@ -21,6 +22,7 @@ export function DailySeriesTooltip({
   isDark,
   chartColor,
   onValuesFormatted,
+  isCumulative,
 }: {
   active?: boolean;
   label?: string;
@@ -30,6 +32,7 @@ export function DailySeriesTooltip({
   isDark: boolean;
   chartColor: string;
   onValuesFormatted?: (v: TooltipCopyValues) => void;
+  isCumulative?: boolean;
 }) {
   // Avoid update loops by only notifying when values change.
   const lastSentKeyRef = useRef<string>("");
@@ -82,7 +85,19 @@ export function DailySeriesTooltip({
           color: "var(--sb-text)",
         }}
       >
-        {label ? <div className="mb-2 text-xs font-medium">{formatTooltipDateDaily(label)}</div> : null}
+        {label ? <div className="mb-2 text-xs font-medium">{formatTooltipDateSmart(label)}</div> : null}
+
+        {Boolean(sorted[0]?.payload?._isPartial) && (
+          <div
+            className="mb-1.5 rounded px-1.5 py-0.5 text-[10px] font-medium"
+            style={{ backgroundColor: "var(--sb-surface)", color: "var(--sb-muted)" }}
+          >
+            Partial period{(() => {
+              const days = Number(sorted[0]?.payload?._bucketDays);
+              return days > 0 ? ` · ${days} day${days !== 1 ? "s" : ""}` : "";
+            })()}
+          </div>
+        )}
 
         {sorted.map((entry, index) => {
           const isMA = String(entry?.dataKey ?? "") === "ma7";
@@ -98,6 +113,11 @@ export function DailySeriesTooltip({
 
           const valueColor = isDark ? chartColor : "var(--sb-text)";
 
+          const bucketDays = Number(entry?.payload?._bucketDays);
+          const showAvg = !isMA && !isCumulative && raw != null && bucketDays > 1;
+          const growthPct = !isMA && !isCumulative ? Number(entry?.payload?._growthPct) : NaN;
+          const hasGrowth = Number.isFinite(growthPct);
+
           return (
             <div key={index} className="text-xs">
               <span style={{ color: "var(--sb-text)" }}>
@@ -105,7 +125,20 @@ export function DailySeriesTooltip({
                 <span className="font-bold" style={{ color: valueColor }}>
                   {value}
                 </span>
+                {hasGrowth && (
+                  <span
+                    className="ml-1.5 text-[10px] font-semibold"
+                    style={{ color: growthPct > 0 ? "var(--sb-success, #10b981)" : growthPct < 0 ? "var(--sb-error, #ef4444)" : "var(--sb-muted)" }}
+                  >
+                    {growthPct > 0 ? "+" : ""}{growthPct.toFixed(1)}%
+                  </span>
+                )}
               </span>
+              {showAvg && (
+                <div className="text-[10px]" style={{ color: "var(--sb-muted)" }}>
+                  avg: {fmtValue(Math.round(raw / bucketDays))}/day
+                </div>
+              )}
             </div>
           );
         })}

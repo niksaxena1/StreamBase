@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent, PointerEvent } from "react";
 
 import { Modal } from "@/components/ui/Modal";
-import { formatTooltipDateDaily, showCopiedToast } from "./chartUtils";
+import { formatTooltipDateSmart, showCopiedToast } from "./chartUtils";
 
 export type TooltipCopyValues = {
   label: string | null;
@@ -57,7 +57,7 @@ export function useChartCopyToClipboard(args: { valueLabel: string }) {
 
   const dialogTitle = useMemo(() => {
     if (!copySnapshot?.label) return "Copy value";
-    return formatTooltipDateDaily(copySnapshot.label);
+    return formatTooltipDateSmart(copySnapshot.label);
   }, [copySnapshot]);
 
   const hasMaInSnapshot = !!copySnapshot?.ma7;

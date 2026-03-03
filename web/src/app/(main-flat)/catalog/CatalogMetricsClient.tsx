@@ -11,6 +11,9 @@ import { slugifyForFilename, todayIsoDate } from "@/lib/csv";
 import { dataDateFromRunDate } from "@/lib/sotDates";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { useMetric } from "@/components/metrics/MetricContext";
+import { granularityLabel } from "@/components/ui/GranularitySelect";
+import type { Granularity } from "@/components/ui/GranularitySelect";
+import { aggregateCumulativeSeries, aggregateDailySeries } from "@/lib/granularity";
 
 type ChartDataPoint = {
   date: string;
@@ -34,19 +37,18 @@ export function CatalogMetricsClient(props: {
   artist30d: number;
   trackCount: number;
   overrideAnnotations: Array<{ date: string; note: string; title?: string; imageUrl?: string | null }>;
+  granularity: Granularity;
 }) {
   const { streamPayoutPerStreamUsd } = usePayoutRate();
   const { metric } = useMetric();
 
-  const cumulativeSeries = useMemo(() => {
+  const cumulativeSeriesRaw = useMemo(() => {
     if (metric === "revenue") {
       return props.cumSeriesAsc.map((p) => ({
         date: dataDateFromRunDate(p.date),
         value: p.value * streamPayoutPerStreamUsd,
       }));
     } else if (metric === "tracks") {
-      // For tracks, we don't have historical track count per artist
-      // So we'll just show a flat line or return empty
       return props.cumSeriesAsc.map((p) => ({
         date: dataDateFromRunDate(p.date),
         value: props.trackCount,
@@ -59,14 +61,18 @@ export function CatalogMetricsClient(props: {
     }
   }, [metric, props.cumSeriesAsc, props.trackCount, streamPayoutPerStreamUsd]);
 
-  const dailyDesc = useMemo(() => {
+  const cumulativeSeries = useMemo(
+    () => aggregateCumulativeSeries(cumulativeSeriesRaw, props.granularity),
+    [cumulativeSeriesRaw, props.granularity],
+  );
+
+  const dailyDescRaw = useMemo(() => {
     if (metric === "revenue") {
       return props.dailyArtistDesc.map((p) => ({
         date: dataDateFromRunDate(p.date),
         daily: p.daily == null ? null : p.daily * streamPayoutPerStreamUsd,
       }));
     } else if (metric === "tracks") {
-      // Track count doesn't change daily for an artist's catalog
       return props.dailyArtistDesc.map((p) => ({
         date: dataDateFromRunDate(p.date),
         daily: 0,
@@ -79,10 +85,14 @@ export function CatalogMetricsClient(props: {
     }
   }, [metric, props.dailyArtistDesc, streamPayoutPerStreamUsd]);
 
-  const dailyWithMaDesc = useMemo(() => computeDailyRollingAvg7(dailyDesc), [dailyDesc]);
+  const dailyWithMaDesc = useMemo(() => {
+    if (props.granularity === "daily") return computeDailyRollingAvg7(dailyDescRaw);
+    return aggregateDailySeries(dailyDescRaw, props.granularity);
+  }, [dailyDescRaw, props.granularity]);
 
+  const gl = granularityLabel(props.granularity).toLowerCase();
   const cumulativeLabel = metric === "revenue" ? "Est. revenue (total)" : metric === "streams" ? "Total streams" : "Track count";
-  const dailyLabel = metric === "revenue" ? "Est. revenue (daily)" : metric === "streams" ? "Daily streams" : "Track change (daily)";
+  const dailyLabel = metric === "revenue" ? `Est. revenue (${gl})` : metric === "streams" ? `${granularityLabel(props.granularity)} streams` : `Track change (${gl})`;
   
   const valueFormat = metric === "revenue" ? "usd" : "int";
   const yTickFormat = metric === "revenue" ? "usd_compact" : metric === "streams" ? "k" : "int";

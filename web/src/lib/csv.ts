@@ -27,11 +27,12 @@ function escapeCsvCell(value: unknown): string {
 function unionHeaders(rows: Array<Record<string, unknown>>): string[] {
   if (!rows.length) return [];
   const first = rows[0] ?? {};
-  const headers: string[] = Object.keys(first);
+  const headers: string[] = Object.keys(first).filter((k) => !k.startsWith("_"));
   const seen = new Set(headers);
 
   for (let i = 1; i < rows.length; i++) {
     for (const k of Object.keys(rows[i] ?? {})) {
+      if (k.startsWith("_")) continue;
       if (!seen.has(k)) {
         seen.add(k);
         headers.push(k);

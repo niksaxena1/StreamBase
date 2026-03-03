@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ExternalLink, User, ChevronRight, Download, List } from "lucide-react";
@@ -20,12 +20,16 @@ import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { PageHeader } from "@/components/shell/PageHeader";
 import { hrefWithPatchedSearchParams } from "@/lib/searchParams";
 import { FilterBar } from "@/components/ui/FilterBar";
-import { ChipGroup } from "@/components/ui/Chip";
 import { IconButton } from "@/components/ui/Button";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { useMetric } from "@/components/metrics/MetricContext";
 import { SectionHeader } from "@/components/ui/SectionHeader";
 import { RememberTrackSelection } from "@/components/dashboard/RememberTrackSelection";
+import { GranularitySelect, RangeSelect, handleGranularityWithRangeRestore, granularityLabel } from "@/components/ui/GranularitySelect";
+import type { Granularity } from "@/components/ui/GranularitySelect";
+import { aggregateCumulativeSeries, aggregateDailySeries } from "@/lib/granularity";
+import { useSharedGranularity } from "@/lib/useSharedGranularity";
+import { useLongPress } from "@/components/charts/useLongPress";
 
 type ChartDataPoint = {
   date: string;
@@ -105,15 +109,22 @@ export function CatalogPageClient(props: {
   const router = useRouter();
   const sp = useSearchParams();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
+  const [granularity, setGranularityRaw] = useSharedGranularity("sb:catalog:granularity");
+  const pushRange = useCallback(
+    (range: number) => router.push(hrefWithPatchedSearchParams(sp, { range: String(range) })),
+    [router, sp],
+  );
+  const handleGranularityChange = useCallback(
+    (g: Granularity) =>
+      handleGranularityWithRangeRestore(g, props.rangeDays, "catalog", setGranularityRaw, pushRange),
+    [props.rangeDays, setGranularityRaw, pushRange],
+  );
 
-  // Remember the last selected track when it changes
   useEffect(() => {
     if (props.isrc) {
       try {
         localStorage.setItem("sb:last_catalog_track_isrc", props.isrc);
-      } catch {
-        // ignore localStorage errors
-      }
+      } catch {}
     }
   }, [props.isrc]);
 
@@ -211,6 +222,23 @@ export function CatalogPageClient(props: {
     );
   }
 
+  // On mobile, ISRC column is hidden and the Release column toggles
+  // between Release date and ISRC via long press.
+  const [showIsrcOnMobile, setShowIsrcOnMobile] = useState(false);
+  const lpFiredRef = useRef(false);
+
+  const toggleIsrcRelease = useCallback(() => {
+    setShowIsrcOnMobile((prev) => !prev);
+    lpFiredRef.current = true;
+  }, []);
+
+  const {
+    onPointerDown: releaseLpDown,
+    onPointerMove: releaseLpMove,
+    onPointerUp: releaseLpUp,
+    onPointerCancel: releaseLpCancel,
+  } = useLongPress({ onLongPress: toggleIsrcRelease });
+
   function downloadTopTracksAsCsv(data: TopTrack[], filename: string, isDaily: boolean) {
     downloadCsv({
       filename,
@@ -250,22 +278,10 @@ export function CatalogPageClient(props: {
         }
         actions={
           <>
-            <ChipGroup segmented className="text-[11px]">
-              {[30, 90, 365].map((d) => (
-                <Link
-                  key={d}
-                  href={hrefWithPatchedSearchParams(sp, { range: String(d) })}
-                  className={[
-                    "rounded-full px-2.5 py-1.5 text-[11px] font-medium transition",
-                    props.rangeDays === d
-                      ? "bg-black text-white shadow-sm dark:bg-white dark:text-black"
-                      : "text-black/70 hover:bg-black/5 dark:text-white/70 dark:hover:bg-white/10",
-                  ].join(" ")}
-                >
-                  {d}d
-                </Link>
-              ))}
-            </ChipGroup>
+            {granularity === "daily" && (
+              <RangeSelect value={props.rangeDays} onChange={pushRange} />
+            )}
+            <GranularitySelect value={granularity} onChange={handleGranularityChange} />
             <IconButton
               variant="secondary"
               aria-label="Catalog config"
@@ -389,6 +405,7 @@ export function CatalogPageClient(props: {
             artist30d={props.artist30d}
             trackCount={props.trackCount}
             overrideAnnotations={props.artistOverrideAnnotations}
+            granularity={granularity}
           />
 
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
@@ -422,13 +439,28 @@ export function CatalogPageClient(props: {
                       />
                     ),
                   },
-                  "ISRC",
+                  { label: "ISRC", className: "hidden sm:table-cell" },
                   {
                     label: (
-                      <SilentSortHeader
-                        label="RELEASE"
-                        onClick={() => toggleSort(setTopTotalSort, topTotalSort, "release")}
-                      />
+                      <div
+                        onPointerDown={releaseLpDown}
+                        onPointerMove={releaseLpMove}
+                        onPointerUp={releaseLpUp}
+                        onPointerCancel={releaseLpCancel}
+                      >
+                        <SilentSortHeader
+                          label={
+                            <>
+                              <span className="sm:hidden">{showIsrcOnMobile ? "ISRC" : "RELEASE"}</span>
+                              <span className="hidden sm:inline">RELEASE</span>
+                            </>
+                          }
+                          onClick={() => {
+                            if (lpFiredRef.current) { lpFiredRef.current = false; return; }
+                            toggleSort(setTopTotalSort, topTotalSort, "release");
+                          }}
+                        />
+                      </div>
                     ),
                   },
                   {
@@ -477,11 +509,11 @@ export function CatalogPageClient(props: {
                         ) : null}
                       </div>
                     </TableCell>
-                    <TableCell mono className="text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>
+                    <TableCell mono className="text-xs opacity-40 hidden sm:table-cell" style={{ color: "var(--sb-muted)" }}>
                       {t.isrc}
                     </TableCell>
                     <TableCell mono className="text-xs" style={{ color: "var(--sb-muted)" }}>
-                      {t.releaseDate ? formatDateISO(t.releaseDate) : null}
+                      {showIsrcOnMobile ? t.isrc : (t.releaseDate ? formatDateISO(t.releaseDate) : null)}
                     </TableCell>
                     <TableCell numeric className="font-medium" style={topTracksNumberStyle}>
                       {t.total === null
@@ -528,13 +560,28 @@ export function CatalogPageClient(props: {
                       />
                     ),
                   },
-                  "ISRC",
+                  { label: "ISRC", className: "hidden sm:table-cell" },
                   {
                     label: (
-                      <SilentSortHeader
-                        label="RELEASE"
-                        onClick={() => toggleSort(setTopDailySort, topDailySort, "release")}
-                      />
+                      <div
+                        onPointerDown={releaseLpDown}
+                        onPointerMove={releaseLpMove}
+                        onPointerUp={releaseLpUp}
+                        onPointerCancel={releaseLpCancel}
+                      >
+                        <SilentSortHeader
+                          label={
+                            <>
+                              <span className="sm:hidden">{showIsrcOnMobile ? "ISRC" : "RELEASE"}</span>
+                              <span className="hidden sm:inline">RELEASE</span>
+                            </>
+                          }
+                          onClick={() => {
+                            if (lpFiredRef.current) { lpFiredRef.current = false; return; }
+                            toggleSort(setTopDailySort, topDailySort, "release");
+                          }}
+                        />
+                      </div>
                     ),
                   },
                   {
@@ -583,11 +630,11 @@ export function CatalogPageClient(props: {
                         ) : null}
                       </div>
                     </TableCell>
-                    <TableCell mono className="text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>
+                    <TableCell mono className="text-xs opacity-40 hidden sm:table-cell" style={{ color: "var(--sb-muted)" }}>
                       {t.isrc}
                     </TableCell>
                     <TableCell mono className="text-xs" style={{ color: "var(--sb-muted)" }}>
-                      {t.releaseDate ? formatDateISO(t.releaseDate) : null}
+                      {showIsrcOnMobile ? t.isrc : (t.releaseDate ? formatDateISO(t.releaseDate) : null)}
                     </TableCell>
                     <TableCell numeric className="font-medium" style={topTracksNumberStyle}>
                       {t.daily === null
@@ -682,11 +729,12 @@ export function CatalogPageClient(props: {
           const valueFormat = trackMode === "revenue" ? ("usd" as const) : ("int" as const);
           const yTickFormat = trackMode === "revenue" ? ("usd_compact" as const) : ("k" as const);
 
-          const cumSeries = trackMode === "revenue"
+          const cumSeriesRaw = trackMode === "revenue"
             ? props.trackCumDesc.map((p) => ({ date: dataDateFromRunDate(p.date), value: p.value * streamPayoutPerStreamUsd }))
             : props.trackCumDesc.map((p) => ({ date: dataDateFromRunDate(p.date), value: p.value }));
+          const cumSeries = aggregateCumulativeSeries(cumSeriesRaw, granularity);
 
-          const dailySeries = trackMode === "revenue"
+          const dailySeriesRaw = trackMode === "revenue"
             ? props.trackDailyWithMaDesc.map((p) => ({
                 date: dataDateFromRunDate(p.date),
                 daily: p.daily == null ? null : p.daily * streamPayoutPerStreamUsd,
@@ -697,6 +745,9 @@ export function CatalogPageClient(props: {
                 daily: p.daily,
                 ma7: p.ma7,
               }));
+          const dailySeries = granularity === "daily"
+            ? dailySeriesRaw
+            : aggregateDailySeries(dailySeriesRaw, granularity);
 
           const trackOverrideAnnotations =
             trackMode === "revenue"
@@ -706,9 +757,10 @@ export function CatalogPageClient(props: {
                 }))
               : props.trackOverrideAnnotations;
 
+          const glTrack = granularityLabel(granularity).toLowerCase();
           const cumulativeTitle = trackMode === "revenue" ? "Track total revenue" : "Track total streams";
-          const dailyTitle = trackMode === "revenue" ? "Track daily revenue" : "Track daily streams";
-          const dailyLabel = trackMode === "revenue" ? "Daily revenue" : "Daily streams";
+          const dailyTitle = trackMode === "revenue" ? `Track ${glTrack} revenue` : `Track ${glTrack} streams`;
+          const dailyLabel = trackMode === "revenue" ? `${granularityLabel(granularity)} revenue` : `${granularityLabel(granularity)} streams`;
           const totalLabel = trackMode === "revenue" ? "Total revenue" : "Total streams";
 
           // Use emerald for revenue, accent stroke for streams (tracks don't have a separate mode like artist/playlist)
@@ -798,7 +850,7 @@ export function CatalogPageClient(props: {
           </div>
         </div>
 
-        <GlassTable headers={["", "PLAYLIST", "KEY", "TYPE", "ADDED", "REMOVED"]} maxBodyHeightClassName="max-h-80">
+        <GlassTable headers={["", "PLAYLIST", { label: "KEY", className: "hidden sm:table-cell" }, "TYPE", "ADDED", "REMOVED"]} maxBodyHeightClassName="max-h-80">
           {(props.isrc ? props.selectedTrackPlaylistMemberships : []).map((m) => (
             <TableRow key={m.playlistKey}>
               <TableCell>
@@ -823,7 +875,7 @@ export function CatalogPageClient(props: {
                   </Link>
                 </div>
               </TableCell>
-              <TableCell mono className="text-[11px] opacity-60" style={{ color: "var(--sb-muted)" }}>
+              <TableCell mono className="text-[11px] opacity-60 hidden sm:table-cell" style={{ color: "var(--sb-muted)" }}>
                 {m.playlistKey}
               </TableCell>
               <TableCell>

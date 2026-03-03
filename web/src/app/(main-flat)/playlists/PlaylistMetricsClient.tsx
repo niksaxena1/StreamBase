@@ -1,18 +1,20 @@
 "use client";
 
+import { useMemo } from "react";
 import { DailyStreamsChart } from "@/components/charts/DailyStreamsChart";
 import { DailyStreamsWithMAChart } from "@/components/charts/DailyStreamsWithMAChart";
 import { SpotlightCard } from "@/components/ui/SpotlightCard";
-import { StatCard } from "@/components/StatCard";
 import { AnimatedCounter } from "@/components/ui/AnimatedCounter";
 import { Activity } from "lucide-react";
-import { formatInt } from "@/lib/format";
 import type { Metric } from "./PlaylistMetricSelector";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
 import { computeDailyRollingAvg7 } from "@/components/charts/chartUtils";
 import { slugifyForFilename, todayIsoDate } from "@/lib/csv";
 import { dataDateFromRunDate } from "@/lib/sotDates";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
+import { granularityLabel } from "@/components/ui/GranularitySelect";
+import type { Granularity } from "@/components/ui/GranularitySelect";
+import { aggregateCumulativeSeries, aggregateDailySeries } from "@/lib/granularity";
 
 type PlaylistDailyStatsRow = {
   date: string;
@@ -32,6 +34,7 @@ export function PlaylistMetricsClient(props: {
   playlistKey: string;
   overrideAnnotations: Array<{ date: string; note: string }>;
   metric: Metric;
+  granularity: Granularity;
 }) {
   const { streamPayoutPerStreamUsd } = usePayoutRate();
 
@@ -40,7 +43,7 @@ export function PlaylistMetricsClient(props: {
     return Number.isFinite(v) ? v : 0;
   };
 
-  const cumulativeSeries = props.history.map((r) => {
+  const cumulativeSeriesRaw = useMemo(() => props.history.map((r) => {
     if (props.metric === "revenue") {
       return { date: dataDateFromRunDate(r.date), value: Number(r.total_streams_cumulative ?? 0) * streamPayoutPerStreamUsd };
     } else if (props.metric === "tracks") {
@@ -48,9 +51,9 @@ export function PlaylistMetricsClient(props: {
     } else {
       return { date: dataDateFromRunDate(r.date), value: Number(r.total_streams_cumulative ?? 0) };
     }
-  });
+  }), [props.history, props.metric, streamPayoutPerStreamUsd]);
 
-  const dailyDesc = props.history.map((r) => {
+  const dailyDescRaw = useMemo(() => props.history.map((r) => {
     if (props.metric === "revenue") {
       const idx = props.history.findIndex((h) => h.date === r.date);
       const prev = idx < props.history.length - 1 ? props.history[idx + 1] : null;
@@ -60,7 +63,6 @@ export function PlaylistMetricsClient(props: {
       const dailyStreams = Math.max(0, curTotal - prevTotal);
       return { date: dataDateFromRunDate(r.date), daily: dailyStreams * streamPayoutPerStreamUsd };
     } else if (props.metric === "tracks") {
-      // Track count doesn't have daily, so calculate delta (can be negative for removals)
       const idx = props.history.findIndex((h) => h.date === r.date);
       const prev = idx < props.history.length - 1 ? props.history[idx + 1] : null;
       const daily = prev ? Number(r.track_count ?? 0) - Number(prev.track_count ?? 0) : 0;
@@ -74,11 +76,20 @@ export function PlaylistMetricsClient(props: {
       const daily = Math.max(0, curTotal - prevTotal);
       return { date: dataDateFromRunDate(r.date), daily };
     }
-  });
-  const dailyWithMaDesc = computeDailyRollingAvg7(dailyDesc);
+  }), [props.history, props.metric, streamPayoutPerStreamUsd]);
 
+  const cumulativeSeries = useMemo(
+    () => aggregateCumulativeSeries(cumulativeSeriesRaw, props.granularity),
+    [cumulativeSeriesRaw, props.granularity],
+  );
+  const dailyWithMaDesc = useMemo(() => {
+    if (props.granularity === "daily") return computeDailyRollingAvg7(dailyDescRaw);
+    return aggregateDailySeries(dailyDescRaw, props.granularity);
+  }, [dailyDescRaw, props.granularity]);
+
+  const gl = granularityLabel(props.granularity).toLowerCase();
   const cumulativeLabel = props.metric === "revenue" ? "Est. revenue (cumulative)" : props.metric === "streams" ? "Total streams" : "Track count";
-  const dailyLabel = props.metric === "revenue" ? "Est. revenue (daily)" : props.metric === "streams" ? "Daily streams" : "Track change (daily)";
+  const dailyLabel = props.metric === "revenue" ? `Est. revenue (${gl})` : props.metric === "streams" ? `${granularityLabel(props.granularity)} streams` : `Track change (${gl})`;
   
   const valueFormat = props.metric === "revenue" ? "usd" : "int";
   const yTickFormat = props.metric === "revenue" ? "usd_compact" : props.metric === "streams" ? "k" : "int";

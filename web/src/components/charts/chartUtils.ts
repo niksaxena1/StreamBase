@@ -192,6 +192,86 @@ export function formatTooltipDateDaily(dateString: string): string {
   return `${dayOfWeek}, ${day}${getOrdinalSuffix(day)} ${month} ${year}`;
 }
 
+// ---------------------------------------------------------------------------
+// Smart date formatters that auto-detect granularity from the date string
+// ---------------------------------------------------------------------------
+
+const MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MONTHS_LONG = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+/** Detect the granularity bucket format from a date string value. */
+function detectBucketFormat(v: string): "weekly" | "monthly" | "quarterly" | "yearly" | "daily" {
+  if (/^\d{4}-W\d{2}$/.test(v)) return "weekly";
+  if (/^Q\d \d{4}$/.test(v)) return "quarterly";
+  if (/^\d{4}$/.test(v)) return "yearly";
+  if (/^\d{4}-\d{2}$/.test(v) && !/^\d{4}-\d{2}-\d{2}$/.test(v)) return "monthly";
+  return "daily";
+}
+
+/** Format a chart date string for X-axis tick labels. Auto-detects granularity. */
+export function formatXAxisTick(value: string): string {
+  const fmt = detectBucketFormat(value);
+  switch (fmt) {
+    case "weekly": {
+      const w = value.split("-W")[1];
+      return `W${w}`;
+    }
+    case "monthly": {
+      const [y, m] = value.split("-");
+      return `${MONTHS_SHORT[Number(m) - 1]} '${y.slice(2)}`;
+    }
+    case "quarterly":
+      return value.replace(/^(Q\d) (\d{4})$/, "$1 '$2").replace(/'(\d{4})/, (_, y) => `'${y.slice(2)}`);
+    case "yearly":
+      return value;
+    default: {
+      const date = new Date(value);
+      const day = String(date.getDate()).padStart(2, "0");
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      return `${day}/${month}`;
+    }
+  }
+}
+
+/** Return the Monday (UTC) of a given ISO week. */
+function isoWeekToMonday(year: number, week: number): Date {
+  const jan4 = new Date(Date.UTC(year, 0, 4));
+  const dayOfWeek = jan4.getUTCDay() || 7; // Mon=1 … Sun=7
+  const mon1 = new Date(jan4);
+  mon1.setUTCDate(jan4.getUTCDate() - dayOfWeek + 1); // Monday of week 1
+  const target = new Date(mon1);
+  target.setUTCDate(mon1.getUTCDate() + (week - 1) * 7);
+  return target;
+}
+
+/** Format a chart date string for tooltip headers. Auto-detects granularity. */
+export function formatTooltipDateSmart(value: string): string {
+  const fmt = detectBucketFormat(value);
+  switch (fmt) {
+    case "weekly": {
+      const [y, w] = value.split("-W");
+      const weekNum = Number(w);
+      const year = Number(y);
+      const mon = isoWeekToMonday(year, weekNum);
+      const sun = new Date(mon);
+      sun.setUTCDate(sun.getUTCDate() + 6);
+      const fmtShort = (d: Date) =>
+        `${MONTHS_SHORT[d.getUTCMonth()]} ${d.getUTCDate()}`;
+      return `Week ${weekNum}, ${y} (${fmtShort(mon)} – ${fmtShort(sun)})`;
+    }
+    case "monthly": {
+      const [y, m] = value.split("-");
+      return `${MONTHS_LONG[Number(m) - 1]} ${y}`;
+    }
+    case "quarterly":
+      return value;
+    case "yearly":
+      return value;
+    default:
+      return formatTooltipDateDaily(value);
+  }
+}
+
 export function formatUsdCompact(n: number, fallback: (n: number) => string): string {
   // NOTE: Despite the name, this is the shared "money compact" formatter for charts.
   // It respects the global currency display mode (USD vs AED) since we store money in USD.

@@ -15,9 +15,8 @@ import { getRollbackDate, rollbackDataDateToRunDate } from "@/lib/rollback";
 import { PlaylistTracksSection } from "./PlaylistTracksSection";
 import { PageHeader } from "@/components/shell/PageHeader";
 import { Skeleton } from "@/components/ui/Skeleton";
-import { ChipGroup } from "@/components/ui/Chip";
-import { hrefWithPatchedSearchParams } from "@/lib/searchParams";
 import { PlaylistHistory30dDetails, type PlaylistHistoryRow } from "./PlaylistHistory30dDetails";
+import { PlaylistHeaderSelects } from "./PlaylistGranularitySelect";
 
 // Uses Supabase session cookies; this route must be dynamic in Next 16.
 export const dynamic = "force-dynamic";
@@ -75,15 +74,6 @@ function clampRangeDays(x: unknown) {
   return Math.max(7, Math.min(365, n));
 }
 
-function rangeChipClass(active: boolean) {
-  return [
-    "rounded-full px-2.5 py-1.5 text-[11px] font-medium transition",
-    active
-      ? "bg-black text-white shadow-sm dark:bg-white dark:text-black"
-      : "text-black/70 hover:bg-black/5 dark:text-white/70 dark:hover:bg-white/10",
-  ].join(" ");
-}
-
 function isIsoDateInRange(args: { d: string; start: string; end: string }) {
   // ISO date format YYYY-MM-DD can be compared lexicographically.
   return args.d >= args.start && args.d <= args.end;
@@ -105,8 +95,6 @@ export default async function PlaylistsPage({
   const sp = (await searchParams) ?? {};
   const playlistKey = (sp.playlist_key ?? "").trim();
   const rangeDays = clampRangeDays(sp.range);
-  const spString = new URLSearchParams(sp as Record<string, string>).toString();
-
   const sb = await supabaseServer();
   const { data: userData } = await sb.auth.getUser();
   if (!userData.user) redirect("/login");
@@ -444,17 +432,7 @@ export default async function PlaylistsPage({
         }
         actions={
           <>
-            <ChipGroup segmented className="text-[11px]">
-              {[30, 90, 365].map((d) => (
-                <Link
-                  key={d}
-                  href={hrefWithPatchedSearchParams(spString, { range: String(d) })}
-                  className={rangeChipClass(rangeDays === d)}
-                >
-                  {d}d
-                </Link>
-              ))}
-            </ChipGroup>
+            <PlaylistHeaderSelects rangeDays={rangeDays} />
             <Link
               href="/playlists/config"
               className="sb-ring grid h-8 w-8 place-items-center rounded-full bg-white/70 text-xs font-medium transition hover:bg-white dark:bg-white/10 dark:hover:bg-white/15"

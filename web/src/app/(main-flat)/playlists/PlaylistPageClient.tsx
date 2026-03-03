@@ -2,6 +2,7 @@
 
 import { PlaylistMetricsClient } from "./PlaylistMetricsClient";
 import { useMetric } from "@/components/metrics/MetricContext";
+import { useSharedGranularity } from "@/lib/useSharedGranularity";
 
 type PlaylistDailyStatsRow = {
   date: string;
@@ -22,6 +23,7 @@ export function PlaylistPageClient(props: {
   overrideAnnotations: Array<{ date: string; note: string }>;
 }) {
   const { metric } = useMetric();
+  const [granularity] = useSharedGranularity("sb:playlists:granularity");
 
   return (
     <PlaylistMetricsClient
@@ -33,6 +35,7 @@ export function PlaylistPageClient(props: {
       playlistKey={props.playlistKey}
       overrideAnnotations={props.overrideAnnotations}
       metric={metric}
+      granularity={granularity}
     />
   );
 }

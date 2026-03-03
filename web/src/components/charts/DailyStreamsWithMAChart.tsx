@@ -22,6 +22,7 @@ import {
   isHighlightDayDateUtc,
   formatKmbTick,
   formatUsdCompact,
+  formatXAxisTick,
 } from "@/components/charts/chartUtils";
 import { useChartCopyToClipboard } from "@/components/charts/useChartCopyToClipboard";
 import { useThemeColors } from "@/components/charts/useThemeColors";
@@ -36,6 +37,8 @@ type DataPoint = {
   date: string;
   daily: number | null;
   ma7?: number | null;
+  _isPartial?: boolean;
+  _bucketDays?: number;
 };
 
 type ManualOverrideAnnotation = {
@@ -115,6 +118,9 @@ export function DailyStreamsWithMAChart({
   const chartDates = new Set(chartData.map((d) => d.date));
   const annotationDates = [...annItemsByDate.keys()].filter((d) => chartDates.has(d));
   const highlightDates = chartData.filter((d) => isHighlightDayDateUtc(d.date, weekHighlightDayUtc)).map((d) => d.date);
+  const partialDate = chartData.length > 0 && chartData[chartData.length - 1]._isPartial
+    ? chartData[chartData.length - 1].date
+    : null;
   
   const hasMa7Data = chartData.some((d) => d.ma7 != null && !isNaN(Number(d.ma7)));
 
@@ -168,12 +174,7 @@ export function DailyStreamsWithMAChart({
           />
           <XAxis
             dataKey="date"
-            tickFormatter={(value) => {
-              const date = new Date(value);
-              const day = String(date.getDate()).padStart(2, '0');
-              const month = String(date.getMonth() + 1).padStart(2, '0');
-              return `${day}/${month}`;
-            }}
+            tickFormatter={formatXAxisTick}
             stroke="var(--sb-muted)"
             fontSize={10}
             tickLine={false}
@@ -235,6 +236,23 @@ export function DailyStreamsWithMAChart({
               ifOverflow="hidden"
             />
           ))}
+          {partialDate && (
+            <ReferenceLine
+              x={partialDate}
+              stroke="var(--sb-muted)"
+              strokeOpacity={0.5}
+              strokeWidth={1.5}
+              strokeDasharray="3 3"
+              ifOverflow="hidden"
+              label={{
+                value: "partial",
+                position: "insideTopRight",
+                fontSize: 9,
+                fill: "var(--sb-muted)",
+                opacity: 0.7,
+              }}
+            />
+          )}
           <Area
             type="monotone"
             dataKey="daily"

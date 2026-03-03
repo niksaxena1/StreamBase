@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Download } from "lucide-react";
@@ -12,6 +12,7 @@ import { useMetric } from "@/components/metrics/MetricContext";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { downloadCsv, slugifyForFilename, todayIsoDate } from "@/lib/csv";
 import { readStoredBool, writeStoredBool } from "@/lib/storage";
+import { useLongPress } from "@/components/charts/useLongPress";
 
 const PLAYLIST_TRACKS_STORAGE = {
   artistsOpen: "sb:playlists:details:artists_open",
@@ -94,6 +95,23 @@ export function PlaylistTracksSectionClient(props: {
     metric === "revenue"
       ? ({ color: "#10b981" } as const) // emerald-500
       : ({ color: "var(--sb-accent-stroke)" } as const);
+
+  // On mobile, the "Added" column is hidden. Long-pressing the "Release"
+  // header toggles between showing release date and added date.
+  const [showAddedOnMobile, setShowAddedOnMobile] = useState(false);
+  const longPressFiredRef = useRef(false);
+
+  const toggleDateColumn = useCallback(() => {
+    setShowAddedOnMobile((prev) => !prev);
+    longPressFiredRef.current = true;
+  }, []);
+
+  const {
+    onPointerDown: releaseLpDown,
+    onPointerMove: releaseLpMove,
+    onPointerUp: releaseLpUp,
+    onPointerCancel: releaseLpCancel,
+  } = useLongPress({ onLongPress: toggleDateColumn });
 
   const [artistsOpen, setArtistsOpen] = useState(true);
   const [artistImagesById, setArtistImagesById] = useState<Map<string, string | null>>(new Map());
@@ -441,10 +459,28 @@ export function PlaylistTracksSectionClient(props: {
               },
               {
                 label: (
-                  <SilentSortHeader
-                    label="Release"
-                    onClick={() => toggleSort(setCurrentSort, currentSort, "release", false)}
-                  />
+                  <div
+                    onPointerDown={releaseLpDown}
+                    onPointerMove={releaseLpMove}
+                    onPointerUp={releaseLpUp}
+                    onPointerCancel={releaseLpCancel}
+                  >
+                    <SilentSortHeader
+                      label={
+                        <>
+                          <span className="sm:hidden">{showAddedOnMobile ? "Added" : "Release"}</span>
+                          <span className="hidden sm:inline">Release</span>
+                        </>
+                      }
+                      onClick={() => {
+                        if (longPressFiredRef.current) {
+                          longPressFiredRef.current = false;
+                          return;
+                        }
+                        toggleSort(setCurrentSort, currentSort, showAddedOnMobile ? "added" : "release", false);
+                      }}
+                    />
+                  </div>
                 ),
               },
               {
@@ -476,6 +512,7 @@ export function PlaylistTracksSectionClient(props: {
                   />
                 ),
                 align: "right",
+                className: "hidden sm:table-cell",
               },
             ]}
           >
@@ -486,7 +523,7 @@ export function PlaylistTracksSectionClient(props: {
             ) : null}
             {currentRowsSorted.map((t) => (
               <TableRow key={t.isrc}>
-                <TableCell>
+                <TableCell className="w-10 min-w-[40px]">
                   {t.album_image_url ? (
                     <Image src={t.album_image_url} alt="Album cover" width={32} height={32} className="h-8 w-8 rounded-lg object-cover sb-ring" />
                   ) : (
@@ -504,7 +541,7 @@ export function PlaylistTracksSectionClient(props: {
                   ) : null}
                 </TableCell>
                 <TableCell mono className="text-xs" style={{ color: "var(--sb-muted)" }}>
-                  {formatDateISO(t.release_date)}
+                  {showAddedOnMobile ? formatDateISO(t.valid_from) : formatDateISO(t.release_date)}
                 </TableCell>
                 <TableCell className="font-medium" style={numberStyle}>
                   {t.daily === null ? "—" : fmtDelta({ mode, value: t.daily, streamPayoutPerStreamUsd })}
@@ -512,7 +549,7 @@ export function PlaylistTracksSectionClient(props: {
                 <TableCell className="font-medium" style={numberStyle}>
                   {t.total === null ? "—" : fmtTotal({ mode, value: t.total, streamPayoutPerStreamUsd })}
                 </TableCell>
-                <TableCell mono className="text-xs">{formatDateISO(t.valid_from)}</TableCell>
+                <TableCell mono className="text-xs hidden sm:table-cell">{formatDateISO(t.valid_from)}</TableCell>
               </TableRow>
             ))}
             {hasStatsDate && !props.topErrMessage && !props.currentRows.length && (

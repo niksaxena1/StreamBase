@@ -1,9 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { Download, Music } from "lucide-react";
 import { fetchUserSettingsBundle, invalidateUserSettingsBundle } from "@/lib/userSettingsBundleFetch";
+import { GranularitySelect, RangeSelect, handleGranularityWithRangeRestore, granularityLabel } from "@/components/ui/GranularitySelect";
+import type { Granularity } from "@/components/ui/GranularitySelect";
+import { aggregateCumulativeSeries, aggregateChartPoints } from "@/lib/granularity";
+import { useSharedGranularity } from "@/lib/useSharedGranularity";
 
 import { useMetric } from "@/components/metrics/MetricContext";
 import { LazyInteractiveChartSection } from "@/components/dashboard/LazyInteractiveChartSection";
@@ -80,10 +85,20 @@ function HomeDashboardInner(props: {
   trackWeekendDips: TrackWeekendDipRow[];
 }) {
   const { metric } = useMetric();
-  // Subscribe so money values re-render when currency setting changes.
   useCurrencyDisplay();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
   const [selectedChart, setSelectedChart] = useState<"daily" | "total">("daily");
+  const [granularity, setGranularityRaw] = useSharedGranularity("sb:home:granularity");
+  const router = useRouter();
+  const pushRange = useCallback(
+    (range: number) => router.push(hrefWith(props.sp, { range: String(range) })),
+    [router, props.sp],
+  );
+  const handleGranularityChange = useCallback(
+    (g: Granularity) =>
+      handleGranularityWithRangeRestore(g, props.rangeDays, "home", setGranularityRaw, pushRange),
+    [props.rangeDays, setGranularityRaw, pushRange],
+  );
 
   // User setting: show/hide Filters section on Home
   const [homeFiltersEnabled, setHomeFiltersEnabled] = useState(true);
@@ -158,7 +173,7 @@ function HomeDashboardInner(props: {
         total: totalDesc.slice(0, props.rangeDays),
         dailyValue,
         totalValue: safeNum(props.latest?.total_streams_cumulative) * streamPayoutPerStreamUsd,
-        dailyTitle: "Revenue (Daily)",
+        dailyTitle: `Revenue (${granularityLabel(granularity)})`,
         totalTitle: "Revenue (Total)",
         dailyValueLabel: "Revenue",
         totalValueLabel: "Revenue",
@@ -187,7 +202,7 @@ function HomeDashboardInner(props: {
         total: totalDesc.slice(0, props.rangeDays),
         dailyValue,
         totalValue: Number(props.latest?.track_count ?? 0),
-        dailyTitle: "Track Change (Daily)",
+        dailyTitle: `Track Change (${granularityLabel(granularity)})`,
         totalTitle: "Track Count",
         dailyValueLabel: "Tracks",
         totalValueLabel: "Tracks",
@@ -216,7 +231,7 @@ function HomeDashboardInner(props: {
       total: totalDesc.slice(0, props.rangeDays),
       dailyValue,
       totalValue: safeNum(props.latest?.total_streams_cumulative),
-      dailyTitle: "Daily Streams",
+      dailyTitle: `${granularityLabel(granularity)} Streams`,
       totalTitle: "Total Streams",
       dailyValueLabel: "Streams",
       totalValueLabel: "Total Streams",
@@ -224,10 +239,19 @@ function HomeDashboardInner(props: {
       yTickFormat: "k" as const,
       color: undefined,
     };
-  }, [metric, props.history, props.latest, streamPayoutPerStreamUsd]);
+  }, [metric, granularity, props.history, props.latest, streamPayoutPerStreamUsd]);
 
-  const chartDataDaily: ChartPoint[] = series.daily;
-  const chartDataTotal: ChartPoint[] = series.total;
+  const chartDataDaily: ChartPoint[] = useMemo(
+    () => aggregateChartPoints(series.daily, granularity) as ChartPoint[],
+    [series.daily, granularity],
+  );
+  const chartDataTotal: ChartPoint[] = useMemo(
+    () => aggregateCumulativeSeries(
+      series.total.filter((p): p is { date: string; value: number } => p.value != null),
+      granularity,
+    ),
+    [series.total, granularity],
+  );
 
   const allCatalogMa7 = useMemo(() => {
     if (props.playlistKey !== "all_catalog") return null;
@@ -318,11 +342,10 @@ function HomeDashboardInner(props: {
             <ToggleLink active={props.playlistKey === "ext"} href={hrefWith(props.sp, { scope: "ext" })}>Ext</ToggleLink>
           </div>
 
-          <div className="sb-ring flex items-center gap-0.5 rounded-full bg-white/60 p-0.5 dark:bg-white/10">
-            <ToggleLink active={props.rangeDays === 30} href={hrefWith(props.sp, { range: "30" })}>30d</ToggleLink>
-            <ToggleLink active={props.rangeDays === 90} href={hrefWith(props.sp, { range: "90" })}>90d</ToggleLink>
-            <ToggleLink active={props.rangeDays === 365} href={hrefWith(props.sp, { range: "365" })}>365d</ToggleLink>
-          </div>
+          {granularity === "daily" && (
+            <RangeSelect value={props.rangeDays} onChange={pushRange} />
+          )}
+          <GranularitySelect value={granularity} onChange={handleGranularityChange} />
         </div>
       </div>
 
