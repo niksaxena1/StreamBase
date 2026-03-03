@@ -208,7 +208,7 @@ export function SavedFilters({ currentFilter, onLoad, onSave }: SavedFiltersProp
             aria-label="Save filter"
             onClick={handleSaveClick}
             title={hasUnsavedChanges ? "Save as..." : "Save changes"}
-            className={hasUnsavedChanges ? "text-[var(--sb-accent)]" : undefined}
+            className={hasUnsavedChanges ? "text-[var(--sb-positive)]" : undefined}
             disabled={saving}
           >
             {saving ? (

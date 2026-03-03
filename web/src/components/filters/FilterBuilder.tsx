@@ -783,7 +783,7 @@ export function FilterBuilder({
           {!isExpanded && activeConditionCount > 0 && (
             <div className="p-3 rounded-xl sb-panel">
               <div className="flex items-center gap-2 mb-2">
-                <Sparkles className="h-4 w-4" style={{ color: "var(--sb-accent)" }} />
+                <Sparkles className="h-4 w-4" style={{ color: "var(--sb-positive)" }} />
                 <span className="text-sm font-medium" style={{ color: "var(--sb-text)" }}>
                   Active Filter
                 </span>

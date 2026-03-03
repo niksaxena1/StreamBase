@@ -67,7 +67,7 @@ function MilestoneTooltip({
   const raw = payload[0]?.value;
   const n = typeof raw === "number" ? raw : Number(raw);
   const count = Number.isFinite(n) ? n : 0;
-  const color = accentColor ?? (mode === "revenue" ? "var(--sb-revenue)" : "var(--sb-accent)");
+  const color = accentColor ?? (mode === "revenue" ? "var(--sb-revenue)" : "var(--sb-positive)");
   const pct =
     totalCount > 0 ? Math.max(0, Math.min(100, (count / totalCount) * 100)) : 0;
   const pctLabel = pct >= 10 ? pct.toFixed(0) : pct.toFixed(1);

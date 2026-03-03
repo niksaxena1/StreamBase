@@ -171,7 +171,7 @@ export function StaleTrackResolver({
               type="button"
               onClick={handleFetch}
               className="inline-flex items-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-lg transition-all
-                bg-[var(--sb-accent)]/15 text-[var(--sb-accent)] hover:bg-[var(--sb-accent)]/25
+                bg-[var(--sb-accent)]/15 text-[var(--sb-positive)] hover:bg-[var(--sb-accent)]/25
                 sb-ring"
             >
               <SpotifyIcon />

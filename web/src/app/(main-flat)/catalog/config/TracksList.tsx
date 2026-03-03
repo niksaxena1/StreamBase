@@ -199,7 +199,7 @@ export function TracksList({ tracks, searchQuery, sortBy = "name", sortAsc = tru
                 type="button"
                 onClick={() => setRenderCap((prev) => prev + INITIAL_RENDER_CAP)}
                 className="inline-flex items-center gap-1 text-xs font-medium transition-colors sb-link-hover"
-                style={{ color: "var(--sb-accent)" }}
+                style={{ color: "var(--sb-positive)" }}
               >
                 <ChevronDown className="h-3.5 w-3.5" />
                 Show more ({filteredAndSortedTracks.length - renderCap} remaining)

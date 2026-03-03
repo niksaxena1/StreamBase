@@ -154,7 +154,7 @@ export function FilterCondition({
           title={condition.enabled ? "Click to disable" : "Click to enable"}
         >
           {condition.enabled ? (
-            <ToggleRight className="h-4 w-4" style={{ color: "var(--sb-accent)" }} />
+            <ToggleRight className="h-4 w-4" style={{ color: "var(--sb-positive)" }} />
           ) : (
             <ToggleLeft className="h-4 w-4" />
           )}

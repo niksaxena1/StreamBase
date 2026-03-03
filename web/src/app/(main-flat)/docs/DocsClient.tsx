@@ -409,7 +409,7 @@ function Markdown(props: { md: string }) {
           <a
             {...p}
             className="underline underline-offset-2 transition-opacity hover:opacity-80"
-            style={{ color: "var(--sb-accent)", textDecorationColor: "var(--sb-accent)" }}
+            style={{ color: "var(--sb-positive)", textDecorationColor: "var(--sb-positive)" }}
           >
             {children}
           </a>

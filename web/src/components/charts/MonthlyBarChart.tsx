@@ -208,6 +208,11 @@ export function MonthlyBarChart({
   const { chartStartDateIso } = useChartStartDate();
   // Use theme-aware colors from CSS variables
   const effectiveColor = color ?? themeColors.accentStroke;
+  // Tooltip text must be readable — accent/accentStroke are too light in light mode
+  const tooltipValueColor =
+    !color || color === "var(--sb-accent)"
+      ? themeColors.positive
+      : color;
 
   // Track active month under tooltip (for click/long-press interactions)
   const activeMonthRef = useRef<string | null>(null);
@@ -325,7 +330,7 @@ export function MonthlyBarChart({
                   payload={payload as Array<{ value?: unknown; payload?: MonthlyDataPoint }>}
                   valueLabel={valueLabel}
                   fmtValue={fmtValue}
-                  valueColor={effectiveColor}
+                  valueColor={tooltipValueColor}
                 />
               );
             }}

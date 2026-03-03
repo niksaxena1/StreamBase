@@ -725,7 +725,7 @@ export function CollectorsClient(props: {
   const comparisonTableMetric: "streams" | "revenue" = metric === "revenue" ? "revenue" : "streams";
   const comparisonTableMetricLabel = comparisonTableMetric === "revenue" ? "Est. revenue" : "Streams";
   const comparisonTableHeaderLabel = comparisonTableMetric === "revenue" ? "REVENUE" : "STREAMS";
-  const comparisonTableValueCellColor = comparisonTableMetric === "revenue" ? "#10b981" : "var(--sb-accent)";
+  const comparisonTableValueCellColor = comparisonTableMetric === "revenue" ? "#10b981" : "var(--sb-positive)";
 
   const computeComparisonRow = useCallback(
     (r: CollectorSummaryRow) => {
@@ -2158,7 +2158,7 @@ export function CollectorsClient(props: {
                               numeric
                               className="font-medium"
                               style={{
-                                color: metric === "revenue" ? "#10b981" : "var(--sb-accent)",
+                                color: metric === "revenue" ? "#10b981" : "var(--sb-positive)",
                               }}
                             >
                               {dailyFormatted}
