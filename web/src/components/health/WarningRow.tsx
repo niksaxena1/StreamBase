@@ -762,7 +762,27 @@ function ExpandedContent({
           )}
         </div>
       ) : (
-        <FallbackNote note={data.note} />
+        <div className="space-y-3">
+          <div className="text-xs opacity-60">
+            <p className="mb-2">
+              <strong>No individual tracks showed decreased streams.</strong>
+            </p>
+            <p className="mb-3">
+              The overall playlist total decreased, but this may be due to:
+            </p>
+            <ul className="list-disc list-inside space-y-1 ml-1 mb-3">
+              <li>Tracks being removed from the playlist (check "Track Count Swing" warning)</li>
+              <li>Spotify removing artificial/invalid stream counts</li>
+              <li>Missing or incomplete data in today's export</li>
+              <li>Data source reporting changes</li>
+            </ul>
+          </div>
+          {data.note && (
+            <div className="text-xs opacity-60 p-2 rounded bg-white/30 dark:bg-white/5">
+              {data.note}
+            </div>
+          )}
+        </div>
       );
 
     case "entity_distro_drift":
@@ -910,9 +930,18 @@ function TrackSection({
 
 function FallbackNote({ note }: { note?: string }) {
   return (
-    <div className="text-xs opacity-60">
-      <p className="mb-2">Track details not available in current warning record.</p>
-      {note && <p>{note}</p>}
+    <div className="text-xs opacity-60 space-y-1.5">
+      <p className="mb-1">Track-level details not loaded. Possible causes:</p>
+      <ul className="list-disc list-inside space-y-1 ml-1">
+        <li>Details may not be available in the warning record</li>
+        <li>Track metadata might be loading (check again after next ingestion run)</li>
+        <li>The warning might be resolved in the latest data</li>
+      </ul>
+      {note && (
+        <div className="mt-2 pt-2 border-t border-white/10">
+          <p className="font-medium">Info: {note}</p>
+        </div>
+      )}
     </div>
   );
 }

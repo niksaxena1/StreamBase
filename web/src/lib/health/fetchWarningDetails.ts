@@ -717,11 +717,29 @@ function buildExpandedData(
     }
     case "total_streams_decreased": {
       const raw = decreasedMap.get(key);
-      if (raw === undefined) return null;
-      if (Array.isArray(raw) && raw.length === 0) return null;
+      const dj = w.details_json as TotalStreamsDecreasedDetailsJson | null;
+      
+      // Use database tracks if available; otherwise fall back to details_json tracks
+      let tracks = raw;
+      if (!Array.isArray(tracks) || tracks.length === 0) {
+        // Fallback: construct DecreasedTrack[] directly from details_json
+        const fallbackTracks = (dj?.decreased_tracks ?? []).map((t) => ({
+          isrc: t.isrc,
+          name: null,
+          artist_names: null,
+          prev_streams: t.prev_streams ?? null,
+          today_streams: t.today_streams ?? null,
+          delta: t.delta ?? null,
+        }));
+        tracks = fallbackTracks.length > 0 ? fallbackTracks : null;
+      }
+      
+      if (tracks === undefined) return null;
+      if (Array.isArray(tracks) && tracks.length === 0) return null;
+      
       return {
         type: "total_streams_decreased",
-        tracks: raw as DecreasedTrack[] | null,
+        tracks: tracks as DecreasedTrack[] | null,
         note:
           noteFromDetails ??
           "Total streams decreased day-over-day. This may indicate Spotify removed artificial streams or a data source issue.",
