@@ -137,7 +137,7 @@ export function CatalogPageClient(props: {
   const topTracksNumberStyle =
     topTracksMode === "revenue"
       ? ({ color: "#10b981" } as const) // emerald-500
-      : ({ color: "var(--sb-accent-stroke)" } as const);
+      : ({ color: "var(--sb-positive)" } as const);
 
   type TopSortKey = "name" | "release" | "total" | "daily";
   type SortState = { key: TopSortKey; asc: boolean } | null;

@@ -82,7 +82,7 @@ export function ArtistsList({ artists, searchQuery, sortBy = "name", sortAsc = t
 
   // Color scheme based on metric
   const metricColor =
-    metric === "revenue" ? "#10b981" : metric === "tracks" ? "#3b82f6" : "var(--sb-accent)";
+    metric === "revenue" ? "#10b981" : metric === "tracks" ? "#3b82f6" : "var(--sb-positive)";
 
   const getMetricValue = (artist: Artist) => {
     if (metric === "tracks") {

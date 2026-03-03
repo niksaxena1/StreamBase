@@ -715,8 +715,6 @@ export function CollectorsClient(props: {
   const valueFormat = metric === "revenue" ? "usd" : "int";
   const yTickFormat = metric === "revenue" ? "usd_compact" : metric === "streams" ? "k" : "int";
   const chartColor = metric === "tracks" ? "#3b82f6" : metric === "revenue" ? "#10b981" : "var(--sb-accent)";
-  const valueCellColor =
-    metric === "revenue" ? "#10b981" : metric === "streams" ? "var(--sb-accent)" : "var(--sb-text)";
 
   const payoutPerStreamUsd = streamPayoutPerStreamUsd;
 

@@ -100,7 +100,7 @@ export function TracksList({ tracks, searchQuery, sortBy = "name", sortAsc = tru
   
   // Color scheme based on metric
   const metricColor =
-    displayMetric === "revenue" ? "#10b981" : "var(--sb-accent)";
+    displayMetric === "revenue" ? "#10b981" : "var(--sb-positive)";
 
   const formatValue = (value: number | null) => {
     if (value === null) return "—";

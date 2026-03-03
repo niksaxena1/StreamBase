@@ -140,7 +140,7 @@ export function PlaylistFilters({ playlists, statsMap, registerExport }: Playlis
       ? "var(--sb-tracks)"
       : metric === "revenue"
         ? "var(--sb-revenue)"
-        : "var(--sb-accent-stroke)";
+        : "var(--sb-positive)";
 
   useEffect(() => {
     if (!registerExport) return;

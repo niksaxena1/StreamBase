@@ -94,7 +94,7 @@ export function PlaylistTracksSectionClient(props: {
   const numberStyle =
     metric === "revenue"
       ? ({ color: "#10b981" } as const) // emerald-500
-      : ({ color: "var(--sb-accent-stroke)" } as const);
+      : ({ color: "var(--sb-positive)" } as const);
 
   // On mobile, the "Added" column is hidden. Long-pressing the "Release"
   // header toggles between showing release date and added date.
