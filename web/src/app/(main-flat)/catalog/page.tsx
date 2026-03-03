@@ -208,7 +208,7 @@ function artistNameFor(rows: TrackRow[], artistId: string) {
 export default async function CatalogPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ artist_id?: string; isrc?: string; range?: string; view?: string }>;
+  searchParams?: Promise<{ artist_id?: string; isrc?: string; range?: string; view?: string; start?: string; end?: string }>;
 }) {
   try {
     const sp = (await searchParams) ?? {};
@@ -218,7 +218,13 @@ export default async function CatalogPage({
       redirect("/catalog/config");
     }
 
-    const rangeDays = clampRangeDays(sp.range);
+    let rangeDays = clampRangeDays(sp.range);
+    if (sp.start && sp.end) {
+      const start = new Date(`${sp.start}T00:00:00Z`);
+      const end = new Date(`${sp.end}T00:00:00Z`);
+      const calculatedDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+      rangeDays = Math.max(7, Math.min(365, calculatedDays));
+    }
     const sb = await supabaseServer();
     const { data: userData } = await sb.auth.getUser();
     if (!userData.user) redirect("/login");
@@ -854,6 +860,7 @@ export default async function CatalogPage({
       <CatalogPageClient
         latestCum={latestCum}
         latestDate={latestRunDate}
+        latestDataDate={latestRunDate ? dataDateFromRunDate(latestRunDate) : null}
         rangeDays={rangeDays}
         cumSeriesAsc={cumSeriesAsc}
         dailyArtistDesc={dailyArtistDesc}

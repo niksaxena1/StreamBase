@@ -90,11 +90,17 @@ function isMembershipActiveAtDate(m: PlaylistMembershipRow, runDate: string) {
 export default async function PlaylistsPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ playlist_key?: string; range?: string; view?: string }>;
+  searchParams?: Promise<{ playlist_key?: string; range?: string; view?: string; start?: string; end?: string }>;
 }) {
   const sp = (await searchParams) ?? {};
   const playlistKey = (sp.playlist_key ?? "").trim();
-  const rangeDays = clampRangeDays(sp.range);
+  let rangeDays = clampRangeDays(sp.range);
+  if (sp.start && sp.end) {
+    const start = new Date(`${sp.start}T00:00:00Z`);
+    const end = new Date(`${sp.end}T00:00:00Z`);
+    const calculatedDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    rangeDays = Math.max(7, Math.min(365, calculatedDays));
+  }
   const sb = await supabaseServer();
   const { data: userData } = await sb.auth.getUser();
   if (!userData.user) redirect("/login");
@@ -432,7 +438,7 @@ export default async function PlaylistsPage({
         }
         actions={
           <>
-            <PlaylistHeaderSelects rangeDays={rangeDays} />
+            <PlaylistHeaderSelects rangeDays={rangeDays} latestDataDate={latestDate ? dataDateFromRunDate(latestDate) : null} />
             <Link
               href="/playlists/config"
               className="sb-ring grid h-8 w-8 place-items-center rounded-full bg-white/70 text-xs font-medium transition hover:bg-white dark:bg-white/10 dark:hover:bg-white/15"

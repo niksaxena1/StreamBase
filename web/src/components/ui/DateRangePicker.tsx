@@ -2,7 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { DayPicker, type DateRange } from "react-day-picker";
 import { DateInput } from "@/components/ui/DateInput";
@@ -50,33 +50,34 @@ const PRESETS: Preset[] = [
   { name: "lastMonth", label: "Last month" },
 ];
 
-export function DateRangePicker({
-  latestDate,
-  currentRangeDays,
-  tone = "default",
-}: {
+export type DateRangePickerHandle = { open: () => void };
+
+export const DateRangePicker = forwardRef<DateRangePickerHandle, {
   latestDate: string | null;
   currentRangeDays: number;
   tone?: "default" | "opaque";
-}) {
+  headless?: boolean;
+}>(function DateRangePicker({ latestDate, currentRangeDays, tone = "default", headless = false }, ref) {
   if (!latestDate) return null;
-  return <DateRangePickerInner latestDate={latestDate} currentRangeDays={currentRangeDays} tone={tone} />;
-}
+  return <DateRangePickerInner ref={ref} latestDate={latestDate} currentRangeDays={currentRangeDays} tone={tone} headless={headless} />;
+});
 
-function DateRangePickerInner({
-  latestDate,
-  currentRangeDays,
-  tone,
-}: {
+const DateRangePickerInner = forwardRef<DateRangePickerHandle, {
   latestDate: string;
   currentRangeDays: number;
   tone: "default" | "opaque";
-}) {
+  headless: boolean;
+}>(function DateRangePickerInner({
+  latestDate,
+  currentRangeDays,
+  tone,
+  headless,
+}, ref) {
   const router = useRouter();
   const sp = useSearchParams();
   const [isOpen, setIsOpen] = useState(false);
   const [range, setRange] = useState<DateRange | undefined>(undefined);
-  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const buttonRef = useRef<HTMLElement | null>(null);
   const [popoverPos, setPopoverPos] = useState<{ top: number; left: number } | null>(null);
   const openedRangeRef = useRef<DateRange | undefined>(undefined);
   const [selectedPreset, setSelectedPreset] = useState<string | undefined>(undefined);
@@ -132,6 +133,17 @@ function DateRangePickerInner({
     return d;
   }, [latestDate]);
   const maxDate = useMemo(() => parseYmd(latestDate), [latestDate]);
+
+  useImperativeHandle(ref, () => ({
+    open: () => {
+      if (!isOpen) {
+        openedRangeRef.current = range ? { ...range } : undefined;
+        setDisplayMonth(new Date(maxDate.getFullYear(), maxDate.getMonth() - (isSmallScreen ? 0 : 1), 1));
+      }
+      setIsOpen(true);
+    },
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [isOpen, range, maxDate, isSmallScreen]);
 
   useEffect(() => {
     const handleResize = () => setIsSmallScreen(window.innerWidth < 640);
@@ -289,43 +301,47 @@ function DateRangePickerInner({
 
   return (
     <div className="relative">
-      <button
-        ref={buttonRef}
-        type="button"
-        onClick={() => {
-          if (!isOpen) {
-            openedRangeRef.current = range ? { ...range } : undefined;
-            setDisplayMonth(new Date(maxDate.getFullYear(), maxDate.getMonth() - (isSmallScreen ? 0 : 1), 1));
-          }
-          setIsOpen(!isOpen);
-        }}
-        className={[
-          "sb-ring flex items-center gap-1.5 rounded-full px-2.5 py-2 text-[11px] font-medium transition",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
-          isOpen || hasCustomRange
-            ? "bg-black text-white shadow-sm dark:bg-white dark:text-black"
-            : tone === "opaque"
-              ? "bg-white/90 hover:bg-white/90 dark:bg-white/20 dark:hover:bg-white/20"
-              : "bg-white/70 hover:bg-white/70 dark:bg-white/10 dark:hover:bg-white/10",
-        ].join(" ")}
-        style={isOpen || hasCustomRange ? undefined : { color: "var(--sb-muted)" }}
-        title={hasCustomRange ? `${formatDisplay(parseYmd(customStart!))} to ${formatDisplay(parseYmd(customEnd!))}` : "Custom date range"}
-      >
-        <Calendar
+      {headless ? (
+        <span ref={(el) => { buttonRef.current = el; }} style={{ display: "inline-block", width: 0, height: 0 }} />
+      ) : (
+        <button
+          ref={(el) => { buttonRef.current = el; }}
+          type="button"
+          onClick={() => {
+            if (!isOpen) {
+              openedRangeRef.current = range ? { ...range } : undefined;
+              setDisplayMonth(new Date(maxDate.getFullYear(), maxDate.getMonth() - (isSmallScreen ? 0 : 1), 1));
+            }
+            setIsOpen(!isOpen);
+          }}
           className={[
-            "h-3 w-3",
-            isOpen || hasCustomRange ? "text-white dark:text-black" : "",
+            "sb-ring flex items-center gap-1.5 rounded-full px-2.5 py-2 text-[11px] font-medium transition",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
+            isOpen || hasCustomRange
+              ? "bg-black text-white shadow-sm dark:bg-white dark:text-black"
+              : tone === "opaque"
+                ? "bg-white/90 hover:bg-white/90 dark:bg-white/20 dark:hover:bg-white/20"
+                : "bg-white/70 hover:bg-white/70 dark:bg-white/10 dark:hover:bg-white/10",
           ].join(" ")}
-        />
-        <ChevronDown className={["h-3 w-3 opacity-70", isOpen ? "rotate-180 transition" : "transition"].join(" ")} />
-        {hasCustomRange ? (
-          <span className="font-mono text-[10px]">
-            {formatDisplay(parseYmd(customStart!))}–{formatDisplay(parseYmd(customEnd!))}
-          </span>
-        ) : (
-          "Range"
-        )}
-      </button>
+          style={isOpen || hasCustomRange ? undefined : { color: "var(--sb-muted)" }}
+          title={hasCustomRange ? `${formatDisplay(parseYmd(customStart!))} to ${formatDisplay(parseYmd(customEnd!))}` : "Custom date range"}
+        >
+          <Calendar
+            className={[
+              "h-3 w-3",
+              isOpen || hasCustomRange ? "text-white dark:text-black" : "",
+            ].join(" ")}
+          />
+          <ChevronDown className={["h-3 w-3 opacity-70", isOpen ? "rotate-180 transition" : "transition"].join(" ")} />
+          {hasCustomRange ? (
+            <span className="font-mono text-[10px]">
+              {formatDisplay(parseYmd(customStart!))}–{formatDisplay(parseYmd(customEnd!))}
+            </span>
+          ) : (
+            "Range"
+          )}
+        </button>
+      )}
 
       {isOpen && popoverPos
         ? createPortal(
@@ -695,4 +711,4 @@ function DateRangePickerInner({
         : null}
     </div>
   );
-}
+});

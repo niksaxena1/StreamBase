@@ -76,7 +76,7 @@ function QuickOverrideButton({
   }, [isrc, date, streams, note, router]);
 
   if (state === "done")
-    return <span className="text-[10px] text-green-500">Overridden</span>;
+    return <span className="text-[10px] text-green-700 dark:text-green-500">Overridden</span>;
 
   if (!open) {
     return (

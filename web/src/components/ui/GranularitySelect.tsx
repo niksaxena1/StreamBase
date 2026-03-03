@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, type ReactNode } from "react";
 
 // ---------------------------------------------------------------------------
 // Shared chip-dropdown primitive
@@ -25,6 +25,8 @@ function ChipDropdown<V extends string | number>({
   onChange,
   title,
   minWidth = "5rem",
+  customOption,
+  customActive = false,
 }: {
   options: readonly ChipDropdownOption<V>[];
   value: V;
@@ -32,11 +34,17 @@ function ChipDropdown<V extends string | number>({
   onChange: (v: V) => void;
   title: string;
   minWidth?: string;
+  /** If provided, appended at the bottom of the list as a special "Custom" row. */
+  customOption?: { label: string; icon?: ReactNode; onSelect: () => void };
+  /** When true, the chip shows the custom option label instead of the current value. */
+  customActive?: boolean;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const [focusIdx, setFocusIdx] = useState(-1);
   const [flipUp, setFlipUp] = useState(false);
+
+  const totalItems = options.length + (customOption ? 1 : 0);
 
   // Close on outside click
   useEffect(() => {
@@ -52,16 +60,17 @@ function ChipDropdown<V extends string | number>({
   // Reset focus index when dropdown opens/closes; detect edge clipping
   useEffect(() => {
     if (isOpen) {
-      setFocusIdx(options.findIndex((o) => o.value === value));
+      const baseIdx = options.findIndex((o) => o.value === value);
+      setFocusIdx(customActive && customOption ? options.length : baseIdx);
       if (containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect();
-        const menuHeight = options.length * 28 + 12;
+        const menuHeight = totalItems * 28 + 12;
         setFlipUp(rect.bottom + menuHeight + 8 > window.innerHeight);
       }
     } else {
       setFocusIdx(-1);
     }
-  }, [isOpen, options, value]);
+  }, [isOpen, options, value, customActive, customOption, totalItems]);
 
   const select = useCallback(
     (v: V) => {
@@ -70,6 +79,11 @@ function ChipDropdown<V extends string | number>({
     },
     [onChange],
   );
+
+  const selectCustom = useCallback(() => {
+    customOption?.onSelect();
+    setIsOpen(false);
+  }, [customOption]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -89,7 +103,7 @@ function ChipDropdown<V extends string | number>({
       switch (e.key) {
         case "ArrowDown":
           e.preventDefault();
-          setFocusIdx((i) => Math.min(i + 1, options.length - 1));
+          setFocusIdx((i) => Math.min(i + 1, totalItems - 1));
           break;
         case "ArrowUp":
           e.preventDefault();
@@ -100,15 +114,19 @@ function ChipDropdown<V extends string | number>({
           e.preventDefault();
           if (focusIdx >= 0 && focusIdx < options.length) {
             select(options[focusIdx].value);
+          } else if (customOption && focusIdx === options.length) {
+            selectCustom();
           }
           break;
       }
     },
-    [isOpen, focusIdx, options, select],
+    [isOpen, focusIdx, options, select, totalItems, customOption, selectCustom],
   );
 
-  const selectedLabel = options.find((o) => o.value === value)?.label ?? String(value);
-  const isDefaultVal = value === defaultValue;
+  const selectedLabel = customActive
+    ? (customOption?.label ?? "Custom")
+    : (options.find((o) => o.value === value)?.label ?? String(value));
+  const isDefaultVal = !customActive && value === defaultValue;
 
   return (
     <div
@@ -156,7 +174,7 @@ function ChipDropdown<V extends string | number>({
           }}
         >
           {options.map((opt, idx) => {
-            const isSelected = value === opt.value;
+            const isSelected = !customActive && value === opt.value;
             const isFocused = focusIdx === idx;
 
             return (
@@ -176,6 +194,26 @@ function ChipDropdown<V extends string | number>({
               </button>
             );
           })}
+
+          {customOption && (
+            <>
+              <div className="mx-1 my-1 border-t" style={{ borderColor: "var(--sb-border-2)" }} />
+              <button
+                type="button"
+                role="option"
+                aria-selected={customActive}
+                onClick={selectCustom}
+                className={[
+                  "flex w-full items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-medium transition",
+                  customActive ? chipActive : chipInactive,
+                  focusIdx === options.length && !customActive ? "ring-1 ring-inset ring-black/20 dark:ring-white/20" : "",
+                ].join(" ")}
+              >
+                {customOption.icon}
+                {customOption.label}
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -228,9 +266,15 @@ const RANGES = [
 export function RangeSelect({
   value,
   onChange,
+  onCustom,
+  customActive = false,
 }: {
   value: number;
   onChange: (range: number) => void;
+  /** When provided, a "Custom" option is appended that calls this instead of onChange. */
+  onCustom?: () => void;
+  /** When true, the chip shows "Custom" as the selected value. */
+  customActive?: boolean;
 }) {
   return (
     <ChipDropdown
@@ -240,6 +284,8 @@ export function RangeSelect({
       onChange={onChange}
       title="Chart display range"
       minWidth="5rem"
+      customOption={onCustom ? { label: "Custom", onSelect: onCustom } : undefined}
+      customActive={customActive}
     />
   );
 }

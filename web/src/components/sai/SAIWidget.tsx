@@ -399,7 +399,7 @@ export function SAIWidget() {
                               key={c.chunkId}
                               href={`/docs#${c.chunkId}`}
                               className="block font-mono underline underline-offset-2 transition-opacity hover:opacity-80"
-                              style={{ color: "var(--sb-accent)", textDecorationColor: "var(--sb-accent)" }}
+                              style={{ color: "var(--sb-positive)", textDecorationColor: "var(--sb-positive)" }}
                             >
                               /docs#{c.chunkId} — {c.title}
                             </a>

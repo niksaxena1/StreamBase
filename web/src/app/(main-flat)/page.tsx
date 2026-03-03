@@ -154,11 +154,17 @@ export const dynamic = "force-dynamic";
 export default async function Home({
   searchParams,
 }: {
-  searchParams?: Promise<{ scope?: string; range?: string; daily?: string; xy_date?: string }>;
+  searchParams?: Promise<{ scope?: string; range?: string; daily?: string; xy_date?: string; start?: string; end?: string }>;
 }) {
   const sp = (await searchParams) ?? {};
   const scope = (sp.scope ?? "all_catalog").toLowerCase();
-  const rangeDays = Math.max(7, Math.min(365, Number(sp.range ?? "30") || 30));
+  let rangeDays = Math.max(7, Math.min(365, Number(sp.range ?? "30") || 30));
+  if (sp.start && sp.end) {
+    const start = new Date(`${sp.start}T00:00:00Z`);
+    const end = new Date(`${sp.end}T00:00:00Z`);
+    const calculatedDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    rangeDays = Math.max(7, Math.min(365, calculatedDays));
+  }
 
   const playlistKey: "all_catalog" | "releases" | "ext" =
     scope === "releases" ? "releases" : scope === "ext" ? "ext" : "all_catalog";

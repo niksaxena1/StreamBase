@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Download, Music } from "lucide-react";
 import { fetchUserSettingsBundle, invalidateUserSettingsBundle } from "@/lib/userSettingsBundleFetch";
 import { GranularitySelect, RangeSelect, handleGranularityWithRangeRestore, granularityLabel } from "@/components/ui/GranularitySelect";
 import type { Granularity } from "@/components/ui/GranularitySelect";
+import { DateRangePicker, type DateRangePickerHandle } from "@/components/ui/DateRangePicker";
 import { aggregateCumulativeSeries, aggregateChartPoints } from "@/lib/granularity";
 import { useSharedGranularity } from "@/lib/useSharedGranularity";
 
@@ -67,7 +68,7 @@ function ToggleLink(props: { href: string; active: boolean; children: React.Reac
 // ============================================================================
 
 function HomeDashboardInner(props: {
-  sp: { scope?: string; range?: string; daily?: string; xy_date?: string };
+  sp: { scope?: string; range?: string; daily?: string; xy_date?: string; start?: string; end?: string };
   playlistKey: "all_catalog" | "releases" | "ext";
   title: string;
   rangeDays: number;
@@ -90,6 +91,8 @@ function HomeDashboardInner(props: {
   const [selectedChart, setSelectedChart] = useState<"daily" | "total">("daily");
   const [granularity, setGranularityRaw] = useSharedGranularity("sb:home:granularity");
   const router = useRouter();
+  const datePickerRef = useRef<DateRangePickerHandle>(null);
+  const hasCustomRange = Boolean(props.sp.start && props.sp.end);
   const pushRange = useCallback(
     (range: number) => router.push(hrefWith(props.sp, { range: String(range) })),
     [router, props.sp],
@@ -343,7 +346,15 @@ function HomeDashboardInner(props: {
           </div>
 
           {granularity === "daily" && (
-            <RangeSelect value={props.rangeDays} onChange={pushRange} />
+            <>
+              <RangeSelect
+                value={props.rangeDays}
+                onChange={pushRange}
+                onCustom={() => datePickerRef.current?.open()}
+                customActive={hasCustomRange}
+              />
+              <DateRangePicker ref={datePickerRef} latestDate={props.latestDataDate ?? null} currentRangeDays={props.rangeDays} headless />
+            </>
           )}
           <GranularitySelect value={granularity} onChange={handleGranularityChange} />
         </div>

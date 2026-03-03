@@ -27,6 +27,7 @@ import { SectionHeader } from "@/components/ui/SectionHeader";
 import { RememberTrackSelection } from "@/components/dashboard/RememberTrackSelection";
 import { GranularitySelect, RangeSelect, handleGranularityWithRangeRestore, granularityLabel } from "@/components/ui/GranularitySelect";
 import type { Granularity } from "@/components/ui/GranularitySelect";
+import { DateRangePicker, type DateRangePickerHandle } from "@/components/ui/DateRangePicker";
 import { aggregateCumulativeSeries, aggregateDailySeries } from "@/lib/granularity";
 import { useSharedGranularity } from "@/lib/useSharedGranularity";
 import { useLongPress } from "@/components/charts/useLongPress";
@@ -77,6 +78,7 @@ type TrackPlaylistMembership = {
 export function CatalogPageClient(props: {
   latestCum: number;
   latestDate: string | null;
+  latestDataDate?: string | null;
   rangeDays: number;
   cumSeriesAsc: ChartDataPoint[];
   dailyArtistDesc: DailyDataPoint[];
@@ -110,8 +112,10 @@ export function CatalogPageClient(props: {
   const sp = useSearchParams();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
   const [granularity, setGranularityRaw] = useSharedGranularity("sb:catalog:granularity");
+  const datePickerRef = useRef<DateRangePickerHandle>(null);
+  const hasCustomRange = Boolean(sp?.get("start") && sp?.get("end"));
   const pushRange = useCallback(
-    (range: number) => router.push(hrefWithPatchedSearchParams(sp, { range: String(range) })),
+    (range: number) => router.push(hrefWithPatchedSearchParams(sp, { range: String(range), start: null, end: null })),
     [router, sp],
   );
   const handleGranularityChange = useCallback(
@@ -279,7 +283,15 @@ export function CatalogPageClient(props: {
         actions={
           <>
             {granularity === "daily" && (
-              <RangeSelect value={props.rangeDays} onChange={pushRange} />
+              <>
+                <RangeSelect
+                  value={props.rangeDays}
+                  onChange={pushRange}
+                  onCustom={() => datePickerRef.current?.open()}
+                  customActive={hasCustomRange}
+                />
+                <DateRangePicker ref={datePickerRef} latestDate={props.latestDataDate ?? null} currentRangeDays={props.rangeDays} headless />
+              </>
             )}
             <GranularitySelect value={granularity} onChange={handleGranularityChange} />
             <IconButton

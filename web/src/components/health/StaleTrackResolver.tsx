@@ -217,7 +217,7 @@ export function StaleTrackResolver({
               onClick={handleApply}
               disabled={selected.size === 0}
               className="inline-flex items-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-lg transition-all
-                bg-green-500/20 text-green-400 hover:bg-green-500/30
+                bg-green-500/20 text-green-700 dark:text-green-400 hover:bg-green-500/30
                 disabled:opacity-30 disabled:cursor-not-allowed sb-ring"
             >
               Apply Selected ({selected.size})
@@ -235,7 +235,7 @@ export function StaleTrackResolver({
         )}
 
         {phase === "done" && (
-          <span className="text-[11px] text-green-400 font-medium">
+          <span className="text-[11px] text-green-700 dark:text-green-400 font-medium">
             {appliedCount} override{appliedCount !== 1 ? "s" : ""} applied
           </span>
         )}
@@ -330,14 +330,14 @@ function StaleStreamInfo({
       {/* Spotify result */}
       {result && result.status === "ok" && result.streams != null && (
         <>
-          <span className="text-green-400 font-medium">
+          <span className="text-green-700 dark:text-green-400 font-medium">
             → Spotify:{" "}
             <span className="font-mono">
               {result.streams.toLocaleString()}
             </span>
           </span>
           {stale != null && result.streams > stale && (
-            <span className="text-green-500/70 text-[10px] font-mono">
+            <span className="text-green-700/70 dark:text-green-500/70 text-[10px] font-mono">
               (+{(result.streams - stale).toLocaleString()})
             </span>
           )}

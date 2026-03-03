@@ -23,6 +23,7 @@ import {
 } from "@/components/charts/CollectorComparisonChart";
 import { CollectorMultiSelect } from "@/components/ui/CollectorMultiSelect";
 import { GranularitySelect, type Granularity } from "@/components/ui/GranularitySelect";
+import { useSharedGranularity } from "@/lib/useSharedGranularity";
 import { TrackSortSelect, type TrackSort } from "@/components/ui/TrackSortSelect";
 import { Chip, ChipGroup } from "@/components/ui/Chip";
 import { Input } from "@/components/ui/Input";
@@ -433,13 +434,16 @@ export function CollectorsClient(props: {
     return "individual";
   });
 
-  const [granularity, setGranularity] = useState<Granularity>(() => {
+  const [granularity, setGranularity] = useSharedGranularity(COLLECTORS_COMPARISON_STORAGE.granularity);
+
+  // If URL has a granularity param, override the localStorage value on first mount.
+  useEffect(() => {
     const urlGranularity = searchParams.get("granularity");
-    if (GRANULARITIES.includes(urlGranularity as Granularity)) {
-      return urlGranularity as Granularity;
+    if (urlGranularity && GRANULARITIES.includes(urlGranularity as Granularity)) {
+      setGranularity(urlGranularity as Granularity);
     }
-    return "daily";
-  });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Restore comparison settings from localStorage after mount (only when URL
   // didn't already specify them) to avoid SSR/client hydration mismatches.
@@ -450,14 +454,6 @@ export function CollectorsClient(props: {
       const stored = readStoredString(COLLECTORS_COMPARISON_STORAGE.mode);
       if (stored === "combined" || stored === "individual" || stored === "percentage") {
         setComparisonMode(stored);
-        changed = true;
-      }
-    }
-
-    if (!searchParams.get("granularity")) {
-      const stored = readStoredString(COLLECTORS_COMPARISON_STORAGE.granularity);
-      if (GRANULARITIES.includes(stored as Granularity)) {
-        setGranularity(stored as Granularity);
         changed = true;
       }
     }
@@ -508,7 +504,6 @@ export function CollectorsClient(props: {
     }
     writeStoredString(COLLECTORS_COMPARISON_STORAGE.collectors, comparisonCollectors.join(","));
     writeStoredString(COLLECTORS_COMPARISON_STORAGE.mode, comparisonMode);
-    writeStoredString(COLLECTORS_COMPARISON_STORAGE.granularity, granularity);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [comparisonCollectors, comparisonMode, granularity]);
 
