@@ -4,13 +4,13 @@ import type { ReactNode } from "react";
 import { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ExternalLink, User, ChevronRight, Download, List } from "lucide-react";
+import { ExternalLink, Download, List, ChevronRight, User } from "lucide-react";
 import { formatDateISO, formatDateOrdinalDMonYYYY, formatInt, formatUsd } from "@/lib/format";
 import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/GlassTable";
-import { CatalogMetricsClient } from "./CatalogMetricsClient";
 import { Combobox } from "@/components/ui/Combobox";
 import { SpotlightCard } from "@/components/ui/SpotlightCard";
 import { AnimatedCounter } from "@/components/ui/AnimatedCounter";
+import { CatalogMetricsClient } from "./CatalogMetricsClient";
 import { DailyStreamsChart } from "@/components/charts/DailyStreamsChart";
 import { DailyStreamsWithMAChart } from "@/components/charts/DailyStreamsWithMAChart";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
@@ -31,49 +31,8 @@ import { DateRangePicker, type DateRangePickerHandle } from "@/components/ui/Dat
 import { aggregateCumulativeSeries, aggregateDailySeries } from "@/lib/granularity";
 import { useSharedGranularity } from "@/lib/useSharedGranularity";
 import { useLongPress } from "@/components/charts/useLongPress";
-
-type ChartDataPoint = {
-  date: string;
-  value: number;
-};
-
-type DailyDataPoint = {
-  date: string;
-  daily: number | null;
-};
-
-type ArtistOption = { id: string; name: string; imageUrl?: string | null };
-type TrackOption = { isrc: string; name: string; albumImageUrl?: string | null };
-type TopTrack = {
-  isrc: string;
-  name: string | null;
-  total: number | null;
-  daily: number | null;
-  albumImageUrl: string | null;
-  artistNames?: string[] | null;
-  artistIds?: string[] | null;
-  releaseDate?: string | null;
-};
-type TrackSeriesPoint = { date: string; value: number };
-type TrackDailyPoint = { date: string; daily: number | null; ma7?: number | null };
-type SelectedTrack = {
-  name: string | null;
-  albumImageUrl: string | null;
-  spotifyTrackId: string | null;
-  artistNames: string[] | null;
-  artistIds: string[] | null;
-  releaseDate: string | null;
-};
-type TrackPlaylistMembership = {
-  playlistKey: string;
-  playlistName: string;
-  playlistType: string;
-  addedRunDate: string;
-  removedRunDate: string | null;
-  spotifyPlaylistId: string | null;
-  spotifyPlaylistImageUrl: string | null;
-  isCatalog: boolean;
-};
+import type { TrackSeriesPoint, TrackDailyPoint, SelectedTrack, TrackPlaylistMembership, TopTrack, ChartDataPoint, DailyDataPoint, ArtistOption, TrackOption } from "./catalogTypes";
+import { sortTopTracks, toggleSort, type SortState, type TopSortKey } from "./catalogUtils";
 
 export function CatalogPageClient(props: {
   latestCum: number;
@@ -145,63 +104,6 @@ export function CatalogPageClient(props: {
   const [topTotalSort, setTopTotalSort] = useState<SortState>(null);
   const [topDailySort, setTopDailySort] = useState<SortState>(null);
 
-  function toggleSort(setter: (next: SortState) => void, current: SortState, key: TopSortKey) {
-    const defaultAsc = key === "name" ? true : key === "release" ? false : false;
-    if (!current || current.key !== key) {
-      setter({ key, asc: defaultAsc });
-      return;
-    }
-    setter({ key, asc: !current.asc });
-  }
-
-  function cmpNullableName(a: string | null | undefined, b: string | null | undefined, aIsrc: string, bIsrc: string) {
-    const aa = ((a ?? "").trim() || aIsrc).toLowerCase();
-    const bb = ((b ?? "").trim() || bIsrc).toLowerCase();
-    return aa.localeCompare(bb);
-  }
-
-  function sortTopTracks(rows: TopTrack[], state: SortState, mode: "total" | "daily") {
-    if (!state) return rows;
-    // Extra guard: keep behavior predictable if a mismatched key ever sneaks in.
-    if (mode === "total" && state.key === "daily") return rows;
-    if (mode === "daily" && state.key === "total") return rows;
-
-    const out = [...rows];
-    out.sort((a, b) => {
-      let c = 0;
-      if (state.key === "name") {
-        c = cmpNullableName(a.name, b.name, a.isrc, b.isrc);
-      } else if (state.key === "release") {
-        const aa = (a.releaseDate ?? "").trim();
-        const bb = (b.releaseDate ?? "").trim();
-        const aNull = !aa;
-        const bNull = !bb;
-        if (aNull || bNull) return aNull === bNull ? 0 : aNull ? 1 : -1; // nulls last always
-        c = aa.localeCompare(bb);
-      } else if (state.key === "total") {
-        const av = a.total;
-        const bv = b.total;
-        const aNull = av == null || !Number.isFinite(av);
-        const bNull = bv == null || !Number.isFinite(bv);
-        if (aNull || bNull) return aNull === bNull ? 0 : aNull ? 1 : -1; // nulls last always
-        c = av - bv;
-      } else if (state.key === "daily") {
-        const av = a.daily;
-        const bv = b.daily;
-        const aNull = av == null || !Number.isFinite(av);
-        const bNull = bv == null || !Number.isFinite(bv);
-        if (aNull || bNull) return aNull === bNull ? 0 : aNull ? 1 : -1; // nulls last always
-        c = av - bv;
-      }
-
-      // Stable-ish tie-break: keep deterministic order by ISRC.
-      if (c === 0) c = a.isrc.localeCompare(b.isrc);
-
-      return state.asc ? c : -c;
-    });
-
-    return out;
-  }
 
   const topByCumulativeSorted = useMemo(
     () => sortTopTracks(props.topByCumulative, topTotalSort, "total"),
