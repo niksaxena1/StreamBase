@@ -352,6 +352,8 @@ function HomeDashboardInner(props: {
                 onChange={pushRange}
                 onCustom={() => datePickerRef.current?.open()}
                 customActive={hasCustomRange}
+                customStart={props.sp.start ?? null}
+                customEnd={props.sp.end ?? null}
               />
               <DateRangePicker ref={datePickerRef} latestDate={props.latestDataDate ?? null} currentRangeDays={props.rangeDays} headless />
             </>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback, type ReactNode } from "react";
+import { formatDateRangeShort } from "@/components/ui/DateRangePicker";
 
 // ---------------------------------------------------------------------------
 // Shared chip-dropdown primitive
@@ -27,6 +28,7 @@ function ChipDropdown<V extends string | number>({
   minWidth = "5rem",
   customOption,
   customActive = false,
+  customLabel,
 }: {
   options: readonly ChipDropdownOption<V>[];
   value: V;
@@ -38,6 +40,8 @@ function ChipDropdown<V extends string | number>({
   customOption?: { label: string; icon?: ReactNode; onSelect: () => void };
   /** When true, the chip shows the custom option label instead of the current value. */
   customActive?: boolean;
+  /** Override the label shown in the chip when customActive is true. Defaults to customOption.label. */
+  customLabel?: string;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -124,7 +128,7 @@ function ChipDropdown<V extends string | number>({
   );
 
   const selectedLabel = customActive
-    ? (customOption?.label ?? "Custom")
+    ? (customLabel ?? customOption?.label ?? "Custom")
     : (options.find((o) => o.value === value)?.label ?? String(value));
   const isDefaultVal = !customActive && value === defaultValue;
 
@@ -268,24 +272,43 @@ export function RangeSelect({
   onChange,
   onCustom,
   customActive = false,
+  customStart,
+  customEnd,
 }: {
   value: number;
   onChange: (range: number) => void;
   /** When provided, a "Custom" option is appended that calls this instead of onChange. */
   onCustom?: () => void;
-  /** When true, the chip shows "Custom" as the selected value. */
+  /** When true, the chip shows the date range as the selected value. */
   customActive?: boolean;
+  /** ISO date string for the active custom start date (used for chip label). */
+  customStart?: string | null;
+  /** ISO date string for the active custom end date (used for chip label). */
+  customEnd?: string | null;
 }) {
+  const customLabel = customActive && customStart && customEnd
+    ? formatDateRangeShort(customStart, customEnd)
+    : undefined;
+
+  // Compute day count for tooltip hint on short ranges.
+  const dayCount = customActive && customStart && customEnd
+    ? Math.round((new Date(`${customEnd}T00:00:00Z`).getTime() - new Date(`${customStart}T00:00:00Z`).getTime()) / 86400000) + 1
+    : null;
+  const tooltip = dayCount !== null && dayCount < 7
+    ? `Chart display range · ${dayCount} day${dayCount === 1 ? "" : "s"}`
+    : "Chart display range";
+
   return (
     <ChipDropdown
       options={RANGES}
       value={value}
       defaultValue={30}
       onChange={onChange}
-      title="Chart display range"
+      title={tooltip}
       minWidth="5rem"
       customOption={onCustom ? { label: "Custom", onSelect: onCustom } : undefined}
       customActive={customActive}
+      customLabel={customLabel}
     />
   );
 }

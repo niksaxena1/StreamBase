@@ -42,6 +42,8 @@ export function PlaylistHeaderSelects({ rangeDays, latestDataDate }: { rangeDays
             onChange={pushRange}
             onCustom={() => datePickerRef.current?.open()}
             customActive={hasCustomRange}
+            customStart={sp?.get("start") ?? null}
+            customEnd={sp?.get("end") ?? null}
           />
           <DateRangePicker ref={datePickerRef} latestDate={latestDataDate} currentRangeDays={rangeDays} headless />
         </>

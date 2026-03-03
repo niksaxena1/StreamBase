@@ -223,7 +223,7 @@ export default async function CatalogPage({
       const start = new Date(`${sp.start}T00:00:00Z`);
       const end = new Date(`${sp.end}T00:00:00Z`);
       const calculatedDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-      rangeDays = Math.max(7, Math.min(365, calculatedDays));
+      rangeDays = Math.max(1, Math.min(365, calculatedDays));
     }
     const sb = await supabaseServer();
     const { data: userData } = await sb.auth.getUser();

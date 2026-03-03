@@ -59,6 +59,8 @@ export function CollectorsPageHeader({
             onChange={pushRange}
             onCustom={() => datePickerRef.current?.open()}
             customActive={hasCustomRange}
+            customStart={searchParams?.get("start") ?? null}
+            customEnd={searchParams?.get("end") ?? null}
           />
           <DateRangePicker ref={datePickerRef} latestDate={latestDataDate ?? null} currentRangeDays={rangeDays} headless />
         </>

@@ -289,6 +289,8 @@ export function CatalogPageClient(props: {
                   onChange={pushRange}
                   onCustom={() => datePickerRef.current?.open()}
                   customActive={hasCustomRange}
+                  customStart={sp?.get("start") ?? null}
+                  customEnd={sp?.get("end") ?? null}
                 />
                 <DateRangePicker ref={datePickerRef} latestDate={props.latestDataDate ?? null} currentRangeDays={props.rangeDays} headless />
               </>

@@ -99,7 +99,7 @@ export default async function CollectorsPage({
     const start = new Date(`${sp.start}T00:00:00Z`);
     const end = new Date(`${sp.end}T00:00:00Z`);
     const calculatedDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-    rangeDays = Math.max(7, Math.min(365, calculatedDays));
+    rangeDays = Math.max(1, Math.min(365, calculatedDays));
   }
   const rawCollector = (sp.collector ?? "").trim().toUpperCase();
   const selectedCollector = (COLLECTORS as readonly string[]).includes(rawCollector)

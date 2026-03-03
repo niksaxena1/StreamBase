@@ -34,8 +34,34 @@ function utcMsFromYmd(ymd: string): number {
 
 function clampDaysInclusive(startYmd: string, endYmd: string): number {
   const days = Math.round((utcMsFromYmd(endYmd) - utcMsFromYmd(startYmd)) / 86400000) + 1;
-  return Math.max(7, Math.min(365, days));
+  return Math.max(1, Math.min(365, days));
 }
+
+/**
+ * Compact date-range label for chips.
+ * Examples: "1 Mar"  |  "1–28 Feb"  |  "23 Feb – 1 Mar"  |  "31 Dec 2025 – 1 Jan 2026"
+ */
+export function formatDateRangeShort(startYmd: string, endYmd: string): string {
+  const s = parseYmd(startYmd);
+  const e = parseYmd(endYmd);
+  const sd = s.getDate();
+  const ed = e.getDate();
+  const sm = s.toLocaleString("en-US", { month: "short" });
+  const em = e.toLocaleString("en-US", { month: "short" });
+  const sy = s.getFullYear();
+  const ey = e.getFullYear();
+  if (startYmd === endYmd) return `${sd} ${sm}`;
+  if (sy !== ey) return `${sd} ${sm} ${sy} – ${ed} ${em} ${ey}`;
+  if (s.getMonth() === e.getMonth()) return `${sd}–${ed} ${em}`;
+  return `${sd} ${sm} – ${ed} ${em}`;
+}
+
+/** Presets that map 1:1 to the standard 30d/90d/365d chips. */
+const STANDARD_RANGE_PRESETS: Record<string, number> = {
+  last30: 30,
+  last90: 90,
+  last365: 365,
+};
 
 type Preset = { name: string; label: string };
 type ConcreteRange = { from: Date; to: Date };
@@ -105,12 +131,45 @@ const DateRangePickerInner = forwardRef<DateRangePickerHandle, {
     if (!range?.from || !range.to) return;
     const startYmd = formatYmd(range.from);
     const endYmd = formatYmd(range.to);
-    const clampedDays = clampDaysInclusive(startYmd, endYmd);
-
     const params = new URLSearchParams(sp.toString());
-    params.set("range", String(clampedDays));
+
+    // If the selection exactly matches a standard preset range, snap to the numeric chip.
+    for (const [presetName, days] of Object.entries(STANDARD_RANGE_PRESETS)) {
+      const r = getPresetRange(presetName);
+      if (formatYmd(r.from) === startYmd && formatYmd(r.to) === endYmd) {
+        params.set("range", String(days));
+        params.delete("start");
+        params.delete("end");
+        router.push(`?${params.toString()}`);
+        setIsOpen(false);
+        return;
+      }
+    }
+
+    params.set("range", String(clampDaysInclusive(startYmd, endYmd)));
     params.set("start", startYmd);
     params.set("end", endYmd);
+    router.push(`?${params.toString()}`);
+    setIsOpen(false);
+  }
+
+  /** Apply a preset immediately (no Apply button needed). */
+  function applyPreset(name: string) {
+    const params = new URLSearchParams(sp.toString());
+    const standardDays = STANDARD_RANGE_PRESETS[name];
+    if (standardDays !== undefined) {
+      // Snap to the numeric chip — clear custom start/end.
+      params.set("range", String(standardDays));
+      params.delete("start");
+      params.delete("end");
+    } else {
+      const r = getPresetRange(name);
+      const startYmd = formatYmd(r.from);
+      const endYmd = formatYmd(r.to);
+      params.set("range", String(clampDaysInclusive(startYmd, endYmd)));
+      params.set("start", startYmd);
+      params.set("end", endYmd);
+    }
     router.push(`?${params.toString()}`);
     setIsOpen(false);
   }
@@ -363,6 +422,12 @@ const DateRangePickerInner = forwardRef<DateRangePickerHandle, {
                 style={isSmallScreen ? { backgroundColor: "var(--sb-bg)" } : { top: popoverPos.top, left: popoverPos.left }}
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !(e.target instanceof HTMLButtonElement) && range?.from && range.to) {
+                    e.preventDefault();
+                    handleApply();
+                  }
+                }}
               >
                 {/* Header with inputs and close */}
                 <div className={[
@@ -424,7 +489,7 @@ const DateRangePickerInner = forwardRef<DateRangePickerHandle, {
                           <button
                             key={p.name}
                             type="button"
-                            onClick={() => setPreset(p.name)}
+                            onClick={() => applyPreset(p.name)}
                             className={[
                               "sb-ring flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-medium transition whitespace-nowrap",
                               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
@@ -554,7 +619,7 @@ const DateRangePickerInner = forwardRef<DateRangePickerHandle, {
                             <button
                               key={p.name}
                               type="button"
-                              onClick={() => setPreset(p.name)}
+                              onClick={() => applyPreset(p.name)}
                               className={[
                                 "sb-ring flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium transition whitespace-nowrap",
                                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
