@@ -692,47 +692,75 @@ function ExpandedContent({
 
     case "total_streams_decreased":
       return Array.isArray(data.tracks) && data.tracks.length > 0 ? (
-        <TrackSection
-          label="Tracks with decreased streams"
-          count={data.tracks.length}
-        >
-          {(data.tracks as DecreasedTrack[]).map((t) => {
-            const prev =
-              typeof t.prev_streams === "number" &&
-              Number.isFinite(t.prev_streams)
-                ? t.prev_streams
-                : null;
-            const today =
-              typeof t.today_streams === "number" &&
-              Number.isFinite(t.today_streams)
-                ? t.today_streams
-                : null;
-            const delta =
-              typeof t.delta === "number" && Number.isFinite(t.delta)
-                ? t.delta
-                : null;
-            return (
-              <TrackListItem
-                key={t.isrc}
-                track={t}
-                actions={
-                  <>
-                    {prev !== null && today !== null && (
-                      <span className="font-mono text-[10px] opacity-70">
-                        {prev.toLocaleString()} → {today.toLocaleString()}
-                      </span>
-                    )}
-                    {delta !== null && (
-                      <span className="font-mono text-[10px] text-red-500 dark:text-red-400 font-medium">
-                        {delta.toLocaleString()}
-                      </span>
-                    )}
-                  </>
-                }
-              />
-            );
-          })}
-        </TrackSection>
+        <div className="space-y-3">
+          <div className="text-xs font-medium opacity-70 mb-2">
+            Tracks with decreased streams ({data.tracks.length}):
+          </div>
+          <div className="space-y-2">
+            {(data.tracks as DecreasedTrack[]).map((t) => {
+              const prev =
+                typeof t.prev_streams === "number" &&
+                Number.isFinite(t.prev_streams)
+                  ? t.prev_streams
+                  : null;
+              const today =
+                typeof t.today_streams === "number" &&
+                Number.isFinite(t.today_streams)
+                  ? t.today_streams
+                  : null;
+              const delta =
+                typeof t.delta === "number" && Number.isFinite(t.delta)
+                  ? t.delta
+                  : null;
+              const deltaPercent =
+                prev !== null && prev > 0
+                  ? Math.round((Math.abs(delta ?? 0) / prev) * 100)
+                  : null;
+
+              return (
+                <div
+                  key={t.isrc}
+                  className="rounded-lg px-3 py-2.5"
+                  style={{ backgroundColor: "var(--sb-surface)" }}
+                >
+                  <TrackListItem track={t} />
+                  {(prev !== null || delta !== null) && (
+                    <div className="mt-2 flex items-center gap-3 flex-wrap text-[10px] font-mono opacity-70">
+                      {prev !== null && today !== null && (
+                        <div className="flex items-center gap-1.5">
+                          <span className="opacity-50">Previous:</span>
+                          <span className="font-semibold text-current">
+                            {prev.toLocaleString()}
+                          </span>
+                          <span className="opacity-50">→</span>
+                          <span className="font-semibold text-current">
+                            {today.toLocaleString()}
+                          </span>
+                        </div>
+                      )}
+                      {delta !== null && (
+                        <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-red-500/10 text-red-600 dark:text-red-400">
+                          <span className="opacity-70">Decrease:</span>
+                          <span className="font-semibold">
+                            {Math.abs(delta).toLocaleString()}
+                          </span>
+                          {deltaPercent !== null && (
+                            <span className="opacity-70">({deltaPercent}%)</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {data.note && (
+            <div className="mt-3 text-xs opacity-60 p-2 rounded bg-white/30 dark:bg-white/5">
+              {data.note}
+            </div>
+          )}
+        </div>
       ) : (
         <FallbackNote note={data.note} />
       );

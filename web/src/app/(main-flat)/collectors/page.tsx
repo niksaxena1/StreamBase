@@ -243,6 +243,21 @@ export default async function CollectorsPage({
           .lte("date", rangeEnd!)
           .order("date", { ascending: false }),
 
+      // All-time series for monthly aggregation (not affected by date range selector)
+      seriesAllTime: async () => {
+        let q = svc
+          .from("collector_daily_agg")
+          .select(
+            "date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net",
+          )
+          .eq("collector", selectedCollector);
+        if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
+        // Bound to last 365 days instead of all-time to cap payload size.
+        const allTimeStart = latestRunDate ? addDaysIso(latestRunDate, -365) : null;
+        if (allTimeStart) q = q.gte("date", allTimeStart);
+        return await q.order("date", { ascending: false });
+      },
+
       // Fetch all collectors data for comparison chart (date-range filtered for daily view)
       allCollectorsSeries: async () =>
         await svc
@@ -365,6 +380,13 @@ export default async function CollectorsPage({
     date: dataDateFromRunDate(p.date),
   }));
 
+  // All-time series for monthly chart (not affected by date range)
+  const seriesAllTimeRun = (results.seriesAllTime.data ?? []) as CollectorSeriesPoint[];
+  const seriesAllTime = seriesAllTimeRun.map((p) => ({
+    ...p,
+    date: dataDateFromRunDate(p.date),
+  }));
+
   // Process all collectors data for comparison chart (date-range filtered)
   const allCollectorsRaw = (results.allCollectorsSeries.data ?? []) as Array<{
     collector: string;
@@ -469,6 +491,7 @@ export default async function CollectorsPage({
         rangeDays={rangeDays}
         summary={summary}
         seriesDesc={seriesDesc as CollectorSeriesPoint[]}
+        seriesAllTime={seriesAllTime as CollectorSeriesPoint[]}
         topPlaylists={normalizedTopPlaylists}
         selectedPlaylistsMeta={selectedPlaylists.map((p) => ({
           playlist_key: p.playlist_key,

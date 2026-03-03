@@ -91,6 +91,7 @@ export function CollectorsClient(props: {
   rangeDays: number;
   summary: CollectorSummaryRow[];
   seriesDesc: CollectorSeriesPoint[];
+  seriesAllTime: CollectorSeriesPoint[];
   topPlaylists: TopPlaylistRow[];
   selectedPlaylistsMeta: Array<{
     playlist_key: string;
@@ -384,12 +385,13 @@ export function CollectorsClient(props: {
   }, [props.seriesDesc, streamPayoutPerStreamUsd]);
 
   const monthlyData = useMemo(() => {
+    // Use seriesAllTime for monthly aggregation so it's not affected by date range selector
     return {
-      revenue: aggregateMonthlyDelta(props.seriesDesc, "revenue", streamPayoutPerStreamUsd),
-      streams: aggregateMonthlyDelta(props.seriesDesc, "streams", streamPayoutPerStreamUsd),
-      tracks: aggregateMonthlyDelta(props.seriesDesc, "tracks", streamPayoutPerStreamUsd),
+      revenue: aggregateMonthlyDelta(props.seriesAllTime, "revenue", streamPayoutPerStreamUsd),
+      streams: aggregateMonthlyDelta(props.seriesAllTime, "streams", streamPayoutPerStreamUsd),
+      tracks: aggregateMonthlyDelta(props.seriesAllTime, "tracks", streamPayoutPerStreamUsd),
     };
-  }, [props.seriesDesc, streamPayoutPerStreamUsd]);
+  }, [props.seriesAllTime, streamPayoutPerStreamUsd]);
 
   const monthlyChartDataForMetric = useMemo(() => {
     const base = monthlyData[metric];
