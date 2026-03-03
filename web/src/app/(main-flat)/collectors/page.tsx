@@ -4,19 +4,19 @@ import { redirect } from "next/navigation";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { formatDateISO } from "@/lib/format";
+import { CACHE_TTL_1H } from "@/lib/constants";
 import { RememberParamRedirect } from "@/components/dashboard/RememberParamRedirect";
 import { cachedQueries, cachedQuery } from "@/lib/supabase/cache";
 import { DateRangePicker } from "@/components/ui/DateRangePicker";
 import { dataDateFromRunDate, SOT_DATA_LAG_DAYS, addDaysISO } from "@/lib/sotDates";
 import { getRollbackDate, rollbackDataDateToRunDate } from "@/lib/rollback";
-import { CollectorsClient } from "./CollectorsClient";
 import type {
   CollectorSeriesPoint,
   CollectorSummaryRow,
   CollectorTrackRow,
   TopPlaylistRow,
 } from "./collectorsTypes";
-import { CollectorsPageHeader } from "./CollectorsPageHeader";
+import { CollectorsPageWrapper } from "./CollectorsPageWrapper";
 
 export const revalidate = 86400; // 24h ISR - data updates daily
 
@@ -26,7 +26,7 @@ type CollectorKey = (typeof COLLECTORS)[number];
 const RANGE_CHOICES = [30, 90, 365] as const;
 
 function clampRangeDays(x: unknown) {
-  const n = Number(x ?? "90") || 90;
+  const n = Number(x ?? "30") || 30;
   return Math.max(7, Math.min(365, n));
 }
 
@@ -42,7 +42,6 @@ type PlaylistRow = {
   collector: string | null;
   spotify_playlist_image_url: string | null;
 };
-
 
 export default async function CollectorsPage({
   searchParams,
@@ -113,7 +112,7 @@ export default async function CollectorsPage({
         },
       },
       `collectors-latest-for-default-rb${rollbackDate ?? "live"}`,
-      600,
+      CACHE_TTL_1H,
     ).then((r) => r.latest);
 
     const latestRunDateForDefault = (latestRowForDefault as { date: string } | null)?.date ?? null;
@@ -126,7 +125,7 @@ export default async function CollectorsPage({
             .select("collector,daily_streams_net")
             .eq("date", latestRunDateForDefault),
         `collectors-compare-for-default-${latestRunDateForDefault}`,
-        600,
+        CACHE_TTL_1H,
       );
 
       const rows = (compareRowsForDefault ?? []) as Array<{ collector: string; daily_streams_net: number }>;
@@ -313,7 +312,7 @@ export default async function CollectorsPage({
     },
     // bump cache key when changing server-side track pagination behavior
     `collectors-${selectedCollector}-${rangeStart}-${rangeEnd}-${latestRunDate}-tracksPaged1-artists1-ov${overrideBuster}-rb${rollbackDate ?? "live"}`,
-    600,
+    CACHE_TTL_1H,
   );
 
   const playlists = (results.playlistRows.data ?? []) as PlaylistRow[];
@@ -434,7 +433,7 @@ export default async function CollectorsPage({
               .order("est_revenue_daily_net", { ascending: false })
               .limit(15),
           `collectors-top-${selectedCollector}-${latestRunDate}-ov${overrideBuster}`,
-          600,
+          CACHE_TTL_1H,
         );
 
         return ((topRows ?? []) as Record<string, unknown>[]).map((r) => ({
@@ -477,32 +476,25 @@ export default async function CollectorsPage({
   }));
 
   return (
-    <div className="space-y-4">
-      <CollectorsPageHeader
-        selectedCollector={selectedCollector}
-        rangeDays={rangeDays}
-        latestDataDate={latestDataDate}
-      />
-
-      <CollectorsClient
-        latestDate={latestDataDate}
-        latestRunDate={latestRunDate}
-        selectedCollector={selectedCollector}
-        rangeDays={rangeDays}
-        summary={summary}
-        seriesDesc={seriesDesc as CollectorSeriesPoint[]}
-        seriesAllTime={seriesAllTime as CollectorSeriesPoint[]}
-        topPlaylists={normalizedTopPlaylists}
-        selectedPlaylistsMeta={selectedPlaylists.map((p) => ({
-          playlist_key: p.playlist_key,
-          display_name: String(nameByKey.get(p.playlist_key) ?? p.display_name ?? p.playlist_key),
-          spotify_playlist_image_url: imageByKey.get(p.playlist_key) ?? null,
-        }))}
-        collectorTracks={collectorTracks}
-        allCollectorsSeries={allCollectorsSeries}
-        allCollectorsAllTime={allCollectorsAllTime}
-      />
-    </div>
+    <CollectorsPageWrapper
+      selectedCollector={selectedCollector}
+      rangeDays={rangeDays}
+      latestDataDate={latestDataDate}
+      summary={summary}
+      seriesDesc={seriesDesc as CollectorSeriesPoint[]}
+      seriesAllTime={seriesAllTime as CollectorSeriesPoint[]}
+      topPlaylists={normalizedTopPlaylists}
+      selectedPlaylistsMeta={selectedPlaylists.map((p) => ({
+        playlist_key: p.playlist_key,
+        display_name: String(nameByKey.get(p.playlist_key) ?? p.display_name ?? p.playlist_key),
+        spotify_playlist_image_url: imageByKey.get(p.playlist_key) ?? null,
+      }))}
+      collectorTracks={collectorTracks}
+      allCollectorsSeries={allCollectorsSeries}
+      allCollectorsAllTime={allCollectorsAllTime}
+      latestDate={latestDataDate}
+      latestRunDate={latestRunDate}
+    />
   );
 }
 

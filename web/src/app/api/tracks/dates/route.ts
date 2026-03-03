@@ -48,5 +48,9 @@ export async function GET() {
     if (rows.length < pageSize) break;
   }
 
-  return NextResponse.json({ rows: out });
+  // Track first_seen/last_seen only change on new ingestion (once daily at most).
+  return NextResponse.json(
+    { rows: out },
+    { headers: { "Cache-Control": "max-age=3600, stale-while-revalidate=86400" } },
+  );
 }

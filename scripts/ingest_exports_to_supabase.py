@@ -883,12 +883,14 @@ def main():
         )
 
         # memberships (skip derived)
+        prev_active_by_playlist: Dict[str, Set[str]] = {}
         for pl_key, todays_isrcs in playlist_to_isrcs.items():
             if not todays_isrcs:
                 continue
             active_rows = pg.select_all("playlist_memberships", "id,isrc", f"playlist_key=eq.{pl_key}&valid_to=is.null&order=id")
             active_set = {r["isrc"] for r in active_rows}
             active_id = {r["isrc"]: r["id"] for r in active_rows}
+            prev_active_by_playlist[pl_key] = active_set
             to_add = sorted(todays_isrcs - active_set)
             to_remove = sorted(active_set - todays_isrcs)
             if to_add:
@@ -999,6 +1001,19 @@ def main():
                             "delta": today_val - prev_val,
                         })
                 decreased_tracks.sort(key=lambda t: t["delta"])
+
+                # Detect tracks removed from this playlist that had streams yesterday.
+                prev_active = prev_active_by_playlist.get(pl_key, set())
+                removed_isrcs = sorted(prev_active - todays_isrcs)
+                removed_tracks = []
+                removed_streams_total = 0
+                for isrc in removed_isrcs:
+                    pv = int(prev_streams.get(isrc, 0))
+                    if pv > 0:
+                        removed_tracks.append({"isrc": isrc, "prev_streams": pv})
+                        removed_streams_total += pv
+                removed_tracks.sort(key=lambda t: t["prev_streams"], reverse=True)
+
                 warn_rows.append(
                     {
                         "run_id": run_id,
@@ -1014,6 +1029,9 @@ def main():
                             "missing_streams_track_count": missing,
                             "decreased_tracks": decreased_tracks[:200],
                             "decreased_tracks_total": len(decreased_tracks),
+                            "removed_tracks": removed_tracks[:200],
+                            "removed_tracks_total": len(removed_tracks),
+                            "removed_streams_total": removed_streams_total,
                             "note": "Totals should be monotonic; investigate missing/invalid stream totals in source export.",
                         },
                     }

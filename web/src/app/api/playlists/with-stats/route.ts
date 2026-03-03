@@ -23,42 +23,59 @@ export async function GET() {
 
   const svc = supabaseService();
 
-  const [playlistsRes, statsRes] = await Promise.all([
-    svc
-      .from("playlists")
-      .select(
-        "playlist_key,display_name,is_catalog,playlist_type,collector,spotify_playlist_image_url",
-      )
-      .order("display_name", { ascending: true }),
-    svc
-      .from("playlist_daily_stats")
-      .select("playlist_key,date,track_count,total_streams_cumulative,daily_streams_net")
-      .order("date", { ascending: false }),
-  ]);
+  // Fetch playlists first so we have the exact set of keys to query.
+  const playlistsRes = await svc
+    .from("playlists")
+    .select(
+      "playlist_key,display_name,is_catalog,playlist_type,collector,spotify_playlist_image_url",
+    )
+    .order("display_name", { ascending: true })
+    .limit(2000);
 
   if (playlistsRes.error) {
     return NextResponse.json({ error: playlistsRes.error.message }, { status: 500 });
   }
-  if (statsRes.error) {
-    return NextResponse.json({ error: statsRes.error.message }, { status: 500 });
-  }
 
-  // Keep only the latest stats row per playlist_key
+  const playlistKeys = (playlistsRes.data ?? []).map((p: any) => String(p.playlist_key ?? "")).filter(Boolean);
+
+  // Find the single latest run date across all playlists — one fast query.
+  const { data: latestDateRow } = await svc
+    .from("playlist_daily_stats")
+    .select("date")
+    .order("date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const latestDate = (latestDateRow as { date: string } | null)?.date ?? null;
+
+  // Fetch stats for only the latest date and only the known playlist keys.
+  // This replaces an unbounded all-time table scan with a precise point-in-time read.
   const latestStats = new Map<
     string,
     { track_count: number; total_streams: number; daily_streams: number | null }
   >();
-  for (const s of statsRes.data ?? []) {
-    const pk = String((s as any).playlist_key ?? "");
-    if (!pk || latestStats.has(pk)) continue;
-    latestStats.set(pk, {
-      track_count: Number((s as any).track_count ?? 0),
-      total_streams: Number((s as any).total_streams_cumulative ?? 0),
-      daily_streams:
-        (s as any).daily_streams_net != null
-          ? Number((s as any).daily_streams_net)
-          : null,
-    });
+
+  if (latestDate && playlistKeys.length > 0) {
+    const { data: statsRows, error: statsErr } = await svc
+      .from("playlist_daily_stats")
+      .select("playlist_key,track_count,total_streams_cumulative,daily_streams_net")
+      .eq("date", latestDate)
+      .in("playlist_key", playlistKeys);
+
+    if (statsErr) {
+      return NextResponse.json({ error: statsErr.message }, { status: 500 });
+    }
+
+    for (const s of statsRows ?? []) {
+      const pk = String((s as any).playlist_key ?? "");
+      if (!pk) continue;
+      latestStats.set(pk, {
+        track_count: Number((s as any).track_count ?? 0),
+        total_streams: Number((s as any).total_streams_cumulative ?? 0),
+        daily_streams:
+          (s as any).daily_streams_net != null ? Number((s as any).daily_streams_net) : null,
+      });
+    }
   }
 
   const playlists = (playlistsRes.data ?? []).map((p: any) => {

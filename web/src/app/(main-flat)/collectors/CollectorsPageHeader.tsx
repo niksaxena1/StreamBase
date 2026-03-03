@@ -4,17 +4,21 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef } from "react";
 import { PageHeader } from "@/components/shell/PageHeader";
 import { DateRangePicker, type DateRangePickerHandle } from "@/components/ui/DateRangePicker";
-import { RangeSelect } from "@/components/ui/GranularitySelect";
+import { RangeSelect, GranularitySelect, type Granularity } from "@/components/ui/GranularitySelect";
 import { formatDateISO } from "@/lib/format";
 
 export function CollectorsPageHeader({
   selectedCollector,
   rangeDays,
   latestDataDate,
+  granularity,
+  onGranularityChange,
 }: {
   selectedCollector: string;
   rangeDays: number;
   latestDataDate: string | null;
+  granularity: Granularity;
+  onGranularityChange: (g: Granularity) => void;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -54,15 +58,20 @@ export function CollectorsPageHeader({
       }
       actions={
         <>
-          <RangeSelect
-            value={rangeDays}
-            onChange={pushRange}
-            onCustom={() => datePickerRef.current?.open()}
-            customActive={hasCustomRange}
-            customStart={searchParams?.get("start") ?? null}
-            customEnd={searchParams?.get("end") ?? null}
-          />
-          <DateRangePicker ref={datePickerRef} latestDate={latestDataDate ?? null} currentRangeDays={rangeDays} headless />
+          {granularity === "daily" && (
+            <>
+              <RangeSelect
+                value={rangeDays}
+                onChange={pushRange}
+                onCustom={() => datePickerRef.current?.open()}
+                customActive={hasCustomRange}
+                customStart={searchParams?.get("start") ?? null}
+                customEnd={searchParams?.get("end") ?? null}
+              />
+              <DateRangePicker ref={datePickerRef} latestDate={latestDataDate ?? null} currentRangeDays={rangeDays} headless />
+            </>
+          )}
+          <GranularitySelect value={granularity} onChange={onGranularityChange} />
         </>
       }
     />

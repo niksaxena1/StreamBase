@@ -41,6 +41,10 @@ export type DecreasedTrack = TrackBase & {
   delta?: number | null;
 };
 
+export type RemovedTrack = TrackBase & {
+  prev_streams?: number | null;
+};
+
 export type PrevNonzeroTrack = TrackBase & {
   prev_streams_cumulative?: number | null;
 };
@@ -138,6 +142,12 @@ export type TotalStreamsDecreasedDetailsJson = {
   prev_total_streams_cumulative?: number;
   today_total_streams_cumulative?: number;
   decreased_tracks_total?: number;
+  removed_tracks?: {
+    isrc: string;
+    prev_streams: number;
+  }[];
+  removed_tracks_total?: number;
+  removed_streams_total?: number;
   note?: string;
 };
 
@@ -176,6 +186,8 @@ export type WarningExpandedData =
   | {
       type: "total_streams_decreased";
       tracks: DecreasedTrack[] | null;
+      removedTracks: RemovedTrack[] | null;
+      removedStreamsTotal: number;
       note?: string;
     }
   | { type: "entity_distro_drift"; drift: DriftData }

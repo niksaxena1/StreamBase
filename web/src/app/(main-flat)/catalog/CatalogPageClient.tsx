@@ -34,6 +34,23 @@ import { useLongPress } from "@/components/charts/useLongPress";
 import type { TrackSeriesPoint, TrackDailyPoint, SelectedTrack, TrackPlaylistMembership, TopTrack, ChartDataPoint, DailyDataPoint, ArtistOption, TrackOption } from "./catalogTypes";
 import { sortTopTracks, toggleSort, type SortState, type TopSortKey } from "./catalogUtils";
 
+// Defined at module level so its identity is stable across renders.
+// Putting it inside the component would create a new type on every render,
+// causing React to unmount and remount the sort header cells unnecessarily.
+function SilentSortHeader({ label, onClick }: { label: ReactNode; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full text-left select-none cursor-default uppercase"
+      // Intentionally no hover/active styles: "hidden" power-user feature.
+      style={{ color: "inherit" }}
+    >
+      {typeof label === "string" ? label.toUpperCase() : label}
+    </button>
+  );
+}
+
 export function CatalogPageClient(props: {
   latestCum: number;
   latestDate: string | null;
@@ -91,6 +108,61 @@ export function CatalogPageClient(props: {
     }
   }, [props.isrc]);
 
+  // Pre-compute track chart series data. This is O(n) over the time series length
+  // (which grows daily), so memoize to avoid re-running on unrelated state changes.
+  const trackChartData = useMemo(() => {
+    if (!props.isrc) return null;
+    // For track panels, "Tracks" metric doesn't apply (always 1 track), so treat as streams.
+    const trackMode: "revenue" | "streams" = metric === "revenue" ? "revenue" : "streams";
+    const valueFormat = trackMode === "revenue" ? ("usd" as const) : ("int" as const);
+    const yTickFormat = trackMode === "revenue" ? ("usd_compact" as const) : ("k" as const);
+
+    const cumSeriesRaw = trackMode === "revenue"
+      ? props.trackCumDesc.map((p) => ({ date: dataDateFromRunDate(p.date), value: p.value * streamPayoutPerStreamUsd }))
+      : props.trackCumDesc.map((p) => ({ date: dataDateFromRunDate(p.date), value: p.value }));
+    const cumSeries = aggregateCumulativeSeries(cumSeriesRaw, granularity);
+
+    const dailySeriesRaw = trackMode === "revenue"
+      ? props.trackDailyWithMaDesc.map((p) => ({
+          date: dataDateFromRunDate(p.date),
+          daily: p.daily == null ? null : p.daily * streamPayoutPerStreamUsd,
+          ma7: p.ma7 == null ? p.ma7 : p.ma7 * streamPayoutPerStreamUsd,
+        }))
+      : props.trackDailyWithMaDesc.map((p) => ({
+          date: dataDateFromRunDate(p.date),
+          daily: p.daily,
+          ma7: p.ma7,
+        }));
+    const dailySeries = granularity === "daily"
+      ? dailySeriesRaw
+      : aggregateDailySeries(dailySeriesRaw, granularity);
+
+    const trackOverrideAnnotations =
+      trackMode === "revenue"
+        ? props.trackOverrideAnnotations.map((a) => ({
+            ...a,
+            note: `${a.note} (applies to revenue via payout model)`,
+          }))
+        : props.trackOverrideAnnotations;
+
+    const glTrack = granularityLabel(granularity).toLowerCase();
+    const trackChartColor = trackMode === "revenue" ? "#10b981" : undefined;
+
+    return {
+      trackMode,
+      valueFormat,
+      yTickFormat,
+      cumSeries,
+      dailySeries,
+      trackOverrideAnnotations,
+      cumulativeTitle: trackMode === "revenue" ? "Track total revenue" : "Track total streams",
+      dailyTitle: trackMode === "revenue" ? `Track ${glTrack} revenue` : `Track ${glTrack} streams`,
+      dailyLabel: trackMode === "revenue" ? `${granularityLabel(granularity)} revenue` : `${granularityLabel(granularity)} streams`,
+      totalLabel: trackMode === "revenue" ? "Total revenue" : "Total streams",
+      trackChartColor,
+    };
+  }, [props.isrc, props.trackCumDesc, props.trackDailyWithMaDesc, metric, granularity, streamPayoutPerStreamUsd, props.trackOverrideAnnotations]);
+
   // Top-track tables only make sense for streams/revenue; treat "tracks" as streams.
   const topTracksMode: "streams" | "revenue" = metric === "revenue" ? "revenue" : "streams";
   const topTracksNumberStyle =
@@ -114,19 +186,28 @@ export function CatalogPageClient(props: {
     [props.topByDaily, topDailySort],
   );
 
-  function SilentSortHeader(props: { label: ReactNode; onClick: () => void }) {
-    return (
-      <button
-        type="button"
-        onClick={props.onClick}
-        className="w-full text-left select-none cursor-default uppercase"
-        // Intentionally no hover/active styles: "hidden" power-user feature.
-        style={{ color: "inherit" }}
-      >
-        {typeof props.label === "string" ? props.label.toUpperCase() : props.label}
-      </button>
-    );
-  }
+  // Memoize Combobox options so inline `.map()` calls don't produce new array
+  // references on every render, which would invalidate the Combobox's internal
+  // filtered useMemo even when the underlying data hasn't changed.
+  const artistComboboxOptions = useMemo(
+    () => props.artists.map((a) => ({ value: a.id, label: a.name, imageUrl: a.imageUrl })),
+    [props.artists],
+  );
+  const trackComboboxOptions = useMemo(
+    () => props.tracks.map((t) => ({ value: t.isrc, label: t.name, imageUrl: t.albumImageUrl })),
+    [props.tracks],
+  );
+
+  // Pre-compute per-row hrefs for the top-track tables so hrefWithPatchedSearchParams
+  // (which parses/serializes URL params) isn't called for every row on every render.
+  const topCumulativeHrefs = useMemo(
+    () => new Map(topByCumulativeSorted.map((t) => [t.isrc, hrefWithPatchedSearchParams(sp, { isrc: t.isrc })])),
+    [topByCumulativeSorted, sp],
+  );
+  const topDailyHrefs = useMemo(
+    () => new Map(topByDailySorted.map((t) => [t.isrc, hrefWithPatchedSearchParams(sp, { isrc: t.isrc })])),
+    [topByDailySorted, sp],
+  );
 
   // On mobile, ISRC column is hidden and the Release column toggles
   // between Release date and ISRC via long press.
@@ -235,7 +316,7 @@ export function CatalogPageClient(props: {
                       <Combobox
                         ariaLabel="Select artist"
                         value={props.artistId}
-                        options={props.artists.map((a) => ({ value: a.id, label: a.name, imageUrl: a.imageUrl }))}
+                        options={artistComboboxOptions}
                         placeholder="Type an artist…"
                         onChange={(id) => {
                           router.push(hrefWithPatchedSearchParams(sp, { artist_id: id, isrc: null }));
@@ -250,7 +331,7 @@ export function CatalogPageClient(props: {
                       <Combobox
                         ariaLabel="Select track"
                         value={props.isrc ?? null}
-                        options={props.tracks.map((t) => ({ value: t.isrc, label: t.name, imageUrl: t.albumImageUrl }))}
+                        options={trackComboboxOptions}
                         placeholder="Type a track…"
                         onChange={(isrc) => {
                           router.push(hrefWithPatchedSearchParams(sp, { isrc: isrc || null }));
@@ -409,7 +490,7 @@ export function CatalogPageClient(props: {
                     <TableCell>
                       <div className="min-w-0">
                         <Link
-                          href={hrefWithPatchedSearchParams(sp, { isrc: t.isrc })}
+                          href={topCumulativeHrefs.get(t.isrc) ?? "#"}
                           className="block truncate font-medium transition-colors sb-link-hover"
                         >
                           {t.name ?? t.isrc}
@@ -530,7 +611,7 @@ export function CatalogPageClient(props: {
                     <TableCell>
                       <div className="min-w-0">
                         <Link
-                          href={hrefWithPatchedSearchParams(sp, { isrc: t.isrc })}
+                          href={topDailyHrefs.get(t.isrc) ?? "#"}
                           className="block truncate font-medium transition-colors sb-link-hover"
                         >
                           {t.name ?? t.isrc}
@@ -638,121 +719,76 @@ export function CatalogPageClient(props: {
           </div>
         )}
 
-        {props.isrc ? (() => {
-          // For track panels, "Tracks" doesn’t mean anything (it’s always 1),
-          // so we keep the track charts on streams when metric === "tracks".
-          const trackMode: "revenue" | "streams" = metric === "revenue" ? "revenue" : "streams";
-          const valueFormat = trackMode === "revenue" ? ("usd" as const) : ("int" as const);
-          const yTickFormat = trackMode === "revenue" ? ("usd_compact" as const) : ("k" as const);
-
-          const cumSeriesRaw = trackMode === "revenue"
-            ? props.trackCumDesc.map((p) => ({ date: dataDateFromRunDate(p.date), value: p.value * streamPayoutPerStreamUsd }))
-            : props.trackCumDesc.map((p) => ({ date: dataDateFromRunDate(p.date), value: p.value }));
-          const cumSeries = aggregateCumulativeSeries(cumSeriesRaw, granularity);
-
-          const dailySeriesRaw = trackMode === "revenue"
-            ? props.trackDailyWithMaDesc.map((p) => ({
-                date: dataDateFromRunDate(p.date),
-                daily: p.daily == null ? null : p.daily * streamPayoutPerStreamUsd,
-                ma7: p.ma7 == null ? p.ma7 : p.ma7 * streamPayoutPerStreamUsd,
-              }))
-            : props.trackDailyWithMaDesc.map((p) => ({
-                date: dataDateFromRunDate(p.date),
-                daily: p.daily,
-                ma7: p.ma7,
-              }));
-          const dailySeries = granularity === "daily"
-            ? dailySeriesRaw
-            : aggregateDailySeries(dailySeriesRaw, granularity);
-
-          const trackOverrideAnnotations =
-            trackMode === "revenue"
-              ? props.trackOverrideAnnotations.map((a) => ({
-                  ...a,
-                  note: `${a.note} (applies to revenue via payout model)`,
-                }))
-              : props.trackOverrideAnnotations;
-
-          const glTrack = granularityLabel(granularity).toLowerCase();
-          const cumulativeTitle = trackMode === "revenue" ? "Track total revenue" : "Track total streams";
-          const dailyTitle = trackMode === "revenue" ? `Track ${glTrack} revenue` : `Track ${glTrack} streams`;
-          const dailyLabel = trackMode === "revenue" ? `${granularityLabel(granularity)} revenue` : `${granularityLabel(granularity)} streams`;
-          const totalLabel = trackMode === "revenue" ? "Total revenue" : "Total streams";
-
-          // Use emerald for revenue, accent stroke for streams (tracks don't have a separate mode like artist/playlist)
-          const trackChartColor = trackMode === "revenue" ? "#10b981" : undefined;
-
-          return (
-            <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
-              <SpotlightCard className="lg:col-span-6 p-3 overflow-visible">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
-                      {cumulativeTitle}
-                    </div>
-                    <div className="mt-1 font-display text-3xl font-bold tracking-tight">
-                      {cumSeries.length > 0 ? (
-                        <AnimatedCounter value={cumSeries[cumSeries.length - 1]?.value ?? 0} format={valueFormat} />
-                      ) : (
-                        "—"
-                      )}
-                    </div>
+        {trackChartData ? (
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
+            <SpotlightCard className="lg:col-span-6 p-3 overflow-visible">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
+                    {trackChartData.cumulativeTitle}
                   </div>
-                  <ChartCsvDownloadButton
-                    rows={cumSeries as unknown as Array<Record<string, unknown>>}
-                    filename={`catalog-track-${slugifyForFilename(cumulativeTitle)}-${props.rangeDays}d-${todayIsoDate()}.csv`}
-                    title="Download CSV"
-                  />
-                </div>
-                <div className="mt-2 min-h-[180px]">
-                  <DailyStreamsChart
-                    data={cumSeries}
-                    valueLabel={totalLabel}
-                    valueFormat={valueFormat}
-                    yTickFormat={yTickFormat}
-                    heightPx={220}
-                    isCumulative={true}
-                    color={trackChartColor}
-                    annotations={trackOverrideAnnotations}
-                  />
-                </div>
-              </SpotlightCard>
-
-              <SpotlightCard className="lg:col-span-6 p-3 overflow-visible">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
-                      {dailyTitle}
-                    </div>
-                    <div className="mt-1 font-display text-3xl font-bold tracking-tight">
-                      {dailySeries.length > 0 && dailySeries[0]?.daily != null ? (
-                        <AnimatedCounter value={Math.abs(dailySeries[0]?.daily ?? 0)} format={valueFormat} />
-                      ) : (
-                        "—"
-                      )}
-                    </div>
+                  <div className="mt-1 font-display text-3xl font-bold tracking-tight">
+                    {trackChartData.cumSeries.length > 0 ? (
+                      <AnimatedCounter value={trackChartData.cumSeries[trackChartData.cumSeries.length - 1]?.value ?? 0} format={trackChartData.valueFormat} />
+                    ) : (
+                      "â€”"
+                    )}
                   </div>
-                  <ChartCsvDownloadButton
-                    rows={dailySeries as unknown as Array<Record<string, unknown>>}
-                    filename={`catalog-track-${slugifyForFilename(dailyTitle)}-${props.rangeDays}d-${todayIsoDate()}.csv`}
-                    title="Download CSV"
-                  />
                 </div>
-                <div className="mt-2 min-h-[180px]">
-                  <DailyStreamsWithMAChart
-                    data={dailySeries}
-                    valueLabel={dailyLabel}
-                    valueFormat={valueFormat}
-                    yTickFormat={yTickFormat}
-                    heightPx={220}
-                    dailyColor={trackChartColor}
-                    annotations={trackOverrideAnnotations}
-                  />
+                <ChartCsvDownloadButton
+                  rows={trackChartData.cumSeries as unknown as Array<Record<string, unknown>>}
+                  filename={`catalog-track-${slugifyForFilename(trackChartData.cumulativeTitle)}-${props.rangeDays}d-${todayIsoDate()}.csv`}
+                  title="Download CSV"
+                />
+              </div>
+              <div className="mt-2 min-h-[180px]">
+                <DailyStreamsChart
+                  data={trackChartData.cumSeries}
+                  valueLabel={trackChartData.totalLabel}
+                  valueFormat={trackChartData.valueFormat}
+                  yTickFormat={trackChartData.yTickFormat}
+                  heightPx={220}
+                  isCumulative={true}
+                  color={trackChartData.trackChartColor}
+                  annotations={trackChartData.trackOverrideAnnotations}
+                />
+              </div>
+            </SpotlightCard>
+
+            <SpotlightCard className="lg:col-span-6 p-3 overflow-visible">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
+                    {trackChartData.dailyTitle}
+                  </div>
+                  <div className="mt-1 font-display text-3xl font-bold tracking-tight">
+                    {trackChartData.dailySeries.length > 0 && trackChartData.dailySeries[0]?.daily != null ? (
+                      <AnimatedCounter value={Math.abs(trackChartData.dailySeries[0]?.daily ?? 0)} format={trackChartData.valueFormat} />
+                    ) : (
+                      "â€”"
+                    )}
+                  </div>
                 </div>
-              </SpotlightCard>
-            </div>
-          );
-        })() : null}
+                <ChartCsvDownloadButton
+                  rows={trackChartData.dailySeries as unknown as Array<Record<string, unknown>>}
+                  filename={`catalog-track-${slugifyForFilename(trackChartData.dailyTitle)}-${props.rangeDays}d-${todayIsoDate()}.csv`}
+                  title="Download CSV"
+                />
+              </div>
+              <div className="mt-2 min-h-[180px]">
+                <DailyStreamsWithMAChart
+                  data={trackChartData.dailySeries}
+                  valueLabel={trackChartData.dailyLabel}
+                  valueFormat={trackChartData.valueFormat}
+                  yTickFormat={trackChartData.yTickFormat}
+                  heightPx={220}
+                  dailyColor={trackChartData.trackChartColor}
+                  annotations={trackChartData.trackOverrideAnnotations}
+                />
+              </div>
+            </SpotlightCard>
+          </div>
+        ) : null}
       </div>
 
       {/* Track playlist memberships (last section) */}

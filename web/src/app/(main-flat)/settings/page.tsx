@@ -76,8 +76,9 @@ export default async function SettingsPage() {
 
   try {
     const pageSize = 1000;
+    const hardCap = 20_000; // scalability guard: cap to avoid huge payloads as catalog grows
     let from = 0;
-    while (true) {
+    while (from < hardCap) {
       const to = from + pageSize - 1;
       const { data, error } = await svc
         .from("tracks")
@@ -169,8 +170,9 @@ export default async function SettingsPage() {
 
   try {
     const pageSize = 1000;
+    const hardCap = 10_000; // unenriched tracks are typically a small fraction of catalog
     let from = 0;
-    while (true) {
+    while (from < hardCap) {
       const to = from + pageSize - 1;
       const { data, error } = await svc
         .from("tracks")
@@ -198,7 +200,8 @@ export default async function SettingsPage() {
     const { data, error } = await svc
       .from("playlists")
       .select("playlist_key,display_name")
-      .order("display_name", { ascending: true });
+      .order("display_name", { ascending: true })
+      .limit(2000);
     if (!error && data) {
       allPlaylists = data as typeof allPlaylists;
     }
@@ -252,8 +255,9 @@ export default async function SettingsPage() {
 
   try {
     const pageSize = 1000;
+    const hardCap = 50_000; // safety guard; overrides grow with catalog size
     let from = 0;
-    while (true) {
+    while (from < hardCap) {
       const to = from + pageSize - 1;
       const { data: rows, error } = await svc
         .from("track_daily_stream_overrides")

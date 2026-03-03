@@ -62,7 +62,8 @@ export default async function PlaylistsConfigPage({
     spotify_last_fetched_at: p.spotify_last_fetched_at ?? null,
   }));
 
-  // Fetch latest stats for all playlists
+  // Fetch latest stats for all playlists in a single batched query.
+  // Request 3 rows per playlist so we can compute the track-count delta client-side.
   const playlistKeys = playlists.map((p) => p.playlist_key);
   const statsMap = new Map<
     string,
@@ -73,38 +74,43 @@ export default async function PlaylistsConfigPage({
       daily_streams_net: number | null;
     }
   >();
-  
+
   if (playlistKeys.length > 0) {
     try {
-      // Fetch latest stats for each playlist
-      const statsPromises = playlistKeys.map(async (key) => {
-        const { data: statsData } = await sb
-          .from("playlist_daily_stats")
-          .select("date,track_count,total_streams_cumulative,daily_streams_net")
-          .eq("playlist_key", key)
-          .order("date", { ascending: false })
-          .limit(2);
-        
-        return { key, stats: statsData };
-      });
-      
-      const statsResults = await Promise.all(statsPromises);
-      statsResults.forEach(({ key, stats }) => {
-        const cur = stats?.[0] ?? null;
-        const prev = stats?.[1] ?? null;
-        if (cur) {
-          const curTracks = cur.track_count ?? null;
-          const prevTracks = prev?.track_count ?? null;
-          const dailyTracksNet =
-            curTracks === null || prevTracks === null ? null : Number(curTracks) - Number(prevTracks);
-          statsMap.set(key, {
-            track_count: cur.track_count,
-            daily_tracks_net: dailyTracksNet,
-            total_streams_cumulative: cur.total_streams_cumulative,
-            daily_streams_net: cur.daily_streams_net,
-          });
-        }
-      });
+      const { data: allRows } = await sb
+        .from("playlist_daily_stats")
+        .select("playlist_key,date,track_count,total_streams_cumulative,daily_streams_net")
+        .in("playlist_key", playlistKeys)
+        .order("date", { ascending: false })
+        .order("playlist_key", { ascending: true })
+        .limit(playlistKeys.length * 3); // up to 3 recent rows per playlist for delta
+
+      // Group rows by playlist_key; rows are already sorted newest-first.
+      type StatRow = NonNullable<typeof allRows>[number];
+      const byKey = new Map<string, StatRow[]>();
+      for (const row of allRows ?? []) {
+        const key = String((row as any).playlist_key ?? "");
+        if (!key) continue;
+        const bucket: StatRow[] = byKey.get(key) ?? [];
+        bucket.push(row);
+        byKey.set(key, bucket);
+      }
+
+      for (const [key, rows] of byKey) {
+        const cur = rows[0] ?? null;
+        const prev = rows[1] ?? null;
+        if (!cur) continue;
+        const curTracks = (cur as any).track_count ?? null;
+        const prevTracks = prev ? ((prev as any).track_count ?? null) : null;
+        const dailyTracksNet =
+          curTracks === null || prevTracks === null ? null : Number(curTracks) - Number(prevTracks);
+        statsMap.set(key, {
+          track_count: (cur as any).track_count ?? null,
+          daily_tracks_net: dailyTracksNet,
+          total_streams_cumulative: (cur as any).total_streams_cumulative ?? null,
+          daily_streams_net: (cur as any).daily_streams_net ?? null,
+        });
+      }
     } catch {
       // ignore stats fetch errors
     }

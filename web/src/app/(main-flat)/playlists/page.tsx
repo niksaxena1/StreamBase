@@ -70,7 +70,7 @@ type ManualOverrideAnnotation = {
 };
 
 function clampRangeDays(x: unknown) {
-  const n = Number(x ?? "90") || 90;
+  const n = Number(x ?? "30") || 30;
   return Math.max(7, Math.min(365, n));
 }
 
@@ -303,7 +303,7 @@ export default async function PlaylistsPage({
           .select("isrc,name,spotify_album_image_url,spotify_artist_names")
           .in("isrc", isrcs)
           .limit(2000),
-      `playlist-overrides-track-meta-${isrcs.length}`,
+      `playlist-overrides-track-meta-v2-${[...isrcs].sort().join(",")}`,
       3600,
     );
     const trackMeta = (trackMetaRaw ?? []) as TrackMetaRow[];

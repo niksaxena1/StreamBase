@@ -22,8 +22,8 @@ import {
   type ComparisonMode,
 } from "@/components/charts/CollectorComparisonChart";
 import { CollectorMultiSelect } from "@/components/ui/CollectorMultiSelect";
-import { GranularitySelect, type Granularity } from "@/components/ui/GranularitySelect";
-import { useSharedGranularity } from "@/lib/useSharedGranularity";
+import { granularityLabel, type Granularity } from "@/components/ui/GranularitySelect";
+import { aggregateCumulativeSeries, aggregateDailySeries } from "@/lib/granularity";
 import { TrackSortSelect, type TrackSort } from "@/components/ui/TrackSortSelect";
 import { Chip, ChipGroup } from "@/components/ui/Chip";
 import { Input } from "@/components/ui/Input";
@@ -89,6 +89,7 @@ export function CollectorsClient(props: {
   latestRunDate: string;
   selectedCollector: string;
   rangeDays: number;
+  granularity?: Granularity;
   summary: CollectorSummaryRow[];
   seriesDesc: CollectorSeriesPoint[];
   seriesAllTime: CollectorSeriesPoint[];
@@ -143,16 +144,8 @@ export function CollectorsClient(props: {
     return "individual";
   });
 
-  const [granularity, setGranularity] = useSharedGranularity(COLLECTORS_COMPARISON_STORAGE.granularity);
-
-  useEffect(() => {
-    const urlGranularity = searchParams.get("granularity");
-    if (urlGranularity && GRANULARITIES.includes(urlGranularity as Granularity)) {
-      setGranularity(urlGranularity as Granularity);
-    }
-    // Intentional: sync URL param on mount; don't re-run on setGranularity changes
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Granularity is now controlled from the page header via props
+  const granularity = props.granularity ?? "daily";
 
   useEffect(() => {
     let changed = false;
@@ -402,9 +395,23 @@ export function CollectorsClient(props: {
     }));
   }, [monthlyData, metric, actualRevenueByMonth]);
 
+  const granCumulative = useMemo(
+    () => aggregateCumulativeSeries(series[metric].cumulative, granularity),
+    [series, metric, granularity],
+  );
+  const granDaily = useMemo(
+    () => aggregateDailySeries(series[metric].daily, granularity),
+    [series, metric, granularity],
+  );
+
+  const gLabel = granularityLabel(granularity);
   const metricLabel = metric === "revenue" ? "Est. revenue" : metric === "streams" ? "Streams" : "Tracks";
   const dailyLabel =
-    metric === "revenue" ? "Est. revenue (daily)" : metric === "streams" ? "Streams (daily)" : "Track change (daily)";
+    metric === "revenue"
+      ? `Est. revenue (${gLabel.toLowerCase()})`
+      : metric === "streams"
+        ? `${gLabel} Streams`
+        : `Track change (${gLabel.toLowerCase()})`;
   const cumulativeLabel =
     metric === "revenue" ? "Est. revenue (cumulative)" : metric === "streams" ? "Streams (total)" : "Tracks";
 
@@ -471,6 +478,17 @@ export function CollectorsClient(props: {
   );
 
   const [trackQuery, setTrackQuery] = useState("");
+  // Debounce the filter/sort pipeline so it doesn't run on every keystroke.
+  const [debouncedTrackQuery, setDebouncedTrackQuery] = useState("");
+  const trackQueryDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (trackQueryDebounceRef.current) clearTimeout(trackQueryDebounceRef.current);
+    trackQueryDebounceRef.current = setTimeout(() => setDebouncedTrackQuery(trackQuery), 150);
+    return () => {
+      if (trackQueryDebounceRef.current) clearTimeout(trackQueryDebounceRef.current);
+    };
+  }, [trackQuery]);
+
   const [trackSort, setTrackSort] = useState<TrackSort>("delta_desc");
 
   const [showIsrcOnMobile, setShowIsrcOnMobile] = useState(false);
@@ -550,6 +568,16 @@ export function CollectorsClient(props: {
   const [drillKind, setDrillKind] = useState<DrillKind>("tracks");
   const [drillCollector, setDrillCollector] = useState<string | null>(null);
   const [drillQuery, setDrillQuery] = useState("");
+  const [debouncedDrillQuery, setDebouncedDrillQuery] = useState("");
+  const drillQueryDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (drillQueryDebounceRef.current) clearTimeout(drillQueryDebounceRef.current);
+    drillQueryDebounceRef.current = setTimeout(() => setDebouncedDrillQuery(drillQuery), 150);
+    return () => {
+      if (drillQueryDebounceRef.current) clearTimeout(drillQueryDebounceRef.current);
+    };
+  }, [drillQuery]);
+
   const [drillError, setDrillError] = useState<string | null>(null);
   const [drillLoading, setDrillLoading] = useState(false);
   const [drillDone, setDrillDone] = useState(false);
@@ -662,7 +690,7 @@ export function CollectorsClient(props: {
   }, [drillOpen, drillCollector, drillKind, drillOffset, props.latestRunDate]);
 
   const filteredSortedDrillItems = useMemo(() => {
-    const q = drillQuery.trim().toLowerCase();
+    const q = debouncedDrillQuery.trim().toLowerCase();
     const effectiveMetric: Metric = drillKind === "tracks" && metric === "tracks" ? "streams" : metric;
 
     if (drillKind === "playlists") {
@@ -710,10 +738,10 @@ export function CollectorsClient(props: {
       });
     }
     return items;
-  }, [drillItems, drillKind, drillQuery, metric]);
+  }, [drillItems, drillKind, debouncedDrillQuery, metric]);
 
   const filteredSortedTracks = useMemo(() => {
-    const q = trackQuery.trim().toLowerCase();
+    const q = debouncedTrackQuery.trim().toLowerCase();
     let rows = props.collectorTracks ?? [];
 
     if (q) {
@@ -787,7 +815,7 @@ export function CollectorsClient(props: {
     });
 
     return rows;
-  }, [props.collectorTracks, trackQuery, trackSort, tracksTableMetric, payoutPerStreamUsd]);
+  }, [props.collectorTracks, debouncedTrackQuery, trackSort, tracksTableMetric, payoutPerStreamUsd]);
 
   const trackHeaderButton = useCallback(
     (args: {
@@ -885,7 +913,6 @@ export function CollectorsClient(props: {
 
                 <div className="flex flex-wrap items-center" style={{ gap: "0.2rem" }}>
                   <CollectorMultiSelect selected={comparisonCollectors} onChange={setComparisonCollectors} />
-                  <GranularitySelect value={granularity} onChange={setGranularity} />
                 </div>
               </div>
             </div>
@@ -1163,14 +1190,14 @@ export function CollectorsClient(props: {
                 {cumulativeLabel}
               </div>
               <ChartCsvDownloadButton
-                rows={series[metric].cumulative as unknown as Array<Record<string, unknown>>}
+                rows={granCumulative as unknown as Array<Record<string, unknown>>}
                 filename={`collectors-${slugifyForFilename(cumulativeLabel)}-${props.rangeDays}d-${todayIsoDate()}.csv`}
                 title="Download CSV"
               />
             </div>
             <div className="mt-2 min-h-[220px]">
               <DailyStreamsChart
-                data={series[metric].cumulative}
+                data={granCumulative}
                 valueLabel={metricLabel}
                 valueFormat={valueFormat}
                 yTickFormat={yTickFormat}
@@ -1188,14 +1215,14 @@ export function CollectorsClient(props: {
                 {dailyLabel}
               </div>
               <ChartCsvDownloadButton
-                rows={series[metric].daily as unknown as Array<Record<string, unknown>>}
+                rows={granDaily as unknown as Array<Record<string, unknown>>}
                 filename={`collectors-${slugifyForFilename(dailyLabel)}-${props.rangeDays}d-${todayIsoDate()}.csv`}
                 title="Download CSV"
               />
             </div>
             <div className="mt-2 min-h-[220px]">
               <DailyStreamsWithMAChart
-                data={series[metric].daily}
+                data={granDaily}
                 valueLabel={metric === "tracks" ? "Tracks" : metricLabel}
                 valueFormat={valueFormat}
                 yTickFormat={yTickFormat}

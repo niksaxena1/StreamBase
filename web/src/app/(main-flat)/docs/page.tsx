@@ -92,13 +92,17 @@ export default async function DocsPage() {
   }
 
   const { introMd, sections } = splitIntoSections(md);
-  const saiEnabled = await getSaiEnabledBestEffort();
+
+  // Fetch sai flag, system stats, and inventory in parallel — all independent DB calls.
+  const [saiEnabled, stats, inventory] = await Promise.all([
+    getSaiEnabledBestEffort(),
+    getSystemStatsBestEffort(),
+    getInventoryBestEffort(),
+  ]);
+
   const { introMd: introMdFiltered, sections: sectionsFiltered } = filterDocsForUser(introMd, sections, {
     saiEnabled,
   });
-
-  const stats = await getSystemStatsBestEffort();
-  const inventory = await getInventoryBestEffort();
 
   return (
     <DocsClient

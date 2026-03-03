@@ -4,6 +4,7 @@ import type {
   TrackBase,
   StaleTrack,
   DecreasedTrack,
+  RemovedTrack,
   PrevNonzeroTrack,
   ExcludedZeroedTrack,
   DriftTrack,
@@ -280,6 +281,25 @@ function extractDecreased(
         prev_streams: Number.isFinite(prev) ? prev : null,
         today_streams: Number.isFinite(today) ? today : null,
         delta: Number.isFinite(delta) ? delta : null,
+      };
+    })
+    .filter((r) => Boolean(r.isrc))
+    .slice(0, 200);
+}
+
+function extractRemoved(
+  dj: Record<string, unknown> | null,
+): TrackSample[] {
+  const details = dj as TotalStreamsDecreasedDetailsJson | null;
+  const raw = details?.removed_tracks;
+  if (!Array.isArray(raw)) return [];
+  return (raw as Array<Record<string, unknown>>)
+    .map((r) => {
+      const isrc = normalizeIsrc(r.isrc);
+      const prev = Number(r.prev_streams ?? NaN);
+      return {
+        isrc,
+        prev_streams: Number.isFinite(prev) ? prev : null,
       };
     })
     .filter((r) => Boolean(r.isrc))
@@ -613,9 +633,22 @@ function patchMessage(
     const trackCount = Array.isArray(tracks)
       ? tracks.length
       : (dj?.decreased_tracks_total ?? 0);
+    const removedCount = dj?.removed_tracks_total ?? 0;
     const deltaStr =
       typeof delta === "number" ? delta.toLocaleString() : "?";
-    return `Total streams decreased ${deltaStr} (${typeof prevTotal === "number" ? prevTotal.toLocaleString() : "?"} → ${typeof todayTotal === "number" ? todayTotal.toLocaleString() : "?"}) — ${trackCount} track(s) decreased`;
+    const parts = [
+      `Total streams decreased ${deltaStr} (${typeof prevTotal === "number" ? prevTotal.toLocaleString() : "?"} → ${typeof todayTotal === "number" ? todayTotal.toLocaleString() : "?"})`,
+    ];
+    if (removedCount > 0) {
+      parts.push(`${removedCount} track(s) removed`);
+    }
+    if (trackCount > 0) {
+      parts.push(`${trackCount} track(s) decreased`);
+    }
+    if (removedCount === 0 && trackCount === 0) {
+      parts.push("0 track(s) decreased");
+    }
+    return parts.join(" — ");
   }
   return w.message;
 }
@@ -634,6 +667,7 @@ function buildExpandedData(
   staleMap: Map<string, Array<TrackBase & Record<string, unknown>> | null>,
   excludedZeroedMap: Map<string, Array<TrackBase & Record<string, unknown>> | null>,
   decreasedMap: Map<string, Array<TrackBase & Record<string, unknown>> | null>,
+  removedMap: Map<string, Array<TrackBase & Record<string, unknown>> | null>,
   driftResult: { map: Map<string, DriftData>; loaded: boolean },
   overlapTracks: OverlapTrack[] | null,
 ): WarningExpandedData {
@@ -719,30 +753,47 @@ function buildExpandedData(
       const raw = decreasedMap.get(key);
       const dj = w.details_json as TotalStreamsDecreasedDetailsJson | null;
       
-      // Use database tracks if available; otherwise fall back to details_json tracks
+      // Decreased tracks: use database results, fall back to details_json
       let tracks = raw;
       if (!Array.isArray(tracks) || tracks.length === 0) {
-        // Fallback: construct DecreasedTrack[] directly from details_json
         const fallbackTracks = (dj?.decreased_tracks ?? []).map((t) => ({
           isrc: t.isrc,
-          name: null,
-          artist_names: null,
+          name: null as string | null,
+          artist_names: null as string[] | null,
           prev_streams: t.prev_streams ?? null,
           today_streams: t.today_streams ?? null,
           delta: t.delta ?? null,
         }));
         tracks = fallbackTracks.length > 0 ? fallbackTracks : null;
       }
-      
-      if (tracks === undefined) return null;
-      if (Array.isArray(tracks) && tracks.length === 0) return null;
-      
+
+      // Removed tracks: use database results, fall back to details_json
+      let removedRaw = removedMap.get(key);
+      if (!Array.isArray(removedRaw) || removedRaw.length === 0) {
+        const fallbackRemoved = (dj?.removed_tracks ?? []).map((t) => ({
+          isrc: t.isrc,
+          name: null as string | null,
+          artist_names: null as string[] | null,
+          prev_streams: t.prev_streams ?? null,
+        }));
+        removedRaw = fallbackRemoved.length > 0 ? fallbackRemoved : null;
+      }
+
+      const removedStreamsTotal = dj?.removed_streams_total ?? 0;
+
+      const hasData =
+        (Array.isArray(tracks) && tracks.length > 0) ||
+        (Array.isArray(removedRaw) && removedRaw.length > 0);
+      if (!hasData) return null;
+
       return {
         type: "total_streams_decreased",
-        tracks: tracks as DecreasedTrack[] | null,
+        tracks: (tracks as DecreasedTrack[] | null) ?? null,
+        removedTracks: (removedRaw as RemovedTrack[] | null) ?? null,
+        removedStreamsTotal: removedStreamsTotal,
         note:
           noteFromDetails ??
-          "Total streams decreased day-over-day. This may indicate Spotify removed artificial streams or a data source issue.",
+          "Total streams decreased day-over-day. This may indicate tracks were removed or Spotify adjusted stream counts.",
       };
     }
     case "entity_distro_drift": {
@@ -837,6 +888,7 @@ export async function fetchDisplayedWarnings(
     staleMapRaw,
     excludedZeroedMap,
     decreasedMap,
+    removedMap,
     driftResult,
     overlapTracks,
     overriddenIsrcs,
@@ -849,6 +901,7 @@ export async function fetchDisplayedWarnings(
     fetchDetailsTracks(svc, staleW, extractStale),
     fetchDetailsTracks(svc, excludedZeroedW, extractExcludedZeroed),
     fetchDetailsTracks(svc, decreasedW, extractDecreased),
+    fetchDetailsTracks(svc, decreasedW, extractRemoved),
     fetchDriftData(svc, driftW, runDate),
     fetchOverlapTracks(svc, overlapW, runDate),
     loadOverriddenIsrcs(svc, runDate),
@@ -911,6 +964,7 @@ export async function fetchDisplayedWarnings(
       staleMap,
       excludedZeroedMap,
       decreasedMap,
+      removedMap,
       driftResult,
       overlapTracks,
     ),

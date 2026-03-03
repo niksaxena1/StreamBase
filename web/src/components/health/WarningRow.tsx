@@ -13,6 +13,7 @@ import type {
   TrackBase,
   StaleTrack,
   DecreasedTrack,
+  RemovedTrack,
   PrevNonzeroTrack,
   ExcludedZeroedTrack,
   OverlapTrack,
@@ -690,93 +691,113 @@ function ExpandedContent({
         <FallbackNote note={data.note} />
       );
 
-    case "total_streams_decreased":
-      return Array.isArray(data.tracks) && data.tracks.length > 0 ? (
-        <div className="space-y-3">
-          <div className="text-xs font-medium opacity-70 mb-2">
-            Tracks with decreased streams ({data.tracks.length}):
-          </div>
-          <div className="space-y-2">
-            {(data.tracks as DecreasedTrack[]).map((t) => {
-              const prev =
-                typeof t.prev_streams === "number" &&
-                Number.isFinite(t.prev_streams)
-                  ? t.prev_streams
-                  : null;
-              const today =
-                typeof t.today_streams === "number" &&
-                Number.isFinite(t.today_streams)
-                  ? t.today_streams
-                  : null;
-              const delta =
-                typeof t.delta === "number" && Number.isFinite(t.delta)
-                  ? t.delta
-                  : null;
-              const deltaPercent =
-                prev !== null && prev > 0
-                  ? Math.round((Math.abs(delta ?? 0) / prev) * 100)
-                  : null;
+    case "total_streams_decreased": {
+      const hasDecreased = Array.isArray(data.tracks) && data.tracks.length > 0;
+      const hasRemoved = Array.isArray(data.removedTracks) && data.removedTracks.length > 0;
 
-              return (
-                <div
-                  key={t.isrc}
-                  className="rounded-lg px-3 py-2.5"
-                  style={{ backgroundColor: "var(--sb-surface)" }}
-                >
-                  <TrackListItem track={t} />
-                  {(prev !== null || delta !== null) && (
-                    <div className="mt-2 flex items-center gap-3 flex-wrap text-[10px] font-mono opacity-70">
-                      {prev !== null && today !== null && (
-                        <div className="flex items-center gap-1.5">
-                          <span className="opacity-50">Previous:</span>
-                          <span className="font-semibold text-current">
-                            {prev.toLocaleString()}
-                          </span>
-                          <span className="opacity-50">→</span>
-                          <span className="font-semibold text-current">
-                            {today.toLocaleString()}
-                          </span>
-                        </div>
-                      )}
-                      {delta !== null && (
-                        <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-red-500/10 text-red-600 dark:text-red-400">
-                          <span className="opacity-70">Decrease:</span>
-                          <span className="font-semibold">
-                            {Math.abs(delta).toLocaleString()}
-                          </span>
-                          {deltaPercent !== null && (
-                            <span className="opacity-70">({deltaPercent}%)</span>
-                          )}
-                        </div>
-                      )}
-                    </div>
+      if (!hasDecreased && !hasRemoved) {
+        return <FallbackNote note={data.note} />;
+      }
+
+      return (
+        <div className="space-y-5">
+          {/* Removed tracks section */}
+          {hasRemoved && (
+            <div>
+              <div className="text-xs font-medium opacity-70 mb-3 flex items-center gap-2">
+                <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium bg-orange-500/20 text-orange-700 dark:bg-orange-500/30 dark:text-orange-300">
+                  Removed
+                </span>
+                <span>
+                  Tracks removed from playlist ({data.removedTracks!.length})
+                  {data.removedStreamsTotal > 0 && (
+                    <> — lost {data.removedStreamsTotal.toLocaleString()} cumulative streams</>
                   )}
-                </div>
-              );
-            })}
-          </div>
-          {data.note && (
-            <div className="mt-3 text-xs opacity-60 p-2 rounded bg-white/30 dark:bg-white/5">
-              {data.note}
+                  :
+                </span>
+              </div>
+              <div className="space-y-1">
+                {(data.removedTracks as RemovedTrack[]).map((t) => {
+                  const prev =
+                    typeof t.prev_streams === "number" && Number.isFinite(t.prev_streams)
+                      ? t.prev_streams
+                      : null;
+                  return (
+                    <TrackListItem
+                      key={t.isrc}
+                      track={t}
+                      compact
+                      className="rounded-lg px-2.5 py-2"
+                      style={{ backgroundColor: "var(--sb-surface)" }}
+                      trailing={
+                        prev !== null ? (
+                          <div className="flex-shrink-0 ml-2 flex items-center gap-1.5 text-[10px] font-mono">
+                            <span className="px-2 py-1 rounded bg-red-500/10 text-red-600 dark:text-red-400 font-medium">
+                              −{prev.toLocaleString()} streams
+                            </span>
+                          </div>
+                        ) : undefined
+                      }
+                    />
+                  );
+                })}
+              </div>
             </div>
           )}
-        </div>
-      ) : (
-        <div className="space-y-3">
-          <div className="text-xs opacity-60">
-            <p className="mb-2">
-              <strong>No individual tracks showed decreased streams.</strong>
-            </p>
-            <p className="mb-3">
-              The overall playlist total decreased, but this may be due to:
-            </p>
-            <ul className="list-disc list-inside space-y-1 ml-1 mb-3">
-              <li>Tracks being removed from the playlist (check "Track Count Swing" warning)</li>
-              <li>Spotify removing artificial/invalid stream counts</li>
-              <li>Missing or incomplete data in today's export</li>
-              <li>Data source reporting changes</li>
-            </ul>
-          </div>
+
+          {/* Decreased tracks section */}
+          {hasDecreased && (
+            <div>
+              <div className="text-xs font-medium opacity-70 mb-3 flex items-center gap-2">
+                <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium bg-red-500/20 text-red-700 dark:bg-red-500/30 dark:text-red-300">
+                  Decreased
+                </span>
+                <span>
+                  Tracks with decreased streams ({data.tracks!.length}):
+                </span>
+              </div>
+              <div className="space-y-1">
+                {(data.tracks as DecreasedTrack[]).map((t) => {
+                  const prev =
+                    typeof t.prev_streams === "number" && Number.isFinite(t.prev_streams)
+                      ? t.prev_streams
+                      : null;
+                  const today =
+                    typeof t.today_streams === "number" && Number.isFinite(t.today_streams)
+                      ? t.today_streams
+                      : null;
+                  const delta =
+                    typeof t.delta === "number" && Number.isFinite(t.delta)
+                      ? t.delta
+                      : null;
+                  return (
+                    <TrackListItem
+                      key={t.isrc}
+                      track={t}
+                      compact
+                      className="rounded-lg px-2.5 py-2"
+                      style={{ backgroundColor: "var(--sb-surface)" }}
+                      trailing={
+                        <div className="flex-shrink-0 ml-2 flex items-center gap-2 text-[10px] font-mono">
+                          {prev !== null && today !== null && (
+                            <span className="opacity-70">
+                              {prev.toLocaleString()} → {today.toLocaleString()}
+                            </span>
+                          )}
+                          {delta !== null && (
+                            <span className="px-2 py-1 rounded bg-red-500/10 text-red-600 dark:text-red-400 font-medium">
+                              {delta.toLocaleString()}
+                            </span>
+                          )}
+                        </div>
+                      }
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {data.note && (
             <div className="text-xs opacity-60 p-2 rounded bg-white/30 dark:bg-white/5">
               {data.note}
@@ -784,6 +805,7 @@ function ExpandedContent({
           )}
         </div>
       );
+    }
 
     case "entity_distro_drift":
       return (

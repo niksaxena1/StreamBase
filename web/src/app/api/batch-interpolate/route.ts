@@ -103,20 +103,22 @@ export async function GET() {
     }
   }
 
-  // Also count stale tracks per candidate date
-  for (const c of candidates) {
-    const { data: staleCount } = await svc.rpc("exec_sql" as any, {
-      query: `
-        SELECT count(*)::int as cnt
-        FROM track_daily_streams t1
-        JOIN track_daily_streams t0 ON t1.isrc = t0.isrc AND t0.date = '${c.prev_date}'
-        WHERE t1.date = '${c.date}'
-          AND t1.streams_cumulative = t0.streams_cumulative
-          AND t0.streams_cumulative > 0
-      `,
-    });
-    (c as any).stale_count = (staleCount as any)?.[0]?.cnt ?? null;
-  }
+  // Count stale tracks per candidate date — all queries are independent, run in parallel.
+  await Promise.all(
+    candidates.map(async (c) => {
+      const { data: staleCount } = await svc.rpc("exec_sql" as any, {
+        query: `
+          SELECT count(*)::int as cnt
+          FROM track_daily_streams t1
+          JOIN track_daily_streams t0 ON t1.isrc = t0.isrc AND t0.date = '${c.prev_date}'
+          WHERE t1.date = '${c.date}'
+            AND t1.streams_cumulative = t0.streams_cumulative
+            AND t0.streams_cumulative > 0
+        `,
+      });
+      (c as any).stale_count = (staleCount as any)?.[0]?.cnt ?? null;
+    }),
+  );
 
   return NextResponse.json({ candidates });
 }

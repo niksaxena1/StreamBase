@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { cachedQuery } from "@/lib/supabase/cache";
-import { CACHE_TTL_1H } from "@/lib/constants";
+import { CACHE_TTL_1H, HOME_SCATTER_HARD_CAP } from "@/lib/constants";
 import { SOT_DATA_LAG_DAYS, addDaysISO, dataDateFromRunDate } from "@/lib/sotDates";
 import { getRollbackDate, rollbackDataDateToRunDate } from "@/lib/rollback";
 import { HomeDashboardClient } from "./HomeDashboardClient";
@@ -97,7 +97,7 @@ async function fetchTrackScatterPoints(
   // To avoid silently truncating the home scatter dataset, explicitly paginate
   // the RPC results using `.range()`.
   const pageSize = 1000;
-  const hardCap = 100_000; // safety cap to avoid huge payloads on very large catalogs
+  const hardCap = HOME_SCATTER_HARD_CAP; // cap to avoid huge payloads as catalog grows
 
   const out: Record<string, unknown>[] = [];
   const seenIsrc = new Set<string>();
@@ -138,12 +138,26 @@ async function fetchTrackMetaByIsrc(
 
   const batchSize = 250;
   const out = new Map<string, TrackMetaRow>();
-  for (let i = 0; i < isrcs.length; i += batchSize) {
-    const batch = isrcs.slice(i, i + batchSize);
-    const { data, error } = await svc
-      .from("tracks")
-      .select("isrc,name,release_date,spotify_album_image_url,spotify_artist_names,spotify_artist_ids")
-      .in("isrc", batch);
+  // Sort for stable cache keys; fetch all batches in parallel.
+  const sorted = [...isrcs].sort();
+  const batches: string[][] = [];
+  for (let i = 0; i < sorted.length; i += batchSize) batches.push(sorted.slice(i, i + batchSize));
+
+  const batchResults = await Promise.all(
+    batches.map((batch, idx) =>
+      cachedQuery(
+        async () =>
+          await svc
+            .from("tracks")
+            .select("isrc,name,release_date,spotify_album_image_url,spotify_artist_names,spotify_artist_ids")
+            .in("isrc", batch),
+        `home-track-meta-for-overrides-b${idx}-${batch.join(",")}`,
+        CACHE_TTL_1H,
+      ),
+    ),
+  );
+
+  for (const { data, error } of batchResults) {
     if (error) throw error;
     for (const r of (data ?? []) as TrackMetaRow[]) out.set(r.isrc, r);
   }
@@ -412,29 +426,29 @@ export default async function Home({
     return out;
   })();
 
-  // Fetch artist weekend dips for the latest week
-  const { data: artistWeekendDips } = await cachedQuery(
-    async () => {
-      return await svc.rpc("home_artist_weekend_dips", {
-        p_min_weekday_avg: 0,
-        p_anchor_data_date: latestDataDate ?? null,
-      });
-    },
-    `home-artist-weekend-dips-${playlistKey}-${latestDataDate ?? "none"}-${session.user.id}`,
-    CACHE_TTL_1H, // 1 hour
-  );
-
-  // Fetch track weekend dips for the latest week
-  const { data: trackWeekendDips } = await cachedQuery(
-    async () => {
-      return await svc.rpc("home_track_weekend_dips", {
-        p_min_weekday_avg: 0,
-        p_anchor_data_date: latestDataDate ?? null,
-      });
-    },
-    `home-track-weekend-dips-${playlistKey}-${latestDataDate ?? "none"}-${session.user.id}`,
-    CACHE_TTL_1H, // 1 hour
-  );
+  // Fetch artist and track weekend dips in parallel — they are independent queries.
+  const [{ data: artistWeekendDips }, { data: trackWeekendDips }] = await Promise.all([
+    cachedQuery(
+      async () => {
+        return await svc.rpc("home_artist_weekend_dips", {
+          p_min_weekday_avg: 0,
+          p_anchor_data_date: latestDataDate ?? null,
+        });
+      },
+      `home-artist-weekend-dips-${playlistKey}-${latestDataDate ?? "none"}-${session.user.id}`,
+      CACHE_TTL_1H,
+    ),
+    cachedQuery(
+      async () => {
+        return await svc.rpc("home_track_weekend_dips", {
+          p_min_weekday_avg: 0,
+          p_anchor_data_date: latestDataDate ?? null,
+        });
+      },
+      `home-track-weekend-dips-${playlistKey}-${latestDataDate ?? "none"}-${session.user.id}`,
+      CACHE_TTL_1H,
+    ),
+  ]);
 
   return (
     <HomeDashboardClient

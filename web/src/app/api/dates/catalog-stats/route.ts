@@ -33,13 +33,16 @@ export async function GET(req: NextRequest) {
 
   const svc = supabaseService();
 
+  // Cap at 1100 rows (~3 years of daily data). Data only changes once per daily ingestion run,
+  // so we also add caching headers to avoid redundant DB hits throughout the day.
   const { data, error } = await svc
     .from("playlist_daily_stats")
     .select(
       "date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_daily_net,missing_streams_track_count",
     )
     .eq("playlist_key", playlistKey)
-    .order("date", { ascending: true });
+    .order("date", { ascending: true })
+    .limit(1100);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -86,5 +89,11 @@ export async function GET(req: NextRequest) {
     };
   });
 
-  return NextResponse.json({ rows, playlist_key: playlistKey }, { status: 200 });
+  // Data changes at most once per daily ingestion; cache aggressively at the CDN/browser level.
+  return NextResponse.json({ rows, playlist_key: playlistKey }, {
+    status: 200,
+    headers: {
+      "Cache-Control": "max-age=3600, stale-while-revalidate=86400",
+    },
+  });
 }

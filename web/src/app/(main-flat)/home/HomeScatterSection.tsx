@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useDeferredValue } from "react";
+import { useEffect, useMemo, useRef, useState, useDeferredValue } from "react";
 import { Search, X } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -23,7 +23,18 @@ export function HomeScatterSection(props: {
 
   const [openScatter, setOpenScatter] = useState(false);
   const [scatterQuery, setScatterQuery] = useState("");
-  const deferredScatterQuery = useDeferredValue(scatterQuery);
+  // Debounce the search query: only commit to expensive filtering after 150ms pause.
+  const [debouncedScatterQuery, setDebouncedScatterQuery] = useState("");
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const deferredScatterQuery = useDeferredValue(debouncedScatterQuery);
+
+  useEffect(() => {
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(() => setDebouncedScatterQuery(scatterQuery), 150);
+    return () => {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    };
+  }, [scatterQuery]);
   const [scatterFocusIsrc, setScatterFocusIsrc] = useState<string | null>(null);
   const [scatterFocusArtistId, setScatterFocusArtistId] = useState<string | null>(null);
   const [scatterSearchFocused, setScatterSearchFocused] = useState(false);

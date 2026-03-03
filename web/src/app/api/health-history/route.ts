@@ -70,8 +70,9 @@ export async function GET() {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, warnings]) => ({ date, warnings }));
 
-  return NextResponse.json({
-    dates,
-    codes: Array.from(allCodes).sort(),
-  });
+  // Warning history changes at most once per daily ingestion run.
+  return NextResponse.json(
+    { dates, codes: Array.from(allCodes).sort() },
+    { headers: { "Cache-Control": "max-age=300, stale-while-revalidate=3600" } },
+  );
 }

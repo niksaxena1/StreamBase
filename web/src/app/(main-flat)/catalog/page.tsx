@@ -83,7 +83,7 @@ type PlaylistMetaRow = {
 };
 
 function clampRangeDays(x: unknown) {
-  const n = Number(x ?? "90") || 90;
+  const n = Number(x ?? "30") || 30;
   return Math.max(7, Math.min(365, n));
 }
 
@@ -545,11 +545,20 @@ export default async function CatalogPage({
     };
   });
 
-  // Selected track panels (optional)
-  const trackSeries =
-    isrc && latestRunDate && startRunDate
-      ? await fetchAllTrackSeries(svc, { isrc, startDate: startRunDate, endDate: latestRunDate, maxRows: API_LOOKUP_TRACK_MAX })
-      : ([] as Array<{ date: string; streams_cumulative: number | null }>);
+  // Selected track panels (optional). Wrap in cachedQuery: series data only changes
+  // when a new ingestion run completes (daily), but can include many paginated rows.
+  const trackSeries = isrc && latestRunDate && startRunDate
+    ? (
+        await cachedQuery(
+          async () => ({
+            data: await fetchAllTrackSeries(svc, { isrc, startDate: startRunDate, endDate: latestRunDate, maxRows: API_LOOKUP_TRACK_MAX }),
+            error: null,
+          }),
+          `catalog-track-series-${isrc}-${startRunDate}-${latestRunDate}-ov${overrideBuster}`,
+          CACHE_TTL_1H,
+        )
+      ).data ?? []
+    : ([] as Array<{ date: string; streams_cumulative: number | null }>);
 
   const trackOverrideAnnotations =
     isrc && latestRunDate && startRunDate
@@ -622,29 +631,31 @@ export default async function CatalogPage({
       metaByIsrc.set(t.isrc, t);
     }
 
-    const rowsAll: TrackOverrideRowWithIsrc[] = [];
     const chunks = chunk(isrcs, 200);
-    for (let i = 0; i < chunks.length; i++) {
-      const isrcChunk = chunks[i] ?? [];
-      if (!isrcChunk.length) continue;
 
-      const { data: rowsRaw } = await cachedQuery(
-        async () => {
-          let q = svc
-            .from("track_daily_stream_overrides")
-            .select("date,isrc,note")
-            .in("isrc", isrcChunk)
-            .gte("date", startRunDate)
-            .lte("date", latestRunDate);
-          if (hideStaleAnnotations) q = q.not("note", "like", "stale-fix:%");
-          return await q.order("date", { ascending: false }).limit(API_LOOKUP_LIMIT_500);
-        },
-        `catalog-artist-overrides-${artistId}-${startRunDate}-${latestRunDate}-c${i}-ov${overrideBuster}-stale${hideStaleAnnotations ? "1" : "0"}`,
-        CACHE_TTL_1H,
-      );
+    // Fetch all chunks in parallel — each is independently cached.
+    const chunkResults = await Promise.all(
+      chunks.map((isrcChunk, i) =>
+        cachedQuery(
+          async () => {
+            let q = svc
+              .from("track_daily_stream_overrides")
+              .select("date,isrc,note")
+              .in("isrc", isrcChunk)
+              .gte("date", startRunDate)
+              .lte("date", latestRunDate);
+            if (hideStaleAnnotations) q = q.not("note", "like", "stale-fix:%");
+            return await q.order("date", { ascending: false }).limit(API_LOOKUP_LIMIT_500);
+          },
+          `catalog-artist-overrides-${artistId}-${startRunDate}-${latestRunDate}-c${i}-ov${overrideBuster}-stale${hideStaleAnnotations ? "1" : "0"}`,
+          CACHE_TTL_1H,
+        ),
+      ),
+    );
 
-      rowsAll.push(...(((rowsRaw ?? []) as TrackOverrideRowWithIsrc[]) ?? []));
-    }
+    const rowsAll: TrackOverrideRowWithIsrc[] = chunkResults.flatMap(
+      ({ data: rowsRaw }) => (rowsRaw ?? []) as TrackOverrideRowWithIsrc[],
+    );
 
     const deduped: TrackOverrideRowWithIsrc[] = [];
     const seen = new Set<string>();
@@ -774,37 +785,37 @@ export default async function CatalogPage({
       .filter(Boolean);
     if (!playlistKeys.length) return [];
 
-    // Fetch playlist metadata (no caching: keeps type badges in sync with /playlists/config edits).
+    // Fetch playlist metadata. Playlist config changes rarely (display_name, type, image);
+    // cache for 1h so repeated track selections don't re-query on every page load.
     // Also provide a fallback if `playlist_type`/`display_order` columns don't exist yet.
     let playlistMetaRows: unknown[] = [];
     try {
-      const res = await svc
-        .from("playlists")
-        .select(
-          "playlist_key,display_name,is_catalog,playlist_type,display_order,spotify_playlist_id,spotify_playlist_image_url",
-        )
-        .in("playlist_key", playlistKeys);
+      const { data: cachedMeta } = await cachedQuery(
+        async () => {
+          const res = await svc
+            .from("playlists")
+            .select(
+              "playlist_key,display_name,is_catalog,playlist_type,display_order,spotify_playlist_id,spotify_playlist_image_url",
+            )
+            .in("playlist_key", playlistKeys);
 
-      if (
-        res.error &&
-        (String(res.error.message ?? "").includes("playlist_type") ||
-          String(res.error.message ?? "").includes("display_order"))
-      ) {
-        const fallback = await svc
-          .from("playlists")
-          .select("playlist_key,display_name,is_catalog,spotify_playlist_id,spotify_playlist_image_url")
-          .in("playlist_key", playlistKeys);
+          if (
+            res.error &&
+            (String(res.error.message ?? "").includes("playlist_type") ||
+              String(res.error.message ?? "").includes("display_order"))
+          ) {
+            return svc
+              .from("playlists")
+              .select("playlist_key,display_name,is_catalog,spotify_playlist_id,spotify_playlist_image_url")
+              .in("playlist_key", playlistKeys);
+          }
 
-        if (fallback.error) {
-          logWarn("Error fetching playlist metadata (fallback)", fallback.error);
-        } else {
-          playlistMetaRows = (fallback.data ?? []) as unknown[];
-        }
-      } else if (res.error) {
-        logWarn("Error fetching playlist metadata", res.error);
-      } else {
-        playlistMetaRows = (res.data ?? []) as unknown[];
-      }
+          return res;
+        },
+        `catalog-track-playlist-meta-${playlistKeys.sort().join(",")}`,
+        CACHE_TTL_1H,
+      );
+      playlistMetaRows = (cachedMeta ?? []) as unknown[];
     } catch (e) {
       logWarn("Error fetching playlist metadata", e);
     }

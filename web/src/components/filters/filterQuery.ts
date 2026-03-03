@@ -100,26 +100,30 @@ export function filterTracksClientSide(
   tracks: TrackDataPoint[],
   filter: FilterConfig
 ): TrackFilterResult[] {
-  const filtered = tracks.filter(track => evaluateFilter(track, filter, "tracks"));
-  
-  return filtered.map(t => ({
-    isrc: t.isrc,
-    name: t.name,
-    release_date: t.release_date,
-    first_seen: t.first_seen ?? null,
-    last_seen: t.last_seen ?? null,
-    spotify_artist_names: t.spotify_artist_names,
-    spotify_artist_ids: t.spotify_artist_ids,
-    total_streams: t.total_streams_cumulative,
-    daily_streams: t.daily_streams ?? null,
-    spotify_track_id: t.spotify_track_id,
-    spotify_album_image_url: t.spotify_album_image_url,
-    in_multiple_distro: (t._distro_count ?? 0) > 1,
-    in_multiple_entity: (t._entity_count ?? 0) > 1,
-    moved_distro_playlists: t._moved_distro_playlists ?? null,
-    moved_entity_playlists: t._moved_entity_playlists ?? null,
-    has_duplicate_title: t._has_duplicate_title ?? false,
-  }));
+  // Single pass: filter + map together to avoid iterating the array twice.
+  const out: TrackFilterResult[] = [];
+  for (const t of tracks) {
+    if (!evaluateFilter(t, filter, "tracks")) continue;
+    out.push({
+      isrc: t.isrc,
+      name: t.name,
+      release_date: t.release_date,
+      first_seen: t.first_seen ?? null,
+      last_seen: t.last_seen ?? null,
+      spotify_artist_names: t.spotify_artist_names,
+      spotify_artist_ids: t.spotify_artist_ids,
+      total_streams: t.total_streams_cumulative,
+      daily_streams: t.daily_streams ?? null,
+      spotify_track_id: t.spotify_track_id,
+      spotify_album_image_url: t.spotify_album_image_url,
+      in_multiple_distro: (t._distro_count ?? 0) > 1,
+      in_multiple_entity: (t._entity_count ?? 0) > 1,
+      moved_distro_playlists: t._moved_distro_playlists ?? null,
+      moved_entity_playlists: t._moved_entity_playlists ?? null,
+      has_duplicate_title: t._has_duplicate_title ?? false,
+    });
+  }
+  return out;
 }
 
 /**
@@ -129,19 +133,22 @@ export function filterArtistsClientSide(
   artists: ArtistDataPoint[],
   filter: FilterConfig
 ): ArtistFilterResult[] {
-  const filtered = artists.filter(artist => evaluateFilter(artist, filter, "artists"));
-  
-  return filtered.map(a => ({
-    artist_id: a.artist_id,
-    artist_name: a.artist_name,
-    total_streams: a.total_streams,
-    track_count: a.track_count,
-    daily_streams: a.daily_streams ?? null,
-    avg_streams_per_track: a.track_count > 0 ? Math.round(a.total_streams / a.track_count) : 0,
-    image_url: a.image_url,
-    first_seen: a.first_seen ?? null,
-    last_seen: a.last_seen ?? null,
-  }));
+  const out: ArtistFilterResult[] = [];
+  for (const a of artists) {
+    if (!evaluateFilter(a, filter, "artists")) continue;
+    out.push({
+      artist_id: a.artist_id,
+      artist_name: a.artist_name,
+      total_streams: a.total_streams,
+      track_count: a.track_count,
+      daily_streams: a.daily_streams ?? null,
+      avg_streams_per_track: a.track_count > 0 ? Math.round(a.total_streams / a.track_count) : 0,
+      image_url: a.image_url,
+      first_seen: a.first_seen ?? null,
+      last_seen: a.last_seen ?? null,
+    });
+  }
+  return out;
 }
 
 /**
@@ -151,21 +158,24 @@ export function filterPlaylistsClientSide(
   playlists: PlaylistDataPoint[],
   filter: FilterConfig
 ): PlaylistFilterResult[] {
-  const filtered = playlists.filter(playlist => evaluateFilter(playlist, filter, "playlists"));
-  
-  return filtered.map(p => ({
-    playlist_key: p.playlist_key,
-    display_name: p.display_name,
-    track_count: p.track_count,
-    total_streams: p.total_streams,
-    daily_streams: p.daily_streams,
-    is_catalog: p.is_catalog,
-    playlist_type: p.playlist_type,
-    spotify_playlist_image_url: p.spotify_playlist_image_url,
-    est_total_revenue: p.est_total_revenue ?? 0,
-    est_daily_revenue: p.est_daily_revenue ?? null,
-    est_monthly_revenue: p.est_monthly_revenue ?? null,
-  }));
+  const out: PlaylistFilterResult[] = [];
+  for (const p of playlists) {
+    if (!evaluateFilter(p, filter, "playlists")) continue;
+    out.push({
+      playlist_key: p.playlist_key,
+      display_name: p.display_name,
+      track_count: p.track_count,
+      total_streams: p.total_streams,
+      daily_streams: p.daily_streams,
+      is_catalog: p.is_catalog,
+      playlist_type: p.playlist_type,
+      spotify_playlist_image_url: p.spotify_playlist_image_url,
+      est_total_revenue: p.est_total_revenue ?? 0,
+      est_daily_revenue: p.est_daily_revenue ?? null,
+      est_monthly_revenue: p.est_monthly_revenue ?? null,
+    });
+  }
+  return out;
 }
 
 /**
@@ -175,23 +185,26 @@ export function filterDatesClientSide(
   dates: DateDataPoint[],
   filter: FilterConfig
 ): DateFilterResult[] {
-  const filtered = dates.filter(d => evaluateFilter(d, filter, "dates"));
-
-  return filtered.map(d => ({
-    date: d.date,
-    daily_streams: d.daily_streams,
-    cumulative_streams: d.cumulative_streams,
-    track_count: d.track_count,
-    growth_pct: d.growth_pct,
-    tracks_added: d.tracks_added,
-    day_of_week: d.day_of_week,
-    est_daily_revenue: d.est_daily_revenue,
-    streams_per_track: d.streams_per_track,
-    is_weekend: d.is_weekend,
-    moving_avg_7d: d.moving_avg_7d,
-    wow_growth_pct: d.wow_growth_pct,
-    missing_streams_count: d.missing_streams_count,
-  }));
+  const out: DateFilterResult[] = [];
+  for (const d of dates) {
+    if (!evaluateFilter(d, filter, "dates")) continue;
+    out.push({
+      date: d.date,
+      daily_streams: d.daily_streams,
+      cumulative_streams: d.cumulative_streams,
+      track_count: d.track_count,
+      growth_pct: d.growth_pct,
+      tracks_added: d.tracks_added,
+      day_of_week: d.day_of_week,
+      est_daily_revenue: d.est_daily_revenue,
+      streams_per_track: d.streams_per_track,
+      is_weekend: d.is_weekend,
+      moving_avg_7d: d.moving_avg_7d,
+      wow_growth_pct: d.wow_growth_pct,
+      missing_streams_count: d.missing_streams_count,
+    });
+  }
+  return out;
 }
 
 /**

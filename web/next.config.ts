@@ -7,6 +7,8 @@ const nextConfig: NextConfig = {
       dynamic: 86400,
       static: 86400,
     },
+    // Tree-shake large icon and chart libraries so only used exports are bundled.
+    optimizePackageImports: ["recharts", "lucide-react"],
   },
   images: {
     // Cache optimized images for a full day.

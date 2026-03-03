@@ -46,3 +46,7 @@ export const API_LOOKUP_PAGE_SIZE = 1000;
 export const API_LOOKUP_TRACK_MAX = 5000;
 export const API_LOOKUP_LIMIT_500 = 500;
 
+// Home scatter chart: cap rows sent to the client to keep payload manageable.
+// Supabase returns tracks ordered by highest streams first, so top N tracks are shown.
+export const HOME_SCATTER_HARD_CAP = 10_000;
+
