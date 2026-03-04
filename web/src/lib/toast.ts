@@ -2,19 +2,31 @@
  * Lightweight imperative toast for action feedback.
  * Mounts a DOM element directly — no React context required.
  */
-export function showToast(message: string, variant: "success" | "error" = "success") {
+export function showToast(message: string, variant: "success" | "error" | "info" | "warning" = "success") {
   try {
     const existing = document.getElementById("sb-action-toast");
     if (existing) existing.remove();
 
+    const backgroundColor = (() => {
+      switch (variant) {
+        case "success": return "#22c55e";
+        case "error": return "#ef4444";
+        case "info": return "#3b82f6";
+        case "warning": return "#f59e0b";
+        default: return "#22c55e";
+      }
+    })();
+
     const el = document.createElement("div");
     el.id = "sb-action-toast";
-    el.textContent = message;
+    el.setAttribute("role", variant === "error" ? "alert" : "status");
+    el.setAttribute("aria-live", variant === "error" ? "assertive" : "polite");
+    el.setAttribute("aria-atomic", "true");
     el.style.cssText = `
       position: fixed;
-      bottom: 24px;
+      bottom: calc(88px + env(safe-area-inset-bottom, 0px));
       right: 24px;
-      background: ${variant === "success" ? "#22c55e" : "#ef4444"};
+      background: ${backgroundColor};
       color: white;
       padding: 10px 16px;
       border-radius: 10px;
@@ -27,6 +39,7 @@ export function showToast(message: string, variant: "success" | "error" = "succe
       transition: opacity 200ms ease, transform 200ms ease;
     `;
     document.body.appendChild(el);
+    el.textContent = message;
 
     requestAnimationFrame(() => {
       el.style.opacity = "1";

@@ -22,8 +22,16 @@ export function Modal({
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const previousActiveElement = useRef<HTMLElement | null>(null);
+  // Keep a stable ref to onClose so the focus-trap effect doesn't re-run when
+  // callers pass an inline function (which gets a new reference every render).
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
 
-  // Focus trap and keyboard handling
+  // Focus trap and keyboard handling — depends only on `open`, not `onClose`,
+  // to prevent the effect re-running (and re-focusing) on every re-render while
+  // the modal is open (e.g. when the user types into a search input inside it).
   useEffect(() => {
     if (!open) return;
 
@@ -38,7 +46,7 @@ export function Modal({
       return Array.from(dialogRef.current.querySelectorAll(focusableSelector));
     }
 
-    // Move focus into the modal
+    // Move focus into the modal on open
     setTimeout(() => {
       const focusables = getFocusableElements();
       if (focusables.length > 0) {
@@ -48,7 +56,7 @@ export function Modal({
 
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
-        onClose();
+        onCloseRef.current();
         return;
       }
 
@@ -72,7 +80,7 @@ export function Modal({
 
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [open, onClose]);
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Restore focus and handle overflow
   useEffect(() => {

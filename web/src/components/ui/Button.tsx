@@ -6,13 +6,10 @@ import {
   ReactElement,
   ReactNode,
 } from "react";
+import { cx } from "@/lib/cx";
 
 type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "accent";
 type ButtonSize = "xs" | "sm" | "md" | "lg";
-
-function cx(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
-}
 
 const VARIANT: Record<ButtonVariant, string> = {
   primary: "bg-black text-white hover:bg-black/90 dark:bg-white dark:text-black dark:hover:bg-white/90",
@@ -40,9 +37,10 @@ export const Button = forwardRef<
     leftIcon?: ReactNode;
     rightIcon?: ReactNode;
     asChild?: boolean;
+    loading?: boolean;
   }
 >(function Button(
-  { className, variant = "secondary", size = "sm", leftIcon, rightIcon, asChild, children, ...props },
+  { className, variant = "secondary", size = "sm", leftIcon, rightIcon, asChild, loading = false, children, ...props },
   ref,
 ) {
   const composedClassName = cx(
@@ -54,16 +52,40 @@ export const Button = forwardRef<
     className,
   );
 
+  const spinner = (
+    <svg
+      className="h-4 w-4 animate-spin"
+      fill="none"
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <circle
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        strokeWidth="2"
+        opacity="0.25"
+      />
+      <path
+        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+
   if (asChild) {
     if (!isValidElement(children)) return null;
     const el = children as ReactElement<any>;
     return cloneElement(el, {
       ...props,
+      disabled: loading || props.disabled,
+      "aria-busy": loading ? "true" : undefined,
       className: cx(el.props?.className, composedClassName),
       children: (
         <>
-          {leftIcon ? <span className="opacity-80">{leftIcon}</span> : null}
-          {el.props?.children}
+          {loading ? spinner : leftIcon ? <span className="opacity-80">{leftIcon}</span> : null}
+          <span className={loading ? "opacity-50" : ""}>{el.props?.children}</span>
           {rightIcon ? <span className="opacity-80">{rightIcon}</span> : null}
         </>
       ),
@@ -74,10 +96,12 @@ export const Button = forwardRef<
     <button
       ref={ref}
       {...props}
+      disabled={loading || props.disabled}
+      aria-busy={loading ? "true" : undefined}
       className={composedClassName}
     >
-      {leftIcon ? <span className="opacity-80">{leftIcon}</span> : null}
-      {children}
+      {loading ? spinner : leftIcon ? <span className="opacity-80">{leftIcon}</span> : null}
+      <span className={loading ? "opacity-50" : ""}>{children}</span>
       {rightIcon ? <span className="opacity-80">{rightIcon}</span> : null}
     </button>
   );

@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import type { ReactNode } from "react";
 import { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
@@ -357,11 +358,12 @@ export function CatalogPageClient(props: {
         <div className="space-y-4 pt-2">
           <div className="flex items-center gap-4">
             {props.artistImageUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
+              <Image
                 src={props.artistImageUrl}
                 alt={props.artistName}
-                className="h-16 w-16 rounded-full object-cover sb-ring"
+                width={64}
+                height={64}
+                className="rounded-full object-cover sb-ring"
               />
             ) : (
               <div className="h-16 w-16 rounded-full sb-ring bg-white/60 flex items-center justify-center">
@@ -477,11 +479,12 @@ export function CatalogPageClient(props: {
                   <TableRow key={t.isrc}>
                     <TableCell>
                       {t.albumImageUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
+                        <Image
                           src={t.albumImageUrl}
                           alt="Album cover"
-                          className="h-8 w-8 rounded-lg object-cover sb-ring"
+                          width={32}
+                          height={32}
+                          className="rounded-lg object-cover sb-ring"
                         />
                       ) : (
                         <div className="h-8 w-8 rounded-lg sb-ring bg-white/60" />
@@ -598,11 +601,12 @@ export function CatalogPageClient(props: {
                   <TableRow key={t.isrc}>
                     <TableCell>
                       {t.albumImageUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
+                        <Image
                           src={t.albumImageUrl}
                           alt="Album cover"
-                          className="h-8 w-8 rounded-lg object-cover sb-ring"
+                          width={32}
+                          height={32}
+                          className="rounded-lg object-cover sb-ring"
                         />
                       ) : (
                         <div className="h-8 w-8 rounded-lg sb-ring bg-white/60" />
@@ -656,11 +660,12 @@ export function CatalogPageClient(props: {
         {props.isrc && props.selectedTrack ? (
           <div className="flex items-center gap-3">
             {props.selectedTrack.albumImageUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
+              <Image
                 src={props.selectedTrack.albumImageUrl}
                 alt="Album cover"
-                className="h-16 w-16 rounded-lg object-cover sb-ring"
+                width={64}
+                height={64}
+                className="rounded-lg object-cover sb-ring"
               />
             ) : (
               <div className="h-16 w-16 rounded-lg sb-ring bg-white/60" />
@@ -807,11 +812,12 @@ export function CatalogPageClient(props: {
             <TableRow key={m.playlistKey}>
               <TableCell>
                 {m.spotifyPlaylistImageUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
+                  <Image
                     src={m.spotifyPlaylistImageUrl}
                     alt="Playlist cover"
-                    className="h-8 w-8 rounded-lg object-cover sb-ring"
+                    width={32}
+                    height={32}
+                    className="rounded-lg object-cover sb-ring"
                   />
                 ) : (
                   <div className="h-8 w-8 rounded-lg sb-ring bg-white/60" />

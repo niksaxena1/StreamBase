@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 
 import { fetchMissingCatalogTracks } from "@/lib/health/fetchWarningDetails";
@@ -52,11 +53,12 @@ export async function MissingCatalogSection({
             <TableCell>
               <div className="flex items-center gap-3">
                 {track.album_image_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
+                  <Image
                     src={track.album_image_url}
                     alt="Album cover"
-                    className="h-10 w-10 rounded object-cover sb-ring flex-shrink-0"
+                    width={40}
+                    height={40}
+                    className="rounded object-cover sb-ring flex-shrink-0"
                   />
                 ) : (
                   <div className="h-10 w-10 rounded sb-ring bg-white/60 flex-shrink-0" />

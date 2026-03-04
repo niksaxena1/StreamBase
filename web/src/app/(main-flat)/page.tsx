@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { Suspense } from "react";
 
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
@@ -7,6 +8,8 @@ import { CACHE_TTL_1H, HOME_SCATTER_HARD_CAP } from "@/lib/constants";
 import { SOT_DATA_LAG_DAYS, addDaysISO, dataDateFromRunDate } from "@/lib/sotDates";
 import { getRollbackDate, rollbackDataDateToRunDate } from "@/lib/rollback";
 import { HomeDashboardClient } from "./HomeDashboardClient";
+import { HomeNegativeStreamsFetcher } from "./HomeNegativeStreamsFetcher";
+import { HomeScatterFetcher } from "./HomeScatterFetcher";
 import type { ArtistWeekendDipRow, TrackWeekendDipRow, NegativeDailyStreamsRow } from "./home/homeTypes";
 import type { TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChart";
 
@@ -426,56 +429,51 @@ export default async function Home({
     return out;
   })();
 
-  // Fetch artist and track weekend dips, and negative daily streams in parallel.
-  const [{ data: artistWeekendDips }, { data: trackWeekendDips }, { data: negativeDailyStreams }] = await Promise.all([
-    cachedQuery(
-      async () => {
-        return await svc.rpc("home_artist_weekend_dips", {
-          p_min_weekday_avg: 0,
-          p_anchor_data_date: latestDataDate ?? null,
-        });
-      },
-      `home-artist-weekend-dips-${playlistKey}-${latestDataDate ?? "none"}-${session.user.id}`,
-      CACHE_TTL_1H,
-    ),
-    cachedQuery(
-      async () => {
-        return await svc.rpc("home_track_weekend_dips", {
-          p_min_weekday_avg: 0,
-          p_anchor_data_date: latestDataDate ?? null,
-        });
-      },
-      `home-track-weekend-dips-${playlistKey}-${latestDataDate ?? "none"}-${session.user.id}`,
-      CACHE_TTL_1H,
-    ),
-    cachedQuery(
-      async () => {
-        return await svc.rpc("home_negative_daily_streams");
-      },
-      `home-negative-daily-v2-${session.user.id}`,
-      CACHE_TTL_1H,
-    ),
-  ]);
-
   return (
-    <HomeDashboardClient
-      sp={sp}
-      playlistKey={playlistKey}
-      title={title}
-      rangeDays={rangeDays}
-      latest={latest as PlaylistDailyStatsRow | null}
-      history={(history as PlaylistDailyStatsRow[] | null) ?? []}
-      playlistImageUrl={playlistImageUrl}
-      historyErrorMessage={historyErr?.message ?? null}
-      trackScatterPoints={trackScatterPoints ?? []}
-      trackScatterErrorMessage={trackScatterErr?.message ?? null}
-      trackScatterDataDate={selectedDataDate}
-      latestRunDate={latestRunDate}
-      latestDataDate={latestDataDate}
-      overrideAnnotations={overrideAnnotations}
-      artistWeekendDips={(artistWeekendDips as ArtistWeekendDipRow[] | null) ?? []}
-      trackWeekendDips={(trackWeekendDips as TrackWeekendDipRow[] | null) ?? []}
-      negativeDailyStreams={(negativeDailyStreams as NegativeDailyStreamsRow[] | null) ?? []}
-    />
+    <>
+      <HomeDashboardClient
+        sp={sp}
+        playlistKey={playlistKey}
+        title={title}
+        rangeDays={rangeDays}
+        latest={latest as PlaylistDailyStatsRow | null}
+        history={(history as PlaylistDailyStatsRow[] | null) ?? []}
+        playlistImageUrl={playlistImageUrl}
+        historyErrorMessage={historyErr?.message ?? null}
+        trackScatterPoints={[]}
+        trackScatterErrorMessage={null}
+        trackScatterDataDate={selectedDataDate}
+        latestRunDate={latestRunDate}
+        latestDataDate={latestDataDate}
+        overrideAnnotations={overrideAnnotations}
+        artistWeekendDips={[]}
+        trackWeekendDips={[]}
+        negativeDailyStreams={[]}
+      />
+      <Suspense
+        fallback={
+          <div className="space-y-4 animate-pulse">
+            <div className="sb-card p-4 h-80 bg-white/5" />
+          </div>
+        }
+      >
+        <HomeNegativeStreamsFetcher userId={session.user.id} />
+      </Suspense>
+      <Suspense
+        fallback={
+          <div className="space-y-4 animate-pulse">
+            <div className="sb-card p-4 h-96 bg-white/5" />
+            <div className="sb-card p-4 h-64 bg-white/5" />
+          </div>
+        }
+      >
+        <HomeScatterFetcher
+          latestRunDate={selectedRunDate}
+          prevDate={selectedRunDate ? addDaysIso(selectedRunDate, -1) : null}
+          latestDataDate={latestDataDate}
+          userId={session.user.id}
+        />
+      </Suspense>
+    </>
   );
 }

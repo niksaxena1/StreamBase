@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
 import { List, ExternalLink, Music } from "lucide-react";
@@ -399,11 +400,12 @@ export default async function PlaylistsPage({
               <Music className="h-6 w-6" style={{ color: "black" }} />
             </div>
           ) : playlistImageUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
+            <Image
               src={playlistImageUrl}
               alt="Playlist cover"
-              className="h-12 w-12 rounded-lg object-cover sb-ring opacity-100"
+              width={48}
+              height={48}
+              className="rounded-lg object-cover sb-ring opacity-100"
             />
           ) : (
             <div className="h-12 w-12 rounded-lg sb-ring bg-white/60" />

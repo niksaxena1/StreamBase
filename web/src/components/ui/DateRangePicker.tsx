@@ -6,26 +6,7 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState }
 import { createPortal } from "react-dom";
 import { DayPicker, type DateRange } from "react-day-picker";
 import { DateInput } from "@/components/ui/DateInput";
-
-function parseYmd(ymd: string): Date {
-  const [y, m, d] = ymd.split("-").map((n) => Number(n));
-  return new Date(y, (m ?? 1) - 1, d ?? 1);
-}
-
-function formatYmd(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
-
-// Format as DD MMM YYYY (e.g., "31 Jan 2026")
-function formatDisplay(date: Date): string {
-  const d = String(date.getDate()).padStart(2, "0");
-  const m = date.toLocaleString("en-US", { month: "short" });
-  const y = date.getFullYear();
-  return `${d} ${m} ${y}`;
-}
+import { parseYmd, formatYmd, formatDisplay } from "@/lib/date";
 
 function utcMsFromYmd(ymd: string): number {
   const [y, m, d] = ymd.split("-").map((n) => Number(n));

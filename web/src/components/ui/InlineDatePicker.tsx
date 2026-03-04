@@ -4,25 +4,7 @@ import { Calendar, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { useMemo, useRef, useState, useEffect } from "react";
 import { DayPicker, type Matcher } from "react-day-picker";
 import { createPortal } from "react-dom";
-
-function parseYmd(ymd: string): Date {
-  const [y, m, d] = ymd.split("-").map(Number);
-  return new Date(y, (m ?? 1) - 1, d ?? 1);
-}
-
-function formatYmd(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
-
-function formatDisplay(date: Date): string {
-  const d = String(date.getDate()).padStart(2, "0");
-  const m = date.toLocaleString("en-US", { month: "short" });
-  const y = date.getFullYear();
-  return `${d} ${m} ${y}`;
-}
+import { parseYmd, formatYmd, formatDisplay } from "@/lib/date";
 
 interface InlineDatePickerProps {
   value: string;

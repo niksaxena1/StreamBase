@@ -97,10 +97,12 @@ export function HomeNegativeStreamsSection(props: {
             <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
               TRACKS: NEGATIVE STREAMS
             </div>
-            <div className="mt-0.5 text-[10px] opacity-40">
-              All dates where daily streams dropped vs previous day
-              {count > 0 ? ` · ${count} occurrence${count !== 1 ? "s" : ""}` : ""}
-            </div>
+            {open ? (
+              <div className="mt-0.5 text-[10px] opacity-40">
+                All dates where daily streams dropped vs previous day
+                {count > 0 ? ` · ${count} occurrence${count !== 1 ? "s" : ""}` : ""}
+              </div>
+            ) : null}
           </div>
         </div>
       </summary>

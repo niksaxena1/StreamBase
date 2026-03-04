@@ -60,6 +60,7 @@ function SideRailContent({
           <Link
             key={it.href}
             href={it.href}
+            aria-current={active ? "page" : undefined}
             className={[
               "group relative grid h-9 w-9 place-items-center rounded-full transition",
               active
@@ -89,7 +90,7 @@ function SideRailContent({
 
             {/* CSS-only tooltip */}
             <span
-              className="pointer-events-none absolute left-full ml-3 flex items-center gap-2 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-medium opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100"
+              className="pointer-events-none absolute left-full ml-3 flex items-center gap-2 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-medium opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
               style={{
                 background: "var(--sb-card)",
                 color: "var(--sb-text)",
@@ -129,7 +130,7 @@ function SideRailContent({
         <IconGear />
         {/* CSS-only tooltip */}
         <span
-          className="pointer-events-none absolute left-full ml-3 flex items-center gap-2 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-medium opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100"
+          className="pointer-events-none absolute left-full ml-3 flex items-center gap-2 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-medium opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
           style={{
             background: "var(--sb-card)",
             color: "var(--sb-text)",

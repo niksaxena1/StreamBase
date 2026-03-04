@@ -182,6 +182,7 @@ export function MobileNav({
               key={item.href}
               href={item.href}
               onClick={handleNavClick}
+              aria-current={active ? "page" : undefined}
               className={[
                 // #3: Larger touch targets - flex-1 for equal distribution, min 48px height
                 "relative flex flex-1 flex-col items-center justify-center gap-1 rounded-xl py-2 transition-all duration-150",

@@ -48,7 +48,11 @@ export function Alert(props: {
   const s = VARIANT_STYLES[v];
 
   return (
-    <div className={["sb-ring rounded-2xl border p-3", s.wrap, props.className].filter(Boolean).join(" ")}>
+    <div
+      className={["sb-ring rounded-2xl border p-3", s.wrap, props.className].filter(Boolean).join(" ")}
+      role={v === "error" || v === "warning" ? "alert" : undefined}
+      aria-live={v === "info" || v === "success" ? "polite" : undefined}
+    >
       <div className="flex items-start gap-2">
         <div className={["mt-0.5 flex-shrink-0", s.iconColor].join(" ")} aria-hidden="true">
           {s.icon}

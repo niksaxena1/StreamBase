@@ -171,16 +171,17 @@ export function Breadcrumbs() {
             {index === 0 ? (
               <Link
                 href={crumb.href}
+                aria-label="Home"
                 className="flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors hover:bg-black/5 dark:hover:bg-white/5"
                 style={{ color: isLast ? "var(--sb-text)" : "var(--sb-muted)" }}
               >
-                <Home className="h-3 w-3" />
+                <Home className="h-3 w-3" aria-hidden="true" />
               </Link>
             ) : (
               <>
                 <ChevronRight className="h-3 w-3" style={{ color: "var(--sb-muted)" }} />
                 {isLast ? (
-                  <span className="font-medium" style={{ color: "var(--sb-text)" }}>
+                  <span aria-current="page" className="font-medium" style={{ color: "var(--sb-text)" }}>
                     {crumb.label}
                   </span>
                 ) : (

@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, X, Music, User, ListMusic } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -151,11 +152,12 @@ function ResultItem({
         onClick={() => navigateTo(result)}
       >
         {result.imageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          <Image
             src={result.imageUrl}
             alt={result.name}
-            className={`h-8 w-8 flex-shrink-0 object-cover ${result.type === "artist" ? "rounded-full" : "rounded"}`}
+            width={32}
+            height={32}
+            className={`flex-shrink-0 object-cover ${result.type === "artist" ? "rounded-full" : "rounded"}`}
           />
         ) : (
           <div
@@ -581,11 +583,12 @@ export function SearchBar() {
                           onClick={() => navigateTo(r as any)}
                         >
                           {r.imageUrl ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
+                            <Image
                               src={r.imageUrl}
                               alt={r.name}
-                              className={`h-8 w-8 object-cover ${r.type === "artist" ? "rounded-full" : "rounded"}`}
+                              width={32}
+                              height={32}
+                              className={`object-cover ${r.type === "artist" ? "rounded-full" : "rounded"}`}
                             />
                           ) : (
                             <div

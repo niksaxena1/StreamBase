@@ -42,10 +42,11 @@ export default function LoginForm() {
       ) : null}
 
       <div className="space-y-1.5">
-        <label className="text-xs font-medium" style={{ color: "var(--sb-muted)" }}>
+        <label htmlFor="login-email" className="text-xs font-medium" style={{ color: "var(--sb-muted)" }}>
           Email
         </label>
         <input
+          id="login-email"
           className="w-full rounded-2xl border border-black/10 bg-white/70 px-4 py-3 text-sm outline-none transition focus:border-black/20 focus:ring-2 focus:ring-black/5 dark:border-white/10 dark:bg-white/5 dark:text-white dark:focus:border-white/20 dark:focus:ring-white/5"
           type="email"
           autoComplete="email"
@@ -56,10 +57,11 @@ export default function LoginForm() {
       </div>
 
       <div className="space-y-1.5">
-        <label className="text-xs font-medium" style={{ color: "var(--sb-muted)" }}>
+        <label htmlFor="login-password" className="text-xs font-medium" style={{ color: "var(--sb-muted)" }}>
           Password
         </label>
         <input
+          id="login-password"
           className="w-full rounded-2xl border border-black/10 bg-white/70 px-4 py-3 text-sm outline-none transition focus:border-black/20 focus:ring-2 focus:ring-black/5 dark:border-white/10 dark:bg-white/5 dark:text-white dark:focus:border-white/20 dark:focus:ring-white/5"
           type="password"
           autoComplete="current-password"

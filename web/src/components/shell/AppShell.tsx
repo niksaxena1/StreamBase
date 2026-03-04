@@ -7,10 +7,10 @@ import { MobileNavWithBadge } from "@/components/shell/MobileNavWithBadge";
 import { Breadcrumbs } from "@/components/shell/Breadcrumbs";
 import { SearchBar } from "@/components/shell/SearchBar";
 import { IngestionStatusBanner } from "@/components/health/IngestionStatusBanner";
-import { SAIWidget } from "@/components/sai/SAIWidget";
 import { UserMenu } from "@/components/shell/UserMenu";
 import { GlobalMetricToggle } from "@/components/shell/GlobalMetricToggle";
 import { RollbackButtonWrapper } from "@/components/shell/RollbackButtonWrapper";
+import { LazyAIWidget } from "@/components/sai/LazyAIWidget";
 
 type MainSurface = "glass" | "plain";
 
@@ -26,7 +26,7 @@ export function AppShell(props: { children: ReactNode; mainSurface?: MainSurface
       <MobileNavWithBadge />
 
       {/* SAI (SpotiBase AI) assistant - also outside main hierarchy */}
-      <SAIWidget />
+      <LazyAIWidget />
 
       <div className="sb-app-shell min-h-dvh">
         {/* subtle accent glow - isolated with contain to prevent affecting fixed children */}
@@ -86,7 +86,7 @@ export function AppShell(props: { children: ReactNode; mainSurface?: MainSurface
             </header>
 
             {/* Main surface - use sb-glass-solid so child FilterBars can have working backdrop-filter */}
-            <main className={(mainSurface === "glass" ? "sb-glass-solid " : "") + "flex-1 px-3 py-3"}>
+            <main id="main-content" className={(mainSurface === "glass" ? "sb-glass-solid " : "") + "flex-1 px-3 py-3"}>
               <IngestionStatusBanner />
               {props.children}
             </main>

@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
@@ -24,13 +25,7 @@ import { useCurrencyDisplay } from "@/components/currency/CurrencyDisplayContext
 
 import type { PlaylistDailyStatsRow, ManualOverrideAnnotation, ChartPoint, ArtistWeekendDipRow, TrackWeekendDipRow, NegativeDailyStreamsRow } from "./home/homeTypes";
 import { rollSum } from "./home/homeUtils";
-import { HomeScatterSection } from "./home/HomeScatterSection";
-import { HomeMilestonesSection } from "./home/HomeMilestonesSection";
-import { HomeDailyDistributionSection } from "./home/HomeDailyDistributionSection";
 import { HomeHistorySection } from "./home/HomeHistorySection";
-import { HomeFilterBuilderSection } from "./home/HomeFilterBuilderSection";
-import { HomeWeekendDipsSection } from "./home/HomeWeekendDipsSection";
-import { HomeNegativeStreamsSection } from "./home/HomeNegativeStreamsSection";
 
 // ============================================================================
 // Helpers (header-only)
@@ -83,9 +78,9 @@ function HomeDashboardInner(props: {
   latestRunDate: string | null;
   latestDataDate: string | null;
   overrideAnnotations?: ManualOverrideAnnotation[];
-  artistWeekendDips: ArtistWeekendDipRow[];
-  trackWeekendDips: TrackWeekendDipRow[];
-  negativeDailyStreams: NegativeDailyStreamsRow[];
+  artistWeekendDips?: ArtistWeekendDipRow[];
+  trackWeekendDips?: TrackWeekendDipRow[];
+  negativeDailyStreams?: NegativeDailyStreamsRow[];
 }) {
   const { metric } = useMetric();
   useCurrencyDisplay();
@@ -295,11 +290,12 @@ function HomeDashboardInner(props: {
                 <Music className="h-5 w-5" style={{ color: "black" }} />
               </div>
             ) : props.playlistImageUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
+              <Image
                 src={props.playlistImageUrl}
                 alt="Playlist cover"
-                className="h-10 w-10 rounded-lg object-cover sb-ring"
+                width={40}
+                height={40}
+                className="rounded-lg object-cover sb-ring"
               />
             ) : (
               <div className="h-10 w-10 rounded-lg sb-ring bg-white/60" />
@@ -407,31 +403,7 @@ function HomeDashboardInner(props: {
         </Alert>
       ) : null}
 
-      {/* Extracted sections -- each manages its own state independently */}
-      <HomeScatterSection
-        trackScatterPoints={props.trackScatterPoints}
-        trackScatterErrorMessage={props.trackScatterErrorMessage}
-      />
-
-      <HomeMilestonesSection trackScatterPoints={props.trackScatterPoints} />
-
-      <HomeDailyDistributionSection trackScatterPoints={props.trackScatterPoints} />
-
-      <HomeWeekendDipsSection
-        artistWeekendDips={props.artistWeekendDips}
-        trackWeekendDips={props.trackWeekendDips}
-      />
-
-      <HomeNegativeStreamsSection negativeDailyStreams={props.negativeDailyStreams} />
-
       <HomeHistorySection history={props.history.slice(0, props.rangeDays)} />
-
-      {homeFiltersConfigured && homeFiltersEnabled ? (
-        <HomeFilterBuilderSection
-          trackScatterPoints={props.trackScatterPoints}
-          trackScatterDataDate={props.trackScatterDataDate}
-        />
-      ) : null}
     </div>
   );
 }
@@ -457,3 +429,4 @@ export function HomeDashboardClient(props: {
 }) {
   return <HomeDashboardInner {...props} />;
 }
+

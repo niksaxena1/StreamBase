@@ -1,8 +1,5 @@
 import { ButtonHTMLAttributes } from "react";
-
-function cx(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
-}
+import { cx } from "@/lib/cx";
 
 export function Chip(
   props: ButtonHTMLAttributes<HTMLButtonElement> & { selected?: boolean; segmented?: boolean },
@@ -12,6 +9,7 @@ export function Chip(
     <button
       type="button"
       {...rest}
+      aria-pressed={selected ?? undefined}
       className={cx(
         "inline-flex items-center gap-2 rounded-full px-2.5 py-1.5 text-[11px] font-medium transition",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
@@ -31,9 +29,16 @@ export function Chip(
   );
 }
 
-export function ChipGroup(props: { className?: string; children: React.ReactNode; segmented?: boolean }) {
+export function ChipGroup(props: {
+  className?: string;
+  children: React.ReactNode;
+  segmented?: boolean;
+  "aria-label"?: string;
+}) {
   return (
     <div
+      role="group"
+      aria-label={props["aria-label"]}
       className={cx(
         "sb-ring inline-flex items-center rounded-full bg-white/60 p-0.5 dark:bg-white/10",
         props.segmented ? "gap-0" : "gap-0.5",

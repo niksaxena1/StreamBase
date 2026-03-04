@@ -2,6 +2,7 @@
 
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { logError } from "@/lib/logger";
+import { Button } from "@/components/ui/Button";
 
 interface Props {
   children: ReactNode;
@@ -60,16 +61,16 @@ export class ErrorBoundary extends Component<Props, State> {
               </pre>
             )}
           </div>
-          <button
-            type="button"
+          <Button
+            variant="primary"
+            size="sm"
             onClick={() => {
               this.setState({ hasError: false, error: null });
               window.location.reload();
             }}
-            className="sb-ring rounded-full bg-black px-4 py-2 text-sm font-medium text-white hover:bg-black/90 dark:bg-white dark:text-black dark:hover:bg-white/90"
           >
             Reload page
-          </button>
+          </Button>
         </div>
       );
     }
