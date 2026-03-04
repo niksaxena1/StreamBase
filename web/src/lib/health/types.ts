@@ -53,6 +53,11 @@ export type ExcludedZeroedTrack = TrackBase & {
   prev_streams?: number | null;
 };
 
+export type NegativeDailyStreamTrack = TrackBase & {
+  daily_streams_delta?: number | null;
+  total_streams_cumulative?: number | null;
+};
+
 export type DriftTrack = TrackBase & {
   source_playlist_key?: string | null;
 };
@@ -192,6 +197,11 @@ export type WarningExpandedData =
     }
   | { type: "entity_distro_drift"; drift: DriftData }
   | { type: "distro_overlap"; tracks: OverlapTrack[] | null; note?: string }
+  | {
+      type: "negative_daily_streams";
+      tracks: NegativeDailyStreamTrack[] | null;
+      note?: string;
+    }
   | null;
 
 // ---------------------------------------------------------------------------

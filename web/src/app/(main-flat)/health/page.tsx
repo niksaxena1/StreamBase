@@ -10,7 +10,6 @@ import type { PlaylistMeta } from "@/lib/health/types";
 
 import { GlassTable, TableRow, TableCell, EmptyState } from "@/components/ui/GlassTable";
 import { RefreshButton } from "@/components/health/RefreshButton";
-import { BatchInterpolateTool } from "@/components/health/BatchInterpolateTool";
 import { WarningHistoryChart } from "@/components/health/WarningHistoryChart";
 import { PageHeader } from "@/components/shell/PageHeader";
 import { Alert } from "@/components/ui/Alert";
@@ -30,6 +29,7 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
   const getFirst = (v: string | string[] | undefined) =>
     Array.isArray(v) ? v[0] : v;
   const dateFilter = getFirst(sp.date);
+  const pageParam = Math.max(1, parseInt(getFirst(sp.page) ?? "1", 10) || 1);
 
   // ---- Auth ----
   const sb = await supabaseServer();
@@ -41,7 +41,7 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
   // ---- Lightweight queries (fast) ----
   const svc = supabaseService();
 
-  const [{ data: runs, error: runsErr }, { data: plRows }] = await Promise.all([
+  const [{ data: runs, error: runsErr }, { data: plRows }, { data: healthConfigRows }] = await Promise.all([
     svc
       .from("ingestion_runs")
       .select("id,run_date,status,logs_url,started_at,finished_at")
@@ -51,6 +51,11 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
       .from("playlists")
       .select("playlist_key,display_name,spotify_playlist_image_url")
       .limit(2000),
+    svc
+      .from("health_config")
+      .select("key,value_numeric,description,updated_at")
+      .order("key", { ascending: true })
+      .limit(100),
   ]);
 
   // Build playlist metadata lookup
@@ -137,14 +142,13 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
           runDate={selectedRunDate}
           dataDate={selectedDataDate}
           playlistMeta={playlistMeta}
+          page={pageParam}
+          dateParam={dateFilter ?? null}
         />
       </Suspense>
 
-      {/* --- Tools & history chart (client components, self-fetching) --- */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <BatchInterpolateTool />
-        <WarningHistoryChart />
-      </div>
+      {/* --- History chart (client component, self-fetching) --- */}
+      <WarningHistoryChart />
 
       {/* --- Missing catalog tracks (medium — own Suspense) --- */}
       <Suspense fallback={<MissingSkeleton />}>
@@ -200,6 +204,39 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
             <EmptyState colSpan={3} message="No ingestion runs yet." />
           )}
         </GlassTable>
+      </CollapsibleSection>
+
+      {/* --- Ingestion Thresholds (health_config) --- */}
+      <CollapsibleSection
+        title="Ingestion Thresholds"
+        storageKey="sb:health:details:ingestion_thresholds"
+      >
+        {healthConfigRows && healthConfigRows.length > 0 ? (
+          <GlassTable headers={["Key", { label: "Value", align: "right" as const }, "Description"]}>
+            {(healthConfigRows as Array<Record<string, unknown>>).map((r) => (
+              <TableRow key={r.key as string}>
+                <TableCell mono className="text-xs">
+                  {r.key as string}
+                </TableCell>
+                <TableCell numeric mono className="text-xs">
+                  {r.value_numeric != null
+                    ? (r.value_numeric as number) < 1 && (r.value_numeric as number) > 0
+                      ? `${((r.value_numeric as number) * 100).toFixed(0)}%`
+                      : String(r.value_numeric)
+                    : "—"}
+                </TableCell>
+                <TableCell className="text-xs opacity-70">
+                  {r.description as string}
+                </TableCell>
+              </TableRow>
+            ))}
+          </GlassTable>
+        ) : (
+          <p className="text-xs opacity-50 px-4 py-3">
+            No threshold config found. Run the{" "}
+            <code className="font-mono">add_health_config_table</code> migration to enable this section.
+          </p>
+        )}
       </CollapsibleSection>
 
       {/* --- Raw Exports (data already available) --- */}

@@ -26,6 +26,9 @@ const INTERESTING_CODES = new Set([
  *
  * Returns warning counts grouped by run_date and code for the past 30 days.
  * Only includes "interesting" warning codes (critical/warn severity).
+ *
+ * Reads from health_warning_history_mv (materialized view) when available,
+ * falling back to the raw ingestion_warnings table.
  */
 export async function GET() {
   const sb = await supabaseServer();
@@ -39,22 +42,45 @@ export async function GET() {
     .toISOString()
     .slice(0, 10);
 
-  const { data: rows, error } = await svc
-    .from("ingestion_warnings")
-    .select("run_date,code,severity")
-    .gte("run_date", thirtyDaysAgo)
-    .in("severity", ["critical", "warn"])
-    .order("run_date", { ascending: true });
+  // Try the materialized view first; fall back to the raw table on any error
+  // (e.g. if the migration hasn't been run yet).
+  let rows: Array<{ run_date: string; code: string; severity: string; warning_count?: number }> | null = null;
+  let usedMv = false;
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  try {
+    const { data: mvRows, error: mvError } = await svc
+      .from("health_warning_history_mv")
+      .select("run_date,code,severity,warning_count")
+      .gte("run_date", thirtyDaysAgo)
+      .order("run_date", { ascending: true });
+
+    if (!mvError && mvRows) {
+      rows = mvRows as typeof rows;
+      usedMv = true;
+    }
+  } catch {
+    // MV not available yet
   }
 
-  // Group by date and code
+  if (!rows) {
+    const { data: rawRows, error } = await svc
+      .from("ingestion_warnings")
+      .select("run_date,code,severity")
+      .gte("run_date", thirtyDaysAgo)
+      .in("severity", ["critical", "warn"])
+      .order("run_date", { ascending: true });
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    rows = (rawRows ?? []) as typeof rows;
+  }
+
+  // Build date → code → count map
   const dateMap = new Map<string, Record<string, number>>();
   const allCodes = new Set<string>();
 
-  for (const r of (rows ?? []) as any[]) {
+  for (const r of rows) {
     const date = String(r.run_date);
     const code = String(r.code);
     if (!INTERESTING_CODES.has(code)) continue;
@@ -62,10 +88,13 @@ export async function GET() {
     allCodes.add(code);
     if (!dateMap.has(date)) dateMap.set(date, {});
     const entry = dateMap.get(date)!;
-    entry[code] = (entry[code] ?? 0) + 1;
+
+    // When reading from the MV each row is already an aggregate; from the raw
+    // table each row is one warning instance (count = 1).
+    const increment = usedMv ? Number((r as { warning_count?: number }).warning_count ?? 1) : 1;
+    entry[code] = (entry[code] ?? 0) + increment;
   }
 
-  // Build sorted date array
   const dates = Array.from(dateMap.entries())
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, warnings]) => ({ date, warnings }));

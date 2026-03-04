@@ -22,7 +22,7 @@ import { type TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChar
 import { computeRollingAvg7 } from "@/components/charts/chartUtils";
 import { useCurrencyDisplay } from "@/components/currency/CurrencyDisplayContext";
 
-import type { PlaylistDailyStatsRow, ManualOverrideAnnotation, ChartPoint, ArtistWeekendDipRow, TrackWeekendDipRow } from "./home/homeTypes";
+import type { PlaylistDailyStatsRow, ManualOverrideAnnotation, ChartPoint, ArtistWeekendDipRow, TrackWeekendDipRow, NegativeDailyStreamsRow } from "./home/homeTypes";
 import { rollSum } from "./home/homeUtils";
 import { HomeScatterSection } from "./home/HomeScatterSection";
 import { HomeMilestonesSection } from "./home/HomeMilestonesSection";
@@ -30,6 +30,7 @@ import { HomeDailyDistributionSection } from "./home/HomeDailyDistributionSectio
 import { HomeHistorySection } from "./home/HomeHistorySection";
 import { HomeFilterBuilderSection } from "./home/HomeFilterBuilderSection";
 import { HomeWeekendDipsSection } from "./home/HomeWeekendDipsSection";
+import { HomeNegativeStreamsSection } from "./home/HomeNegativeStreamsSection";
 
 // ============================================================================
 // Helpers (header-only)
@@ -420,6 +421,8 @@ function HomeDashboardInner(props: {
         trackWeekendDips={props.trackWeekendDips}
       />
 
+      <HomeNegativeStreamsSection negativeDailyStreams={props.negativeDailyStreams} />
+
       <HomeHistorySection history={props.history.slice(0, props.rangeDays)} />
 
       {homeFiltersConfigured && homeFiltersEnabled ? (
@@ -449,6 +452,7 @@ export function HomeDashboardClient(props: {
   overrideAnnotations?: ManualOverrideAnnotation[];
   artistWeekendDips: ArtistWeekendDipRow[];
   trackWeekendDips: TrackWeekendDipRow[];
+  negativeDailyStreams: NegativeDailyStreamsRow[];
 }) {
   return <HomeDashboardInner {...props} />;
 }

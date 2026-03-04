@@ -110,7 +110,7 @@ export async function PlaylistTracksSection(props: {
 
   // NOTE: This cache stores *both data and errors*. When we change playlist RPCs,
   // we must bump this version to avoid serving stale cached error payloads.
-  const cacheKeyBase = `playlist-tables-v3-${props.playlistKey}-${props.latestRunDate}-${props.prevRunDate ?? "none"}-${props.cacheBuster ?? "none"}`;
+  const cacheKeyBase = `playlist-tables-v4-${props.playlistKey}-${props.latestRunDate}-${props.prevRunDate ?? "none"}-${props.cacheBuster ?? "none"}`;
 
   const results = await cachedQueries<{
     top: PlaylistTopTrackRow[];

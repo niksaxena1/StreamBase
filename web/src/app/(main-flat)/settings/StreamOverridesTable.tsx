@@ -3,6 +3,7 @@
 import { Fragment, useState, useMemo } from "react";
 import { ChevronLeft, ChevronRight, Download } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
 import { Input } from "@/components/ui/Input";
 import { MenuSelect } from "@/components/ui/MenuSelect";
 import { IconButton } from "@/components/ui/Button";
@@ -309,7 +310,10 @@ export function StreamOverridesTable({
                     >
                       <td className="px-4 py-3 font-mono text-xs">{formatDateDisplay(o.date)}</td>
                       <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
+                        <Link
+                          href={`/tracks/${isrc}`}
+                          className="flex items-center gap-2 group"
+                        >
                           {imageUrl ? (
                             <Image
                               src={imageUrl}
@@ -322,12 +326,12 @@ export function StreamOverridesTable({
                             <div className="h-8 w-8 rounded-lg sb-ring bg-white/60 dark:bg-white/10 flex-shrink-0" />
                           )}
                           <div className="flex-1 min-w-0">
-                            <div className="font-medium text-sm truncate">{name}</div>
+                            <div className="font-medium text-sm truncate group-hover:underline">{name}</div>
                             <div className="font-mono text-[11px] truncate" style={{ color: "var(--sb-muted)" }}>
                               {isrc}
                             </div>
                           </div>
-                        </div>
+                        </Link>
                       </td>
                       <td className="px-4 py-3 text-right font-mono text-xs">
                         {Intl.NumberFormat().format(Number(o.streams_cumulative_override ?? 0))}

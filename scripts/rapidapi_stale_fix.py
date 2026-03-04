@@ -92,6 +92,28 @@ def main():
 
     pg = Postgrest(supabase_url, service_key)
 
+    # Check whether the user has disabled the auto-fix or changed the daily cap.
+    daily_cap = DAILY_CAP
+    try:
+        settings_rows = pg.select(
+            "user_settings",
+            "rapidapi_auto_fix_enabled,rapidapi_auto_fix_daily_cap",
+            "limit=1",
+        )
+        if settings_rows:
+            row = settings_rows[0]
+            if row.get("rapidapi_auto_fix_enabled") is False:
+                print("RapidAPI auto-fix is disabled in settings. Skipping.")
+                write_summary("", 0, 0, [])
+                sys.exit(0)
+            cap_val = row.get("rapidapi_auto_fix_daily_cap")
+            if isinstance(cap_val, int) and 1 <= cap_val <= 1000:
+                daily_cap = cap_val
+    except Exception as e:
+        print(f"Warning: could not read auto-fix settings ({e}). Using defaults.")
+
+    print(f"Daily cap: {daily_cap}")
+
     # Find the latest individual_tracks_stale warning.
     warnings = pg.select(
         "ingestion_warnings",
@@ -121,9 +143,9 @@ def main():
     )
     existing_isrcs = {str(r.get("isrc", "")).strip().upper() for r in existing}
     already_fixed = len(existing_isrcs)
-    budget = max(0, DAILY_CAP - already_fixed)
+    budget = max(0, daily_cap - already_fixed)
 
-    print(f"  Already fixed today: {already_fixed}/{DAILY_CAP}  |  Budget remaining: {budget}")
+    print(f"  Already fixed today: {already_fixed}/{daily_cap}  |  Budget remaining: {budget}")
 
     if budget <= 0:
         print("Daily cap reached. Exiting.")

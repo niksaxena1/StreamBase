@@ -294,7 +294,21 @@ async function computeActiveWarnings(
     }
   }
 
-  // 5. Build filtered list ----------------------------------------------------
+  // 4e. negative_daily_streams – call RPC for tracks with negative daily deltas
+  let negativeStreamsRows: Array<Record<string, unknown>> = [];
+  try {
+    const { data: rows, error: negErr } = await svc.rpc(
+      "health_negative_daily_streams",
+      { run_date: targetRunDate },
+    );
+    if (!negErr && Array.isArray(rows)) {
+      negativeStreamsRows = rows;
+    }
+  } catch {
+    // RPC may not exist yet – proceed without it.
+  }
+
+  // 5. Build filtered list + inject synthetic negative_daily_streams warning ----
   const active = allWarnings.filter((w) => {
     if (w.code === "non_catalog_tracks_present" && w.playlist_key) {
       return exclusionsEnabled ? ncActive.has(w.playlist_key) : true;
@@ -322,6 +336,21 @@ async function computeActiveWarnings(
     }
     return true;
   });
+
+  // Inject synthetic negative_daily_streams warning if tracks exist
+  if (negativeStreamsRows.length > 0) {
+    const isrcList = negativeStreamsRows
+      .map((r) => String(r.isrc ?? "").trim())
+      .filter(Boolean);
+    active.push({
+      severity: "warn",
+      code: "negative_daily_streams",
+      playlist_key: null,
+      message: `${negativeStreamsRows.length} track(s) had negative daily streams`,
+      run_date: targetRunDate,
+      details_json: { isrc_list: isrcList },
+    });
+  }
 
   const criticalCount = active.filter(
     (w) => w.severity === "critical",

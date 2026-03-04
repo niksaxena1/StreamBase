@@ -16,6 +16,7 @@ import type {
   RemovedTrack,
   PrevNonzeroTrack,
   ExcludedZeroedTrack,
+  NegativeDailyStreamTrack,
   OverlapTrack,
 } from "@/lib/health/types";
 
@@ -920,6 +921,52 @@ function ExpandedContent({
               />
             ))}
           </div>
+        </div>
+      ) : (
+        <FallbackNote note={data.note} />
+      );
+
+    case "negative_daily_streams":
+      return Array.isArray(data.tracks) && data.tracks.length > 0 ? (
+        <div className="space-y-3">
+          <div className="text-xs font-medium opacity-70 mb-3 flex items-center gap-2">
+            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium bg-red-500/20 text-red-700 dark:bg-red-500/30 dark:text-red-300">
+              Negative Deltas
+            </span>
+            <span>
+              Tracks with stream corrections ({data.tracks.length}):
+            </span>
+          </div>
+          <div className="space-y-1">
+            {(data.tracks as NegativeDailyStreamTrack[]).map((t) => {
+              const delta =
+                typeof t.daily_streams_delta === "number" &&
+                Number.isFinite(t.daily_streams_delta)
+                  ? t.daily_streams_delta
+                  : null;
+              return (
+                <TrackListItem
+                  key={`${t.isrc}-negative`}
+                  track={t}
+                  compact
+                  className="rounded-lg px-2.5 py-2"
+                  style={{ backgroundColor: "var(--sb-surface)" }}
+                  trailing={
+                    delta !== null && (
+                      <div className="flex-shrink-0 ml-2 text-[10px] font-mono font-medium px-2 py-1 rounded bg-red-500/20 text-red-600 dark:bg-red-500/30 dark:text-red-300">
+                        {delta.toLocaleString()}
+                      </div>
+                    )
+                  }
+                />
+              );
+            })}
+          </div>
+          {data.note && (
+            <div className="text-xs opacity-60 p-2 rounded bg-white/30 dark:bg-white/5">
+              {data.note}
+            </div>
+          )}
         </div>
       ) : (
         <FallbackNote note={data.note} />

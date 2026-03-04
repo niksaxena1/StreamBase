@@ -116,9 +116,8 @@ const TRACK_FIELDS: FilterFieldDefinition[] = [
     type: "number",
     operators: ["gt", "gte", "lt", "lte", "between", "eq"],
     description: "Most recent daily stream count",
-    min: 0,
     placeholder: "e.g., 10000",
-    helpText: "Daily stream delta from the latest data",
+    helpText: "Daily stream delta from the latest data (can be negative for corrections)",
   },
   {
     key: "release_date",
@@ -363,7 +362,6 @@ const ARTIST_FIELDS: FilterFieldDefinition[] = [
     type: "number",
     operators: ["gt", "gte", "lt", "lte", "between", "eq"],
     description: "Sum of daily streams across all artist's tracks",
-    min: 0,
     placeholder: "e.g., 50000",
   },
   {
@@ -479,7 +477,6 @@ const PLAYLIST_FIELDS: FilterFieldDefinition[] = [
     type: "number",
     operators: ["gt", "gte", "lt", "lte", "between", "eq"],
     description: "Daily stream delta",
-    min: 0,
     placeholder: "e.g., 10000",
   },
   {
@@ -593,7 +590,6 @@ const DATE_FIELDS: FilterFieldDefinition[] = [
     type: "number",
     operators: ["gt", "gte", "lt", "lte", "between", "eq"],
     description: "Total daily stream delta across catalog",
-    min: 0,
     placeholder: "e.g., 50000",
   },
   {

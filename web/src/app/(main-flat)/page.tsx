@@ -7,7 +7,7 @@ import { CACHE_TTL_1H, HOME_SCATTER_HARD_CAP } from "@/lib/constants";
 import { SOT_DATA_LAG_DAYS, addDaysISO, dataDateFromRunDate } from "@/lib/sotDates";
 import { getRollbackDate, rollbackDataDateToRunDate } from "@/lib/rollback";
 import { HomeDashboardClient } from "./HomeDashboardClient";
-import type { ArtistWeekendDipRow, TrackWeekendDipRow } from "./home/homeTypes";
+import type { ArtistWeekendDipRow, TrackWeekendDipRow, NegativeDailyStreamsRow } from "./home/homeTypes";
 import type { TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChart";
 
 type PlaylistDailyStatsRow = {
@@ -287,7 +287,7 @@ export default async function Home({
     : latestRunDate;
 
   // Bump cache key when scatter point shape changes.
-  const scatterCacheKey = `home-track-scatter-v6-${selectedRunDate ?? "none"}`;
+  const scatterCacheKey = `home-track-scatter-v7-${selectedRunDate ?? "none"}`;
   const { data: trackScatterPoints, error: trackScatterErr } = await cachedQuery(
     async () => {
       if (!selectedRunDate) return { data: [] as TrackStreamsXYPoint[], error: null };
@@ -426,8 +426,8 @@ export default async function Home({
     return out;
   })();
 
-  // Fetch artist and track weekend dips in parallel — they are independent queries.
-  const [{ data: artistWeekendDips }, { data: trackWeekendDips }] = await Promise.all([
+  // Fetch artist and track weekend dips, and negative daily streams in parallel.
+  const [{ data: artistWeekendDips }, { data: trackWeekendDips }, { data: negativeDailyStreams }] = await Promise.all([
     cachedQuery(
       async () => {
         return await svc.rpc("home_artist_weekend_dips", {
@@ -446,6 +446,13 @@ export default async function Home({
         });
       },
       `home-track-weekend-dips-${playlistKey}-${latestDataDate ?? "none"}-${session.user.id}`,
+      CACHE_TTL_1H,
+    ),
+    cachedQuery(
+      async () => {
+        return await svc.rpc("home_negative_daily_streams");
+      },
+      `home-negative-daily-v2-${session.user.id}`,
       CACHE_TTL_1H,
     ),
   ]);
@@ -468,6 +475,7 @@ export default async function Home({
       overrideAnnotations={overrideAnnotations}
       artistWeekendDips={(artistWeekendDips as ArtistWeekendDipRow[] | null) ?? []}
       trackWeekendDips={(trackWeekendDips as TrackWeekendDipRow[] | null) ?? []}
+      negativeDailyStreams={(negativeDailyStreams as NegativeDailyStreamsRow[] | null) ?? []}
     />
   );
 }

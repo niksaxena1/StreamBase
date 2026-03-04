@@ -13,10 +13,25 @@ import requests
 
 STREAM_PAYOUT_USD = 0.002
 
-# Warning thresholds (tune later)
+# Warning thresholds — these are the hard-coded fallback defaults.
+# At runtime the ingestion script loads live values from the health_config table
+# (via load_health_config()) so you can tune them without a code deploy.
 TRACK_COUNT_SWING_WARN_RATIO = 0.30  # 30% day-over-day swing
 ZERO_STREAM_WARN_RATIO = 0.60  # 60% rows with 0 cumulative streams (catalog exports only)
 CATALOG_TRACK_COUNT_DROP_CRITICAL = 5  # critical if catalog track_count drops by >5 day-over-day
+STALE_SOURCE_DATA_IDENTICAL_RATIO = 0.90  # 90% of tracks identical → stale_source_data warning
+TRACK_COUNT_SWING_HARD_FAIL_RATIO = 0.70  # 70% catalog swing → abort ingestion
+INDIVIDUAL_TRACKS_STALE_CRITICAL_COUNT = 15  # >= N stale tracks → critical (else warn)
+
+# Canonical keys mirrored in the health_config table seed.
+_HEALTH_CONFIG_DEFAULTS: Dict[str, float] = {
+    "track_count_swing_warn_ratio": TRACK_COUNT_SWING_WARN_RATIO,
+    "track_count_swing_hard_fail_ratio": TRACK_COUNT_SWING_HARD_FAIL_RATIO,
+    "zero_stream_warn_ratio": ZERO_STREAM_WARN_RATIO,
+    "catalog_track_count_drop_critical": float(CATALOG_TRACK_COUNT_DROP_CRITICAL),
+    "stale_source_data_identical_ratio": STALE_SOURCE_DATA_IDENTICAL_RATIO,
+    "individual_tracks_stale_critical_count": float(INDIVIDUAL_TRACKS_STALE_CRITICAL_COUNT),
+}
 
 
 @dataclass(frozen=True)
@@ -174,11 +189,40 @@ class Postgrest:
             offset += page_size
         return out
 
+    def rpc(self, function_name: str, params: Optional[dict] = None) -> Optional[dict]:
+        """Call a PostgREST RPC function."""
+        url = f"{self.base}/rpc/{function_name}"
+        r = requests.post(url, headers=self.h, data=json.dumps(params or {}), timeout=180)
+        if r.status_code not in (200, 204):
+            raise RuntimeError(f"RPC {function_name} failed: {r.status_code} {r.text[:500]}")
+        return r.json() if r.content else None
+
 
 def calc_rev(streams: Optional[int]) -> Optional[float]:
     if streams is None:
         return None
     return float(streams) * STREAM_PAYOUT_USD
+
+
+def load_health_config(pg: "Postgrest") -> Dict[str, float]:
+    """
+    Load warning thresholds from the health_config table.
+
+    Falls back to _HEALTH_CONFIG_DEFAULTS if the table doesn't exist yet
+    (i.e. the migration hasn't been applied) or if any read error occurs.
+    Only numeric config keys are loaded here.
+    """
+    config = dict(_HEALTH_CONFIG_DEFAULTS)
+    try:
+        rows = pg.select("health_config", "key,value_numeric", "value_numeric=not.is.null")
+        for r in rows:
+            key = str(r.get("key") or "")
+            val = r.get("value_numeric")
+            if key in config and val is not None:
+                config[key] = float(val)
+    except Exception:
+        pass  # Table not yet migrated — use module-level defaults
+    return config
 
 
 def main():
@@ -211,6 +255,15 @@ def main():
 
     pg = Postgrest(supabase_url=supabase_url, service_role_key=service_key)
     run_id: Optional[str] = None
+
+    # Load warning thresholds from DB (falls back to module constants if unavailable).
+    _cfg = load_health_config(pg)
+    track_count_swing_warn_ratio: float = _cfg["track_count_swing_warn_ratio"]
+    track_count_swing_hard_fail_ratio: float = _cfg["track_count_swing_hard_fail_ratio"]
+    zero_stream_warn_ratio: float = _cfg["zero_stream_warn_ratio"]
+    catalog_track_count_drop_critical: int = int(_cfg["catalog_track_count_drop_critical"])
+    stale_source_data_identical_ratio: float = _cfg["stale_source_data_identical_ratio"]
+    individual_tracks_stale_critical_count: int = int(_cfg["individual_tracks_stale_critical_count"])
 
     # Optional: load health warning exclusions (best-effort; table may not exist yet).
     # These exclusions are used to suppress "non_catalog_tracks_present" warnings and to
@@ -618,7 +671,7 @@ def main():
                 if catalog_streams_today.get(isrc) == prev_streams.get(isrc)
             )
             identical_ratio = identical_count / len(common_isrcs)
-            if identical_ratio >= 0.90:
+            if identical_ratio >= stale_source_data_identical_ratio:
                 stale_data_detected = True
                 pg.insert(
                     "ingestion_warnings",
@@ -771,7 +824,7 @@ def main():
                         "run_id": run_id,
                         "run_date": run_date.isoformat(),
                         "playlist_key": "all_catalog",
-                        "severity": "critical" if len(stale_tracks) >= 15 else "warn",
+                        "severity": "critical" if len(stale_tracks) >= individual_tracks_stale_critical_count else "warn",
                         "code": "individual_tracks_stale",
                         "message": (
                             f"{len(stale_tracks)} track(s) with >={stale_track_threshold:,} total streams "
@@ -857,7 +910,7 @@ def main():
             if prev_count and prev_count > 0:
                 ratio = abs(len(todays_isrcs) - prev_count) / float(prev_count)
                 # For catalog exports, a huge swing is almost always a data integrity issue.
-                if pl.is_catalog and ratio >= 0.70:
+                if pl.is_catalog and ratio >= track_count_swing_hard_fail_ratio:
                     swing_hard_fail.append(
                         {
                             "run_id": run_id,
@@ -1062,7 +1115,7 @@ def main():
                 ratio = abs(delta) / float(prev_count)
 
                 # Critical: catalog track count drop by an absolute threshold (even if ratio is small).
-                if pl.is_catalog and (prev_count - today_count) > CATALOG_TRACK_COUNT_DROP_CRITICAL:
+                if pl.is_catalog and (prev_count - today_count) > catalog_track_count_drop_critical:
                     warn_rows.append(
                         {
                             "run_id": run_id,
@@ -1076,11 +1129,11 @@ def main():
                                 "today": today_count,
                                 "delta": delta,
                                 "ratio": ratio,
-                                "drop_threshold": CATALOG_TRACK_COUNT_DROP_CRITICAL,
+                                "drop_threshold": catalog_track_count_drop_critical,
                             },
                         }
                     )
-                elif ratio >= TRACK_COUNT_SWING_WARN_RATIO:
+                elif ratio >= track_count_swing_warn_ratio:
                     warn_rows.append(
                         {
                             "run_id": run_id,
@@ -1093,7 +1146,7 @@ def main():
                         }
                     )
 
-            if pl_key in catalog_zero_stream_ratio and catalog_zero_stream_ratio[pl_key] >= ZERO_STREAM_WARN_RATIO:
+            if pl_key in catalog_zero_stream_ratio and catalog_zero_stream_ratio[pl_key] >= zero_stream_warn_ratio:
                 zr = catalog_zero_stream_ratio[pl_key]
                 warn_rows.append(
                     {
@@ -1261,8 +1314,15 @@ def main():
         pg.patch("ingestion_runs", {"status": "success", "finished_at": datetime.now(timezone.utc).isoformat()}, f"id=eq.{run_id}")
         print(f"✅ Ingestion complete for {run_date} (run_id={run_id})")
 
+        # Refresh the health history materialized view so the chart stays current.
+        try:
+            pg.rpc("refresh_health_warning_history_mv")
+            print("  ℹ Refreshed health_warning_history_mv")
+        except Exception as _mv_err:
+            print(f"  ⚠ Could not refresh health_warning_history_mv: {_mv_err}")
+
         # Write machine-readable summary for CI notification workflow.
-        individual_tracks_stale_severity = "critical" if individual_tracks_stale_count >= 15 else ("warn" if individual_tracks_stale_count > 0 else None)
+        individual_tracks_stale_severity = "critical" if individual_tracks_stale_count >= individual_tracks_stale_critical_count else ("warn" if individual_tracks_stale_count > 0 else None)
         ingestion_summary = {
             "status": "success",
             "run_date": run_date.isoformat(),

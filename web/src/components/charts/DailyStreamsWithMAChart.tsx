@@ -133,22 +133,60 @@ export function DailyStreamsWithMAChart({
     return formatKmbTick(n);
   };
 
-  const yAxisDomain = zoomDailyYAxis
-    ? computePaddedDomain(
-        [
-          ...chartData.map((d) => d.daily),
-          ...chartData.map((d) => d.ma7),
-        ],
-        { clampMinToZero: false, padRatio: 0.10, minAbsPad: 1 },
-      )
+  const allDailyValues = [
+    ...chartData.map((d) => d.daily),
+    ...chartData.map((d) => d.ma7),
+  ];
+  const hasNegatives = allDailyValues.some(
+    (x) => typeof x === "number" && Number.isFinite(x) && (x as number) < 0,
+  );
+
+  const yAxisDomain = (zoomDailyYAxis || hasNegatives)
+    ? computePaddedDomain(allDailyValues, { clampMinToZero: false, padRatio: 0.10, minAbsPad: 1 })
     : undefined;
 
-  const { dot, activeDot } = makeHighlightDayDotRenderers({
+  // Gradient split offsets for stroke/fill when negatives exist.
+  // Stroke BB spans actual data extremes; fill BB spans from spline-max to chart baseline.
+  // The fill uses yAxisDomain bounds (which include padding above any spline overshoot)
+  // so the red-to-green transition lands at or just below zero, never above.
+  const finiteValues = allDailyValues.filter((x): x is number => typeof x === "number" && Number.isFinite(x));
+  const dataMax = finiteValues.length ? Math.max(...finiteValues) : 0;
+  const dataMin = finiteValues.length ? Math.min(...finiteValues) : 0;
+  const strokeZeroOffset = hasNegatives && dataMax > 0 && dataMin < 0
+    ? `${(dataMax / (dataMax - dataMin) * 100).toFixed(2)}%`
+    : null;
+  // Fill BB spans [dataMax → dataMin] (baseValue=0 means the fill polygon is bounded
+  // by the data line on top and the zero-baseline on the bottom — same range as the stroke).
+  // Using yAxisDomain[1] here over-estimates the BB top and pushes the transition below zero.
+  const fillZeroOffset = strokeZeroOffset;
+
+  const { dot: baseDot, activeDot: baseActiveDot } = makeHighlightDayDotRenderers({
     baseColor: effectiveDailyColor,
     highlightColor: sundayColor,
     highlightWeekdayUtc: weekHighlightDayUtc,
     showWeekendDipLabels: enableWeekendDip,
   });
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const dot = (props: any) => {
+    const val = (props?.payload as Record<string, unknown>)?.daily;
+    if (typeof val === "number" && val < 0) {
+      const x = Number(props?.cx), y = Number(props?.cy);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+      return <circle cx={x} cy={y} r={3} fill="#ef4444" stroke="var(--sb-bg)" strokeWidth={1.5} />;
+    }
+    return baseDot(props);
+  };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const activeDot = (props: any) => {
+    const val = (props?.payload as Record<string, unknown>)?.daily;
+    if (typeof val === "number" && val < 0) {
+      const x = Number(props?.cx), y = Number(props?.cy);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+      return <circle cx={x} cy={y} r={4} fill="#ef4444" stroke="var(--sb-bg)" strokeWidth={1.5} />;
+    }
+    return baseActiveDot(props);
+  };
 
   return (
     <div
@@ -162,10 +200,31 @@ export function DailyStreamsWithMAChart({
           style={{ outline: "none" }}
         >
           <defs>
+            {/* Area fill gradient: accent above zero, red below zero */}
             <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor={effectiveDailyColor} stopOpacity={0.28} />
-              <stop offset="95%" stopColor={effectiveDailyColor} stopOpacity={0} />
+              {fillZeroOffset ? (
+                <>
+                  <stop offset="0%" stopColor={effectiveDailyColor} stopOpacity={0.28} />
+                  <stop offset={fillZeroOffset} stopColor={effectiveDailyColor} stopOpacity={0.05} />
+                  <stop offset={fillZeroOffset} stopColor="#ef4444" stopOpacity={0.15} />
+                  <stop offset="100%" stopColor="#ef4444" stopOpacity={0.4} />
+                </>
+              ) : (
+                <>
+                  <stop offset="5%" stopColor={effectiveDailyColor} stopOpacity={0.28} />
+                  <stop offset="95%" stopColor={effectiveDailyColor} stopOpacity={0} />
+                </>
+              )}
             </linearGradient>
+            {/* Stroke gradient: accent above zero, red below zero */}
+            {strokeZeroOffset && (
+              <linearGradient id={`${gid}-stroke`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={effectiveDailyColor} stopOpacity={1} />
+                <stop offset={strokeZeroOffset} stopColor={effectiveDailyColor} stopOpacity={1} />
+                <stop offset={strokeZeroOffset} stopColor="#ef4444" stopOpacity={1} />
+                <stop offset="100%" stopColor="#ef4444" stopOpacity={1} />
+              </linearGradient>
+            )}
           </defs>
           <CartesianGrid
             strokeDasharray="3 3"
@@ -253,10 +312,20 @@ export function DailyStreamsWithMAChart({
               }}
             />
           )}
+          {hasNegatives && (
+            <ReferenceLine
+              y={0}
+              stroke="#ef4444"
+              strokeOpacity={0.45}
+              strokeWidth={1}
+              strokeDasharray="3 3"
+              ifOverflow="hidden"
+            />
+          )}
           <Area
             type="monotone"
             dataKey="daily"
-            stroke={effectiveDailyColor}
+            stroke={strokeZeroOffset ? `url(#${gid}-stroke)` : effectiveDailyColor}
             strokeWidth={2}
             fillOpacity={1}
             fill={`url(#${gid})`}

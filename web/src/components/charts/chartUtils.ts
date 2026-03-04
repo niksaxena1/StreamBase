@@ -308,7 +308,7 @@ export function formatKmbTick(n: number): string {
     const thousands = n / 1000;
     return `${thousands % 1 === 0 ? thousands.toFixed(0) : thousands.toFixed(1)}k`;
   }
-  return new Intl.NumberFormat("en-US").format(n);
+  return new Intl.NumberFormat("en-US").format(Math.round(n));
 }
 
 export function showCopiedToast(message: string) {

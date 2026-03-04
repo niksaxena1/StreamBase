@@ -7,6 +7,7 @@ import type {
   RemovedTrack,
   PrevNonzeroTrack,
   ExcludedZeroedTrack,
+  NegativeDailyStreamTrack,
   DriftTrack,
   DriftData,
   OverlapTrack,
@@ -538,6 +539,31 @@ async function fetchOverlapTracks(
   }
 }
 
+async function fetchNegativeStreamTracks(
+  svc: Svc,
+  runDate: string,
+): Promise<NegativeDailyStreamTrack[] | null> {
+  try {
+    const { data: rows, error } = await svc.rpc(
+      "health_negative_daily_streams",
+      { run_date: runDate },
+    );
+    if (error) return null;
+
+    return ((rows ?? []) as Array<Record<string, unknown>>).map((t) => ({
+      isrc: normalizeIsrc(t.isrc),
+      name: (t.name ?? null) as string | null,
+      artist_names: (t.artist_names ?? null) as string[] | null,
+      artist_ids: (t.artist_ids ?? null) as string[] | null,
+      album_image_url: (t.album_image_url ?? null) as string | null,
+      daily_streams_delta: typeof t.daily_streams_delta === "number" ? t.daily_streams_delta : null,
+      total_streams_cumulative: typeof t.total_streams_cumulative === "number" ? t.total_streams_cumulative : null,
+    }));
+  } catch {
+    return null;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Stream override loader — ISRCs with manual overrides for a given data date
 // ---------------------------------------------------------------------------
@@ -578,6 +604,7 @@ function patchMessage(
   driftResult: { map: Map<string, DriftData>; loaded: boolean },
   overlapTracks: OverlapTrack[] | null,
   decreasedMap: Map<string, Array<TrackBase & Record<string, unknown>> | null>,
+  negativeStreamTracks: NegativeDailyStreamTrack[] | null,
   playlistMeta: Map<string, PlaylistMeta>,
 ): string {
   if (w.code === "non_catalog_tracks_present" && w.playlist_key) {
@@ -622,6 +649,9 @@ function patchMessage(
   }
   if (w.code === "distro_overlap" && Array.isArray(overlapTracks)) {
     return `${overlapTracks.length} track(s) appear in multiple Distro playlists`;
+  }
+  if (w.code === "negative_daily_streams" && Array.isArray(negativeStreamTracks)) {
+    return `${negativeStreamTracks.length} track(s) had negative daily streams`;
   }
   if (w.code === "total_streams_decreased") {
     const key = String(w.playlist_key ?? "global");
@@ -670,6 +700,7 @@ function buildExpandedData(
   removedMap: Map<string, Array<TrackBase & Record<string, unknown>> | null>,
   driftResult: { map: Map<string, DriftData>; loaded: boolean },
   overlapTracks: OverlapTrack[] | null,
+  negativeStreamTracks: NegativeDailyStreamTrack[] | null,
 ): WarningExpandedData {
   const key = String(w.playlist_key ?? "global");
   const noteFromDetails = (w.details_json as Record<string, unknown> | null)?.note as
@@ -812,6 +843,15 @@ function buildExpandedData(
         note: "Track details not available. Run the migration for health_distro_overlap_tracks to enable detailed display.",
       };
     }
+    case "negative_daily_streams": {
+      if (negativeStreamTracks === undefined) return null;
+      if (Array.isArray(negativeStreamTracks) && negativeStreamTracks.length === 0) return null;
+      return {
+        type: "negative_daily_streams",
+        tracks: negativeStreamTracks,
+        note: "Tracks with negative daily stream deltas (corrections, deduplication, or anomalies).",
+      };
+    }
     default:
       return null;
   }
@@ -838,10 +878,22 @@ function severityRank(severity: string): number {
 // Main orchestrator (#1: all data-fetching extracted from page.tsx)
 // ---------------------------------------------------------------------------
 
+export type PaginatedWarnings = {
+  warnings: DisplayedWarning[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+};
+
+const DEFAULT_PAGE_SIZE = 20;
+
 export async function fetchDisplayedWarnings(
   runDate: string,
   playlistMeta: Record<string, PlaylistMeta>,
-): Promise<DisplayedWarning[]> {
+  page = 1,
+  pageSize = DEFAULT_PAGE_SIZE,
+): Promise<PaginatedWarnings> {
   const svc = supabaseService();
   const { warnings } = await getActiveWarningSummary(runDate);
   const excl = await loadExclusions(svc);
@@ -891,6 +943,7 @@ export async function fetchDisplayedWarnings(
     removedMap,
     driftResult,
     overlapTracks,
+    negativeStreamTracks,
     overriddenIsrcs,
   ] = await Promise.all([
     fetchNonCatalogTracks(svc, ncW, runDate, excl),
@@ -904,6 +957,7 @@ export async function fetchDisplayedWarnings(
     fetchDetailsTracks(svc, decreasedW, extractRemoved),
     fetchDriftData(svc, driftW, runDate),
     fetchOverlapTracks(svc, overlapW, runDate),
+    fetchNegativeStreamTracks(svc, runDate),
     loadOverriddenIsrcs(svc, runDate),
   ]);
 
@@ -933,7 +987,7 @@ export async function fetchDisplayedWarnings(
     return (a.message ?? "").localeCompare(b.message ?? "");
   });
 
-  return sorted.map((w) => ({
+  const all: DisplayedWarning[] = sorted.map((w) => ({
     severity: w.severity,
     code: w.code,
     playlist_key: w.playlist_key,
@@ -949,6 +1003,7 @@ export async function fetchDisplayedWarnings(
       driftResult,
       overlapTracks,
       decreasedMap,
+      negativeStreamTracks,
       metaMap,
     ),
     playlistMeta: w.playlist_key
@@ -967,8 +1022,17 @@ export async function fetchDisplayedWarnings(
       removedMap,
       driftResult,
       overlapTracks,
+      negativeStreamTracks,
     ),
   }));
+
+  const totalCount = all.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const safePage = Math.min(Math.max(1, page), totalPages);
+  const start = (safePage - 1) * pageSize;
+  const pageWarnings = all.slice(start, start + pageSize);
+
+  return { warnings: pageWarnings, totalCount, page: safePage, pageSize, totalPages };
 }
 
 // ---------------------------------------------------------------------------

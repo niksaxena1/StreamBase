@@ -8,6 +8,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const DEFAULT_HIDE = false;
+const DEFAULT_EXCLUDE_CATALOG = false;
 
 export async function GET() {
   const sb = await supabaseServer();
@@ -18,29 +19,45 @@ export async function GET() {
   const svc = supabaseService();
   const { data: settings, error } = await svc
     .from("user_settings")
-    .select("hide_stale_override_annotations")
+    .select("hide_stale_override_annotations, hide_stale_annotations_exclude_catalog")
     .eq("user_id", user.id)
     .maybeSingle();
 
   if (error) {
     if (isSchemaMissing(error)) {
       return NextResponse.json(
-        { hide_stale_override_annotations: DEFAULT_HIDE, configured: false },
+        {
+          hide_stale_override_annotations: DEFAULT_HIDE,
+          hide_stale_annotations_exclude_catalog: DEFAULT_EXCLUDE_CATALOG,
+          configured: false,
+        },
         { status: 200 },
       );
     }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  const val = (settings as Record<string, unknown>)?.hide_stale_override_annotations;
+  const row = settings as Record<string, unknown> | null;
+  const val = row?.hide_stale_override_annotations;
+  const excludeCatalog = row?.hide_stale_annotations_exclude_catalog;
 
   return NextResponse.json(
     {
       hide_stale_override_annotations: typeof val === "boolean" ? val : DEFAULT_HIDE,
+      hide_stale_annotations_exclude_catalog: typeof excludeCatalog === "boolean" ? excludeCatalog : DEFAULT_EXCLUDE_CATALOG,
       configured: true,
     },
     { status: 200 },
   );
+}
+
+function parseBool(val: unknown): boolean | null {
+  if (typeof val === "boolean") return val;
+  if (val === undefined || val === null) return null;
+  const s = String(val).trim().toLowerCase();
+  if (s === "true" || s === "1") return true;
+  if (s === "false" || s === "0") return false;
+  return null;
 }
 
 export async function POST(request: NextRequest) {
@@ -50,25 +67,26 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: "not authenticated" }, { status: 401 });
 
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-  const raw = body.hide_stale_override_annotations ?? body.enabled;
-  let enabled: boolean;
-  if (typeof raw === "boolean") {
-    enabled = raw;
-  } else {
-    const s = String(raw ?? "").trim().toLowerCase();
-    if (s === "true" || s === "1") enabled = true;
-    else if (s === "false" || s === "0") enabled = false;
-    else return NextResponse.json({ error: "Value must be a boolean." }, { status: 400 });
+
+  const hideRaw = body.hide_stale_override_annotations ?? body.enabled;
+  const excludeCatalogRaw = body.hide_stale_annotations_exclude_catalog;
+
+  const hideVal = parseBool(hideRaw);
+  const excludeCatalogVal = parseBool(excludeCatalogRaw);
+
+  if (hideVal === null && excludeCatalogVal === null) {
+    return NextResponse.json({ error: "No recognised boolean field provided." }, { status: 400 });
   }
+
+  const patch: Record<string, unknown> = { user_id: user.id };
+  if (hideVal !== null) patch.hide_stale_override_annotations = hideVal;
+  if (excludeCatalogVal !== null) patch.hide_stale_annotations_exclude_catalog = excludeCatalogVal;
 
   const svc = supabaseService();
   const { data: upserted, error } = await svc
     .from("user_settings")
-    .upsert(
-      [{ user_id: user.id, hide_stale_override_annotations: enabled }],
-      { onConflict: "user_id" },
-    )
-    .select("hide_stale_override_annotations")
+    .upsert([patch], { onConflict: "user_id" })
+    .select("hide_stale_override_annotations, hide_stale_annotations_exclude_catalog")
     .maybeSingle();
 
   if (error) {
@@ -81,11 +99,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  const saved = (upserted as Record<string, unknown>)?.hide_stale_override_annotations;
+  const row = upserted as Record<string, unknown> | null;
+  const savedHide = row?.hide_stale_override_annotations;
+  const savedExclude = row?.hide_stale_annotations_exclude_catalog;
 
   return NextResponse.json(
     {
-      hide_stale_override_annotations: typeof saved === "boolean" ? saved : enabled,
+      hide_stale_override_annotations: typeof savedHide === "boolean" ? savedHide : (hideVal ?? DEFAULT_HIDE),
+      hide_stale_annotations_exclude_catalog: typeof savedExclude === "boolean" ? savedExclude : (excludeCatalogVal ?? DEFAULT_EXCLUDE_CATALOG),
       configured: true,
     },
     { status: 200 },

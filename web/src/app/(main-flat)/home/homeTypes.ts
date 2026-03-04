@@ -41,3 +41,14 @@ export type TrackWeekendDipRow = {
   sun_dip_pct: number | null;
   avg_dip_pct: number | null;
 };
+
+export type NegativeDailyStreamsRow = {
+  isrc: string;
+  name: string;
+  artist_names: string[] | null;
+  artist_ids: string[] | null;
+  album_image_url: string | null;
+  date: string;
+  daily_streams_delta: number;
+  total_streams_cumulative: number;
+};

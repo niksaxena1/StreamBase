@@ -130,18 +130,32 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
   // Calculate Y-axis domain:
   // - Cumulative: exact min/max (fills chart, avoids wasted space).
   // - Daily: "zoomed" domain around min/max with padding (improves at-a-glance deltas).
+  // - Daily with negatives: always compute domain so negatives are visible (never clamped at 0).
+  const v = chartData.map((d) => d.value);
+  const ma = hasMA7 ? chartData.map((d) => d.ma7) : [];
+  const hasNegatives = !isCumulative && [...v, ...ma].some(
+    (x) => typeof x === "number" && Number.isFinite(x) && (x as number) < 0,
+  );
+
   const yAxisDomain = (() => {
     if (chartData.length === 0) return undefined;
-    const v = chartData.map((d) => d.value);
-    const ma = hasMA7 ? chartData.map((d) => d.ma7) : [];
     if (isCumulative) {
       const values = v.filter((x): x is number => typeof x === "number" && Number.isFinite(x));
       if (!values.length) return undefined;
       return [Math.min(...values), Math.max(...values)] as [number, number];
     }
-    if (!zoomDailyYAxis) return undefined;
+    if (!zoomDailyYAxis && !hasNegatives) return undefined;
     return computePaddedDomain([...v, ...ma], { clampMinToZero: false, padRatio: 0.10, minAbsPad: 1 });
   })();
+
+  const finiteValues = [...v, ...ma].filter((x): x is number => typeof x === "number" && Number.isFinite(x));
+  const dataMax = finiteValues.length ? Math.max(...finiteValues) : 0;
+  const dataMin = finiteValues.length ? Math.min(...finiteValues) : 0;
+  const strokeZeroOffset = hasNegatives && dataMax > 0 && dataMin < 0
+    ? `${(dataMax / (dataMax - dataMin) * 100).toFixed(2)}%`
+    : null;
+  // Fill BB spans [dataMax → dataMin] — same as the stroke path.
+  const fillZeroOffset = strokeZeroOffset;
 
   const fmtValue = (n: number) =>
     valueFormat === "usd" ? formatUsd(n) : formatInt(n);
@@ -153,12 +167,33 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
   };
 
   const ChartComponent = hasMA7 ? ComposedChart : AreaChart;
-  const { dot, activeDot } = makeHighlightDayDotRenderers({
+  const { dot: baseDot, activeDot: baseActiveDot } = makeHighlightDayDotRenderers({
     baseColor: effectiveColor,
     highlightColor: sundayColor,
     highlightWeekdayUtc: weekHighlightDayUtc,
     showWeekendDipLabels: enableWeekendDip,
   });
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const dot = (props: any) => {
+    const val = (props?.payload as Record<string, unknown>)?.value;
+    if (typeof val === "number" && val < 0) {
+      const x = Number(props?.cx), y = Number(props?.cy);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+      return <circle cx={x} cy={y} r={3} fill="#ef4444" stroke="var(--sb-bg)" strokeWidth={1.5} />;
+    }
+    return baseDot(props);
+  };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const activeDot = (props: any) => {
+    const val = (props?.payload as Record<string, unknown>)?.value;
+    if (typeof val === "number" && val < 0) {
+      const x = Number(props?.cx), y = Number(props?.cy);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+      return <circle cx={x} cy={y} r={4} fill="#ef4444" stroke="var(--sb-bg)" strokeWidth={1.5} />;
+    }
+    return baseActiveDot(props);
+  };
 
   return (
     <div
@@ -173,9 +208,28 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
         >
           <defs>
             <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor={effectiveColor} stopOpacity={0.3} />
-              <stop offset="95%" stopColor={effectiveColor} stopOpacity={0} />
+              {fillZeroOffset ? (
+                <>
+                  <stop offset="0%" stopColor={effectiveColor} stopOpacity={0.3} />
+                  <stop offset={fillZeroOffset} stopColor={effectiveColor} stopOpacity={0.05} />
+                  <stop offset={fillZeroOffset} stopColor="#ef4444" stopOpacity={0.15} />
+                  <stop offset="100%" stopColor="#ef4444" stopOpacity={0.4} />
+                </>
+              ) : (
+                <>
+                  <stop offset="5%" stopColor={effectiveColor} stopOpacity={0.3} />
+                  <stop offset="95%" stopColor={effectiveColor} stopOpacity={0} />
+                </>
+              )}
             </linearGradient>
+            {strokeZeroOffset && (
+              <linearGradient id={`${gid}-stroke`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={effectiveColor} stopOpacity={1} />
+                <stop offset={strokeZeroOffset} stopColor={effectiveColor} stopOpacity={1} />
+                <stop offset={strokeZeroOffset} stopColor="#ef4444" stopOpacity={1} />
+                <stop offset="100%" stopColor="#ef4444" stopOpacity={1} />
+              </linearGradient>
+            )}
           </defs>
           <CartesianGrid
             strokeDasharray="3 3"
@@ -264,10 +318,20 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
               }}
             />
           )}
+          {hasNegatives && (
+            <ReferenceLine
+              y={0}
+              stroke="#ef4444"
+              strokeOpacity={0.45}
+              strokeWidth={1}
+              strokeDasharray="3 3"
+              ifOverflow="hidden"
+            />
+          )}
           <Area
             type="monotone"
             dataKey="value"
-            stroke={effectiveColor}
+            stroke={strokeZeroOffset ? `url(#${gid}-stroke)` : effectiveColor}
             strokeWidth={2}
             fillOpacity={1}
             fill={`url(#${gid})`}

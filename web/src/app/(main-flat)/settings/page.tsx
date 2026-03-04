@@ -13,7 +13,7 @@ import { ChartAxisZoomSetting } from "./ChartAxisZoomSetting";
 import { WeekendDipSetting } from "./WeekendDipSetting";
 import { CurrencyDisplaySetting } from "./CurrencyDisplaySetting";
 import { StaleTrackThresholdSetting } from "./StaleTrackThresholdSetting";
-import { RapidApiFallbackSetting } from "./RapidApiFallbackSetting";
+import { RapidApiAutoFixSetting } from "./RapidApiAutoFixSetting";
 import { HideStaleAnnotationsSetting } from "./HideStaleAnnotationsSetting";
 import { ManualStreamOverrideForm } from "./ManualStreamOverrideForm";
 import { StreamOverridesTable, StreamOverridesTableDownloadButton } from "./StreamOverridesTable";
@@ -708,7 +708,7 @@ export default async function SettingsPage() {
         >
           <SectionHeader title="Health" subtitle="Configure data-quality detection thresholds used during daily ingestion." />
           <StaleTrackThresholdSetting />
-          <RapidApiFallbackSetting />
+          <RapidApiAutoFixSetting />
         </div>
       </div>
 

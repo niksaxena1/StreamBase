@@ -244,10 +244,13 @@ export default async function CatalogPage({
     try {
       const { data: uSettings } = await sb
         .from("user_settings")
-        .select("hide_stale_override_annotations")
+        .select("hide_stale_override_annotations, hide_stale_annotations_exclude_catalog")
         .eq("user_id", userData.user.id)
         .maybeSingle();
-      hideStaleAnnotations = Boolean((uSettings as Record<string, unknown> | null)?.hide_stale_override_annotations);
+      const row = uSettings as Record<string, unknown> | null;
+      const wantsHide = Boolean(row?.hide_stale_override_annotations);
+      const excludeCatalog = Boolean(row?.hide_stale_annotations_exclude_catalog);
+      hideStaleAnnotations = wantsHide && !excludeCatalog;
     } catch {
       // graceful fallback
     }
@@ -442,7 +445,7 @@ export default async function CatalogPage({
               run_date: latestRunDate,
               limit_rows: 25,
             }),
-          `catalog-artist-top-total-${artistId}-${latestRunDate}-ov${overrideBuster}`,
+          `catalog-artist-top-total-v2-${artistId}-${latestRunDate}-ov${overrideBuster}`,
           CACHE_TTL_1H,
         )
       : Promise.resolve({ data: [] as CatalogTopTrackRow[], error: null }),
@@ -454,7 +457,7 @@ export default async function CatalogPage({
               run_date: latestRunDate,
               limit_rows: 25,
             }),
-          `catalog-artist-top-daily-${artistId}-${latestRunDate}-ov${overrideBuster}`,
+          `catalog-artist-top-daily-v2-${artistId}-${latestRunDate}-ov${overrideBuster}`,
           CACHE_TTL_1H,
         )
       : Promise.resolve({ data: [] as CatalogTopTrackRow[], error: null }),
@@ -472,7 +475,7 @@ export default async function CatalogPage({
   const dailyArtistAscRun = cumSeriesAscRun.map((p, idx) => {
     if (idx === 0) return { date: p.date, daily: null };
     const prev = cumSeriesAscRun[idx - 1].value;
-    return { date: p.date, daily: Math.max(0, p.value - prev) };
+    return { date: p.date, daily: p.value - prev };
   });
   const dailyArtistDesc = [...dailyArtistAscRun].reverse();
   const dailyArtistWithMaDesc = computeDailyRollingAvg7(dailyArtistDesc);
@@ -600,7 +603,7 @@ export default async function CatalogPage({
   const trackDailyAsc = trackCumAscRun.map((p, idx) => {
     if (idx === 0) return { date: p.date, daily: null };
     const prev = trackCumAscRun[idx - 1].value;
-    return { date: p.date, daily: Math.max(0, p.value - prev) };
+    return { date: p.date, daily: p.value - prev };
   });
   const trackDailyDesc = [...trackDailyAsc]
     .reverse()
