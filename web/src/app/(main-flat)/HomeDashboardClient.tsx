@@ -25,7 +25,13 @@ import { useCurrencyDisplay } from "@/components/currency/CurrencyDisplayContext
 
 import type { PlaylistDailyStatsRow, ManualOverrideAnnotation, ChartPoint, ArtistWeekendDipRow, TrackWeekendDipRow, NegativeDailyStreamsRow } from "./home/homeTypes";
 import { rollSum } from "./home/homeUtils";
+import { HomeScatterSection } from "./home/HomeScatterSection";
+import { HomeMilestonesSection } from "./home/HomeMilestonesSection";
+import { HomeDailyDistributionSection } from "./home/HomeDailyDistributionSection";
+import { HomeNegativeStreamsSection } from "./home/HomeNegativeStreamsSection";
+import { HomeWeekendDipsSection } from "./home/HomeWeekendDipsSection";
 import { HomeHistorySection } from "./home/HomeHistorySection";
+import { HomeFilterBuilderSection } from "./home/HomeFilterBuilderSection";
 
 // ============================================================================
 // Helpers (header-only)
@@ -78,9 +84,9 @@ function HomeDashboardInner(props: {
   latestRunDate: string | null;
   latestDataDate: string | null;
   overrideAnnotations?: ManualOverrideAnnotation[];
-  artistWeekendDips?: ArtistWeekendDipRow[];
-  trackWeekendDips?: TrackWeekendDipRow[];
-  negativeDailyStreams?: NegativeDailyStreamsRow[];
+  artistWeekendDips: ArtistWeekendDipRow[];
+  trackWeekendDips: TrackWeekendDipRow[];
+  negativeDailyStreams: NegativeDailyStreamsRow[];
 }) {
   const { metric } = useMetric();
   useCurrencyDisplay();
@@ -403,7 +409,30 @@ function HomeDashboardInner(props: {
         </Alert>
       ) : null}
 
+      <HomeScatterSection
+        trackScatterPoints={props.trackScatterPoints}
+        trackScatterErrorMessage={props.trackScatterErrorMessage}
+      />
+
+      <HomeMilestonesSection trackScatterPoints={props.trackScatterPoints} />
+
+      <HomeDailyDistributionSection trackScatterPoints={props.trackScatterPoints} />
+
+      <HomeNegativeStreamsSection negativeDailyStreams={props.negativeDailyStreams} />
+
+      <HomeWeekendDipsSection
+        artistWeekendDips={props.artistWeekendDips}
+        trackWeekendDips={props.trackWeekendDips}
+      />
+
       <HomeHistorySection history={props.history.slice(0, props.rangeDays)} />
+
+      {homeFiltersConfigured && homeFiltersEnabled ? (
+        <HomeFilterBuilderSection
+          trackScatterPoints={props.trackScatterPoints}
+          trackScatterDataDate={props.trackScatterDataDate}
+        />
+      ) : null}
     </div>
   );
 }

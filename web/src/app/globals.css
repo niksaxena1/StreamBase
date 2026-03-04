@@ -860,9 +860,4 @@ html[data-theme="dark"] .sb-filter-bar {
   .animate-badge-pop {
     animation: none;
   }
-  
-  * {
-    animation-duration: 0.01ms !important;
-    transition-duration: 0.01ms !important;
-  }
 }
