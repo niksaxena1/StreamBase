@@ -81,7 +81,7 @@ export function MenuSelect({
         disabled={disabled}
         onClick={() => setIsOpen((v) => !v)}
         className={cx(
-          "flex items-center justify-between gap-2 rounded-[var(--sb-radius)] border px-2.5 py-1.5 text-[11px] font-medium transition",
+          "flex items-center justify-between gap-2 rounded-[var(--sb-radius)] border px-2.5 py-1.5 text-[11px] font-medium transition hover:bg-[var(--sb-card)]",
           disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer",
           buttonClassName,
         )}
@@ -89,14 +89,6 @@ export function MenuSelect({
           backgroundColor: "var(--sb-surface)",
           borderColor: "var(--sb-border-2)",
           color: "var(--sb-text)",
-        }}
-        onMouseEnter={(e) => {
-          if (disabled) return;
-          e.currentTarget.style.backgroundColor = isOpen ? "var(--sb-surface)" : "var(--sb-card)";
-        }}
-        onMouseLeave={(e) => {
-          if (disabled) return;
-          e.currentTarget.style.backgroundColor = "var(--sb-surface)";
         }}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
@@ -149,18 +141,11 @@ export function MenuSelect({
                 className={cx(
                   "flex w-full items-center justify-between gap-2 rounded-[calc(var(--sb-radius)-8px)] px-2 py-1.5 text-left text-xs transition",
                   isDisabled ? "cursor-not-allowed opacity-50" : "cursor-pointer",
+                  !isSelected && "hover:bg-[var(--sb-surface)]",
                 )}
                 style={{
                   color: isSelected ? "#000" : "var(--sb-text)",
                   backgroundColor: isSelected ? "var(--sb-accent)" : "transparent",
-                }}
-                onMouseEnter={(e) => {
-                  if (isSelected || isDisabled) return;
-                  e.currentTarget.style.backgroundColor = "var(--sb-surface)";
-                }}
-                onMouseLeave={(e) => {
-                  if (isSelected || isDisabled) return;
-                  e.currentTarget.style.backgroundColor = "transparent";
                 }}
                 role="option"
                 aria-selected={isSelected}

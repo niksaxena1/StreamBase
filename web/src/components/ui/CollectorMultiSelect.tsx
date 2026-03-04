@@ -68,17 +68,11 @@ export function CollectorMultiSelect({
         ref={buttonRef}
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 rounded-[var(--sb-radius)] border px-2.5 py-1.5 text-[11px] font-medium transition"
+        className="flex items-center gap-2 rounded-[var(--sb-radius)] border px-2.5 py-1.5 text-[11px] font-medium transition hover:bg-[var(--sb-card)]"
         style={{
           backgroundColor: "var(--sb-surface)",
           borderColor: "var(--sb-border-2)",
           color: "var(--sb-text)",
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.backgroundColor = isOpen ? "var(--sb-surface)" : "var(--sb-card)";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.backgroundColor = "var(--sb-surface)";
         }}
       >
         <svg
@@ -129,17 +123,9 @@ export function CollectorMultiSelect({
           <button
             type="button"
             onClick={selectAll}
-            className="flex w-full items-center gap-2 rounded-[calc(var(--sb-radius)-8px)] px-2 py-1.5 text-left text-xs transition"
+            className="flex w-full items-center gap-2 rounded-[calc(var(--sb-radius)-8px)] px-2 py-1.5 text-left text-xs transition hover:bg-[var(--sb-surface)]"
             style={{ 
               color: "var(--sb-text)",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = accentBg;
-              e.currentTarget.style.color = accentText;
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = "transparent";
-              e.currentTarget.style.color = "var(--sb-text)";
             }}
           >
             Select All
@@ -156,20 +142,12 @@ export function CollectorMultiSelect({
                 key={collector}
                 type="button"
                 onClick={() => toggleCollector(collector)}
-                className="flex w-full items-center gap-2 rounded-[calc(var(--sb-radius)-8px)] px-2 py-1.5 text-left text-xs transition"
+                className={`flex w-full items-center gap-2 rounded-[calc(var(--sb-radius)-8px)] px-2 py-1.5 text-left text-xs transition ${
+                  !isSelected ? "hover:bg-[var(--sb-surface)]" : ""
+                }`}
                 style={{ 
                   color: isSelected ? accentText : "var(--sb-text)",
                   backgroundColor: isSelected ? accentBg : "transparent",
-                }}
-                onMouseEnter={(e) => {
-                  if (!isSelected) {
-                    e.currentTarget.style.backgroundColor = "var(--sb-surface)";
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!isSelected) {
-                    e.currentTarget.style.backgroundColor = "transparent";
-                  }
                 }}
               >
                 <span

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 import React from "react";
 
@@ -56,7 +57,7 @@ function SideRailContent({
         const isHealth = it.href === "/health";
 
         return (
-          <a
+          <Link
             key={it.href}
             href={it.href}
             className={[
@@ -110,13 +111,13 @@ function SideRailContent({
                 </kbd>
               )}
             </span>
-          </a>
+          </Link>
         );
       })}
 
       <div className="my-2 h-px w-full" style={{ background: "var(--sb-border)" }} />
 
-      <a
+      <Link
         href="/settings"
         className="group relative grid h-9 w-9 place-items-center rounded-full transition hover:opacity-90"
         style={{
@@ -148,7 +149,7 @@ function SideRailContent({
             g s
           </kbd>
         </span>
-      </a>
+      </Link>
     </div>
   );
 }

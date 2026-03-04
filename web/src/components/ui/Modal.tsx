@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode, useEffect } from "react";
+import { ReactNode, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
 export function Modal({
@@ -20,19 +20,70 @@ export function Modal({
   maxWidthClassName?: string;
   showCloseButton?: boolean;
 }) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const previousActiveElement = useRef<HTMLElement | null>(null);
+
+  // Focus trap and keyboard handling
   useEffect(() => {
     if (!open) return;
 
+    // Save the element that had focus before the modal opened
+    previousActiveElement.current = document.activeElement as HTMLElement;
+
+    const focusableSelector =
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+
+    function getFocusableElements(): HTMLElement[] {
+      if (!dialogRef.current) return [];
+      return Array.from(dialogRef.current.querySelectorAll(focusableSelector));
+    }
+
+    // Move focus into the modal
+    setTimeout(() => {
+      const focusables = getFocusableElements();
+      if (focusables.length > 0) {
+        focusables[0].focus();
+      }
+    }, 0);
+
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        onClose();
+        return;
+      }
+
+      if (e.key !== "Tab") return;
+
+      const focusables = getFocusableElements();
+      if (focusables.length === 0) return;
+
+      const currentIndex = focusables.indexOf(document.activeElement as HTMLElement);
+      let nextIndex: number;
+
+      if (e.shiftKey) {
+        nextIndex = currentIndex <= 0 ? focusables.length - 1 : currentIndex - 1;
+      } else {
+        nextIndex = currentIndex < 0 || currentIndex >= focusables.length - 1 ? 0 : currentIndex + 1;
+      }
+
+      e.preventDefault();
+      focusables[nextIndex].focus();
     }
 
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [open, onClose]);
 
+  // Restore focus and handle overflow
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      // Restore focus to the element that opened the modal
+      if (previousActiveElement.current) {
+        previousActiveElement.current.focus();
+      }
+      return;
+    }
+
     const prev = document.documentElement.style.overflow;
     document.documentElement.style.overflow = "hidden";
     return () => {
@@ -50,6 +101,7 @@ export function Modal({
       aria-modal="true"
       aria-label={typeof title === "string" ? title : "Modal"}
       onMouseDown={() => onClose()}
+      ref={dialogRef}
     >
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
 

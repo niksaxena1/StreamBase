@@ -85,6 +85,7 @@ function HomeDashboardInner(props: {
   overrideAnnotations?: ManualOverrideAnnotation[];
   artistWeekendDips: ArtistWeekendDipRow[];
   trackWeekendDips: TrackWeekendDipRow[];
+  negativeDailyStreams: NegativeDailyStreamsRow[];
 }) {
   const { metric } = useMetric();
   useCurrencyDisplay();

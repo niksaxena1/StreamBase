@@ -24,7 +24,7 @@ import {
 import { CollectorMultiSelect } from "@/components/ui/CollectorMultiSelect";
 import { granularityLabel, type Granularity } from "@/components/ui/GranularitySelect";
 import { aggregateCumulativeSeries, aggregateDailySeries } from "@/lib/granularity";
-import { TrackSortSelect, type TrackSort } from "@/components/ui/TrackSortSelect";
+import { MenuSelect, type MenuSelectOption } from "@/components/ui/MenuSelect";
 import { Chip, ChipGroup } from "@/components/ui/Chip";
 import { Input } from "@/components/ui/Input";
 import { IconButton } from "@/components/ui/Button";
@@ -57,6 +57,32 @@ import {
   type DrillTrackItem,
   type DateBreakdownCollector,
 } from "./collectorsTypes";
+
+// Track sort types and options
+export type TrackSort =
+  | "delta_desc"
+  | "delta_asc"
+  | "total_desc"
+  | "total_asc"
+  | "release_desc"
+  | "release_asc"
+  | "name_asc"
+  | "name_desc"
+  | "distro_desc"
+  | "distro_asc";
+
+const SORTS: MenuSelectOption[] = [
+  { value: "delta_desc", label: "Daily ↓" },
+  { value: "delta_asc", label: "Daily ↑" },
+  { value: "total_desc", label: "Total ↓" },
+  { value: "total_asc", label: "Total ↑" },
+  { value: "release_desc", label: "Release ↓" },
+  { value: "release_asc", label: "Release ↑" },
+  { value: "name_asc", label: "Name ↑" },
+  { value: "name_desc", label: "Name ↓" },
+  { value: "distro_desc", label: "Distro ↓" },
+  { value: "distro_asc", label: "Distro ↑" },
+];
 
 export type {
   CollectorSummaryRow,
@@ -1525,7 +1551,7 @@ export function CollectorsClient(props: {
               )}
             </div>
 
-            <TrackSortSelect value={trackSort} onChange={setTrackSort} />
+            <MenuSelect value={trackSort} options={SORTS} onChange={(v) => setTrackSort(v as TrackSort)} align="right" ariaLabel="Sort tracks" />
 
             <div className="text-xs whitespace-nowrap" style={{ color: "var(--sb-muted)" }}>
               {formatInt(filteredSortedTracks.length)} / {formatInt(props.collectorTracks.length)}

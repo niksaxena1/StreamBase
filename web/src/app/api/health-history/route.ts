@@ -44,7 +44,8 @@ export async function GET() {
 
   // Try the materialized view first; fall back to the raw table on any error
   // (e.g. if the migration hasn't been run yet).
-  let rows: Array<{ run_date: string; code: string; severity: string; warning_count?: number }> | null = null;
+  type HistoryRow = { run_date: string; code: string; severity: string; warning_count?: number };
+  let rows: HistoryRow[] | null = null;
   let usedMv = false;
 
   try {
@@ -55,7 +56,7 @@ export async function GET() {
       .order("run_date", { ascending: true });
 
     if (!mvError && mvRows) {
-      rows = mvRows as typeof rows;
+      rows = mvRows as unknown as HistoryRow[];
       usedMv = true;
     }
   } catch {
@@ -73,7 +74,7 @@ export async function GET() {
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
-    rows = (rawRows ?? []) as typeof rows;
+    rows = (rawRows ?? []) as HistoryRow[];
   }
 
   // Build date → code → count map

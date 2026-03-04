@@ -195,7 +195,7 @@ export default async function Home({
   if (!session) redirect("/login");
 
   const { data: isAdmin } = await sb.rpc("is_admin");
-  if (!isAdmin) redirect("/");
+  if (!isAdmin) redirect("/login");
 
   // IMPORTANT: playlist_daily_stats is protected by admin-only RLS. Use service client
   // for cached reads so cache revalidation can't fail due to missing cookies.
