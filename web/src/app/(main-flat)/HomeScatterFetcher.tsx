@@ -85,10 +85,13 @@ export async function HomeScatterFetcher({
           data: (rows.map((r) => ({
             isrc: String(r?.isrc ?? "").trim(),
             name: String(r?.name ?? "").trim() || null,
-            streams_today: Number(r?.streams_today ?? 0) || 0,
-            streams_yesterday: Number(r?.streams_yesterday ?? 0) || 0,
-            streams_delta: Number(r?.streams_delta ?? 0) || 0,
-          })) as TrackStreamsXYPoint[]),
+            artist_names: null,
+            artist_ids: null,
+            album_image_url: null,
+            total_streams_cumulative: 0,
+            daily_streams_delta: Number(r?.streams_delta ?? 0) || 0,
+            has_prev_day: true,
+          })) as unknown as TrackStreamsXYPoint[]),
           error: null,
         };
       },
