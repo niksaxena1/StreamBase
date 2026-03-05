@@ -4,7 +4,8 @@ import { revalidatePath, revalidateTag } from "next/cache";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { PageHeader } from "@/components/shell/PageHeader";
-import { SAISettingsToggle } from "./SAISettingsToggle";
+import { PurgeCacheButton } from "./PurgeCacheButton";
+ import { SAISettingsToggle } from "./SAISettingsToggle";
 import { HomeFiltersToggle } from "./HomeFiltersToggle";
 import { PayoutRateSetting } from "./PayoutRateSetting";
 import { WeekHighlightDaySetting } from "./WeekHighlightDaySetting";
@@ -559,6 +560,23 @@ export default async function SettingsPage() {
     revalidatePath("/catalog");
   }
 
+  async function purgeSupabaseCaches() {
+    "use server";
+
+    await requireAdmin();
+
+    // `cachedQuery` uses unstable_cache tags: ["supabase", `supabase-${key}`].
+    // Purge the shared tag to invalidate all cached Supabase reads immediately.
+    revalidateTag("supabase", "max");
+
+    revalidatePath("/settings");
+    revalidatePath("/health");
+    revalidatePath("/");
+    revalidatePath("/playlists");
+    revalidatePath("/collectors");
+    revalidatePath("/catalog");
+  }
+
   const totalExclusions = exclusions.length + enrichmentExclusions.length + staleExclusions.length;
 
   const exclusionTabs: ExclusionTabConfig[] = [
@@ -631,6 +649,7 @@ export default async function SettingsPage() {
     { id: "revenue", label: "Revenue" },
     { id: "charts", label: "Charts" },
     { id: "health", label: "Health" },
+    { id: "cache", label: "Cache" },
     { id: "exclusions", label: `Exclusions (${totalExclusions})` },
     { id: "overrides", label: `Overrides (${streamOverrides.length})` },
   ];
@@ -709,6 +728,21 @@ export default async function SettingsPage() {
           <SectionHeader title="Health" subtitle="Configure data-quality detection thresholds used during daily ingestion." />
           <StaleTrackThresholdSetting />
           <RapidApiAutoFixSetting />
+        </div>
+
+        <div
+          id="cache"
+          className="scroll-mt-14 space-y-2 rounded-xl border p-4"
+          style={{ borderColor: "var(--sb-border)" }}
+        >
+          <SectionHeader title="Cache" subtitle="Force-refresh server-side cached query results." />
+          <div className="text-xs space-y-2" style={{ color: "var(--sb-muted)" }}>
+            <div>
+              If artwork or tables look stale after enrichment or ingestion, use this to purge the Vercel Data Cache.
+              All server-side query results are invalidated immediately and will be re-fetched from the database on the next page load.
+            </div>
+            <PurgeCacheButton purgeAction={purgeSupabaseCaches} />
+          </div>
         </div>
       </div>
 
