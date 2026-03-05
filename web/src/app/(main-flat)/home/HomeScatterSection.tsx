@@ -12,6 +12,8 @@ import { TrackStreamsXYChart, type TrackStreamsXYPoint } from "@/components/char
 import { ArtistStreamsXYChart, aggregateTracksToArtists } from "@/components/charts/ArtistStreamsXYChart";
 import { foldForSearch } from "@/lib/searchFold";
 import { readStoredBool, writeStoredBool } from "@/lib/storage";
+import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
+import { todayIsoDate } from "@/lib/csv";
 import { HOME_DETAILS_STORAGE } from "./homeUtils";
 
 export function HomeScatterSection(props: {
@@ -250,6 +252,28 @@ export function HomeScatterSection(props: {
               >
                 {scatterLogScale ? "Log" : "Linear"}
               </button>
+              <ChartCsvDownloadButton
+                filename={`home-scatter-${scatterView}-${todayIsoDate()}.csv`}
+                rows={
+                  scatterView === "tracks"
+                    ? (props.trackScatterPoints ?? []).map((p) => ({
+                        name: p.name,
+                        isrc: p.isrc,
+                        artists: (p.artist_names ?? []).join(", "),
+                        release_date: p.release_date,
+                        total_streams_cumulative: p.total_streams_cumulative,
+                        daily_streams_delta: p.daily_streams_delta,
+                      }))
+                    : artistScatterPoints.map((p) => ({
+                        artist_name: p.artist_name,
+                        artist_id: p.artist_id,
+                        track_count: p.track_count,
+                        total_streams_cumulative: p.total_streams_cumulative,
+                        daily_streams_delta: p.daily_streams_delta,
+                      }))
+                }
+                title="Download scatter data CSV"
+              />
             </div>
           ) : null}
         </div>

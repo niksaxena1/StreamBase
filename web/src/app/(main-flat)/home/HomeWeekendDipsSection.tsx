@@ -10,6 +10,8 @@ import { formatInt, formatUsd } from "@/lib/format";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import type { ArtistWeekendDipRow, TrackWeekendDipRow } from "./homeTypes";
 import { readStoredBool, readStoredNumber, writeStoredBool, writeStoredNumber } from "@/lib/storage";
+import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
+import { todayIsoDate } from "@/lib/csv";
 
 const STORAGE_KEY_OPEN = "sb:home-weekend-dips-open";
 const STORAGE_KEY_MIN_AVG = "sb:home-weekend-dips-min-avg";
@@ -159,7 +161,11 @@ export function HomeWeekendDipsSection(props: {
           </div>
 
           {open ? (
-            <div className="flex items-center gap-2 flex-shrink-0">
+            <div
+              className="flex items-center gap-2 flex-shrink-0"
+              onMouseDown={(ev) => { ev.preventDefault(); ev.stopPropagation(); }}
+              onClick={(ev) => { ev.preventDefault(); ev.stopPropagation(); }}
+            >
               <div className="sb-ring flex items-center gap-0.5 rounded-full bg-white/60 p-0.5 dark:bg-white/10">
                 <button type="button" onClick={() => setViewMode("artists")} className={headerPill(viewMode === "artists")}>
                   ARTISTS
@@ -186,6 +192,11 @@ export function HomeWeekendDipsSection(props: {
                 style={{ color: "var(--sb-text)" }}
                 title="Minimum weekday average (Mon–Fri) streams required to include an artist. Helps filter small/noisy artists."
                 aria-label="Minimum weekday average streams filter"
+              />
+              <ChartCsvDownloadButton
+                filename={`home-weekend-dips-${viewMode}-${todayIsoDate()}.csv`}
+                rows={(filtered as Array<Record<string, unknown>>)}
+                title="Download weekend dips CSV"
               />
             </div>
           ) : null}

@@ -8,6 +8,8 @@ import { formatInt, formatUsd } from "@/lib/format";
 import { readStoredBool, writeStoredBool } from "@/lib/storage";
 import { useMetric } from "@/components/metrics/MetricContext";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
+import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
+import { todayIsoDate } from "@/lib/csv";
 import type { NegativeDailyStreamsRow } from "./homeTypes";
 
 const STORAGE_KEY_OPEN = "sb:home-negative-daily-open";
@@ -86,24 +88,46 @@ export function HomeNegativeStreamsSection(props: {
       style={{ borderColor: "var(--sb-border)" }}
     >
       <summary className="cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
-        <div className="flex items-start gap-2 min-w-0">
-          <span
-            className="mt-0.5 flex-shrink-0 text-xs opacity-60 transition-transform duration-150"
-            style={{ display: "inline-block", transform: open ? "rotate(90deg)" : "rotate(0deg)" }}
-          >
-            ▸
-          </span>
-          <div className="min-w-0">
-            <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
-              TRACKS: NEGATIVE STREAMS
-            </div>
-            {open ? (
-              <div className="mt-0.5 text-[10px] opacity-40">
-                All dates where daily streams dropped vs previous day
-                {count > 0 ? ` · ${count} occurrence${count !== 1 ? "s" : ""}` : ""}
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-2 min-w-0">
+            <span
+              className="mt-0.5 flex-shrink-0 text-xs opacity-60 transition-transform duration-150"
+              style={{ display: "inline-block", transform: open ? "rotate(90deg)" : "rotate(0deg)" }}
+            >
+              ▸
+            </span>
+            <div className="min-w-0">
+              <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
+                TRACKS: NEGATIVE STREAMS
               </div>
-            ) : null}
+              {open ? (
+                <div className="mt-0.5 text-[10px] opacity-40">
+                  All dates where daily streams dropped vs previous day
+                  {count > 0 ? ` · ${count} occurrence${count !== 1 ? "s" : ""}` : ""}
+                </div>
+              ) : null}
+            </div>
           </div>
+          {open ? (
+            <div
+              className="flex-shrink-0"
+              onMouseDown={(ev) => { ev.preventDefault(); ev.stopPropagation(); }}
+              onClick={(ev) => { ev.preventDefault(); ev.stopPropagation(); }}
+            >
+              <ChartCsvDownloadButton
+                filename={`home-negative-streams-${todayIsoDate()}.csv`}
+                rows={sorted.map((r) => ({
+                  name: r.name,
+                  isrc: r.isrc,
+                  artists: (r.artist_names ?? []).join(", "),
+                  date: r.date,
+                  daily_streams_delta: r.daily_streams_delta,
+                  total_streams_cumulative: r.total_streams_cumulative,
+                }))}
+                title="Download negative streams CSV"
+              />
+            </div>
+          ) : null}
         </div>
       </summary>
 

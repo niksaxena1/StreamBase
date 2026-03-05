@@ -8,6 +8,8 @@ import { GlassTable, TableRow, TableCell, EmptyState } from "@/components/ui/Gla
 import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
 import { dataDateFromRunDate } from "@/lib/sotDates";
 import { readStoredBool, writeStoredBool } from "@/lib/storage";
+import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
+import { todayIsoDate } from "@/lib/csv";
 import { HOME_DETAILS_STORAGE } from "./homeUtils";
 import type { PlaylistDailyStatsRow } from "./homeTypes";
 
@@ -45,6 +47,24 @@ export function HomeHistorySection(props: {
               Recent History
             </div>
           </div>
+          {openHistory ? (
+            <div
+              className="flex-shrink-0"
+              onMouseDown={(ev) => { ev.preventDefault(); ev.stopPropagation(); }}
+              onClick={(ev) => { ev.preventDefault(); ev.stopPropagation(); }}
+            >
+              <ChartCsvDownloadButton
+                filename={`home-history-${todayIsoDate()}.csv`}
+                rows={(props.history ?? []).map((r) => ({
+                  date: r.date,
+                  track_count: r.track_count,
+                  total_streams_cumulative: r.total_streams_cumulative,
+                  daily_streams_net: r.daily_streams_net,
+                }))}
+                title="Download history CSV"
+              />
+            </div>
+          ) : null}
         </div>
       </summary>
 
