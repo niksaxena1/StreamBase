@@ -264,22 +264,25 @@ export function CatalogPageClient(props: {
     onPointerCancel: releaseLpCancel,
   } = useLongPress({ onLongPress: toggleIsrcRelease });
 
-  function downloadTopTracksAsCsv(data: TopTrack[], filename: string, isDaily: boolean) {
+  function downloadTopTracksAsCsv(data: TopTrack[], filename: string, isDaily: boolean, pctByIsrc: Map<string, number>) {
+    const isRevMode = topTracksMode === "revenue";
+    const valueLabel = isRevMode
+      ? (isDaily ? "daily_revenue_usd" : "total_revenue_usd")
+      : (isDaily ? "daily_streams" : "total_streams");
     downloadCsv({
       filename,
-      rows: data.map((t) => ({
-        track: t.name ?? t.isrc,
-        isrc: t.isrc,
-        value:
-          topTracksMode === "revenue"
-            ? (isDaily ? t.daily : t.total) == null
-              ? null
-              : (Number(isDaily ? t.daily : t.total) * streamPayoutPerStreamUsd)
-            : isDaily
-            ? t.daily
-            : t.total,
-      })) as Array<Record<string, unknown>>,
-      headers: ["track", "isrc", "value"],
+      rows: data.map((t) => {
+        const raw = isDaily ? t.daily : t.total;
+        return {
+          track: t.name ?? t.isrc,
+          isrc: t.isrc,
+          artists: (t.artistNames ?? []).join(", "),
+          release_date: t.releaseDate ?? "",
+          [valueLabel]: raw == null ? null : isRevMode ? Number(raw) * streamPayoutPerStreamUsd : raw,
+          share_pct: pctByIsrc.get(t.isrc)?.toFixed(2) ?? "",
+        };
+      }) as Array<Record<string, unknown>>,
+      headers: ["track", "isrc", "artists", "release_date", valueLabel, "share_pct"],
       sortForExport: false,
     });
   }
@@ -454,7 +457,8 @@ export function CatalogPageClient(props: {
                     onClick={() => downloadTopTracksAsCsv(
                       topByCumulativeSorted,
                       `tracks-total-${slugifyForFilename(props.artistName)}-${todayIsoDate()}.csv`,
-                      false
+                      false,
+                      concentrationTotal.pctByIsrc
                     )}
                     className="inline-flex items-center justify-center p-0 transition-colors hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
                     title="Download as CSV"
@@ -603,7 +607,8 @@ export function CatalogPageClient(props: {
                     onClick={() => downloadTopTracksAsCsv(
                       topByDailySorted,
                       `tracks-daily-${slugifyForFilename(props.artistName)}-${todayIsoDate()}.csv`,
-                      true
+                      true,
+                      concentrationDaily.pctByIsrc
                     )}
                     className="inline-flex items-center justify-center p-0 transition-colors hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
                     title="Download as CSV"

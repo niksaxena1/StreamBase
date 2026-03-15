@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -28,12 +28,24 @@ import type { TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChar
 import { COLLECTOR_ORDER } from "@/app/(main-flat)/collectors/collectorsTypes";
 import { COLLECTOR_COLORS } from "@/components/charts/CollectorComparisonChart";
 import { supabaseBrowser } from "@/lib/supabase/client";
+import { ConcentrationFilterPicker, type PlaylistOption } from "./ConcentrationFilterPicker";
 
 const STORAGE_KEY_OPEN = "sb:home-concentration-open";
 const STORAGE_KEY_MODE = "sb:home-concentration-mode";
 const STORAGE_KEY_THRESHOLD = "sb:home-concentration-threshold";
 
 type ViewMode = "total" | "daily";
+type FilterMode = "all" | "artist" | "collector" | "playlist";
+
+const HEADER_PILL_ACTIVE = "bg-black text-white dark:bg-white dark:text-black";
+const HEADER_PILL_IDLE = "text-black/70 hover:bg-white/70 dark:text-white/70 dark:hover:bg-white/20";
+
+function headerPill(active: boolean): string {
+  return [
+    "rounded-full px-2.5 py-1.5 text-[11px] font-medium transition",
+    active ? HEADER_PILL_ACTIVE : HEADER_PILL_IDLE,
+  ].join(" ");
+}
 
 function deriveArtists(points: TrackStreamsXYPoint[]) {
   const byId = new Map<string, { name: string; imageUrl: string | null }>();
@@ -50,225 +62,6 @@ function deriveArtists(points: TrackStreamsXYPoint[]) {
   return Array.from(byId.entries())
     .map(([id, { name, imageUrl }]) => ({ id, name, imageUrl }))
     .sort((a, b) => a.name.localeCompare(b.name));
-}
-
-type FilterMode = "all" | "artist" | "collector";
-
-const PICKER_PANEL_STYLE = {
-  backgroundColor: "var(--sb-card)",
-  borderColor: "var(--sb-border-2)",
-  backdropFilter: "blur(var(--sb-blur))",
-  WebkitBackdropFilter: "blur(var(--sb-blur))",
-} as const;
-
-const PICKER_ITEM_CLS = "flex items-center gap-2 w-full text-left px-2 py-1.5 text-xs rounded transition-colors";
-const PICKER_ITEM_ACTIVE = "bg-black/5 dark:bg-white/10 font-semibold";
-const PICKER_ITEM_IDLE = "hover:bg-black/5 dark:hover:bg-white/10";
-
-function CatalogFilterPicker({
-  artists,
-  filterMode,
-  artistId,
-  onSelectAll,
-  onSelectArtist,
-  onSelectCollectorMode,
-}: {
-  artists: { id: string; name: string; imageUrl: string | null }[];
-  filterMode: FilterMode;
-  artistId: string | null;
-  onSelectAll: () => void;
-  onSelectArtist: (id: string) => void;
-  onSelectCollectorMode: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [search, setSearch] = useState("");
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function onDown(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
-
-  const selectedArtist = artistId ? artists.find((a) => a.id === artistId) ?? null : null;
-  const filtered = search.trim()
-    ? artists.filter((a) => a.name.toLowerCase().includes(search.trim().toLowerCase()))
-    : artists;
-
-  const buttonLabel = filterMode === "artist" && selectedArtist
-    ? selectedArtist.name
-    : filterMode === "collector"
-      ? "By collector"
-      : "All Catalog";
-
-  const buttonImage = filterMode === "artist" && selectedArtist?.imageUrl
-    ? selectedArtist.imageUrl
-    : null;
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className={[
-          "flex items-center gap-1.5 text-xs px-2 py-1.5 rounded",
-          "bg-white/20 dark:bg-white/10",
-          "border border-white/10",
-          "outline-none focus:outline-none",
-          "max-w-[180px] min-w-[120px]",
-          "transition-colors hover:bg-white/30 dark:hover:bg-white/15",
-        ].join(" ")}
-        style={{ color: "var(--sb-text)" }}
-      >
-        {buttonImage ? (
-          <Image src={buttonImage} alt={buttonLabel} width={16} height={16} className="h-4 w-4 rounded-sm object-cover flex-shrink-0" />
-        ) : (
-          <div className="h-4 w-4 rounded-sm bg-white/30 dark:bg-white/20 flex-shrink-0" />
-        )}
-        <span className="truncate flex-1 text-left">{buttonLabel}</span>
-        <span className="opacity-40 flex-shrink-0">▾</span>
-      </button>
-
-      {open && (
-        <div
-          className="absolute right-0 top-full mt-1.5 z-50 w-56 rounded-[var(--sb-radius)] border p-1 shadow-lg overflow-hidden"
-          style={PICKER_PANEL_STYLE}
-        >
-          <div className="px-1 pb-1">
-            <input
-              autoFocus
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search artists…"
-              className={[
-                "w-full text-xs px-2 py-1.5 rounded",
-                "bg-black/5 dark:bg-white/10",
-                "outline-none focus:outline-none",
-              ].join(" ")}
-              style={{ color: "var(--sb-text)" }}
-            />
-          </div>
-          <div className="max-h-56 overflow-y-auto">
-            {/* All Catalog */}
-            <button
-              type="button"
-              onClick={() => { onSelectAll(); setOpen(false); setSearch(""); }}
-              className={[PICKER_ITEM_CLS, filterMode === "all" ? PICKER_ITEM_ACTIVE : PICKER_ITEM_IDLE].join(" ")}
-              style={{ color: "var(--sb-text)" }}
-            >
-              <div className="h-6 w-6 rounded-sm flex-shrink-0 flex items-center justify-center text-[9px]" style={{ backgroundColor: "var(--sb-surface)", color: "var(--sb-muted)" }}>★</div>
-              All Catalog
-            </button>
-
-            {/* Choose collector */}
-            <button
-              type="button"
-              onClick={() => { onSelectCollectorMode(); setOpen(false); setSearch(""); }}
-              className={[PICKER_ITEM_CLS, filterMode === "collector" ? PICKER_ITEM_ACTIVE : PICKER_ITEM_IDLE].join(" ")}
-              style={{ color: "var(--sb-text)" }}
-            >
-              <div className="h-6 w-6 rounded-sm flex-shrink-0 flex items-center justify-center text-[9px]" style={{ backgroundColor: "var(--sb-surface)", color: "var(--sb-muted)" }}>◆</div>
-              Choose collector
-            </button>
-
-            {/* Divider */}
-            <div className="my-1 border-t" style={{ borderColor: "var(--sb-border)" }} />
-
-            {/* Artist list */}
-            {filtered.map((a) => (
-              <button
-                key={a.id}
-                type="button"
-                onClick={() => { onSelectArtist(a.id); setOpen(false); setSearch(""); }}
-                className={[PICKER_ITEM_CLS, filterMode === "artist" && artistId === a.id ? PICKER_ITEM_ACTIVE : PICKER_ITEM_IDLE].join(" ")}
-                style={{ color: "var(--sb-text)" }}
-              >
-                {a.imageUrl ? (
-                  <Image src={a.imageUrl} alt={a.name} width={24} height={24} className="h-6 w-6 rounded-sm object-cover flex-shrink-0" />
-                ) : (
-                  <div className="h-6 w-6 rounded-sm flex-shrink-0" style={{ backgroundColor: "var(--sb-surface)" }} />
-                )}
-                <span className="truncate">{a.name}</span>
-              </button>
-            ))}
-            {filtered.length === 0 && (
-              <div className="px-2 py-1.5 text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>No artists found</div>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function CollectorPicker({
-  value,
-  onChange,
-}: {
-  value: string | null;
-  onChange: (collector: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function onDown(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className={[
-          "flex items-center gap-1.5 text-xs px-2 py-1.5 rounded",
-          "bg-white/20 dark:bg-white/10",
-          "border border-white/10",
-          "outline-none focus:outline-none",
-          "min-w-[72px]",
-          "transition-colors hover:bg-white/30 dark:hover:bg-white/15",
-        ].join(" ")}
-        style={{ color: "var(--sb-text)" }}
-      >
-        {value ? (
-          <span className="h-3 w-3 rounded-full flex-shrink-0" style={{ backgroundColor: COLLECTOR_COLORS[value] ?? "var(--sb-muted)" }} />
-        ) : (
-          <span className="h-3 w-3 rounded-full flex-shrink-0 bg-white/30 dark:bg-white/20" />
-        )}
-        <span className="flex-1 text-left">{value ?? "Select…"}</span>
-        <span className="opacity-40 flex-shrink-0">▾</span>
-      </button>
-
-      {open && (
-        <div
-          className="absolute right-0 top-full mt-1.5 z-50 w-36 rounded-[var(--sb-radius)] border p-1 shadow-lg overflow-hidden"
-          style={PICKER_PANEL_STYLE}
-        >
-          {COLLECTOR_ORDER.map((c) => (
-            <button
-              key={c}
-              type="button"
-              onClick={() => { onChange(c); setOpen(false); }}
-              className={[PICKER_ITEM_CLS, value === c ? PICKER_ITEM_ACTIVE : PICKER_ITEM_IDLE].join(" ")}
-              style={{ color: "var(--sb-text)" }}
-            >
-              <span className="h-4 w-4 rounded-full flex-shrink-0" style={{ backgroundColor: COLLECTOR_COLORS[c] ?? "var(--sb-muted)" }} />
-              <span className="font-medium">{c}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
 }
 
 // Build the Lorenz curve data: for each track (sorted by value desc),
@@ -309,6 +102,10 @@ export function HomeConcentrationSection(props: {
   const [collectorId, setCollectorId] = useState<string | null>(null);
   const [collectorIsrcs, setCollectorIsrcs] = useState<Set<string> | null>(null);
   const [collectorLoading, setCollectorLoading] = useState(false);
+  const [playlistKey, setPlaylistKey] = useState<string | null>(null);
+  const [playlists, setPlaylists] = useState<PlaylistOption[]>([]);
+  const [playlistIsrcs, setPlaylistIsrcs] = useState<Set<string> | null>(null);
+  const [playlistLoading, setPlaylistLoading] = useState(false);
   const [showCurveModal, setShowCurveModal] = useState(false);
 
   useEffect(() => {
@@ -323,6 +120,44 @@ export function HomeConcentrationSection(props: {
     try { localStorage.setItem(STORAGE_KEY_MODE, viewMode); } catch { /* ignore */ }
   }, [viewMode]);
   useEffect(() => { writeStoredNumber(STORAGE_KEY_THRESHOLD, threshold); }, [threshold]);
+
+  // Fetch playlist list once on mount
+  useEffect(() => {
+    fetch("/api/playlists/options")
+      .then((r) => r.json())
+      .then((body: { playlists?: PlaylistOption[] }) => {
+        if (body.playlists) setPlaylists(body.playlists);
+      })
+      .catch(() => { /* ignore */ });
+  }, []);
+
+  // Fetch ISRCs for selected playlist
+  useEffect(() => {
+    if (filterMode !== "playlist" || !playlistKey || !props.latestRunDate) {
+      setPlaylistIsrcs(null);
+      return;
+    }
+    let cancelled = false;
+    setPlaylistLoading(true);
+
+    fetch("/api/playlists/memberships", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ date: props.latestRunDate, playlist_keys: [playlistKey] }),
+    })
+      .then((r) => r.json())
+      .then((body: { rows?: Array<{ isrc: string }> }) => {
+        if (cancelled) return;
+        const isrcs = new Set<string>((body.rows ?? []).map((r) => r.isrc).filter(Boolean));
+        setPlaylistIsrcs(isrcs);
+        setPlaylistLoading(false);
+      })
+      .catch(() => {
+        if (!cancelled) setPlaylistLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [filterMode, playlistKey, props.latestRunDate]);
 
   // Fetch ISRCs for selected collector
   useEffect(() => {
@@ -380,27 +215,36 @@ export function HomeConcentrationSection(props: {
     if (filterMode === "collector" && collectorIsrcs) {
       return props.trackScatterPoints.filter((p) => collectorIsrcs.has(p.isrc));
     }
+    if (filterMode === "playlist" && playlistIsrcs) {
+      return props.trackScatterPoints.filter((p) => playlistIsrcs.has(p.isrc));
+    }
     return props.trackScatterPoints;
-  }, [props.trackScatterPoints, filterMode, artistId, collectorIsrcs]);
+  }, [props.trackScatterPoints, filterMode, artistId, collectorIsrcs, playlistIsrcs]);
 
-  const getValue = (p: TrackStreamsXYPoint) =>
-    viewMode === "daily" ? p.daily_streams_delta : p.total_streams_cumulative;
+  const getValue = useCallback(
+    (p: TrackStreamsXYPoint) =>
+      viewMode === "daily" ? p.daily_streams_delta : p.total_streams_cumulative,
+    [viewMode]
+  );
 
-  const { sorted, grandTotal, thresholdIdx } = useMemo(() => {
+  const { sorted, grandTotal, thresholdIdx, cumPcts } = useMemo(() => {
     const s = [...filteredPoints].sort((a, b) => getValue(b) - getValue(a));
     const total = s.reduce((sum, p) => sum + Math.max(0, getValue(p)), 0);
 
+    // Precompute prefix-sum cumulative percentages once (O(n))
+    const cumPctsArr: number[] = new Array(s.length);
     let cum = 0;
     let tIdx = -1;
     for (let i = 0; i < s.length; i++) {
       cum += Math.max(0, getValue(s[i]));
-      if (tIdx === -1 && total > 0 && (cum / total) * 100 >= threshold) {
+      cumPctsArr[i] = total > 0 ? (cum / total) * 100 : 0;
+      if (tIdx === -1 && total > 0 && cumPctsArr[i] >= threshold) {
         tIdx = i;
       }
     }
 
-    return { sorted: s, grandTotal: total, thresholdIdx: tIdx };
-  }, [filteredPoints, viewMode, threshold]); // eslint-disable-line react-hooks/exhaustive-deps
+    return { sorted: s, grandTotal: total, thresholdIdx: tIdx, cumPcts: cumPctsArr };
+  }, [filteredPoints, getValue, threshold]);
 
   const tracksAboveThreshold = thresholdIdx >= 0 ? thresholdIdx + 1 : sorted.length;
 
@@ -432,12 +276,15 @@ export function HomeConcentrationSection(props: {
     ].join(" ");
 
   const sectionTitle = "STREAM CONCENTRATION";
+  const selectedPlaylistName = playlistKey ? playlists.find((p) => p.playlist_key === playlistKey)?.display_name ?? playlistKey : null;
   const sectionSubtitle =
     filterMode === "artist" && artistId
       ? `${artists.find((a) => a.id === artistId)?.name ?? "Artist"}: ${viewMode === "daily" ? "daily" : "total"} streams ranked by share`
       : filterMode === "collector" && collectorId
         ? `Collector ${collectorId}: ${viewMode === "daily" ? "daily" : "total"} streams ranked by share${collectorLoading ? " (loading…)" : ""}`
-        : `All catalog tracks ranked by ${viewMode === "daily" ? "daily" : "total"} stream share`;
+        : filterMode === "playlist" && playlistKey
+          ? `${selectedPlaylistName}: ${viewMode === "daily" ? "daily" : "total"} streams ranked by share${playlistLoading ? " (loading…)" : ""}`
+          : `All catalog tracks ranked by ${viewMode === "daily" ? "daily" : "total"} stream share`;
 
   return (
     <>
@@ -481,20 +328,18 @@ export function HomeConcentrationSection(props: {
                   </button>
                 </div>
 
-                <CatalogFilterPicker
+                <ConcentrationFilterPicker
                   artists={artists}
+                  playlists={playlists}
                   filterMode={filterMode}
                   artistId={artistId}
-                  onSelectAll={() => { setFilterMode("all"); setArtistId(null); setCollectorId(null); }}
-                  onSelectArtist={(id) => { setFilterMode("artist"); setArtistId(id); setCollectorId(null); }}
-                  onSelectCollectorMode={() => { setFilterMode("collector"); setArtistId(null); }}
+                  collectorId={collectorId}
+                  playlistKey={playlistKey}
+                  onSelectAll={() => { setFilterMode("all"); setArtistId(null); setCollectorId(null); setPlaylistKey(null); }}
+                  onSelectArtist={(id) => { setFilterMode("artist"); setArtistId(id); setCollectorId(null); setPlaylistKey(null); }}
+                  onSelectCollector={(c) => { setFilterMode("collector"); setCollectorId(c); setArtistId(null); setPlaylistKey(null); }}
+                  onSelectPlaylist={(k) => { setFilterMode("playlist"); setPlaylistKey(k); setArtistId(null); setCollectorId(null); }}
                 />
-                {filterMode === "collector" && (
-                  <CollectorPicker
-                    value={collectorId}
-                    onChange={setCollectorId}
-                  />
-                )}
 
                 <ChartCsvDownloadButton
                   filename={`concentration-${viewMode}-${todayIsoDate()}.csv`}
@@ -569,18 +414,13 @@ export function HomeConcentrationSection(props: {
               sorted.map((p, i) => {
                 const val = Math.max(0, getValue(p));
                 const sharePct = grandTotal > 0 ? (val / grandTotal) * 100 : 0;
-                let cumPct = 0;
-                if (grandTotal > 0) {
-                  let cum = 0;
-                  for (let j = 0; j <= i; j++) cum += Math.max(0, getValue(sorted[j]));
-                  cumPct = (cum / grandTotal) * 100;
-                }
+                const cumPct = cumPcts[i] ?? 0;
                 const isThresholdRow = i === thresholdIdx;
                 const isAboveThreshold = thresholdIdx >= 0 && i <= thresholdIdx && tracksAboveThreshold < sorted.length;
 
                 return (
-                  <>{/* Fragment for row + optional divider */}
-                    <TableRow key={p.isrc} style={isAboveThreshold ? { backgroundColor: "color-mix(in srgb, var(--sb-positive) 6%, transparent)" } : undefined}>
+                  <React.Fragment key={p.isrc}>
+                    <TableRow style={isAboveThreshold ? { backgroundColor: "color-mix(in srgb, var(--sb-positive) 6%, transparent)" } : undefined}>
                       <TableCell>
                         {p.album_image_url ? (
                           <Image
@@ -627,7 +467,7 @@ export function HomeConcentrationSection(props: {
                       </TableCell>
                     </TableRow>
                     {isThresholdRow && tracksAboveThreshold < sorted.length && (
-                      <tr key={`divider-${p.isrc}`} aria-hidden>
+                      <tr aria-hidden>
                         <td colSpan={6} className="px-2 py-0">
                           <div className="flex items-center gap-2">
                             <div className="flex-1 border-t" style={{ borderColor: "var(--sb-positive)", opacity: 0.4 }} />
@@ -639,7 +479,7 @@ export function HomeConcentrationSection(props: {
                         </td>
                       </tr>
                     )}
-                  </>
+                  </React.Fragment>
                 );
               })
             )}
@@ -652,7 +492,7 @@ export function HomeConcentrationSection(props: {
         open={showCurveModal}
         onClose={() => setShowCurveModal(false)}
         title="Concentration curve"
-        subtitle={`${sorted.length} tracks${filterMode === "artist" && artistId ? ` · ${artists.find((a) => a.id === artistId)?.name ?? ""}` : filterMode === "collector" && collectorId ? ` · Collector ${collectorId}` : ""}`}
+        subtitle={`${sorted.length} tracks${filterMode === "artist" && artistId ? ` · ${artists.find((a) => a.id === artistId)?.name ?? ""}` : filterMode === "collector" && collectorId ? ` · Collector ${collectorId}` : filterMode === "playlist" && selectedPlaylistName ? ` · ${selectedPlaylistName}` : ""}`}
         headerCenter={
           <div className="sb-ring flex items-center gap-0.5 rounded-full bg-white/60 p-0.5 dark:bg-white/10">
             <button type="button" onClick={() => setViewMode("total")} className={headerPill(viewMode === "total")}>
