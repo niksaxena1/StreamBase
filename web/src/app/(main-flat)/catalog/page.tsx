@@ -443,9 +443,9 @@ export default async function CatalogPage({
             await svc.rpc("catalog_artist_top_tracks_total", {
               artist_id: artistId,
               run_date: latestRunDate,
-              limit_rows: 25,
+              limit_rows: Math.max(isrcs.length, 1000),
             }),
-          `catalog-artist-top-total-v2-${artistId}-${latestRunDate}-ov${overrideBuster}`,
+          `catalog-artist-top-total-v3-${artistId}-${latestRunDate}-ov${overrideBuster}`,
           CACHE_TTL_1H,
         )
       : Promise.resolve({ data: [] as CatalogTopTrackRow[], error: null }),
@@ -455,9 +455,9 @@ export default async function CatalogPage({
             await svc.rpc("catalog_artist_top_tracks_daily", {
               artist_id: artistId,
               run_date: latestRunDate,
-              limit_rows: 25,
+              limit_rows: Math.max(isrcs.length, 1000),
             }),
-          `catalog-artist-top-daily-v2-${artistId}-${latestRunDate}-ov${overrideBuster}`,
+          `catalog-artist-top-daily-v3-${artistId}-${latestRunDate}-ov${overrideBuster}`,
           CACHE_TTL_1H,
         )
       : Promise.resolve({ data: [] as CatalogTopTrackRow[], error: null }),

@@ -187,6 +187,43 @@ export function CatalogPageClient(props: {
     [props.topByDaily, topDailySort],
   );
 
+  // [PROTOTYPE] Concentration analysis — N tracks = 80% of streams
+  const concentrationTotal = useMemo(() => {
+    const sorted = [...props.topByCumulative].sort((a, b) => (b.total ?? 0) - (a.total ?? 0));
+    const grandTotal = sorted.reduce((s, t) => s + (t.total ?? 0), 0);
+    if (!grandTotal) return { grandTotal: 0, n80: 0, pctByIsrc: new Map<string, number>(), threshold80Isrc: null as string | null };
+    let cum = 0;
+    let n80 = 0;
+    let threshold80Isrc: string | null = null;
+    const pctByIsrc = new Map<string, number>();
+    for (const t of sorted) {
+      const pct = ((t.total ?? 0) / grandTotal) * 100;
+      pctByIsrc.set(t.isrc, pct);
+      cum += pct;
+      n80++;
+      if (cum >= 80 && !threshold80Isrc) threshold80Isrc = t.isrc;
+    }
+    return { grandTotal, n80, pctByIsrc, threshold80Isrc };
+  }, [props.topByCumulative]);
+
+  const concentrationDaily = useMemo(() => {
+    const sorted = [...props.topByDaily].sort((a, b) => (b.daily ?? 0) - (a.daily ?? 0));
+    const grandTotal = sorted.reduce((s, t) => s + (t.daily ?? 0), 0);
+    if (!grandTotal) return { grandTotal: 0, n80: 0, pctByIsrc: new Map<string, number>(), threshold80Isrc: null as string | null };
+    let cum = 0;
+    let n80 = 0;
+    let threshold80Isrc: string | null = null;
+    const pctByIsrc = new Map<string, number>();
+    for (const t of sorted) {
+      const pct = ((t.daily ?? 0) / grandTotal) * 100;
+      pctByIsrc.set(t.isrc, pct);
+      cum += pct;
+      n80++;
+      if (cum >= 80 && !threshold80Isrc) threshold80Isrc = t.isrc;
+    }
+    return { grandTotal, n80, pctByIsrc, threshold80Isrc };
+  }, [props.topByDaily]);
+
   // Memoize Combobox options so inline `.map()` calls don't produce new array
   // references on every render, which would invalidate the Combobox's internal
   // filtered useMemo even when the underlying data hasn't changed.
@@ -411,12 +448,12 @@ export function CatalogPageClient(props: {
             <div className="space-y-3">
               <div className="flex items-end justify-between px-1">
                 <div className="flex items-center gap-2">
-                  <h2 className="text-sm font-semibold">Top tracks (total)</h2>
+                  <h2 className="text-sm font-semibold">Tracks (total)</h2>
                   <button
                     type="button"
                     onClick={() => downloadTopTracksAsCsv(
                       topByCumulativeSorted,
-                      `top-tracks-total-${slugifyForFilename(props.artistName)}-${todayIsoDate()}.csv`,
+                      `tracks-total-${slugifyForFilename(props.artistName)}-${todayIsoDate()}.csv`,
                       false
                     )}
                     className="inline-flex items-center justify-center p-0 transition-colors hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
@@ -425,6 +462,12 @@ export function CatalogPageClient(props: {
                   >
                     <Download className="h-3.5 w-3.5" />
                   </button>
+                </div>
+                <div className="text-[11px] text-right" style={{ color: "var(--sb-muted)" }}>
+                  {props.topByCumulative.length} tracks
+                  {concentrationTotal.n80 > 0 && concentrationTotal.n80 < props.topByCumulative.length && (
+                    <> · top {concentrationTotal.n80} = 80%</>
+                  )}
                 </div>
               </div>
               <GlassTable
@@ -471,61 +514,82 @@ export function CatalogPageClient(props: {
                     ),
                     align: "right",
                   },
+                  { label: "SHARE", align: "right" },
                 ]}
                 maxBodyHeightClassName="max-h-56"
                 bodyClassName="overflow-x-hidden"
               >
-                {topByCumulativeSorted.map((t) => (
-                  <TableRow key={t.isrc}>
-                    <TableCell>
-                      {t.albumImageUrl ? (
-                        <Image
-                          src={t.albumImageUrl}
-                          alt="Album cover"
-                          width={32}
-                          height={32}
-                          className="rounded-lg object-cover sb-ring"
-                        />
-                      ) : (
-                        <div className="h-8 w-8 rounded-lg sb-ring bg-white/60" />
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <div className="min-w-0">
-                        <Link
-                          href={topCumulativeHrefs.get(t.isrc) ?? "#"}
-                          className="block truncate font-medium transition-colors sb-link-hover"
-                        >
-                          {t.name ?? t.isrc}
-                        </Link>
-                        {t.artistNames?.length ? (
-                          <div className="mt-0.5 truncate text-xs" style={{ color: "var(--sb-muted)" }}>
-                            <ArtistLinks
-                              artistNames={t.artistNames}
-                              artistIds={t.artistIds}
-                              className="inline"
+                {topByCumulativeSorted.map((t, i) => {
+                  const isThreshold = t.isrc === concentrationTotal.threshold80Isrc;
+                  const pct = concentrationTotal.pctByIsrc.get(t.isrc);
+                  return (
+                    <>
+                      <TableRow key={t.isrc}>
+                        <TableCell>
+                          {t.albumImageUrl ? (
+                            <Image
+                              src={t.albumImageUrl}
+                              alt="Album cover"
+                              width={32}
+                              height={32}
+                              className="rounded-lg object-cover sb-ring"
                             />
+                          ) : (
+                            <div className="h-8 w-8 rounded-lg sb-ring bg-white/60" />
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <div className="min-w-0">
+                            <Link
+                              href={topCumulativeHrefs.get(t.isrc) ?? "#"}
+                              className="block truncate font-medium transition-colors sb-link-hover"
+                            >
+                              {t.name ?? t.isrc}
+                            </Link>
+                            {t.artistNames?.length ? (
+                              <div className="mt-0.5 truncate text-xs" style={{ color: "var(--sb-muted)" }}>
+                                <ArtistLinks
+                                  artistNames={t.artistNames}
+                                  artistIds={t.artistIds}
+                                  className="inline"
+                                />
+                              </div>
+                            ) : null}
                           </div>
-                        ) : null}
-                      </div>
-                    </TableCell>
-                    <TableCell mono className="text-xs opacity-40 hidden sm:table-cell" style={{ color: "var(--sb-muted)" }}>
-                      {t.isrc}
-                    </TableCell>
-                    <TableCell mono className="text-xs" style={{ color: "var(--sb-muted)" }}>
-                      {showIsrcOnMobile ? t.isrc : (t.releaseDate ? formatDateISO(t.releaseDate) : null)}
-                    </TableCell>
-                    <TableCell numeric className="font-medium" style={topTracksNumberStyle}>
-                      {t.total === null
-                        ? null
-                        : topTracksMode === "revenue"
-                          ? formatUsd(t.total * streamPayoutPerStreamUsd)
-                          : formatInt(t.total)}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                        </TableCell>
+                        <TableCell mono className="text-xs opacity-40 hidden sm:table-cell" style={{ color: "var(--sb-muted)" }}>
+                          {t.isrc}
+                        </TableCell>
+                        <TableCell mono className="text-xs" style={{ color: "var(--sb-muted)" }}>
+                          {showIsrcOnMobile ? t.isrc : (t.releaseDate ? formatDateISO(t.releaseDate) : null)}
+                        </TableCell>
+                        <TableCell numeric className="font-medium" style={topTracksNumberStyle}>
+                          {t.total === null
+                            ? null
+                            : topTracksMode === "revenue"
+                              ? formatUsd(t.total * streamPayoutPerStreamUsd)
+                              : formatInt(t.total)}
+                        </TableCell>
+                        <TableCell numeric className="text-xs font-mono" style={{ color: "var(--sb-muted)", opacity: 0.7 }}>
+                          {pct != null ? `${pct.toFixed(1)}%` : null}
+                        </TableCell>
+                      </TableRow>
+                      {isThreshold && (
+                        <tr key={`${t.isrc}-divider`} aria-hidden>
+                          <td colSpan={6} className="px-2 py-0">
+                            <div className="flex items-center gap-2">
+                              <div className="flex-1 border-t" style={{ borderColor: "var(--sb-positive)", opacity: 0.4 }} />
+                              <span className="text-[10px] font-medium" style={{ color: "var(--sb-positive)", opacity: 0.7 }}>80% of streams above</span>
+                              <div className="flex-1 border-t" style={{ borderColor: "var(--sb-positive)", opacity: 0.4 }} />
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </>
+                  );
+                })}
                 {!props.topByCumulative.length && (
-                  <EmptyState colSpan={5} message="No track totals found" />
+                  <EmptyState colSpan={6} message="No track totals found" />
                 )}
               </GlassTable>
             </div>
@@ -533,12 +597,12 @@ export function CatalogPageClient(props: {
             <div className="space-y-3">
               <div className="flex items-end justify-between px-1">
                 <div className="flex items-center gap-2">
-                  <h2 className="text-sm font-semibold">Top tracks (daily)</h2>
+                  <h2 className="text-sm font-semibold">Tracks (daily)</h2>
                   <button
                     type="button"
                     onClick={() => downloadTopTracksAsCsv(
                       topByDailySorted,
-                      `top-tracks-daily-${slugifyForFilename(props.artistName)}-${todayIsoDate()}.csv`,
+                      `tracks-daily-${slugifyForFilename(props.artistName)}-${todayIsoDate()}.csv`,
                       true
                     )}
                     className="inline-flex items-center justify-center p-0 transition-colors hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
@@ -547,6 +611,12 @@ export function CatalogPageClient(props: {
                   >
                     <Download className="h-3.5 w-3.5" />
                   </button>
+                </div>
+                <div className="text-[11px] text-right" style={{ color: "var(--sb-muted)" }}>
+                  {props.topByDaily.length} tracks
+                  {concentrationDaily.n80 > 0 && concentrationDaily.n80 < props.topByDaily.length && (
+                    <> · top {concentrationDaily.n80} = 80%</>
+                  )}
                 </div>
               </div>
               <GlassTable
@@ -593,61 +663,82 @@ export function CatalogPageClient(props: {
                     ),
                     align: "right",
                   },
+                  { label: "SHARE", align: "right" },
                 ]}
                 maxBodyHeightClassName="max-h-56"
                 bodyClassName="overflow-x-hidden"
               >
-                {topByDailySorted.map((t) => (
-                  <TableRow key={t.isrc}>
-                    <TableCell>
-                      {t.albumImageUrl ? (
-                        <Image
-                          src={t.albumImageUrl}
-                          alt="Album cover"
-                          width={32}
-                          height={32}
-                          className="rounded-lg object-cover sb-ring"
-                        />
-                      ) : (
-                        <div className="h-8 w-8 rounded-lg sb-ring bg-white/60" />
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <div className="min-w-0">
-                        <Link
-                          href={topDailyHrefs.get(t.isrc) ?? "#"}
-                          className="block truncate font-medium transition-colors sb-link-hover"
-                        >
-                          {t.name ?? t.isrc}
-                        </Link>
-                        {t.artistNames?.length ? (
-                          <div className="mt-0.5 truncate text-xs" style={{ color: "var(--sb-muted)" }}>
-                            <ArtistLinks
-                              artistNames={t.artistNames}
-                              artistIds={t.artistIds}
-                              className="inline"
+                {topByDailySorted.map((t) => {
+                  const isThreshold = t.isrc === concentrationDaily.threshold80Isrc;
+                  const pct = concentrationDaily.pctByIsrc.get(t.isrc);
+                  return (
+                    <>
+                      <TableRow key={t.isrc}>
+                        <TableCell>
+                          {t.albumImageUrl ? (
+                            <Image
+                              src={t.albumImageUrl}
+                              alt="Album cover"
+                              width={32}
+                              height={32}
+                              className="rounded-lg object-cover sb-ring"
                             />
+                          ) : (
+                            <div className="h-8 w-8 rounded-lg sb-ring bg-white/60" />
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <div className="min-w-0">
+                            <Link
+                              href={topDailyHrefs.get(t.isrc) ?? "#"}
+                              className="block truncate font-medium transition-colors sb-link-hover"
+                            >
+                              {t.name ?? t.isrc}
+                            </Link>
+                            {t.artistNames?.length ? (
+                              <div className="mt-0.5 truncate text-xs" style={{ color: "var(--sb-muted)" }}>
+                                <ArtistLinks
+                                  artistNames={t.artistNames}
+                                  artistIds={t.artistIds}
+                                  className="inline"
+                                />
+                              </div>
+                            ) : null}
                           </div>
-                        ) : null}
-                      </div>
-                    </TableCell>
-                    <TableCell mono className="text-xs opacity-40 hidden sm:table-cell" style={{ color: "var(--sb-muted)" }}>
-                      {t.isrc}
-                    </TableCell>
-                    <TableCell mono className="text-xs" style={{ color: "var(--sb-muted)" }}>
-                      {showIsrcOnMobile ? t.isrc : (t.releaseDate ? formatDateISO(t.releaseDate) : null)}
-                    </TableCell>
-                    <TableCell numeric className="font-medium" style={topTracksNumberStyle}>
-                      {t.daily === null
-                        ? null
-                        : topTracksMode === "revenue"
-                          ? `+${formatUsd(t.daily * streamPayoutPerStreamUsd)}`
-                          : `+${formatInt(t.daily)}`}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                        </TableCell>
+                        <TableCell mono className="text-xs opacity-40 hidden sm:table-cell" style={{ color: "var(--sb-muted)" }}>
+                          {t.isrc}
+                        </TableCell>
+                        <TableCell mono className="text-xs" style={{ color: "var(--sb-muted)" }}>
+                          {showIsrcOnMobile ? t.isrc : (t.releaseDate ? formatDateISO(t.releaseDate) : null)}
+                        </TableCell>
+                        <TableCell numeric className="font-medium" style={topTracksNumberStyle}>
+                          {t.daily === null
+                            ? null
+                            : topTracksMode === "revenue"
+                              ? `+${formatUsd(t.daily * streamPayoutPerStreamUsd)}`
+                              : `+${formatInt(t.daily)}`}
+                        </TableCell>
+                        <TableCell numeric className="text-xs font-mono" style={{ color: "var(--sb-muted)", opacity: 0.7 }}>
+                          {pct != null ? `${pct.toFixed(1)}%` : null}
+                        </TableCell>
+                      </TableRow>
+                      {isThreshold && (
+                        <tr key={`${t.isrc}-divider`} aria-hidden>
+                          <td colSpan={6} className="px-2 py-0">
+                            <div className="flex items-center gap-2">
+                              <div className="flex-1 border-t" style={{ borderColor: "var(--sb-positive)", opacity: 0.4 }} />
+                              <span className="text-[10px] font-medium" style={{ color: "var(--sb-positive)", opacity: 0.7 }}>80% of streams above</span>
+                              <div className="flex-1 border-t" style={{ borderColor: "var(--sb-positive)", opacity: 0.4 }} />
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </>
+                  );
+                })}
                 {!props.topByDaily.length && (
-                  <EmptyState colSpan={5} message="No daily deltas found" />
+                  <EmptyState colSpan={6} message="No daily deltas found" />
                 )}
               </GlassTable>
             </div>
