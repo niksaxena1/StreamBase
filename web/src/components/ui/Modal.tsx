@@ -8,6 +8,7 @@ export function Modal({
   onClose,
   title,
   subtitle,
+  headerCenter,
   children,
   maxWidthClassName,
   showCloseButton = true,
@@ -16,6 +17,7 @@ export function Modal({
   onClose: () => void;
   title?: ReactNode;
   subtitle?: ReactNode;
+  headerCenter?: ReactNode;
   children: ReactNode;
   maxWidthClassName?: string;
   showCloseButton?: boolean;
@@ -120,9 +122,9 @@ export function Modal({
         ].join(" ")}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        {(title || subtitle) && (
-          <div className="flex-none flex items-start justify-between gap-3 border-b px-4 py-3" style={{ borderColor: "var(--sb-border)" }}>
-            <div>
+        {(title || subtitle || headerCenter) && (
+          <div className="relative flex-none flex items-center justify-between gap-3 border-b px-4 py-3" style={{ borderColor: "var(--sb-border)" }}>
+            <div className="min-w-0">
               {title ? (
                 <div className="font-display text-base font-semibold tracking-tight" style={{ color: "var(--sb-text)" }}>
                   {title}
@@ -134,10 +136,13 @@ export function Modal({
                 </div>
               ) : null}
             </div>
+            {headerCenter ? (
+              <div className="absolute left-1/2 -translate-x-1/2">{headerCenter}</div>
+            ) : null}
             {showCloseButton ? (
               <button
                 type="button"
-                className="sb-ring rounded-full bg-white/60 px-2.5 py-1.5 text-xs font-medium hover:bg-white/80 dark:bg-white/10 dark:hover:bg-white/15"
+                className="sb-ring rounded-full bg-white/60 px-2.5 py-1.5 text-xs font-medium hover:bg-white/80 dark:bg-white/10 dark:hover:bg-white/15 flex-shrink-0"
                 style={{ color: "var(--sb-text)" }}
                 onClick={onClose}
               >

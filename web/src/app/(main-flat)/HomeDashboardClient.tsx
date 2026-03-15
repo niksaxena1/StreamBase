@@ -32,6 +32,7 @@ import { HomeNegativeStreamsSection } from "./home/HomeNegativeStreamsSection";
 import { HomeWeekendDipsSection } from "./home/HomeWeekendDipsSection";
 import { HomeHistorySection } from "./home/HomeHistorySection";
 import { HomeFilterBuilderSection } from "./home/HomeFilterBuilderSection";
+import { HomeConcentrationSection } from "./home/HomeConcentrationSection";
 
 // ============================================================================
 // Helpers (header-only)
@@ -424,6 +425,8 @@ function HomeDashboardInner(props: {
         artistWeekendDips={props.artistWeekendDips}
         trackWeekendDips={props.trackWeekendDips}
       />
+
+      <HomeConcentrationSection trackScatterPoints={props.trackScatterPoints} latestRunDate={props.latestRunDate} />
 
       <HomeHistorySection history={props.history.slice(0, props.rangeDays)} />
 

@@ -187,41 +187,41 @@ export function CatalogPageClient(props: {
     [props.topByDaily, topDailySort],
   );
 
-  // [PROTOTYPE] Concentration analysis — N tracks = 80% of streams
+  // Concentration analysis — N tracks = 50% of streams
   const concentrationTotal = useMemo(() => {
     const sorted = [...props.topByCumulative].sort((a, b) => (b.total ?? 0) - (a.total ?? 0));
     const grandTotal = sorted.reduce((s, t) => s + (t.total ?? 0), 0);
-    if (!grandTotal) return { grandTotal: 0, n80: 0, pctByIsrc: new Map<string, number>(), threshold80Isrc: null as string | null };
+    if (!grandTotal) return { grandTotal: 0, nThreshold: 0, pctByIsrc: new Map<string, number>(), thresholdIsrc: null as string | null };
     let cum = 0;
-    let n80 = 0;
-    let threshold80Isrc: string | null = null;
+    let nThreshold = 0;
+    let thresholdIsrc: string | null = null;
     const pctByIsrc = new Map<string, number>();
     for (const t of sorted) {
       const pct = ((t.total ?? 0) / grandTotal) * 100;
       pctByIsrc.set(t.isrc, pct);
       cum += pct;
-      n80++;
-      if (cum >= 80 && !threshold80Isrc) threshold80Isrc = t.isrc;
+      nThreshold++;
+      if (cum >= 50 && !thresholdIsrc) thresholdIsrc = t.isrc;
     }
-    return { grandTotal, n80, pctByIsrc, threshold80Isrc };
+    return { grandTotal, nThreshold, pctByIsrc, thresholdIsrc };
   }, [props.topByCumulative]);
 
   const concentrationDaily = useMemo(() => {
     const sorted = [...props.topByDaily].sort((a, b) => (b.daily ?? 0) - (a.daily ?? 0));
     const grandTotal = sorted.reduce((s, t) => s + (t.daily ?? 0), 0);
-    if (!grandTotal) return { grandTotal: 0, n80: 0, pctByIsrc: new Map<string, number>(), threshold80Isrc: null as string | null };
+    if (!grandTotal) return { grandTotal: 0, nThreshold: 0, pctByIsrc: new Map<string, number>(), thresholdIsrc: null as string | null };
     let cum = 0;
-    let n80 = 0;
-    let threshold80Isrc: string | null = null;
+    let nThreshold = 0;
+    let thresholdIsrc: string | null = null;
     const pctByIsrc = new Map<string, number>();
     for (const t of sorted) {
       const pct = ((t.daily ?? 0) / grandTotal) * 100;
       pctByIsrc.set(t.isrc, pct);
       cum += pct;
-      n80++;
-      if (cum >= 80 && !threshold80Isrc) threshold80Isrc = t.isrc;
+      nThreshold++;
+      if (cum >= 50 && !thresholdIsrc) thresholdIsrc = t.isrc;
     }
-    return { grandTotal, n80, pctByIsrc, threshold80Isrc };
+    return { grandTotal, nThreshold, pctByIsrc, thresholdIsrc };
   }, [props.topByDaily]);
 
   // Memoize Combobox options so inline `.map()` calls don't produce new array
@@ -465,8 +465,8 @@ export function CatalogPageClient(props: {
                 </div>
                 <div className="text-[11px] text-right" style={{ color: "var(--sb-muted)" }}>
                   {props.topByCumulative.length} tracks
-                  {concentrationTotal.n80 > 0 && concentrationTotal.n80 < props.topByCumulative.length && (
-                    <> · top {concentrationTotal.n80} = 80%</>
+                  {concentrationTotal.nThreshold > 0 && concentrationTotal.nThreshold < props.topByCumulative.length && (
+                    <> · top {concentrationTotal.nThreshold} = 50%</>
                   )}
                 </div>
               </div>
@@ -520,7 +520,7 @@ export function CatalogPageClient(props: {
                 bodyClassName="overflow-x-hidden"
               >
                 {topByCumulativeSorted.map((t, i) => {
-                  const isThreshold = t.isrc === concentrationTotal.threshold80Isrc;
+                  const isThreshold = t.isrc === concentrationTotal.thresholdIsrc;
                   const pct = concentrationTotal.pctByIsrc.get(t.isrc);
                   return (
                     <>
@@ -579,7 +579,7 @@ export function CatalogPageClient(props: {
                           <td colSpan={6} className="px-2 py-0">
                             <div className="flex items-center gap-2">
                               <div className="flex-1 border-t" style={{ borderColor: "var(--sb-positive)", opacity: 0.4 }} />
-                              <span className="text-[10px] font-medium" style={{ color: "var(--sb-positive)", opacity: 0.7 }}>80% of streams above</span>
+                              <span className="text-[10px] font-medium" style={{ color: "var(--sb-positive)", opacity: 0.7 }}>50% of streams above</span>
                               <div className="flex-1 border-t" style={{ borderColor: "var(--sb-positive)", opacity: 0.4 }} />
                             </div>
                           </td>
@@ -614,8 +614,8 @@ export function CatalogPageClient(props: {
                 </div>
                 <div className="text-[11px] text-right" style={{ color: "var(--sb-muted)" }}>
                   {props.topByDaily.length} tracks
-                  {concentrationDaily.n80 > 0 && concentrationDaily.n80 < props.topByDaily.length && (
-                    <> · top {concentrationDaily.n80} = 80%</>
+                  {concentrationDaily.nThreshold > 0 && concentrationDaily.nThreshold < props.topByDaily.length && (
+                    <> · top {concentrationDaily.nThreshold} = 50%</>
                   )}
                 </div>
               </div>
@@ -669,7 +669,7 @@ export function CatalogPageClient(props: {
                 bodyClassName="overflow-x-hidden"
               >
                 {topByDailySorted.map((t) => {
-                  const isThreshold = t.isrc === concentrationDaily.threshold80Isrc;
+                  const isThreshold = t.isrc === concentrationDaily.thresholdIsrc;
                   const pct = concentrationDaily.pctByIsrc.get(t.isrc);
                   return (
                     <>
@@ -728,7 +728,7 @@ export function CatalogPageClient(props: {
                           <td colSpan={6} className="px-2 py-0">
                             <div className="flex items-center gap-2">
                               <div className="flex-1 border-t" style={{ borderColor: "var(--sb-positive)", opacity: 0.4 }} />
-                              <span className="text-[10px] font-medium" style={{ color: "var(--sb-positive)", opacity: 0.7 }}>80% of streams above</span>
+                              <span className="text-[10px] font-medium" style={{ color: "var(--sb-positive)", opacity: 0.7 }}>50% of streams above</span>
                               <div className="flex-1 border-t" style={{ borderColor: "var(--sb-positive)", opacity: 0.4 }} />
                             </div>
                           </td>
