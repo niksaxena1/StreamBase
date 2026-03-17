@@ -25,8 +25,6 @@ import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { Modal } from "@/components/ui/Modal";
 import { useThemeColors, getChartTooltipStyle } from "@/components/charts/useThemeColors";
 import type { TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChart";
-import { COLLECTOR_ORDER } from "@/app/(main-flat)/collectors/collectorsTypes";
-import { COLLECTOR_COLORS } from "@/components/charts/CollectorComparisonChart";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { ConcentrationFilterPicker, type PlaylistOption } from "./ConcentrationFilterPicker";
 
@@ -251,7 +249,7 @@ export function HomeConcentrationSection(props: {
   // Lorenz curve data
   const lorenzData = useMemo(
     () => buildLorenzCurve(sorted, grandTotal, getValue),
-    [sorted, grandTotal, viewMode], // eslint-disable-line react-hooks/exhaustive-deps
+    [sorted, grandTotal, getValue],
   );
 
   // Find the point on the Lorenz curve that corresponds to the current threshold
@@ -267,21 +265,13 @@ export function HomeConcentrationSection(props: {
   const valueStyle = isRevenue ? ({ color: "#10b981" } as const) : ({ color: "var(--sb-positive)" } as const);
   const valueClass = "font-medium";
 
-  const headerPill = (active: boolean) =>
-    [
-      "rounded-full px-2.5 py-1.5 text-[11px] font-medium transition",
-      active
-        ? "bg-black text-white dark:bg-white dark:text-black"
-        : "text-black/70 hover:bg-white/70 dark:text-white/70 dark:hover:bg-white/20",
-    ].join(" ");
-
   const sectionTitle = "STREAM CONCENTRATION";
   const selectedPlaylistName = playlistKey ? playlists.find((p) => p.playlist_key === playlistKey)?.display_name ?? playlistKey : null;
   const sectionSubtitle =
     filterMode === "artist" && artistId
       ? `${artists.find((a) => a.id === artistId)?.name ?? "Artist"}: ${viewMode === "daily" ? "daily" : "total"} streams ranked by share`
       : filterMode === "collector" && collectorId
-        ? `Collector ${collectorId}: ${viewMode === "daily" ? "daily" : "total"} streams ranked by share${collectorLoading ? " (loading…)" : ""}`
+        ? `${collectorId}: ${viewMode === "daily" ? "daily" : "total"} streams ranked by share${collectorLoading ? " (loading…)" : ""}`
         : filterMode === "playlist" && playlistKey
           ? `${selectedPlaylistName}: ${viewMode === "daily" ? "daily" : "total"} streams ranked by share${playlistLoading ? " (loading…)" : ""}`
           : `All catalog tracks ranked by ${viewMode === "daily" ? "daily" : "total"} stream share`;
@@ -492,7 +482,12 @@ export function HomeConcentrationSection(props: {
         open={showCurveModal}
         onClose={() => setShowCurveModal(false)}
         title="Concentration curve"
-        subtitle={`${sorted.length} tracks${filterMode === "artist" && artistId ? ` · ${artists.find((a) => a.id === artistId)?.name ?? ""}` : filterMode === "collector" && collectorId ? ` · Collector ${collectorId}` : filterMode === "playlist" && selectedPlaylistName ? ` · ${selectedPlaylistName}` : ""}`}
+        subtitle={[
+          `${sorted.length} tracks`,
+          filterMode === "artist" && artistId ? artists.find((a) => a.id === artistId)?.name : null,
+          filterMode === "collector" && collectorId ? collectorId : null,
+          filterMode === "playlist" && selectedPlaylistName ? selectedPlaylistName : null,
+        ].filter(Boolean).join(" · ")}
         headerCenter={
           <div className="sb-ring flex items-center gap-0.5 rounded-full bg-white/60 p-0.5 dark:bg-white/10">
             <button type="button" onClick={() => setViewMode("total")} className={headerPill(viewMode === "total")}>

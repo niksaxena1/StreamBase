@@ -97,7 +97,7 @@ export function ConcentrationFilterPicker({
       ? <Image src={selectedArtist.imageUrl} alt={buttonLabel} width={16} height={16} className="h-4 w-4 rounded-sm object-cover flex-shrink-0" />
       : <div className="h-4 w-4 rounded-sm flex-shrink-0" style={{ backgroundColor: "var(--sb-surface)" }} />;
   } else if (filterMode === "collector" && collectorId) {
-    buttonLabel = `Collector ${collectorId}`;
+    buttonLabel = collectorId;
     buttonThumb = <span className="h-4 w-4 rounded-full flex-shrink-0" style={{ backgroundColor: COLLECTOR_COLORS[collectorId] ?? "var(--sb-muted)" }} />;
   } else if (filterMode === "playlist" && selectedPlaylist) {
     buttonLabel = selectedPlaylist.display_name;
