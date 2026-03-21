@@ -8,6 +8,8 @@ export function ChartCsvDownloadButton(props: {
   filename: string;
   rows: Array<Record<string, unknown>>;
   headers?: string[];
+  /** When false, preserves row order (e.g. concentration rankings). Default matches downloadCsv. */
+  sortForExport?: boolean;
   className?: string;
   title?: string;
   disabled?: boolean;
@@ -23,6 +25,7 @@ export function ChartCsvDownloadButton(props: {
           filename: props.filename,
           rows: props.rows,
           headers: props.headers,
+          sortForExport: props.sortForExport,
         });
       }}
       title={props.title ?? "Download CSV"}

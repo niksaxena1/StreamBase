@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Download } from "lucide-react";
@@ -126,6 +126,44 @@ export function PlaylistTracksSectionClient(props: {
   const [addedSort, setAddedSort] = useState<SortState<AddedSortKey>>(null);
   const [removedSort, setRemovedSort] = useState<SortState<RemovedSortKey>>(null);
   const [artistSort, setArtistSort] = useState<SortState<ArtistSortKey>>(null);
+
+  /** lg-only: align "Tracks removed" bottom with left column; always cap height (never clear — that was letting the table run full length when left was shorter than "Tracks added"). */
+  const leftColumnRef = useRef<HTMLDivElement>(null);
+  const addedBlockRef = useRef<HTMLDivElement>(null);
+  const [removedSectionHeightPx, setRemovedSectionHeightPx] = useState<number | null>(null);
+
+  const syncRemovedSectionHeight = useCallback(() => {
+    if (typeof window === "undefined") return;
+    if (!window.matchMedia("(min-width: 1024px)").matches) {
+      setRemovedSectionHeightPx(null);
+      return;
+    }
+    const left = leftColumnRef.current;
+    const added = addedBlockRef.current;
+    if (!left || !added) return;
+    const gridGapPx = 12; // gap-3 between grid rows
+    const next = Math.round(left.getBoundingClientRect().height - added.getBoundingClientRect().height - gridGapPx);
+    // If "added" is taller than the left column, `next` is negative — still enforce a minimum scroll area instead of dropping the constraint (which made the removed table infinitely tall).
+    setRemovedSectionHeightPx(Math.max(200, next));
+  }, []);
+
+  useLayoutEffect(() => {
+    syncRemovedSectionHeight();
+    requestAnimationFrame(() => syncRemovedSectionHeight());
+    const ro = new ResizeObserver(() => syncRemovedSectionHeight());
+    const left = leftColumnRef.current;
+    const added = addedBlockRef.current;
+    if (left) ro.observe(left);
+    if (added) ro.observe(added);
+    const mq = window.matchMedia("(min-width: 1024px)");
+    mq.addEventListener("change", syncRemovedSectionHeight);
+    window.addEventListener("resize", syncRemovedSectionHeight);
+    return () => {
+      ro.disconnect();
+      mq.removeEventListener("change", syncRemovedSectionHeight);
+      window.removeEventListener("resize", syncRemovedSectionHeight);
+    };
+  }, [syncRemovedSectionHeight]);
 
   function toggleSort<K extends string>(
     setter: (next: SortState<K>) => void,
@@ -413,7 +451,7 @@ export function PlaylistTracksSectionClient(props: {
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-        <div className="space-y-3">
+        <div ref={leftColumnRef} className="space-y-3 lg:row-span-2">
           <div className="flex items-end justify-between px-1">
             <div className="flex items-center gap-2">
               <h2 className="text-sm font-semibold">Tracks currently in playlist</h2>
@@ -558,121 +596,123 @@ export function PlaylistTracksSectionClient(props: {
           </GlassTable>
         </div>
 
-        <div className="flex h-full flex-col gap-3">
-          <div className="space-y-3">
-            <div className="flex items-end justify-between px-1">
-              <div className="flex items-center gap-2">
-                <h2 className="text-sm font-semibold">Tracks added (last 7 days)</h2>
-                <button
-                  type="button"
-                  onClick={exportAddedTracks}
-                  className="inline-flex items-center justify-center p-0 transition-colors hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
-                  title="Download as CSV"
-                  aria-label="Download as CSV"
-                  style={{ color: "var(--sb-muted)" }}
-                >
-                  <Download className="h-3.5 w-3.5" />
-                </button>
-              </div>
-              <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
-                Based on membership added date.
-              </div>
+        <div ref={addedBlockRef} className="space-y-3">
+          <div className="flex items-end justify-between px-1">
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-semibold">Tracks added (last 7 days)</h2>
+              <button
+                type="button"
+                onClick={exportAddedTracks}
+                className="inline-flex items-center justify-center p-0 transition-colors hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
+                title="Download as CSV"
+                aria-label="Download as CSV"
+                style={{ color: "var(--sb-muted)" }}
+              >
+                <Download className="h-3.5 w-3.5" />
+              </button>
             </div>
-            <GlassTable
-              headers={[
-                "",
-                {
-                  label: (
-                    <SilentSortHeader
-                      label="Track"
-                      onClick={() => toggleSort(setAddedSort, addedSort, "track", true)}
-                    />
-                  ),
-                },
-                {
-                  label: (
-                    <SilentSortHeader
-                      label="Release"
-                      onClick={() => toggleSort(setAddedSort, addedSort, "release", false)}
-                    />
-                  ),
-                },
-                {
-                  label: (
-                    <SilentSortHeader
-                      label="Added"
-                      onClick={() => toggleSort(setAddedSort, addedSort, "added", false)}
-                      align="right"
-                    />
-                  ),
-                  align: "right",
-                },
-              ]}
-              maxBodyHeightClassName="max-h-[260px]"
-            >
-              {props.addedErrMessage ? (
-                <EmptyState colSpan={4} message={`Error loading added tracks: ${props.addedErrMessage}`} />
-              ) : null}
-              {addedRowsSorted.map((m, idx) => (
-                <TableRow key={`${m.isrc}-${m.valid_from}-${idx}`}>
-                  <TableCell>
-                    {m.album_image_url ? (
-                      <Image
-                        src={m.album_image_url}
-                        alt="Album cover"
-                        width={32}
-                        height={32}
-                        className="h-8 w-8 rounded-lg object-cover sb-ring"
-                      />
-                    ) : (
-                      <div className="h-8 w-8 rounded-lg sb-ring bg-white/60" />
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <Link href={`/tracks/${m.isrc}`} className="font-medium transition-colors sb-link-hover">
-                      {m.name ?? m.isrc}
-                    </Link>
-                    {m.artist_names?.length ? (
-                      <div className="mt-0.5 text-xs opacity-60">
-                        <ArtistLinks artistNames={m.artist_names} artistIds={m.artist_ids ?? undefined} />
-                      </div>
-                    ) : null}
-                  </TableCell>
-                  <TableCell mono className="text-xs" style={{ color: "var(--sb-muted)" }}>
-                    {formatDateISO(m.release_date)}
-                  </TableCell>
-                  <TableCell mono className="text-xs">{formatDateISO(m.valid_from)}</TableCell>
-                </TableRow>
-              ))}
-              {!props.addedErrMessage && !props.addedLast7Days.length && (
-                <EmptyState colSpan={4} message="No tracks added in the last 7 days" />
-              )}
-            </GlassTable>
+            <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
+              Based on membership added date.
+            </div>
           </div>
+          <GlassTable
+            headers={[
+              "",
+              {
+                label: (
+                  <SilentSortHeader
+                    label="Track"
+                    onClick={() => toggleSort(setAddedSort, addedSort, "track", true)}
+                  />
+                ),
+              },
+              {
+                label: (
+                  <SilentSortHeader
+                    label="Release"
+                    onClick={() => toggleSort(setAddedSort, addedSort, "release", false)}
+                  />
+                ),
+              },
+              {
+                label: (
+                  <SilentSortHeader
+                    label="Added"
+                    onClick={() => toggleSort(setAddedSort, addedSort, "added", false)}
+                    align="right"
+                  />
+                ),
+                align: "right",
+              },
+            ]}
+            maxBodyHeightClassName="max-h-[260px]"
+          >
+            {props.addedErrMessage ? (
+              <EmptyState colSpan={4} message={`Error loading added tracks: ${props.addedErrMessage}`} />
+            ) : null}
+            {addedRowsSorted.map((m, idx) => (
+              <TableRow key={`${m.isrc}-${m.valid_from}-${idx}`}>
+                <TableCell>
+                  {m.album_image_url ? (
+                    <Image
+                      src={m.album_image_url}
+                      alt="Album cover"
+                      width={32}
+                      height={32}
+                      className="h-8 w-8 rounded-lg object-cover sb-ring"
+                    />
+                  ) : (
+                    <div className="h-8 w-8 rounded-lg sb-ring bg-white/60" />
+                  )}
+                </TableCell>
+                <TableCell>
+                  <Link href={`/tracks/${m.isrc}`} className="font-medium transition-colors sb-link-hover">
+                    {m.name ?? m.isrc}
+                  </Link>
+                  {m.artist_names?.length ? (
+                    <div className="mt-0.5 text-xs opacity-60">
+                      <ArtistLinks artistNames={m.artist_names} artistIds={m.artist_ids ?? undefined} />
+                    </div>
+                  ) : null}
+                </TableCell>
+                <TableCell mono className="text-xs" style={{ color: "var(--sb-muted)" }}>
+                  {formatDateISO(m.release_date)}
+                </TableCell>
+                <TableCell mono className="text-xs">{formatDateISO(m.valid_from)}</TableCell>
+              </TableRow>
+            ))}
+            {!props.addedErrMessage && !props.addedLast7Days.length && (
+              <EmptyState colSpan={4} message="No tracks added in the last 7 days" />
+            )}
+          </GlassTable>
+        </div>
 
-          <div className="flex flex-1 flex-col gap-3">
-            <div className="flex items-end justify-between px-1">
-              <div className="flex items-center gap-2">
-                <h2 className="text-sm font-semibold">Tracks removed</h2>
-                <button
-                  type="button"
-                  onClick={exportRemovedTracks}
-                  className="inline-flex items-center justify-center p-0 transition-colors hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
-                  title="Download as CSV"
-                  aria-label="Download as CSV"
-                  style={{ color: "var(--sb-muted)" }}
-                >
-                  <Download className="h-3.5 w-3.5" />
-                </button>
-              </div>
-              <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
-                Most recent removals first.
-              </div>
+        <div
+          className="flex min-h-0 flex-col gap-3 lg:max-h-[min(72vh,560px)] lg:overflow-hidden"
+          style={removedSectionHeightPx != null ? { height: removedSectionHeightPx, minHeight: 0 } : undefined}
+        >
+          <div className="flex shrink-0 items-end justify-between px-1">
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-semibold">Tracks removed</h2>
+              <button
+                type="button"
+                onClick={exportRemovedTracks}
+                className="inline-flex items-center justify-center p-0 transition-colors hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
+                title="Download as CSV"
+                aria-label="Download as CSV"
+                style={{ color: "var(--sb-muted)" }}
+              >
+                <Download className="h-3.5 w-3.5" />
+              </button>
             </div>
+            <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
+              Most recent removals first.
+            </div>
+          </div>
+          <div className="min-h-0 flex-1">
             <GlassTable
-              className="flex-1"
-              bodyClassName="flex-1"
-              maxBodyHeightClassName="flex-1"
+              className="h-full min-h-0"
+              maxBodyHeightClassName="h-full max-h-full"
               headers={[
                 "",
                 {

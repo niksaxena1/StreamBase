@@ -129,6 +129,120 @@ async function fetchTrackScatterPoints(
   return out;
 }
 
+function shortHash(s: string): string {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
+  return Math.abs(h).toString(36);
+}
+
+type DistroPlaylistInfo = { name: string; imageUrl: string | null };
+
+type MembershipRow = { isrc: string; playlist_key: string; valid_to: string | null };
+
+/** PostgREST commonly caps responses at 1000 rows; paginate with .range() until exhausted. */
+async function fetchAllPlaylistMembershipRowsForIsrcChunk(
+  svc: ReturnType<typeof supabaseService>,
+  runDate: string,
+  isrcChunk: string[],
+): Promise<{ data: MembershipRow[]; error: { message: string; code?: string } | null }> {
+  const pageSize = 1000;
+  const allRows: MembershipRow[] = [];
+  let from = 0;
+  while (true) {
+    const res = await svc
+      .from("playlist_memberships")
+      .select("isrc,playlist_key,valid_to")
+      .in("isrc", isrcChunk)
+      .lte("valid_from", runDate)
+      .range(from, from + pageSize - 1);
+    if (res.error) return { data: [], error: res.error };
+    const rows = (res.data ?? []) as MembershipRow[];
+    allRows.push(...rows);
+    if (rows.length < pageSize) break;
+    from += pageSize;
+  }
+  return { data: allRows, error: null };
+}
+
+async function fetchDistroPlaylistsByKeys(
+  svc: ReturnType<typeof supabaseService>,
+  playlistKeys: string[],
+): Promise<{ data: Array<{ playlist_key: string; display_name: string | null; spotify_playlist_image_url: string | null }>; error: { message: string; code?: string } | null }> {
+  const keyBatchSize = 1000;
+  const pageSize = 1000;
+  const out: Array<{ playlist_key: string; display_name: string | null; spotify_playlist_image_url: string | null }> = [];
+  for (let k = 0; k < playlistKeys.length; k += keyBatchSize) {
+    const keyBatch = playlistKeys.slice(k, k + keyBatchSize);
+    let from = 0;
+    while (true) {
+      const res = await svc
+        .from("playlists")
+        .select("playlist_key,display_name,spotify_playlist_image_url")
+        .in("playlist_key", keyBatch)
+        .eq("playlist_type", "Distro")
+        .range(from, from + pageSize - 1);
+      if (res.error) return { data: [], error: res.error };
+      const rows = (res.data ?? []) as typeof out;
+      out.push(...rows);
+      if (rows.length < pageSize) break;
+      from += pageSize;
+    }
+  }
+  return { data: out, error: null };
+}
+
+/** Distro playlist membership per ISRC at run date (matches catalog top-track logic). */
+async function fetchDistroByIsrcForHome(
+  svc: ReturnType<typeof supabaseService>,
+  runDate: string,
+  isrcs: string[],
+): Promise<Map<string, DistroPlaylistInfo>> {
+  const distroByIsrc = new Map<string, DistroPlaylistInfo>();
+  const unique = [...new Set(isrcs.filter(Boolean))];
+  if (!unique.length || !runDate) return distroByIsrc;
+
+  const chunkSize = 500;
+  for (let i = 0; i < unique.length; i += chunkSize) {
+    const chunk = unique.slice(i, i + chunkSize);
+    const chunkKey = `${i}-${shortHash([...chunk].sort().join(","))}`;
+
+    const { data: memRows, error: memErr } = await cachedQuery(
+      async () => fetchAllPlaylistMembershipRowsForIsrcChunk(svc, runDate, chunk),
+      `home-scatter-distro-mem-${runDate}-${chunkKey}`,
+      CACHE_TTL_1H,
+    );
+    if (memErr) throw memErr;
+
+    const activeMemRows = ((memRows ?? []) as MembershipRow[]).filter(
+      (r) => r.valid_to == null || r.valid_to >= runDate,
+    );
+    const uniquePlaylistKeys = [...new Set(activeMemRows.map((r) => r.playlist_key))];
+    if (!uniquePlaylistKeys.length) continue;
+
+    const plKey = `${chunkKey}-${shortHash(uniquePlaylistKeys.slice().sort().join("|"))}`;
+
+    const { data: plRows, error: plErr } = await cachedQuery(
+      async () => fetchDistroPlaylistsByKeys(svc, uniquePlaylistKeys),
+      `home-scatter-distro-pl-${runDate}-${plKey}`,
+      CACHE_TTL_1H,
+    );
+    if (plErr) throw plErr;
+
+    const distroPlaylistMap = new Map(
+      ((plRows ?? []) as Array<{ playlist_key: string; display_name: string | null; spotify_playlist_image_url: string | null }>).map((p) => [
+        p.playlist_key,
+        { name: p.display_name ?? p.playlist_key, imageUrl: p.spotify_playlist_image_url ?? null },
+      ]),
+    );
+    for (const r of activeMemRows) {
+      const info = distroPlaylistMap.get(r.playlist_key);
+      if (info && !distroByIsrc.has(r.isrc)) distroByIsrc.set(r.isrc, info);
+    }
+  }
+
+  return distroByIsrc;
+}
+
 /** Fetch metadata for specific ISRCs (still needed for override annotations). */
 async function fetchTrackMetaByIsrc(
   svc: ReturnType<typeof supabaseService>,
@@ -287,7 +401,7 @@ export default async function Home({
     : latestRunDate;
 
   // Bump cache key when scatter point shape changes.
-  const scatterCacheKey = `home-track-scatter-v7-${selectedRunDate ?? "none"}`;
+  const scatterCacheKey = `home-track-scatter-v9-${selectedRunDate ?? "none"}`;
   const { data: trackScatterPoints, error: trackScatterErr } = await cachedQuery(
     async () => {
       if (!selectedRunDate) return { data: [] as TrackStreamsXYPoint[], error: null };
@@ -326,7 +440,18 @@ export default async function Home({
         })
         .filter((p): p is TrackStreamsXYPoint => p !== null);
 
-      return { data: points, error: null };
+      const distroByIsrc = await fetchDistroByIsrcForHome(svc, selectedRunDate, points.map((p) => p.isrc));
+
+      const withDistro: TrackStreamsXYPoint[] = points.map((p) => {
+        const d = distroByIsrc.get(p.isrc);
+        return {
+          ...p,
+          distroPlaylistName: d?.name ?? null,
+          distroPlaylistImageUrl: d?.imageUrl ?? null,
+        };
+      });
+
+      return { data: withDistro, error: null };
     },
     scatterCacheKey,
     CACHE_TTL_1H,

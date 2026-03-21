@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { Share2 } from "lucide-react";
 import {
   Area,
   AreaChart,
@@ -17,7 +18,7 @@ import {
 import { useMetric } from "@/components/metrics/MetricContext";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/GlassTable";
-import { formatInt, formatUsd } from "@/lib/format";
+import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
 import { readStoredBool, readStoredNumber, readStoredString, writeStoredBool, writeStoredNumber, writeStoredString } from "@/lib/storage";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
 import { todayIsoDate } from "@/lib/csv";
@@ -27,6 +28,8 @@ import { useThemeColors, getChartTooltipStyle } from "@/components/charts/useThe
 import type { TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChart";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { ConcentrationFilterPicker, type PlaylistOption } from "./ConcentrationFilterPicker";
+import { IconButton } from "@/components/ui/Button";
+import type { ConcentrationShareSnapshotV1 } from "@/lib/share/concentrationSnapshot";
 
 const STORAGE_KEY_OPEN = "sb:home-concentration-open";
 const STORAGE_KEY_MODE = "sb:home-concentration-mode";
@@ -107,6 +110,10 @@ export function HomeConcentrationSection(props: {
   const [playlistIsrcs, setPlaylistIsrcs] = useState<Set<string> | null>(null);
   const [playlistLoading, setPlaylistLoading] = useState(false);
   const [showCurveModal, setShowCurveModal] = useState(false);
+  // Distro/ISRC column toggle (default: show distro), same pattern as /catalog top-track tables.
+  const [showIsrcInDistroCol, setShowIsrcInDistroCol] = useState(false);
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareHint, setShareHint] = useState<string | null>(null);
 
   useEffect(() => {
     setOpen(readStoredBool(STORAGE_KEY_OPEN, false));
@@ -265,6 +272,36 @@ export function HomeConcentrationSection(props: {
   const valueStyle = isRevenue ? ({ color: "#10b981" } as const) : ({ color: "var(--sb-positive)" } as const);
   const valueClass = "font-medium";
 
+  const concentrationValueLabel = useMemo(() => {
+    if (isRevenue) {
+      return viewMode === "daily" ? "daily_revenue_usd" : "total_revenue_usd";
+    }
+    return viewMode === "daily" ? "daily_streams" : "total_streams";
+  }, [isRevenue, viewMode]);
+
+  const concentrationCsvRows = useMemo(() => {
+    return sorted.map((p, i) => {
+      const raw = Math.max(0, getValue(p));
+      const valueExport = isRevenue ? Number(raw) * streamPayoutPerStreamUsd : raw;
+      return {
+        track: p.name ?? p.isrc,
+        isrc: p.isrc,
+        artists: (p.artist_names ?? []).join(", "),
+        release_date: p.release_date ?? "",
+        distro_playlist: p.distroPlaylistName ?? "",
+        [concentrationValueLabel]: valueExport,
+        share_pct: grandTotal > 0 ? ((raw / grandTotal) * 100).toFixed(2) : "0",
+        cum_pct: (cumPcts[i] ?? 0).toFixed(2),
+      } as Record<string, unknown>;
+    });
+  }, [sorted, grandTotal, cumPcts, getValue, isRevenue, streamPayoutPerStreamUsd, concentrationValueLabel]);
+
+  const concentrationCsvHeaders = useMemo(
+    () =>
+      ["track", "isrc", "artists", "release_date", "distro_playlist", concentrationValueLabel, "share_pct", "cum_pct"] as string[],
+    [concentrationValueLabel],
+  );
+
   const selectedPlaylistName = playlistKey ? playlists.find((p) => p.playlist_key === playlistKey)?.display_name ?? playlistKey : null;
   const sectionSubtitle =
     filterMode === "artist" && artistId
@@ -274,6 +311,86 @@ export function HomeConcentrationSection(props: {
         : filterMode === "playlist" && playlistKey
           ? `${selectedPlaylistName}: ${viewMode === "daily" ? "daily" : "total"} streams ranked by share${playlistLoading ? " (loading…)" : ""}`
           : `All catalog tracks ranked by ${viewMode === "daily" ? "daily" : "total"} stream share`;
+
+  const concentrationSharePayload = useMemo((): ConcentrationShareSnapshotV1 | null => {
+    if (sorted.length === 0) return null;
+    const rows = sorted.map((p, i) => ({
+      isrc: p.isrc,
+      name: p.name,
+      artist_names: p.artist_names,
+      album_image_url: p.album_image_url,
+      distroPlaylistName: p.distroPlaylistName ?? null,
+      distroPlaylistImageUrl: p.distroPlaylistImageUrl ?? null,
+      valueStreams: Math.max(0, getValue(p)),
+      sharePct: grandTotal > 0 ? (Math.max(0, getValue(p)) / grandTotal) * 100 : 0,
+      cumPct: cumPcts[i] ?? 0,
+    }));
+    return {
+      v: 1,
+      title: SECTION_TITLE,
+      subtitle: sectionSubtitle,
+      latestRunDate: props.latestRunDate,
+      viewMode,
+      metric: isRevenue ? "revenue" : "streams",
+      streamPayoutPerStreamUsd,
+      threshold,
+      showIsrcColumn: showIsrcInDistroCol,
+      tracksAboveThreshold,
+      thresholdIdx,
+      rowCount: rows.length,
+      rows,
+    };
+  }, [
+    sorted,
+    grandTotal,
+    cumPcts,
+    getValue,
+    viewMode,
+    isRevenue,
+    streamPayoutPerStreamUsd,
+    threshold,
+    showIsrcInDistroCol,
+    tracksAboveThreshold,
+    thresholdIdx,
+    props.latestRunDate,
+    sectionSubtitle,
+  ]);
+
+  const shareSnapshot = useCallback(async () => {
+    if (!concentrationSharePayload) return;
+    setShareBusy(true);
+    setShareHint(null);
+    try {
+      const r = await fetch("/api/share/concentration", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(concentrationSharePayload),
+      });
+      const j = (await r.json()) as { error?: string; url?: string; expires_at?: string };
+      if (!r.ok) throw new Error(j.error ?? "Could not create share link");
+      const url = j.url;
+      if (!url) throw new Error("Missing URL in response");
+      const expLabel = j.expires_at ? formatDateISO(j.expires_at.slice(0, 10)) : null;
+      const expiryNote = expLabel ? ` · expires ${expLabel}` : "";
+      try {
+        await navigator.clipboard.writeText(url);
+        setShareHint(`Link copied${expiryNote}`);
+      } catch {
+        setShareHint(`${url}${expiryNote ? `\n${expiryNote.trim()}` : ""}`);
+      }
+    } catch (e) {
+      setShareHint(e instanceof Error ? e.message : "Share failed");
+    } finally {
+      setShareBusy(false);
+      window.setTimeout(() => setShareHint(null), 10000);
+    }
+  }, [concentrationSharePayload]);
+
+  const shareDisabled =
+    !concentrationSharePayload ||
+    shareBusy ||
+    (filterMode === "collector" && !!collectorId && collectorIsrcs === null) ||
+    (filterMode === "playlist" && !!playlistKey && playlistIsrcs === null);
 
   return (
     <>
@@ -330,17 +447,27 @@ export function HomeConcentrationSection(props: {
                   onSelectPlaylist={(k) => { setFilterMode("playlist"); setPlaylistKey(k); setArtistId(null); setCollectorId(null); }}
                 />
 
+                <IconButton
+                  type="button"
+                  onClick={() => void shareSnapshot()}
+                  disabled={shareDisabled}
+                  title="Create read-only share link (snapshot)"
+                  aria-label="Create read-only share link"
+                >
+                  <Share2 className="h-3.5 w-3.5" />
+                </IconButton>
                 <ChartCsvDownloadButton
                   filename={`concentration-${viewMode}-${todayIsoDate()}.csv`}
-                  rows={sorted.map((p) => ({
-                    track: p.name ?? p.isrc,
-                    isrc: p.isrc,
-                    artists: (p.artist_names ?? []).join(", "),
-                    value: getValue(p),
-                    share_pct: grandTotal > 0 ? ((Math.max(0, getValue(p)) / grandTotal) * 100).toFixed(2) : "0",
-                  }))}
+                  rows={concentrationCsvRows}
+                  headers={concentrationCsvHeaders}
+                  sortForExport={false}
                   title="Download concentration CSV"
                 />
+                {shareHint ? (
+                  <span className="text-[10px] max-w-[200px] truncate" style={{ color: "var(--sb-muted)" }} title={shareHint}>
+                    {shareHint}
+                  </span>
+                ) : null}
               </div>
             ) : null}
           </div>
@@ -390,7 +517,20 @@ export function HomeConcentrationSection(props: {
             headers={[
               "",
               "TRACK",
-              { label: "ISRC", className: "hidden sm:table-cell" },
+              {
+                label: (
+                  <button
+                    type="button"
+                    onClick={() => setShowIsrcInDistroCol((v) => !v)}
+                    className="flex items-center gap-1 uppercase tracking-wider text-[11px] font-medium opacity-60 hover:opacity-100 transition-opacity"
+                    title={showIsrcInDistroCol ? "Show distro playlist" : "Show ISRC"}
+                  >
+                    {showIsrcInDistroCol ? "ISRC" : "DISTRO"}
+                    <span className="opacity-50 text-[9px]">⇄</span>
+                  </button>
+                ),
+                className: "hidden sm:table-cell",
+              },
               { label: isRevenue ? (viewMode === "daily" ? "DAILY REV" : "TOTAL REV") : (viewMode === "daily" ? "DAILY" : "TOTAL"), align: "right" as const },
               { label: "SHARE", align: "right" as const },
               { label: "CUM %", align: "right" as const },
@@ -442,8 +582,21 @@ export function HomeConcentrationSection(props: {
                           ) : null}
                         </div>
                       </TableCell>
-                      <TableCell mono className="text-xs opacity-40 hidden sm:table-cell" style={{ color: "var(--sb-muted)" }}>
-                        {p.isrc}
+                      <TableCell className="hidden sm:table-cell">
+                        {showIsrcInDistroCol ? (
+                          <span className="font-mono text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>{p.isrc}</span>
+                        ) : p.distroPlaylistName ? (
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            {p.distroPlaylistImageUrl ? (
+                              <Image src={p.distroPlaylistImageUrl} alt={p.distroPlaylistName} width={20} height={20} className="h-5 w-5 rounded flex-shrink-0 object-cover" />
+                            ) : (
+                              <div className="h-5 w-5 rounded flex-shrink-0 bg-orange-400/20" />
+                            )}
+                            <span className="truncate text-xs" style={{ color: "var(--sb-muted)" }}>{p.distroPlaylistName}</span>
+                          </div>
+                        ) : (
+                          <span className="text-xs opacity-30" style={{ color: "var(--sb-muted)" }}>—</span>
+                        )}
                       </TableCell>
                       <TableCell numeric className={valueClass} style={valueStyle}>
                         {viewMode === "daily" ? `+${formatValue(val)}` : formatValue(val)}

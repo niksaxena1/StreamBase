@@ -17,6 +17,8 @@ export type TrackStreamsXYPoint = {
   artist_names: string[] | null;
   artist_ids: string[] | null;
   album_image_url: string | null;
+  distroPlaylistName?: string | null;
+  distroPlaylistImageUrl?: string | null;
   total_streams_cumulative: number;
   daily_streams_delta: number;
   has_prev_day: boolean;
