@@ -9,6 +9,7 @@ import { getRollbackDate, rollbackDataDateToRunDate } from "@/lib/rollback";
 import { HomeDashboardClient } from "./HomeDashboardClient";
 import type { ArtistWeekendDipRow, TrackWeekendDipRow, NegativeDailyStreamsRow } from "./home/homeTypes";
 import type { TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChart";
+import { normalizeReleaseDateFromRpc } from "@/components/charts/trackReleaseCohorts";
 
 type PlaylistDailyStatsRow = {
   date: string;
@@ -401,7 +402,7 @@ export default async function Home({
     : latestRunDate;
 
   // Bump cache key when scatter point shape changes.
-  const scatterCacheKey = `home-track-scatter-v9-${selectedRunDate ?? "none"}`;
+  const scatterCacheKey = `home-track-scatter-v10-${selectedRunDate ?? "none"}`;
   const { data: trackScatterPoints, error: trackScatterErr } = await cachedQuery(
     async () => {
       if (!selectedRunDate) return { data: [] as TrackStreamsXYPoint[], error: null };
@@ -420,7 +421,7 @@ export default async function Home({
           if (!isFinite(total)) return null;
           const isrc = String(r?.isrc ?? "").trim();
           const name = typeof r?.name === "string" ? r.name : null;
-          const release_date = typeof r?.release_date === "string" ? r.release_date : null;
+          const release_date = normalizeReleaseDateFromRpc(r?.release_date) ?? null;
           const artist_names = Array.isArray(r?.artist_names) ? (r.artist_names as string[]) : null;
           const artist_ids = Array.isArray(r?.artist_ids) ? (r.artist_ids as string[]) : null;
           const album_image_url = typeof r?.album_image_url === "string" ? r.album_image_url : null;

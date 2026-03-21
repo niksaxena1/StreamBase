@@ -8,6 +8,7 @@ import { AED_PER_USD, getCurrencyDisplay } from "@/lib/format";
 
 export const HOME_DETAILS_STORAGE = {
   scatterOpen: "sb:home:details:scatter_open",
+  scatterReleaseCohorts: "sb:home:details:scatter_release_cohorts",
   milestoneOpen: "sb:home:details:milestones_open",
   dailyDistOpen: "sb:home:details:daily_dist_open",
   historyOpen: "sb:home:details:history_open",

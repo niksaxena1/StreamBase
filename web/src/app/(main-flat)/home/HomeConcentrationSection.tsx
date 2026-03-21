@@ -319,6 +319,7 @@ export function HomeConcentrationSection(props: {
       name: p.name,
       artist_names: p.artist_names,
       album_image_url: p.album_image_url,
+      release_date: p.release_date ?? null,
       distroPlaylistName: p.distroPlaylistName ?? null,
       distroPlaylistImageUrl: p.distroPlaylistImageUrl ?? null,
       valueStreams: Math.max(0, getValue(p)),
@@ -517,6 +518,7 @@ export function HomeConcentrationSection(props: {
             headers={[
               "",
               "TRACK",
+              { label: "RELEASE", className: "hidden sm:table-cell" },
               {
                 label: (
                   <button
@@ -538,7 +540,7 @@ export function HomeConcentrationSection(props: {
             maxBodyHeightClassName="max-h-[600px]"
           >
             {sorted.length === 0 ? (
-              <EmptyState colSpan={6} message="No tracks found" />
+              <EmptyState colSpan={7} message="No tracks found" />
             ) : (
               sorted.map((p, i) => {
                 const val = Math.max(0, getValue(p));
@@ -582,6 +584,9 @@ export function HomeConcentrationSection(props: {
                           ) : null}
                         </div>
                       </TableCell>
+                      <TableCell mono className="text-xs hidden sm:table-cell" style={{ color: "var(--sb-muted)" }}>
+                        {formatDateISO(p.release_date ?? null)}
+                      </TableCell>
                       <TableCell className="hidden sm:table-cell">
                         {showIsrcInDistroCol ? (
                           <span className="font-mono text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>{p.isrc}</span>
@@ -610,7 +615,7 @@ export function HomeConcentrationSection(props: {
                     </TableRow>
                     {isThresholdRow && tracksAboveThreshold < sorted.length && (
                       <tr aria-hidden>
-                        <td colSpan={6} className="px-2 py-0">
+                        <td colSpan={7} className="px-2 py-0">
                           <div className="flex items-center gap-2">
                             <div className="flex-1 border-t" style={{ borderColor: "var(--sb-positive)", opacity: 0.4 }} />
                             <span className="text-[10px] font-medium" style={{ color: "var(--sb-positive)", opacity: 0.7 }}>

@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import React from "react";
 
 import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/GlassTable";
-import { formatInt, formatUsd } from "@/lib/format";
+import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
 import { parseConcentrationShareSnapshotV1 } from "@/lib/share/concentrationSnapshot";
 import { formatShareSnapshotCreatedAtAbuDhabi } from "@/lib/share/formatShareCreatedAt";
 import { CONCENTRATION_SHARE_TTL_DAYS } from "@/lib/share/concentrationShareTtl";
@@ -102,6 +102,7 @@ export default async function SharedConcentrationPage(props: PageProps) {
           headers={[
             "",
             "TRACK",
+            { label: "RELEASE", className: "hidden sm:table-cell" },
             {
               label: <span className="uppercase tracking-wider">{snap.showIsrcColumn ? "ISRC" : "DISTRO"}</span>,
               className: "hidden sm:table-cell",
@@ -113,7 +114,7 @@ export default async function SharedConcentrationPage(props: PageProps) {
           maxBodyHeightClassName="max-h-[70vh]"
         >
           {snap.rows.length === 0 ? (
-            <EmptyState colSpan={6} message="No tracks in snapshot" />
+            <EmptyState colSpan={7} message="No tracks in snapshot" />
           ) : (
             snap.rows.map((p, i) => {
               const val = Math.max(0, p.valueStreams);
@@ -150,6 +151,9 @@ export default async function SharedConcentrationPage(props: PageProps) {
                           <div className="text-[10px] opacity-50 truncate">{p.artist_names.join(", ")}</div>
                         ) : null}
                       </div>
+                    </TableCell>
+                    <TableCell mono className="text-xs hidden sm:table-cell" style={{ color: "var(--sb-muted)" }}>
+                      {formatDateISO(p.release_date ?? null)}
                     </TableCell>
                     <TableCell className="hidden sm:table-cell">
                       {snap.showIsrcColumn ? (
@@ -191,7 +195,7 @@ export default async function SharedConcentrationPage(props: PageProps) {
                   </TableRow>
                   {isThresholdRow && tracksAboveThreshold < snap.rows.length && (
                     <tr aria-hidden>
-                      <td colSpan={6} className="px-2 py-0">
+                      <td colSpan={7} className="px-2 py-0">
                         <div className="flex items-center gap-2">
                           <div className="flex-1 border-t" style={{ borderColor: "var(--sb-positive)", opacity: 0.4 }} />
                           <span className="text-[10px] font-medium" style={{ color: "var(--sb-positive)", opacity: 0.7 }}>

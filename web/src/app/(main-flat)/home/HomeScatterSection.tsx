@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useDeferredValue } from "react";
-import { Search, X } from "lucide-react";
+import { Calendar, Search, X } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 
@@ -41,6 +41,9 @@ export function HomeScatterSection(props: {
   const [scatterFocusArtistId, setScatterFocusArtistId] = useState<string | null>(null);
   const [scatterSearchFocused, setScatterSearchFocused] = useState(false);
   const [scatterLogScale, setScatterLogScale] = useState(false);
+  const [scatterReleaseCohorts, setScatterReleaseCohorts] = useState(() =>
+    readStoredBool(HOME_DETAILS_STORAGE.scatterReleaseCohorts, false),
+  );
   const [scatterView, setScatterView] = useState<"tracks" | "artists">("tracks");
   const [scatterArtistImagesById, setScatterArtistImagesById] = useState<Map<string, string | null> | null>(null);
 
@@ -54,6 +57,10 @@ export function HomeScatterSection(props: {
   useEffect(() => {
     writeStoredBool(HOME_DETAILS_STORAGE.scatterOpen, openScatter);
   }, [openScatter]);
+
+  useEffect(() => {
+    writeStoredBool(HOME_DETAILS_STORAGE.scatterReleaseCohorts, scatterReleaseCohorts);
+  }, [scatterReleaseCohorts]);
 
   // Load artist images for artist scatter view
   useEffect(() => {
@@ -252,6 +259,27 @@ export function HomeScatterSection(props: {
               >
                 {scatterLogScale ? "Log" : "Linear"}
               </button>
+              {scatterView === "tracks" && scatterLogScale ? (
+                <button
+                  type="button"
+                  onClick={() => setScatterReleaseCohorts((v) => !v)}
+                  className={[
+                    "inline-flex h-7 w-7 items-center justify-center rounded-full transition",
+                    scatterReleaseCohorts
+                      ? "bg-black text-white dark:bg-white dark:text-black"
+                      : "text-black/70 hover:bg-white/70 dark:text-white/70 dark:hover:bg-white/20",
+                  ].join(" ")}
+                  title={
+                    scatterReleaseCohorts
+                      ? "Hide soft release-week clusters (log only). Each week gets its own hue; hover a blob for the week and track count."
+                      : "Show soft release-week clusters (log only). Each week gets its own hue; hover a blob for the week and track count."
+                  }
+                  aria-label={scatterReleaseCohorts ? "Hide release cohort highlights" : "Show release cohort highlights"}
+                  aria-pressed={scatterReleaseCohorts}
+                >
+                  <Calendar className="h-3.5 w-3.5" strokeWidth={2} />
+                </button>
+              ) : null}
               <ChartCsvDownloadButton
                 filename={`home-scatter-${scatterView}-${todayIsoDate()}.csv`}
                 rows={
@@ -445,6 +473,7 @@ export function HomeScatterSection(props: {
               payoutPerStreamUsd={streamPayoutPerStreamUsd}
               focusIsrc={scatterFocusIsrc}
               logScale={scatterLogScale}
+              showReleaseCohorts={scatterReleaseCohorts && scatterLogScale}
               topNDelta={scatterLogScale ? 750 : 100}
               topNCumulative={scatterLogScale ? 750 : 100}
               sampleN={scatterLogScale ? 0 : 80}

@@ -3,6 +3,8 @@ export type ConcentrationShareRowV1 = {
   name: string | null;
   artist_names: string[] | null;
   album_image_url: string | null;
+  /** ISO date string (YYYY-MM-DD) or null */
+  release_date: string | null;
   distroPlaylistName: string | null;
   distroPlaylistImageUrl: string | null;
   /** Underlying stream count (daily delta or total cumulative) for the value column */
@@ -73,11 +75,15 @@ export function parseConcentrationShareSnapshotV1(raw: unknown): ConcentrationSh
     if (!isStrOrNull(r.distroPlaylistName)) return null;
     if (!isStrOrNull(r.distroPlaylistImageUrl)) return null;
     if (!isNum(r.valueStreams) || !isNum(r.sharePct) || !isNum(r.cumPct)) return null;
+    const releaseRaw = r.release_date;
+    if (releaseRaw != null && typeof releaseRaw !== "string") return null;
+    const release_date = typeof releaseRaw === "string" ? releaseRaw : null;
     rows.push({
       isrc: r.isrc,
       name: r.name,
       artist_names: r.artist_names,
       album_image_url: r.album_image_url,
+      release_date,
       distroPlaylistName: r.distroPlaylistName,
       distroPlaylistImageUrl: r.distroPlaylistImageUrl,
       valueStreams: r.valueStreams,

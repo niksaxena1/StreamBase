@@ -9,6 +9,9 @@ import { formatInt, formatUsd, formatUsd2 } from "@/lib/format";
 import { formatKmbTick, formatUsdCompact } from "@/components/charts/chartUtils";
 import { useThemeColors } from "@/components/charts/useThemeColors";
 import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
+import { ScatterCohortOverlay } from "@/components/charts/ScatterCohortOverlay";
+import { clientToSvgUserPoint, pointInPolygon } from "@/components/charts/scatterCohortHitTest";
+import { buildTrackReleaseCohortGroups, type CohortHitRegion } from "@/components/charts/trackReleaseCohorts";
 
 export type TrackStreamsXYPoint = {
   isrc: string;
@@ -223,6 +226,7 @@ export function TrackStreamsXYChart({
   sampleN = 80,
   focusIsrc = null,
   logScale = false,
+  showReleaseCohorts = false,
   onClearFocus,
 }: {
   points: TrackStreamsXYPoint[];
@@ -235,6 +239,8 @@ export function TrackStreamsXYChart({
   sampleN?: number;
   focusIsrc?: string | null;
   logScale?: boolean;
+  /** When true, draws faint hulls behind points for compact same–ISO-week release clusters (tracks only). */
+  showReleaseCohorts?: boolean;
   onClearFocus?: () => void;
 }) {
   const [hovered, setHovered] = useState<{ point: ChartDatum; x: number; y: number } | null>(null);
@@ -245,6 +251,19 @@ export function TrackStreamsXYChart({
   const lastPointerTypeRef = useRef<string | null>(null);
   const longPressTimerRef = useRef<number | null>(null);
   const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
+  const chartAreaRef = useRef<HTMLDivElement | null>(null);
+  const cohortHitRef = useRef<CohortHitRegion[]>([]);
+  const hoveredRef = useRef<{ point: ChartDatum; x: number; y: number } | null>(null);
+  const [cohortHover, setCohortHover] = useState<{
+    weekTitle: string;
+    count: number;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  const handleCohortHitRegions = useCallback((regions: CohortHitRegion[]) => {
+    cohortHitRef.current = regions;
+  }, []);
 
   const clearLongPressTimer = useCallback(() => {
     if (longPressTimerRef.current != null) {
@@ -258,6 +277,14 @@ export function TrackStreamsXYChart({
   useEffect(() => {
     return () => clearLongPressTimer();
   }, [clearLongPressTimer]);
+
+  useEffect(() => {
+    hoveredRef.current = hovered;
+  }, [hovered]);
+
+  useEffect(() => {
+    if (hovered) setCohortHover(null);
+  }, [hovered]);
 
   const { allData, topData, sampledData, hiddenCount } = useMemo(() => {
     // Filter out obviously bad points (keeps chart stable)
@@ -396,6 +423,11 @@ export function TrackStreamsXYChart({
     return allData.find((d) => d.isrc === isrc) ?? null;
   }, [allData, focusIsrc]);
   const isFocusMode = Boolean(focusPoint);
+
+  const releaseCohortPayload = useMemo(() => {
+    if (!showReleaseCohorts || isFocusMode) return [];
+    return buildTrackReleaseCohortGroups(allData, topData, logScale);
+  }, [showReleaseCohorts, isFocusMode, allData, topData, logScale]);
 
   // Container event handlers using pointer events (same pattern as useChartCopyToClipboard)
   const handleMouseDown = (e: MouseEvent) => {
@@ -626,8 +658,73 @@ export function TrackStreamsXYChart({
     topData,
   ]);
 
+  const cohortOverlayEnabled =
+    showReleaseCohorts && logScale && !isFocusMode && releaseCohortPayload.length > 0;
+
+  useEffect(() => {
+    if (!cohortOverlayEnabled) {
+      cohortHitRef.current = [];
+      setCohortHover(null);
+    }
+  }, [cohortOverlayEnabled]);
+
+  const handleChartMouseMove = useCallback(
+    (e: MouseEvent<HTMLDivElement>) => {
+      if (!cohortOverlayEnabled || frozen) {
+        setCohortHover(null);
+        return;
+      }
+      if (hoveredRef.current) {
+        setCohortHover(null);
+        return;
+      }
+      const root = chartAreaRef.current;
+      if (!root) return;
+      const svg = root.querySelector("svg.recharts-surface") as SVGSVGElement | null;
+      if (!svg) return;
+      const pt = clientToSvgUserPoint(svg, e.clientX, e.clientY);
+      if (!pt) return;
+      const regions = cohortHitRef.current;
+      for (let i = regions.length - 1; i >= 0; i--) {
+        const r = regions[i]!;
+        if (pointInPolygon(pt.x, pt.y, r.polygon)) {
+          const rect = root.getBoundingClientRect();
+          setCohortHover({
+            weekTitle: r.weekTitle,
+            count: r.count,
+            x: e.clientX - rect.left,
+            y: e.clientY - rect.top,
+          });
+          return;
+        }
+      }
+      setCohortHover(null);
+    },
+    [cohortOverlayEnabled, frozen],
+  );
+
+  const handleChartMouseLeave = useCallback(() => {
+    setCohortHover(null);
+  }, []);
+
+  const logXDomain =
+    Array.isArray(logDomainX) &&
+    logDomainX.length === 2 &&
+    typeof logDomainX[0] === "number" &&
+    typeof logDomainX[1] === "number"
+      ? (logDomainX as [number, number])
+      : null;
+  const logYDomain =
+    Array.isArray(logDomainY) &&
+    logDomainY.length === 2 &&
+    typeof logDomainY[0] === "number" &&
+    typeof logDomainY[1] === "number"
+      ? (logDomainY as [number, number])
+      : null;
+
   return (
     <div
+      ref={chartAreaRef}
       className="relative w-full outline-none"
       style={{
         outline: "none",
@@ -642,8 +739,22 @@ export function TrackStreamsXYChart({
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerCancel}
       onClick={handleClick}
+      onMouseMove={handleChartMouseMove}
+      onMouseLeave={handleChartMouseLeave}
     >
       {chartEl}
+
+      {cohortOverlayEnabled && logXDomain && logYDomain ? (
+        <ScatterCohortOverlay
+          containerRef={chartAreaRef}
+          cohorts={releaseCohortPayload}
+          logDomainX={logXDomain}
+          logDomainY={logYDomain}
+          enabled={cohortOverlayEnabled}
+          isDark={themeColors.isDark}
+          onHitRegionsChange={handleCohortHitRegions}
+        />
+      ) : null}
 
       {hiddenCount > 0 ? (
         <div
@@ -672,6 +783,34 @@ export function TrackStreamsXYChart({
               accentColor={dotColor}
               frozen={true}
             />
+          </ViewportAwareTooltip>
+        </div>
+      ) : null}
+
+      {cohortHover && !focusPoint && !frozen && !hovered ? (
+        <div
+          className="pointer-events-none absolute z-40"
+          style={{
+            left: 0,
+            top: 0,
+            transform: `translate3d(${Math.max(8, cohortHover.x + 12)}px, ${Math.max(8, cohortHover.y + 12)}px, 0)`,
+            willChange: "transform",
+          }}
+        >
+          <ViewportAwareTooltip>
+            <div
+              className="max-w-[280px] rounded-lg border px-3 py-2 shadow-md"
+              style={{
+                borderColor: "var(--sb-border)",
+                background: "var(--sb-card)",
+                color: "var(--sb-fg)",
+              }}
+            >
+              <div className="text-xs font-medium leading-snug">{cohortHover.weekTitle}</div>
+              <div className="mt-0.5 text-[11px] opacity-80" style={{ color: "var(--sb-muted)" }}>
+                {cohortHover.count} {cohortHover.count === 1 ? "track" : "tracks"} on chart (same ISO week)
+              </div>
+            </div>
           </ViewportAwareTooltip>
         </div>
       ) : null}

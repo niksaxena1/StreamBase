@@ -18,7 +18,7 @@ import { useMetric } from "@/components/metrics/MetricContext";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/GlassTable";
 import { Modal } from "@/components/ui/Modal";
-import { formatInt, formatUsd } from "@/lib/format";
+import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
 import { useThemeColors, getChartTooltipStyle } from "@/components/charts/useThemeColors";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
@@ -117,20 +117,22 @@ export function FilterConcentrationView({
   const valueStyle = isRevenue ? ({ color: "#10b981" } as const) : ({ color: "var(--sb-positive)" } as const);
   const valueClass = "font-medium";
 
-  const csvRows = useMemo(() =>
-    sorted.map((t) => {
-      const val = getValue(t);
-      const distro = distroByIsrc?.get(t.isrc);
-      return {
-        track: t.name ?? t.isrc,
-        isrc: t.isrc,
-        artists: (t.spotify_artist_names ?? []).join(", "),
-        distro_playlist: distro?.name ?? "",
-        value: val,
-        share_pct: grandTotal > 0 ? ((Math.max(0, val) / grandTotal) * 100).toFixed(2) : "0",
-        cum_pct: (cumPcts[sorted.indexOf(t)] ?? 0).toFixed(2),
-      };
-    }),
+  const csvRows = useMemo(
+    () =>
+      sorted.map((t, i) => {
+        const val = getValue(t);
+        const distro = distroByIsrc?.get(t.isrc);
+        return {
+          track: t.name ?? t.isrc,
+          isrc: t.isrc,
+          artists: (t.spotify_artist_names ?? []).join(", "),
+          release_date: t.release_date ?? "",
+          distro_playlist: distro?.name ?? "",
+          value: val,
+          share_pct: grandTotal > 0 ? ((Math.max(0, val) / grandTotal) * 100).toFixed(2) : "0",
+          cum_pct: (cumPcts[i] ?? 0).toFixed(2),
+        };
+      }),
     [sorted, getValue, grandTotal, cumPcts, distroByIsrc],
   );
 
@@ -143,7 +145,7 @@ export function FilterConcentrationView({
   }
 
   // Column count for threshold divider colSpan
-  const colCount = 6;
+  const colCount = 7;
 
   return (
     <>
@@ -212,6 +214,7 @@ export function FilterConcentrationView({
           headers={[
             "",
             "TRACK",
+            { label: "RELEASE", className: "hidden sm:table-cell" },
             {
               label: (
                 <button
@@ -274,6 +277,9 @@ export function FilterConcentrationView({
                         </div>
                       ) : null}
                     </div>
+                  </TableCell>
+                  <TableCell mono className="text-xs hidden sm:table-cell" style={{ color: "var(--sb-muted)" }}>
+                    {formatDateISO(t.release_date)}
                   </TableCell>
                   <TableCell className="hidden sm:table-cell">
                     {showIsrc ? (
