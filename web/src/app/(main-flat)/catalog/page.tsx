@@ -520,8 +520,48 @@ export default async function CatalogPage({
     }
   }
 
+  // Batch-fetch the distro playlist (playlist_type = 'Distro') for every top-track ISRC.
+  const distroByIsrc = new Map<string, { name: string; imageUrl: string | null }>();
+  if (latestRunDate && topIsrcs.size > 0) {
+    const allTopIsrcs = Array.from(topIsrcs).filter(Boolean);
+    const { data: distroMemRows } = await cachedQuery(
+      async () =>
+        await svc
+          .from("playlist_memberships")
+          .select("isrc,playlist_key,valid_to")
+          .in("isrc", allTopIsrcs)
+          .lte("valid_from", latestRunDate),
+      `catalog-top-distro-memberships-${artistId}-${latestRunDate}`,
+      CACHE_TTL_1H,
+    );
+    const activeMemRows = ((distroMemRows ?? []) as Array<{ isrc: string; playlist_key: string; valid_to: string | null }>)
+      .filter((r) => r.valid_to == null || r.valid_to >= latestRunDate);
+    const uniquePlaylistKeys = [...new Set(activeMemRows.map((r) => r.playlist_key))];
+    if (uniquePlaylistKeys.length) {
+      const { data: distroPlaylistRows } = await cachedQuery(
+        async () =>
+          await svc
+            .from("playlists")
+            .select("playlist_key,display_name,spotify_playlist_image_url")
+            .in("playlist_key", uniquePlaylistKeys)
+            .eq("playlist_type", "Distro"),
+        `catalog-top-distro-playlists-${artistId}-${latestRunDate}`,
+        CACHE_TTL_1H,
+      );
+      const distroPlaylistMap = new Map(
+        ((distroPlaylistRows ?? []) as Array<{ playlist_key: string; display_name: string | null; spotify_playlist_image_url: string | null }>)
+          .map((p) => [p.playlist_key, { name: p.display_name ?? p.playlist_key, imageUrl: p.spotify_playlist_image_url ?? null }]),
+      );
+      for (const r of activeMemRows) {
+        const info = distroPlaylistMap.get(r.playlist_key);
+        if (info && !distroByIsrc.has(r.isrc)) distroByIsrc.set(r.isrc, info);
+      }
+    }
+  }
+
   const topByCumulative = ((topTotalRows ?? []) as CatalogTopTrackRow[]).map((r) => {
     const meta = trackMetaByIsrc.get(r.isrc) ?? null;
+    const distro = distroByIsrc.get(r.isrc) ?? null;
     return {
       isrc: r.isrc,
       total: r.total ?? null,
@@ -531,11 +571,14 @@ export default async function CatalogPage({
       artistNames: meta?.spotify_artist_names ?? null,
       artistIds: meta?.spotify_artist_ids ?? null,
       releaseDate: (meta?.release_date ?? "").trim() || null,
+      distroPlaylistName: distro?.name ?? null,
+      distroPlaylistImageUrl: distro?.imageUrl ?? null,
     };
   });
 
   const topByDaily = ((topDailyRows ?? []) as CatalogTopTrackRow[]).map((r) => {
     const meta = trackMetaByIsrc.get(r.isrc) ?? null;
+    const distro = distroByIsrc.get(r.isrc) ?? null;
     return {
       isrc: r.isrc,
       daily: r.daily ?? null,
@@ -545,6 +588,8 @@ export default async function CatalogPage({
       artistNames: meta?.spotify_artist_names ?? null,
       artistIds: meta?.spotify_artist_ids ?? null,
       releaseDate: (meta?.release_date ?? "").trim() || null,
+      distroPlaylistName: distro?.name ?? null,
+      distroPlaylistImageUrl: distro?.imageUrl ?? null,
     };
   });
 

@@ -21,6 +21,8 @@ export type TopTrack = {
   artistNames?: string[] | null;
   artistIds?: string[] | null;
   releaseDate?: string | null;
+  distroPlaylistName?: string | null;
+  distroPlaylistImageUrl?: string | null;
 };
 
 export type TrackSeriesPoint = { date: string; value: number };

@@ -247,6 +247,9 @@ export function CatalogPageClient(props: {
     [topByDailySorted, sp],
   );
 
+  // Distro/ISRC column toggle (default: show distro)
+  const [showIsrcInDistroCol, setShowIsrcInDistroCol] = useState(false);
+
   // On mobile, ISRC column is hidden and the Release column toggles
   // between Release date and ISRC via long press.
   const [showIsrcOnMobile, setShowIsrcOnMobile] = useState(false);
@@ -278,11 +281,12 @@ export function CatalogPageClient(props: {
           isrc: t.isrc,
           artists: (t.artistNames ?? []).join(", "),
           release_date: t.releaseDate ?? "",
+          distro_playlist: t.distroPlaylistName ?? "",
           [valueLabel]: raw == null ? null : isRevMode ? Number(raw) * streamPayoutPerStreamUsd : raw,
           share_pct: pctByIsrc.get(t.isrc)?.toFixed(2) ?? "",
         };
       }) as Array<Record<string, unknown>>,
-      headers: ["track", "isrc", "artists", "release_date", valueLabel, "share_pct"],
+      headers: ["track", "isrc", "artists", "release_date", "distro_playlist", valueLabel, "share_pct"],
       sortForExport: false,
     });
   }
@@ -485,7 +489,20 @@ export function CatalogPageClient(props: {
                       />
                     ),
                   },
-                  { label: "ISRC", className: "hidden sm:table-cell" },
+                  {
+                    label: (
+                      <button
+                        type="button"
+                        onClick={() => setShowIsrcInDistroCol((v) => !v)}
+                        className="flex items-center gap-1 uppercase tracking-wider text-[11px] font-medium opacity-60 hover:opacity-100 transition-opacity"
+                        title={showIsrcInDistroCol ? "Show distro playlist" : "Show ISRC"}
+                      >
+                        {showIsrcInDistroCol ? "ISRC" : "DISTRO"}
+                        <span className="opacity-50 text-[9px]">⇄</span>
+                      </button>
+                    ),
+                    className: "hidden sm:table-cell",
+                  },
                   {
                     label: (
                       <div
@@ -561,8 +578,21 @@ export function CatalogPageClient(props: {
                             ) : null}
                           </div>
                         </TableCell>
-                        <TableCell mono className="text-xs opacity-40 hidden sm:table-cell" style={{ color: "var(--sb-muted)" }}>
-                          {t.isrc}
+                        <TableCell className="hidden sm:table-cell">
+                          {showIsrcInDistroCol ? (
+                            <span className="font-mono text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>{t.isrc}</span>
+                          ) : t.distroPlaylistName ? (
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              {t.distroPlaylistImageUrl ? (
+                                <Image src={t.distroPlaylistImageUrl} alt={t.distroPlaylistName} width={20} height={20} className="h-5 w-5 rounded flex-shrink-0 object-cover" />
+                              ) : (
+                                <div className="h-5 w-5 rounded flex-shrink-0 bg-orange-400/20" />
+                              )}
+                              <span className="truncate text-xs" style={{ color: "var(--sb-muted)" }}>{t.distroPlaylistName}</span>
+                            </div>
+                          ) : (
+                            <span className="text-xs opacity-30" style={{ color: "var(--sb-muted)" }}>—</span>
+                          )}
                         </TableCell>
                         <TableCell mono className="text-xs" style={{ color: "var(--sb-muted)" }}>
                           {showIsrcOnMobile ? t.isrc : (t.releaseDate ? formatDateISO(t.releaseDate) : null)}
@@ -635,7 +665,20 @@ export function CatalogPageClient(props: {
                       />
                     ),
                   },
-                  { label: "ISRC", className: "hidden sm:table-cell" },
+                  {
+                    label: (
+                      <button
+                        type="button"
+                        onClick={() => setShowIsrcInDistroCol((v) => !v)}
+                        className="flex items-center gap-1 uppercase tracking-wider text-[11px] font-medium opacity-60 hover:opacity-100 transition-opacity"
+                        title={showIsrcInDistroCol ? "Show distro playlist" : "Show ISRC"}
+                      >
+                        {showIsrcInDistroCol ? "ISRC" : "DISTRO"}
+                        <span className="opacity-50 text-[9px]">⇄</span>
+                      </button>
+                    ),
+                    className: "hidden sm:table-cell",
+                  },
                   {
                     label: (
                       <div
@@ -711,8 +754,21 @@ export function CatalogPageClient(props: {
                             ) : null}
                           </div>
                         </TableCell>
-                        <TableCell mono className="text-xs opacity-40 hidden sm:table-cell" style={{ color: "var(--sb-muted)" }}>
-                          {t.isrc}
+                        <TableCell className="hidden sm:table-cell">
+                          {showIsrcInDistroCol ? (
+                            <span className="font-mono text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>{t.isrc}</span>
+                          ) : t.distroPlaylistName ? (
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              {t.distroPlaylistImageUrl ? (
+                                <Image src={t.distroPlaylistImageUrl} alt={t.distroPlaylistName} width={20} height={20} className="h-5 w-5 rounded flex-shrink-0 object-cover" />
+                              ) : (
+                                <div className="h-5 w-5 rounded flex-shrink-0 bg-orange-400/20" />
+                              )}
+                              <span className="truncate text-xs" style={{ color: "var(--sb-muted)" }}>{t.distroPlaylistName}</span>
+                            </div>
+                          ) : (
+                            <span className="text-xs opacity-30" style={{ color: "var(--sb-muted)" }}>—</span>
+                          )}
                         </TableCell>
                         <TableCell mono className="text-xs" style={{ color: "var(--sb-muted)" }}>
                           {showIsrcOnMobile ? t.isrc : (t.releaseDate ? formatDateISO(t.releaseDate) : null)}

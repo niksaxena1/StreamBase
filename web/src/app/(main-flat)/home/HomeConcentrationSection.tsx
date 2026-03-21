@@ -18,7 +18,7 @@ import { useMetric } from "@/components/metrics/MetricContext";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/GlassTable";
 import { formatInt, formatUsd } from "@/lib/format";
-import { readStoredBool, readStoredNumber, writeStoredBool, writeStoredNumber } from "@/lib/storage";
+import { readStoredBool, readStoredNumber, readStoredString, writeStoredBool, writeStoredNumber, writeStoredString } from "@/lib/storage";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
 import { todayIsoDate } from "@/lib/csv";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
@@ -34,6 +34,8 @@ const STORAGE_KEY_THRESHOLD = "sb:home-concentration-threshold";
 
 type ViewMode = "total" | "daily";
 type FilterMode = "all" | "artist" | "collector" | "playlist";
+
+const SECTION_TITLE = "STREAM CONCENTRATION";
 
 const HEADER_PILL_ACTIVE = "bg-black text-white dark:bg-white dark:text-black";
 const HEADER_PILL_IDLE = "text-black/70 hover:bg-white/70 dark:text-white/70 dark:hover:bg-white/20";
@@ -108,15 +110,13 @@ export function HomeConcentrationSection(props: {
 
   useEffect(() => {
     setOpen(readStoredBool(STORAGE_KEY_OPEN, false));
-    const m = typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEY_MODE) : null;
+    const m = readStoredString(STORAGE_KEY_MODE);
     if (m === "total" || m === "daily") setViewMode(m);
     setThreshold(readStoredNumber(STORAGE_KEY_THRESHOLD, 50));
   }, []);
 
   useEffect(() => { writeStoredBool(STORAGE_KEY_OPEN, open); }, [open]);
-  useEffect(() => {
-    try { localStorage.setItem(STORAGE_KEY_MODE, viewMode); } catch { /* ignore */ }
-  }, [viewMode]);
+  useEffect(() => { writeStoredString(STORAGE_KEY_MODE, viewMode); }, [viewMode]);
   useEffect(() => { writeStoredNumber(STORAGE_KEY_THRESHOLD, threshold); }, [threshold]);
 
   // Fetch playlist list once on mount
@@ -265,7 +265,6 @@ export function HomeConcentrationSection(props: {
   const valueStyle = isRevenue ? ({ color: "#10b981" } as const) : ({ color: "var(--sb-positive)" } as const);
   const valueClass = "font-medium";
 
-  const sectionTitle = "STREAM CONCENTRATION";
   const selectedPlaylistName = playlistKey ? playlists.find((p) => p.playlist_key === playlistKey)?.display_name ?? playlistKey : null;
   const sectionSubtitle =
     filterMode === "artist" && artistId
@@ -295,7 +294,7 @@ export function HomeConcentrationSection(props: {
               </span>
               <div className="min-w-0">
                 <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
-                  {sectionTitle}
+                  {SECTION_TITLE}
                 </div>
                 {open ? (
                   <div className="mt-0.5 text-[10px] opacity-40">{sectionSubtitle}</div>
