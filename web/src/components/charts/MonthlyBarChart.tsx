@@ -106,7 +106,7 @@ function MonthlyTooltip({
           >
             Est. full month:{" "}
             <span className="font-semibold" style={{ color: valueColor }}>
-              {fmtValue(dp.projectedTotal)}
+              {fmtValue(Math.round(dp.projectedTotal))}
             </span>
           </div>
         )}

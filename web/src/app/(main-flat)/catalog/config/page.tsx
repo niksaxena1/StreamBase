@@ -6,6 +6,8 @@ import { TracksConfigClient } from "./TracksConfigClient";
 
 export const revalidate = 86400; // 24h ISR - catalog config uses daily snapshots
 
+export type DistroPlaylist = { key: string; name: string; imageUrl: string | null };
+
 type TrackDailyRow = {
   date: string;
   isrc: string;
@@ -230,6 +232,69 @@ export default async function CatalogConfigPage() {
     });
   }
 
+  // Fetch distro playlists and their currently-active memberships.
+  // Strategy: query the small set of distro playlists first, then paginate memberships scoped to those keys.
+  // Use today's date (not latestDate) so newly-added memberships aren't missed.
+  const todayDate = new Date().toISOString().slice(0, 10);
+  const isrcDistroMap = new Map<string, DistroPlaylist[]>();
+  const artistDistroMap = new Map<string, DistroPlaylist[]>();
+
+  const { data: distroPlaylistRows } = await svc
+    .from("playlists")
+    .select("playlist_key,display_name,spotify_playlist_image_url")
+    .eq("playlist_type", "Distro");
+
+  const distroPlaylists = ((distroPlaylistRows ?? []) as Array<{
+    playlist_key: string;
+    display_name: string | null;
+    spotify_playlist_image_url: string | null;
+  }>).map((p) => ({
+    key: p.playlist_key,
+    name: p.display_name ?? p.playlist_key,
+    imageUrl: p.spotify_playlist_image_url ?? null,
+  }));
+
+  if (distroPlaylists.length) {
+    const distroKeys = distroPlaylists.map((p) => p.key);
+    const distroInfoByKey = new Map(distroPlaylists.map((p) => [p.key, p]));
+
+    // Paginate to avoid the Supabase 1000-row limit silently truncating results.
+    const allMembershipRows: Array<{ isrc: string; playlist_key: string; valid_to: string | null }> = [];
+    let from = 0;
+    const pageSize = 1000;
+    while (true) {
+      const { data: page } = await svc
+        .from("playlist_memberships")
+        .select("isrc,playlist_key,valid_to")
+        .in("playlist_key", distroKeys)
+        .or(`valid_to.is.null,valid_to.gte.${todayDate}`)
+        .range(from, from + pageSize - 1);
+      const rows = (page ?? []) as typeof allMembershipRows;
+      allMembershipRows.push(...rows);
+      if (rows.length < pageSize) break;
+      from += pageSize;
+    }
+
+    for (const r of allMembershipRows) {
+      const info = distroInfoByKey.get(r.playlist_key);
+      if (!info) continue;
+      if (!isrcDistroMap.has(r.isrc)) isrcDistroMap.set(r.isrc, []);
+      isrcDistroMap.get(r.isrc)!.push(info);
+    }
+
+    // Aggregate distro playlists per artist (deduplicated by playlist key)
+    for (const track of trackRows) {
+      const distros = isrcDistroMap.get(track.isrc) ?? [];
+      for (const artistId of (track.spotify_artist_ids ?? [])) {
+        if (!artistDistroMap.has(artistId)) artistDistroMap.set(artistId, []);
+        const existing = artistDistroMap.get(artistId)!;
+        for (const d of distros) {
+          if (!existing.some((e) => e.key === d.key)) existing.push(d);
+        }
+      }
+    }
+  }
+
   const tracksWithData = trackRows.map((track) => ({
     isrc: track.isrc,
     name: track.name,
@@ -241,6 +306,7 @@ export default async function CatalogConfigPage() {
     externalUrl: track.spotify_track_id ? `https://open.spotify.com/track/${track.spotify_track_id}` : null,
     totalStreams: trackStats.get(track.isrc)?.totalStreams ?? null,
     dailyStreams: trackStats.get(track.isrc)?.dailyStreams ?? null,
+    distroPlaylists: isrcDistroMap.get(track.isrc) ?? [],
   }));
 
   const artistsWithStats = artistsWithData.map((artist) => {
@@ -251,14 +317,16 @@ export default async function CatalogConfigPage() {
       dailyStreams: stats?.dailyStreams ?? null,
       trackCount: stats?.trackCount ?? 0,
       dailyTrackCount: stats?.dailyTrackCount ?? 0,
+      distroPlaylists: artistDistroMap.get(artist.id) ?? [],
     };
   });
 
   return (
     <div className="space-y-4">
-      <ArtistsConfigClient 
-        artists={artistsWithStats} 
+      <ArtistsConfigClient
+        artists={artistsWithStats}
         totalCount={artists.length}
+        allTracks={tracksWithData}
       />
       
       <TracksConfigClient

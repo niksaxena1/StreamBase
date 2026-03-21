@@ -9,6 +9,8 @@ export const StatCard = memo(function StatCard(props: {
   trend?: "up" | "down" | "neutral";
   trendData?: number[]; // Array of numbers for dynamic sparkline
   accentColor?: string; // Custom accent color (ring and glow)
+  distroName?: string | null;
+  distroImageUrl?: string | null;
 }) {
   // Use custom accent color if provided, otherwise lime green (default)
   const accentColor = props.accentColor ?? "#c7f33c";
@@ -79,13 +81,32 @@ export const StatCard = memo(function StatCard(props: {
       ) : null}
 
       <div className="relative z-10 flex h-full flex-col justify-between">
-        <div>
-          <div className="text-[11px] font-medium uppercase tracking-wide opacity-60">
-            {props.title}
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex-1">
+            <div className="text-[11px] font-medium uppercase tracking-wide opacity-60">
+              {props.title}
+            </div>
+            <div className="mt-1 font-display text-2xl font-bold tracking-tight leading-none">
+              {props.value}
+            </div>
           </div>
-          <div className="mt-1 font-display text-2xl font-bold tracking-tight leading-none">
-            {props.value}
-          </div>
+
+          {/* Distro info in top-right */}
+          {(props.distroName || props.distroImageUrl) && (
+            <div className="flex items-center gap-1">
+              {props.distroImageUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={props.distroImageUrl}
+                  alt={props.distroName || "distro"}
+                  className="h-5 w-5 rounded object-cover flex-shrink-0"
+                />
+              )}
+              {props.distroName && (
+                <span className="text-[10px] opacity-60 max-w-[80px] truncate">{props.distroName}</span>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="mt-2 flex items-end justify-between gap-2">

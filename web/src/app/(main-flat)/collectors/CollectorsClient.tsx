@@ -146,6 +146,9 @@ export function CollectorsClient(props: {
     writeStoredBool(COLLECTORS_MONTHLY_ACTUAL_REVENUE_STORAGE.visible, showActualRevenue);
   }, [showActualRevenue]);
 
+  // Distro/ISRC column toggle (default: show distro)
+  const [showIsrcInDistroCol, setShowIsrcInDistroCol] = useState(false);
+
   const [actualRevenueByMonth, setActualRevenueByMonth] = useState<Record<string, number>>({});
   const [forecastOpen, setForecastOpen] = useState(false);
   const [forecastMonth, setForecastMonth] = useState<string | null>(null);
@@ -1477,6 +1480,12 @@ export function CollectorsClient(props: {
                   "—"
                 )
               }
+              distroName={
+                topTrackCards.bestDelta?.distro_playlist_names?.[0]
+              }
+              distroImageUrl={
+                topTrackCards.bestDelta?.distro_playlist_image_urls?.[0]
+              }
             />
             <StatCard
               title="Top total track"
@@ -1521,6 +1530,12 @@ export function CollectorsClient(props: {
                   "—"
                 )
               }
+              distroName={
+                topTrackCards.bestTotal?.distro_playlist_names?.[0]
+              }
+              distroImageUrl={
+                topTrackCards.bestTotal?.distro_playlist_image_urls?.[0]
+              }
             />
             </div>
 
@@ -1563,7 +1578,20 @@ export function CollectorsClient(props: {
                 headers={[
                   "",
                   trackHeaderButton({ label: "TRACK", asc: "name_asc", desc: "name_desc", defaultDir: "asc" }),
-                  { label: "ISRC", className: "hidden sm:table-cell" },
+                  {
+                    label: (
+                      <button
+                        type="button"
+                        onClick={() => setShowIsrcInDistroCol((v) => !v)}
+                        className="flex items-center gap-1 uppercase tracking-wider text-[11px] font-medium opacity-60 hover:opacity-100 transition-opacity"
+                        title={showIsrcInDistroCol ? "Show distro playlist" : "Show ISRC"}
+                      >
+                        {showIsrcInDistroCol ? "ISRC" : "DISTRO"}
+                        <span className="opacity-50 text-[9px]">⇄</span>
+                      </button>
+                    ),
+                    className: "hidden sm:table-cell",
+                  },
                   {
                     label: (
                       <div
@@ -1596,13 +1624,13 @@ export function CollectorsClient(props: {
                     align: "right",
                     title: "Today minus yesterday (based on cumulative streams). Click to sort.",
                   }),
-                  trackHeaderButton({ label: "DISTRO", asc: "distro_asc", desc: "distro_desc", defaultDir: "desc" }),
                 ]}
                 maxBodyHeightClassName="max-h-[520px]"
               >
               {filteredSortedTracks.map((t) => {
                 const distroKeys = (t.distro_playlist_keys ?? []).filter(Boolean);
                 const distroNames = (t.distro_playlist_names ?? []).filter(Boolean);
+                const distroImages = (t.distro_playlist_image_urls ?? []).filter(Boolean);
                 const distroTitle = distroNames.length ? distroNames.join(", ") : distroKeys.join(", ");
 
                 return (
@@ -1635,8 +1663,22 @@ export function CollectorsClient(props: {
                         </div>
                       ) : null}
                     </TableCell>
-                    <TableCell mono className="text-xs opacity-40 hidden sm:table-cell" style={{ color: "var(--sb-muted)" }}>
-                      {t.isrc}
+                    <TableCell className="hidden sm:table-cell">
+                      {showIsrcInDistroCol ? (
+                        <span className="font-mono text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>{t.isrc}</span>
+                      ) : distroNames.length ? (
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          {distroImages[0] ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={distroImages[0]} alt={distroNames[0]} className="h-5 w-5 rounded flex-shrink-0 object-cover" />
+                          ) : (
+                            <div className="h-5 w-5 rounded flex-shrink-0 bg-orange-400/20" />
+                          )}
+                          <span className="truncate text-xs" style={{ color: "var(--sb-muted)" }}>{distroNames[0]}</span>
+                        </div>
+                      ) : (
+                        <span className="text-xs opacity-30" style={{ color: "var(--sb-muted)" }}>—</span>
+                      )}
                     </TableCell>
                     <TableCell
                       mono

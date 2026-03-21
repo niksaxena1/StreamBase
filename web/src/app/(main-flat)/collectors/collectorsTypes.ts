@@ -108,6 +108,7 @@ export type CollectorTrackRow = {
   playlist_names: string[] | null;
   distro_playlist_keys: string[] | null;
   distro_playlist_names: string[] | null;
+  distro_playlist_image_urls: (string | null)[] | null;
   total_streams_cumulative: number | null;
   daily_streams_delta: number | null;
 };

@@ -16,14 +16,15 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { formatInt, formatDateISO, formatMoney } from "@/lib/format";
 import { todayIsoDate } from "@/lib/csv";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
-import type { 
-  EntityType, 
-  TrackFilterResult, 
-  ArtistFilterResult, 
+import type {
+  EntityType,
+  TrackFilterResult,
+  ArtistFilterResult,
   PlaylistFilterResult,
   DateFilterResult,
   FilterResult,
 } from "./filterTypes";
+import { FilterConcentrationView } from "./FilterConcentrationView";
 
 function ArtistLinksInline(props: { names?: string[]; ids?: string[] }) {
   const names = props.names ?? [];
@@ -70,16 +71,32 @@ type FilterResultsProps = {
   results: FilterResult[];
   isLoading: boolean;
   error: string | null;
+  distroByIsrc?: Map<string, { name: string; imageUrl: string | null }>;
 };
 
 const PAGE_SIZE = 25;
 
-export function FilterResults({ entityType, results, isLoading, error }: FilterResultsProps) {
+type ResultsView = "table" | "concentration";
+
+const VIEW_PILL_ACTIVE = "bg-black text-white dark:bg-white dark:text-black";
+const VIEW_PILL_IDLE = "text-black/70 hover:bg-white/70 dark:text-white/70 dark:hover:bg-white/20";
+
+function viewPill(active: boolean): string {
+  return [
+    "rounded-full px-2.5 py-1.5 text-[11px] font-medium transition cursor-pointer",
+    active ? VIEW_PILL_ACTIVE : VIEW_PILL_IDLE,
+  ].join(" ");
+}
+
+export function FilterResults({ entityType, results, isLoading, error, distroByIsrc }: FilterResultsProps) {
   const [sort, setSort] = useState<SortConfig>({ key: "", direction: null });
   const [page, setPage] = useState(1);
+  const [resultsView, setResultsView] = useState<ResultsView>("table");
 
-  // Reset page when results change (e.g. new filter applied, entity switch)
+  // Reset page and view when results change (e.g. new filter applied, entity switch)
   useEffect(() => { setPage(1); }, [results]);
+  // Reset view to table when switching away from tracks
+  useEffect(() => { if (entityType !== "tracks") setResultsView("table"); }, [entityType]);
   
   // Sort results
   const sortedResults = useMemo(() => {
@@ -244,46 +261,71 @@ export function FilterResults({ entityType, results, isLoading, error }: FilterR
     }
   };
 
+  const showViewToggle = entityType === "tracks" && results.length > 0;
+
   return (
     <div className="mt-4 space-y-4">
-      {/* Results count and download */}
+      {/* Results count, view toggle, and download */}
       <div className="flex items-center justify-between gap-2">
-        <p className="text-sm" style={{ color: "var(--sb-muted)" }}>
-          Showing {paginatedResults.length} of {results.length} results
-        </p>
-        <ChartCsvDownloadButton
-          filename={`filter-results-${entityType}-${todayIsoDate()}.csv`}
-          rows={csvRows}
-          title="Download results as CSV"
-        />
-      </div>
-      
-      {/* Table */}
-      {renderTable()}
-      
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setPage(p => Math.max(1, p - 1))}
-            disabled={page === 1}
-          >
-            Previous
-          </Button>
-          <span className="text-sm px-4" style={{ color: "var(--sb-muted)" }}>
-            Page {page} of {totalPages}
-          </span>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-            disabled={page === totalPages}
-          >
-            Next
-          </Button>
+        <div className="flex items-center gap-3">
+          <p className="text-sm" style={{ color: "var(--sb-muted)" }}>
+            {resultsView === "concentration"
+              ? `${results.length} tracks`
+              : `Showing ${paginatedResults.length} of ${results.length} results`}
+          </p>
+          {showViewToggle && (
+            <div className="sb-ring flex items-center gap-0.5 rounded-full bg-white/60 p-0.5 dark:bg-white/10">
+              <button type="button" onClick={() => setResultsView("table")} className={viewPill(resultsView === "table")}>
+                TABLE
+              </button>
+              <button type="button" onClick={() => setResultsView("concentration")} className={viewPill(resultsView === "concentration")}>
+                CONCENTRATION
+              </button>
+            </div>
+          )}
         </div>
+        {resultsView === "table" && (
+          <ChartCsvDownloadButton
+            filename={`filter-results-${entityType}-${todayIsoDate()}.csv`}
+            rows={csvRows}
+            title="Download results as CSV"
+          />
+        )}
+      </div>
+
+      {/* Concentration view for tracks */}
+      {resultsView === "concentration" && entityType === "tracks" ? (
+        <FilterConcentrationView results={results as TrackFilterResult[]} distroByIsrc={distroByIsrc} />
+      ) : (
+        <>
+          {/* Table */}
+          {renderTable()}
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page === 1}
+              >
+                Previous
+              </Button>
+              <span className="text-sm px-4" style={{ color: "var(--sb-muted)" }}>
+                Page {page} of {totalPages}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+              >
+                Next
+              </Button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

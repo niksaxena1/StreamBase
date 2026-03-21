@@ -208,6 +208,32 @@ export function FilterBuilder({
     return next;
   }
   
+  // Eagerly load distro playlist memberships for concentration view
+  useEffect(() => {
+    if (!isOpen || !asOfRunDate || !playlistData.length) return;
+    const distroKeys = playlistData.filter((p) => p.playlist_type === "Distro").map((p) => p.playlist_key);
+    if (!distroKeys.length) return;
+    const missing = distroKeys.filter((k) => !membershipByPlaylistKey.has(k));
+    if (!missing.length) return;
+    void ensurePlaylistMemberships(missing).catch(() => { /* ignore */ });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, asOfRunDate, playlistData]);
+
+  // Build distro-by-ISRC map from Distro playlists + memberships (for concentration view)
+  const distroByIsrc = useMemo(() => {
+    const map = new Map<string, { name: string; imageUrl: string | null }>();
+    const distroPlaylists = playlistData.filter((p) => p.playlist_type === "Distro");
+    for (const dp of distroPlaylists) {
+      const members = membershipByPlaylistKey.get(dp.playlist_key);
+      if (!members) continue;
+      const info = { name: dp.display_name, imageUrl: dp.spotify_playlist_image_url ?? null };
+      for (const isrc of members) {
+        if (!map.has(isrc)) map.set(isrc, info);
+      }
+    }
+    return map;
+  }, [playlistData, membershipByPlaylistKey]);
+
   // Build track options for the "Contains Track" multi-select on playlists
   const trackOptions = useMemo(() => {
     return trackData.map((t) => ({
@@ -814,6 +840,7 @@ export function FilterBuilder({
               results={results}
               isLoading={isLoading}
               error={error}
+              distroByIsrc={distroByIsrc}
             />
           )}
           

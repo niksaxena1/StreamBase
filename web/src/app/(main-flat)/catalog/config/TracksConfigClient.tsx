@@ -10,6 +10,8 @@ import { downloadCsv, todayIsoDate } from "@/lib/csv";
 import { foldForSearch } from "@/lib/searchFold";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 
+type DistroPlaylist = { key: string; name: string; imageUrl: string | null };
+
 type Track = {
   isrc: string;
   name: string | null;
@@ -21,6 +23,7 @@ type Track = {
   externalUrl: string | null;
   totalStreams: number | null;
   dailyStreams: number | null;
+  distroPlaylists: DistroPlaylist[];
 };
 
 type TracksConfigClientProps = {
@@ -118,6 +121,7 @@ export function TracksConfigClient({ tracks, totalCount }: TracksConfigClientPro
                   "Daily Streams": dailyStreams,
                   "Total Revenue (USD)": totalRevenueUsd,
                   "Daily Revenue (USD)": dailyRevenueUsd,
+                  "Distro Playlist": track.distroPlaylists.map((d) => d.name).join(", "),
                   "Release Date": track.release_date ?? "",
                   "Last Seen": track.last_seen ?? "",
                   "Spotify URL": track.externalUrl ?? "",

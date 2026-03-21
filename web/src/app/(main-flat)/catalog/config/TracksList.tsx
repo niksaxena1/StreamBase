@@ -15,6 +15,8 @@ import { formatInt, formatUsd2 } from "@/lib/format";
 /** Number of rows to render initially before requiring "Show more". */
 const INITIAL_RENDER_CAP = 150;
 
+type DistroPlaylist = { key: string; name: string; imageUrl: string | null };
+
 type Track = {
   isrc: string;
   name: string | null;
@@ -26,6 +28,7 @@ type Track = {
   externalUrl: string | null;
   totalStreams: number | null;
   dailyStreams: number | null;
+  distroPlaylists: DistroPlaylist[];
 };
 
 type SortOption = "name" | "total" | "daily" | "release" | "lastseen";
@@ -125,7 +128,7 @@ export function TracksList({ tracks, searchQuery, sortBy = "name", sortAsc = tru
 
   return (
     <div className="flex flex-col space-y-2">
-      <GlassTable headers={["", "Track", getTotalMetricLabel(), getDailyMetricLabel(), "ISRC", "Release", "Last seen", ""]}>
+      <GlassTable headers={["", "Track", getTotalMetricLabel(), getDailyMetricLabel(), "DISTRO", "ISRC", "Release", "Last seen", ""]}>
         {visibleTracks.map((track) => (
           <TableRow key={track.isrc}>
             <TableCell>
@@ -167,6 +170,28 @@ export function TracksList({ tracks, searchQuery, sortBy = "name", sortAsc = tru
                 {formatValue(track.dailyStreams)}
               </span>
             </TableCell>
+            <TableCell>
+              {track.distroPlaylists.length === 0 ? (
+                <span className="text-xs" style={{ color: "var(--sb-muted)" }}>—</span>
+              ) : (
+                <div className="flex items-center gap-1.5">
+                  {track.distroPlaylists[0].imageUrl ? (
+                    <Image
+                      src={track.distroPlaylists[0].imageUrl}
+                      alt={track.distroPlaylists[0].name}
+                      width={20}
+                      height={20}
+                      className="h-5 w-5 rounded-full object-cover sb-ring flex-shrink-0"
+                    />
+                  ) : (
+                    <div className="h-5 w-5 rounded-full sb-ring bg-white/40 flex-shrink-0" />
+                  )}
+                  <span className="text-xs truncate max-w-[80px]" style={{ color: "var(--sb-muted)" }}>
+                    {track.distroPlaylists[0].name}
+                  </span>
+                </div>
+              )}
+            </TableCell>
             <TableCell mono className="text-xs" style={{ color: "var(--sb-muted)" }}>
               {track.isrc}
             </TableCell>
@@ -194,7 +219,7 @@ export function TracksList({ tracks, searchQuery, sortBy = "name", sortAsc = tru
         ))}
         {hasMore && (
           <TableRow>
-            <TableCell className="py-3 text-center" colSpan={8}>
+            <TableCell className="py-3 text-center" colSpan={9}>
               <button
                 type="button"
                 onClick={() => setRenderCap((prev) => prev + INITIAL_RENDER_CAP)}
@@ -209,7 +234,7 @@ export function TracksList({ tracks, searchQuery, sortBy = "name", sortAsc = tru
         )}
         {!filteredAndSortedTracks.length && (
           <TableRow>
-            <TableCell className="py-8 text-center opacity-50" colSpan={8}>
+            <TableCell className="py-8 text-center opacity-50" colSpan={9}>
               {searchQuery.trim() ? "No tracks found matching your search." : "No tracks found."}
             </TableCell>
           </TableRow>

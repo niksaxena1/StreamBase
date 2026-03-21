@@ -420,6 +420,14 @@ export default async function CollectorsPage({
   const imageByKey = new Map(
     selectedPlaylists.map((p) => [p.playlist_key, p.spotify_playlist_image_url ?? null]),
   );
+  const allPlaylistsImageByKey = new Map(
+    playlists.map((p) => [p.playlist_key, p.spotify_playlist_image_url ?? null]),
+  );
+
+  const mapPlaylistKeysToImageUrls = (keys: string[] | null): (string | null)[] | null => {
+    if (!keys?.length) return keys?.length === 0 ? [] : null;
+    return keys.map((k) => allPlaylistsImageByKey.get(String(k)) ?? null);
+  };
 
   const topPlaylists: TopPlaylistRow[] = selectedKeys.length
     ? await (async () => {
@@ -471,6 +479,7 @@ export default async function CollectorsPage({
     playlist_names: mapPlaylistKeysToNames((r.playlist_keys ?? null) as string[] | null),
     distro_playlist_keys: (r.distro_playlist_keys ?? null) as string[] | null,
     distro_playlist_names: mapPlaylistKeysToNames((r.distro_playlist_keys ?? null) as string[] | null),
+    distro_playlist_image_urls: mapPlaylistKeysToImageUrls((r.distro_playlist_keys ?? null) as string[] | null),
     total_streams_cumulative: r.total_streams_cumulative == null ? null : Number(r.total_streams_cumulative),
     daily_streams_delta: r.daily_streams_delta == null ? null : Number(r.daily_streams_delta),
   }));

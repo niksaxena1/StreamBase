@@ -410,6 +410,8 @@ function HomeDashboardInner(props: {
         </Alert>
       ) : null}
 
+      <HomeConcentrationSection trackScatterPoints={props.trackScatterPoints} latestRunDate={props.latestRunDate} />
+
       <HomeScatterSection
         trackScatterPoints={props.trackScatterPoints}
         trackScatterErrorMessage={props.trackScatterErrorMessage}
@@ -425,8 +427,6 @@ function HomeDashboardInner(props: {
         artistWeekendDips={props.artistWeekendDips}
         trackWeekendDips={props.trackWeekendDips}
       />
-
-      <HomeConcentrationSection trackScatterPoints={props.trackScatterPoints} latestRunDate={props.latestRunDate} />
 
       <HomeHistorySection history={props.history.slice(0, props.rangeDays)} />
 
