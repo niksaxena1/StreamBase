@@ -3,16 +3,17 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { ExternalLink, User, ChevronDown, ChevronUp } from "lucide-react";
+import { ExternalLink, User, ChevronDown } from "lucide-react";
 
 import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
-import { Modal } from "@/components/ui/Modal";
+import {
+  ArtistDistroTracksModal,
+  type DistroPlaylist,
+} from "@/components/catalog/ArtistDistroTracksModal";
 import { foldForSearch } from "@/lib/searchFold";
 import { useMetric } from "@/components/metrics/MetricContext";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { formatInt, formatUsd2 } from "@/lib/format";
-
-type DistroPlaylist = { key: string; name: string; imageUrl: string | null };
 
 type Artist = {
   id: string;
@@ -38,7 +39,6 @@ type TrackRow = {
 };
 
 type SortOption = "name" | "total" | "daily" | "tracks";
-type ModalSortKey = "name" | "total" | "daily";
 
 type ArtistsListProps = {
   artists: Artist[];
@@ -51,33 +51,6 @@ type ArtistsListProps = {
 
 const INITIAL_RENDER_CAP = 150;
 
-function SortHeader({
-  label,
-  sortKey,
-  current,
-  onSort,
-}: {
-  label: string;
-  sortKey: ModalSortKey;
-  current: { key: ModalSortKey; asc: boolean } | null;
-  onSort: (key: ModalSortKey) => void;
-}) {
-  const active = current?.key === sortKey;
-  return (
-    <button
-      type="button"
-      onClick={() => onSort(sortKey)}
-      className="flex items-center gap-1 uppercase tracking-wider text-[11px] font-medium transition-opacity hover:opacity-100"
-      style={{ opacity: active ? 1 : 0.6, color: "inherit" }}
-    >
-      {label}
-      {active ? (
-        current.asc ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
-      ) : null}
-    </button>
-  );
-}
-
 export function ArtistsList({
   artists,
   searchQuery,
@@ -88,6 +61,15 @@ export function ArtistsList({
 }: ArtistsListProps) {
   const { metric } = useMetric();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
+  
+  // Create a map for quick artist name lookup by ID
+  const artistIdToName = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const artist of artists) {
+      map.set(artist.id, artist.name);
+    }
+    return map;
+  }, [artists]);
 
   const filteredAndSortedArtists = useMemo(() => {
     let result = [...artists];
@@ -174,50 +156,17 @@ export function ArtistsList({
 
   // Distro modal state
   const [distroModal, setDistroModal] = useState<{ artistId: string; artistName: string; playlists: DistroPlaylist[] } | null>(null);
-  const [modalSort, setModalSort] = useState<{ key: ModalSortKey; asc: boolean } | null>({ key: "total", asc: false });
 
-  const handleModalSort = (key: ModalSortKey) => {
-    setModalSort((prev) => {
-      if (!prev || prev.key !== key) return { key, asc: key === "name" };
-      return { key, asc: !prev.asc };
-    });
-  };
-
-  // Tracks for the open modal artist, filtered to distro-only, sorted
   const modalTracks = useMemo(() => {
     if (!distroModal) return [];
     const artistId = distroModal.artistId;
     const distroKeys = new Set(distroModal.playlists.map((p) => p.key));
-
-    let rows = allTracks.filter(
+    return allTracks.filter(
       (t) =>
         t.artistIds?.includes(artistId) &&
         t.distroPlaylists.some((d) => distroKeys.has(d.key)),
     );
-
-    if (modalSort) {
-      rows = [...rows].sort((a, b) => {
-        let c = 0;
-        if (modalSort.key === "name") {
-          const an = (a.name ?? a.isrc).toLowerCase();
-          const bn = (b.name ?? b.isrc).toLowerCase();
-          c = an.localeCompare(bn);
-        } else if (modalSort.key === "total") {
-          const av = a.totalStreams ?? -1;
-          const bv = b.totalStreams ?? -1;
-          c = av - bv;
-        } else if (modalSort.key === "daily") {
-          const av = a.dailyStreams ?? -1;
-          const bv = b.dailyStreams ?? -1;
-          c = av - bv;
-        }
-        if (c === 0) c = a.isrc.localeCompare(b.isrc);
-        return modalSort.asc ? c : -c;
-      });
-    }
-
-    return rows;
-  }, [distroModal, allTracks, modalSort]);
+  }, [distroModal, allTracks]);
 
   // Incremental render cap to keep DOM node count low for large artist lists.
   const [renderCap, setRenderCap] = useState(INITIAL_RENDER_CAP);
@@ -346,149 +295,14 @@ export function ArtistsList({
         )}
       </GlassTable>
 
-      <Modal
+      <ArtistDistroTracksModal
         open={distroModal !== null}
         onClose={() => setDistroModal(null)}
-        title={distroModal?.artistName}
-        subtitle={
-          distroModal
-            ? `${distroModal.playlists.length} distro ${distroModal.playlists.length === 1 ? "playlist" : "playlists"} · ${modalTracks.length} ${modalTracks.length === 1 ? "track" : "tracks"}`
-            : undefined
-        }
-        maxWidthClassName="max-w-2xl"
-      >
-        {distroModal && (
-          <div className="space-y-4">
-            {/* Playlist chips */}
-            <div className="flex flex-wrap gap-2">
-              {distroModal.playlists.map((d) => (
-                <div key={d.key} className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium sb-ring" style={{ background: "var(--sb-glass-bg)" }}>
-                  {d.imageUrl && (
-                    <Image
-                      src={d.imageUrl}
-                      alt={d.name}
-                      width={16}
-                      height={16}
-                      className="h-4 w-4 rounded-full object-cover flex-shrink-0"
-                    />
-                  )}
-                  <span style={{ color: "var(--sb-text)" }}>{d.name}</span>
-                </div>
-              ))}
-            </div>
-
-            {/* Tracks table */}
-            <GlassTable
-              maxBodyHeightClassName="max-h-[480px]"
-              headers={[
-                "",
-                {
-                  label: (
-                    <SortHeader label="Track" sortKey="name" current={modalSort} onSort={handleModalSort} />
-                  ),
-                },
-                "DISTRO",
-                {
-                  label: (
-                    <SortHeader label="Total" sortKey="total" current={modalSort} onSort={handleModalSort} />
-                  ),
-                  align: "right" as const,
-                },
-                {
-                  label: (
-                    <SortHeader label="Daily" sortKey="daily" current={modalSort} onSort={handleModalSort} />
-                  ),
-                  align: "right" as const,
-                },
-                "",
-              ]}
-            >
-              {modalTracks.map((track) => {
-                const distro = track.distroPlaylists.find((d) =>
-                  distroModal.playlists.some((p) => p.key === d.key),
-                );
-                return (
-                  <TableRow key={track.isrc}>
-                    <TableCell>
-                      {track.albumImageUrl ? (
-                        <Image
-                          src={track.albumImageUrl}
-                          alt="Album cover"
-                          width={32}
-                          height={32}
-                          className="h-8 w-8 rounded-lg object-cover sb-ring"
-                        />
-                      ) : (
-                        <div className="h-8 w-8 rounded-lg sb-ring bg-white/60" />
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Link
-                        href={`/tracks/${track.isrc}`}
-                        className="font-medium transition-colors sb-link-hover block truncate max-w-[220px]"
-                      >
-                        {track.name ?? track.isrc}
-                      </Link>
-                      <span className="text-xs font-mono opacity-40" style={{ color: "var(--sb-muted)" }}>
-                        {track.isrc}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      {distro ? (
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          {distro.imageUrl ? (
-                            <Image
-                              src={distro.imageUrl}
-                              alt={distro.name}
-                              width={20}
-                              height={20}
-                              className="h-5 w-5 rounded-full object-cover sb-ring flex-shrink-0"
-                            />
-                          ) : (
-                            <div className="h-5 w-5 rounded-full bg-white/30 flex-shrink-0" />
-                          )}
-                          <span className="text-xs truncate max-w-[100px]" style={{ color: "var(--sb-muted)" }}>
-                            {distro.name}
-                          </span>
-                        </div>
-                      ) : (
-                        <span className="text-xs opacity-30" style={{ color: "var(--sb-muted)" }}>—</span>
-                      )}
-                    </TableCell>
-                    <TableCell numeric className="font-medium text-xs" style={{ color: "var(--sb-positive)" }}>
-                      {track.totalStreams != null ? formatInt(track.totalStreams) : "—"}
-                    </TableCell>
-                    <TableCell numeric className="font-medium text-xs" style={{ color: "var(--sb-positive)" }}>
-                      {track.dailyStreams != null ? formatInt(track.dailyStreams) : "—"}
-                    </TableCell>
-                    <TableCell>
-                      {track.externalUrl ? (
-                        <Link
-                          href={track.externalUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center justify-center rounded-full p-1 transition-colors hover:bg-black/5 dark:hover:bg-white/10"
-                          title="Open on Spotify"
-                          style={{ color: "var(--sb-muted)" }}
-                        >
-                          <ExternalLink className="h-3.5 w-3.5" />
-                        </Link>
-                      ) : null}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-              {modalTracks.length === 0 && (
-                <TableRow>
-                  <TableCell className="py-8 text-center opacity-50" colSpan={6}>
-                    No distro tracks found.
-                  </TableCell>
-                </TableRow>
-              )}
-            </GlassTable>
-          </div>
-        )}
-      </Modal>
+        artistName={distroModal?.artistName ?? ""}
+        distroPlaylists={distroModal?.playlists ?? []}
+        tracks={modalTracks}
+        artistIdToName={artistIdToName}
+      />
     </div>
   );
 }

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { BookOpen, LogOut, Settings, User, Moon, Sun } from "lucide-react";
+import { BookOpen, LogOut, Network, Settings, User, Moon, Sun } from "lucide-react";
 
 import { IconButton } from "@/components/ui/Button";
 import { supabaseBrowser } from "@/lib/supabase/client";
@@ -47,7 +47,13 @@ export function UserMenu() {
   // to guarantee it sits above charts/tables/filters.
   const useHighZPortal = useMemo(() => {
     const p = (pathname ?? "").toLowerCase();
-    return p === "/catalog" || p.startsWith("/catalog/") || p === "/playlists" || p.startsWith("/playlists/");
+    return (
+      p === "/catalog" ||
+      p.startsWith("/catalog/") ||
+      p === "/playlists" ||
+      p.startsWith("/playlists/") ||
+      p === "/network"
+    );
   }, [pathname]);
 
   const [portalPos, setPortalPos] = useState<{ top: number; right: number } | null>(null);
@@ -134,6 +140,16 @@ export function UserMenu() {
         </span>
         <span>{isDark ? "Light Mode" : "Dark Mode"}</span>
       </button>
+
+      <Link
+        href="/network"
+        className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs transition hover:bg-black/5 dark:hover:bg-white/10"
+        onClick={() => setOpen(false)}
+        title="Collaboration network"
+      >
+        <Network className="h-4 w-4 opacity-70" />
+        <span>Network</span>
+      </Link>
 
       {/* Mobile-only: settings is otherwise available in the desktop side rail */}
       <Link

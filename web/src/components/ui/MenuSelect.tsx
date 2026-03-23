@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 
 function cx(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
@@ -10,6 +11,8 @@ export type MenuSelectOption = {
   value: string;
   label: string;
   disabled?: boolean;
+  /** Optional icon or thumbnail shown before the label in the trigger and menu rows. */
+  leading?: ReactNode;
 };
 
 export function MenuSelect({
@@ -69,9 +72,16 @@ export function MenuSelect({
     }
   }, [isOpen, matchTriggerWidth]);
 
+  const selectedOption = useMemo(
+    () => options.find((o) => o.value === value),
+    [options, value],
+  );
+
   const selectedLabel = useMemo(() => {
-    return options.find((o) => o.value === value)?.label ?? (value ? value : placeholder);
-  }, [options, placeholder, value]);
+    return selectedOption?.label ?? (value ? value : placeholder);
+  }, [selectedOption, placeholder, value]);
+
+  const selectedLeading = selectedOption?.leading;
 
   return (
     <div ref={rootRef} className={cx("relative", className)}>
@@ -81,7 +91,7 @@ export function MenuSelect({
         disabled={disabled}
         onClick={() => setIsOpen((v) => !v)}
         className={cx(
-          "flex items-center justify-between gap-2 rounded-[var(--sb-radius)] border px-2.5 py-1.5 text-[11px] font-medium transition hover:bg-[var(--sb-card)]",
+          "flex min-w-0 items-center justify-between gap-2 rounded-[var(--sb-radius)] border px-2.5 py-1.5 text-[11px] font-medium transition hover:bg-[var(--sb-card)]",
           disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer",
           buttonClassName,
         )}
@@ -94,7 +104,12 @@ export function MenuSelect({
         aria-expanded={isOpen}
         aria-label={ariaLabel}
       >
-        <span className="truncate">{selectedLabel}</span>
+        <span className="flex min-w-0 flex-1 items-center gap-2">
+          {selectedLeading ? (
+            <span className="shrink-0 [&_img]:pointer-events-none">{selectedLeading}</span>
+          ) : null}
+          <span className="truncate">{selectedLabel}</span>
+        </span>
         <svg
           className={cx("h-3 w-3 shrink-0 transition-transform", isOpen && "rotate-180")}
           fill="none"
@@ -150,7 +165,12 @@ export function MenuSelect({
                 role="option"
                 aria-selected={isSelected}
               >
-                <span className="truncate">{opt.label}</span>
+                <span className="flex min-w-0 flex-1 items-center gap-2">
+                  {opt.leading ? (
+                    <span className="shrink-0 [&_img]:pointer-events-none">{opt.leading}</span>
+                  ) : null}
+                  <span className="truncate">{opt.label}</span>
+                </span>
               </button>
             );
           })}

@@ -320,6 +320,11 @@ html[data-theme="dark"] .sb-glass-nav {
   color: var(--sb-positive-muted);
 }
 
+/* Muted link default color — use with .sb-link-hover (avoid inline color; it blocks hover) */
+.sb-link-muted {
+  color: var(--sb-muted);
+}
+
 /* Modal entrance animations */
 @keyframes modal-fade-in {
   from { opacity: 0; }
