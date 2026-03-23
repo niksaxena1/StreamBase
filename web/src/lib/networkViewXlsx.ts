@@ -50,6 +50,15 @@ function normalizeExportEdge(e: NetworkViewExportEdge): {
   };
 }
 
+/** Per-artist aggregates from `network_export_artist_stream_stats` (scope matches graph RPC). */
+export type NetworkArtistStreamExportRow = {
+  total_streams_in_scope: number;
+  daily_streams_in_scope: number;
+  tracks_all_catalog: number;
+  total_streams_all_catalog: number;
+  daily_streams_all_catalog: number;
+};
+
 export type NetworkViewExportMeta = {
   /** Human-readable scope, e.g. playlist name or "All catalog" */
   scopeLabel: string;
@@ -207,6 +216,8 @@ export async function downloadNetworkViewXlsx(args: {
   exportOrigin: string;
   /** Per-ISRC rows from /api/admin/isrc-batch-details (optional). */
   trackEnrichment?: Map<string, NetworkTrackSheetEnrichment>;
+  /** Per-artist stream totals from /api/admin/network-export-artist-stream-stats (optional). */
+  artistStreamStatsById?: Map<string, NetworkArtistStreamExportRow>;
 }): Promise<void> {
   const XLSX = await import("xlsx");
 
@@ -214,6 +225,7 @@ export async function downloadNetworkViewXlsx(args: {
   const normEdges = args.viewEdges.map(normalizeExportEdge);
   const neighborIdsByArtist = buildNeighborIdsByArtist(args.fullEdges);
   const enrich = args.trackEnrichment;
+  const streamByArtist = args.artistStreamStatsById ?? new Map<string, NetworkArtistStreamExportRow>();
 
   const summaryAoa: Array<Array<string | number | boolean>> = [
     ["Field", "Value"],
@@ -246,6 +258,11 @@ export async function downloadNetworkViewXlsx(args: {
     "artist_id",
     "artist_name",
     "track_count",
+    "total_streams_in_scope",
+    "daily_streams_in_scope",
+    "tracks_all_catalog",
+    "total_streams_all_catalog",
+    "daily_streams_all_catalog",
     "collaborators_full_graph",
     "collaborators_in_view",
     "collaborator_names",
@@ -262,7 +279,20 @@ export async function downloadNetworkViewXlsx(args: {
             .sort((a, b) => a.localeCompare(b))
         : [];
       const collaboratorNames = joinCellListForSpreadsheet(collabNames);
-      return [n.id, n.name, n.track_count, full, inv, collaboratorNames];
+      const st = streamByArtist.get(n.id);
+      return [
+        n.id,
+        n.name,
+        n.track_count,
+        st?.total_streams_in_scope ?? "",
+        st?.daily_streams_in_scope ?? "",
+        st?.tracks_all_catalog ?? "",
+        st?.total_streams_all_catalog ?? "",
+        st?.daily_streams_all_catalog ?? "",
+        full,
+        inv,
+        collaboratorNames,
+      ];
     }),
   ];
 
@@ -397,6 +427,11 @@ export async function downloadNetworkViewXlsx(args: {
     { wch: 24 },
     { wch: 28 },
     { wch: 12 },
+    { wch: 20 },
+    { wch: 18 },
+    { wch: 18 },
+    { wch: 22 },
+    { wch: 22 },
     { wch: 22 },
     { wch: 22 },
     { wch: 56 },
@@ -508,7 +543,7 @@ export async function downloadNetworkViewXlsx(args: {
 
   const artistsDataRows = artistsAoa.length - 1;
   if (artistsDataRows > 0) {
-    formatNumericColumns(wsArtists, XLSX.utils, [2, 3, 4], artistsDataRows, "#,##0");
+    formatNumericColumns(wsArtists, XLSX.utils, [2, 3, 4, 5, 6, 7, 8, 9], artistsDataRows, "#,##0");
   }
   const edgesDataRows = edgesAoa.length - 1;
   if (edgesDataRows > 0) {

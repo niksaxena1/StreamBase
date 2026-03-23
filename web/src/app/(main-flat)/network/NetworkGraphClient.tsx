@@ -36,6 +36,7 @@ import { formatDateISO, formatInt } from "@/lib/format";
 import { slugifyForFilename, todayIsoDate } from "@/lib/csv";
 import {
   downloadNetworkViewXlsx,
+  type NetworkArtistStreamExportRow,
   type NetworkTrackSheetEnrichment,
   type NetworkViewExportEdge,
 } from "@/lib/networkViewXlsx";
@@ -537,6 +538,44 @@ export function NetworkGraphClient({
         }
       }
 
+      const artistStreamStatsById = new Map<string, NetworkArtistStreamExportRow>();
+      const artistIdsForStats = graphData.nodes.map((n) => n.id).filter((id) => String(id).trim().length > 0);
+      if (artistIdsForStats.length) {
+        const resStats = await fetch("/api/admin/network-export-artist-stream-stats", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            artistIds: artistIdsForStats,
+            playlistKey: playlistKey ?? null,
+            hideNonPrimary,
+          }),
+        });
+        const js = (await resStats.json()) as {
+          rows?: Array<{
+            artist_id: string;
+            total_streams_in_scope: number;
+            daily_streams_in_scope: number;
+            tracks_all_catalog: number;
+            total_streams_all_catalog: number;
+            daily_streams_all_catalog: number;
+          }>;
+          error?: string;
+        };
+        if (!resStats.ok || js.error) {
+          console.error("network-export-artist-stream-stats:", js.error ?? resStats.statusText);
+        } else {
+          for (const r of js.rows ?? []) {
+            artistStreamStatsById.set(r.artist_id, {
+              total_streams_in_scope: r.total_streams_in_scope,
+              daily_streams_in_scope: r.daily_streams_in_scope,
+              tracks_all_catalog: r.tracks_all_catalog,
+              total_streams_all_catalog: r.total_streams_all_catalog,
+              daily_streams_all_catalog: r.daily_streams_all_catalog,
+            });
+          }
+        }
+      }
+
       const qs = searchParams.toString();
       const pageUrl = `${SPOTIBASE_PUBLIC_ORIGIN}${pathname || ""}${qs ? `?${qs}` : ""}`;
       const exportOrigin = SPOTIBASE_PUBLIC_ORIGIN;
@@ -566,6 +605,7 @@ export function NetworkGraphClient({
         filenameBase: `network_${scopeSlug}_${todayIsoDate()}`,
         exportOrigin,
         trackEnrichment,
+        artistStreamStatsById,
       });
     } catch (err) {
       console.error("network xlsx export failed:", err);
@@ -583,6 +623,7 @@ export function NetworkGraphClient({
     collabCountMap,
     pathname,
     searchParams,
+    playlistKey,
   ]);
 
   const selectionHydrateKey = useMemo(
