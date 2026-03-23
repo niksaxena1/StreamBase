@@ -70,6 +70,7 @@ type IsrcBatchDetailRow = {
   isrc: string;
   name: string | null;
   spotify_album_image_url: string | null;
+  spotify_track_id: string | null;
   release_date: string | null;
   totalStreams: number | null;
   dailyStreams: number | null;
@@ -122,6 +123,7 @@ export async function POST(req: Request) {
     {
       name: string | null;
       spotify_album_image_url: string | null;
+      spotify_track_id: string | null;
       release_date: string | null;
       spotify_artist_names: string[] | null;
     }
@@ -130,7 +132,7 @@ export async function POST(req: Request) {
   for (const part of chunk(isrcs, 200)) {
     const { data, error } = await svc
       .from("tracks")
-      .select("isrc,name,spotify_album_image_url,release_date,spotify_artist_names")
+      .select("isrc,name,spotify_album_image_url,spotify_track_id,release_date,spotify_artist_names")
       .in("isrc", part);
 
     if (error) {
@@ -141,14 +143,17 @@ export async function POST(req: Request) {
       isrc: string;
       name: string | null;
       spotify_album_image_url: string | null;
+      spotify_track_id: string | null;
       release_date: string | null;
       spotify_artist_names: string[] | null;
     }>) {
       if (!wanted.has(r.isrc) || metaByIsrc.has(r.isrc)) continue;
       const rd = r.release_date;
+      const tid = r.spotify_track_id;
       metaByIsrc.set(r.isrc, {
         name: r.name,
         spotify_album_image_url: r.spotify_album_image_url ?? null,
+        spotify_track_id: typeof tid === "string" && tid.trim() ? tid.trim() : null,
         release_date: typeof rd === "string" ? rd : rd != null ? String(rd) : null,
         spotify_artist_names: Array.isArray(r.spotify_artist_names) ? r.spotify_artist_names : null,
       });
@@ -247,6 +252,7 @@ export async function POST(req: Request) {
       isrc,
       name: meta?.name ?? null,
       spotify_album_image_url: meta?.spotify_album_image_url ?? null,
+      spotify_track_id: meta?.spotify_track_id ?? null,
       release_date: meta?.release_date ?? null,
       totalStreams: total,
       dailyStreams: daily,

@@ -26,6 +26,7 @@ export type NetworkTrackSheetEnrichment = {
   releaseDate: string | null;
   /** Distro playlist display names, comma-separated */
   distroPlaylists: string;
+  spotifyTrackId: string | null;
 };
 
 function linkEndpointId(end: unknown): string {
@@ -56,6 +57,13 @@ export type NetworkViewExportMeta = {
   /** Describes collaborator filter, e.g. "None" or "≤5 collaborators" */
   collabFilterLabel: string;
   exportedAtIso: string;
+  /** Full URL (origin + path + query) to reproduce the view */
+  pageUrl: string;
+  fullGraphArtistCount: number;
+  fullGraphCollaborationCount: number;
+  trackEnrichmentIsrcRequested: number;
+  trackEnrichmentIsrcLoaded: number;
+  trackEnrichmentBatchFailures: number;
 };
 
 function degreeInView(nodeId: string, edges: NetworkViewExportEdge[]): number {
@@ -111,8 +119,7 @@ function releaseDateStringToExcelSerial(raw: string): number | null {
   return (utc - excelEpoch) / 86400000;
 }
 
-/** Coerce release_date cells to numeric Excel dates so Excel formats/sorts them as dates. */
-function formatReleaseDateColumnAsExcelDates(
+function formatReleaseDateColumn(
   ws: import("xlsx").WorkSheet,
   utils: typeof import("xlsx").utils,
   releaseCol: number,
@@ -130,6 +137,62 @@ function formatReleaseDateColumnAsExcelDates(
   }
 }
 
+function formatNumericColumns(
+  ws: import("xlsx").WorkSheet,
+  utils: typeof import("xlsx").utils,
+  cols: number[],
+  rowCountExcludingHeader: number,
+  z: string,
+) {
+  for (let r = 1; r <= rowCountExcludingHeader; r++) {
+    for (const c of cols) {
+      const addr = utils.encode_cell({ r, c });
+      const cell = ws[addr] as import("xlsx").CellObject | undefined;
+      if (!cell || cell.v === "" || cell.v == null) continue;
+      const n = typeof cell.v === "number" ? cell.v : Number(cell.v);
+      if (!Number.isFinite(n)) continue;
+      ws[addr] = { t: "n", v: n, z };
+    }
+  }
+}
+
+function addAutofilter(ws: import("xlsx").WorkSheet) {
+  const ref = ws["!ref"];
+  if (!ref) return;
+  ws["!autofilter"] = { ref };
+}
+
+function collabPairLabel(
+  sourceId: string,
+  targetId: string,
+  nodeById: Map<string, NetworkViewExportNode>,
+): string {
+  const na = nodeById.get(sourceId)?.name ?? sourceId;
+  const nb = nodeById.get(targetId)?.name ?? targetId;
+  return sourceId <= targetId ? `${na} × ${nb}` : `${nb} × ${na}`;
+}
+
+function pairKey(sourceId: string, targetId: string): string {
+  return sourceId <= targetId ? `${sourceId}|${targetId}` : `${targetId}|${sourceId}`;
+}
+
+function setLinkCell(
+  ws: import("xlsx").WorkSheet,
+  utils: typeof import("xlsx").utils,
+  r: number,
+  c: number,
+  display: string,
+  targetUrl: string,
+  tooltip: string,
+) {
+  const addr = utils.encode_cell({ r, c });
+  ws[addr] = {
+    t: "s",
+    v: display,
+    l: { Target: targetUrl, Tooltip: tooltip },
+  } as import("xlsx").CellObject;
+}
+
 export async function downloadNetworkViewXlsx(args: {
   meta: NetworkViewExportMeta;
   viewNodes: NetworkViewExportNode[];
@@ -140,6 +203,8 @@ export async function downloadNetworkViewXlsx(args: {
   fullArtistNameById: Map<string, string>;
   fullCollabCountById: Map<string, number>;
   filenameBase: string;
+  /** Site origin only, e.g. https://app.example.com (no trailing slash) — for catalog hyperlinks. */
+  exportOrigin: string;
   /** Per-ISRC rows from /api/admin/isrc-batch-details (optional). */
   trackEnrichment?: Map<string, NetworkTrackSheetEnrichment>;
 }): Promise<void> {
@@ -148,16 +213,34 @@ export async function downloadNetworkViewXlsx(args: {
   const nodeById = new Map(args.viewNodes.map((n) => [n.id, n]));
   const normEdges = args.viewEdges.map(normalizeExportEdge);
   const neighborIdsByArtist = buildNeighborIdsByArtist(args.fullEdges);
+  const enrich = args.trackEnrichment;
 
   const summaryAoa: Array<Array<string | number | boolean>> = [
     ["Field", "Value"],
     ["Exported at (UTC)", args.meta.exportedAtIso],
+    ["Page URL (reproduce view)", args.meta.pageUrl],
     ["Scope", args.meta.scopeLabel],
     ["Hide non-primary artists", args.meta.hideNonPrimary ? "Yes" : "No"],
     ["Collaborator filter", args.meta.collabFilterLabel],
-    ["Artists in this export", args.viewNodes.length],
-    ["Collaboration links in this export", args.viewEdges.length],
+    ["Artists in this export (visible)", args.viewNodes.length],
+    ["Collaboration links in this export (visible)", args.viewEdges.length],
+    ["Artists in full loaded graph", args.meta.fullGraphArtistCount],
+    ["Collaborations in full loaded graph", args.meta.fullGraphCollaborationCount],
+    ["Track enrichment: ISRCs requested", args.meta.trackEnrichmentIsrcRequested],
+    ["Track enrichment: ISRCs with metadata loaded", args.meta.trackEnrichmentIsrcLoaded],
+    ["Track enrichment: API batch failures", args.meta.trackEnrichmentBatchFailures],
+    [
+      "Note",
+      "Row 1 is headers on data sheets; AutoFilter is enabled. View → Freeze Panes → Freeze Top Row keeps headers visible. (SheetJS export does not embed frozen panes.)",
+    ],
   ];
+
+  if (args.meta.trackEnrichmentBatchFailures > 0) {
+    summaryAoa.push([
+      "Enrichment warning",
+      "Some isrc-batch-details requests failed; Tracks sheets may have blank stream/distro cells for affected ISRCs.",
+    ]);
+  }
 
   const artistsHeader = [
     "artist_id",
@@ -211,9 +294,10 @@ export async function downloadNetworkViewXlsx(args: {
     "daily_streams",
     "release_date",
     "distro_playlists",
+    "spotify_link",
+    "catalog_link",
   ];
   const tracksAoa: Array<Array<string | number>> = [tracksHeader];
-  const enrich = args.trackEnrichment;
   for (const e of normEdges) {
     const list = e.shared_tracks ?? [];
     const sn = nodeById.get(e.source)?.name ?? e.source;
@@ -232,8 +316,77 @@ export async function downloadNetworkViewXlsx(args: {
         row?.dailyStreams ?? "",
         row?.releaseDate ?? "",
         row?.distroPlaylists ?? "",
+        "",
+        "",
       ]);
     }
+  }
+
+  const isrcCol = tracksHeader.indexOf("isrc");
+  const spotifyCol = tracksHeader.indexOf("spotify_link");
+  const catalogCol = tracksHeader.indexOf("catalog_link");
+  const origin = args.exportOrigin.replace(/\/$/, "");
+
+  type PairAgg = { keys: Set<string>; labelByKey: Map<string, string> };
+  const uniqueByIsrc = new Map<string, PairAgg>();
+  for (const e of normEdges) {
+    const pk = pairKey(e.source, e.target);
+    const pl = collabPairLabel(e.source, e.target, nodeById);
+    for (const t of e.shared_tracks ?? []) {
+      const isrc = String(t.isrc ?? "").trim();
+      if (!isrc) continue;
+      if (!uniqueByIsrc.has(isrc)) {
+        uniqueByIsrc.set(isrc, { keys: new Set(), labelByKey: new Map() });
+      }
+      const ag = uniqueByIsrc.get(isrc)!;
+      ag.keys.add(pk);
+      ag.labelByKey.set(pk, pl);
+    }
+  }
+
+  const graphTrackNameByIsrc = new Map<string, string>();
+  for (const e of normEdges) {
+    for (const t of e.shared_tracks ?? []) {
+      const ir = String(t.isrc ?? "").trim();
+      if (!ir || graphTrackNameByIsrc.has(ir)) continue;
+      const nm = t.name?.trim();
+      if (nm) graphTrackNameByIsrc.set(ir, nm);
+    }
+  }
+
+  const uniqueHeader = [
+    "isrc",
+    "track_name",
+    "artists_on_track",
+    "collaborating_pairs",
+    "total_streams",
+    "daily_streams",
+    "release_date",
+    "distro_playlists",
+    "spotify_link",
+    "catalog_link",
+  ];
+  const uniqueAoa: Array<Array<string | number>> = [uniqueHeader];
+  const sortedIsrcs = [...uniqueByIsrc.keys()].sort((a, b) => a.localeCompare(b));
+  for (const isrc of sortedIsrcs) {
+    const ag = uniqueByIsrc.get(isrc)!;
+    const pairLabels = [...ag.keys]
+      .sort()
+      .map((k) => ag.labelByKey.get(k) ?? k);
+    const pairsCell = joinCellListForSpreadsheet(pairLabels);
+    const row = enrich?.get(isrc);
+    uniqueAoa.push([
+      isrc,
+      row?.catalogName ?? graphTrackNameByIsrc.get(isrc) ?? "",
+      row?.artistsOnTrack ?? "",
+      pairsCell,
+      row?.totalStreams ?? "",
+      row?.dailyStreams ?? "",
+      row?.releaseDate ?? "",
+      row?.distroPlaylists ?? "",
+      "",
+      "",
+    ]);
   }
 
   const wb = XLSX.utils.book_new();
@@ -248,12 +401,41 @@ export async function downloadNetworkViewXlsx(args: {
     { wch: 22 },
     { wch: 56 },
   ];
+
   const wsEdges = XLSX.utils.aoa_to_sheet(edgesAoa);
   wsEdges["!cols"] = [{ wch: 26 }, { wch: 28 }, { wch: 26 }, { wch: 28 }, { wch: 18 }];
+
   const wsTracks = XLSX.utils.aoa_to_sheet(tracksAoa);
-  const releaseDateCol = tracksHeader.indexOf("release_date");
-  if (releaseDateCol >= 0 && tracksAoa.length > 1) {
-    formatReleaseDateColumnAsExcelDates(wsTracks, XLSX.utils, releaseDateCol, tracksAoa.length - 1);
+  const tracksDataRows = tracksAoa.length - 1;
+  const releaseCol = tracksHeader.indexOf("release_date");
+  const totalCol = tracksHeader.indexOf("total_streams");
+  const dailyCol = tracksHeader.indexOf("daily_streams");
+  if (releaseCol >= 0 && tracksDataRows > 0) {
+    formatReleaseDateColumn(wsTracks, XLSX.utils, releaseCol, tracksDataRows);
+  }
+  if (tracksDataRows > 0) {
+    formatNumericColumns(wsTracks, XLSX.utils, [totalCol, dailyCol], tracksDataRows, "#,##0");
+  }
+  for (let r = 1; r <= tracksDataRows; r++) {
+    const isrcAddr = XLSX.utils.encode_cell({ r, c: isrcCol });
+    const isrcCell = wsTracks[isrcAddr] as import("xlsx").CellObject | undefined;
+    const isrc = isrcCell?.v != null ? String(isrcCell.v).trim() : "";
+    if (!isrc) continue;
+    const er = enrich?.get(isrc);
+    const catUrl = `${origin}/catalog?isrc=${encodeURIComponent(isrc)}`;
+    setLinkCell(wsTracks, XLSX.utils, r, catalogCol, "Catalog", catUrl, "Open in SpotiBase catalog");
+    const sid = er?.spotifyTrackId?.trim();
+    if (sid) {
+      setLinkCell(
+        wsTracks,
+        XLSX.utils,
+        r,
+        spotifyCol,
+        "Spotify",
+        `https://open.spotify.com/track/${sid}`,
+        "Open in Spotify",
+      );
+    }
   }
   wsTracks["!cols"] = [
     { wch: 24 },
@@ -267,12 +449,77 @@ export async function downloadNetworkViewXlsx(args: {
     { wch: 14 },
     { wch: 12 },
     { wch: 40 },
+    { wch: 10 },
+    { wch: 10 },
   ];
+
+  const wsUnique = XLSX.utils.aoa_to_sheet(uniqueAoa);
+  const uniqueDataRows = uniqueAoa.length - 1;
+  const uRelease = uniqueHeader.indexOf("release_date");
+  const uTotal = uniqueHeader.indexOf("total_streams");
+  const uDaily = uniqueHeader.indexOf("daily_streams");
+  const uIsrc = uniqueHeader.indexOf("isrc");
+  const uSpot = uniqueHeader.indexOf("spotify_link");
+  const uCat = uniqueHeader.indexOf("catalog_link");
+  if (uRelease >= 0 && uniqueDataRows > 0) {
+    formatReleaseDateColumn(wsUnique, XLSX.utils, uRelease, uniqueDataRows);
+  }
+  if (uniqueDataRows > 0) {
+    formatNumericColumns(wsUnique, XLSX.utils, [uTotal, uDaily], uniqueDataRows, "#,##0");
+  }
+  for (let r = 1; r <= uniqueDataRows; r++) {
+    const isrcAddr = XLSX.utils.encode_cell({ r, c: uIsrc });
+    const isrcCell = wsUnique[isrcAddr] as import("xlsx").CellObject | undefined;
+    const isrc = isrcCell?.v != null ? String(isrcCell.v).trim() : "";
+    if (!isrc) continue;
+    const er = enrich?.get(isrc);
+    const catUrl = `${origin}/catalog?isrc=${encodeURIComponent(isrc)}`;
+    setLinkCell(wsUnique, XLSX.utils, r, uCat, "Catalog", catUrl, "Open in SpotiBase catalog");
+    const sid = er?.spotifyTrackId?.trim();
+    if (sid) {
+      setLinkCell(
+        wsUnique,
+        XLSX.utils,
+        r,
+        uSpot,
+        "Spotify",
+        `https://open.spotify.com/track/${sid}`,
+        "Open in Spotify",
+      );
+    }
+  }
+  wsUnique["!cols"] = [
+    { wch: 14 },
+    { wch: 36 },
+    { wch: 48 },
+    { wch: 56 },
+    { wch: 14 },
+    { wch: 14 },
+    { wch: 12 },
+    { wch: 40 },
+    { wch: 10 },
+    { wch: 10 },
+  ];
+
+  addAutofilter(wsArtists);
+  addAutofilter(wsEdges);
+  addAutofilter(wsTracks);
+  addAutofilter(wsUnique);
+
+  const artistsDataRows = artistsAoa.length - 1;
+  if (artistsDataRows > 0) {
+    formatNumericColumns(wsArtists, XLSX.utils, [2, 3, 4], artistsDataRows, "#,##0");
+  }
+  const edgesDataRows = edgesAoa.length - 1;
+  if (edgesDataRows > 0) {
+    formatNumericColumns(wsEdges, XLSX.utils, [4], edgesDataRows, "#,##0");
+  }
 
   XLSX.utils.book_append_sheet(wb, wsSummary, sanitizeSheetName("Summary"));
   XLSX.utils.book_append_sheet(wb, wsArtists, sanitizeSheetName("Artists"));
   XLSX.utils.book_append_sheet(wb, wsEdges, sanitizeSheetName("Collaborations"));
   XLSX.utils.book_append_sheet(wb, wsTracks, sanitizeSheetName("Tracks"));
+  XLSX.utils.book_append_sheet(wb, wsUnique, sanitizeSheetName("Tracks unique"));
 
   const safeBase = args.filenameBase.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 80);
   XLSX.writeFile(wb, `${safeBase || "network_export"}.xlsx`);

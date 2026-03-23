@@ -97,6 +97,8 @@ function scaleLinear(val: number, min: number, max: number, outMin: number, outM
 }
 
 const LS_NETWORK_CAMERA = "sb:network:camera:v1";
+/** Production site for Excel export links (catalog URLs, Summary page URL) — not the dev server origin. */
+const SPOTIBASE_PUBLIC_ORIGIN = "https://spotibase.vercel.app";
 const MAX_SEL_URL = 80;
 const CAMERA_SAVE_MS = 450;
 /** Match `TrackStreamsXYChart`: touch/pen hold before box-select; movement cancels (user is panning). */
@@ -495,6 +497,7 @@ export function NetworkGraphClient({
       const isrcList = [...isrcSet];
       const trackEnrichment = new Map<string, NetworkTrackSheetEnrichment>();
       const ISRC_BATCH = 3500;
+      let trackEnrichmentBatchFailures = 0;
       for (let i = 0; i < isrcList.length; i += ISRC_BATCH) {
         const part = isrcList.slice(i, i + ISRC_BATCH);
         const res = await fetch("/api/admin/isrc-batch-details", {
@@ -511,14 +514,17 @@ export function NetworkGraphClient({
             dailyStreams: number | null;
             artistsOnTrack?: string;
             distroPlaylists?: string;
+            spotify_track_id?: string | null;
           }>;
           error?: string;
         };
         if (!res.ok || j.error) {
+          trackEnrichmentBatchFailures += 1;
           console.error("isrc-batch-details for export:", j.error ?? res.statusText);
           continue;
         }
         for (const t of j.tracks ?? []) {
+          const sid = t.spotify_track_id;
           trackEnrichment.set(t.isrc, {
             catalogName: t.name,
             artistsOnTrack: t.artistsOnTrack ?? "",
@@ -526,9 +532,14 @@ export function NetworkGraphClient({
             dailyStreams: t.dailyStreams ?? null,
             releaseDate: t.release_date,
             distroPlaylists: t.distroPlaylists ?? "",
+            spotifyTrackId: typeof sid === "string" && sid.trim() ? sid.trim() : null,
           });
         }
       }
+
+      const qs = searchParams.toString();
+      const pageUrl = `${SPOTIBASE_PUBLIC_ORIGIN}${pathname || ""}${qs ? `?${qs}` : ""}`;
+      const exportOrigin = SPOTIBASE_PUBLIC_ORIGIN;
 
       await downloadNetworkViewXlsx({
         meta: {
@@ -536,6 +547,12 @@ export function NetworkGraphClient({
           hideNonPrimary,
           collabFilterLabel: collabFilterExportLabel,
           exportedAtIso: new Date().toISOString(),
+          pageUrl,
+          fullGraphArtistCount: nodes.length,
+          fullGraphCollaborationCount: edges.length,
+          trackEnrichmentIsrcRequested: isrcList.length,
+          trackEnrichmentIsrcLoaded: trackEnrichment.size,
+          trackEnrichmentBatchFailures,
         },
         viewNodes: graphData.nodes.map((n) => ({
           id: n.id,
@@ -547,6 +564,7 @@ export function NetworkGraphClient({
         fullArtistNameById: new Map(nodes.map((n) => [n.id, n.name])),
         fullCollabCountById: collabCountMap,
         filenameBase: `network_${scopeSlug}_${todayIsoDate()}`,
+        exportOrigin,
         trackEnrichment,
       });
     } catch (err) {
@@ -563,6 +581,8 @@ export function NetworkGraphClient({
     edges,
     nodes,
     collabCountMap,
+    pathname,
+    searchParams,
   ]);
 
   const selectionHydrateKey = useMemo(
@@ -1488,7 +1508,8 @@ export function NetworkGraphClient({
           <li>
             <span style={{ color: "var(--sb-muted)" }}>
               The download button exports the current view (playlist, hide-non-primary, collab filter) to a multi-sheet{" "}
-              <code className="font-mono text-[11px]">.xlsx</code> (Summary, Artists, Collaborations, Tracks) in your browser.
+              <code className="font-mono text-[11px]">.xlsx</code> (Summary, Artists, Collaborations, Tracks, Tracks unique) in
+              your browser.
             </span>
           </li>
           <li className="pt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
@@ -1728,7 +1749,7 @@ export function NetworkGraphClient({
           type="button"
           variant="ghost"
           size="sm"
-          title="Download Excel — current view (Summary, Artists, Collaborations, Tracks)"
+          title="Download Excel — current view (Summary, Artists, Collaborations, Tracks, Tracks unique)"
           aria-label="Download Excel export of current network view"
           disabled={xlsxExporting}
           onClick={() => void handleExportViewXlsx()}
@@ -2069,6 +2090,7 @@ type IsrcDetailPayload = {
   isrc: string;
   name: string | null;
   spotify_album_image_url: string | null;
+  spotify_track_id?: string | null;
   release_date: string | null;
   totalStreams: number | null;
   dailyStreams: number | null;
