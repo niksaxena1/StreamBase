@@ -18,12 +18,30 @@ import type {
   NodeObject,
   LinkObject,
 } from "react-force-graph-2d";
-import { useRouter } from "next/navigation";
-import { Search, RotateCcw, ImageIcon, Scaling, UserRound, ListMusic, Disc3 } from "lucide-react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import {
+  Search,
+  RotateCcw,
+  ImageIcon,
+  Scaling,
+  UserRound,
+  ListMusic,
+  Disc3,
+  SquareDashed,
+  Keyboard,
+  Download,
+  Loader2,
+} from "lucide-react";
 import { formatDateISO, formatInt } from "@/lib/format";
 import { slugifyForFilename, todayIsoDate } from "@/lib/csv";
+import {
+  downloadNetworkViewXlsx,
+  type NetworkTrackSheetEnrichment,
+  type NetworkViewExportEdge,
+} from "@/lib/networkViewXlsx";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
 import { useThemeColors } from "@/components/charts/useThemeColors";
+import { IconButton } from "@/components/ui/Button";
 import { MenuSelect, type MenuSelectOption } from "@/components/ui/MenuSelect";
 import { Modal } from "@/components/ui/Modal";
 import { GlassTable, TableRow, TableCell, EmptyState } from "@/components/ui/GlassTable";
@@ -78,12 +96,75 @@ function scaleLinear(val: number, min: number, max: number, outMin: number, outM
   return outMin + ((val - min) / (max - min)) * (outMax - outMin);
 }
 
-function networkPageHref(playlistKey: string | null, hideNonPrimary: boolean) {
+const LS_NETWORK_CAMERA = "sb:network:camera:v1";
+const MAX_SEL_URL = 80;
+const CAMERA_SAVE_MS = 450;
+/** Match `TrackStreamsXYChart`: touch/pen hold before box-select; movement cancels (user is panning). */
+const NETWORK_LONG_PRESS_MS = 550;
+const NETWORK_LONG_PRESS_MOVE_PX = 10;
+
+function readNetworkToggles(sp: URLSearchParams) {
+  return {
+    scaleByTracks: sp.get("scale_tracks") === "1",
+    showImages: sp.get("images") !== "0",
+  };
+}
+
+type CollabFilterMode = "le" | "ge";
+
+function parseCollabDegreeFilter(sp: URLSearchParams): { n: number | null; mode: CollabFilterMode } {
+  const parseN = (raw: string | null): number | null => {
+    if (raw == null || raw === "") return null;
+    const n = parseInt(raw, 10);
+    if (!Number.isFinite(n) || n < 0 || n > 999) return null;
+    return n;
+  };
+  const minN = parseN(sp.get("collab_min"));
+  const maxN = parseN(sp.get("collab_max"));
+  if (minN != null) return { n: minN, mode: "ge" };
+  if (maxN != null) return { n: maxN, mode: "le" };
+  return { n: null, mode: "le" };
+}
+
+/** Non-empty draft must be digits only; clamps to 0–999. */
+function parseCollabInputDraft(trimmed: string): number | null {
+  const t = trimmed.trim();
+  if (t === "") return null;
+  if (!/^\d+$/.test(t)) return null;
+  const n = parseInt(t, 10);
+  return Math.min(999, Math.max(0, n));
+}
+
+function buildNetworkQueryString(args: {
+  playlistKey: string | null;
+  hideNonPrimary: boolean;
+  scaleByTracks: boolean;
+  showImages: boolean;
+  collabFilterN: number | null;
+  collabFilterMode: CollabFilterMode;
+  selectedIds: string[];
+}): string {
   const p = new URLSearchParams();
-  if (playlistKey) p.set("playlist", playlistKey);
-  if (hideNonPrimary) p.set("hide_non_primary", "1");
+  if (args.playlistKey) p.set("playlist", args.playlistKey);
+  if (args.hideNonPrimary) p.set("hide_non_primary", "1");
+  if (args.scaleByTracks) p.set("scale_tracks", "1");
+  if (!args.showImages) p.set("images", "0");
+  if (args.collabFilterN != null) {
+    if (args.collabFilterMode === "ge") p.set("collab_min", String(args.collabFilterN));
+    else p.set("collab_max", String(args.collabFilterN));
+  }
+  if (args.selectedIds.length > 0 && args.selectedIds.length <= MAX_SEL_URL) {
+    p.set("sel", args.selectedIds.join(","));
+  }
   const s = p.toString();
-  return s ? `/network?${s}` : "/network";
+  return s ? `?${s}` : "";
+}
+
+function isTypingTarget(el: EventTarget | null) {
+  if (!(el instanceof HTMLElement)) return false;
+  const tag = el.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+  return el.isContentEditable;
 }
 
 function linkEndpointId(end: unknown): string {
@@ -133,13 +214,32 @@ export function NetworkGraphClient({
   hideNonPrimary,
 }: Props) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const colors = useThemeColors();
   const fgRef = useRef<ForceGraphMethods<FGNode, FGLink> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const cameraSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Controls
-  const [scaleByTracks, setScaleByTracks] = useState(true);
-  const [showImages, setShowImages] = useState(true);
+  // Controls (URL-synced toggles — see effects below)
+  const [scaleByTracks, setScaleByTracks] = useState(() => readNetworkToggles(searchParams).scaleByTracks);
+  const [showImages, setShowImages] = useState(() => readNetworkToggles(searchParams).showImages);
+  const [collabFilterN, setCollabFilterN] = useState<number | null>(() =>
+    parseCollabDegreeFilter(searchParams).n,
+  );
+  const [collabFilterMode, setCollabFilterMode] = useState<CollabFilterMode>(() =>
+    parseCollabDegreeFilter(searchParams).mode,
+  );
+  const [collabInputDraft, setCollabInputDraft] = useState(() => {
+    const { n } = parseCollabDegreeFilter(searchParams);
+    return n == null ? "" : String(n);
+  });
+  const [boxSelectArmed, setBoxSelectArmed] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [tabHidden, setTabHidden] = useState(false);
+  const [xlsxExporting, setXlsxExporting] = useState(false);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
 
@@ -175,6 +275,18 @@ export function NetworkGraphClient({
     x0: number;
     y0: number;
   } | null>(null);
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
+  const touchPointerDownRef = useRef(false);
+
+  const clearNetworkLongPress = useCallback(() => {
+    if (longPressTimerRef.current != null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => () => clearNetworkLongPress(), [clearNetworkLongPress]);
 
   const [streamTotals, setStreamTotals] = useState<{
     total: number | null;
@@ -198,6 +310,30 @@ export function NetworkGraphClient({
     });
     ro.observe(el);
     return () => ro.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const r = readNetworkToggles(searchParams);
+    setScaleByTracks(r.scaleByTracks);
+    setShowImages(r.showImages);
+    const cf = parseCollabDegreeFilter(searchParams);
+    setCollabFilterN(cf.n);
+    setCollabFilterMode(cf.mode);
+    setCollabInputDraft(cf.n == null ? "" : String(cf.n));
+  }, [searchParams]);
+
+  useEffect(() => {
+    const fn = () => {
+      const hidden = document.visibilityState === "hidden";
+      setTabHidden(hidden);
+      const fg = fgRef.current;
+      if (!fg) return;
+      if (hidden) fg.pauseAnimation();
+      else fg.resumeAnimation();
+    };
+    fn();
+    document.addEventListener("visibilitychange", fn);
+    return () => document.removeEventListener("visibilitychange", fn);
   }, []);
 
   const playlistScopeOptions = useMemo((): MenuSelectOption[] => {
@@ -234,6 +370,21 @@ export function NetworkGraphClient({
     ];
   }, [playlists]);
 
+  const networkExportScopeLabel = useMemo(
+    () =>
+      playlistKey
+        ? playlists.find((p) => p.playlist_key === playlistKey)?.display_name ?? playlistKey
+        : "All catalog",
+    [playlistKey, playlists],
+  );
+
+  const collabFilterExportLabel = useMemo(() => {
+    if (collabFilterN == null) return "None";
+    return collabFilterMode === "le"
+      ? `≤${collabFilterN} (up to)`
+      : `≥${collabFilterN} (at least)`;
+  }, [collabFilterN, collabFilterMode]);
+
   // Precompute adjacency
   const { neighbors } = useMemo(() => buildAdjacency(edges), [edges]);
 
@@ -258,13 +409,48 @@ export function NetworkGraphClient({
     return map;
   }, [edges]);
 
-  // Graph data — react-force-graph mutates objects so we keep stable refs.
-  const graphData = useMemo(() => {
-    return {
-      nodes: nodes.map((n) => ({ ...n })),
-      links: edges.map((e) => ({ ...e })),
-    };
-  }, [nodes, edges]);
+  const visibleNodeIdsForCollab = useMemo(() => {
+    if (collabFilterN === null) return null;
+    const s = new Set<string>();
+    for (const node of nodes) {
+      const deg = collabCountMap.get(node.id) ?? 0;
+      const ok = collabFilterMode === "le" ? deg <= collabFilterN : deg >= collabFilterN;
+      if (ok) s.add(node.id);
+    }
+    return s;
+  }, [nodes, collabCountMap, collabFilterN, collabFilterMode]);
+
+  const neighborsView = useMemo(() => {
+    if (!visibleNodeIdsForCollab) return neighbors;
+    const fe = edges.filter(
+      (e) => visibleNodeIdsForCollab.has(e.source) && visibleNodeIdsForCollab.has(e.target),
+    );
+    return buildAdjacency(fe).neighbors;
+  }, [neighbors, edges, visibleNodeIdsForCollab]);
+
+  const collabDegreeMatchesFilter = useCallback(
+    (deg: number) =>
+      collabFilterN === null
+        ? true
+        : collabFilterMode === "le"
+          ? deg <= collabFilterN
+          : deg >= collabFilterN,
+    [collabFilterN, collabFilterMode],
+  );
+
+  useEffect(() => {
+    if (collabFilterN === null) return;
+    setRangeSelection((prev) => {
+      const next = prev.filter((id) =>
+        collabDegreeMatchesFilter(collabCountMap.get(id) ?? 0),
+      );
+      return next.length === prev.length ? prev : next;
+    });
+    setSelectedNodeId((prev) => {
+      if (!prev) return null;
+      return collabDegreeMatchesFilter(collabCountMap.get(prev) ?? 0) ? prev : null;
+    });
+  }, [collabFilterN, collabFilterMode, collabCountMap, collabDegreeMatchesFilter]);
 
   const nodeIdKey = useMemo(
     () =>
@@ -275,7 +461,218 @@ export function NetworkGraphClient({
     [nodes],
   );
 
+  const cameraScope = useMemo(
+    () =>
+      `${playlistKey ?? "all"}|${hideNonPrimary ? "1" : "0"}|${nodeIdKey}|c:${collabFilterMode}:${collabFilterN ?? "x"}`,
+    [playlistKey, hideNonPrimary, nodeIdKey, collabFilterMode, collabFilterN],
+  );
+
+  const graphData = useMemo(() => {
+    if (!visibleNodeIdsForCollab) {
+      return {
+        nodes: nodes.map((n) => ({ ...n })),
+        links: edges.map((e) => ({ ...e })),
+      };
+    }
+    const fnodes = nodes.filter((n) => visibleNodeIdsForCollab.has(n.id)).map((n) => ({ ...n }));
+    const flinks = edges
+      .filter((e) => visibleNodeIdsForCollab.has(e.source) && visibleNodeIdsForCollab.has(e.target))
+      .map((e) => ({ ...e }));
+    return { nodes: fnodes, links: flinks };
+  }, [nodes, edges, visibleNodeIdsForCollab]);
+
+  const handleExportViewXlsx = useCallback(async () => {
+    setXlsxExporting(true);
+    try {
+      const scopeSlug = slugifyForFilename(networkExportScopeLabel);
+      const isrcSet = new Set<string>();
+      for (const e of graphData.links) {
+        for (const t of e.shared_tracks ?? []) {
+          const id = String(t.isrc ?? "").trim();
+          if (id) isrcSet.add(id);
+        }
+      }
+      const isrcList = [...isrcSet];
+      const trackEnrichment = new Map<string, NetworkTrackSheetEnrichment>();
+      const ISRC_BATCH = 3500;
+      for (let i = 0; i < isrcList.length; i += ISRC_BATCH) {
+        const part = isrcList.slice(i, i + ISRC_BATCH);
+        const res = await fetch("/api/admin/isrc-batch-details", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ isrcs: part }),
+        });
+        const j = (await res.json()) as {
+          tracks?: Array<{
+            isrc: string;
+            name: string | null;
+            release_date: string | null;
+            totalStreams: number | null;
+            dailyStreams: number | null;
+            artistsOnTrack?: string;
+            distroPlaylists?: string;
+          }>;
+          error?: string;
+        };
+        if (!res.ok || j.error) {
+          console.error("isrc-batch-details for export:", j.error ?? res.statusText);
+          continue;
+        }
+        for (const t of j.tracks ?? []) {
+          trackEnrichment.set(t.isrc, {
+            catalogName: t.name,
+            artistsOnTrack: t.artistsOnTrack ?? "",
+            totalStreams: t.totalStreams ?? null,
+            dailyStreams: t.dailyStreams ?? null,
+            releaseDate: t.release_date,
+            distroPlaylists: t.distroPlaylists ?? "",
+          });
+        }
+      }
+
+      await downloadNetworkViewXlsx({
+        meta: {
+          scopeLabel: networkExportScopeLabel,
+          hideNonPrimary,
+          collabFilterLabel: collabFilterExportLabel,
+          exportedAtIso: new Date().toISOString(),
+        },
+        viewNodes: graphData.nodes.map((n) => ({
+          id: n.id,
+          name: n.name,
+          track_count: n.track_count,
+        })),
+        viewEdges: graphData.links as unknown as NetworkViewExportEdge[],
+        fullEdges: edges as unknown as NetworkViewExportEdge[],
+        fullArtistNameById: new Map(nodes.map((n) => [n.id, n.name])),
+        fullCollabCountById: collabCountMap,
+        filenameBase: `network_${scopeSlug}_${todayIsoDate()}`,
+        trackEnrichment,
+      });
+    } catch (err) {
+      console.error("network xlsx export failed:", err);
+    } finally {
+      setXlsxExporting(false);
+    }
+  }, [
+    networkExportScopeLabel,
+    hideNonPrimary,
+    collabFilterExportLabel,
+    graphData.nodes,
+    graphData.links,
+    edges,
+    nodes,
+    collabCountMap,
+  ]);
+
+  const selectionHydrateKey = useMemo(
+    () => `${nodeIdKey}\0${searchParams.get("sel") ?? ""}`,
+    [nodeIdKey, searchParams],
+  );
+
   const rangeSet = useMemo(() => new Set(rangeSelection), [rangeSelection]);
+
+  const pushNetworkUrl = useCallback(
+    (patch: Partial<{
+      playlistKey: string | null;
+      hideNonPrimary: boolean;
+      scaleByTracks: boolean;
+      showImages: boolean;
+      collabFilterN: number | null;
+      collabFilterMode: CollabFilterMode;
+      selectedIds: string[];
+    }>) => {
+      const q = buildNetworkQueryString({
+        playlistKey: patch.playlistKey ?? playlistKey,
+        hideNonPrimary: patch.hideNonPrimary ?? hideNonPrimary,
+        scaleByTracks: patch.scaleByTracks ?? scaleByTracks,
+        showImages: patch.showImages ?? showImages,
+        collabFilterN: patch.collabFilterN !== undefined ? patch.collabFilterN : collabFilterN,
+        collabFilterMode: patch.collabFilterMode ?? collabFilterMode,
+        selectedIds: patch.selectedIds ?? rangeSelection,
+      });
+      router.replace((pathname || "/network") + q, { scroll: false });
+    },
+    [
+      pathname,
+      router,
+      playlistKey,
+      hideNonPrimary,
+      scaleByTracks,
+      showImages,
+      collabFilterN,
+      collabFilterMode,
+      rangeSelection,
+    ],
+  );
+
+  const prevSelectionHydrateKey = useRef("");
+  useEffect(() => {
+    if (prevSelectionHydrateKey.current === selectionHydrateKey) return;
+    prevSelectionHydrateKey.current = selectionHydrateKey;
+    const sel = searchParams.get("sel");
+    const setId = new Set(nodes.map((n) => n.id));
+    if (!sel?.trim()) {
+      setRangeSelection([]);
+      return;
+    }
+    setRangeSelection(sel.split(",").map((s) => s.trim()).filter((id) => setId.has(id)));
+  }, [selectionHydrateKey, nodes, searchParams]);
+
+  useEffect(() => {
+    const q = buildNetworkQueryString({
+      playlistKey,
+      hideNonPrimary,
+      scaleByTracks,
+      showImages,
+      collabFilterN,
+      collabFilterMode,
+      selectedIds: rangeSelection,
+    });
+    const nextPath = (pathname || "/network") + q;
+    const t = setTimeout(() => {
+      if (typeof window === "undefined") return;
+      const cur = `${pathname}${window.location.search}`;
+      if (nextPath === cur) return;
+      router.replace(nextPath, { scroll: false });
+    }, 200);
+    return () => clearTimeout(t);
+  }, [
+    rangeSelection,
+    scaleByTracks,
+    showImages,
+    collabFilterN,
+    collabFilterMode,
+    playlistKey,
+    hideNonPrimary,
+    pathname,
+    router,
+  ]);
+
+  const scheduleCameraSave = useCallback(() => {
+    if (cameraSaveTimerRef.current) clearTimeout(cameraSaveTimerRef.current);
+    cameraSaveTimerRef.current = setTimeout(() => {
+      cameraSaveTimerRef.current = null;
+      const fg = fgRef.current;
+      if (!fg) return;
+      try {
+        const k = fg.zoom();
+        const c = fg.centerAt();
+        localStorage.setItem(
+          LS_NETWORK_CAMERA,
+          JSON.stringify({ scope: cameraScope, k, cx: c.x, cy: c.y }),
+        );
+      } catch {
+        // ignore quota / private mode
+      }
+    }, CAMERA_SAVE_MS);
+  }, [cameraScope]);
+
+  useEffect(() => {
+    return () => {
+      if (cameraSaveTimerRef.current) clearTimeout(cameraSaveTimerRef.current);
+    };
+  }, []);
 
   const rangeStats = useMemo(() => {
     if (rangeSelection.length < 2) {
@@ -337,10 +734,12 @@ export function NetworkGraphClient({
   const searchResults = useMemo(() => {
     if (!searchQuery.trim()) return [];
     const q = searchQuery.toLowerCase();
-    return nodes
-      .filter((n) => n.name.toLowerCase().includes(q))
-      .slice(0, 12);
-  }, [nodes, searchQuery]);
+    let list = nodes.filter((n) => n.name.toLowerCase().includes(q));
+    if (visibleNodeIdsForCollab) {
+      list = list.filter((n) => visibleNodeIdsForCollab.has(n.id));
+    }
+    return list.slice(0, 12);
+  }, [nodes, searchQuery, visibleNodeIdsForCollab]);
 
   // Is a node highlighted?
   const isHighlighted = useCallback(
@@ -348,9 +747,9 @@ export function NetworkGraphClient({
       if (rangeSet.size > 0) return rangeSet.has(nodeId);
       if (!selectedNodeId) return true;
       if (nodeId === selectedNodeId) return true;
-      return neighbors.get(selectedNodeId)?.has(nodeId) ?? false;
+      return neighborsView.get(selectedNodeId)?.has(nodeId) ?? false;
     },
-    [rangeSet, selectedNodeId, neighbors],
+    [rangeSet, selectedNodeId, neighborsView],
   );
 
   // Is a link highlighted?
@@ -580,50 +979,135 @@ export function NetworkGraphClient({
     setRangeSelection([]);
   }, []);
 
-  const onBoxPointerDownCapture = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
-    if (!e.altKey || e.button !== 0) return;
-    const host = containerRef.current;
-    if (!host) return;
-    const r = host.getBoundingClientRect();
-    if (
-      e.clientX < r.left ||
-      e.clientX > r.right ||
-      e.clientY < r.top ||
-      e.clientY > r.bottom
-    ) {
-      return;
-    }
-    e.preventDefault();
-    e.stopPropagation();
-    selectDragRef.current = { pointerId: e.pointerId, x0: e.clientX, y0: e.clientY };
-    try {
-      host.setPointerCapture(e.pointerId);
-    } catch {
-      // ignore
-    }
-    setBoxRect({
-      left: e.clientX - r.left,
-      top: e.clientY - r.top,
-      width: 0,
-      height: 0,
-    });
-  }, []);
+  const onBoxPointerDownCapture = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      if (e.button !== 0) return;
+      const host = containerRef.current;
+      if (!host) return;
+      const r = host.getBoundingClientRect();
+      if (
+        e.clientX < r.left ||
+        e.clientX > r.right ||
+        e.clientY < r.top ||
+        e.clientY > r.bottom
+      ) {
+        return;
+      }
 
-  const onBoxPointerMoveCapture = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
-    const d = selectDragRef.current;
-    if (!d || e.pointerId !== d.pointerId) return;
-    const host = containerRef.current;
-    if (!host) return;
-    const r = host.getBoundingClientRect();
-    const x1 = e.clientX;
-    const y1 = e.clientY;
-    setBoxRect({
-      left: Math.min(d.x0, x1) - r.left,
-      top: Math.min(d.y0, y1) - r.top,
-      width: Math.abs(x1 - d.x0),
-      height: Math.abs(y1 - d.y0),
-    });
-  }, []);
+      const pt = e.pointerType;
+
+      // Mouse: Alt or "Select region" — immediate box drag (blocks default pan on this gesture).
+      if (pt === "mouse") {
+        if (!e.altKey && !boxSelectArmed) return;
+        clearNetworkLongPress();
+        e.preventDefault();
+        e.stopPropagation();
+        selectDragRef.current = { pointerId: e.pointerId, x0: e.clientX, y0: e.clientY };
+        try {
+          host.setPointerCapture(e.pointerId);
+        } catch {
+          // ignore
+        }
+        setBoxRect({
+          left: e.clientX - r.left,
+          top: e.clientY - r.top,
+          width: 0,
+          height: 0,
+        });
+        return;
+      }
+
+      // Touch / pen: drag pans/zooms the graph. Box select = hold still (same timing as home scatter chart),
+      // or use "Select region" for an immediate marquee without waiting.
+      if (pt === "touch" || pt === "pen") {
+        if (boxSelectArmed) {
+          clearNetworkLongPress();
+          e.preventDefault();
+          e.stopPropagation();
+          selectDragRef.current = { pointerId: e.pointerId, x0: e.clientX, y0: e.clientY };
+          try {
+            host.setPointerCapture(e.pointerId);
+          } catch {
+            // ignore
+          }
+          setBoxRect({
+            left: e.clientX - r.left,
+            top: e.clientY - r.top,
+            width: 0,
+            height: 0,
+          });
+          return;
+        }
+
+        clearNetworkLongPress();
+        touchPointerDownRef.current = true;
+        longPressStartRef.current = { x: e.clientX, y: e.clientY };
+        const pid = e.pointerId;
+        longPressTimerRef.current = window.setTimeout(() => {
+          longPressTimerRef.current = null;
+          if (!touchPointerDownRef.current) return;
+          const start = longPressStartRef.current;
+          if (!start) return;
+          const h = containerRef.current;
+          if (!h) return;
+          try {
+            void navigator.vibrate?.(25);
+          } catch {
+            // ignore
+          }
+          longPressStartRef.current = null;
+          selectDragRef.current = { pointerId: pid, x0: start.x, y0: start.y };
+          try {
+            h.setPointerCapture(pid);
+          } catch {
+            // ignore
+          }
+          const br = h.getBoundingClientRect();
+          setBoxRect({
+            left: start.x - br.left,
+            top: start.y - br.top,
+            width: 0,
+            height: 0,
+          });
+        }, NETWORK_LONG_PRESS_MS);
+      }
+    },
+    [boxSelectArmed, clearNetworkLongPress],
+  );
+
+  const onBoxPointerMoveCapture = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      const d = selectDragRef.current;
+      if (d && e.pointerId === d.pointerId) {
+        e.preventDefault();
+        e.stopPropagation();
+        const host = containerRef.current;
+        if (!host) return;
+        const r = host.getBoundingClientRect();
+        const x1 = e.clientX;
+        const y1 = e.clientY;
+        setBoxRect({
+          left: Math.min(d.x0, x1) - r.left,
+          top: Math.min(d.y0, y1) - r.top,
+          width: Math.abs(x1 - d.x0),
+          height: Math.abs(y1 - d.y0),
+        });
+        return;
+      }
+
+      if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
+      if (longPressTimerRef.current == null) return;
+      const start = longPressStartRef.current;
+      if (!start) return;
+      const dx = e.clientX - start.x;
+      const dy = e.clientY - start.y;
+      if (Math.hypot(dx, dy) > NETWORK_LONG_PRESS_MOVE_PX) {
+        clearNetworkLongPress();
+        longPressStartRef.current = null;
+      }
+    },
+    [clearNetworkLongPress],
+  );
 
   const finalizeBoxSelect = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -671,19 +1155,32 @@ export function NetworkGraphClient({
       picked.sort();
       setRangeSelection(picked);
       setSelectedNodeId(null);
+      if (
+        boxSelectArmed &&
+        typeof window !== "undefined" &&
+        window.matchMedia("(pointer: coarse)").matches
+      ) {
+        setBoxSelectArmed(false);
+      }
     },
-    [graphData.nodes],
+    [graphData.nodes, boxSelectArmed],
   );
 
   const onBoxPointerUpCapture = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
+      touchPointerDownRef.current = false;
+      clearNetworkLongPress();
+      longPressStartRef.current = null;
       finalizeBoxSelect(e);
     },
-    [finalizeBoxSelect],
+    [clearNetworkLongPress, finalizeBoxSelect],
   );
 
   const onBoxPointerCancelCapture = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
+      touchPointerDownRef.current = false;
+      clearNetworkLongPress();
+      longPressStartRef.current = null;
       if (selectDragRef.current?.pointerId !== e.pointerId) return;
       selectDragRef.current = null;
       setBoxRect(null);
@@ -696,7 +1193,7 @@ export function NetworkGraphClient({
         }
       }
     },
-    [],
+    [clearNetworkLongPress],
   );
 
   const handleNodeHover = useCallback(
@@ -754,11 +1251,24 @@ export function NetworkGraphClient({
   /* -------- Reset -------- */
 
   const handleReset = useCallback(() => {
+    try {
+      localStorage.removeItem(LS_NETWORK_CAMERA);
+    } catch {
+      // ignore
+    }
     setSelectedNodeId(null);
     setRangeSelection([]);
     setSearchQuery("");
+    setCollabFilterN(null);
+    setCollabFilterMode("le");
+    setCollabInputDraft("");
+    pushNetworkUrl({
+      selectedIds: [],
+      collabFilterN: null,
+      collabFilterMode: "le",
+    });
     fgRef.current?.zoomToFit(600, 40);
-  }, []);
+  }, [pushNetworkUrl]);
 
   /* -------- Initial zoom-to-fit -------- */
 
@@ -766,13 +1276,13 @@ export function NetworkGraphClient({
   useEffect(() => {
     hasZoomed.current = false;
     setBoxRect(null);
-    setRangeSelection((prev) => prev.filter((id) => nodes.some((n) => n.id === id)));
 
     const prevSel = selectedNodeIdRef.current;
     const keepSel = Boolean(prevSel && nodes.some((n) => n.id === prevSel));
     refocusSingleAfterGraphReloadRef.current = keepSel;
     setSelectedNodeId(keepSel ? prevSel : null);
-  }, [playlistKey, hideNonPrimary, nodeIdKey]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- nodeIdKey tracks graph identity; nodes ref churns without composition change
+  }, [playlistKey, hideNonPrimary, nodeIdKey, collabFilterN, collabFilterMode]);
 
   const onEngineStop = useCallback(() => {
     if (hasZoomed.current) return;
@@ -793,10 +1303,37 @@ export function NetworkGraphClient({
       }
     }
 
+    const fg = fgRef.current;
+    if (fg) {
+      try {
+        const raw = localStorage.getItem(LS_NETWORK_CAMERA);
+        if (raw) {
+          const p = JSON.parse(raw) as { scope?: string; k?: number; cx?: number; cy?: number };
+          if (
+            p.scope === cameraScope &&
+            typeof p.k === "number" &&
+            Number.isFinite(p.k) &&
+            typeof p.cx === "number" &&
+            typeof p.cy === "number" &&
+            Number.isFinite(p.cx) &&
+            Number.isFinite(p.cy)
+          ) {
+            hasZoomed.current = true;
+            refocusSingleAfterGraphReloadRef.current = false;
+            fg.zoom(p.k, 0);
+            fg.centerAt(p.cx, p.cy, 0);
+            return;
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+
     hasZoomed.current = true;
     refocusSingleAfterGraphReloadRef.current = false;
     fgRef.current?.zoomToFit(400, 40);
-  }, [graphData.nodes]);
+  }, [graphData.nodes, cameraScope]);
 
   /* -------- Tooltip content -------- */
 
@@ -856,10 +1393,118 @@ export function NetworkGraphClient({
     return null;
   }, [hoveredNode, hoveredLink, collabCountMap, colors]);
 
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (isTypingTarget(e.target)) {
+        if (e.key === "Escape") {
+          (e.target as HTMLElement).blur();
+        }
+        return;
+      }
+      if (e.key === "Escape") {
+        if (selectionCollabsModalOpen) {
+          setSelectionCollabsModalOpen(false);
+          return;
+        }
+        if (distroModalOpen) {
+          closeDistroModal();
+          return;
+        }
+        if (shortcutsOpen) {
+          setShortcutsOpen(false);
+          return;
+        }
+        if (searchOpen) {
+          setSearchOpen(false);
+          return;
+        }
+        if (rangeSelection.length > 0) {
+          setRangeSelection([]);
+          return;
+        }
+        if (selectedNodeId) {
+          setSelectedNodeId(null);
+          return;
+        }
+        return;
+      }
+      if (e.key === "?" || (e.shiftKey && e.key === "/")) {
+        e.preventDefault();
+        setShortcutsOpen((o) => !o);
+        return;
+      }
+      if (e.key === "/" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        setSearchOpen(true);
+        return;
+      }
+      if (e.key === "f" || e.key === "F") {
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        e.preventDefault();
+        fgRef.current?.zoomToFit(600, 40);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [
+    selectionCollabsModalOpen,
+    distroModalOpen,
+    shortcutsOpen,
+    searchOpen,
+    rangeSelection.length,
+    selectedNodeId,
+    closeDistroModal,
+  ]);
+
   /* -------- Render -------- */
 
   return (
     <div className="flex flex-col h-[calc(100vh-64px)]">
+      <Modal
+        open={shortcutsOpen}
+        onClose={() => setShortcutsOpen(false)}
+        title="Network shortcuts"
+        subtitle="View and graph tools"
+        maxWidthClassName="max-w-md"
+      >
+        <ul className="list-none space-y-2.5 text-sm" style={{ color: "var(--sb-text)" }}>
+          <li>
+            <kbd className="rounded border px-1.5 py-0.5 font-mono text-[11px]" style={{ borderColor: "var(--sb-border)" }}>/</kbd>{" "}
+            <span style={{ color: "var(--sb-muted)" }}>Focus search</span>
+          </li>
+          <li>
+            <kbd className="rounded border px-1.5 py-0.5 font-mono text-[11px]" style={{ borderColor: "var(--sb-border)" }}>?</kbd>{" "}
+            <span style={{ color: "var(--sb-muted)" }}>Toggle this panel</span>
+          </li>
+          <li>
+            <kbd className="rounded border px-1.5 py-0.5 font-mono text-[11px]" style={{ borderColor: "var(--sb-border)" }}>Esc</kbd>{" "}
+            <span style={{ color: "var(--sb-muted)" }}>Close modals, then clear box selection, then clear artist focus</span>
+          </li>
+          <li>
+            <kbd className="rounded border px-1.5 py-0.5 font-mono text-[11px]" style={{ borderColor: "var(--sb-border)" }}>F</kbd>{" "}
+            <span style={{ color: "var(--sb-muted)" }}>Fit graph to view</span>
+          </li>
+          <li>
+            <span style={{ color: "var(--sb-muted)" }}>
+              The download button exports the current view (playlist, hide-non-primary, collab filter) to a multi-sheet{" "}
+              <code className="font-mono text-[11px]">.xlsx</code> (Summary, Artists, Collaborations, Tracks) in your browser.
+            </span>
+          </li>
+          <li className="pt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
+            URL keeps playlist, filters, toggles, <code className="font-mono">collab_max</code> (≤N collaborators) and{" "}
+            <code className="font-mono">collab_min</code> (≥N), and selection (up to {MAX_SEL_URL} artists). Pan/zoom is
+            restored per graph scope in this browser.
+          </li>
+          <li className="text-xs" style={{ color: "var(--sb-muted)" }}>
+            Touch / pen: hold still ~{(NETWORK_LONG_PRESS_MS / 1000).toFixed(2)}s (same idea as the home scatter chart), then
+            drag a box. Dragging
+            without holding pans the graph. Optional: <span style={{ color: "var(--sb-text)", fontWeight: 600 }}>Select region</span>{" "}
+            starts a marquee immediately.
+          </li>
+        </ul>
+      </Modal>
+
       {/* Controls bar */}
       <div
         className="flex items-center gap-3 px-4 py-2.5 flex-wrap border-b"
@@ -873,7 +1518,7 @@ export function NetworkGraphClient({
           value={playlistKey ?? ""}
           options={playlistScopeOptions}
           onChange={(v) => {
-            router.push(networkPageHref(v || null, hideNonPrimary));
+            pushNetworkUrl({ playlistKey: v || null });
           }}
           ariaLabel="Scope graph to playlist"
           placeholder="All catalog tracks"
@@ -881,6 +1526,92 @@ export function NetworkGraphClient({
           className="min-w-[10rem] max-w-[min(100vw-8rem,17rem)]"
           menuClassName="max-h-80 min-w-[min(100vw-2rem,17rem)] overflow-y-auto"
         />
+
+        <div
+          className="flex flex-wrap items-center gap-1.5 rounded-lg px-2 py-1 text-[11px]"
+          style={{
+            backgroundColor: colors.isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)",
+            color: colors.text,
+          }}
+        >
+          <span className="shrink-0 pl-0.5" style={{ color: colors.muted }}>
+            Collabs
+          </span>
+          <div className="flex rounded-md overflow-hidden border shrink-0" style={{ borderColor: colors.border }}>
+            <button
+              type="button"
+              className="px-2 py-1 font-medium transition-colors"
+              style={{
+                backgroundColor:
+                  collabFilterMode === "le"
+                    ? colors.isDark
+                      ? "rgba(212,255,77,0.14)"
+                      : "rgba(168,214,46,0.2)"
+                    : "transparent",
+                color: collabFilterMode === "le" ? colors.text : colors.muted,
+              }}
+              onClick={() => {
+                if (collabFilterMode === "le") return;
+                setCollabFilterMode("le");
+                pushNetworkUrl({ collabFilterMode: "le" });
+              }}
+            >
+              Up to
+            </button>
+            <button
+              type="button"
+              className="px-2 py-1 font-medium transition-colors border-l"
+              style={{
+                borderColor: colors.border,
+                backgroundColor:
+                  collabFilterMode === "ge"
+                    ? colors.isDark
+                      ? "rgba(212,255,77,0.14)"
+                      : "rgba(168,214,46,0.2)"
+                    : "transparent",
+                color: collabFilterMode === "ge" ? colors.text : colors.muted,
+              }}
+              onClick={() => {
+                if (collabFilterMode === "ge") return;
+                setCollabFilterMode("ge");
+                pushNetworkUrl({ collabFilterMode: "ge" });
+              }}
+            >
+              At least
+            </button>
+          </div>
+          <input
+            type="text"
+            inputMode="numeric"
+            autoComplete="off"
+            placeholder="Any"
+            title="Leave blank for all artists. Enter a number (0–999), then blur or press Enter."
+            aria-label="Filter by collaborator count"
+            className="w-11 min-w-0 rounded px-1.5 py-1 font-mono text-xs tabular-nums outline-none border"
+            style={{
+              borderColor: colors.border,
+              backgroundColor: colors.isDark ? "rgba(0,0,0,0.25)" : "rgba(255,255,255,0.7)",
+              color: colors.text,
+            }}
+            value={collabInputDraft}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === "" || /^\d*$/.test(v)) setCollabInputDraft(v);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                (e.target as HTMLInputElement).blur();
+              }
+            }}
+            onBlur={() => {
+              const parsed = parseCollabInputDraft(collabInputDraft);
+              setCollabFilterN(parsed);
+              setCollabInputDraft(parsed == null ? "" : String(parsed));
+              pushNetworkUrl({ collabFilterN: parsed });
+            }}
+          />
+        </div>
 
         <div className="w-px h-5" style={{ backgroundColor: colors.border }} />
 
@@ -895,8 +1626,9 @@ export function NetworkGraphClient({
           >
             <Search size={14} style={{ color: colors.muted }} />
             <input
+              ref={searchInputRef}
               type="text"
-              placeholder="Search artist..."
+              placeholder="Search artist…"
               className="bg-transparent outline-none w-44 placeholder:opacity-40"
               style={{ color: colors.text }}
               value={searchQuery}
@@ -957,49 +1689,93 @@ export function NetworkGraphClient({
         {/* Divider */}
         <div className="w-px h-5" style={{ backgroundColor: colors.border }} />
 
-        {/* Toggle: Scale by tracks */}
         <ToggleButton
           active={scaleByTracks}
-          onClick={() => setScaleByTracks((v) => !v)}
+          onClick={() => pushNetworkUrl({ scaleByTracks: !scaleByTracks })}
           icon={<Scaling size={14} />}
-          label="Scale by tracks"
+          title="Scale by tracks — node size reflects catalog track count for each artist"
           colors={colors}
         />
 
-        {/* Toggle: Show images */}
         <ToggleButton
           active={showImages}
-          onClick={() => setShowImages((v) => !v)}
+          onClick={() => pushNetworkUrl({ showImages: !showImages })}
           icon={<ImageIcon size={14} />}
-          label="Show images"
+          title="Show images — artist avatars on the graph (when available)"
+          colors={colors}
+        />
+
+        <ToggleButton
+          active={boxSelectArmed}
+          onClick={() => setBoxSelectArmed((v) => !v)}
+          icon={<SquareDashed size={14} />}
+          title="Select region — tap or click to start a box selection (touch: long-press ~0.5s then drag, or use this)"
           colors={colors}
         />
 
         <ToggleButton
           active={hideNonPrimary}
-          onClick={() =>
-            router.push(networkPageHref(playlistKey, !hideNonPrimary))
-          }
+          onClick={() => pushNetworkUrl({ hideNonPrimary: !hideNonPrimary })}
           icon={<UserRound size={14} />}
-          label="Hide non-primary"
+          title="Hide non-primary — only artists who are primary on at least one track in scope"
           colors={colors}
         />
 
         {/* Divider */}
         <div className="w-px h-5" style={{ backgroundColor: colors.border }} />
 
-        {/* Reset */}
-        <button
-          className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs transition-colors"
+        <IconButton
+          type="button"
+          variant="ghost"
+          size="sm"
+          title="Download Excel — current view (Summary, Artists, Collaborations, Tracks)"
+          aria-label="Download Excel export of current network view"
+          disabled={xlsxExporting}
+          onClick={() => void handleExportViewXlsx()}
+          className="!h-8 !w-8 shrink-0 !rounded-lg"
           style={{
             color: colors.muted,
             backgroundColor: colors.isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)",
           }}
-          onClick={handleReset}
         >
-          <RotateCcw size={13} />
-          Reset
-        </button>
+          {xlsxExporting ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+          ) : (
+            <Download className="h-3.5 w-3.5" aria-hidden />
+          )}
+        </IconButton>
+
+        <IconButton
+          type="button"
+          variant="ghost"
+          size="sm"
+          title="Keyboard shortcuts (?)"
+          aria-label="Keyboard shortcuts"
+          onClick={() => setShortcutsOpen(true)}
+          className="!h-8 !w-8 shrink-0 !rounded-lg"
+          style={{
+            color: colors.muted,
+            backgroundColor: colors.isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)",
+          }}
+        >
+          <Keyboard className="h-3.5 w-3.5" aria-hidden />
+        </IconButton>
+
+        <IconButton
+          type="button"
+          variant="ghost"
+          size="sm"
+          title="Reset — clear selection, collab filter, search; clear saved camera; fit graph"
+          aria-label="Reset network view"
+          onClick={handleReset}
+          className="!h-8 !w-8 shrink-0 !rounded-lg"
+          style={{
+            color: colors.muted,
+            backgroundColor: colors.isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)",
+          }}
+        >
+          <RotateCcw className="h-3.5 w-3.5" aria-hidden />
+        </IconButton>
 
         {/* Stats */}
         <div className="ml-auto text-xs text-right" style={{ color: colors.muted }}>
@@ -1011,10 +1787,22 @@ export function NetworkGraphClient({
               {" · "}
             </span>
           ) : null}
+          {collabFilterN != null ? (
+            <>
+              <span className="whitespace-nowrap">
+                {graphData.nodes.length} visible ({collabFilterMode === "le" ? "≤" : "≥"}
+                {collabFilterN} collabs) &middot; {graphData.links.length} links
+              </span>
+              <span className="opacity-70"> — full </span>
+            </>
+          ) : null}
           {nodes.length} artists &middot; {edges.length} collaborations
+          <span className="mt-0.5 block text-[10px] opacity-80 xl:hidden">
+            Hold ~0.5s then drag to box-select · drag to pan
+          </span>
           <span className="hidden xl:inline">
             {" "}
-            &middot; Alt+drag box &middot; Ctrl+click distro
+            &middot; Alt+drag or Select region (touch: hold ~0.5s, then drag) &middot; Ctrl+click distro &middot; ? shortcuts
           </span>
         </div>
       </div>
@@ -1051,9 +1839,9 @@ export function NetworkGraphClient({
       {selectedNodeId && (
         <SelectedArtistPanel
           nodeId={selectedNodeId}
-          nodes={nodes}
+          nodes={graphData.nodes}
           edges={edges}
-          neighbors={neighbors}
+          neighbors={neighborsView}
           colors={colors}
           onClose={() => setSelectedNodeId(null)}
           onFocusArtist={focusOnArtist}
@@ -1110,6 +1898,8 @@ export function NetworkGraphClient({
           width={dimensions.width}
           height={dimensions.height}
           backgroundColor="transparent"
+          autoPauseRedraw={tabHidden}
+          onZoomEnd={() => scheduleCameraSave()}
           // Node
           nodeId="id"
           nodeVal={nodeVal}
@@ -1282,6 +2072,8 @@ type IsrcDetailPayload = {
   release_date: string | null;
   totalStreams: number | null;
   dailyStreams: number | null;
+  artistsOnTrack?: string;
+  distroPlaylists?: string;
 };
 
 function SelectionArtistAvatar({ url }: { url: string | null }) {
@@ -1465,8 +2257,18 @@ function SelectionCollabsModal({
       title="Selected collaborations"
       subtitle={`${scopeLabel} · ${internalEdges.length} collab ${linkWord} · ${rows.length} track ${creditWord}`}
       maxWidthClassName="max-w-5xl"
+      headerActions={
+        <ChartCsvDownloadButton
+          rows={csvRows as unknown as Array<Record<string, unknown>>}
+          filename={`network-collabs-${slugifyForFilename(scopeLabel)}-${todayIsoDate()}.csv`}
+          title="Download CSV"
+          sortForExport={false}
+          headers={["collaboration", "track", "isrc", "release_date", "total_streams", "daily_streams"]}
+          disabled={rows.length === 0}
+        />
+      }
     >
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+      <div className="mb-3">
         {detailsLoading ? (
           <span className="text-[11px] opacity-60" style={{ color: "var(--sb-muted)" }}>
             Loading track metadata…
@@ -1478,14 +2280,6 @@ function SelectionCollabsModal({
             dialog closes.
           </span>
         )}
-        <ChartCsvDownloadButton
-          rows={csvRows as unknown as Array<Record<string, unknown>>}
-          filename={`network-collabs-${slugifyForFilename(scopeLabel)}-${todayIsoDate()}.csv`}
-          title="Download CSV"
-          sortForExport={false}
-          headers={["collaboration", "track", "isrc", "release_date", "total_streams", "daily_streams"]}
-          disabled={rows.length === 0}
-        />
       </div>
       <GlassTable
         headers={[
@@ -1622,18 +2416,21 @@ function ToggleButton({
   active,
   onClick,
   icon,
-  label,
+  title,
   colors,
 }: {
   active: boolean;
   onClick: () => void;
   icon: React.ReactNode;
-  label: string;
+  title: string;
   colors: ReturnType<typeof useThemeColors>;
 }) {
   return (
     <button
-      className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs transition-colors"
+      type="button"
+      title={title}
+      aria-label={title}
+      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs transition-colors"
       style={{
         color: active ? colors.accent : colors.muted,
         backgroundColor: active
@@ -1647,7 +2444,6 @@ function ToggleButton({
       onClick={onClick}
     >
       {icon}
-      {label}
     </button>
   );
 }

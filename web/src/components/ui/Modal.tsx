@@ -9,6 +9,7 @@ export function Modal({
   title,
   subtitle,
   headerCenter,
+  headerActions,
   children,
   maxWidthClassName,
   showCloseButton = true,
@@ -18,6 +19,8 @@ export function Modal({
   title?: ReactNode;
   subtitle?: ReactNode;
   headerCenter?: ReactNode;
+  /** Rendered to the left of the Close control (e.g. CSV export). */
+  headerActions?: ReactNode;
   children: ReactNode;
   maxWidthClassName?: string;
   showCloseButton?: boolean;
@@ -122,9 +125,9 @@ export function Modal({
         ].join(" ")}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        {(title || subtitle || headerCenter) && (
+        {(title || subtitle || headerCenter || headerActions) && (
           <div className="relative flex-none flex items-center justify-between gap-3 border-b px-4 py-3" style={{ borderColor: "var(--sb-border)" }}>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1 pr-2">
               {title ? (
                 <div className="font-display text-base font-semibold tracking-tight" style={{ color: "var(--sb-text)" }}>
                   {title}
@@ -139,16 +142,21 @@ export function Modal({
             {headerCenter ? (
               <div className="absolute left-1/2 -translate-x-1/2">{headerCenter}</div>
             ) : null}
-            {showCloseButton ? (
-              <button
-                type="button"
-                className="sb-ring rounded-full bg-white/60 px-2.5 py-1.5 text-xs font-medium hover:bg-white/80 dark:bg-white/10 dark:hover:bg-white/15 flex-shrink-0"
-                style={{ color: "var(--sb-text)" }}
-                onClick={onClose}
-              >
-                Close
-              </button>
-            ) : null}
+            {(headerActions || showCloseButton) && (
+              <div className="flex flex-shrink-0 items-center gap-2">
+                {headerActions}
+                {showCloseButton ? (
+                  <button
+                    type="button"
+                    className="sb-ring rounded-full bg-white/60 px-2.5 py-1.5 text-xs font-medium hover:bg-white/80 dark:bg-white/10 dark:hover:bg-white/15"
+                    style={{ color: "var(--sb-text)" }}
+                    onClick={onClose}
+                  >
+                    Close
+                  </button>
+                ) : null}
+              </div>
+            )}
           </div>
         )}
 

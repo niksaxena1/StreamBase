@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 
 import { supabaseServer } from "@/lib/supabase/server";
@@ -107,12 +108,20 @@ export default async function NetworkPage({
   };
 
   return (
-    <NetworkGraphClient
-      nodes={graph.nodes}
-      edges={graph.edges}
-      playlists={playlists}
-      playlistKey={playlistKey}
-      hideNonPrimary={hideNonPrimary}
-    />
+    <Suspense
+      fallback={
+        <div className="flex h-[calc(100vh-64px)] items-center justify-center text-sm" style={{ color: "var(--sb-muted)" }}>
+          Loading network…
+        </div>
+      }
+    >
+      <NetworkGraphClient
+        nodes={graph.nodes}
+        edges={graph.edges}
+        playlists={playlists}
+        playlistKey={playlistKey}
+        hideNonPrimary={hideNonPrimary}
+      />
+    </Suspense>
   );
 }
