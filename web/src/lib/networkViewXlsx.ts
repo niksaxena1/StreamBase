@@ -65,6 +65,8 @@ export type NetworkViewExportMeta = {
   hideNonPrimary: boolean;
   /** Describes collaborator filter, e.g. "None" or "≤5 collaborators" */
   collabFilterLabel: string;
+  /** How co_artists_on_tracks was counted (playlist-wide vs lead rows). */
+  collabCountBasisLabel: string;
   exportedAtIso: string;
   /** Full URL (origin + path + query) to reproduce the view */
   pageUrl: string;
@@ -234,6 +236,7 @@ export async function downloadNetworkViewXlsx(args: {
     ["Scope", args.meta.scopeLabel],
     ["Hide non-primary artists", args.meta.hideNonPrimary ? "Yes" : "No"],
     ["Collaborator filter", args.meta.collabFilterLabel],
+    ["Co-artist count basis", args.meta.collabCountBasisLabel],
     ["Artists in this export (visible)", args.viewNodes.length],
     ["Collaboration links in this export (visible)", args.viewEdges.length],
     ["Artists in full loaded graph", args.meta.fullGraphArtistCount],
@@ -244,6 +247,12 @@ export async function downloadNetworkViewXlsx(args: {
     [
       "Note",
       "Row 1 is headers on data sheets; AutoFilter is enabled. View → Freeze Panes → Freeze Top Row keeps headers visible. (SheetJS export does not embed frozen panes.)",
+    ],
+    [
+      "Artists sheet — co-artists vs graph",
+      `co_artists_on_tracks matches the "Co-artist count basis" row above (${args.meta.collabCountBasisLabel}). graph_links_in_view / graph_neighbor_names follow graph edges only${
+        args.meta.hideNonPrimary ? " (both endpoints must be primary somewhere in scope)." : "."
+      }`,
     ],
   ];
 
@@ -263,9 +272,9 @@ export async function downloadNetworkViewXlsx(args: {
     "tracks_all_catalog",
     "total_streams_all_catalog",
     "daily_streams_all_catalog",
-    "collaborators_full_graph",
-    "collaborators_in_view",
-    "collaborator_names",
+    "co_artists_on_tracks",
+    "graph_links_in_view",
+    "graph_neighbor_names",
   ];
   const artistsAoa: Array<Array<string | number>> = [
     artistsHeader,

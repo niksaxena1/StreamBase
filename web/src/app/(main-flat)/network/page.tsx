@@ -12,6 +12,10 @@ export type GraphNode = {
   name: string;
   track_count: number;
   image_url: string | null;
+  /** Distinct other credited artists on the same scoped ISRC as this artist (any credit row). */
+  co_artists_any_track?: number;
+  /** Distinct other credited artists on ISRCs where this artist is primary (first credit). */
+  co_artists_primary_tracks?: number;
 };
 
 export type SharedTrack = {
@@ -95,9 +99,10 @@ export default async function NetworkPage({
     console.error("artist_collaboration_graph RPC failed:", error);
     return (
       <div className="p-8 text-center" style={{ color: "var(--sb-muted)" }}>
-        Failed to load collaboration graph. Deploy migration{" "}
-        <code className="font-mono text-xs">artist_collaboration_graph_hide_non_primary.sql</code>{" "}
-        if you see a function signature error.
+        Failed to load collaboration graph. Apply the latest{" "}
+        <code className="font-mono text-xs">artist_collaboration_graph_*.sql</code> migrations (including{" "}
+        <code className="font-mono text-xs">artist_collaboration_graph_track_coartist_counts.sql</code>
+        ) if you see a function or column error.
       </div>
     );
   }
