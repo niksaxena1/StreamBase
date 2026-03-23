@@ -11,6 +11,9 @@ const nextConfig: NextConfig = {
     optimizePackageImports: ["recharts", "lucide-react"],
   },
   images: {
+    // Spotify CDN assets are already sized reasonably; skipping the Image
+    // Optimization API avoids Vercel "Image Transformations" quota on Hobby.
+    unoptimized: true,
     // Cache optimized images for a full day.
     minimumCacheTTL: 86400,
     remotePatterns: [
