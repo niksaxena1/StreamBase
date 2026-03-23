@@ -8,6 +8,8 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { useMetric } from "@/components/metrics/MetricContext";
+import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import type { ForwardRefExoticComponent, RefAttributes } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
@@ -34,9 +36,11 @@ import {
   Loader2,
   X,
   Filter,
+  Link2,
   Music,
 } from "lucide-react";
-import { formatDateISO, formatInt } from "@/lib/format";
+import { formatDateISO, formatInt, formatUsd2 } from "@/lib/format";
+import { showToast } from "@/lib/toast";
 import { slugifyForFilename, todayIsoDate } from "@/lib/csv";
 import {
   downloadNetworkViewXlsx,
@@ -193,6 +197,44 @@ function parseCollabCountBasis(sp: URLSearchParams): CollabCountBasis {
   return "playlist";
 }
 
+/** Visible-artists table sort (URL: `tbl_sort`, `tbl_dir`). */
+type NetworkTableSortKey =
+  | "name"
+  | "track_count"
+  | "co"
+  | "deg"
+  | "streams_total"
+  | "streams_daily";
+
+function parseNetworkTableSort(sp: { get: (k: string) => string | null }): {
+  key: NetworkTableSortKey;
+  dir: "asc" | "desc";
+} {
+  const raw = sp.get("tbl_sort");
+  const key: NetworkTableSortKey =
+    raw === "track_count" ||
+    raw === "co" ||
+    raw === "deg" ||
+    raw === "streams_total" ||
+    raw === "streams_daily"
+      ? raw
+      : "name";
+  const dir = sp.get("tbl_dir") === "desc" ? "desc" : "asc";
+  return { key, dir };
+}
+
+function appendNetworkTableSortParams(
+  p: URLSearchParams,
+  key: NetworkTableSortKey,
+  dir: "asc" | "desc",
+): void {
+  p.delete("tbl_sort");
+  p.delete("tbl_dir");
+  if (key === "name" && dir === "asc") return;
+  p.set("tbl_sort", key);
+  if (dir === "desc") p.set("tbl_dir", "desc");
+}
+
 function parseCollabDegreeFilter(sp: URLSearchParams): { n: number | null; mode: CollabFilterMode } {
   const parseN = (raw: string | null): number | null => {
     if (raw == null || raw === "") return null;
@@ -237,6 +279,8 @@ function buildNetworkQueryString(args: {
   trackCountMin: number | null;
   trackCountMax: number | null;
   selectedIds: string[];
+  tableSortKey: NetworkTableSortKey;
+  tableSortDir: "asc" | "desc";
 }): string {
   const p = new URLSearchParams();
   appendNetworkScopeToSearchParams(p, args.scope);
@@ -254,6 +298,7 @@ function buildNetworkQueryString(args: {
   if (args.selectedIds.length > 0 && args.selectedIds.length <= MAX_SEL_URL) {
     p.set("sel", args.selectedIds.join(","));
   }
+  appendNetworkTableSortParams(p, args.tableSortKey, args.tableSortDir);
   const s = p.toString();
   return s ? `?${s}` : "";
 }
@@ -264,6 +309,54 @@ function networkScopeIdentity(scope: NetworkScopeState): string {
   if (scope.mode === "playlist") return `p:${scope.playlistKey ?? ""}`;
   const keys = [...scope.customPlaylistKeys].sort().join(",");
   return `u:${keys}:${scope.customPlaylistMode}`;
+}
+
+/**
+ * Global metric toggle (streams / revenue / tracks). Tracks is treated as streams for stream-derived values.
+ * APIs always return stream counts; revenue multiplies by payout rate for display and sort.
+ */
+function useNetworkMetricStreams() {
+  const { metric } = useMetric();
+  const { streamPayoutPerStreamUsd } = usePayoutRate();
+  const displayMetric = metric === "tracks" ? "streams" : metric;
+  const metricColor =
+    displayMetric === "revenue" ? "#10b981" : "var(--sb-positive)";
+
+  const formatFromStreamCount = useCallback(
+    (streamCount: number | null | undefined) => {
+      if (streamCount == null) return "—";
+      if (displayMetric === "revenue") {
+        return formatUsd2(streamCount * streamPayoutPerStreamUsd);
+      }
+      return formatInt(streamCount);
+    },
+    [displayMetric, streamPayoutPerStreamUsd],
+  );
+
+  const sortKeyFromStreamCount = useCallback(
+    (streamCount: number | null | undefined): number | null => {
+      if (streamCount == null) return null;
+      if (displayMetric === "revenue") {
+        return streamCount * streamPayoutPerStreamUsd;
+      }
+      return streamCount;
+    },
+    [displayMetric, streamPayoutPerStreamUsd],
+  );
+
+  const totalColumnLabel =
+    displayMetric === "revenue" ? "Total revenue" : "Total streams";
+  const dailyColumnLabel =
+    displayMetric === "revenue" ? "Daily revenue" : "Daily streams";
+
+  return {
+    displayMetric,
+    metricColor,
+    formatFromStreamCount,
+    sortKeyFromStreamCount,
+    totalColumnLabel,
+    dailyColumnLabel,
+  };
 }
 
 function isTypingTarget(el: EventTarget | null) {
@@ -398,6 +491,12 @@ export function NetworkGraphClient({
   const [xlsxExporting, setXlsxExporting] = useState(false);
   const [xlsxExportPhase, setXlsxExportPhase] = useState<string | null>(null);
   const [xlsxExportAlert, setXlsxExportAlert] = useState<string | null>(null);
+  const [tableStreamStats, setTableStreamStats] = useState<Map<
+    string,
+    NetworkArtistStreamExportRow
+  > | null>(null);
+  const [tableStreamStatsLoading, setTableStreamStatsLoading] = useState(false);
+  const [tableStreamStatsError, setTableStreamStatsError] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
@@ -563,6 +662,8 @@ export function NetworkGraphClient({
     () => formatNetworkScopeLabel(networkScope, playlistNameByKey),
     [networkScope, playlistNameByKey],
   );
+
+  const tableSort = useMemo(() => parseNetworkTableSort(searchParams), [searchParams]);
 
   const collabCountBasisLabel = useMemo(
     () =>
@@ -856,6 +957,88 @@ export function NetworkGraphClient({
     return { nodes: fnodes, links: flinks };
   }, [nodes, edges, combinedVisibleNodeIds]);
 
+  const visibleTableArtistIdsKey = useMemo(
+    () =>
+      [...graphData.nodes]
+        .map((n) => String(n.id).trim())
+        .filter((id) => id.length > 0)
+        .sort()
+        .join("\0"),
+    [graphData.nodes],
+  );
+
+  useEffect(() => {
+    if (!tableView) {
+      setTableStreamStats(null);
+      setTableStreamStatsLoading(false);
+      setTableStreamStatsError(false);
+      return;
+    }
+    if (!visibleTableArtistIdsKey) {
+      setTableStreamStats(new Map());
+      setTableStreamStatsLoading(false);
+      setTableStreamStatsError(false);
+      return;
+    }
+    const artistIds = visibleTableArtistIdsKey.split("\0");
+    let cancelled = false;
+    setTableStreamStatsLoading(true);
+    setTableStreamStatsError(false);
+    fetch("/api/admin/network-export-artist-stream-stats", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        artistIds,
+        playlistKey: playlistKey ?? null,
+        hideNonPrimary,
+      }),
+    })
+      .then((r) => r.json())
+      .then(
+        (js: {
+          rows?: Array<{
+            artist_id: string;
+            total_streams_in_scope: number;
+            daily_streams_in_scope: number;
+            tracks_all_catalog: number;
+            total_streams_all_catalog: number;
+            daily_streams_all_catalog: number;
+          }>;
+          error?: string;
+        }) => {
+          if (cancelled) return;
+          if (js.error) {
+            setTableStreamStats(null);
+            setTableStreamStatsError(true);
+            setTableStreamStatsLoading(false);
+            return;
+          }
+          const m = new Map<string, NetworkArtistStreamExportRow>();
+          for (const row of js.rows ?? []) {
+            m.set(row.artist_id, {
+              total_streams_in_scope: row.total_streams_in_scope,
+              daily_streams_in_scope: row.daily_streams_in_scope,
+              tracks_all_catalog: row.tracks_all_catalog,
+              total_streams_all_catalog: row.total_streams_all_catalog,
+              daily_streams_all_catalog: row.daily_streams_all_catalog,
+            });
+          }
+          setTableStreamStats(m);
+          setTableStreamStatsLoading(false);
+        },
+      )
+      .catch(() => {
+        if (!cancelled) {
+          setTableStreamStats(null);
+          setTableStreamStatsError(true);
+          setTableStreamStatsLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tableView, visibleTableArtistIdsKey, playlistKey, hideNonPrimary]);
+
   const handleExportViewXlsx = useCallback(async () => {
     setXlsxExporting(true);
     setXlsxExportAlert(null);
@@ -1087,6 +1270,8 @@ export function NetworkGraphClient({
       trackCountMin: number | null;
       trackCountMax: number | null;
       selectedIds: string[];
+      tableSortKey: NetworkTableSortKey;
+      tableSortDir: "asc" | "desc";
     }>) => {
       const scope = patch.scope ?? scopeRef.current;
       const q = buildNetworkQueryString({
@@ -1101,12 +1286,16 @@ export function NetworkGraphClient({
         trackCountMin: patch.trackCountMin !== undefined ? patch.trackCountMin : trackCountMin,
         trackCountMax: patch.trackCountMax !== undefined ? patch.trackCountMax : trackCountMax,
         selectedIds: patch.selectedIds ?? rangeSelection,
+        tableSortKey: patch.tableSortKey ?? tableSort.key,
+        tableSortDir: patch.tableSortDir ?? tableSort.dir,
       });
       router.replace((pathname || "/network") + q, { scroll: false });
     },
     [
       pathname,
       router,
+      tableSort.key,
+      tableSort.dir,
       hideNonPrimary,
       scaleByTracks,
       showImages,
@@ -1119,6 +1308,29 @@ export function NetworkGraphClient({
       rangeSelection,
     ],
   );
+
+  const cycleTableSortColumn = useCallback(
+    (key: NetworkTableSortKey) => {
+      const cur = parseNetworkTableSort(searchParams);
+      const nextDir: "asc" | "desc" =
+        cur.key === key ? (cur.dir === "asc" ? "desc" : "asc") : "asc";
+      pushNetworkUrl({ tableSortKey: key, tableSortDir: nextDir });
+    },
+    [searchParams, pushNetworkUrl],
+  );
+
+  const copyShareablePageLink = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const url = window.location.href;
+    void navigator.clipboard
+      .writeText(url)
+      .then(() => {
+        showToast("Link copied to clipboard", "success");
+      })
+      .catch(() => {
+        showToast("Could not copy — copy the address bar manually", "error");
+      });
+  }, []);
 
   const prevSelectionHydrateKey = useRef("");
   useEffect(() => {
@@ -1146,6 +1358,8 @@ export function NetworkGraphClient({
       trackCountMin,
       trackCountMax,
       selectedIds: rangeSelection,
+      tableSortKey: tableSort.key,
+      tableSortDir: tableSort.dir,
     });
     const nextPath = (pathname || "/network") + q;
     const t = setTimeout(() => {
@@ -1169,6 +1383,8 @@ export function NetworkGraphClient({
     hideNonPrimary,
     pathname,
     router,
+    tableSort.key,
+    tableSort.dir,
   ]);
 
   const scheduleCameraSave = useCallback(() => {
@@ -1966,6 +2182,8 @@ export function NetworkGraphClient({
       trackCountMin: null,
       trackCountMax: null,
       tableView: false,
+      tableSortKey: "name",
+      tableSortDir: "asc",
     });
     fgRef.current?.zoomToFit(600, 40);
   }, [pushNetworkUrl]);
@@ -2367,7 +2585,12 @@ export function NetworkGraphClient({
                 <span style={{ color: "var(--sb-text)" }}>Hide non-primary</span> — drop artists with no lead track in scope.
               </li>
               <li>
-                <span style={{ color: "var(--sb-text)" }}>Table</span> — sortable list of visible artists.
+                <span style={{ color: "var(--sb-text)" }}>Table</span> — sortable list of visible artists (avatars, sticky
+                header, row activates the graph, in-scope totals from the same API as the Excel Artists sheet). Values follow the
+                global metric (Streams / Revenue / Tracks→Streams) and payout rate like catalog tables. Sort order is stored in the
+                URL (
+                <code className="font-mono text-[11px]">tbl_sort</code>,{" "}
+                <code className="font-mono text-[11px]">tbl_dir</code>).
               </li>
               <li>
                 <span style={{ color: "var(--sb-text)" }}>Funnel</span> — advanced filters: AND/OR inside each group, and when
@@ -2386,15 +2609,28 @@ export function NetworkGraphClient({
               Collaborations, Tracks, Tracks unique) for the current scope and toolbar filters.
             </p>
             <p className="text-[13px] leading-snug mt-2" style={{ color: "var(--sb-muted)" }}>
-              The URL stores scope (<code className="font-mono text-[11px]">playlist=…</code> or custom{" "}
+              Use the toolbar <span style={{ color: "var(--sb-text)" }}>Copy link</span> button (chain icon) to copy the full
+              address bar URL. Anyone signed in as an <span style={{ color: "var(--sb-text)" }}>admin</span> can open it and get
+              the same scope, toolbar filters, table on/off, table sort, and multi-select (
+              <code className="font-mono text-[11px]">sel=</code>, up to {MAX_SEL_URL} ids).
+            </p>
+            <p className="text-[13px] leading-snug mt-2" style={{ color: "var(--sb-muted)" }}>
+              The URL encodes scope (<code className="font-mono text-[11px]">playlist=…</code> or custom{" "}
               <code className="font-mono text-[11px]">net_scope</code> / <code className="font-mono text-[11px]">net_pl</code> /{" "}
               <code className="font-mono text-[11px]">net_pl_m</code>), toggles,{" "}
               <code className="font-mono text-[11px]">collab_max</code> /{" "}
               <code className="font-mono text-[11px]">collab_min</code>,{" "}
-              <code className="font-mono text-[11px]">co_basis=primary</code> (lead rows; default is playlist-wide),{" "}
+              <code className="font-mono text-[11px]">co_basis=primary</code>,{" "}
               <code className="font-mono text-[11px]">tc_min</code> / <code className="font-mono text-[11px]">tc_max</code>,{" "}
-              <code className="font-mono text-[11px]">table=1</code>, and selection (up to {MAX_SEL_URL} artists). Pan/zoom is
-              remembered per graph scope in this browser. Bookmark or share the URL to return to the same toolbar state.
+              <code className="font-mono text-[11px]">table=1</code>,{" "}
+              <code className="font-mono text-[11px]">tbl_sort</code> / <code className="font-mono text-[11px]">tbl_dir</code>{" "}
+              (including <code className="font-mono text-[11px]">streams_total</code> /{" "}
+              <code className="font-mono text-[11px]">streams_daily</code>).
+            </p>
+            <p className="text-[13px] leading-snug mt-2" style={{ color: "var(--sb-muted)" }}>
+              <span style={{ color: "var(--sb-text)" }}>Not</span> in the URL:{" "}
+              <span style={{ color: "var(--sb-text)" }}>Funnel</span> (advanced filter) — presets stay on this device; pan/zoom
+              is saved in local storage per graph identity. Re-apply the funnel or align the camera after opening a shared link.
             </p>
           </section>
         </div>
@@ -2821,6 +3057,22 @@ export function NetworkGraphClient({
           type="button"
           variant="ghost"
           size="sm"
+          title="Copy link to this view"
+          aria-label="Copy shareable link to the clipboard"
+          onClick={() => copyShareablePageLink()}
+          className="!h-8 !w-8 shrink-0 !rounded-lg"
+          style={{
+            color: colors.muted,
+            backgroundColor: colors.isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)",
+          }}
+        >
+          <Link2 className="h-3.5 w-3.5" aria-hidden />
+        </IconButton>
+
+        <IconButton
+          type="button"
+          variant="ghost"
+          size="sm"
           title="Help"
           aria-label="Help and shortcuts"
           onClick={() => setShortcutsOpen(true)}
@@ -3050,7 +3302,7 @@ export function NetworkGraphClient({
       <div className="flex flex-1 flex-col min-h-0 min-w-0">
         <div
           ref={containerRef}
-          className="flex-1 min-h-[220px] relative overflow-hidden touch-none"
+          className="relative min-h-[220px] min-w-0 flex-1 touch-none overflow-hidden"
           onPointerDownCapture={onBoxPointerDownCapture}
           onPointerMoveCapture={onBoxPointerMoveCapture}
           onPointerUpCapture={onBoxPointerUpCapture}
@@ -3130,6 +3382,13 @@ export function NetworkGraphClient({
             graphDegreeMap={graphDegreeMap}
             collabCountBasis={collabCountBasis}
             colors={colors}
+            sortKey={tableSort.key}
+            sortDir={tableSort.dir}
+            onSortColumn={cycleTableSortColumn}
+            onRowActivate={focusOnArtist}
+            streamStatsById={tableStreamStats}
+            streamsLoading={tableStreamStatsLoading}
+            streamsError={tableStreamStatsError}
           />
         ) : null}
       </div>
@@ -3141,54 +3400,83 @@ export function NetworkGraphClient({
 /*  Visible-artists table (sortable)                                   */
 /* ------------------------------------------------------------------ */
 
-type NetworkTableSortKey = "name" | "track_count" | "co" | "deg";
-
 function NetworkArtistsTable({
   nodes,
   trackCollabFilterMap,
   graphDegreeMap,
   collabCountBasis,
   colors,
+  sortKey,
+  sortDir,
+  onSortColumn,
+  onRowActivate,
+  streamStatsById,
+  streamsLoading,
+  streamsError,
 }: {
   nodes: GraphNode[];
   trackCollabFilterMap: Map<string, number>;
   graphDegreeMap: Map<string, number>;
   collabCountBasis: CollabCountBasis;
   colors: ReturnType<typeof useThemeColors>;
+  sortKey: NetworkTableSortKey;
+  sortDir: "asc" | "desc";
+  onSortColumn: (key: NetworkTableSortKey) => void;
+  onRowActivate: (artistId: string) => void;
+  streamStatsById: Map<string, NetworkArtistStreamExportRow> | null;
+  streamsLoading: boolean;
+  streamsError: boolean;
 }) {
-  const [sortKey, setSortKey] = useState<NetworkTableSortKey>("name");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const { metricColor, formatFromStreamCount, sortKeyFromStreamCount, totalColumnLabel, dailyColumnLabel } =
+    useNetworkMetricStreams();
 
   const sorted = useMemo(() => {
     const arr = [...nodes];
-    const m = sortDir === "asc" ? 1 : -1;
+    const dir = sortDir === "asc" ? 1 : -1;
+    const streamPick = (id: string, field: "total" | "daily"): number | null => {
+      const r = streamStatsById?.get(id);
+      if (!r) return null;
+      const raw = field === "total" ? r.total_streams_in_scope : r.daily_streams_in_scope;
+      return sortKeyFromStreamCount(raw);
+    };
+    const streamCmp = (aId: string, bId: string, field: "total" | "daily"): number => {
+      const va = streamPick(aId, field);
+      const vb = streamPick(bId, field);
+      if (va === null && vb === null) return 0;
+      if (va === null) return 1;
+      if (vb === null) return -1;
+      return va - vb;
+    };
     arr.sort((a, b) => {
       let cmp = 0;
       if (sortKey === "name") cmp = a.name.localeCompare(b.name);
       else if (sortKey === "track_count") cmp = (a.track_count ?? 0) - (b.track_count ?? 0);
       else if (sortKey === "co")
         cmp = (trackCollabFilterMap.get(a.id) ?? 0) - (trackCollabFilterMap.get(b.id) ?? 0);
-      else cmp = (graphDegreeMap.get(a.id) ?? 0) - (graphDegreeMap.get(b.id) ?? 0);
-      return cmp * m || a.name.localeCompare(b.name);
+      else if (sortKey === "deg")
+        cmp = (graphDegreeMap.get(a.id) ?? 0) - (graphDegreeMap.get(b.id) ?? 0);
+      else if (sortKey === "streams_total") cmp = streamCmp(a.id, b.id, "total");
+      else if (sortKey === "streams_daily") cmp = streamCmp(a.id, b.id, "daily");
+      else cmp = 0;
+      return cmp * dir || a.name.localeCompare(b.name);
     });
     return arr;
-  }, [nodes, sortKey, sortDir, trackCollabFilterMap, graphDegreeMap]);
-
-  const cycleSort = (key: NetworkTableSortKey) => {
-    if (sortKey !== key) {
-      setSortKey(key);
-      setSortDir("asc");
-      return;
-    }
-    setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-  };
+  }, [
+    nodes,
+    sortKey,
+    sortDir,
+    trackCollabFilterMap,
+    graphDegreeMap,
+    streamStatsById,
+    sortKeyFromStreamCount,
+  ]);
 
   const thBtn = (key: NetworkTableSortKey, label: string, className?: string) => (
     <button
       type="button"
       className={`inline-flex items-center gap-0.5 font-medium hover:opacity-90 ${className ?? ""}`}
       style={{ color: colors.text }}
-      onClick={() => cycleSort(key)}
+      onClick={() => onSortColumn(key)}
     >
       {label}
       {sortKey === key ? (sortDir === "asc" ? " ▲" : " ▼") : ""}
@@ -3200,24 +3488,56 @@ function NetworkArtistsTable({
 
   return (
     <div
-      className="shrink-0 border-t overflow-hidden flex flex-col"
+      className="flex shrink-0 flex-col overflow-hidden border-t"
       style={{ borderColor: colors.border, backgroundColor: colors.card }}
     >
       <div
-        className="px-4 py-2 text-xs font-semibold flex items-center justify-between gap-2"
+        className="flex flex-col gap-1 px-4 py-2 text-xs font-semibold sm:flex-row sm:items-center sm:justify-between"
         style={{ color: colors.text }}
       >
         <span>Visible artists ({sorted.length})</span>
-        <span className="font-normal opacity-70">Same scope as the graph · click column to sort</span>
+        <span className="font-normal opacity-70">
+          Same scope as the graph · totals match Excel Artists (in-scope stream counts × global metric) · row =
+          focus on graph
+        </span>
+        {streamsError ? (
+          <span className="font-normal text-[11px]" style={{ color: colors.muted }}>
+            Stream totals failed to load — columns show “—”.
+          </span>
+        ) : null}
       </div>
-      <div className="max-h-[38vh] overflow-auto px-2 pb-3">
-        <table className="w-full text-left text-xs border-collapse">
-          <thead>
-            <tr style={{ borderBottom: `1px solid ${colors.border}`, color: colors.muted }}>
-              <th className="py-2 pl-2 pr-2">{thBtn("name", "Name")}</th>
-              <th className="py-2 pr-2 text-right whitespace-nowrap">{thBtn("track_count", "Tracks", "justify-end w-full")}</th>
-              <th className="py-2 pr-2 text-right whitespace-nowrap">{thBtn("co", coHead, "justify-end w-full")}</th>
-              <th className="py-2 pr-2 text-right whitespace-nowrap">
+      <div className="max-h-[min(50vh,440px)] overflow-auto px-2 pb-3">
+        <table className="w-full border-collapse text-left text-xs">
+          <thead
+            className="sticky top-0 z-[1]"
+            style={{
+              backgroundColor: colors.card,
+              boxShadow: `inset 0 -1px 0 ${colors.border}`,
+              color: colors.muted,
+            }}
+          >
+            <tr>
+              <th className="w-9 py-2 pl-2 pr-1" aria-hidden />
+              <th className="py-2 pr-2">{thBtn("name", "Name")}</th>
+              <th className="whitespace-nowrap py-2 pr-2 text-right">
+                {thBtn("track_count", "Tracks", "justify-end w-full")}
+              </th>
+              <th
+                className="whitespace-nowrap py-2 pr-2 text-right"
+                title={`${totalColumnLabel} in current graph scope (underlying data: stream counts)`}
+              >
+                {thBtn("streams_total", totalColumnLabel, "justify-end w-full")}
+              </th>
+              <th
+                className="whitespace-nowrap py-2 pr-2 text-right"
+                title={`${dailyColumnLabel} in current graph scope`}
+              >
+                {thBtn("streams_daily", dailyColumnLabel, "justify-end w-full")}
+              </th>
+              <th className="whitespace-nowrap py-2 pr-2 text-right">
+                {thBtn("co", coHead, "justify-end w-full")}
+              </th>
+              <th className="whitespace-nowrap py-2 pr-2 text-right">
                 {thBtn("deg", "Graph links", "justify-end w-full")}
               </th>
             </tr>
@@ -3226,15 +3546,59 @@ function NetworkArtistsTable({
             {sorted.map((n) => (
               <tr
                 key={n.id}
-                className="border-b border-black/5 dark:border-white/10"
+                tabIndex={0}
+                className="cursor-pointer border-b border-black/5 transition-colors hover:bg-black/[0.04] dark:border-white/10 dark:hover:bg-white/[0.06]"
                 style={{ borderColor: colors.border }}
+                onClick={() => onRowActivate(n.id)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onRowActivate(n.id);
+                  }
+                }}
               >
-                <td className="py-1.5 pl-2 pr-2 font-medium truncate max-w-[12rem]">{n.name}</td>
-                <td className="py-1.5 pr-2 text-right tabular-nums font-mono">{n.track_count}</td>
-                <td className="py-1.5 pr-2 text-right tabular-nums font-mono">
+                <td className="py-1.5 pl-2 pr-1">
+                  {n.image_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={n.image_url}
+                      alt=""
+                      className="h-6 w-6 shrink-0 rounded-full object-cover"
+                    />
+                  ) : (
+                    <div
+                      className="h-6 w-6 shrink-0 rounded-full"
+                      style={{ backgroundColor: `${colors.accent}40` }}
+                      aria-hidden
+                    />
+                  )}
+                </td>
+                <td className="max-w-[12rem] truncate py-1.5 pr-2 font-medium">{n.name}</td>
+                <td className="py-1.5 pr-2 text-right font-mono tabular-nums">{n.track_count}</td>
+                <td
+                  className="py-1.5 pr-2 text-right font-mono text-[11px] font-medium tabular-nums"
+                  style={{ color: metricColor }}
+                >
+                  {streamsLoading ? (
+                    <span className="opacity-50">…</span>
+                  ) : (
+                    formatFromStreamCount(streamStatsById?.get(n.id)?.total_streams_in_scope)
+                  )}
+                </td>
+                <td
+                  className="py-1.5 pr-2 text-right font-mono text-[11px] font-medium tabular-nums opacity-90"
+                  style={{ color: metricColor }}
+                >
+                  {streamsLoading ? (
+                    <span className="opacity-50">…</span>
+                  ) : (
+                    formatFromStreamCount(streamStatsById?.get(n.id)?.daily_streams_in_scope)
+                  )}
+                </td>
+                <td className="py-1.5 pr-2 text-right font-mono tabular-nums">
                   {trackCollabFilterMap.get(n.id) ?? 0}
                 </td>
-                <td className="py-1.5 pr-2 text-right tabular-nums font-mono">
+                <td className="py-1.5 pr-2 text-right font-mono tabular-nums">
                   {graphDegreeMap.get(n.id) ?? 0}
                 </td>
               </tr>
@@ -3278,6 +3642,9 @@ function SelectionStatsPanel({
   onOpenScopedTracks: () => void;
   onClear: () => void;
 }) {
+  const { metricColor, formatFromStreamCount, totalColumnLabel, dailyColumnLabel } =
+    useNetworkMetricStreams();
+
   return (
     <div
       className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2 border-b text-xs"
@@ -3306,22 +3673,18 @@ function SelectionStatsPanel({
             </span>
           </div>
           <div style={{ color: colors.muted }}>
-            Streams (selection):{" "}
-            <span className="font-mono font-medium" style={{ color: "var(--sb-positive)" }}>
+            {totalColumnLabel} (selection):{" "}
+            <span className="font-mono font-medium" style={{ color: metricColor }}>
               {streamTotals.loading
                 ? "…"
-                : streamTotals.total != null
-                  ? formatInt(streamTotals.total)
-                  : "—"}
+                : formatFromStreamCount(streamTotals.total)}
             </span>
             <span className="mx-1 opacity-50">·</span>
-            Daily:{" "}
-            <span className="font-mono font-medium" style={{ color: "var(--sb-positive)" }}>
+            {dailyColumnLabel}:{" "}
+            <span className="font-mono font-medium" style={{ color: metricColor }}>
               {streamTotals.loading
                 ? "…"
-                : streamTotals.daily != null
-                  ? formatInt(streamTotals.daily)
-                  : "—"}
+                : formatFromStreamCount(streamTotals.daily)}
             </span>
           </div>
         </>
@@ -3425,6 +3788,9 @@ function SelectionScopedTracksModal({
   scopeLabel: string;
   expectedTrackCount: number | null;
 }) {
+  const { metricColor, formatFromStreamCount, totalColumnLabel, dailyColumnLabel, displayMetric } =
+    useNetworkMetricStreams();
+
   const listKey = useMemo(
     () =>
       artistIds.length === 0
@@ -3542,7 +3908,6 @@ function SelectionScopedTracksModal({
     });
   }, [isrcs, detailByIsrc]);
 
-  const streamAccent = "var(--sb-positive)";
   const subParts = [
     `${artistIds.length} artist${artistIds.length !== 1 ? "s" : ""}`,
     expectedTrackCount != null ? `${formatInt(expectedTrackCount)} tracks deduped` : null,
@@ -3574,16 +3939,18 @@ function SelectionScopedTracksModal({
           </span>
         ) : (
           <span className="text-[11px] opacity-60" style={{ color: "var(--sb-muted)" }}>
-            Deduped in-scope tracks for the selected artists. Streams use the latest cumulative day in your
-            data.
+            Deduped in-scope tracks for the selected artists.{" "}
+            {displayMetric === "revenue"
+              ? "Est. revenue uses your payout rate × latest cumulative stream totals in the data."
+              : "Stream totals use the latest cumulative day in your data."}
           </span>
         )}
       </div>
       <GlassTable
         headers={[
           { label: "Track", className: "min-w-0" },
-          { label: "Total streams", align: "right" as const, className: "w-[100px]" },
-          { label: "Daily streams", align: "right" as const, className: "w-[100px]" },
+          { label: totalColumnLabel, align: "right" as const, className: "w-[100px]" },
+          { label: dailyColumnLabel, align: "right" as const, className: "w-[100px]" },
           { label: "ISRC", className: "w-[140px]" },
         ]}
         maxBodyHeightClassName="max-h-[60vh]"
@@ -3636,15 +4003,15 @@ function SelectionScopedTracksModal({
                     </div>
                   </div>
                 </TableCell>
-                <TableCell numeric className="align-top text-xs font-medium" style={{ color: streamAccent }}>
-                  {detailsLoading ? "…" : total != null ? formatInt(total) : "—"}
+                <TableCell numeric className="align-top text-xs font-medium" style={{ color: metricColor }}>
+                  {detailsLoading ? "…" : formatFromStreamCount(total)}
                 </TableCell>
                 <TableCell
                   numeric
                   className="align-top text-xs font-medium opacity-80"
-                  style={{ color: streamAccent }}
+                  style={{ color: metricColor }}
                 >
-                  {detailsLoading ? "…" : daily != null ? formatInt(daily) : "—"}
+                  {detailsLoading ? "…" : formatFromStreamCount(daily)}
                 </TableCell>
                 <TableCell className="align-top" mono>
                   <div className="min-w-0 space-y-0.5">
@@ -3728,6 +4095,8 @@ function SelectionCollabsModal({
   scopeLabel: string;
   onNetworkSelectArtist?: (artistId: string) => void;
 }) {
+  const { metricColor, formatFromStreamCount, totalColumnLabel, dailyColumnLabel, displayMetric } =
+    useNetworkMetricStreams();
   const nodeById = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
   const nameById = useMemo(() => new Map(nodes.map((n) => [n.id, n.name])), [nodes]);
 
@@ -3839,7 +4208,6 @@ function SelectionCollabsModal({
 
   const linkWord = internalEdges.length === 1 ? "link" : "links";
   const creditWord = rows.length === 1 ? "credit" : "credits";
-  const streamAccent = "var(--sb-positive)";
 
   return (
     <Modal
@@ -3866,9 +4234,11 @@ function SelectionCollabsModal({
           </span>
         ) : (
           <span className="text-[11px] opacity-60" style={{ color: "var(--sb-muted)" }}>
-            Streams use the latest cumulative day in your data (same as catalog). Ctrl/⌘+click an artist
-            (name or photo) to select only them on the graph; playlist / filters stay the same and this
-            dialog closes.
+            {displayMetric === "revenue"
+              ? "Est. revenue uses your payout rate × stream totals (same source as catalog)."
+              : "Stream totals use the latest cumulative day in your data (same as catalog)."}{" "}
+            Ctrl/⌘+click an artist (name or photo) to select only them on the graph; playlist / filters stay
+            the same and this dialog closes.
           </span>
         )}
       </div>
@@ -3876,8 +4246,8 @@ function SelectionCollabsModal({
         headers={[
           { label: "Collaboration", className: "w-[200px]" },
           { label: "Track", className: "min-w-0" },
-          { label: "Total streams", align: "right" as const, className: "w-[100px]" },
-          { label: "Daily streams", align: "right" as const, className: "w-[100px]" },
+          { label: totalColumnLabel, align: "right" as const, className: "w-[100px]" },
+          { label: dailyColumnLabel, align: "right" as const, className: "w-[100px]" },
           { label: "ISRC", className: "w-[140px]" },
         ]}
         maxBodyHeightClassName="max-h-[60vh]"
@@ -3970,15 +4340,15 @@ function SelectionCollabsModal({
                     </div>
                   </div>
                 </TableCell>
-                <TableCell numeric className="align-top text-xs font-medium" style={{ color: streamAccent }}>
-                  {detailsLoading ? "…" : total != null ? formatInt(total) : "—"}
+                <TableCell numeric className="align-top text-xs font-medium" style={{ color: metricColor }}>
+                  {detailsLoading ? "…" : formatFromStreamCount(total)}
                 </TableCell>
                 <TableCell
                   numeric
                   className="align-top text-xs font-medium opacity-80"
-                  style={{ color: streamAccent }}
+                  style={{ color: metricColor }}
                 >
-                  {detailsLoading ? "…" : daily != null ? formatInt(daily) : "—"}
+                  {detailsLoading ? "…" : formatFromStreamCount(daily)}
                 </TableCell>
                 <TableCell className="align-top" mono>
                   <div className="min-w-0 space-y-0.5">
