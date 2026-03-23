@@ -708,6 +708,90 @@ const DATE_FIELDS: FilterFieldDefinition[] = [
 ];
 
 // ============================================================================
+// Network graph artists (client-side on collaboration graph payload only;
+// not listed in home FilterBuilder — use getFieldsForEntity("network_artists").)
+// ============================================================================
+
+const NETWORK_ARTIST_FIELDS: FilterFieldDefinition[] = [
+  {
+    key: "artist_name",
+    label: "Artist name",
+    type: "text",
+    operators: ["contains", "not_contains", "starts_with", "eq", "neq"],
+    description: "Display name on the graph",
+    placeholder: "Search…",
+  },
+  {
+    key: "track_count",
+    label: "In-scope tracks (graph)",
+    type: "number",
+    operators: ["eq", "gt", "gte", "lt", "lte", "between"],
+    description: "Track count from the collaboration graph for the current scope",
+    min: 0,
+    placeholder: "e.g., 5",
+  },
+  {
+    key: "co_artists_playlist",
+    label: "Co-artists (playlist credits)",
+    type: "number",
+    operators: ["eq", "gt", "gte", "lt", "lte", "between"],
+    description: "Distinct other artists on the same scoped track (any credit)",
+    min: 0,
+    placeholder: "e.g., 3",
+  },
+  {
+    key: "co_artists_lead",
+    label: "Co-artists (lead rows)",
+    type: "number",
+    operators: ["eq", "gt", "gte", "lt", "lte", "between"],
+    description: "Co-artists only on tracks where this artist is primary",
+    min: 0,
+    placeholder: "e.g., 1",
+  },
+  {
+    key: "graph_collab_links",
+    label: "Collab links (graph edges)",
+    type: "number",
+    operators: ["eq", "gt", "gte", "lt", "lte", "between"],
+    description: "Number of collaboration edges in the loaded graph (co-primary links when hide-non-primary is on)",
+    min: 0,
+    placeholder: "e.g., 2",
+  },
+  {
+    key: "collab_partner",
+    label: "Collab partner on graph",
+    type: "multi-select",
+    operators: ["in", "not_in"],
+    description: "Whether this artist shares a graph edge with any selected artist",
+    optionsSource: "network_nodes",
+    placeholder: "Select artists…",
+    helpText:
+      "“Is any of” = has at least one collaboration link to a selected artist. “Is none of” = no link to any of them. Only artists in the current graph appear here.",
+  },
+  {
+    key: "streams_total_scope",
+    label: "Total streams (in scope)",
+    type: "number",
+    operators: ["eq", "gt", "gte", "lt", "lte", "between"],
+    description: "Cumulative streams for deduped in-scope tracks (same rules as network export)",
+    min: 0,
+    placeholder: "e.g., 1M",
+    helpText:
+      "Loads from the server when this filter is active. Uses latest cumulative day in your data. Respects current playlist scope and hide-non-primary.",
+  },
+  {
+    key: "streams_daily_scope",
+    label: "Daily streams (in scope)",
+    type: "number",
+    operators: ["eq", "gt", "gte", "lt", "lte", "between"],
+    description: "Sum of latest daily deltas for in-scope tracks",
+    min: 0,
+    placeholder: "e.g., 10K",
+    helpText: "Same data source as total streams; day-over-day delta from stream history.",
+  },
+];
+
+// ============================================================================
 // Entity Configurations
 // ============================================================================
 
@@ -739,6 +823,7 @@ export const ENTITY_CONFIGS: Record<string, EntityFieldConfig> = {
 };
 
 export function getFieldsForEntity(entityType: string): FilterFieldDefinition[] {
+  if (entityType === "network_artists") return NETWORK_ARTIST_FIELDS;
   return ENTITY_CONFIGS[entityType]?.fields ?? [];
 }
 

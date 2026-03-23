@@ -27,6 +27,7 @@ export async function GET() {
     name: row.name,
     entityType: row.entity_type,
     groups: row.config?.groups ?? [],
+    groupJoinLogic: row.config?.groupJoinLogic === "OR" ? "OR" : undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }));
@@ -47,19 +48,24 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "invalid body" }, { status: 400 });
   }
 
-  const { id, name, entityType, groups } = body as Record<string, any>;
+  const { id, name, entityType, groups, groupJoinLogic } = body as Record<string, unknown>;
   if (!name || typeof name !== "string" || !entityType || !Array.isArray(groups)) {
     return NextResponse.json({ error: "name, entityType, and groups are required" }, { status: 400 });
   }
 
+  const join =
+    groupJoinLogic === "OR" ? "OR" : "AND";
+
   const now = new Date().toISOString();
 
   function toFilterResponse(row: any) {
+    const cfg = row.config as { groups?: unknown; groupJoinLogic?: string } | null;
     return {
       id: row.id,
       name: row.name,
       entityType: row.entity_type,
-      groups: (row.config as any)?.groups ?? [],
+      groups: cfg?.groups ?? [],
+      groupJoinLogic: cfg?.groupJoinLogic === "OR" ? "OR" : undefined,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
@@ -72,7 +78,7 @@ export async function POST(req: NextRequest) {
       .update({
         name,
         entity_type: entityType,
-        config: { groups },
+        config: { groups, groupJoinLogic: join },
         updated_at: now,
       })
       .eq("id", id)
@@ -96,7 +102,7 @@ export async function POST(req: NextRequest) {
       user_id: userData.user.id,
       name,
       entity_type: entityType,
-      config: { groups },
+      config: { groups, groupJoinLogic: join },
       created_at: now,
       updated_at: now,
     })

@@ -15,10 +15,11 @@ import {
 } from "lucide-react";
 import { Button, IconButton } from "@/components/ui/Button";
 import { Combobox, type ComboboxOption } from "@/components/ui/Combobox";
-import type { 
-  FilterConfig, 
-  FilterGroup as FilterGroupType, 
+import type {
+  FilterConfig,
+  FilterGroup as FilterGroupType,
   EntityType,
+  FilterGroupJoinLogic,
   FilterResult,
 } from "./filterTypes";
 import { createEmptyFilter, createEmptyGroup } from "./filterTypes";
@@ -286,6 +287,15 @@ export function FilterBuilder({
     setCurrentFilter({
       ...currentFilter,
       groups: [...currentFilter.groups, createEmptyGroup()],
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  function handleGroupJoinLogicChange(logic: FilterGroupJoinLogic) {
+    if (!currentFilter) return;
+    setCurrentFilter({
+      ...currentFilter,
+      groupJoinLogic: logic,
       updatedAt: new Date().toISOString(),
     });
   }
@@ -630,8 +640,10 @@ export function FilterBuilder({
       {/* Expanded content */}
       {currentFilter && (
         <div className="mt-3">
-          <div className="mb-3 text-xs opacity-70" style={{ color: "var(--sb-muted)" }}>
-            Build custom views of your data
+          <div className="mb-3 text-xs opacity-70 leading-snug" style={{ color: "var(--sb-muted)" }}>
+            Build custom views of your data. Each group has its own AND/OR between conditions; when you add more than one
+            group, use <span style={{ color: "var(--sb-text)", fontWeight: 600 }}>Combine groups</span> to choose AND vs OR
+            between them (same as the network advanced filters).
           </div>
 
           {/* Toolbar */}
@@ -759,21 +771,65 @@ export function FilterBuilder({
           {/* Filter editor */}
           {isExpanded && (
             <div className="space-y-4">
+              {currentFilter.groups.length > 1 ? (
+                <div
+                  className="flex flex-wrap items-center gap-2 text-[11px] rounded-lg px-2 py-1.5 sb-panel"
+                  style={{ color: "var(--sb-muted)" }}
+                >
+                  <span className="shrink-0 font-medium" style={{ color: "var(--sb-text)" }}>
+                    Combine groups
+                  </span>
+                  <div className="flex rounded-md overflow-hidden border shrink-0" style={{ borderColor: "var(--sb-border)" }}>
+                    <button
+                      type="button"
+                      className="px-2.5 py-1 font-medium transition-colors"
+                      aria-label="Combine groups with AND"
+                      style={{
+                        backgroundColor:
+                          (currentFilter.groupJoinLogic ?? "AND") === "AND" ? "var(--sb-accent)" : "transparent",
+                        color: (currentFilter.groupJoinLogic ?? "AND") === "AND" ? "black" : "var(--sb-muted)",
+                      }}
+                      onClick={() => handleGroupJoinLogicChange("AND")}
+                    >
+                      AND
+                    </button>
+                    <button
+                      type="button"
+                      className="px-2.5 py-1 font-medium transition-colors border-l"
+                      aria-label="Combine groups with OR"
+                      style={{
+                        borderColor: "var(--sb-border)",
+                        backgroundColor:
+                          currentFilter.groupJoinLogic === "OR" ? "var(--sb-accent)" : "transparent",
+                        color: currentFilter.groupJoinLogic === "OR" ? "black" : "var(--sb-muted)",
+                      }}
+                      onClick={() => handleGroupJoinLogicChange("OR")}
+                    >
+                      OR
+                    </button>
+                  </div>
+                  <span className="min-w-0 opacity-90">
+                    {(currentFilter.groupJoinLogic ?? "AND") === "AND"
+                      ? "Every group must match."
+                      : "Match if any group matches."}
+                  </span>
+                </div>
+              ) : null}
+
               {/* Groups */}
               {currentFilter.groups.map((group, index) => (
                 <div key={group.id}>
-                  {/* AND connector between groups */}
                   {index > 0 && (
                     <div className="flex items-center gap-3 py-2">
                       <div className="flex-1 h-px" style={{ background: "var(--sb-border)" }} />
                       <span
                         className="text-xs font-medium px-3 py-1 rounded-lg"
-                        style={{ 
+                        style={{
                           background: "var(--sb-accent)",
                           color: "black",
                         }}
                       >
-                        AND
+                        {(currentFilter.groupJoinLogic ?? "AND") === "OR" ? "OR" : "AND"}
                       </span>
                       <div className="flex-1 h-px" style={{ background: "var(--sb-border)" }} />
                     </div>
@@ -799,7 +855,7 @@ export function FilterBuilder({
                   leftIcon={<Plus className="h-4 w-4" />}
                   onClick={handleAddGroup}
                 >
-                  Add Group (AND)
+                  Add group
                 </Button>
               </div>
             </div>
@@ -819,7 +875,7 @@ export function FilterBuilder({
                   <div key={group.id}>
                     {index > 0 && (
                       <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-[var(--sb-accent)] text-black mr-2">
-                        AND
+                        {(currentFilter.groupJoinLogic ?? "AND") === "OR" ? "OR" : "AND"}
                       </span>
                     )}
                     <GroupSummary

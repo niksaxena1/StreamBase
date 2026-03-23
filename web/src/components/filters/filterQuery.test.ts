@@ -207,6 +207,20 @@ describe("filterTracksClientSide", () => {
     expect(results[0].name).toBe("Collab Track");
   });
 
+  it("supports OR logic across groups", () => {
+    const filter = makeFilter({
+      groupJoinLogic: "OR",
+      groups: [
+        makeGroup([makeCond({ field: "total_streams", operator: "gt", value: 4_000_000 })]),
+        makeGroup([makeCond({ field: "track_name", operator: "contains", value: "collab" })]),
+      ],
+    });
+    const results = filterTracksClientSide(sampleTracks, filter);
+    expect(results).toHaveLength(2);
+    const names = [...results.map((r) => r.name)].sort();
+    expect(names).toEqual(["Big Hit", "Collab Track"]);
+  });
+
   it("ignores disabled conditions", () => {
     const filter = makeFilter({
       groups: [makeGroup([makeCond({ field: "total_streams", operator: "gt", value: 999_999_999, enabled: false })])],

@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { NetworkGraphClient } from "./NetworkGraphClient";
+import { parseNetworkScope } from "./networkScope";
 
 export const dynamic = "force-dynamic";
 
@@ -52,7 +53,13 @@ function parseHideNonPrimary(v: string | string[] | undefined): boolean {
 export default async function NetworkPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ playlist?: string; hide_non_primary?: string | string[] }>;
+  searchParams?: Promise<{
+    playlist?: string;
+    hide_non_primary?: string | string[];
+    net_scope?: string;
+    net_pl?: string;
+    net_pl_m?: string;
+  }>;
 }) {
   const sb = await supabaseServer();
   const {
@@ -64,7 +71,6 @@ export default async function NetworkPage({
   if (!isAdmin) redirect("/");
 
   const sp = (await searchParams) ?? {};
-  const rawPlaylist = typeof sp.playlist === "string" ? sp.playlist.trim() : "";
 
   const svc = supabaseService();
 
@@ -85,14 +91,19 @@ export default async function NetworkPage({
   }));
 
   const validKeys = new Set(playlists.map((p) => p.playlist_key));
-  const playlistKey =
-    rawPlaylist && validKeys.has(rawPlaylist) ? rawPlaylist : null;
+  const networkScope = parseNetworkScope(sp, validKeys);
 
   const hideNonPrimary = parseHideNonPrimary(sp.hide_non_primary);
 
   const { data, error } = await svc.rpc("artist_collaboration_graph", {
-    p_playlist_key: playlistKey,
+    p_playlist_key: networkScope.mode === "playlist" ? networkScope.playlistKey : null,
     p_hide_non_primary: hideNonPrimary,
+    p_scope_playlists:
+      networkScope.mode === "custom" && networkScope.customPlaylistKeys.length > 0
+        ? networkScope.customPlaylistKeys
+        : null,
+    p_scope_playlist_mode:
+      networkScope.mode === "custom" ? networkScope.customPlaylistMode : "any",
   });
 
   if (error) {
@@ -120,13 +131,7 @@ export default async function NetworkPage({
         </div>
       }
     >
-      <NetworkGraphClient
-        nodes={graph.nodes}
-        edges={graph.edges}
-        playlists={playlists}
-        playlistKey={playlistKey}
-        hideNonPrimary={hideNonPrimary}
-      />
+      <NetworkGraphClient nodes={graph.nodes} edges={graph.edges} playlists={playlists} hideNonPrimary={hideNonPrimary} />
     </Suspense>
   );
 }

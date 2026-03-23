@@ -36,6 +36,7 @@ export async function saveFilter(filter: FilterConfig): Promise<FilterConfig | n
         name: filter.name,
         entityType: filter.entityType,
         groups: filter.groups,
+        groupJoinLogic: filter.groupJoinLogic,
       }),
     });
     if (!res.ok) return null;
@@ -68,9 +69,9 @@ export async function duplicateFilter(
   if (!original) return null;
 
   const duplicate: FilterConfig = {
+    ...original,
     id: "",
     name: newName ?? `${original.name} (copy)`,
-    entityType: original.entityType,
     groups: JSON.parse(JSON.stringify(original.groups)),
     createdAt: "",
     updatedAt: "",

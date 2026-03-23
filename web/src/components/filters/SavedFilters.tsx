@@ -354,7 +354,7 @@ export function SavedFilters({ currentFilter, onLoad, onSave }: SavedFiltersProp
             <textarea
               value={importJson}
               onChange={(e) => setImportJson(e.target.value)}
-              placeholder='{"entityType": "tracks", "groups": [...], ...}'
+              placeholder='{"entityType": "tracks", "groupJoinLogic": "OR", "groups": [...]}'
               className="w-full h-32 rounded-xl bg-white/70 px-3 py-2 text-sm outline-none placeholder:text-black/40 dark:bg-white/5 dark:placeholder:text-white/40 resize-none font-mono"
               style={{ color: "var(--sb-text)" }}
             />

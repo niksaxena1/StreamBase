@@ -27,11 +27,14 @@ import {
   UserRound,
   ListMusic,
   Disc3,
+  Table2,
   SquareDashed,
-  Keyboard,
+  HelpCircle,
   Download,
   Loader2,
   X,
+  Filter,
+  Music,
 } from "lucide-react";
 import { formatDateISO, formatInt } from "@/lib/format";
 import { slugifyForFilename, todayIsoDate } from "@/lib/csv";
@@ -52,6 +55,24 @@ import {
   type ArtistDistroTrackRow,
   type DistroPlaylist,
 } from "@/components/catalog/ArtistDistroTracksModal";
+import type { FilterConfig } from "@/components/filters/filterTypes";
+import {
+  filterNetworkArtistsClientSide,
+  hasActiveConditions,
+  countActiveConditions,
+  networkFilterUsesStreamFields,
+  type NetworkArtistStreamStatsRow,
+} from "@/components/filters/filterQuery";
+import { NetworkAdvancedFilterModal } from "./NetworkAdvancedFilterModal";
+import { NetworkCustomScopeModal } from "./NetworkCustomScopeModal";
+import {
+  ALL_CATALOG_PLAYLIST_KEY,
+  appendNetworkScopeToSearchParams,
+  DEFAULT_NETWORK_SCOPE,
+  formatNetworkScopeLabel,
+  parseNetworkScope,
+  type NetworkScopeState,
+} from "./networkScope";
 import type { GraphNode, GraphEdge, SharedTrack, NetworkPlaylistOption } from "./page";
 
 /** Co-artists from track credits (not graph edges). */
@@ -143,6 +164,21 @@ function readNetworkToggles(sp: URLSearchParams) {
   return {
     scaleByTracks: sp.get("scale_tracks") === "1",
     showImages: sp.get("images") !== "0",
+    tableView: sp.get("table") === "1",
+  };
+}
+
+function parseTrackCountBound(raw: string | null): number | null {
+  if (raw == null || raw === "") return null;
+  const n = parseInt(raw, 10);
+  if (!Number.isFinite(n) || n < 0 || n > 999999) return null;
+  return n;
+}
+
+function parseTrackCountBounds(sp: URLSearchParams): { min: number | null; max: number | null } {
+  return {
+    min: parseTrackCountBound(sp.get("tc_min")),
+    max: parseTrackCountBound(sp.get("tc_max")),
   };
 }
 
@@ -180,31 +216,54 @@ function parseCollabInputDraft(trimmed: string): number | null {
   return Math.min(999, Math.max(0, n));
 }
 
+/** Track-count filter inputs: 0–999999 (graph node `track_count` in scope). */
+function parseTrackCountInputDraft(trimmed: string): number | null {
+  const t = trimmed.trim();
+  if (t === "") return null;
+  if (!/^\d+$/.test(t)) return null;
+  const n = parseInt(t, 10);
+  return Math.min(999999, Math.max(0, n));
+}
+
 function buildNetworkQueryString(args: {
-  playlistKey: string | null;
+  scope: NetworkScopeState;
   hideNonPrimary: boolean;
   scaleByTracks: boolean;
   showImages: boolean;
+  tableView: boolean;
   collabFilterN: number | null;
   collabFilterMode: CollabFilterMode;
   collabCountBasis: CollabCountBasis;
+  trackCountMin: number | null;
+  trackCountMax: number | null;
   selectedIds: string[];
 }): string {
   const p = new URLSearchParams();
-  if (args.playlistKey) p.set("playlist", args.playlistKey);
+  appendNetworkScopeToSearchParams(p, args.scope);
   if (args.hideNonPrimary) p.set("hide_non_primary", "1");
   if (args.scaleByTracks) p.set("scale_tracks", "1");
   if (!args.showImages) p.set("images", "0");
+  if (args.tableView) p.set("table", "1");
   if (args.collabFilterN != null) {
     if (args.collabFilterMode === "ge") p.set("collab_min", String(args.collabFilterN));
     else p.set("collab_max", String(args.collabFilterN));
   }
   if (args.collabCountBasis === "primary_rows") p.set("co_basis", "primary");
+  if (args.trackCountMin != null) p.set("tc_min", String(args.trackCountMin));
+  if (args.trackCountMax != null) p.set("tc_max", String(args.trackCountMax));
   if (args.selectedIds.length > 0 && args.selectedIds.length <= MAX_SEL_URL) {
     p.set("sel", args.selectedIds.join(","));
   }
   const s = p.toString();
   return s ? `?${s}` : "";
+}
+
+/** Stable string for camera persistence, selection fetch keys, and graph-identity effects. */
+function networkScopeIdentity(scope: NetworkScopeState): string {
+  if (scope.mode === "catalog") return "c";
+  if (scope.mode === "playlist") return `p:${scope.playlistKey ?? ""}`;
+  const keys = [...scope.customPlaylistKeys].sort().join(",");
+  return `u:${keys}:${scope.customPlaylistMode}`;
 }
 
 function isTypingTarget(el: EventTarget | null) {
@@ -249,20 +308,44 @@ interface Props {
   nodes: GraphNode[];
   edges: GraphEdge[];
   playlists: NetworkPlaylistOption[];
-  playlistKey: string | null;
   hideNonPrimary: boolean;
 }
+
+const SCOPE_CATALOG = "__scope_catalog__";
+const SCOPE_CUSTOM = "__scope_custom__";
 
 export function NetworkGraphClient({
   nodes,
   edges,
   playlists,
-  playlistKey,
   hideNonPrimary,
 }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const validPlaylistKeys = useMemo(() => new Set(playlists.map((p) => p.playlist_key)), [playlists]);
+  /** Exclude synthetic `all_catalog` row — same as graph “All Catalog” scope (see `Combobox` isAllCatalog). */
+  const scopePlaylists = useMemo(
+    () => playlists.filter((p) => p.playlist_key !== ALL_CATALOG_PLAYLIST_KEY),
+    [playlists],
+  );
+  const networkScope = useMemo(() => {
+    const sp: Record<string, string | string[] | undefined> = {};
+    searchParams.forEach((value, key) => {
+      sp[key] = value;
+    });
+    return parseNetworkScope(sp, validPlaylistKeys);
+  }, [searchParams, validPlaylistKeys]);
+  const scopeRef = useRef(networkScope);
+  scopeRef.current = networkScope;
+  /** Single-playlist key when scope mode is playlist; null for catalog or custom (used by stream APIs that expect one key). */
+  const playlistKey = networkScope.mode === "playlist" ? networkScope.playlistKey : null;
+  const networkScopeIdentityStr = useMemo(() => networkScopeIdentity(networkScope), [networkScope]);
+  const playlistNameByKey = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const p of playlists) m.set(p.playlist_key, p.display_name);
+    return m;
+  }, [playlists]);
   const colors = useThemeColors();
   const fgRef = useRef<ForceGraphMethods<FGNode, FGLink> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -272,6 +355,7 @@ export function NetworkGraphClient({
   // Controls (URL-synced toggles — see effects below)
   const [scaleByTracks, setScaleByTracks] = useState(() => readNetworkToggles(searchParams).scaleByTracks);
   const [showImages, setShowImages] = useState(() => readNetworkToggles(searchParams).showImages);
+  const [tableView, setTableView] = useState(() => readNetworkToggles(searchParams).tableView);
   const [collabFilterN, setCollabFilterN] = useState<number | null>(() =>
     parseCollabDegreeFilter(searchParams).n,
   );
@@ -285,6 +369,29 @@ export function NetworkGraphClient({
   const [collabCountBasis, setCollabCountBasis] = useState<CollabCountBasis>(() =>
     parseCollabCountBasis(searchParams),
   );
+  const [trackCountMin, setTrackCountMin] = useState<number | null>(() =>
+    parseTrackCountBounds(searchParams).min,
+  );
+  const [trackCountMax, setTrackCountMax] = useState<number | null>(() =>
+    parseTrackCountBounds(searchParams).max,
+  );
+  const [trackCountMinDraft, setTrackCountMinDraft] = useState(() => {
+    const { min } = parseTrackCountBounds(searchParams);
+    return min == null ? "" : String(min);
+  });
+  const [trackCountMaxDraft, setTrackCountMaxDraft] = useState(() => {
+    const { max } = parseTrackCountBounds(searchParams);
+    return max == null ? "" : String(max);
+  });
+  const [customScopeModalOpen, setCustomScopeModalOpen] = useState(false);
+  const [networkAdvModalOpen, setNetworkAdvModalOpen] = useState(false);
+  const [networkAdvFilterApplied, setNetworkAdvFilterApplied] = useState<FilterConfig | null>(null);
+  const [networkAdvStreamStats, setNetworkAdvStreamStats] = useState<Map<
+    string,
+    NetworkArtistStreamStatsRow
+  > | null>(null);
+  const [networkAdvStreamStatsLoading, setNetworkAdvStreamStatsLoading] = useState(false);
+  const [networkAdvStreamStatsError, setNetworkAdvStreamStatsError] = useState<string | null>(null);
   const [boxSelectArmed, setBoxSelectArmed] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [tabHidden, setTabHidden] = useState(false);
@@ -343,10 +450,12 @@ export function NetworkGraphClient({
   const [streamTotals, setStreamTotals] = useState<{
     total: number | null;
     daily: number | null;
+    trackCount: number | null;
     loading: boolean;
-  }>({ total: null, daily: null, loading: false });
+  }>({ total: null, daily: null, trackCount: null, loading: false });
 
   const [selectionCollabsModalOpen, setSelectionCollabsModalOpen] = useState(false);
+  const [selectionScopedTracksOpen, setSelectionScopedTracksOpen] = useState(false);
 
   // Container sizing
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
@@ -368,11 +477,17 @@ export function NetworkGraphClient({
     const r = readNetworkToggles(searchParams);
     setScaleByTracks(r.scaleByTracks);
     setShowImages(r.showImages);
+    setTableView(r.tableView);
     const cf = parseCollabDegreeFilter(searchParams);
     setCollabFilterN(cf.n);
     setCollabFilterMode(cf.mode);
     setCollabInputDraft(cf.n == null ? "" : String(cf.n));
     setCollabCountBasis(parseCollabCountBasis(searchParams));
+    const tc = parseTrackCountBounds(searchParams);
+    setTrackCountMin(tc.min);
+    setTrackCountMax(tc.max);
+    setTrackCountMinDraft(tc.min == null ? "" : String(tc.min));
+    setTrackCountMaxDraft(tc.max == null ? "" : String(tc.max));
   }, [searchParams]);
 
   useEffect(() => {
@@ -390,18 +505,33 @@ export function NetworkGraphClient({
   }, []);
 
   const playlistScopeOptions = useMemo((): MenuSelectOption[] => {
+    /* Match dashboard `Combobox` `isAllCatalog` tile (accent + Music). */
     const catalogThumb = (
       <div
-        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-[calc(var(--sb-radius)-6px)] text-[10px]"
-        style={{ backgroundColor: "var(--sb-surface)", color: "var(--sb-muted)" }}
+        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg"
+        style={{ backgroundColor: "var(--sb-accent)" }}
         aria-hidden
       >
-        ★
+        <Music className="h-3.5 w-3.5" strokeWidth={2} style={{ color: "black" }} />
       </div>
     );
+    const customThumb = (
+      <div
+        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-[10px] font-semibold"
+        style={{ backgroundColor: "var(--sb-surface)", color: "var(--sb-accent)" }}
+        aria-hidden
+      >
+        +
+      </div>
+    );
+    const customLabel =
+      networkScope.mode === "custom"
+        ? formatNetworkScopeLabel(networkScope, playlistNameByKey)
+        : "Custom playlist scope…";
     return [
-      { value: "", label: "All catalog tracks", leading: catalogThumb },
-      ...playlists.map((p) => ({
+      { value: SCOPE_CATALOG, label: "All Catalog", leading: catalogThumb },
+      { value: SCOPE_CUSTOM, label: customLabel, leading: customThumb },
+      ...scopePlaylists.map((p) => ({
         value: p.playlist_key,
         label: p.display_name,
         leading: p.spotify_playlist_image_url ? (
@@ -410,25 +540,28 @@ export function NetworkGraphClient({
             alt=""
             width={24}
             height={24}
-            className="h-6 w-6 shrink-0 rounded-[calc(var(--sb-radius)-6px)] object-cover"
+            className="h-6 w-6 shrink-0 rounded-lg object-cover"
           />
         ) : (
           <div
-            className="h-6 w-6 shrink-0 rounded-[calc(var(--sb-radius)-6px)]"
+            className="h-6 w-6 shrink-0 rounded-lg"
             style={{ backgroundColor: "var(--sb-surface)" }}
             aria-hidden
           />
         ),
       })),
     ];
-  }, [playlists]);
+  }, [scopePlaylists, networkScope, playlistNameByKey]);
+
+  const scopeMenuValue = useMemo(() => {
+    if (networkScope.mode === "catalog") return SCOPE_CATALOG;
+    if (networkScope.mode === "custom") return SCOPE_CUSTOM;
+    return networkScope.playlistKey ?? SCOPE_CATALOG;
+  }, [networkScope]);
 
   const networkExportScopeLabel = useMemo(
-    () =>
-      playlistKey
-        ? playlists.find((p) => p.playlist_key === playlistKey)?.display_name ?? playlistKey
-        : "All catalog",
-    [playlistKey, playlists],
+    () => formatNetworkScopeLabel(networkScope, playlistNameByKey),
+    [networkScope, playlistNameByKey],
   );
 
   const collabCountBasisLabel = useMemo(
@@ -447,9 +580,6 @@ export function NetworkGraphClient({
         : `≥${collabFilterN} (at least)`;
     return `${base}; ${collabCountBasis === "playlist" ? "playlist-wide" : "primary rows"}`;
   }, [collabFilterN, collabFilterMode, collabCountBasis]);
-
-  // Precompute adjacency
-  const { neighbors } = useMemo(() => buildAdjacency(edges), [edges]);
 
   // Compute node size range
   const { minTrackCount, maxTrackCount } = useMemo(() => {
@@ -481,7 +611,7 @@ export function NetworkGraphClient({
     return map;
   }, [nodes, collabCountBasis]);
 
-  const visibleNodeIdsForCollab = useMemo(() => {
+  const collabVisibleNodeIds = useMemo(() => {
     if (collabFilterN === null) return null;
     const s = new Set<string>();
     for (const node of nodes) {
@@ -492,13 +622,158 @@ export function NetworkGraphClient({
     return s;
   }, [nodes, trackCollabFilterMap, collabFilterN, collabFilterMode]);
 
+  const { trackCountMinEffective, trackCountMaxEffective } = useMemo(() => {
+    const a = trackCountMin;
+    const b = trackCountMax;
+    if (a != null && b != null && a > b) {
+      return { trackCountMinEffective: b, trackCountMaxEffective: a };
+    }
+    return { trackCountMinEffective: a, trackCountMaxEffective: b };
+  }, [trackCountMin, trackCountMax]);
+
+  /** Co-artist filter ∩ in-scope track-count bounds (graph node `track_count`). */
+  const filteredVisibleNodeIds = useMemo(() => {
+    const hasCollab = collabVisibleNodeIds !== null;
+    const hasTc = trackCountMinEffective != null || trackCountMaxEffective != null;
+    if (!hasCollab && !hasTc) return null;
+
+    const out = new Set<string>();
+    for (const node of nodes) {
+      if (hasCollab && !collabVisibleNodeIds!.has(node.id)) continue;
+      const tc = node.track_count ?? 0;
+      if (trackCountMinEffective != null && tc < trackCountMinEffective) continue;
+      if (trackCountMaxEffective != null && tc > trackCountMaxEffective) continue;
+      out.add(node.id);
+    }
+    return out;
+  }, [nodes, collabVisibleNodeIds, trackCountMinEffective, trackCountMaxEffective]);
+
+  const networkAdvAllowedIds = useMemo(() => {
+    if (!networkAdvFilterApplied || !hasActiveConditions(networkAdvFilterApplied)) return null;
+    const needsStreams = networkFilterUsesStreamFields(networkAdvFilterApplied);
+    if (needsStreams) {
+      if (networkAdvStreamStatsLoading) return null;
+      if (networkAdvStreamStatsError) return new Set<string>();
+    }
+    return filterNetworkArtistsClientSide(
+      networkAdvFilterApplied,
+      nodes,
+      edges,
+      needsStreams ? (networkAdvStreamStats ?? undefined) : undefined,
+    );
+  }, [
+    networkAdvFilterApplied,
+    nodes,
+    edges,
+    networkAdvStreamStats,
+    networkAdvStreamStatsLoading,
+    networkAdvStreamStatsError,
+  ]);
+
+  useEffect(() => {
+    if (!networkAdvFilterApplied || !hasActiveConditions(networkAdvFilterApplied)) {
+      setNetworkAdvStreamStats(null);
+      setNetworkAdvStreamStatsError(null);
+      setNetworkAdvStreamStatsLoading(false);
+      return;
+    }
+    if (!networkFilterUsesStreamFields(networkAdvFilterApplied)) {
+      setNetworkAdvStreamStats(null);
+      setNetworkAdvStreamStatsError(null);
+      setNetworkAdvStreamStatsLoading(false);
+      return;
+    }
+
+    const artistIds = nodes.map((n) => n.id).filter((id) => String(id).trim().length > 0);
+    if (artistIds.length === 0) {
+      setNetworkAdvStreamStats(new Map());
+      setNetworkAdvStreamStatsError(null);
+      setNetworkAdvStreamStatsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setNetworkAdvStreamStatsLoading(true);
+    setNetworkAdvStreamStatsError(null);
+
+    void fetch("/api/admin/network-export-artist-stream-stats", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        artistIds,
+        playlistKey: playlistKey ?? null,
+        hideNonPrimary,
+      }),
+    })
+      .then((r) => r.json())
+      .then(
+        (j: {
+          rows?: Array<{
+            artist_id: string;
+            total_streams_in_scope: number | string | null;
+            daily_streams_in_scope: number | string | null;
+          }>;
+          error?: string;
+        }) => {
+          if (cancelled) return;
+          if (j.error) {
+            setNetworkAdvStreamStats(null);
+            setNetworkAdvStreamStatsError(j.error);
+            setNetworkAdvStreamStatsLoading(false);
+            return;
+          }
+          const m = new Map<string, NetworkArtistStreamStatsRow>();
+          for (const row of j.rows ?? []) {
+            m.set(row.artist_id, {
+              total_streams_in_scope: Number(row.total_streams_in_scope ?? 0) || 0,
+              daily_streams_in_scope: Number(row.daily_streams_in_scope ?? 0) || 0,
+            });
+          }
+          setNetworkAdvStreamStats(m);
+          setNetworkAdvStreamStatsLoading(false);
+        },
+      )
+      .catch(() => {
+        if (cancelled) return;
+        setNetworkAdvStreamStats(null);
+        setNetworkAdvStreamStatsError("Failed to load stream stats for advanced filter.");
+        setNetworkAdvStreamStatsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [networkAdvFilterApplied, playlistKey, hideNonPrimary, nodes]);
+
+  /** Toolbar filters ∩ advanced modal filter (full graph used to evaluate advanced rules). */
+  const combinedVisibleNodeIds = useMemo(() => {
+    const all = new Set(nodes.map((n) => n.id));
+    const toolbar = filteredVisibleNodeIds ?? all;
+    const adv = networkAdvAllowedIds ?? all;
+    const out = new Set<string>();
+    for (const id of toolbar) {
+      if (adv.has(id)) out.add(id);
+    }
+    return out;
+  }, [filteredVisibleNodeIds, networkAdvAllowedIds, nodes]);
+
+  useEffect(() => {
+    setRangeSelection((prev) => {
+      const next = prev.filter((id) => combinedVisibleNodeIds.has(id));
+      return next.length === prev.length ? prev : next;
+    });
+    setSelectedNodeId((prev) => {
+      if (!prev) return null;
+      return combinedVisibleNodeIds.has(prev) ? prev : null;
+    });
+  }, [combinedVisibleNodeIds]);
+
   const neighborsView = useMemo(() => {
-    if (!visibleNodeIdsForCollab) return neighbors;
     const fe = edges.filter(
-      (e) => visibleNodeIdsForCollab.has(e.source) && visibleNodeIdsForCollab.has(e.target),
+      (e) => combinedVisibleNodeIds.has(e.source) && combinedVisibleNodeIds.has(e.target),
     );
     return buildAdjacency(fe).neighbors;
-  }, [neighbors, edges, visibleNodeIdsForCollab]);
+  }, [edges, combinedVisibleNodeIds]);
 
   const collabDegreeMatchesFilter = useCallback(
     (deg: number) =>
@@ -508,6 +783,18 @@ export function NetworkGraphClient({
           ? deg <= collabFilterN
           : deg >= collabFilterN,
     [collabFilterN, collabFilterMode],
+  );
+
+  const nodePassesTrackCountBounds = useCallback(
+    (nodeId: string) => {
+      const node = nodes.find((n) => n.id === nodeId);
+      if (!node) return false;
+      const tc = node.track_count ?? 0;
+      if (trackCountMinEffective != null && tc < trackCountMinEffective) return false;
+      if (trackCountMaxEffective != null && tc > trackCountMaxEffective) return false;
+      return true;
+    },
+    [nodes, trackCountMinEffective, trackCountMaxEffective],
   );
 
   useEffect(() => {
@@ -524,6 +811,18 @@ export function NetworkGraphClient({
     });
   }, [collabFilterN, collabFilterMode, trackCollabFilterMap, collabDegreeMatchesFilter]);
 
+  useEffect(() => {
+    if (trackCountMinEffective == null && trackCountMaxEffective == null) return;
+    setRangeSelection((prev) => {
+      const next = prev.filter((id) => nodePassesTrackCountBounds(id));
+      return next.length === prev.length ? prev : next;
+    });
+    setSelectedNodeId((prev) => {
+      if (!prev) return null;
+      return nodePassesTrackCountBounds(prev) ? prev : null;
+    });
+  }, [trackCountMinEffective, trackCountMaxEffective, nodePassesTrackCountBounds]);
+
   const nodeIdKey = useMemo(
     () =>
       [...nodes]
@@ -535,23 +834,27 @@ export function NetworkGraphClient({
 
   const cameraScope = useMemo(
     () =>
-      `${playlistKey ?? "all"}|${hideNonPrimary ? "1" : "0"}|${nodeIdKey}|c:${collabFilterMode}:${collabFilterN ?? "x"}|b:${collabCountBasis}`,
-    [playlistKey, hideNonPrimary, nodeIdKey, collabFilterMode, collabFilterN, collabCountBasis],
+      `${networkScopeIdentityStr}|${hideNonPrimary ? "1" : "0"}|${nodeIdKey}|c:${collabFilterMode}:${collabFilterN ?? "x"}|b:${collabCountBasis}|tc:${trackCountMinEffective ?? "x"}:${trackCountMaxEffective ?? "x"}|tbl:${tableView ? "1" : "0"}`,
+    [
+      networkScopeIdentityStr,
+      hideNonPrimary,
+      nodeIdKey,
+      collabFilterMode,
+      collabFilterN,
+      collabCountBasis,
+      trackCountMinEffective,
+      trackCountMaxEffective,
+      tableView,
+    ],
   );
 
   const graphData = useMemo(() => {
-    if (!visibleNodeIdsForCollab) {
-      return {
-        nodes: nodes.map((n) => ({ ...n })),
-        links: edges.map((e) => ({ ...e })),
-      };
-    }
-    const fnodes = nodes.filter((n) => visibleNodeIdsForCollab.has(n.id)).map((n) => ({ ...n }));
+    const fnodes = nodes.filter((n) => combinedVisibleNodeIds.has(n.id)).map((n) => ({ ...n }));
     const flinks = edges
-      .filter((e) => visibleNodeIdsForCollab.has(e.source) && visibleNodeIdsForCollab.has(e.target))
+      .filter((e) => combinedVisibleNodeIds.has(e.source) && combinedVisibleNodeIds.has(e.target))
       .map((e) => ({ ...e }));
     return { nodes: fnodes, links: flinks };
-  }, [nodes, edges, visibleNodeIdsForCollab]);
+  }, [nodes, edges, combinedVisibleNodeIds]);
 
   const handleExportViewXlsx = useCallback(async () => {
     setXlsxExporting(true);
@@ -760,6 +1063,7 @@ export function NetworkGraphClient({
     pathname,
     searchParams,
     playlistKey,
+    networkScopeIdentityStr,
     collabCountBasisLabel,
   ]);
 
@@ -772,23 +1076,30 @@ export function NetworkGraphClient({
 
   const pushNetworkUrl = useCallback(
     (patch: Partial<{
-      playlistKey: string | null;
+      scope: NetworkScopeState;
       hideNonPrimary: boolean;
       scaleByTracks: boolean;
       showImages: boolean;
+      tableView: boolean;
       collabFilterN: number | null;
       collabFilterMode: CollabFilterMode;
       collabCountBasis: CollabCountBasis;
+      trackCountMin: number | null;
+      trackCountMax: number | null;
       selectedIds: string[];
     }>) => {
+      const scope = patch.scope ?? scopeRef.current;
       const q = buildNetworkQueryString({
-        playlistKey: patch.playlistKey ?? playlistKey,
+        scope,
         hideNonPrimary: patch.hideNonPrimary ?? hideNonPrimary,
         scaleByTracks: patch.scaleByTracks ?? scaleByTracks,
         showImages: patch.showImages ?? showImages,
+        tableView: patch.tableView ?? tableView,
         collabFilterN: patch.collabFilterN !== undefined ? patch.collabFilterN : collabFilterN,
         collabFilterMode: patch.collabFilterMode ?? collabFilterMode,
         collabCountBasis: patch.collabCountBasis ?? collabCountBasis,
+        trackCountMin: patch.trackCountMin !== undefined ? patch.trackCountMin : trackCountMin,
+        trackCountMax: patch.trackCountMax !== undefined ? patch.trackCountMax : trackCountMax,
         selectedIds: patch.selectedIds ?? rangeSelection,
       });
       router.replace((pathname || "/network") + q, { scroll: false });
@@ -796,13 +1107,15 @@ export function NetworkGraphClient({
     [
       pathname,
       router,
-      playlistKey,
       hideNonPrimary,
       scaleByTracks,
       showImages,
+      tableView,
       collabFilterN,
       collabFilterMode,
       collabCountBasis,
+      trackCountMin,
+      trackCountMax,
       rangeSelection,
     ],
   );
@@ -822,13 +1135,16 @@ export function NetworkGraphClient({
 
   useEffect(() => {
     const q = buildNetworkQueryString({
-      playlistKey,
+      scope: scopeRef.current,
       hideNonPrimary,
       scaleByTracks,
       showImages,
+      tableView,
       collabFilterN,
       collabFilterMode,
       collabCountBasis,
+      trackCountMin,
+      trackCountMax,
       selectedIds: rangeSelection,
     });
     const nextPath = (pathname || "/network") + q;
@@ -843,10 +1159,13 @@ export function NetworkGraphClient({
     rangeSelection,
     scaleByTracks,
     showImages,
+    tableView,
     collabFilterN,
     collabFilterMode,
     collabCountBasis,
-    playlistKey,
+    trackCountMin,
+    trackCountMax,
+    networkScopeIdentityStr,
     hideNonPrimary,
     pathname,
     router,
@@ -898,39 +1217,62 @@ export function NetworkGraphClient({
     return { internalEdges, unionIsrcs: [...isrcs], weightSum };
   }, [edges, rangeSelection]);
 
+  const selectionTotalsFetchKey = useMemo(() => {
+    if (rangeSelection.length === 0) return "";
+    return `${[...rangeSelection].sort().join("\0")}\0${networkScopeIdentityStr}\0${hideNonPrimary ? "1" : "0"}`;
+  }, [rangeSelection, networkScopeIdentityStr, hideNonPrimary]);
+
   useEffect(() => {
-    const list = rangeStats.unionIsrcs;
-    if (list.length === 0) {
-      setStreamTotals({ total: null, daily: null, loading: false });
+    if (selectionTotalsFetchKey === "") {
+      setStreamTotals({ total: null, daily: null, trackCount: null, loading: false });
       return;
     }
     let cancelled = false;
     setStreamTotals((s) => ({ ...s, loading: true }));
-    fetch("/api/admin/isrc-stream-totals", {
+    fetch("/api/admin/network-selection-stream-totals", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ isrcs: list }),
+      body: JSON.stringify({
+        artistIds: rangeSelection,
+        playlistKey: playlistKey ?? null,
+        hideNonPrimary,
+      }),
     })
       .then((r) => r.json())
-      .then((j: { totalStreams?: unknown; dailyStreams?: unknown }) => {
-        if (cancelled) return;
-        setStreamTotals({
-          total: typeof j.totalStreams === "number" ? j.totalStreams : null,
-          daily: typeof j.dailyStreams === "number" ? j.dailyStreams : null,
-          loading: false,
-        });
-      })
+      .then(
+        (j: {
+          trackCount?: unknown;
+          totalStreams?: unknown;
+          dailyStreams?: unknown;
+          error?: string;
+        }) => {
+          if (cancelled) return;
+          if (j.error) {
+            setStreamTotals({ total: null, daily: null, trackCount: null, loading: false });
+            return;
+          }
+          setStreamTotals({
+            total: typeof j.totalStreams === "number" ? j.totalStreams : null,
+            daily: typeof j.dailyStreams === "number" ? j.dailyStreams : null,
+            trackCount: typeof j.trackCount === "number" ? j.trackCount : null,
+            loading: false,
+          });
+        },
+      )
       .catch(() => {
         if (cancelled) return;
-        setStreamTotals({ total: null, daily: null, loading: false });
+        setStreamTotals({ total: null, daily: null, trackCount: null, loading: false });
       });
     return () => {
       cancelled = true;
     };
-  }, [rangeStats.unionIsrcs]);
+  }, [selectionTotalsFetchKey, rangeSelection, playlistKey, hideNonPrimary, networkScopeIdentityStr]);
 
   useEffect(() => {
-    if (rangeSelection.length === 0) setSelectionCollabsModalOpen(false);
+    if (rangeSelection.length === 0) {
+      setSelectionCollabsModalOpen(false);
+      setSelectionScopedTracksOpen(false);
+    }
   }, [rangeSelection.length]);
 
   // Search results
@@ -938,11 +1280,9 @@ export function NetworkGraphClient({
     if (!searchQuery.trim()) return [];
     const q = searchQuery.toLowerCase();
     let list = nodes.filter((n) => n.name.toLowerCase().includes(q));
-    if (visibleNodeIdsForCollab) {
-      list = list.filter((n) => visibleNodeIdsForCollab.has(n.id));
-    }
+    list = list.filter((n) => combinedVisibleNodeIds.has(n.id));
     return list.slice(0, 12);
-  }, [nodes, searchQuery, visibleNodeIdsForCollab]);
+  }, [nodes, searchQuery, combinedVisibleNodeIds]);
 
   // Is a node highlighted?
   const isHighlighted = useCallback(
@@ -1546,25 +1886,19 @@ export function NetworkGraphClient({
     [clearNetworkLongPress],
   );
 
-  const handleNodeHover = useCallback(
-    (node: FGNodeObj | null, _prev: FGNodeObj | null) => {
-      setHoveredNode(node);
-      if (!node) {
-        setTooltipPos(null);
-      }
-    },
-    [],
-  );
+  const handleNodeHover = useCallback((node: FGNodeObj | null) => {
+    setHoveredNode(node);
+    if (!node) {
+      setTooltipPos(null);
+    }
+  }, []);
 
-  const handleLinkHover = useCallback(
-    (link: FGLinkObj | null, _prev: FGLinkObj | null) => {
-      setHoveredLink(link);
-      if (!link) {
-        setTooltipPos(null);
-      }
-    },
-    [],
-  );
+  const handleLinkHover = useCallback((link: FGLinkObj | null) => {
+    setHoveredLink(link);
+    if (!link) {
+      setTooltipPos(null);
+    }
+  }, []);
 
   // Track mouse position for tooltip
   useEffect(() => {
@@ -1613,11 +1947,25 @@ export function NetworkGraphClient({
     setCollabFilterMode("le");
     setCollabInputDraft("");
     setCollabCountBasis("playlist");
+    setTrackCountMin(null);
+    setTrackCountMax(null);
+    setTrackCountMinDraft("");
+    setTrackCountMaxDraft("");
+    setTableView(false);
+    setNetworkAdvFilterApplied(null);
+    setNetworkAdvStreamStats(null);
+    setNetworkAdvStreamStatsError(null);
+    setNetworkAdvStreamStatsLoading(false);
+    setNetworkAdvModalOpen(false);
     pushNetworkUrl({
+      scope: DEFAULT_NETWORK_SCOPE,
       selectedIds: [],
       collabFilterN: null,
       collabFilterMode: "le",
       collabCountBasis: "playlist",
+      trackCountMin: null,
+      trackCountMax: null,
+      tableView: false,
     });
     fgRef.current?.zoomToFit(600, 40);
   }, [pushNetworkUrl]);
@@ -1634,7 +1982,16 @@ export function NetworkGraphClient({
     refocusSingleAfterGraphReloadRef.current = keepSel;
     setSelectedNodeId(keepSel ? prevSel : null);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- nodeIdKey tracks graph identity; nodes ref churns without composition change
-  }, [playlistKey, hideNonPrimary, nodeIdKey, collabFilterN, collabFilterMode, collabCountBasis]);
+  }, [
+    networkScopeIdentityStr,
+    hideNonPrimary,
+    nodeIdKey,
+    collabFilterN,
+    collabFilterMode,
+    collabCountBasis,
+    trackCountMinEffective,
+    trackCountMaxEffective,
+  ]);
 
   const onEngineStop = useCallback(() => {
     if (hasZoomed.current) return;
@@ -1779,6 +2136,14 @@ export function NetworkGraphClient({
         return;
       }
       if (e.key === "Escape") {
+        if (networkAdvModalOpen) {
+          setNetworkAdvModalOpen(false);
+          return;
+        }
+        if (selectionScopedTracksOpen) {
+          setSelectionScopedTracksOpen(false);
+          return;
+        }
         if (selectionCollabsModalOpen) {
           setSelectionCollabsModalOpen(false);
           return;
@@ -1825,6 +2190,8 @@ export function NetworkGraphClient({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [
+    networkAdvModalOpen,
+    selectionScopedTracksOpen,
     selectionCollabsModalOpen,
     distroModalOpen,
     shortcutsOpen,
@@ -1834,60 +2201,203 @@ export function NetworkGraphClient({
     closeDistroModal,
   ]);
 
+  const networkAdvAppliedCount =
+    networkAdvFilterApplied && hasActiveConditions(networkAdvFilterApplied)
+      ? countActiveConditions(networkAdvFilterApplied)
+      : 0;
+
+  const activeFiltersSummary = useMemo(() => {
+    const parts: string[] = [];
+    if (collabFilterN != null) {
+      parts.push(
+        `Co-artists ${collabFilterMode === "le" ? "≤" : "≥"}${collabFilterN} (${collabCountBasis === "playlist" ? "playlist-wide" : "lead rows"})`,
+      );
+    }
+    if (trackCountMinEffective != null || trackCountMaxEffective != null) {
+      const lo = trackCountMinEffective != null ? String(trackCountMinEffective) : "any";
+      const hi = trackCountMaxEffective != null ? String(trackCountMaxEffective) : "any";
+      parts.push(`Visible nodes: ${lo}–${hi} tracks (graph track_count)`);
+    }
+    if (networkAdvAppliedCount > 0) {
+      const join =
+        networkAdvFilterApplied?.groupJoinLogic === "OR" ? "OR between groups" : "AND between groups";
+      parts.push(
+        `Advanced filter (${networkAdvAppliedCount} condition${networkAdvAppliedCount !== 1 ? "s" : ""}, ${join})`,
+      );
+    }
+    return parts;
+  }, [
+    collabFilterN,
+    collabFilterMode,
+    collabCountBasis,
+    trackCountMinEffective,
+    trackCountMaxEffective,
+    networkAdvAppliedCount,
+    networkAdvFilterApplied,
+  ]);
+
   /* -------- Render -------- */
 
   return (
     <div className="flex flex-col h-[calc(100vh-64px)]">
+      <NetworkAdvancedFilterModal
+        open={networkAdvModalOpen}
+        onClose={() => setNetworkAdvModalOpen(false)}
+        nodes={nodes}
+        appliedFilter={networkAdvFilterApplied}
+        onApply={(f) => setNetworkAdvFilterApplied(f)}
+        onClearAdvanced={() => setNetworkAdvFilterApplied(null)}
+      />
+
+      <NetworkCustomScopeModal
+        open={customScopeModalOpen}
+        onClose={() => setCustomScopeModalOpen(false)}
+        playlists={scopePlaylists}
+        initialKeys={
+          networkScope.mode === "custom" ? networkScope.customPlaylistKeys : []
+        }
+        initialMode={
+          networkScope.mode === "custom" ? networkScope.customPlaylistMode : "any"
+        }
+        onApply={(keys, mode) => {
+          pushNetworkUrl({
+            scope: {
+              mode: "custom",
+              playlistKey: null,
+              customPlaylistKeys: keys,
+              customPlaylistMode: mode,
+            },
+          });
+        }}
+      />
+
       <Modal
         open={shortcutsOpen}
         onClose={() => setShortcutsOpen(false)}
-        title="Network shortcuts"
-        subtitle="View and graph tools"
+        title="Help"
+        subtitle="Shortcuts, toolbar, and graph"
         maxWidthClassName="max-w-md"
       >
-        <ul className="list-none space-y-2.5 text-sm" style={{ color: "var(--sb-text)" }}>
-          <li>
-            <kbd className="rounded border px-1.5 py-0.5 font-mono text-[11px]" style={{ borderColor: "var(--sb-border)" }}>/</kbd>{" "}
-            <span style={{ color: "var(--sb-muted)" }}>Focus search</span>
-          </li>
-          <li>
-            <kbd className="rounded border px-1.5 py-0.5 font-mono text-[11px]" style={{ borderColor: "var(--sb-border)" }}>?</kbd>{" "}
-            <span style={{ color: "var(--sb-muted)" }}>Toggle this panel</span>
-          </li>
-          <li>
-            <kbd className="rounded border px-1.5 py-0.5 font-mono text-[11px]" style={{ borderColor: "var(--sb-border)" }}>Esc</kbd>{" "}
-            <span style={{ color: "var(--sb-muted)" }}>Close modals, then clear box selection, then clear artist focus</span>
-          </li>
-          <li>
-            <kbd className="rounded border px-1.5 py-0.5 font-mono text-[11px]" style={{ borderColor: "var(--sb-border)" }}>F</kbd>{" "}
-            <span style={{ color: "var(--sb-muted)" }}>Fit graph to view</span>
-          </li>
-          <li>
-            <span style={{ color: "var(--sb-muted)" }}>
-              A faint grid moves with the graph (not the window). When you zoom in, finer dashed lines can appear; x=0 and y=0
-              are drawn slightly bolder when visible.
-            </span>
-          </li>
-          <li>
-            <span style={{ color: "var(--sb-muted)" }}>
-              The download button exports the current view (playlist, hide-non-primary, collab filter) to a multi-sheet{" "}
-              <code className="font-mono text-[11px]">.xlsx</code> (Summary, Artists, Collaborations, Tracks, Tracks unique) in
-              your browser.
-            </span>
-          </li>
-          <li className="pt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
-            URL keeps playlist, filters, toggles, <code className="font-mono">collab_max</code> /{" "}
-            <code className="font-mono">collab_min</code>, <code className="font-mono">co_basis=primary</code> (lead rows
-            only; default is playlist-wide), and selection (up to {MAX_SEL_URL} artists). Pan/zoom is
-            restored per graph scope in this browser.
-          </li>
-          <li className="text-xs" style={{ color: "var(--sb-muted)" }}>
-            Touch / pen: hold still ~{(NETWORK_LONG_PRESS_MS / 1000).toFixed(2)}s (same idea as the home scatter chart), then
-            drag a box. Dragging
-            without holding pans the graph. Optional: <span style={{ color: "var(--sb-text)", fontWeight: 600 }}>Select region</span>{" "}
-            starts a marquee immediately.
-          </li>
-        </ul>
+        <div className="space-y-4 text-sm" style={{ color: "var(--sb-text)" }}>
+          <section>
+            <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--sb-muted)" }}>
+              Keyboard
+            </h3>
+            <ul className="list-none space-y-2">
+              <li>
+                <kbd className="rounded border px-1.5 py-0.5 font-mono text-[11px]" style={{ borderColor: "var(--sb-border)" }}>/</kbd>{" "}
+                <span style={{ color: "var(--sb-muted)" }}>Focus search</span>
+              </li>
+              <li>
+                <kbd className="rounded border px-1.5 py-0.5 font-mono text-[11px]" style={{ borderColor: "var(--sb-border)" }}>?</kbd>{" "}
+                <span style={{ color: "var(--sb-muted)" }}>Open or close this panel</span>
+              </li>
+              <li>
+                <kbd className="rounded border px-1.5 py-0.5 font-mono text-[11px]" style={{ borderColor: "var(--sb-border)" }}>Esc</kbd>{" "}
+                <span style={{ color: "var(--sb-muted)" }}>Close modals, then clear box selection, then clear focused artist</span>
+              </li>
+              <li>
+                <kbd className="rounded border px-1.5 py-0.5 font-mono text-[11px]" style={{ borderColor: "var(--sb-border)" }}>F</kbd>{" "}
+                <span style={{ color: "var(--sb-muted)" }}>Fit graph to view</span>
+              </li>
+            </ul>
+          </section>
+
+          <section>
+            <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--sb-muted)" }}>
+              Graph & selection
+            </h3>
+            <ul className="list-none space-y-2" style={{ color: "var(--sb-muted)" }}>
+              <li>
+                <span style={{ color: "var(--sb-text)" }}>Box select:</span> Alt+drag on desktop, or turn on{" "}
+                <span style={{ color: "var(--sb-text)", fontWeight: 600 }}>Select region</span> then drag.
+              </li>
+              <li>
+                <span style={{ color: "var(--sb-text)" }}>Distro tracks:</span> Ctrl+click an artist node (when not box-selecting).
+              </li>
+              <li>
+                Touch / pen: hold still ~{(NETWORK_LONG_PRESS_MS / 1000).toFixed(2)}s, then drag a box. Dragging without holding
+                pans the graph. <span style={{ color: "var(--sb-text)", fontWeight: 600 }}>Select region</span> starts a marquee
+                immediately.
+              </li>
+              <li>
+                A faint grid moves with the graph. Zooming in can show finer dashed lines; x=0 and y=0 are slightly bolder when
+                visible.
+              </li>
+            </ul>
+          </section>
+
+          <section>
+            <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--sb-muted)" }}>
+              Toolbar filters
+            </h3>
+            <ul className="list-none space-y-2" style={{ color: "var(--sb-muted)" }}>
+              <li>
+                <span style={{ color: "var(--sb-text)" }}>Graph scope</span> (dropdown): all catalog, one playlist, or{" "}
+                <span style={{ color: "var(--sb-text)" }}>Custom playlist scope…</span> (modal: Any of / All of / Not in
+                selected playlists). Custom scopes use URL params{" "}
+                <code className="font-mono text-[11px]">net_scope=custom</code>,{" "}
+                <code className="font-mono text-[11px]">net_pl</code>,{" "}
+                <code className="font-mono text-[11px]">net_pl_m</code>.
+              </li>
+              <li>
+                <span style={{ color: "var(--sb-text)" }}>Co-artists</span>: choose Up to / At least, enter 0–999 (blank = no
+                limit), blur or Enter to apply. <span style={{ color: "var(--sb-text)" }}>Playlist</span> vs{" "}
+                <span style={{ color: "var(--sb-text)" }}>Lead only</span> changes what we count as a co-artist.
+              </li>
+              <li>
+                <span style={{ color: "var(--sb-text)" }}>Node tracks</span> filters by each node&apos;s in-scope{" "}
+                <code className="font-mono text-[11px]">track_count</code> (min / max).
+              </li>
+            </ul>
+          </section>
+
+          <section>
+            <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--sb-muted)" }}>
+              Toggles
+            </h3>
+            <ul className="list-none space-y-2" style={{ color: "var(--sb-muted)" }}>
+              <li>
+                <span style={{ color: "var(--sb-text)" }}>Scale by tracks</span> — node size from catalog track count.
+              </li>
+              <li>
+                <span style={{ color: "var(--sb-text)" }}>Show images</span> — avatars on nodes when available.
+              </li>
+              <li>
+                <span style={{ color: "var(--sb-text)" }}>Hide non-primary</span> — drop artists with no lead track in scope.
+              </li>
+              <li>
+                <span style={{ color: "var(--sb-text)" }}>Table</span> — sortable list of visible artists.
+              </li>
+              <li>
+                <span style={{ color: "var(--sb-text)" }}>Funnel</span> — advanced filters: AND/OR inside each group, and when
+                you add multiple groups, <span style={{ color: "var(--sb-text)", fontWeight: 600 }}>Combine groups</span> chooses
+                AND vs OR between them. Save/load presets in the modal (this device).
+              </li>
+            </ul>
+          </section>
+
+          <section>
+            <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--sb-muted)" }}>
+              Export & link
+            </h3>
+            <p className="text-[13px] leading-snug" style={{ color: "var(--sb-muted)" }}>
+              Download builds a multi-sheet <code className="font-mono text-[11px]">.xlsx</code> (Summary, Artists,
+              Collaborations, Tracks, Tracks unique) for the current scope and toolbar filters.
+            </p>
+            <p className="text-[13px] leading-snug mt-2" style={{ color: "var(--sb-muted)" }}>
+              The URL stores scope (<code className="font-mono text-[11px]">playlist=…</code> or custom{" "}
+              <code className="font-mono text-[11px]">net_scope</code> / <code className="font-mono text-[11px]">net_pl</code> /{" "}
+              <code className="font-mono text-[11px]">net_pl_m</code>), toggles,{" "}
+              <code className="font-mono text-[11px]">collab_max</code> /{" "}
+              <code className="font-mono text-[11px]">collab_min</code>,{" "}
+              <code className="font-mono text-[11px]">co_basis=primary</code> (lead rows; default is playlist-wide),{" "}
+              <code className="font-mono text-[11px]">tc_min</code> / <code className="font-mono text-[11px]">tc_max</code>,{" "}
+              <code className="font-mono text-[11px]">table=1</code>, and selection (up to {MAX_SEL_URL} artists). Pan/zoom is
+              remembered per graph scope in this browser. Bookmark or share the URL to return to the same toolbar state.
+            </p>
+          </section>
+        </div>
       </Modal>
 
       {/* Controls bar */}
@@ -1898,15 +2408,30 @@ export function NetworkGraphClient({
           backgroundColor: colors.card,
         }}
       >
-        {/* Playlist scope */}
+        {/* Graph scope */}
         <MenuSelect
-          value={playlistKey ?? ""}
+          value={scopeMenuValue}
           options={playlistScopeOptions}
           onChange={(v) => {
-            pushNetworkUrl({ playlistKey: v || null });
+            if (v === SCOPE_CATALOG) {
+              pushNetworkUrl({ scope: DEFAULT_NETWORK_SCOPE });
+              return;
+            }
+            if (v === SCOPE_CUSTOM) {
+              setCustomScopeModalOpen(true);
+              return;
+            }
+            pushNetworkUrl({
+              scope: {
+                mode: "playlist",
+                playlistKey: v,
+                customPlaylistKeys: [],
+                customPlaylistMode: "any",
+              },
+            });
           }}
-          ariaLabel="Scope graph to playlist"
-          placeholder="All catalog tracks"
+          ariaLabel="Graph scope: catalog, playlist, or custom playlists"
+          placeholder="All Catalog"
           matchTriggerWidth={false}
           className="min-w-[10rem] max-w-[min(100vw-8rem,17rem)]"
           menuClassName="max-h-80 min-w-[min(100vw-2rem,17rem)] overflow-y-auto"
@@ -1926,6 +2451,7 @@ export function NetworkGraphClient({
             <button
               type="button"
               className="px-2 py-1 font-medium transition-colors"
+              aria-label="Co-artists: up to N"
               style={{
                 backgroundColor:
                   collabFilterMode === "le"
@@ -1946,6 +2472,7 @@ export function NetworkGraphClient({
             <button
               type="button"
               className="px-2 py-1 font-medium transition-colors border-l"
+              aria-label="Co-artists: at least N"
               style={{
                 borderColor: colors.border,
                 backgroundColor:
@@ -1970,7 +2497,6 @@ export function NetworkGraphClient({
             inputMode="numeric"
             autoComplete="off"
             placeholder="Any"
-            title="Leave blank for all artists. Use Playlist vs Lead only (next to count) to choose what we count. Enter 0–999, then blur or Enter."
             aria-label="Filter by co-artist count on tracks"
             className="w-11 min-w-0 rounded px-1.5 py-1 font-mono text-xs tabular-nums outline-none border"
             style={{
@@ -2003,7 +2529,7 @@ export function NetworkGraphClient({
             <button
               type="button"
               className="px-2 py-1 font-medium transition-colors"
-              title="Count anyone else credited on the same scoped track (use for “no collabs in this playlist”)."
+              aria-label="Co-artist count: playlist-wide (any credit on scoped tracks)"
               style={{
                 backgroundColor:
                   collabCountBasis === "playlist"
@@ -2024,7 +2550,7 @@ export function NetworkGraphClient({
             <button
               type="button"
               className="px-2 py-1 font-medium transition-colors border-l"
-              title="Count only co-artists on tracks where this artist is the lead (first credit). Ignores features-only collabs."
+              aria-label="Co-artist count: lead rows only"
               style={{
                 borderColor: colors.border,
                 backgroundColor:
@@ -2044,6 +2570,79 @@ export function NetworkGraphClient({
               Lead only
             </button>
           </div>
+        </div>
+
+        <div
+          className="flex flex-wrap items-center gap-1.5 rounded-lg px-2 py-1 text-[11px]"
+          style={{
+            backgroundColor: colors.isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)",
+            color: colors.text,
+          }}
+        >
+          <span className="shrink-0 pl-0.5" style={{ color: colors.muted }}>
+            Node tracks
+          </span>
+          <input
+            type="text"
+            inputMode="numeric"
+            autoComplete="off"
+            placeholder="Min"
+            aria-label="Minimum in-scope track count on graph nodes"
+            className="w-14 min-w-0 rounded px-1.5 py-1 font-mono text-xs tabular-nums outline-none border"
+            style={{
+              borderColor: colors.border,
+              backgroundColor: colors.isDark ? "rgba(0,0,0,0.25)" : "rgba(255,255,255,0.7)",
+              color: colors.text,
+            }}
+            value={trackCountMinDraft}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === "" || /^\d*$/.test(v)) setTrackCountMinDraft(v);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                (e.target as HTMLInputElement).blur();
+              }
+            }}
+            onBlur={() => {
+              const parsed = parseTrackCountInputDraft(trackCountMinDraft);
+              setTrackCountMin(parsed);
+              setTrackCountMinDraft(parsed == null ? "" : String(parsed));
+              pushNetworkUrl({ trackCountMin: parsed });
+            }}
+          />
+          <span style={{ color: colors.muted }}>–</span>
+          <input
+            type="text"
+            inputMode="numeric"
+            autoComplete="off"
+            placeholder="Max"
+            aria-label="Maximum in-scope track count on graph nodes"
+            className="w-14 min-w-0 rounded px-1.5 py-1 font-mono text-xs tabular-nums outline-none border"
+            style={{
+              borderColor: colors.border,
+              backgroundColor: colors.isDark ? "rgba(0,0,0,0.25)" : "rgba(255,255,255,0.7)",
+              color: colors.text,
+            }}
+            value={trackCountMaxDraft}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === "" || /^\d*$/.test(v)) setTrackCountMaxDraft(v);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                (e.target as HTMLInputElement).blur();
+              }
+            }}
+            onBlur={() => {
+              const parsed = parseTrackCountInputDraft(trackCountMaxDraft);
+              setTrackCountMax(parsed);
+              setTrackCountMaxDraft(parsed == null ? "" : String(parsed));
+              pushNetworkUrl({ trackCountMax: parsed });
+            }}
+          />
         </div>
 
         <div className="w-px h-5" style={{ backgroundColor: colors.border }} />
@@ -2126,7 +2725,7 @@ export function NetworkGraphClient({
           active={scaleByTracks}
           onClick={() => pushNetworkUrl({ scaleByTracks: !scaleByTracks })}
           icon={<Scaling size={14} />}
-          title="Scale by tracks — node size reflects catalog track count for each artist"
+          title="Scale by tracks"
           colors={colors}
         />
 
@@ -2134,7 +2733,7 @@ export function NetworkGraphClient({
           active={showImages}
           onClick={() => pushNetworkUrl({ showImages: !showImages })}
           icon={<ImageIcon size={14} />}
-          title="Show images — artist avatars on the graph (when available)"
+          title="Show images"
           colors={colors}
         />
 
@@ -2142,7 +2741,7 @@ export function NetworkGraphClient({
           active={boxSelectArmed}
           onClick={() => setBoxSelectArmed((v) => !v)}
           icon={<SquareDashed size={14} />}
-          title="Select region — tap or click to start a box selection (touch: long-press ~0.5s then drag, or use this)"
+          title="Select region"
           colors={colors}
         />
 
@@ -2150,9 +2749,40 @@ export function NetworkGraphClient({
           active={hideNonPrimary}
           onClick={() => pushNetworkUrl({ hideNonPrimary: !hideNonPrimary })}
           icon={<UserRound size={14} />}
-          title="Hide non-primary — only artists who are primary on at least one track in scope"
+          title="Hide non-primary"
           colors={colors}
         />
+
+        <ToggleButton
+          active={tableView}
+          onClick={() => pushNetworkUrl({ tableView: !tableView })}
+          icon={<Table2 size={14} />}
+          title="Table view"
+          colors={colors}
+        />
+
+        <IconButton
+          type="button"
+          variant="ghost"
+          size="sm"
+          title="Advanced filters"
+          aria-label="Open advanced artist filters"
+          onClick={() => setNetworkAdvModalOpen(true)}
+          className="!h-8 !w-8 shrink-0 !rounded-lg"
+          style={{
+            color: networkAdvAppliedCount > 0 ? colors.accent : colors.muted,
+            backgroundColor:
+              networkAdvAppliedCount > 0
+                ? colors.isDark
+                  ? "rgba(212,255,77,0.12)"
+                  : "rgba(168,214,46,0.15)"
+                : colors.isDark
+                  ? "rgba(255,255,255,0.06)"
+                  : "rgba(0,0,0,0.04)",
+          }}
+        >
+          <Filter className="h-3.5 w-3.5" aria-hidden />
+        </IconButton>
 
         {/* Divider */}
         <div className="w-px h-5" style={{ backgroundColor: colors.border }} />
@@ -2170,7 +2800,7 @@ export function NetworkGraphClient({
           type="button"
           variant="ghost"
           size="sm"
-          title="Download Excel — current view (Summary, Artists, Collaborations, Tracks, Tracks unique)"
+          title="Download Excel"
           aria-label="Download Excel export of current network view"
           disabled={xlsxExporting}
           onClick={() => void handleExportViewXlsx()}
@@ -2191,8 +2821,8 @@ export function NetworkGraphClient({
           type="button"
           variant="ghost"
           size="sm"
-          title="Keyboard shortcuts (?)"
-          aria-label="Keyboard shortcuts"
+          title="Help"
+          aria-label="Help and shortcuts"
           onClick={() => setShortcutsOpen(true)}
           className="!h-8 !w-8 shrink-0 !rounded-lg"
           style={{
@@ -2200,15 +2830,15 @@ export function NetworkGraphClient({
             backgroundColor: colors.isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)",
           }}
         >
-          <Keyboard className="h-3.5 w-3.5" aria-hidden />
+          <HelpCircle className="h-3.5 w-3.5" aria-hidden />
         </IconButton>
 
         <IconButton
           type="button"
           variant="ghost"
           size="sm"
-          title="Reset — clear selection, collab filter, search; clear saved camera; fit graph"
-          aria-label="Reset network view"
+          title="Reset"
+          aria-label="Reset network view — clear selection, filters, search, saved camera; fit graph"
           onClick={handleReset}
           className="!h-8 !w-8 shrink-0 !rounded-lg"
           style={{
@@ -2219,35 +2849,106 @@ export function NetworkGraphClient({
           <RotateCcw className="h-3.5 w-3.5" aria-hidden />
         </IconButton>
 
+        {activeFiltersSummary.length > 0 ? (
+          <div
+            className="basis-full w-full flex flex-wrap items-center gap-x-2 gap-y-1 border-t pt-2 mt-1 -mx-4 px-4 text-[10px] leading-snug"
+            style={{ borderColor: colors.border, color: colors.muted }}
+          >
+            <span className="font-semibold uppercase tracking-wide opacity-80 shrink-0">
+              Combined filters
+            </span>
+            <span className="min-w-0">
+              {activeFiltersSummary.map((t, i) => (
+                <span key={i}>
+                  {i > 0 ? " · " : null}
+                  {t}
+                </span>
+              ))}
+            </span>
+          </div>
+        ) : null}
+
         {/* Stats */}
         <div className="ml-auto text-xs text-right" style={{ color: colors.muted }}>
-          {playlistKey ? (
+          {networkScope.mode === "playlist" || networkScope.mode === "custom" ? (
             <span className="block sm:inline">
-              Scoped:{" "}
-              {playlists.find((p) => p.playlist_key === playlistKey)?.display_name ??
-                playlistKey}
+              Scoped: {formatNetworkScopeLabel(networkScope, playlistNameByKey)}
               {" · "}
             </span>
           ) : null}
-          {collabFilterN != null ? (
+          {collabFilterN != null ||
+          trackCountMinEffective != null ||
+          trackCountMaxEffective != null ||
+          networkAdvAppliedCount > 0 ? (
             <>
               <span className="whitespace-nowrap">
-                {graphData.nodes.length} visible ({collabFilterMode === "le" ? "≤" : "≥"}
-                {collabFilterN} on-track) &middot; {graphData.links.length} links
+                {graphData.nodes.length} visible
+                {collabFilterN != null ? (
+                  <>
+                    {" "}
+                    ({collabFilterMode === "le" ? "≤" : "≥"}
+                    {collabFilterN} co-artists)
+                  </>
+                ) : null}
+                {(trackCountMinEffective != null || trackCountMaxEffective != null) && (
+                  <>
+                    {" "}
+                    (
+                    {trackCountMinEffective != null ? `≥${trackCountMinEffective}` : "any min"} tracks →{" "}
+                    {trackCountMaxEffective != null ? `≤${trackCountMaxEffective}` : "any max"})
+                  </>
+                )}
+                {" · "}
+                {graphData.links.length} links
               </span>
               <span className="opacity-70"> — full </span>
             </>
           ) : null}
           {nodes.length} artists &middot; {edges.length} collaborations
-          <span className="mt-0.5 block text-[10px] opacity-80 xl:hidden">
-            Hold ~0.5s then drag to box-select · drag to pan
-          </span>
-          <span className="hidden xl:inline">
-            {" "}
-            &middot; Alt+drag or Select region (touch: hold ~0.5s, then drag) &middot; Ctrl+click distro &middot; ? shortcuts
-          </span>
         </div>
       </div>
+
+      {networkAdvFilterApplied &&
+      hasActiveConditions(networkAdvFilterApplied) &&
+      networkFilterUsesStreamFields(networkAdvFilterApplied) &&
+      networkAdvStreamStatsLoading ? (
+        <div
+          className="flex items-center gap-2 px-4 py-1.5 border-b text-xs"
+          style={{
+            borderColor: colors.border,
+            backgroundColor: colors.isDark ? "rgba(59,130,246,0.14)" : "rgba(59,130,246,0.1)",
+            color: colors.text,
+          }}
+        >
+          <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" aria-hidden />
+          <span>Loading stream stats for advanced filter…</span>
+        </div>
+      ) : null}
+
+      {networkAdvStreamStatsError &&
+      networkAdvFilterApplied &&
+      hasActiveConditions(networkAdvFilterApplied) &&
+      networkFilterUsesStreamFields(networkAdvFilterApplied) ? (
+        <div
+          className="flex items-start gap-2 px-4 py-2 border-b text-sm"
+          style={{
+            borderColor: colors.border,
+            backgroundColor: colors.isDark ? "rgba(245,158,11,0.12)" : "rgba(245,158,11,0.15)",
+            color: colors.text,
+          }}
+        >
+          <span className="flex-1 min-w-0">{networkAdvStreamStatsError}</span>
+          <button
+            type="button"
+            className="shrink-0 rounded-md p-1 hover:opacity-80"
+            style={{ color: colors.muted }}
+            aria-label="Dismiss stream stats error"
+            onClick={() => setNetworkAdvStreamStatsError(null)}
+          >
+            <X className="h-4 w-4" aria-hidden />
+          </button>
+        </div>
+      ) : null}
 
       {xlsxExportAlert ? (
         <div
@@ -2287,16 +2988,23 @@ export function NetworkGraphClient({
         onClose={() => setSelectionCollabsModalOpen(false)}
         internalEdges={rangeStats.internalEdges}
         nodes={nodes}
-        scopeLabel={
-          playlistKey
-            ? playlists.find((p) => p.playlist_key === playlistKey)?.display_name ?? playlistKey
-            : "All catalog"
-        }
+        scopeLabel={formatNetworkScopeLabel(networkScope, playlistNameByKey)}
         onNetworkSelectArtist={(artistId) => {
           setSelectedNodeId(null);
           setRangeSelection([artistId]);
           setSelectionCollabsModalOpen(false);
         }}
+      />
+
+      <SelectionScopedTracksModal
+        open={selectionScopedTracksOpen}
+        onClose={() => setSelectionScopedTracksOpen(false)}
+        artistIds={rangeSelection}
+        playlistKey={playlistKey}
+        scopeCacheKey={networkScopeIdentityStr}
+        hideNonPrimary={hideNonPrimary}
+        scopeLabel={formatNetworkScopeLabel(networkScope, playlistNameByKey)}
+        expectedTrackCount={streamTotals.trackCount}
       />
 
       {/* Selected artist info panel */}
@@ -2322,34 +3030,32 @@ export function NetworkGraphClient({
       {rangeSelection.length > 0 && (
         <SelectionStatsPanel
           artistCount={rangeSelection.length}
-          playlistScopeLabel={
-            playlistKey
-              ? playlists.find((p) => p.playlist_key === playlistKey)?.display_name ??
-                playlistKey
-              : "All catalog"
-          }
+          playlistScopeLabel={networkExportScopeLabel}
           internalEdgeCount={rangeStats.internalEdges.length}
           weightSum={rangeStats.weightSum}
           uniqueCollabTracks={rangeStats.unionIsrcs.length}
           streamTotals={streamTotals}
           colors={colors}
           onOpenCollabsList={() => setSelectionCollabsModalOpen(true)}
+          onOpenScopedTracks={() => setSelectionScopedTracksOpen(true)}
           onClear={() => {
             setSelectionCollabsModalOpen(false);
+            setSelectionScopedTracksOpen(false);
             setRangeSelection([]);
           }}
         />
       )}
 
-      {/* Graph container */}
-      <div
-        ref={containerRef}
-        className="flex-1 relative overflow-hidden touch-none"
-        onPointerDownCapture={onBoxPointerDownCapture}
-        onPointerMoveCapture={onBoxPointerMoveCapture}
-        onPointerUpCapture={onBoxPointerUpCapture}
-        onPointerCancelCapture={onBoxPointerCancelCapture}
-      >
+      {/* Graph + optional table */}
+      <div className="flex flex-1 flex-col min-h-0 min-w-0">
+        <div
+          ref={containerRef}
+          className="flex-1 min-h-[220px] relative overflow-hidden touch-none"
+          onPointerDownCapture={onBoxPointerDownCapture}
+          onPointerMoveCapture={onBoxPointerMoveCapture}
+          onPointerUpCapture={onBoxPointerUpCapture}
+          onPointerCancelCapture={onBoxPointerCancelCapture}
+        >
         {boxRect && boxRect.width + boxRect.height > 0 ? (
           <div
             className="absolute z-[15] pointer-events-none rounded-sm border-2 border-dashed"
@@ -2416,6 +3122,125 @@ export function NetworkGraphClient({
             {tooltipContent}
           </div>
         )}
+        </div>
+        {tableView ? (
+          <NetworkArtistsTable
+            nodes={graphData.nodes}
+            trackCollabFilterMap={trackCollabFilterMap}
+            graphDegreeMap={graphDegreeMap}
+            collabCountBasis={collabCountBasis}
+            colors={colors}
+          />
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Visible-artists table (sortable)                                   */
+/* ------------------------------------------------------------------ */
+
+type NetworkTableSortKey = "name" | "track_count" | "co" | "deg";
+
+function NetworkArtistsTable({
+  nodes,
+  trackCollabFilterMap,
+  graphDegreeMap,
+  collabCountBasis,
+  colors,
+}: {
+  nodes: GraphNode[];
+  trackCollabFilterMap: Map<string, number>;
+  graphDegreeMap: Map<string, number>;
+  collabCountBasis: CollabCountBasis;
+  colors: ReturnType<typeof useThemeColors>;
+}) {
+  const [sortKey, setSortKey] = useState<NetworkTableSortKey>("name");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  const sorted = useMemo(() => {
+    const arr = [...nodes];
+    const m = sortDir === "asc" ? 1 : -1;
+    arr.sort((a, b) => {
+      let cmp = 0;
+      if (sortKey === "name") cmp = a.name.localeCompare(b.name);
+      else if (sortKey === "track_count") cmp = (a.track_count ?? 0) - (b.track_count ?? 0);
+      else if (sortKey === "co")
+        cmp = (trackCollabFilterMap.get(a.id) ?? 0) - (trackCollabFilterMap.get(b.id) ?? 0);
+      else cmp = (graphDegreeMap.get(a.id) ?? 0) - (graphDegreeMap.get(b.id) ?? 0);
+      return cmp * m || a.name.localeCompare(b.name);
+    });
+    return arr;
+  }, [nodes, sortKey, sortDir, trackCollabFilterMap, graphDegreeMap]);
+
+  const cycleSort = (key: NetworkTableSortKey) => {
+    if (sortKey !== key) {
+      setSortKey(key);
+      setSortDir("asc");
+      return;
+    }
+    setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+  };
+
+  const thBtn = (key: NetworkTableSortKey, label: string, className?: string) => (
+    <button
+      type="button"
+      className={`inline-flex items-center gap-0.5 font-medium hover:opacity-90 ${className ?? ""}`}
+      style={{ color: colors.text }}
+      onClick={() => cycleSort(key)}
+    >
+      {label}
+      {sortKey === key ? (sortDir === "asc" ? " ▲" : " ▼") : ""}
+    </button>
+  );
+
+  const coHead =
+    collabCountBasis === "playlist" ? "Co-artists (playlist)" : "Co-artists (lead)";
+
+  return (
+    <div
+      className="shrink-0 border-t overflow-hidden flex flex-col"
+      style={{ borderColor: colors.border, backgroundColor: colors.card }}
+    >
+      <div
+        className="px-4 py-2 text-xs font-semibold flex items-center justify-between gap-2"
+        style={{ color: colors.text }}
+      >
+        <span>Visible artists ({sorted.length})</span>
+        <span className="font-normal opacity-70">Same scope as the graph · click column to sort</span>
+      </div>
+      <div className="max-h-[38vh] overflow-auto px-2 pb-3">
+        <table className="w-full text-left text-xs border-collapse">
+          <thead>
+            <tr style={{ borderBottom: `1px solid ${colors.border}`, color: colors.muted }}>
+              <th className="py-2 pl-2 pr-2">{thBtn("name", "Name")}</th>
+              <th className="py-2 pr-2 text-right whitespace-nowrap">{thBtn("track_count", "Tracks", "justify-end w-full")}</th>
+              <th className="py-2 pr-2 text-right whitespace-nowrap">{thBtn("co", coHead, "justify-end w-full")}</th>
+              <th className="py-2 pr-2 text-right whitespace-nowrap">
+                {thBtn("deg", "Graph links", "justify-end w-full")}
+              </th>
+            </tr>
+          </thead>
+          <tbody style={{ color: colors.text }}>
+            {sorted.map((n) => (
+              <tr
+                key={n.id}
+                className="border-b border-black/5 dark:border-white/10"
+                style={{ borderColor: colors.border }}
+              >
+                <td className="py-1.5 pl-2 pr-2 font-medium truncate max-w-[12rem]">{n.name}</td>
+                <td className="py-1.5 pr-2 text-right tabular-nums font-mono">{n.track_count}</td>
+                <td className="py-1.5 pr-2 text-right tabular-nums font-mono">
+                  {trackCollabFilterMap.get(n.id) ?? 0}
+                </td>
+                <td className="py-1.5 pr-2 text-right tabular-nums font-mono">
+                  {graphDegreeMap.get(n.id) ?? 0}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );
@@ -2434,6 +3259,7 @@ function SelectionStatsPanel({
   streamTotals,
   colors,
   onOpenCollabsList,
+  onOpenScopedTracks,
   onClear,
 }: {
   artistCount: number;
@@ -2441,9 +3267,15 @@ function SelectionStatsPanel({
   internalEdgeCount: number;
   weightSum: number;
   uniqueCollabTracks: number;
-  streamTotals: { total: number | null; daily: number | null; loading: boolean };
+  streamTotals: {
+    total: number | null;
+    daily: number | null;
+    trackCount: number | null;
+    loading: boolean;
+  };
   colors: ReturnType<typeof useThemeColors>;
   onOpenCollabsList: () => void;
+  onOpenScopedTracks: () => void;
   onClear: () => void;
 }) {
   return (
@@ -2461,6 +3293,39 @@ function SelectionStatsPanel({
       <div style={{ color: colors.muted }}>
         Scope: <span style={{ color: colors.text }}>{playlistScopeLabel}</span>
       </div>
+      {artistCount >= 1 ? (
+        <>
+          <div style={{ color: colors.muted }}>
+            In-scope tracks (deduped):{" "}
+            <span className="font-mono font-medium" style={{ color: colors.text }}>
+              {streamTotals.loading
+                ? "…"
+                : streamTotals.trackCount != null
+                  ? formatInt(streamTotals.trackCount)
+                  : "—"}
+            </span>
+          </div>
+          <div style={{ color: colors.muted }}>
+            Streams (selection):{" "}
+            <span className="font-mono font-medium" style={{ color: "var(--sb-positive)" }}>
+              {streamTotals.loading
+                ? "…"
+                : streamTotals.total != null
+                  ? formatInt(streamTotals.total)
+                  : "—"}
+            </span>
+            <span className="mx-1 opacity-50">·</span>
+            Daily:{" "}
+            <span className="font-mono font-medium" style={{ color: "var(--sb-positive)" }}>
+              {streamTotals.loading
+                ? "…"
+                : streamTotals.daily != null
+                  ? formatInt(streamTotals.daily)
+                  : "—"}
+            </span>
+          </div>
+        </>
+      ) : null}
       {artistCount >= 2 ? (
         <>
           <div style={{ color: colors.muted }}>
@@ -2476,37 +3341,28 @@ function SelectionStatsPanel({
             </span>
           </div>
           <div style={{ color: colors.muted }}>
-            Unique collab tracks:{" "}
+            Unique collab tracks (internal edges):{" "}
             <span className="font-mono font-medium" style={{ color: colors.text }}>
               {uniqueCollabTracks}
             </span>
           </div>
-          {uniqueCollabTracks > 0 ? (
-            <div style={{ color: colors.muted }}>
-              Streams (those tracks):{" "}
-              <span className="font-mono font-medium" style={{ color: "var(--sb-positive)" }}>
-                {streamTotals.loading
-                  ? "…"
-                  : streamTotals.total != null
-                    ? formatInt(streamTotals.total)
-                    : "—"}
-              </span>
-              <span className="mx-1 opacity-50">·</span>
-              Daily:{" "}
-              <span className="font-mono font-medium" style={{ color: "var(--sb-positive)" }}>
-                {streamTotals.loading
-                  ? "…"
-                  : streamTotals.daily != null
-                    ? formatInt(streamTotals.daily)
-                    : "—"}
-              </span>
-            </div>
-          ) : null}
         </>
-      ) : (
-        <div style={{ color: colors.muted }}>Alt+drag a box to select 2+ artists for collab stats.</div>
-      )}
+      ) : null}
       <div className="ml-auto flex flex-wrap items-center gap-2">
+        {artistCount >= 1 ? (
+          <button
+            type="button"
+            className="flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-medium transition-colors"
+            style={{
+              color: colors.accent,
+              backgroundColor: colors.isDark ? "rgba(212,255,77,0.12)" : "rgba(168,214,46,0.15)",
+            }}
+            onClick={onOpenScopedTracks}
+          >
+            <Disc3 className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            Tracks in scope
+          </button>
+        ) : null}
         {artistCount >= 2 && internalEdgeCount > 0 ? (
           <button
             type="button"
@@ -2548,6 +3404,266 @@ type IsrcDetailPayload = {
   artistsOnTrack?: string;
   distroPlaylists?: string;
 };
+
+function SelectionScopedTracksModal({
+  open,
+  onClose,
+  artistIds,
+  playlistKey,
+  scopeCacheKey,
+  hideNonPrimary,
+  scopeLabel,
+  expectedTrackCount,
+}: {
+  open: boolean;
+  onClose: () => void;
+  artistIds: string[];
+  playlistKey: string | null;
+  /** Distinguishes custom / catalog when `playlistKey` is null for multiple scopes. */
+  scopeCacheKey: string;
+  hideNonPrimary: boolean;
+  scopeLabel: string;
+  expectedTrackCount: number | null;
+}) {
+  const listKey = useMemo(
+    () =>
+      artistIds.length === 0
+        ? ""
+        : `${[...artistIds].sort().join("\0")}\0${playlistKey ?? ""}\0${scopeCacheKey}\0${hideNonPrimary ? "1" : "0"}`,
+    [artistIds, playlistKey, scopeCacheKey, hideNonPrimary],
+  );
+
+  const [isrcs, setIsrcs] = useState<string[]>([]);
+  const [listLoading, setListLoading] = useState(false);
+  const [listTruncated, setListTruncated] = useState(false);
+
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (!open || listKey === "") {
+      setIsrcs([]);
+      setListTruncated(false);
+      return;
+    }
+    let cancelled = false;
+    setListLoading(true);
+    fetch("/api/admin/network-selection-scoped-isrcs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        artistIds,
+        playlistKey: playlistKey ?? null,
+        hideNonPrimary,
+        offset: 0,
+      }),
+    })
+      .then((r) => r.json())
+      .then((j: { isrcs?: string[]; hasMore?: boolean; error?: string }) => {
+        if (cancelled) return;
+        if (j.error) {
+          setIsrcs([]);
+          setListTruncated(false);
+          return;
+        }
+        setIsrcs(j.isrcs ?? []);
+        setListTruncated(Boolean(j.hasMore));
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setIsrcs([]);
+          setListTruncated(false);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setListLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, listKey, artistIds, playlistKey, hideNonPrimary]);
+
+  const [detailByIsrc, setDetailByIsrc] = useState<Map<string, IsrcDetailPayload>>(() => new Map());
+  const [detailsLoading, setDetailsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open || isrcs.length === 0) {
+      setDetailByIsrc(new Map());
+      setDetailsLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setDetailsLoading(true);
+    const BATCH = 400;
+    const parts: string[][] = [];
+    for (let i = 0; i < isrcs.length; i += BATCH) parts.push(isrcs.slice(i, i + BATCH));
+
+    void Promise.all(
+      parts.map((part) =>
+        fetch("/api/admin/isrc-batch-details", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ isrcs: part }),
+        }).then((res) => res.json()),
+      ),
+    )
+      .then((jsons) => {
+        if (cancelled) return;
+        const m = new Map<string, IsrcDetailPayload>();
+        for (const j of jsons) {
+          const jj = j as { tracks?: IsrcDetailPayload[] };
+          for (const t of jj.tracks ?? []) {
+            m.set(t.isrc, t);
+          }
+        }
+        setDetailByIsrc(m);
+      })
+      .catch(() => {
+        if (!cancelled) setDetailByIsrc(new Map());
+      })
+      .finally(() => {
+        if (!cancelled) setDetailsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, isrcs]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  const csvRows = useMemo(() => {
+    return isrcs.map((isrc) => {
+      const d = detailByIsrc.get(isrc);
+      return {
+        track: d?.name ?? "—",
+        isrc,
+        release_date: d?.release_date ? formatDateISO(d.release_date) : "",
+        total_streams: d?.totalStreams ?? "",
+        daily_streams: d?.dailyStreams ?? "",
+        artists: d?.artistsOnTrack ?? "",
+      };
+    });
+  }, [isrcs, detailByIsrc]);
+
+  const streamAccent = "var(--sb-positive)";
+  const subParts = [
+    `${artistIds.length} artist${artistIds.length !== 1 ? "s" : ""}`,
+    expectedTrackCount != null ? `${formatInt(expectedTrackCount)} tracks deduped` : null,
+    listTruncated ? "first page of ISRCs shown (export or narrow selection for full list)" : null,
+  ].filter(Boolean);
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Tracks in selection"
+      subtitle={`${scopeLabel} · ${subParts.join(" · ")}`}
+      maxWidthClassName="max-w-5xl"
+      headerActions={
+        <ChartCsvDownloadButton
+          rows={csvRows as unknown as Array<Record<string, unknown>>}
+          filename={`network-selection-tracks-${slugifyForFilename(scopeLabel)}-${todayIsoDate()}.csv`}
+          title="Download CSV"
+          sortForExport={false}
+          headers={["track", "isrc", "release_date", "total_streams", "daily_streams", "artists"]}
+          disabled={isrcs.length === 0}
+        />
+      }
+    >
+      <div className="mb-3">
+        {listLoading || detailsLoading ? (
+          <span className="text-[11px] opacity-60" style={{ color: "var(--sb-muted)" }}>
+            Loading tracks…
+          </span>
+        ) : (
+          <span className="text-[11px] opacity-60" style={{ color: "var(--sb-muted)" }}>
+            Deduped in-scope tracks for the selected artists. Streams use the latest cumulative day in your
+            data.
+          </span>
+        )}
+      </div>
+      <GlassTable
+        headers={[
+          { label: "Track", className: "min-w-0" },
+          { label: "Total streams", align: "right" as const, className: "w-[100px]" },
+          { label: "Daily streams", align: "right" as const, className: "w-[100px]" },
+          { label: "ISRC", className: "w-[140px]" },
+        ]}
+        maxBodyHeightClassName="max-h-[60vh]"
+        tableLayout="fixed"
+      >
+        {isrcs.length === 0 && !listLoading ? (
+          <EmptyState
+            colSpan={4}
+            message="No in-scope tracks"
+            description="These artists may have no scoped credits under the current playlist / hide-non-primary rules."
+          />
+        ) : (
+          isrcs.map((isrc) => {
+            const d = detailByIsrc.get(isrc);
+            const displayName = d?.name ?? "—";
+            const albumUrl = d?.spotify_album_image_url ?? null;
+            const releaseRaw = d?.release_date ?? null;
+            const total = d?.totalStreams ?? null;
+            const daily = d?.dailyStreams ?? null;
+
+            return (
+              <TableRow key={isrc}>
+                <TableCell className="align-top">
+                  <div className="flex min-w-0 items-center gap-2">
+                    {albumUrl ? (
+                      <NextImage
+                        src={albumUrl}
+                        alt=""
+                        width={32}
+                        height={32}
+                        className="h-8 w-8 shrink-0 rounded-lg object-cover sb-ring"
+                      />
+                    ) : (
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg sb-ring bg-white/60 dark:bg-white/10">
+                        <Disc3 className="h-4 w-4 opacity-40" aria-hidden />
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <Link
+                        href={`/catalog?isrc=${encodeURIComponent(isrc)}`}
+                        className="sb-link-hover block truncate text-sm font-medium"
+                      >
+                        {displayName}
+                      </Link>
+                      {d?.artistsOnTrack ? (
+                        <div className="mt-0.5 text-[10px] leading-snug opacity-70 line-clamp-2">
+                          {d.artistsOnTrack}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </TableCell>
+                <TableCell numeric className="align-top text-xs font-medium" style={{ color: streamAccent }}>
+                  {detailsLoading ? "…" : total != null ? formatInt(total) : "—"}
+                </TableCell>
+                <TableCell
+                  numeric
+                  className="align-top text-xs font-medium opacity-80"
+                  style={{ color: streamAccent }}
+                >
+                  {detailsLoading ? "…" : daily != null ? formatInt(daily) : "—"}
+                </TableCell>
+                <TableCell className="align-top" mono>
+                  <div className="min-w-0 space-y-0.5">
+                    <div className="font-mono text-[11px] opacity-70" style={{ color: "var(--sb-muted)" }}>
+                      {isrc}
+                    </div>
+                    <div className="text-[10px] opacity-55" style={{ color: "var(--sb-muted)" }}>
+                      {releaseRaw ? formatDateISO(releaseRaw) : "—"}
+                    </div>
+                  </div>
+                </TableCell>
+              </TableRow>
+            );
+          })
+        )}
+      </GlassTable>
+    </Modal>
+  );
+}
 
 function SelectionArtistAvatar({ url }: { url: string | null }) {
   return url ? (
@@ -2666,6 +3782,7 @@ function SelectionCollabsModal({
   const [detailByIsrc, setDetailByIsrc] = useState<Map<string, IsrcDetailPayload>>(() => new Map());
   const [detailsLoading, setDetailsLoading] = useState(false);
 
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!open) {
       setDetailByIsrc(new Map());
@@ -2704,6 +3821,7 @@ function SelectionCollabsModal({
       cancelled = true;
     };
   }, [open, rows]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const csvRows = useMemo(() => {
     return rows.map((r) => {

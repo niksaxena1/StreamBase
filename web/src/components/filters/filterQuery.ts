@@ -292,16 +292,13 @@ type DataRow = Record<string, unknown>;
 
 /**
  * Evaluate a complete filter against a data row
- * Groups are AND'd together, conditions within groups follow group logic
+ * Groups combine per `filter.groupJoinLogic` (default AND); conditions within each group follow that group's logic.
  */
 function evaluateFilter(row: DataRow, filter: FilterConfig, entityType: string): boolean {
-  // All groups must match (AND between groups)
-  for (const group of filter.groups) {
-    if (!evaluateGroup(row, group, entityType)) {
-      return false;
-    }
-  }
-  return true;
+  const join = filter.groupJoinLogic ?? "AND";
+  const groupResults = filter.groups.map((group) => evaluateGroup(row, group, entityType));
+  if (groupResults.length === 0) return true;
+  return join === "OR" ? groupResults.some(Boolean) : groupResults.every(Boolean);
 }
 
 /**
@@ -410,6 +407,13 @@ function evaluateCondition(row: DataRow, condition: FilterCondition, entityType:
  * Computed/derived fields are resolved here so they never need to be stored on the row.
  */
 function getRowValue(row: DataRow, field: string, entityType: string): unknown {
+  // --- Network graph artists (collaboration graph modal filters) ---
+  if (entityType === "network_artists") {
+    if (field === "collab_partner") {
+      return (row["_neighbor_ids"] as string[]) ?? [];
+    }
+  }
+
   // --- Playlist containment fields (resolved server-side, flag on the row) ---
   if (field === "contains_track" || field === "contains_artist") {
     return row["_contains_match"] === true ? "__match__" : "__no_match__";
@@ -655,6 +659,92 @@ function compareIn(rowValue: unknown, filterValue: FilterValue, row: DataRow, fi
 }
 
 // ============================================================================
+// Network collaboration graph (client-side)
+// ============================================================================
+
+/**
+ * Returns artist ids that pass the advanced filter. Expects `filter.entityType === "network_artists"`.
+ * Uses the full loaded node list and edge list (same scope as the graph RPC).
+ */
+export type NetworkArtistStreamStatsRow = {
+  total_streams_in_scope: number;
+  daily_streams_in_scope: number;
+};
+
+/** True if any enabled condition uses one of the given field keys (values must be “active” per hasActiveConditions rules). */
+export function networkFilterUsesFields(filter: FilterConfig | null, ...fieldKeys: string[]): boolean {
+  if (!filter || filter.entityType !== "network_artists") return false;
+  const want = new Set(fieldKeys);
+  for (const g of filter.groups) {
+    for (const c of g.conditions) {
+      if (!c.enabled || !c.field || !want.has(c.field)) continue;
+      const v = c.value;
+      if (v == null || v === "") continue;
+      if (Array.isArray(v) && v.length === 0) continue;
+      return true;
+    }
+  }
+  return false;
+}
+
+export function networkFilterUsesStreamFields(filter: FilterConfig | null): boolean {
+  return networkFilterUsesFields(filter, "streams_total_scope", "streams_daily_scope");
+}
+
+export function filterNetworkArtistsClientSide(
+  filter: FilterConfig,
+  nodes: Array<{
+    id: string;
+    name: string;
+    track_count: number;
+    co_artists_any_track?: number;
+    co_artists_primary_tracks?: number;
+  }>,
+  edges: Array<{ source: string; target: string }>,
+  streamStatsByArtistId?: Map<string, NetworkArtistStreamStatsRow>,
+): Set<string> {
+  if (filter.entityType !== "network_artists") {
+    return new Set(nodes.map((n) => n.id));
+  }
+
+  const needsStreams = networkFilterUsesStreamFields(filter);
+  if (needsStreams && !streamStatsByArtistId) {
+    return new Set();
+  }
+
+  const neighbors = new Map<string, Set<string>>();
+  const degree = new Map<string, number>();
+  for (const e of edges) {
+    if (!neighbors.has(e.source)) neighbors.set(e.source, new Set());
+    if (!neighbors.has(e.target)) neighbors.set(e.target, new Set());
+    neighbors.get(e.source)!.add(e.target);
+    neighbors.get(e.target)!.add(e.source);
+    degree.set(e.source, (degree.get(e.source) ?? 0) + 1);
+    degree.set(e.target, (degree.get(e.target) ?? 0) + 1);
+  }
+
+  const out = new Set<string>();
+  for (const n of nodes) {
+    const neighborIds = neighbors.get(n.id) ?? new Set<string>();
+    const st = streamStatsByArtistId?.get(n.id);
+    const row: DataRow = {
+      track_count: n.track_count,
+      co_artists_playlist: n.co_artists_any_track ?? 0,
+      co_artists_lead: n.co_artists_primary_tracks ?? 0,
+      graph_collab_links: degree.get(n.id) ?? 0,
+      artist_name: n.name,
+      _neighbor_ids: Array.from(neighborIds),
+      streams_total_scope: st != null ? st.total_streams_in_scope : null,
+      streams_daily_scope: st != null ? st.daily_streams_in_scope : null,
+    };
+    if (evaluateFilter(row, filter, "network_artists")) {
+      out.add(n.id);
+    }
+  }
+  return out;
+}
+
+// ============================================================================
 // Filter Validation
 // ============================================================================
 
@@ -664,9 +754,11 @@ function compareIn(rowValue: unknown, filterValue: FilterValue, row: DataRow, fi
 export function hasActiveConditions(filter: FilterConfig): boolean {
   for (const group of filter.groups) {
     for (const condition of group.conditions) {
-      if (condition.enabled && condition.field && condition.value != null && condition.value !== "") {
-        return true;
-      }
+      if (!condition.enabled || !condition.field) continue;
+      const v = condition.value;
+      if (v == null || v === "") continue;
+      if (Array.isArray(v) && v.length === 0) continue;
+      return true;
     }
   }
   return false;
@@ -679,9 +771,11 @@ export function countActiveConditions(filter: FilterConfig): number {
   let count = 0;
   for (const group of filter.groups) {
     for (const condition of group.conditions) {
-      if (condition.enabled && condition.field && condition.value != null && condition.value !== "") {
-        count++;
-      }
+      if (!condition.enabled || !condition.field) continue;
+      const v = condition.value;
+      if (v == null || v === "") continue;
+      if (Array.isArray(v) && v.length === 0) continue;
+      count++;
     }
   }
   return count;

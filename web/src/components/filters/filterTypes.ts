@@ -9,7 +9,7 @@
 // Core Filter Types
 // ============================================================================
 
-export type EntityType = "tracks" | "artists" | "playlists" | "dates";
+export type EntityType = "tracks" | "artists" | "playlists" | "dates" | "network_artists";
 
 export type FieldType = "number" | "date" | "text" | "select" | "multi-select" | "boolean";
 
@@ -50,6 +50,9 @@ export type FilterCondition = {
 
 export type FilterGroupLogic = "AND" | "OR";
 
+/** How top-level groups combine with each other (each group still uses its own inner AND/OR). */
+export type FilterGroupJoinLogic = "AND" | "OR";
+
 export type FilterGroup = {
   id: string;
   logic: FilterGroupLogic;
@@ -65,6 +68,8 @@ export type FilterConfig = {
   name: string;
   entityType: EntityType;
   groups: FilterGroup[];
+  /** Combine groups with AND (all must match) or OR (any group matches). Defaults to AND. */
+  groupJoinLogic?: FilterGroupJoinLogic;
   createdAt: string;
   updatedAt: string;
 };
@@ -82,7 +87,7 @@ export type FilterFieldDefinition = {
   // For select/multi-select fields
   options?: Array<{ value: string; label: string }>;
   // For async options (e.g., artists loaded from data)
-  optionsSource?: "artists" | "playlists" | "tracks";
+  optionsSource?: "artists" | "playlists" | "tracks" | "network_nodes";
   // For number fields
   min?: number;
   max?: number;
@@ -194,6 +199,7 @@ export function createEmptyFilter(entityType: EntityType = "tracks"): FilterConf
     name: "",
     entityType,
     groups: [createEmptyGroup()],
+    groupJoinLogic: "AND",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };

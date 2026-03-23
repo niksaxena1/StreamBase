@@ -63,6 +63,7 @@ describe("createEmptyFilter", () => {
     expect(filter.name).toBe("");
     expect(filter.entityType).toBe("tracks");
     expect(filter.groups).toHaveLength(1);
+    expect(filter.groupJoinLogic).toBe("AND");
     expect(filter.createdAt).toBeTruthy();
     expect(filter.updatedAt).toBeTruthy();
   });
