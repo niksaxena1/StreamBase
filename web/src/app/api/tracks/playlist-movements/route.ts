@@ -1,7 +1,8 @@
-import { NextResponse, NextRequest } from "next/server";
+import { NextRequest } from "next/server";
 
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
+import { apiJsonErr, apiJsonOk, readJsonBodyOptional, requireAdmin } from "@/lib/api/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,67 +17,48 @@ type MembershipRecord = {
   valid_to: string | null;
 };
 
-/**
- * Returns ISRCs that have been in 2+ different playlists of the same type
- * (Distro or Entity), indicating a movement between playlists.
- *
- * Body: { type: "Distro" | "Entity", start_date?: string, end_date?: string }
- *
- * Response: { movements: Record<string, { playlists: string[] }> }
- *   - Key is ISRC
- *   - playlists is ordered chronologically (oldest first, newest last)
- *     so playlists[0] is the "from" and playlists[last] is the current/latest "to"
- *   - playlist values are display_name strings
- */
 export async function POST(req: NextRequest) {
   const sb = await supabaseServer();
-  const { data: userData } = await sb.auth.getUser();
-  if (!userData.user) {
-    return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
-  }
+  const auth = await requireAdmin(sb);
+  if (!auth.ok) return auth.response;
 
-  const { data: isAdmin, error: adminErr } = await sb.rpc("is_admin");
-  if (adminErr) return NextResponse.json({ error: adminErr.message }, { status: 500 });
-  if (!isAdmin) return NextResponse.json({ error: "forbidden" }, { status: 403 });
-
-  const body = await req.json().catch(() => ({}));
-  const type = (body as any)?.type;
-  const startDate = (body as any)?.start_date ?? null;
-  const endDate = (body as any)?.end_date ?? null;
+  const body = await readJsonBodyOptional(req);
+  const type = body.type;
+  const startDate = body.start_date ?? null;
+  const endDate = body.end_date ?? null;
 
   if (type !== "Distro" && type !== "Entity") {
-    return NextResponse.json({ error: 'type must be "Distro" or "Entity"' }, { status: 400 });
+    return apiJsonErr('type must be "Distro" or "Entity"', 400);
   }
   if (startDate != null && !isIsoDate(startDate)) {
-    return NextResponse.json({ error: "invalid start_date" }, { status: 400 });
+    return apiJsonErr("invalid start_date", 400);
   }
   if (endDate != null && !isIsoDate(endDate)) {
-    return NextResponse.json({ error: "invalid end_date" }, { status: 400 });
+    return apiJsonErr("invalid end_date", 400);
   }
 
   const svc = supabaseService();
 
-  // Step 1: Get all playlists of the requested type (key + name)
   const { data: playlists, error: plErr } = await svc
     .from("playlists")
     .select("playlist_key,display_name,spotify_playlist_image_url")
     .eq("playlist_type", type);
 
-  if (plErr) return NextResponse.json({ error: plErr.message }, { status: 500 });
-  const playlistKeys = (playlists ?? []).map((p: any) => String(p.playlist_key));
+  if (plErr) return apiJsonErr(plErr.message, 500);
+  const playlistKeys = (playlists ?? []).map((p: { playlist_key?: unknown }) => String(p.playlist_key));
   if (playlistKeys.length === 0) {
-    return NextResponse.json({ movements: {} }, { status: 200 });
+    return apiJsonOk({ movements: {} as Record<string, { playlists: { name: string; imageUrl: string | null }[] }> });
   }
 
   const nameMap = new Map<string, string>();
   const imageMap = new Map<string, string | null>();
   for (const p of playlists ?? []) {
-    const pk = String(p.playlist_key);
-    nameMap.set(pk, String(p.display_name ?? pk));
-    imageMap.set(pk, (p.spotify_playlist_image_url as string) ?? null);
+    const row = p as { playlist_key?: unknown; display_name?: unknown; spotify_playlist_image_url?: unknown };
+    const pk = String(row.playlist_key);
+    nameMap.set(pk, String(row.display_name ?? pk));
+    imageMap.set(pk, (row.spotify_playlist_image_url as string) ?? null);
   }
 
-  // Step 2: Fetch membership records with dates for chronological ordering
   const pageSize = 1000;
   const hardCap = 500_000;
   const isrcRecords = new Map<string, MembershipRecord[]>();
@@ -92,15 +74,17 @@ export async function POST(req: NextRequest) {
     if (startDate) query = query.gte("valid_from", startDate);
     if (endDate) query = query.lte("valid_from", endDate);
 
-    query = query
-      .order("isrc", { ascending: true })
-      .order("valid_from", { ascending: true })
-      .range(from, to);
+    query = query.order("isrc", { ascending: true }).order("valid_from", { ascending: true }).range(from, to);
 
     const { data, error } = await query;
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) return apiJsonErr(error.message, 500);
 
-    const rows = (data ?? []) as any[];
+    const rows = (data ?? []) as Array<{
+      isrc?: unknown;
+      playlist_key?: unknown;
+      valid_from?: unknown;
+      valid_to?: unknown;
+    }>;
     if (!rows.length) break;
 
     for (const r of rows) {
@@ -123,7 +107,6 @@ export async function POST(req: NextRequest) {
     if (rows.length < pageSize) break;
   }
 
-  // Step 3: Build movements — only for ISRCs in 2+ distinct playlists
   const movements: Record<string, { playlists: { name: string; imageUrl: string | null }[] }> = {};
 
   for (const [isrc, records] of isrcRecords) {
@@ -146,5 +129,5 @@ export async function POST(req: NextRequest) {
     movements[isrc] = { playlists: ordered };
   }
 
-  return NextResponse.json({ movements }, { status: 200 });
+  return apiJsonOk({ movements });
 }

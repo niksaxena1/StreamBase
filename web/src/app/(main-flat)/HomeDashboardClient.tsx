@@ -23,7 +23,15 @@ import { type TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChar
 import { computeRollingAvg7 } from "@/components/charts/chartUtils";
 import { useCurrencyDisplay } from "@/components/currency/CurrencyDisplayContext";
 
-import type { PlaylistDailyStatsRow, ManualOverrideAnnotation, ChartPoint, ArtistWeekendDipRow, TrackWeekendDipRow, NegativeDailyStreamsRow } from "./home/homeTypes";
+import type {
+  PlaylistDailyStatsRow,
+  ManualOverrideAnnotation,
+  ChartPoint,
+  ArtistWeekendDipRow,
+  TrackWeekendDipRow,
+  NegativeDailyStreamsRow,
+  HomeDashboardServerProps,
+} from "./home/homeTypes";
 import { rollSum } from "./home/homeUtils";
 import { HomeScatterSection } from "./home/HomeScatterSection";
 import { HomeMilestonesSection } from "./home/HomeMilestonesSection";
@@ -440,25 +448,7 @@ function HomeDashboardInner(props: {
   );
 }
 
-export function HomeDashboardClient(props: {
-  sp: { scope?: string; range?: string; daily?: string; xy_date?: string };
-  playlistKey: "all_catalog" | "releases" | "ext";
-  title: string;
-  rangeDays: number;
-  latest: PlaylistDailyStatsRow | null;
-  history: PlaylistDailyStatsRow[];
-  playlistImageUrl: string | null;
-  historyErrorMessage?: string | null;
-  trackScatterPoints: TrackStreamsXYPoint[];
-  trackScatterErrorMessage?: string | null;
-  trackScatterDataDate: string | null;
-  latestRunDate: string | null;
-  latestDataDate: string | null;
-  overrideAnnotations?: ManualOverrideAnnotation[];
-  artistWeekendDips: ArtistWeekendDipRow[];
-  trackWeekendDips: TrackWeekendDipRow[];
-  negativeDailyStreams: NegativeDailyStreamsRow[];
-}) {
+export function HomeDashboardClient(props: HomeDashboardServerProps) {
   return <HomeDashboardInner {...props} />;
 }
 

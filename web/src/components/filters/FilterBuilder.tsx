@@ -7,6 +7,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { fetchApiJson } from "@/lib/api";
 import { 
   Play, 
   Plus, 
@@ -185,14 +186,12 @@ export function FilterBuilder({
     const allRows: any[] = [];
     for (let i = 0; i < missing.length; i += BATCH) {
       const chunk = missing.slice(i, i + BATCH);
-      const res = await fetch("/api/playlists/memberships", {
+      const json = await fetchApiJson<{ rows?: any[] }>("/api/playlists/memberships", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ date, playlist_keys: chunk }),
       });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error((json as any)?.error ?? "Failed to load playlist memberships");
-      const rows = Array.isArray((json as any)?.rows) ? ((json as any).rows as any[]) : [];
+      const rows = Array.isArray(json.rows) ? json.rows : [];
       allRows.push(...rows);
     }
 
@@ -422,14 +421,12 @@ export function FilterBuilder({
               const matchingKeys = new Set<string>();
               for (let i = 0; i < allIsrcs.length; i += BATCH) {
                 const chunk = allIsrcs.slice(i, i + BATCH);
-                const res = await fetch("/api/playlists/containing", {
+                const json = await fetchApiJson<{ playlist_keys?: string[] }>("/api/playlists/containing", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({ date: asOfRunDate, isrcs: chunk }),
                 });
-                const json = await res.json().catch(() => ({}));
-                if (!res.ok) throw new Error((json as any)?.error ?? "Failed to look up playlist memberships");
-                const keys: string[] = Array.isArray((json as any)?.playlist_keys) ? (json as any).playlist_keys : [];
+                const keys: string[] = Array.isArray(json.playlist_keys) ? json.playlist_keys : [];
                 for (const k of keys) matchingKeys.add(k);
               }
               playlistDataForFilter = playlistData.map((p) => ({
@@ -444,8 +441,8 @@ export function FilterBuilder({
           const needsMovedEntity = filterUsesAnyField(currentFilter, "moved_entity");
           type PlaylistRef = { name: string; imageUrl: string | null };
           type MovementMap = Map<string, PlaylistRef[]>;
-          let distroMovements: MovementMap = new Map();
-          let entityMovements: MovementMap = new Map();
+          const distroMovements: MovementMap = new Map();
+          const entityMovements: MovementMap = new Map();
 
           function parseMovementResponse(json: any, target: MovementMap) {
             const mv = json?.movements;
@@ -460,7 +457,7 @@ export function FilterBuilder({
           const movementFetches: Promise<void>[] = [];
           if (needsMovedDistro) {
             movementFetches.push(
-              fetch("/api/tracks/playlist-movements", {
+              fetchApiJson("/api/tracks/playlist-movements", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -468,14 +465,12 @@ export function FilterBuilder({
                   start_date: movementStartDate || undefined,
                   end_date: movementEndDate || undefined,
                 }),
-              })
-                .then((r) => r.json())
-                .then((json: any) => parseMovementResponse(json, distroMovements)),
+              }).then((json: any) => parseMovementResponse(json, distroMovements)),
             );
           }
           if (needsMovedEntity) {
             movementFetches.push(
-              fetch("/api/tracks/playlist-movements", {
+              fetchApiJson("/api/tracks/playlist-movements", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -483,9 +478,7 @@ export function FilterBuilder({
                   start_date: movementStartDate || undefined,
                   end_date: movementEndDate || undefined,
                 }),
-              })
-                .then((r) => r.json())
-                .then((json: any) => parseMovementResponse(json, entityMovements)),
+              }).then((json: any) => parseMovementResponse(json, entityMovements)),
             );
           }
           if (movementFetches.length) await Promise.all(movementFetches);

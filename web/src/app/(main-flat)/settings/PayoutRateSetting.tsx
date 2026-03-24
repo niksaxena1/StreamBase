@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { fetchApiJson } from "@/lib/api";
 import { SAVED_FEEDBACK_MS } from "@/lib/constants";
+
+type RatePayload = {
+  stream_payout_rate_per_k_usd: number;
+  configured?: boolean;
+};
 
 function normalizeRateInput(raw: string) {
   const s = raw.trim();
@@ -27,16 +33,11 @@ export function PayoutRateSetting() {
   useEffect(() => {
     setLoading(true);
     setError(null);
-    void fetch("/api/user-settings/rate")
-      .then(async (res) => {
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error((data as any)?.error ?? "Failed to load rate");
-        return data;
-      })
+    void fetchApiJson<RatePayload>("/api/user-settings/rate")
       .then((data) => {
-        const rate = Number((data as any)?.stream_payout_rate_per_k_usd ?? 2);
+        const rate = Number(data.stream_payout_rate_per_k_usd ?? 2);
         setRateText(Number.isFinite(rate) ? String(rate) : "2");
-        setConfigured((data as any)?.configured !== false);
+        setConfigured(data.configured !== false);
         setLoading(false);
       })
       .catch((e) => {
@@ -56,16 +57,13 @@ export function PayoutRateSetting() {
 
     setSaving(true);
     try {
-      const res = await fetch("/api/user-settings/rate", {
+      const data = await fetchApiJson<RatePayload>("/api/user-settings/rate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ stream_payout_rate_per_k_usd: parsed.value }),
       });
 
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error((data as any)?.error ?? "Failed to update rate");
-
-      const savedRate = Number((data as any)?.stream_payout_rate_per_k_usd ?? parsed.value);
+      const savedRate = Number(data.stream_payout_rate_per_k_usd ?? parsed.value);
       setRateText(Number.isFinite(savedRate) ? String(savedRate) : String(parsed.value));
       setSaved(true);
       setTimeout(() => setSaved(false), SAVED_FEEDBACK_MS);

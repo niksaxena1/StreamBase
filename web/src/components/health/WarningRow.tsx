@@ -7,6 +7,7 @@ import { TableCell, TableRow } from "@/components/ui/GlassTable";
 import { TrackListItem } from "@/components/health/TrackListItem";
 import { StaleTrackResolver } from "@/components/health/StaleTrackResolver";
 import { useRouter } from "next/navigation";
+import { fetchApiJson } from "@/lib/api";
 import type {
   PlaylistMeta,
   WarningExpandedData,
@@ -53,7 +54,7 @@ function QuickOverrideButton({
     setState("loading");
     setErrMsg("");
     try {
-      const res = await fetch("/api/health-actions", {
+      await fetchApiJson("/api/health-actions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -64,10 +65,6 @@ function QuickOverrideButton({
           note: note.trim(),
         }),
       });
-      if (!res.ok) {
-        const d = await res.json().catch(() => ({}));
-        throw new Error((d as Record<string, unknown>)?.error as string ?? "Failed");
-      }
       setState("done");
       setOpen(false);
       router.refresh();
@@ -259,38 +256,16 @@ export function WarningRow({
       if (missingThumbIsrcs.length === 0) return;
 
       try {
-        const res = await fetch("/api/spotify-track-batch", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          cache: "no-store",
-          body: JSON.stringify({ isrcs: missingThumbIsrcs }),
-        });
-        if (res.status === 404) {
-          for (const isrc of missingThumbIsrcs) {
-            if (cancelled) return;
-            if (thumbByIsrc[isrc] !== undefined) continue;
-            try {
-              const one = await fetch(
-                `/api/spotify-track?isrc=${encodeURIComponent(isrc)}`,
-                { cache: "no-store" },
-              );
-              const j = (await one.json()) as {
-                albumImageUrl?: string | null;
-              };
-              const url = one.ok ? (j.albumImageUrl ?? null) : null;
-              if (!cancelled)
-                setThumbByIsrc((prev) => ({ ...prev, [isrc]: url }));
-            } catch {
-              if (!cancelled)
-                setThumbByIsrc((prev) => ({ ...prev, [isrc]: null }));
-            }
-          }
-          return;
-        }
-        const json = (await res.json()) as {
-          byIsrc?: Record<string, string | null>;
-        };
-        const byIsrc = res.ok ? (json.byIsrc ?? {}) : {};
+        const json = await fetchApiJson<{ byIsrc: Record<string, string | null> }>(
+          "/api/spotify-track-batch",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            cache: "no-store",
+            body: JSON.stringify({ isrcs: missingThumbIsrcs }),
+          },
+        );
+        const byIsrc = json.byIsrc ?? {};
         if (!cancelled) setThumbByIsrc((prev) => ({ ...prev, ...byIsrc }));
       } catch {
         // Placeholders remain

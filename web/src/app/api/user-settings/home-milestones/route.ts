@@ -1,8 +1,9 @@
-import { NextResponse, NextRequest } from "next/server";
+import { NextRequest } from "next/server";
 
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { isSchemaMissing } from "@/lib/supabase/schemaMissing";
+import { apiJsonErr, apiJsonOk, readJsonBodyOptional, requireUser } from "@/lib/api/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,7 +14,6 @@ function normalizeCsv(raw: unknown): string | null {
   const s = String(raw ?? "").trim();
   if (!s) return null;
 
-  // Expect comma-separated integers (streams), min 100k.
   const parts = s
     .split(/[\s,]+/g)
     .map((p) => p.trim())
@@ -33,74 +33,63 @@ function normalizeCsv(raw: unknown): string | null {
 
 export async function GET() {
   const sb = await supabaseServer();
-  const { data } = await sb.auth.getUser();
-  const user = data.user;
-  if (!user) {
-    return NextResponse.json({ error: "not authenticated" }, { status: 401 });
-  }
+  const auth = await requireUser(sb);
+  if (!auth.ok) return auth.response;
 
   const svc = supabaseService();
   const { data: settings, error } = await svc
     .from("user_settings")
     .select("home_custom_milestones_streams")
-    .eq("user_id", user.id)
+    .eq("user_id", auth.user.id)
     .maybeSingle();
 
   if (error) {
     if (isSchemaMissing(error)) {
-      return NextResponse.json({ home_custom_milestones_streams: null, configured: false }, { status: 200 });
+      return apiJsonOk({ home_custom_milestones_streams: null, configured: false as const });
     }
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiJsonErr(error.message, 500);
   }
 
-  return NextResponse.json(
-    {
-      home_custom_milestones_streams: (settings as any)?.home_custom_milestones_streams ?? null,
-      configured: true,
-    },
-    { status: 200 },
-  );
+  return apiJsonOk({
+    home_custom_milestones_streams:
+      (settings as { home_custom_milestones_streams?: string | null } | null)?.home_custom_milestones_streams ?? null,
+    configured: true as const,
+  });
 }
 
 export async function POST(req: NextRequest) {
   const sb = await supabaseServer();
-  const { data } = await sb.auth.getUser();
-  const user = data.user;
-  if (!user) {
-    return NextResponse.json({ error: "not authenticated" }, { status: 401 });
-  }
+  const auth = await requireUser(sb);
+  if (!auth.ok) return auth.response;
 
-  const body = await req.json().catch(() => ({}));
+  const body = await readJsonBodyOptional(req);
   let csv: string | null;
   try {
-    csv = normalizeCsv((body as any)?.home_custom_milestones_streams ?? (body as any)?.milestones_csv);
+    csv = normalizeCsv(body.home_custom_milestones_streams ?? body.milestones_csv);
   } catch (e) {
-    return NextResponse.json({ error: e instanceof Error ? e.message : "Invalid milestones." }, { status: 400 });
+    return apiJsonErr(e instanceof Error ? e.message : "Invalid milestones.", 400);
   }
 
   const svc = supabaseService();
   const { data: upserted, error } = await svc
     .from("user_settings")
-    .upsert([{ user_id: user.id, home_custom_milestones_streams: csv }], { onConflict: "user_id" })
+    .upsert([{ user_id: auth.user.id, home_custom_milestones_streams: csv }], { onConflict: "user_id" })
     .select("home_custom_milestones_streams")
     .maybeSingle();
 
   if (error) {
     if (isSchemaMissing(error)) {
-      return NextResponse.json(
-        {
-          error:
-            "Home milestones setting isn’t configured in the database yet. Add the `home_custom_milestones_streams` column to `user_settings`, then retry.",
-        },
-        { status: 503 },
+      return apiJsonErr(
+        "Home milestones setting isn’t configured in the database yet. Add the `home_custom_milestones_streams` column to `user_settings`, then retry.",
+        503,
       );
     }
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiJsonErr(error.message, 500);
   }
 
-  return NextResponse.json(
-    { home_custom_milestones_streams: (upserted as any)?.home_custom_milestones_streams ?? csv, configured: true },
-    { status: 200 },
-  );
+  return apiJsonOk({
+    home_custom_milestones_streams:
+      (upserted as { home_custom_milestones_streams?: string | null } | null)?.home_custom_milestones_streams ?? csv,
+    configured: true as const,
+  });
 }
-

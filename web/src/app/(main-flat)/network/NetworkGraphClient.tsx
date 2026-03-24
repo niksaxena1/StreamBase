@@ -30,6 +30,7 @@ import {
   Filter,
   Music,
 } from "lucide-react";
+import { fetchApiJson } from "@/lib/api";
 import { formatInt } from "@/lib/format";
 import { slugifyForFilename, todayIsoDate } from "@/lib/csv";
 import {
@@ -595,7 +596,13 @@ export function NetworkGraphClient({
     setNetworkAdvStreamStatsLoading(true);
     setNetworkAdvStreamStatsError(null);
 
-    void fetch("/api/admin/network-export-artist-stream-stats", {
+    void fetchApiJson<{
+      rows?: Array<{
+        artist_id: string;
+        total_streams_in_scope: number | string | null;
+        daily_streams_in_scope: number | string | null;
+      }>;
+    }>("/api/admin/network-export-artist-stream-stats", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -604,34 +611,18 @@ export function NetworkGraphClient({
         hideNonPrimary,
       }),
     })
-      .then((r) => r.json())
-      .then(
-        (j: {
-          rows?: Array<{
-            artist_id: string;
-            total_streams_in_scope: number | string | null;
-            daily_streams_in_scope: number | string | null;
-          }>;
-          error?: string;
-        }) => {
-          if (cancelled) return;
-          if (j.error) {
-            setNetworkAdvStreamStats(null);
-            setNetworkAdvStreamStatsError(j.error);
-            setNetworkAdvStreamStatsLoading(false);
-            return;
-          }
-          const m = new Map<string, NetworkArtistStreamStatsRow>();
-          for (const row of j.rows ?? []) {
-            m.set(row.artist_id, {
-              total_streams_in_scope: Number(row.total_streams_in_scope ?? 0) || 0,
-              daily_streams_in_scope: Number(row.daily_streams_in_scope ?? 0) || 0,
-            });
-          }
-          setNetworkAdvStreamStats(m);
-          setNetworkAdvStreamStatsLoading(false);
-        },
-      )
+      .then((j) => {
+        if (cancelled) return;
+        const m = new Map<string, NetworkArtistStreamStatsRow>();
+        for (const row of j.rows ?? []) {
+          m.set(row.artist_id, {
+            total_streams_in_scope: Number(row.total_streams_in_scope ?? 0) || 0,
+            daily_streams_in_scope: Number(row.daily_streams_in_scope ?? 0) || 0,
+          });
+        }
+        setNetworkAdvStreamStats(m);
+        setNetworkAdvStreamStatsLoading(false);
+      })
       .catch(() => {
         if (cancelled) return;
         setNetworkAdvStreamStats(null);
@@ -834,7 +825,16 @@ export function NetworkGraphClient({
     let cancelled = false;
     setTableStreamStatsLoading(true);
     setTableStreamStatsError(false);
-    fetch("/api/admin/network-export-artist-stream-stats", {
+    fetchApiJson<{
+      rows?: Array<{
+        artist_id: string;
+        total_streams_in_scope: number;
+        daily_streams_in_scope: number;
+        tracks_all_catalog: number;
+        total_streams_all_catalog: number;
+        daily_streams_all_catalog: number;
+      }>;
+    }>("/api/admin/network-export-artist-stream-stats", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -843,40 +843,21 @@ export function NetworkGraphClient({
         hideNonPrimary,
       }),
     })
-      .then((r) => r.json())
-      .then(
-        (js: {
-          rows?: Array<{
-            artist_id: string;
-            total_streams_in_scope: number;
-            daily_streams_in_scope: number;
-            tracks_all_catalog: number;
-            total_streams_all_catalog: number;
-            daily_streams_all_catalog: number;
-          }>;
-          error?: string;
-        }) => {
-          if (cancelled) return;
-          if (js.error) {
-            setTableStreamStats(null);
-            setTableStreamStatsError(true);
-            setTableStreamStatsLoading(false);
-            return;
-          }
-          const m = new Map<string, NetworkArtistStreamExportRow>();
-          for (const row of js.rows ?? []) {
-            m.set(row.artist_id, {
-              total_streams_in_scope: row.total_streams_in_scope,
-              daily_streams_in_scope: row.daily_streams_in_scope,
-              tracks_all_catalog: row.tracks_all_catalog,
-              total_streams_all_catalog: row.total_streams_all_catalog,
-              daily_streams_all_catalog: row.daily_streams_all_catalog,
-            });
-          }
-          setTableStreamStats(m);
-          setTableStreamStatsLoading(false);
-        },
-      )
+      .then((js) => {
+        if (cancelled) return;
+        const m = new Map<string, NetworkArtistStreamExportRow>();
+        for (const row of js.rows ?? []) {
+          m.set(row.artist_id, {
+            total_streams_in_scope: row.total_streams_in_scope,
+            daily_streams_in_scope: row.daily_streams_in_scope,
+            tracks_all_catalog: row.tracks_all_catalog,
+            total_streams_all_catalog: row.total_streams_all_catalog,
+            daily_streams_all_catalog: row.daily_streams_all_catalog,
+          });
+        }
+        setTableStreamStats(m);
+        setTableStreamStatsLoading(false);
+      })
       .catch(() => {
         if (!cancelled) {
           setTableStreamStats(null);
@@ -920,16 +901,7 @@ export function NetworkGraphClient({
           return { map: new Map(), ok: true };
         }
         try {
-          const resStats = await fetch("/api/admin/network-export-artist-stream-stats", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              artistIds: artistIdsForStats,
-              playlistKey: playlistKey ?? null,
-              hideNonPrimary,
-            }),
-          });
-          const js = (await resStats.json()) as {
+          const js = await fetchApiJson<{
             rows?: Array<{
               artist_id: string;
               total_streams_in_scope: number;
@@ -938,12 +910,15 @@ export function NetworkGraphClient({
               total_streams_all_catalog: number;
               daily_streams_all_catalog: number;
             }>;
-            error?: string;
-          };
-          if (!resStats.ok || js.error) {
-            console.error("network-export-artist-stream-stats:", js.error ?? resStats.statusText);
-            return { map: new Map(), ok: false };
-          }
+          }>("/api/admin/network-export-artist-stream-stats", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              artistIds: artistIdsForStats,
+              playlistKey: playlistKey ?? null,
+              hideNonPrimary,
+            }),
+          });
           const map = new Map<string, NetworkArtistStreamExportRow>();
           for (const r of js.rows ?? []) {
             map.set(r.artist_id, {
@@ -976,12 +951,7 @@ export function NetworkGraphClient({
       let completedBatches = 0;
 
       async function fetchOneIsrcBatch(part: string[]): Promise<void> {
-        const res = await fetch("/api/admin/isrc-batch-details", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ isrcs: part }),
-        });
-        const j = (await res.json()) as {
+        let j: {
           tracks?: Array<{
             isrc: string;
             name: string | null;
@@ -992,11 +962,16 @@ export function NetworkGraphClient({
             distroPlaylists?: string;
             spotify_track_id?: string | null;
           }>;
-          error?: string;
         };
-        if (!res.ok || j.error) {
+        try {
+          j = await fetchApiJson("/api/admin/isrc-batch-details", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ isrcs: part }),
+          });
+        } catch (e) {
           trackEnrichmentBatchFailures += 1;
-          console.error("isrc-batch-details for export:", j.error ?? res.statusText);
+          console.error("isrc-batch-details for export:", e);
           return;
         }
         for (const t of j.tracks ?? []) {
@@ -1295,7 +1270,11 @@ export function NetworkGraphClient({
     }
     let cancelled = false;
     setStreamTotals((s) => ({ ...s, loading: true }));
-    fetch("/api/admin/network-selection-stream-totals", {
+    fetchApiJson<{
+      trackCount?: unknown;
+      totalStreams?: unknown;
+      dailyStreams?: unknown;
+    }>("/api/admin/network-selection-stream-totals", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1304,27 +1283,15 @@ export function NetworkGraphClient({
         hideNonPrimary,
       }),
     })
-      .then((r) => r.json())
-      .then(
-        (j: {
-          trackCount?: unknown;
-          totalStreams?: unknown;
-          dailyStreams?: unknown;
-          error?: string;
-        }) => {
-          if (cancelled) return;
-          if (j.error) {
-            setStreamTotals({ total: null, daily: null, trackCount: null, loading: false });
-            return;
-          }
-          setStreamTotals({
-            total: typeof j.totalStreams === "number" ? j.totalStreams : null,
-            daily: typeof j.dailyStreams === "number" ? j.dailyStreams : null,
-            trackCount: typeof j.trackCount === "number" ? j.trackCount : null,
-            loading: false,
-          });
-        },
-      )
+      .then((j) => {
+        if (cancelled) return;
+        setStreamTotals({
+          total: typeof j.totalStreams === "number" ? j.totalStreams : null,
+          daily: typeof j.dailyStreams === "number" ? j.dailyStreams : null,
+          trackCount: typeof j.trackCount === "number" ? j.trackCount : null,
+          loading: false,
+        });
+      })
       .catch(() => {
         if (cancelled) return;
         setStreamTotals({ total: null, daily: null, trackCount: null, loading: false });
@@ -1681,19 +1648,12 @@ export function NetworkGraphClient({
     setDistroTracks([]);
     setDistroNameMap(new Map());
     try {
-      const res = await fetch(
-        `/api/admin/artist-distro-tracks?artist_id=${encodeURIComponent(artistId)}`,
-      );
-      const json = (await res.json()) as {
-        error?: string;
+      const json = await fetchApiJson<{
         artistName?: string;
         playlists?: DistroPlaylist[];
         tracks?: ArtistDistroTrackRow[];
         nameByArtistId?: Record<string, string>;
-      };
-      if (!res.ok) {
-        throw new Error(json.error ?? "Failed to load");
-      }
+      }>(`/api/admin/artist-distro-tracks?artist_id=${encodeURIComponent(artistId)}`);
       setDistroArtistName(
         typeof json.artistName === "string" ? json.artistName : fallbackName,
       );

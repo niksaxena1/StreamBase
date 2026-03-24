@@ -1,18 +1,11 @@
-import { NextResponse, NextRequest } from "next/server";
+import { NextRequest } from "next/server";
+
 import { supabaseServer } from "@/lib/supabase/server";
 import { RAPIDAPI_ENDPOINT, RAPIDAPI_HOST, RAPIDAPI_DELAY_MS } from "@/lib/rapidapi";
+import { apiJsonErr, apiJsonOk, readJsonBodyOptional, requireAdmin } from "@/lib/api/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-async function requireAdmin() {
-  const sb = await supabaseServer();
-  const { data } = await sb.auth.getUser();
-  if (!data.user) return null;
-  const { data: isAdmin, error } = await sb.rpc("is_admin");
-  if (error || !isAdmin) return null;
-  return data.user;
-}
 
 export type StaleLookupResult = {
   isrc: string;
@@ -21,42 +14,20 @@ export type StaleLookupResult = {
   error?: string;
 };
 
-/**
- * POST /api/rapidapi-stale-lookup
- *
- * Lookup-only: fetches stream counts from RapidAPI for the given ISRCs
- * but does NOT write anything to the database. Returns results for
- * the caller to review before deciding to apply overrides.
- *
- * Body: { isrcs: string[], staleStreams?: Record<string, number> }
- *   - isrcs: array of ISRCs to look up (max 20)
- *   - staleStreams: optional map of isrc -> current stale cumulative count,
- *     used to flag suspicious results (fetched < stale)
- */
 export async function POST(request: NextRequest) {
-  const user = await requireAdmin();
-  if (!user) {
-    return NextResponse.json(
-      { error: "not authenticated or not admin" },
-      { status: 401 },
-    );
-  }
+  const sb = await supabaseServer();
+  const auth = await requireAdmin(sb);
+  if (!auth.ok) return auth.response;
 
   const apiKey = process.env.RAPIDAPI_KEY?.trim();
   if (!apiKey) {
-    return NextResponse.json(
-      { error: "RAPIDAPI_KEY is not configured on the server" },
-      { status: 503 },
-    );
+    return apiJsonErr("RAPIDAPI_KEY is not configured on the server", 503);
   }
 
   let isrcs: string[];
   let staleStreams: Record<string, number>;
   try {
-    const body = (await request.json().catch(() => ({}))) as Record<
-      string,
-      unknown
-    >;
+    const body = await readJsonBodyOptional(request);
     const raw = body.isrcs;
     if (!Array.isArray(raw) || raw.length === 0) {
       throw new Error("isrcs must be a non-empty array");
@@ -69,18 +40,13 @@ export async function POST(request: NextRequest) {
 
     staleStreams = {};
     if (body.staleStreams && typeof body.staleStreams === "object") {
-      for (const [k, v] of Object.entries(
-        body.staleStreams as Record<string, unknown>,
-      )) {
+      for (const [k, v] of Object.entries(body.staleStreams as Record<string, unknown>)) {
         const n = Number(v);
         if (Number.isFinite(n)) staleStreams[k.trim().toUpperCase()] = n;
       }
     }
   } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Invalid request body" },
-      { status: 400 },
-    );
+    return apiJsonErr(e instanceof Error ? e.message : "Invalid request body", 400);
   }
 
   const results: StaleLookupResult[] = [];
@@ -111,8 +77,7 @@ export async function POST(request: NextRequest) {
           results.push({ isrc, streams: null, status: "failed", error: "Invalid stream count" });
         } else {
           const stale = staleStreams[isrc];
-          const suspicious =
-            stale != null && apiVal < stale;
+          const suspicious = stale != null && apiVal < stale;
           results.push({
             isrc,
             streams: apiVal,
@@ -129,5 +94,5 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({ results });
+  return apiJsonOk({ results });
 }

@@ -1,8 +1,9 @@
-import { NextResponse, NextRequest } from "next/server";
+import { NextRequest } from "next/server";
 
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { isSchemaMissing } from "@/lib/supabase/schemaMissing";
+import { apiJsonErr, apiJsonOk, readJsonBodyOptional, requireUser } from "@/lib/api/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,43 +13,37 @@ const DEFAULT_EXCLUDE_CATALOG = false;
 
 export async function GET() {
   const sb = await supabaseServer();
-  const { data } = await sb.auth.getUser();
-  const user = data.user;
-  if (!user) return NextResponse.json({ error: "not authenticated" }, { status: 401 });
+  const auth = await requireUser(sb);
+  if (!auth.ok) return auth.response;
 
   const svc = supabaseService();
   const { data: settings, error } = await svc
     .from("user_settings")
     .select("hide_stale_override_annotations, hide_stale_annotations_exclude_catalog")
-    .eq("user_id", user.id)
+    .eq("user_id", auth.user.id)
     .maybeSingle();
 
   if (error) {
     if (isSchemaMissing(error)) {
-      return NextResponse.json(
-        {
-          hide_stale_override_annotations: DEFAULT_HIDE,
-          hide_stale_annotations_exclude_catalog: DEFAULT_EXCLUDE_CATALOG,
-          configured: false,
-        },
-        { status: 200 },
-      );
+      return apiJsonOk({
+        hide_stale_override_annotations: DEFAULT_HIDE,
+        hide_stale_annotations_exclude_catalog: DEFAULT_EXCLUDE_CATALOG,
+        configured: false as const,
+      });
     }
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiJsonErr(error.message, 500);
   }
 
   const row = settings as Record<string, unknown> | null;
   const val = row?.hide_stale_override_annotations;
   const excludeCatalog = row?.hide_stale_annotations_exclude_catalog;
 
-  return NextResponse.json(
-    {
-      hide_stale_override_annotations: typeof val === "boolean" ? val : DEFAULT_HIDE,
-      hide_stale_annotations_exclude_catalog: typeof excludeCatalog === "boolean" ? excludeCatalog : DEFAULT_EXCLUDE_CATALOG,
-      configured: true,
-    },
-    { status: 200 },
-  );
+  return apiJsonOk({
+    hide_stale_override_annotations: typeof val === "boolean" ? val : DEFAULT_HIDE,
+    hide_stale_annotations_exclude_catalog:
+      typeof excludeCatalog === "boolean" ? excludeCatalog : DEFAULT_EXCLUDE_CATALOG,
+    configured: true as const,
+  });
 }
 
 function parseBool(val: unknown): boolean | null {
@@ -62,11 +57,10 @@ function parseBool(val: unknown): boolean | null {
 
 export async function POST(request: NextRequest) {
   const sb = await supabaseServer();
-  const { data } = await sb.auth.getUser();
-  const user = data.user;
-  if (!user) return NextResponse.json({ error: "not authenticated" }, { status: 401 });
+  const auth = await requireUser(sb);
+  if (!auth.ok) return auth.response;
 
-  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = await readJsonBodyOptional(request);
 
   const hideRaw = body.hide_stale_override_annotations ?? body.enabled;
   const excludeCatalogRaw = body.hide_stale_annotations_exclude_catalog;
@@ -75,10 +69,10 @@ export async function POST(request: NextRequest) {
   const excludeCatalogVal = parseBool(excludeCatalogRaw);
 
   if (hideVal === null && excludeCatalogVal === null) {
-    return NextResponse.json({ error: "No recognised boolean field provided." }, { status: 400 });
+    return apiJsonErr("No recognised boolean field provided.", 400);
   }
 
-  const patch: Record<string, unknown> = { user_id: user.id };
+  const patch: Record<string, unknown> = { user_id: auth.user.id };
   if (hideVal !== null) patch.hide_stale_override_annotations = hideVal;
   if (excludeCatalogVal !== null) patch.hide_stale_annotations_exclude_catalog = excludeCatalogVal;
 
@@ -91,24 +85,19 @@ export async function POST(request: NextRequest) {
 
   if (error) {
     if (isSchemaMissing(error)) {
-      return NextResponse.json(
-        { error: "Setting isn't configured in the database yet. Apply migrations, then retry." },
-        { status: 503 },
-      );
+      return apiJsonErr("Setting isn't configured in the database yet. Apply migrations, then retry.", 503);
     }
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiJsonErr(error.message, 500);
   }
 
   const row = upserted as Record<string, unknown> | null;
   const savedHide = row?.hide_stale_override_annotations;
   const savedExclude = row?.hide_stale_annotations_exclude_catalog;
 
-  return NextResponse.json(
-    {
-      hide_stale_override_annotations: typeof savedHide === "boolean" ? savedHide : (hideVal ?? DEFAULT_HIDE),
-      hide_stale_annotations_exclude_catalog: typeof savedExclude === "boolean" ? savedExclude : (excludeCatalogVal ?? DEFAULT_EXCLUDE_CATALOG),
-      configured: true,
-    },
-    { status: 200 },
-  );
+  return apiJsonOk({
+    hide_stale_override_annotations: typeof savedHide === "boolean" ? savedHide : (hideVal ?? DEFAULT_HIDE),
+    hide_stale_annotations_exclude_catalog:
+      typeof savedExclude === "boolean" ? savedExclude : (excludeCatalogVal ?? DEFAULT_EXCLUDE_CATALOG),
+    configured: true as const,
+  });
 }

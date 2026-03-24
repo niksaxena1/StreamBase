@@ -1,25 +1,14 @@
-import { NextResponse } from "next/server";
-
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
+import { apiJsonErr, apiJsonOk, requireAdmin } from "@/lib/api/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   const sb = await supabaseServer();
-  const { data: userData } = await sb.auth.getUser();
-  if (!userData.user) {
-    return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
-  }
-
-  const { data: isAdmin, error: adminErr } = await sb.rpc("is_admin");
-  if (adminErr) {
-    return NextResponse.json({ error: adminErr.message }, { status: 500 });
-  }
-  if (!isAdmin) {
-    return NextResponse.json({ error: "forbidden" }, { status: 403 });
-  }
+  const auth = await requireAdmin(sb);
+  if (!auth.ok) return auth.response;
 
   const svc = supabaseService();
   const { data, error } = await svc
@@ -29,17 +18,16 @@ export async function GET() {
     .limit(5000);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiJsonErr(error.message, 500);
   }
 
   const artists = (data ?? [])
-    .map((a: any) => ({
+    .map((a: { artist_id?: unknown; name?: unknown; image_url?: unknown }) => ({
       artist_id: String(a?.artist_id ?? ""),
       name: (a?.name ?? null) as string | null,
       image_url: (a?.image_url ?? null) as string | null,
     }))
-    .filter((a: any) => a.artist_id);
+    .filter((a: { artist_id: string }) => a.artist_id);
 
-  return NextResponse.json({ artists }, { status: 200 });
+  return apiJsonOk({ artists });
 }
-

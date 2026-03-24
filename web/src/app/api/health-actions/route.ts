@@ -1,51 +1,25 @@
-import { NextResponse, NextRequest } from "next/server";
+import { NextRequest } from "next/server";
+
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
+import { apiJsonErr, apiJsonOk, readJsonBodyOptional, requireAdmin } from "@/lib/api/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-async function requireAdmin() {
-  const sb = await supabaseServer();
-  const { data } = await sb.auth.getUser();
-  if (!data.user) return null;
-  const { data: isAdmin, error } = await sb.rpc("is_admin");
-  if (error || !isAdmin) return null;
-  return data.user;
-}
-
-/**
- * POST /api/health-actions
- *
- * Supports three actions:
- *   { action: "exclude_stale", isrc: string }
- *     → Adds the ISRC to health_warning_exclusions for individual_tracks_stale
- *
- *   { action: "quick_override", isrc: string, date: string, streams_cumulative: number, note: string }
- *     → Inserts a manual override and triggers cascade recompute
- *
- *   { action: "batch_override", date: string, overrides: [{ isrc: string, streams_cumulative: number }] }
- *     → Inserts multiple overrides at once, then triggers a single cascade recompute
- */
 export async function POST(request: NextRequest) {
-  const user = await requireAdmin();
-  if (!user) {
-    return NextResponse.json(
-      { error: "not authenticated or not admin" },
-      { status: 401 },
-    );
-  }
+  const sb = await supabaseServer();
+  const auth = await requireAdmin(sb);
+  if (!auth.ok) return auth.response;
+  const user = auth.user;
 
-  const body = (await request.json().catch(() => ({}))) as Record<
-    string,
-    unknown
-  >;
+  const body = await readJsonBodyOptional(request);
   const action = String(body.action ?? "");
 
   if (action === "exclude_stale") {
     const isrc = String(body.isrc ?? "").trim().toUpperCase();
     if (!isrc || !/^[A-Z]{2}[A-Z0-9]{10}$/.test(isrc)) {
-      return NextResponse.json({ error: "Invalid ISRC" }, { status: 400 });
+      return apiJsonErr("Invalid ISRC", 400);
     }
 
     const svc = supabaseService();
@@ -61,25 +35,19 @@ export async function POST(request: NextRequest) {
     );
 
     if (error) {
-      // Try plain insert as fallback (upsert conflict key may differ)
-      const { error: insertErr } = await svc
-        .from("health_warning_exclusions")
-        .insert([
-          {
-            code: "individual_tracks_stale",
-            isrc,
-            note: `Excluded from health page (${new Date().toISOString().slice(0, 10)})`,
-          },
-        ]);
+      const { error: insertErr } = await svc.from("health_warning_exclusions").insert([
+        {
+          code: "individual_tracks_stale",
+          isrc,
+          note: `Excluded from health page (${new Date().toISOString().slice(0, 10)})`,
+        },
+      ]);
       if (insertErr) {
-        return NextResponse.json(
-          { error: insertErr.message },
-          { status: 500 },
-        );
+        return apiJsonErr(insertErr.message, 500);
       }
     }
 
-    return NextResponse.json({ ok: true, action: "exclude_stale", isrc });
+    return apiJsonOk({ ok: true as const, action: "exclude_stale" as const, isrc });
   }
 
   if (action === "quick_override") {
@@ -89,47 +57,25 @@ export async function POST(request: NextRequest) {
     const note = String(body.note ?? "").trim();
 
     if (!isrc || !/^[A-Z]{2}[A-Z0-9]{10}$/.test(isrc)) {
-      return NextResponse.json({ error: "Invalid ISRC" }, { status: 400 });
+      return apiJsonErr("Invalid ISRC", 400);
     }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      return NextResponse.json(
-        { error: "Invalid date (YYYY-MM-DD)" },
-        { status: 400 },
-      );
+      return apiJsonErr("Invalid date (YYYY-MM-DD)", 400);
     }
-    if (
-      !Number.isFinite(streamsCumulative) ||
-      !Number.isInteger(streamsCumulative) ||
-      streamsCumulative < 0
-    ) {
-      return NextResponse.json(
-        { error: "streams_cumulative must be a non-negative integer" },
-        { status: 400 },
-      );
+    if (!Number.isFinite(streamsCumulative) || !Number.isInteger(streamsCumulative) || streamsCumulative < 0) {
+      return apiJsonErr("streams_cumulative must be a non-negative integer", 400);
     }
     if (!note) {
-      return NextResponse.json(
-        { error: "Note is required for overrides" },
-        { status: 400 },
-      );
+      return apiJsonErr("Note is required for overrides", 400);
     }
 
     const svc = supabaseService();
 
-    // Check ISRC exists
-    const { data: track } = await svc
-      .from("tracks")
-      .select("isrc")
-      .eq("isrc", isrc)
-      .maybeSingle();
+    const { data: track } = await svc.from("tracks").select("isrc").eq("isrc", isrc).maybeSingle();
     if (!track) {
-      return NextResponse.json(
-        { error: `Track ${isrc} not found` },
-        { status: 404 },
-      );
+      return apiJsonErr(`Track ${isrc} not found`, 404);
     }
 
-    // Upsert override
     const { error: upsertErr } = await svc
       .from("track_daily_stream_overrides")
       .upsert(
@@ -146,20 +92,16 @@ export async function POST(request: NextRequest) {
       );
 
     if (upsertErr) {
-      return NextResponse.json(
-        { error: upsertErr.message },
-        { status: 500 },
-      );
+      return apiJsonErr(upsertErr.message, 500);
     }
 
-    // Cascade recompute from the override date
     await svc.rpc("spotibase_recompute_playlist_daily_stats_cascade", {
       p_start_date: date,
     });
 
-    return NextResponse.json({
-      ok: true,
-      action: "quick_override",
+    return apiJsonOk({
+      ok: true as const,
+      action: "quick_override" as const,
       isrc,
       date,
       streams_cumulative: streamsCumulative,
@@ -169,18 +111,12 @@ export async function POST(request: NextRequest) {
   if (action === "batch_override") {
     const date = String(body.date ?? "").trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      return NextResponse.json(
-        { error: "Invalid date (YYYY-MM-DD)" },
-        { status: 400 },
-      );
+      return apiJsonErr("Invalid date (YYYY-MM-DD)", 400);
     }
 
     const rawOverrides = body.overrides;
     if (!Array.isArray(rawOverrides) || rawOverrides.length === 0) {
-      return NextResponse.json(
-        { error: "overrides must be a non-empty array" },
-        { status: 400 },
-      );
+      return apiJsonErr("overrides must be a non-empty array", 400);
     }
 
     const validated: { isrc: string; streams_cumulative: number }[] = [];
@@ -189,16 +125,10 @@ export async function POST(request: NextRequest) {
       const isrc = String(e.isrc ?? "").trim().toUpperCase();
       const sc = Number(e.streams_cumulative);
       if (!isrc || !/^[A-Z]{2}[A-Z0-9]{10}$/.test(isrc)) {
-        return NextResponse.json(
-          { error: `Invalid ISRC: ${isrc}` },
-          { status: 400 },
-        );
+        return apiJsonErr(`Invalid ISRC: ${isrc}`, 400);
       }
       if (!Number.isFinite(sc) || !Number.isInteger(sc) || sc < 0) {
-        return NextResponse.json(
-          { error: `Invalid streams_cumulative for ${isrc}` },
-          { status: 400 },
-        );
+        return apiJsonErr(`Invalid streams_cumulative for ${isrc}`, 400);
       }
       validated.push({ isrc, streams_cumulative: sc });
     }
@@ -214,29 +144,24 @@ export async function POST(request: NextRequest) {
       created_by: user.id,
     }));
 
-    const { error: upsertErr } = await svc
-      .from("track_daily_stream_overrides")
-      .upsert(rows, { onConflict: "date,isrc" });
+    const { error: upsertErr } = await svc.from("track_daily_stream_overrides").upsert(rows, { onConflict: "date,isrc" });
 
     if (upsertErr) {
-      return NextResponse.json(
-        { error: upsertErr.message },
-        { status: 500 },
-      );
+      return apiJsonErr(upsertErr.message, 500);
     }
 
     await svc.rpc("spotibase_recompute_playlist_daily_stats_cascade", {
       p_start_date: date,
     });
 
-    return NextResponse.json({
-      ok: true,
-      action: "batch_override",
+    return apiJsonOk({
+      ok: true as const,
+      action: "batch_override" as const,
       date,
       count: validated.length,
       isrcs: validated.map((v) => v.isrc),
     });
   }
 
-  return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
+  return apiJsonErr(`Unknown action: ${action}`, 400);
 }

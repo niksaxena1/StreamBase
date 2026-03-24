@@ -1,9 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 
 import { getActiveWarningSummary } from "@/lib/health/activeWarnings";
 import { logError } from "@/lib/logger";
+import { apiJsonOk } from "@/lib/api/server";
 
-// This route is time-sensitive (used for polling).
 export const dynamic = "force-dynamic";
 
 type HealthSummaryPayload = {
@@ -18,13 +18,10 @@ export async function GET(request: NextRequest) {
     const debugToken = process.env.SB_HEALTH_DEBUG_TOKEN ?? "";
     const debugAllowed = debugRequested && !!debugToken && sp.get("token") === debugToken;
 
-    // Use the shared cached function so counts stay consistent with badge + page.
     const summary = await getActiveWarningSummary();
 
     const payload: HealthSummaryPayload & { debug?: Record<string, unknown> } = {
-      latestRun: summary.runDate
-        ? { runDate: summary.runDate, status: "success" }
-        : null,
+      latestRun: summary.runDate ? { runDate: summary.runDate, status: "success" } : null,
       criticalWarnings: summary.criticalCount,
     };
 
@@ -35,13 +32,13 @@ export async function GET(request: NextRequest) {
       };
     }
 
-    return NextResponse.json(payload satisfies HealthSummaryPayload, {
+    return apiJsonOk(payload satisfies HealthSummaryPayload, {
       headers: { "Cache-Control": "no-store" },
     });
   } catch (e) {
     logError("[health-summary] error", e);
-    return NextResponse.json(
-      { latestRun: null, criticalWarnings: 0 },
+    return apiJsonOk(
+      { latestRun: null, criticalWarnings: 0 } satisfies HealthSummaryPayload,
       { status: 200, headers: { "Cache-Control": "no-store" } },
     );
   }

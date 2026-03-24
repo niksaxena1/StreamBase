@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { type TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChart";
 import { FilterBuilder, type TrackDataPoint, type PlaylistDataPoint, type DateDataPoint } from "@/components/filters";
+import { fetchApiJson } from "@/lib/api";
 import { addDaysISO, dataDateFromRunDate, SOT_DATA_LAG_DAYS } from "@/lib/sotDates";
 
 export function HomeFilterBuilderSection({
@@ -26,11 +27,8 @@ export function HomeFilterBuilderSection({
     let cancelled = false;
     async function load() {
       try {
-        const res = await fetch("/api/playlists/options");
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) return;
-        const obj = json && typeof json === "object" ? (json as Record<string, unknown>) : null;
-        const rows = Array.isArray(obj?.playlists) ? (obj.playlists as unknown[]) : [];
+        const obj = await fetchApiJson<{ playlists?: unknown[] }>("/api/playlists/options");
+        const rows = Array.isArray(obj.playlists) ? obj.playlists : [];
         if (!cancelled) {
           setPlaylistOptions(
             rows.map((r) => {
@@ -57,11 +55,8 @@ export function HomeFilterBuilderSection({
     let cancelled = false;
     async function load() {
       try {
-        const res = await fetch("/api/playlists/with-stats");
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) return;
-        const obj = json && typeof json === "object" ? (json as Record<string, unknown>) : null;
-        const rows = Array.isArray(obj?.playlists) ? (obj.playlists as unknown[]) : [];
+        const obj = await fetchApiJson<{ playlists?: unknown[] }>("/api/playlists/with-stats");
+        const rows = Array.isArray(obj.playlists) ? obj.playlists : [];
         if (!cancelled) {
           setPlaylistData(
             rows.map((r) => {
@@ -95,11 +90,8 @@ export function HomeFilterBuilderSection({
         const url = dateScopePlaylistKey && dateScopePlaylistKey !== "all_catalog"
           ? `/api/dates/catalog-stats?playlist_key=${encodeURIComponent(dateScopePlaylistKey)}`
           : "/api/dates/catalog-stats";
-        const res = await fetch(url);
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) return;
-        const obj = json && typeof json === "object" ? (json as Record<string, unknown>) : null;
-        const rows = Array.isArray(obj?.rows) ? (obj.rows as unknown[]) : [];
+        const obj = await fetchApiJson<{ rows?: unknown[] }>(url);
+        const rows = Array.isArray(obj.rows) ? obj.rows : [];
         if (!cancelled) {
           // First pass: basic fields (convert run dates to data dates)
           const base = rows.map((r) => {
@@ -166,11 +158,8 @@ export function HomeFilterBuilderSection({
     let cancelled = false;
     async function load() {
       try {
-        const res = await fetch("/api/tracks/dates");
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) return;
-        const obj = json && typeof json === "object" ? (json as Record<string, unknown>) : null;
-        const rows = Array.isArray(obj?.rows) ? (obj.rows as unknown[]) : [];
+        const obj = await fetchApiJson<{ rows?: unknown[] }>("/api/tracks/dates");
+        const rows = Array.isArray(obj.rows) ? obj.rows : [];
         const map = new Map<string, { first_seen: string | null; last_seen: string | null }>();
         for (const r of rows) {
           const row = r as Record<string, unknown>;
@@ -194,11 +183,8 @@ export function HomeFilterBuilderSection({
     let cancelled = false;
     async function load() {
       try {
-        const res = await fetch("/api/artists/options");
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) return;
-        const obj = json && typeof json === "object" ? (json as Record<string, unknown>) : null;
-        const rows = Array.isArray(obj?.artists) ? (obj.artists as unknown[]) : [];
+        const obj = await fetchApiJson<{ artists?: unknown[] }>("/api/artists/options");
+        const rows = Array.isArray(obj.artists) ? obj.artists : [];
         const map = new Map<string, string | null>();
         for (const r of rows) {
           const row = r as Record<string, unknown>;

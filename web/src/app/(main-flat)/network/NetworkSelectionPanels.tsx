@@ -3,6 +3,7 @@
 import NextImage from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { Disc3, ListMusic, UserRound } from "lucide-react";
+import { fetchApiJson } from "@/lib/api";
 import { formatDateISO, formatInt } from "@/lib/format";
 import { slugifyForFilename, todayIsoDate } from "@/lib/csv";
 import type { ThemeColors } from "@/components/charts/useThemeColors";
@@ -204,7 +205,7 @@ export function SelectionScopedTracksModal({
     }
     let cancelled = false;
     setListLoading(true);
-    fetch("/api/admin/network-selection-scoped-isrcs", {
+    fetchApiJson<{ isrcs?: string[]; hasMore?: boolean }>("/api/admin/network-selection-scoped-isrcs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -214,14 +215,8 @@ export function SelectionScopedTracksModal({
         offset: 0,
       }),
     })
-      .then((r) => r.json())
-      .then((j: { isrcs?: string[]; hasMore?: boolean; error?: string }) => {
+      .then((j) => {
         if (cancelled) return;
-        if (j.error) {
-          setIsrcs([]);
-          setListTruncated(false);
-          return;
-        }
         setIsrcs(j.isrcs ?? []);
         setListTruncated(Boolean(j.hasMore));
       })
@@ -256,18 +251,17 @@ export function SelectionScopedTracksModal({
 
     void Promise.all(
       parts.map((part) =>
-        fetch("/api/admin/isrc-batch-details", {
+        fetchApiJson<{ tracks?: IsrcDetailPayload[] }>("/api/admin/isrc-batch-details", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ isrcs: part }),
-        }).then((res) => res.json()),
+        }),
       ),
     )
       .then((jsons) => {
         if (cancelled) return;
         const m = new Map<string, IsrcDetailPayload>();
-        for (const j of jsons) {
-          const jj = j as { tracks?: IsrcDetailPayload[] };
+        for (const jj of jsons) {
           for (const t of jj.tracks ?? []) {
             m.set(t.isrc, t);
           }
@@ -533,13 +527,12 @@ export function SelectionCollabsModal({
     }
     let cancelled = false;
     setDetailsLoading(true);
-    fetch("/api/admin/isrc-batch-details", {
+    fetchApiJson<{ tracks?: IsrcDetailPayload[] }>("/api/admin/isrc-batch-details", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ isrcs }),
     })
-      .then((res) => res.json())
-      .then((j: { tracks?: IsrcDetailPayload[]; error?: string }) => {
+      .then((j) => {
         if (cancelled) return;
         const m = new Map<string, IsrcDetailPayload>();
         for (const t of j.tracks ?? []) {

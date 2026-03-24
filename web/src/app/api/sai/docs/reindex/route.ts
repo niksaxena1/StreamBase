@@ -2,10 +2,11 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { readFile } from "node:fs/promises";
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 
 import { supabaseService } from "@/lib/supabase/service";
 import { embedTexts, embeddingsEnabled, embeddingDims } from "@/lib/sai/embeddings";
+import { apiJsonErr, apiJsonOk } from "@/lib/api/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -117,15 +118,15 @@ function requireAdmin(req: NextRequest): string | null {
 
 export async function POST(req: NextRequest) {
   const err = requireAdmin(req);
-  if (err) return NextResponse.json({ error: err }, { status: 401 });
-  if (!embeddingsEnabled()) return NextResponse.json({ error: "OPENAI_API_KEY not configured" }, { status: 400 });
+  if (err) return apiJsonErr(err, 401);
+  if (!embeddingsEnabled()) return apiJsonErr("OPENAI_API_KEY not configured", 400);
 
   // Sanity check: migration and dims must align.
   const dims = embeddingDims();
   if (dims !== 1536) {
-    return NextResponse.json(
-      { error: `SAI_EMBED_DIMS=${dims} but DB migration uses vector(1536). Update migration + code together.` },
-      { status: 400 },
+    return apiJsonErr(
+      `SAI_EMBED_DIMS=${dims} but DB migration uses vector(1536). Update migration + code together.`,
+      400,
     );
   }
 
@@ -149,10 +150,7 @@ export async function POST(req: NextRequest) {
 
     const { vectors } = await embedTexts(inputs);
     if (vectors.length !== batch.length) {
-      return NextResponse.json(
-        { error: `embedding count mismatch: got ${vectors.length}, expected ${batch.length}` },
-        { status: 500 },
-      );
+      return apiJsonErr(`embedding count mismatch: got ${vectors.length}, expected ${batch.length}`, 500);
     }
 
     const rows = batch.map((c, idx) => ({
@@ -168,7 +166,7 @@ export async function POST(req: NextRequest) {
     }));
 
     const { error } = await svc.from("sai_doc_chunks").upsert(rows, { onConflict: "doc_path,chunk_id" });
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) return apiJsonErr(error.message, 500);
     upserted += rows.length;
   }
 
@@ -180,15 +178,12 @@ export async function POST(req: NextRequest) {
     await svc.from("sai_doc_chunks").delete().eq("doc_path", docPath).in("chunk_id", stale);
   }
 
-  return NextResponse.json(
-    {
-      ok: true,
-      docPath,
-      chunks: chunks.length,
-      upserted,
-      deletedStale: stale.length,
-    },
-    { status: 200 },
-  );
+  return apiJsonOk({
+    ok: true as const,
+    docPath,
+    chunks: chunks.length,
+    upserted,
+    deletedStale: stale.length,
+  });
 }
 

@@ -1,20 +1,20 @@
-import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
 import { logError } from "@/lib/logger";
+import { apiJsonErr, apiJsonOk } from "@/lib/api/server";
 
-export const revalidate = 86400; // 24h ISR - track labels change with daily data
+export const revalidate = 86400;
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const isrc = searchParams.get("isrc");
 
   if (!isrc) {
-    return NextResponse.json({ trackLabel: null }, { status: 400 });
+    return apiJsonErr("missing isrc", 400);
   }
 
   try {
     const sb = await supabaseServer();
-    
+
     const { data: track } = await sb
       .from("tracks")
       .select("name,spotify_artist_names")
@@ -22,13 +22,12 @@ export async function GET(request: Request) {
       .maybeSingle();
 
     if (!track) {
-      return NextResponse.json({ trackLabel: isrc });
+      return apiJsonOk({ trackLabel: isrc });
     }
 
     const trackName = track.name ?? isrc;
     const artistNames = track.spotify_artist_names;
 
-    // Format: "[Artist] - [Title]" or just "[Title] ([ISRC])" if no artist
     let trackLabel: string;
     if (artistNames && artistNames.length > 0) {
       trackLabel = `${artistNames[0]} - ${trackName}`;
@@ -36,9 +35,9 @@ export async function GET(request: Request) {
       trackLabel = `${trackName} (${isrc})`;
     }
 
-    return NextResponse.json({ trackLabel });
+    return apiJsonOk({ trackLabel });
   } catch (error) {
     logError("Breadcrumb track error", error);
-    return NextResponse.json({ trackLabel: isrc }, { status: 500 });
+    return apiJsonOk({ trackLabel: isrc });
   }
 }

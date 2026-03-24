@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { fetchApiJson } from "@/lib/api";
 import { SAVED_FEEDBACK_MS } from "@/lib/constants";
+
+type RapidApiAutoFixPayload = {
+  rapidapi_auto_fix_enabled?: boolean;
+  rapidapi_auto_fix_daily_cap?: number;
+  configured?: boolean;
+};
 
 const MAX_CAP = 1000;
 const DEFAULT_CAP = 20;
@@ -19,16 +26,7 @@ export function RapidApiAutoFixSetting() {
   useEffect(() => {
     setLoading(true);
     setError(null);
-    void fetch("/api/user-settings/rapidapi-auto-fix")
-      .then(async (res) => {
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok)
-          throw new Error(
-            (data as Record<string, unknown>)?.error as string ??
-              "Failed to load setting",
-          );
-        return data as Record<string, unknown>;
-      })
+    void fetchApiJson<RapidApiAutoFixPayload>("/api/user-settings/rapidapi-auto-fix")
       .then((data) => {
         setEnabled(data.rapidapi_auto_fix_enabled !== false);
         const cap = typeof data.rapidapi_auto_fix_daily_cap === "number"
@@ -62,13 +60,11 @@ export function RapidApiAutoFixSetting() {
     setSaved(false);
     setSaving(true);
     try {
-      const res = await fetch("/api/user-settings/rapidapi-auto-fix", {
+      const data = await fetchApiJson<RapidApiAutoFixPayload>("/api/user-settings/rapidapi-auto-fix", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(patch),
       });
-      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-      if (!res.ok) throw new Error((data.error as string) ?? "Failed to update setting");
 
       setEnabled(data.rapidapi_auto_fix_enabled !== false);
       const cap = typeof data.rapidapi_auto_fix_daily_cap === "number"

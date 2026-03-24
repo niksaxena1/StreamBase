@@ -18,6 +18,7 @@ import {
 import { useMetric } from "@/components/metrics/MetricContext";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/GlassTable";
+import { fetchApiJson } from "@/lib/api";
 import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
 import { readStoredBool, readStoredNumber, readStoredString, writeStoredBool, writeStoredNumber, writeStoredString } from "@/lib/storage";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
@@ -129,9 +130,8 @@ export function HomeConcentrationSection(props: {
 
   // Fetch playlist list once on mount
   useEffect(() => {
-    fetch("/api/playlists/options")
-      .then((r) => r.json())
-      .then((body: { playlists?: PlaylistOption[] }) => {
+    void fetchApiJson<{ playlists?: PlaylistOption[] }>("/api/playlists/options")
+      .then((body) => {
         if (body.playlists) setPlaylists(body.playlists);
       })
       .catch(() => { /* ignore */ });
@@ -146,13 +146,12 @@ export function HomeConcentrationSection(props: {
     let cancelled = false;
     setPlaylistLoading(true);
 
-    fetch("/api/playlists/memberships", {
+    void fetchApiJson<{ rows?: Array<{ isrc: string }> }>("/api/playlists/memberships", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ date: props.latestRunDate, playlist_keys: [playlistKey] }),
     })
-      .then((r) => r.json())
-      .then((body: { rows?: Array<{ isrc: string }> }) => {
+      .then((body) => {
         if (cancelled) return;
         const isrcs = new Set<string>((body.rows ?? []).map((r) => r.isrc).filter(Boolean));
         setPlaylistIsrcs(isrcs);
@@ -363,13 +362,11 @@ export function HomeConcentrationSection(props: {
     setShareBusy(true);
     setShareHint(null);
     try {
-      const r = await fetch("/api/share/concentration", {
+      const j = await fetchApiJson<{ url?: string; expires_at?: string }>("/api/share/concentration", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(concentrationSharePayload),
       });
-      const j = (await r.json()) as { error?: string; url?: string; expires_at?: string };
-      if (!r.ok) throw new Error(j.error ?? "Could not create share link");
       const url = j.url;
       if (!url) throw new Error("Missing URL in response");
       const expLabel = j.expires_at ? formatDateISO(j.expires_at.slice(0, 10)) : null;

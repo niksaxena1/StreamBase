@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { fetchApiJson } from "@/lib/api";
 import { SAVED_FEEDBACK_MS } from "@/lib/constants";
+
+type WeekHighlightPayload = {
+  chart_week_highlight_day: number;
+  configured?: boolean;
+};
 
 const DAYS: Array<{ value: number; label: string }> = [
   { value: 0, label: "Sunday" },
@@ -30,15 +36,10 @@ export function WeekHighlightDaySetting() {
   useEffect(() => {
     setLoading(true);
     setError(null);
-    void fetch("/api/user-settings/week-highlight-day")
-      .then(async (res) => {
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error((data as any)?.error ?? "Failed to load setting");
-        return data;
-      })
+    void fetchApiJson<WeekHighlightPayload>("/api/user-settings/week-highlight-day")
       .then((data) => {
-        setDay(normalizeDay((data as any)?.chart_week_highlight_day));
-        setConfigured((data as any)?.configured !== false);
+        setDay(normalizeDay(data.chart_week_highlight_day));
+        setConfigured(data.configured !== false);
         setLoading(false);
       })
       .catch((e) => {
@@ -52,15 +53,13 @@ export function WeekHighlightDaySetting() {
     setSaved(false);
     setSaving(true);
     try {
-      const res = await fetch("/api/user-settings/week-highlight-day", {
+      const data = await fetchApiJson<WeekHighlightPayload>("/api/user-settings/week-highlight-day", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ chart_week_highlight_day: nextDay }),
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error((data as any)?.error ?? "Failed to update setting");
 
-      setDay(normalizeDay((data as any)?.chart_week_highlight_day ?? nextDay));
+      setDay(normalizeDay(data.chart_week_highlight_day ?? nextDay));
       setSaved(true);
       setTimeout(() => setSaved(false), SAVED_FEEDBACK_MS);
 

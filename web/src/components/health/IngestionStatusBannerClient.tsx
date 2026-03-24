@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
+import { fetchApiJson } from "@/lib/api";
 import { dataDateFromRunDate } from "@/lib/sotDates";
 
 type HealthSummary = {
@@ -45,9 +46,7 @@ export function IngestionStatusBannerClient(props: { initialSummary: HealthSumma
 
     async function tick() {
       try {
-        const res = await fetch("/api/health-summary", { cache: "no-store" });
-        if (!res.ok) return;
-        const next = (await res.json()) as HealthSummary;
+        const next = await fetchApiJson<HealthSummary>("/api/health-summary", { cache: "no-store" });
         if (!cancelled) setSummary(next);
       } catch {
         // ignore (banner is best-effort)

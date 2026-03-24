@@ -1,40 +1,21 @@
-import { type NextRequest, NextResponse } from "next/server";
+import { type NextRequest } from "next/server";
 
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
+import { apiJsonErr, apiJsonOk, requireAdmin } from "@/lib/api/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/**
- * Returns daily aggregate stats for a playlist (defaults to all_catalog).
- * Each row = one date with streams, track counts, growth, etc.
- *
- * GET /api/dates/catalog-stats?playlist_key=<key>
- * Returns { rows: DateStatRow[], playlist_key: string }
- */
 export async function GET(req: NextRequest) {
   const sb = await supabaseServer();
-  const { data: userData } = await sb.auth.getUser();
-  if (!userData.user) {
-    return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
-  }
+  const auth = await requireAdmin(sb);
+  if (!auth.ok) return auth.response;
 
-  const { data: isAdmin, error: adminErr } = await sb.rpc("is_admin");
-  if (adminErr) {
-    return NextResponse.json({ error: adminErr.message }, { status: 500 });
-  }
-  if (!isAdmin) {
-    return NextResponse.json({ error: "forbidden" }, { status: 403 });
-  }
-
-  const playlistKey =
-    req.nextUrl.searchParams.get("playlist_key")?.trim() || "all_catalog";
+  const playlistKey = req.nextUrl.searchParams.get("playlist_key")?.trim() || "all_catalog";
 
   const svc = supabaseService();
 
-  // Cap at 1100 rows (~3 years of daily data). Data only changes once per daily ingestion run,
-  // so we also add caching headers to avoid redundant DB hits throughout the day.
   const { data, error } = await svc
     .from("playlist_daily_stats")
     .select(
@@ -45,7 +26,7 @@ export async function GET(req: NextRequest) {
     .limit(1100);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiJsonErr(error.message, 500);
   }
 
   const raw = (data ?? []) as Array<{
@@ -65,9 +46,7 @@ export async function GET(req: NextRequest) {
     const prevTrackCount = prev ? Number(prev.track_count ?? 0) : trackCount;
 
     const growthPct =
-      prevDailyStreams > 0
-        ? ((dailyStreams - prevDailyStreams) / prevDailyStreams) * 100
-        : null;
+      prevDailyStreams > 0 ? ((dailyStreams - prevDailyStreams) / prevDailyStreams) * 100 : null;
 
     const tracksAdded = trackCount - prevTrackCount;
 
@@ -83,17 +62,16 @@ export async function GET(req: NextRequest) {
       day_of_week: dayOfWeek,
       est_daily_revenue: r.est_revenue_daily_net != null ? Number(r.est_revenue_daily_net) : null,
       missing_streams_count:
-        r.missing_streams_track_count != null
-          ? Number(r.missing_streams_track_count)
-          : 0,
+        r.missing_streams_track_count != null ? Number(r.missing_streams_track_count) : 0,
     };
   });
 
-  // Data changes at most once per daily ingestion; cache aggressively at the CDN/browser level.
-  return NextResponse.json({ rows, playlist_key: playlistKey }, {
-    status: 200,
-    headers: {
-      "Cache-Control": "max-age=3600, stale-while-revalidate=86400",
+  return apiJsonOk(
+    { rows, playlist_key: playlistKey },
+    {
+      headers: {
+        "Cache-Control": "max-age=3600, stale-while-revalidate=86400",
+      },
     },
-  });
+  );
 }

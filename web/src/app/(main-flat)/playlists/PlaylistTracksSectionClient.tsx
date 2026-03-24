@@ -5,6 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { Download } from "lucide-react";
 
+import { fetchApiJson } from "@/lib/api";
 import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
 import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/GlassTable";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
@@ -235,10 +236,10 @@ export function PlaylistTracksSectionClient(props: {
     let cancelled = false;
     async function load() {
       try {
-        const res = await fetch("/api/artists/options");
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) return;
-        const rows = Array.isArray((json as any)?.artists) ? ((json as any).artists as any[]) : [];
+        const json = await fetchApiJson<{ artists?: Array<{ artist_id?: string; image_url?: string | null }> }>(
+          "/api/artists/options",
+        );
+        const rows = Array.isArray(json.artists) ? json.artists : [];
         const map = new Map<string, string | null>();
         for (const r of rows) {
           const id = String(r?.artist_id ?? "");

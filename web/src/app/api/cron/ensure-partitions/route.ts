@@ -1,14 +1,6 @@
-import { NextResponse } from "next/server";
-
 import { supabaseService } from "@/lib/supabase/service";
+import { apiJsonErr, apiJsonOk } from "@/lib/api/server";
 
-/**
- * Cron endpoint: ensures monthly partitions exist for track_daily_streams
- * so ETL can insert data for future months. Call monthly (e.g. 1st of month).
- *
- * Secured by CRON_SECRET: send Authorization: Bearer <CRON_SECRET>.
- * Set CRON_SECRET in Vercel (and .env.local for local testing).
- */
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
@@ -26,15 +18,12 @@ function isAuthorized(req: Request): boolean {
 
 export async function GET(req: Request) {
   if (!isAuthorized(req)) {
-    return NextResponse.json(
-      { ok: false, error: "unauthorized" },
-      { status: 401 }
-    );
+    return apiJsonErr("unauthorized", 401);
   }
 
   const monthsAhead = Math.min(
     24,
-    Math.max(1, Number(new URL(req.url).searchParams.get("months_ahead")) || 6)
+    Math.max(1, Number(new URL(req.url).searchParams.get("months_ahead")) || 6),
   );
 
   try {
@@ -45,22 +34,15 @@ export async function GET(req: Request) {
 
     if (error) {
       console.error("ensure_track_daily_streams_partitions failed:", error);
-      return NextResponse.json(
-        { ok: false, error: error.message },
-        { status: 500 }
-      );
+      return apiJsonErr(error.message, 500);
     }
 
-    return NextResponse.json({
-      ok: true,
+    return apiJsonOk({
       message: `Ensured partitions for the next ${monthsAhead} months.`,
     });
   } catch (e) {
     console.error("ensure-partitions cron error:", e);
-    return NextResponse.json(
-      { ok: false, error: e instanceof Error ? e.message : "Unknown error" },
-      { status: 500 }
-    );
+    return apiJsonErr(e instanceof Error ? e.message : "Unknown error", 500);
   }
 }
 

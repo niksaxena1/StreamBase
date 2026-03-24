@@ -5,6 +5,7 @@ import NextImage from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Disc3, ExternalLink, Loader2, Music, UserRound } from "lucide-react";
+import { fetchApiJson } from "@/lib/api";
 import { formatDateISO } from "@/lib/format";
 import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
 import { Modal } from "@/components/ui/Modal";
@@ -89,19 +90,13 @@ export function FrozenEdgeTrackDetailModal({
     let cancelled = false;
     setLoading(true);
     setError(null);
-    fetch("/api/admin/isrc-batch-details", {
+    fetchApiJson<{ tracks?: IsrcDetailPayload[] }>("/api/admin/isrc-batch-details", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ isrcs: [isrc] }),
     })
-      .then((res) => res.json())
-      .then((j: { tracks?: IsrcDetailPayload[]; error?: string }) => {
+      .then((j) => {
         if (cancelled) return;
-        if (j.error) {
-          setDetail(null);
-          setError(j.error);
-          return;
-        }
         const t = j.tracks?.find((x) => x.isrc === isrc) ?? null;
         setDetail(t ?? null);
       })

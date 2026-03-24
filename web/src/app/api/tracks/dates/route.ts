@@ -1,25 +1,14 @@
-import { NextResponse } from "next/server";
-
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
+import { apiJsonErr, apiJsonOk, requireAdmin } from "@/lib/api/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/**
- * GET /api/tracks/dates
- * Returns { rows: Array<{ isrc, first_seen, last_seen }> } for all tracks.
- */
 export async function GET() {
   const sb = await supabaseServer();
-  const { data: userData } = await sb.auth.getUser();
-  if (!userData.user) {
-    return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
-  }
-
-  const { data: isAdmin, error: adminErr } = await sb.rpc("is_admin");
-  if (adminErr) return NextResponse.json({ error: adminErr.message }, { status: 500 });
-  if (!isAdmin) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  const auth = await requireAdmin(sb);
+  if (!auth.ok) return auth.response;
 
   const svc = supabaseService();
 
@@ -33,8 +22,8 @@ export async function GET() {
       .select("isrc,first_seen,last_seen")
       .range(offset, offset + pageSize - 1);
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    const rows = (data ?? []) as any[];
+    if (error) return apiJsonErr(error.message, 500);
+    const rows = (data ?? []) as Array<{ isrc?: unknown; first_seen?: unknown; last_seen?: unknown }>;
     if (!rows.length) break;
 
     for (const r of rows) {
@@ -48,8 +37,7 @@ export async function GET() {
     if (rows.length < pageSize) break;
   }
 
-  // Track first_seen/last_seen only change on new ingestion (once daily at most).
-  return NextResponse.json(
+  return apiJsonOk(
     { rows: out },
     { headers: { "Cache-Control": "max-age=3600, stale-while-revalidate=86400" } },
   );

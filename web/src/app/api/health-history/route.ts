@@ -1,11 +1,10 @@
-import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
+import { apiJsonErr, apiJsonOk, requireUser } from "@/lib/api/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** Warning codes worth tracking in the history chart (critical/warn only). */
 const INTERESTING_CODES = new Set([
   "catalog_missing_stream_snapshots",
   "catalog_streams_missing_prev_nonzero",
@@ -21,29 +20,14 @@ const INTERESTING_CODES = new Set([
   "ingestion_exception",
 ]);
 
-/**
- * GET /api/health-history
- *
- * Returns warning counts grouped by run_date and code for the past 30 days.
- * Only includes "interesting" warning codes (critical/warn severity).
- *
- * Reads from health_warning_history_mv (materialized view) when available,
- * falling back to the raw ingestion_warnings table.
- */
 export async function GET() {
   const sb = await supabaseServer();
-  const { data } = await sb.auth.getUser();
-  if (!data.user) {
-    return NextResponse.json({ error: "not authenticated" }, { status: 401 });
-  }
+  const auth = await requireUser(sb);
+  if (!auth.ok) return auth.response;
 
   const svc = supabaseService();
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000)
-    .toISOString()
-    .slice(0, 10);
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
 
-  // Try the materialized view first; fall back to the raw table on any error
-  // (e.g. if the migration hasn't been run yet).
   type HistoryRow = { run_date: string; code: string; severity: string; warning_count?: number };
   let rows: HistoryRow[] | null = null;
   let usedMv = false;
@@ -72,12 +56,11 @@ export async function GET() {
       .order("run_date", { ascending: true });
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return apiJsonErr(error.message, 500);
     }
     rows = (rawRows ?? []) as HistoryRow[];
   }
 
-  // Build date → code → count map
   const dateMap = new Map<string, Record<string, number>>();
   const allCodes = new Set<string>();
 
@@ -90,8 +73,6 @@ export async function GET() {
     if (!dateMap.has(date)) dateMap.set(date, {});
     const entry = dateMap.get(date)!;
 
-    // When reading from the MV each row is already an aggregate; from the raw
-    // table each row is one warning instance (count = 1).
     const increment = usedMv ? Number((r as { warning_count?: number }).warning_count ?? 1) : 1;
     entry[code] = (entry[code] ?? 0) + increment;
   }
@@ -100,8 +81,7 @@ export async function GET() {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, warnings]) => ({ date, warnings }));
 
-  // Warning history changes at most once per daily ingestion run.
-  return NextResponse.json(
+  return apiJsonOk(
     { dates, codes: Array.from(allCodes).sort() },
     { headers: { "Cache-Control": "max-age=300, stale-while-revalidate=3600" } },
   );

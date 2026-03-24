@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { isSchemaMissing } from "@/lib/supabase/schemaMissing";
+import { apiJsonErr, apiJsonOk, readJsonBodyOptional, requireAdmin } from "@/lib/api/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,16 +28,12 @@ function parseAmountUsdOrNull(raw: unknown): number | null {
 
 export async function GET(req: NextRequest) {
   const sb = await supabaseServer();
-  const { data: userData } = await sb.auth.getUser();
-  if (!userData.user) return NextResponse.json({ ok: false, error: "unauthenticated" }, { status: 401 });
-
-  const { data: isAdmin, error: adminErr } = await sb.rpc("is_admin");
-  if (adminErr) return NextResponse.json({ ok: false, error: adminErr.message }, { status: 500 });
-  if (!isAdmin) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  const auth = await requireAdmin(sb);
+  if (!auth.ok) return auth.response;
 
   const { searchParams } = new URL(req.url);
   const collector = parseCollector(searchParams.get("collector"));
-  if (!collector) return NextResponse.json({ ok: false, error: "missing collector" }, { status: 400 });
+  if (!collector) return apiJsonErr("missing collector", 400);
 
   const svc = supabaseService();
   const { data, error } = await svc
@@ -47,64 +44,54 @@ export async function GET(req: NextRequest) {
 
   if (error) {
     if (isSchemaMissing(error)) {
-      // Best-effort overlay: if the table isn't migrated yet, just show no markers.
-      return NextResponse.json({ ok: true, items: [], configured: false }, { status: 200 });
+      return apiJsonOk({ ok: true as const, items: [], configured: false as const });
     }
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    return apiJsonErr(error.message, 500);
   }
 
-  const items = (data ?? []).map((r: any) => ({
+  const items = (data ?? []).map((r: Record<string, unknown>) => ({
     collector: String(r.collector ?? "").toUpperCase(),
     month: String(r.month ?? ""),
     amount_usd: r.amount_usd == null ? null : Number(r.amount_usd),
     updated_at: r.updated_at ?? null,
   }));
 
-  return NextResponse.json({ ok: true, items }, { status: 200 });
+  return apiJsonOk({ ok: true as const, items });
 }
 
 export async function POST(req: NextRequest) {
   const sb = await supabaseServer();
-  const { data: userData } = await sb.auth.getUser();
-  const user = userData.user;
-  if (!user) return NextResponse.json({ ok: false, error: "unauthenticated" }, { status: 401 });
+  const auth = await requireAdmin(sb);
+  if (!auth.ok) return auth.response;
+  const user = auth.user;
 
-  const { data: isAdmin, error: adminErr } = await sb.rpc("is_admin");
-  if (adminErr) return NextResponse.json({ ok: false, error: adminErr.message }, { status: 500 });
-  if (!isAdmin) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
-
-  const body = await req.json().catch(() => ({} as any));
-  const collector = parseCollector(body?.collector);
-  const month = String(body?.month ?? "").trim();
+  const body = await readJsonBodyOptional(req);
+  const collector = parseCollector(body.collector);
+  const month = String(body.month ?? "").trim();
   let amountUsd: number | null = null;
   try {
-    amountUsd = parseAmountUsdOrNull(body?.amount_usd ?? body?.amountUsd ?? body?.value);
+    amountUsd = parseAmountUsdOrNull(body.amount_usd ?? body.amountUsd ?? body.value);
   } catch (e) {
-    return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : "Invalid amount." }, { status: 400 });
+    return apiJsonErr(e instanceof Error ? e.message : "Invalid amount.", 400);
   }
 
-  if (!collector) return NextResponse.json({ ok: false, error: "missing collector" }, { status: 400 });
-  if (!isMonthKey(month)) return NextResponse.json({ ok: false, error: "invalid month (expected YYYY-MM)" }, { status: 400 });
+  if (!collector) return apiJsonErr("missing collector", 400);
+  if (!isMonthKey(month)) return apiJsonErr("invalid month (expected YYYY-MM)", 400);
 
   const svc = supabaseService();
 
-  // Clear (delete) when amount is null.
   if (amountUsd == null) {
-    const { error } = await svc
-      .from("collector_monthly_actual_revenue")
-      .delete()
-      .eq("collector", collector)
-      .eq("month", month);
+    const { error } = await svc.from("collector_monthly_actual_revenue").delete().eq("collector", collector).eq("month", month);
     if (error) {
       if (isSchemaMissing(error)) {
-        return NextResponse.json(
-          { ok: false, error: "Monthly revenue overlay isn’t configured in the database yet. Apply migrations, then retry." },
-          { status: 503 },
+        return apiJsonErr(
+          "Monthly revenue overlay isn’t configured in the database yet. Apply migrations, then retry.",
+          503,
         );
       }
-      return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+      return apiJsonErr(error.message, 500);
     }
-    return NextResponse.json({ ok: true, cleared: true }, { status: 200 });
+    return apiJsonOk({ ok: true as const, cleared: true as const });
   }
 
   const { data, error } = await svc
@@ -126,25 +113,22 @@ export async function POST(req: NextRequest) {
 
   if (error) {
     if (isSchemaMissing(error)) {
-      return NextResponse.json(
-        { ok: false, error: "Monthly revenue overlay isn’t configured in the database yet. Apply migrations, then retry." },
-        { status: 503 },
+      return apiJsonErr(
+        "Monthly revenue overlay isn’t configured in the database yet. Apply migrations, then retry.",
+        503,
       );
     }
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    return apiJsonErr(error.message, 500);
   }
 
-  return NextResponse.json(
-    {
-      ok: true,
-      item: {
-        collector: String((data as any)?.collector ?? collector).toUpperCase(),
-        month: String((data as any)?.month ?? month),
-        amount_usd: (data as any)?.amount_usd == null ? amountUsd : Number((data as any).amount_usd),
-        updated_at: (data as any)?.updated_at ?? null,
-      },
+  const row = data as Record<string, unknown> | null;
+  return apiJsonOk({
+    ok: true as const,
+    item: {
+      collector: String(row?.collector ?? collector).toUpperCase(),
+      month: String(row?.month ?? month),
+      amount_usd: row?.amount_usd == null ? amountUsd : Number(row.amount_usd),
+      updated_at: row?.updated_at ?? null,
     },
-    { status: 200 },
-  );
+  });
 }
-

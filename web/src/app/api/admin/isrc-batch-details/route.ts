@@ -1,7 +1,6 @@
-import { NextResponse } from "next/server";
-
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
+import { apiJsonErr, apiJsonOk, readJsonBody, requireAdmin } from "@/lib/api/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -98,25 +97,12 @@ type IsrcBatchDetailRow = {
 
 export async function POST(req: Request) {
   const sb = await supabaseServer();
-  const { data: userData } = await sb.auth.getUser();
-  if (!userData.user) {
-    return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
-  }
+  const auth = await requireAdmin(sb);
+  if (!auth.ok) return auth.response;
 
-  const { data: isAdmin, error: adminErr } = await sb.rpc("is_admin");
-  if (adminErr) {
-    return NextResponse.json({ error: adminErr.message }, { status: 500 });
-  }
-  if (!isAdmin) {
-    return NextResponse.json({ error: "forbidden" }, { status: 403 });
-  }
-
-  let body: unknown;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "invalid JSON" }, { status: 400 });
-  }
+  const parsed = await readJsonBody(req);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.body;
 
   const raw = (body as { isrcs?: unknown })?.isrcs;
   const isrcsRaw = (
@@ -127,7 +113,7 @@ export async function POST(req: Request) {
   const isrcs = [...new Set(isrcsRaw)];
 
   if (!isrcs.length) {
-    return NextResponse.json({ tracks: [] as IsrcBatchDetailRow[] });
+    return apiJsonOk({ tracks: [] as IsrcBatchDetailRow[] });
   }
 
   const svc = supabaseService();
@@ -156,7 +142,7 @@ export async function POST(req: Request) {
 
     if (error) {
       console.error("isrc-batch-details: tracks", error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return apiJsonErr(error.message, 500);
     }
     for (const r of (data ?? []) as Array<{
       isrc: string;
@@ -336,5 +322,5 @@ export async function POST(req: Request) {
     };
   });
 
-  return NextResponse.json({ tracks });
+  return apiJsonOk({ tracks });
 }

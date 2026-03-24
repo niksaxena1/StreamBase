@@ -1,7 +1,6 @@
-import { NextResponse } from "next/server";
-
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
+import { apiJsonErr, apiJsonOk, readJsonBody, requireAdmin } from "@/lib/api/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -54,27 +53,13 @@ const MAX_ISRCS = 4000;
 
 export async function POST(req: Request) {
   const sb = await supabaseServer();
-  const { data: userData } = await sb.auth.getUser();
-  if (!userData.user) {
-    return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
-  }
+  const auth = await requireAdmin(sb);
+  if (!auth.ok) return auth.response;
 
-  const { data: isAdmin, error: adminErr } = await sb.rpc("is_admin");
-  if (adminErr) {
-    return NextResponse.json({ error: adminErr.message }, { status: 500 });
-  }
-  if (!isAdmin) {
-    return NextResponse.json({ error: "forbidden" }, { status: 403 });
-  }
+  const parsed = await readJsonBody(req);
+  if (!parsed.ok) return parsed.response;
 
-  let body: unknown;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "invalid JSON" }, { status: 400 });
-  }
-
-  const raw = (body as { isrcs?: unknown })?.isrcs;
+  const raw = (parsed.body as { isrcs?: unknown })?.isrcs;
   const isrcs = (
     Array.isArray(raw)
       ? raw.filter((x): x is string => typeof x === "string" && x.trim().length > 0).map((s) => s.trim())
@@ -82,7 +67,7 @@ export async function POST(req: Request) {
   ).slice(0, MAX_ISRCS);
 
   if (!isrcs.length) {
-    return NextResponse.json({
+    return apiJsonOk({
       trackCount: 0,
       totalStreams: null as number | null,
       dailyStreams: null as number | null,
@@ -139,7 +124,7 @@ export async function POST(req: Request) {
     }
   }
 
-  return NextResponse.json({
+  return apiJsonOk({
     trackCount: counted,
     totalStreams: hasTotal ? totalSum : null,
     dailyStreams: hasDaily ? dailySum : null,

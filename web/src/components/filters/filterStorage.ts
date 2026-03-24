@@ -5,6 +5,8 @@
  * All CRUD operations are async.
  */
 
+import { fetchApiJson } from "@/lib/api";
+
 import type { FilterConfig } from "./filterTypes";
 
 const API_BASE = "/api/filters/saved";
@@ -16,10 +18,8 @@ const API_BASE = "/api/filters/saved";
 /** Fetch all saved filters for the current user. */
 export async function loadSavedFilters(): Promise<FilterConfig[]> {
   try {
-    const res = await fetch(API_BASE);
-    if (!res.ok) return [];
-    const json = await res.json();
-    return Array.isArray(json?.filters) ? json.filters : [];
+    const data = await fetchApiJson<{ filters: FilterConfig[] }>(API_BASE);
+    return Array.isArray(data.filters) ? data.filters : [];
   } catch {
     return [];
   }
@@ -28,7 +28,7 @@ export async function loadSavedFilters(): Promise<FilterConfig[]> {
 /** Create or update a saved filter. Returns the persisted filter. */
 export async function saveFilter(filter: FilterConfig): Promise<FilterConfig | null> {
   try {
-    const res = await fetch(API_BASE, {
+    const data = await fetchApiJson<{ filter: FilterConfig }>(API_BASE, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -39,9 +39,7 @@ export async function saveFilter(filter: FilterConfig): Promise<FilterConfig | n
         groupJoinLogic: filter.groupJoinLogic,
       }),
     });
-    if (!res.ok) return null;
-    const json = await res.json();
-    return json?.filter ?? null;
+    return data.filter ?? null;
   } catch {
     return null;
   }
@@ -50,10 +48,10 @@ export async function saveFilter(filter: FilterConfig): Promise<FilterConfig | n
 /** Delete a filter by ID. Returns true on success. */
 export async function deleteFilter(filterId: string): Promise<boolean> {
   try {
-    const res = await fetch(`${API_BASE}?id=${encodeURIComponent(filterId)}`, {
+    await fetchApiJson<{ ok: true }>(`${API_BASE}?id=${encodeURIComponent(filterId)}`, {
       method: "DELETE",
     });
-    return res.ok;
+    return true;
   } catch {
     return false;
   }

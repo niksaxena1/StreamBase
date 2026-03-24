@@ -1,8 +1,7 @@
-import { NextResponse } from "next/server";
-
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { getPlaylist } from "@/lib/spotify";
+import { apiJsonErr, apiJsonOk, readJsonBodyOptional, requireAdmin } from "@/lib/api/server";
 
 type Body = {
   cursor?: string | null;
@@ -12,25 +11,11 @@ type Body = {
 
 export async function POST(req: Request) {
   const sb = await supabaseServer();
-  const { data: userData } = await sb.auth.getUser();
-  if (!userData.user) {
-    return NextResponse.json({ ok: false, error: "unauthenticated" }, { status: 401 });
-  }
+  const auth = await requireAdmin(sb);
+  if (!auth.ok) return auth.response;
 
-  const { data: isAdmin, error: adminErr } = await sb.rpc("is_admin");
-  if (adminErr) {
-    return NextResponse.json({ ok: false, error: adminErr.message }, { status: 500 });
-  }
-  if (!isAdmin) {
-    return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
-  }
-
-  let body: Body = {};
-  try {
-    body = (await req.json()) as Body;
-  } catch {
-    body = {};
-  }
+  const raw = await readJsonBodyOptional(req);
+  const body = raw as Body;
 
   const cursor = (body.cursor ?? null) as string | null;
   const limit = Math.max(1, Math.min(Number(body.limit ?? 5) || 5, 10));
@@ -50,7 +35,7 @@ export async function POST(req: Request) {
 
   const { data: rows, error } = await q;
   if (error) {
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    return apiJsonErr(error.message, 500);
   }
 
   const items = (rows ?? []) as Array<{
@@ -88,12 +73,10 @@ export async function POST(req: Request) {
   const nextCursor = items.length ? items[items.length - 1]!.playlist_key : null;
   const done = items.length < limit;
 
-  return NextResponse.json({
-    ok: true,
+  return apiJsonOk({
     processed,
     cursor: nextCursor,
     done,
     failures,
   });
 }
-

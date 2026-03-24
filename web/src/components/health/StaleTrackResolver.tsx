@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
+import { fetchApiJson } from "@/lib/api";
 import { TrackListItem } from "@/components/health/TrackListItem";
 import type { StaleTrack } from "@/lib/health/types";
 
@@ -49,23 +50,11 @@ export function StaleTrackResolver({
     }
 
     try {
-      const res = await fetch("/api/rapidapi-stale-lookup", {
+      const data = await fetchApiJson<{ results: LookupResult[] }>("/api/rapidapi-stale-lookup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isrcs, staleStreams }),
       });
-
-      if (!res.ok) {
-        const d = (await res.json().catch(() => ({}))) as Record<
-          string,
-          unknown
-        >;
-        throw new Error(
-          (d?.error as string) ?? `HTTP ${res.status}`,
-        );
-      }
-
-      const data = (await res.json()) as { results: LookupResult[] };
       const map = new Map<string, LookupResult>();
       const autoSelect = new Set<string>();
 
@@ -121,7 +110,7 @@ export function StaleTrackResolver({
       .filter(Boolean) as { isrc: string; streams_cumulative: number }[];
 
     try {
-      const res = await fetch("/api/health-actions", {
+      await fetchApiJson("/api/health-actions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -130,16 +119,6 @@ export function StaleTrackResolver({
           overrides,
         }),
       });
-
-      if (!res.ok) {
-        const d = (await res.json().catch(() => ({}))) as Record<
-          string,
-          unknown
-        >;
-        throw new Error(
-          (d?.error as string) ?? `HTTP ${res.status}`,
-        );
-      }
 
       setAppliedCount(overrides.length);
       setPhase("done");

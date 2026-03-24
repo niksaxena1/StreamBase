@@ -1,8 +1,9 @@
-import { NextResponse, NextRequest } from "next/server";
+import { NextRequest } from "next/server";
 
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { isSchemaMissing } from "@/lib/supabase/schemaMissing";
+import { apiJsonErr, apiJsonOk, readJsonBodyOptional, requireUser } from "@/lib/api/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,65 +23,54 @@ function parseBool(raw: unknown): boolean {
 
 export async function GET() {
   const sb = await supabaseServer();
-  const { data } = await sb.auth.getUser();
-  const user = data.user;
-  if (!user) return NextResponse.json({ error: "not authenticated" }, { status: 401 });
+  const auth = await requireUser(sb);
+  if (!auth.ok) return auth.response;
 
   const svc = supabaseService();
   const { data: settings, error } = await svc
     .from("user_settings")
     .select("chart_zoom_daily_y_axis,chart_zoom_daily_y_axis_collector_comparison")
-    .eq("user_id", user.id)
+    .eq("user_id", auth.user.id)
     .maybeSingle();
 
   if (error) {
     if (isSchemaMissing(error)) {
-      return NextResponse.json(
-        {
-          chart_zoom_daily_y_axis: DEFAULT_ZOOM_DAILY,
-          chart_zoom_daily_y_axis_collector_comparison: DEFAULT_ZOOM_COLLECTOR_COMPARISON,
-          configured: false,
-        },
-        { status: 200 },
-      );
+      return apiJsonOk({
+        chart_zoom_daily_y_axis: DEFAULT_ZOOM_DAILY,
+        chart_zoom_daily_y_axis_collector_comparison: DEFAULT_ZOOM_COLLECTOR_COMPARISON,
+        configured: false as const,
+      });
     }
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiJsonErr(error.message, 500);
   }
 
-  const zoomDaily = (settings as any)?.chart_zoom_daily_y_axis;
-  const zoomCollector = (settings as any)?.chart_zoom_daily_y_axis_collector_comparison;
+  const zoomDaily = (settings as { chart_zoom_daily_y_axis?: unknown } | null)?.chart_zoom_daily_y_axis;
+  const zoomCollector = (settings as { chart_zoom_daily_y_axis_collector_comparison?: unknown } | null)
+    ?.chart_zoom_daily_y_axis_collector_comparison;
 
-  return NextResponse.json(
-    {
-      chart_zoom_daily_y_axis: typeof zoomDaily === "boolean" ? zoomDaily : DEFAULT_ZOOM_DAILY,
-      chart_zoom_daily_y_axis_collector_comparison:
-        typeof zoomCollector === "boolean" ? zoomCollector : DEFAULT_ZOOM_COLLECTOR_COMPARISON,
-      configured: true,
-    },
-    { status: 200 },
-  );
+  return apiJsonOk({
+    chart_zoom_daily_y_axis: typeof zoomDaily === "boolean" ? zoomDaily : DEFAULT_ZOOM_DAILY,
+    chart_zoom_daily_y_axis_collector_comparison:
+      typeof zoomCollector === "boolean" ? zoomCollector : DEFAULT_ZOOM_COLLECTOR_COMPARISON,
+    configured: true as const,
+  });
 }
 
 export async function POST(request: NextRequest) {
   const sb = await supabaseServer();
-  const { data } = await sb.auth.getUser();
-  const user = data.user;
-  if (!user) return NextResponse.json({ error: "not authenticated" }, { status: 401 });
+  const auth = await requireUser(sb);
+  if (!auth.ok) return auth.response;
 
-  const body = await request.json().catch(() => ({}));
+  const body = await readJsonBodyOptional(request);
   let zoomDaily: boolean;
   let zoomCollector: boolean;
   try {
-    zoomDaily = parseBool(
-      (body as any)?.chart_zoom_daily_y_axis ?? (body as any)?.zoom_daily ?? (body as any)?.enabled,
-    );
+    zoomDaily = parseBool(body.chart_zoom_daily_y_axis ?? body.zoom_daily ?? body.enabled);
     zoomCollector = parseBool(
-      (body as any)?.chart_zoom_daily_y_axis_collector_comparison ??
-        (body as any)?.zoom_collector_comparison ??
-        (body as any)?.collector_comparison_enabled,
+      body.chart_zoom_daily_y_axis_collector_comparison ?? body.zoom_collector_comparison ?? body.collector_comparison_enabled,
     );
   } catch (e) {
-    return NextResponse.json({ error: e instanceof Error ? e.message : "Invalid value." }, { status: 400 });
+    return apiJsonErr(e instanceof Error ? e.message : "Invalid value.", 400);
   }
 
   const svc = supabaseService();
@@ -89,7 +79,7 @@ export async function POST(request: NextRequest) {
     .upsert(
       [
         {
-          user_id: user.id,
+          user_id: auth.user.id,
           chart_zoom_daily_y_axis: zoomDaily,
           chart_zoom_daily_y_axis_collector_comparison: zoomCollector,
         },
@@ -101,25 +91,19 @@ export async function POST(request: NextRequest) {
 
   if (error) {
     if (isSchemaMissing(error)) {
-      return NextResponse.json(
-        { error: "Chart axis zoom settings aren’t configured in the database yet. Apply migrations, then retry." },
-        { status: 503 },
-      );
+      return apiJsonErr("Chart axis zoom settings aren’t configured in the database yet. Apply migrations, then retry.", 503);
     }
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiJsonErr(error.message, 500);
   }
 
-  const savedDaily = (upserted as any)?.chart_zoom_daily_y_axis;
-  const savedCollector = (upserted as any)?.chart_zoom_daily_y_axis_collector_comparison;
+  const savedDaily = (upserted as { chart_zoom_daily_y_axis?: unknown } | null)?.chart_zoom_daily_y_axis;
+  const savedCollector = (upserted as { chart_zoom_daily_y_axis_collector_comparison?: unknown } | null)
+    ?.chart_zoom_daily_y_axis_collector_comparison;
 
-  return NextResponse.json(
-    {
-      chart_zoom_daily_y_axis: typeof savedDaily === "boolean" ? savedDaily : zoomDaily,
-      chart_zoom_daily_y_axis_collector_comparison:
-        typeof savedCollector === "boolean" ? savedCollector : zoomCollector,
-      configured: true,
-    },
-    { status: 200 },
-  );
+  return apiJsonOk({
+    chart_zoom_daily_y_axis: typeof savedDaily === "boolean" ? savedDaily : zoomDaily,
+    chart_zoom_daily_y_axis_collector_comparison:
+      typeof savedCollector === "boolean" ? savedCollector : zoomCollector,
+    configured: true as const,
+  });
 }
-

@@ -3,8 +3,14 @@
 import { useEffect, useState } from "react";
 
 import { Chip, ChipGroup } from "@/components/ui/Chip";
+import { fetchApiJson } from "@/lib/api";
 import type { CurrencyDisplay } from "@/lib/format";
 import { DEFAULT_CURRENCY, SAVED_FEEDBACK_MS } from "@/lib/constants";
+
+type CurrencyDisplayPayload = {
+  currency_display: string;
+  configured?: boolean;
+};
 
 function parseCurrency(raw: unknown): CurrencyDisplay {
   const s = String(raw ?? "").trim().toUpperCase();
@@ -22,15 +28,10 @@ export function CurrencyDisplaySetting() {
   useEffect(() => {
     setLoading(true);
     setError(null);
-    void fetch("/api/user-settings/currency-display")
-      .then(async (res) => {
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error((data as any)?.error ?? "Failed to load setting");
-        return data;
-      })
+    void fetchApiJson<CurrencyDisplayPayload>("/api/user-settings/currency-display")
       .then((data) => {
-        setValue(parseCurrency((data as any)?.currency_display));
-        setConfigured((data as any)?.configured !== false);
+        setValue(parseCurrency(data.currency_display));
+        setConfigured(data.configured !== false);
         setLoading(false);
       })
       .catch((e) => {
@@ -44,15 +45,13 @@ export function CurrencyDisplaySetting() {
     setSaved(false);
     setSaving(true);
     try {
-      const res = await fetch("/api/user-settings/currency-display", {
+      const data = await fetchApiJson<CurrencyDisplayPayload>("/api/user-settings/currency-display", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ currency_display: next }),
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error((data as any)?.error ?? "Failed to update setting");
 
-      setValue(parseCurrency((data as any)?.currency_display));
+      setValue(parseCurrency(data.currency_display));
       setSaved(true);
       setTimeout(() => setSaved(false), SAVED_FEEDBACK_MS);
 

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { logWarn } from "@/lib/logger";
+import { fetchApiJson } from "@/lib/api";
 import { ChevronRight, Home } from "lucide-react";
 
 type BreadcrumbItem = {
@@ -25,8 +26,9 @@ export function Breadcrumbs() {
     
     // Handle artist pages: /artists/[spotify_artist_id]
     if (segments[0] === "artists" && segments[1] && segments[1].length > 10) {
-      fetch(`/api/breadcrumb/artist?artist_id=${encodeURIComponent(segments[1])}`)
-        .then((res) => res.json())
+      fetchApiJson<{ artistName: string | null }>(
+        `/api/breadcrumb/artist?artist_id=${encodeURIComponent(segments[1])}`,
+      )
         .then((data) => {
           if (!alive) return;
           const label = (data?.artistName as string | undefined) ?? "";
@@ -47,8 +49,7 @@ export function Breadcrumbs() {
 
     // Handle track pages: /tracks/[isrc]
     if (segments[0] === "tracks" && segments[1] && segments[1].length > 10) {
-      fetch(`/api/breadcrumb/track?isrc=${encodeURIComponent(segments[1])}`)
-        .then((res) => res.json())
+      fetchApiJson<{ trackLabel: string }>(`/api/breadcrumb/track?isrc=${encodeURIComponent(segments[1])}`)
         .then((data) => {
           if (!alive) return;
           const label = (data?.trackLabel as string | undefined) ?? "";

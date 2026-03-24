@@ -1,16 +1,9 @@
-import { NextResponse } from "next/server";
-
 import { findTrackByIsrc } from "@/lib/spotify";
+import { apiJsonErr, apiJsonOk, readJsonBody } from "@/lib/api/server";
 
 export const runtime = "nodejs";
 
 type Body = { isrcs?: unknown };
-
-function chunk<T>(arr: T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
-}
 
 async function mapWithConcurrency<T, R>(
   items: T[],
@@ -33,40 +26,31 @@ async function mapWithConcurrency<T, R>(
 }
 
 export async function POST(req: Request) {
-  let json: Body;
-  try {
-    json = (await req.json()) as Body;
-  } catch {
-    return NextResponse.json({ error: "invalid json" }, { status: 400 });
-  }
+  const parsed = await readJsonBody(req);
+  if (!parsed.ok) return parsed.response;
+  const json = parsed.body as Body;
 
-  const raw = Array.isArray((json as any).isrcs) ? ((json as any).isrcs as unknown[]) : [];
-  const isrcs = raw
-    .map((v) => String(v ?? "").trim().toUpperCase())
-    .filter(Boolean);
+  const raw = Array.isArray(json.isrcs) ? json.isrcs : [];
+  const isrcs = raw.map((v) => String(v ?? "").trim().toUpperCase()).filter(Boolean);
 
   if (isrcs.length === 0) {
-    return NextResponse.json({ error: "missing isrcs" }, { status: 400 });
+    return apiJsonErr("missing isrcs", 400);
   }
 
-  // Keep request bounded.
   const unique = Array.from(new Set(isrcs)).slice(0, 50);
 
-  // Spotify search is per-ISRC; do modest parallelism.
   const concurrency = 5;
   const results = await mapWithConcurrency(unique, concurrency, async (isrc) => {
     try {
       const res = await findTrackByIsrc(isrc);
       return { isrc, albumImageUrl: res?.albumImageUrl ?? null };
-    } catch (e: any) {
-      return { isrc, albumImageUrl: null, error: e?.message ?? "spotify lookup failed" };
+    } catch (e: unknown) {
+      return { isrc, albumImageUrl: null, error: e instanceof Error ? e.message : "spotify lookup failed" };
     }
   });
 
-  // Return as a map for easy client merge.
   const byIsrc: Record<string, string | null> = {};
   for (const r of results) byIsrc[r.isrc] = r.albumImageUrl ?? null;
 
-  return NextResponse.json({ byIsrc }, { status: 200 });
+  return apiJsonOk({ byIsrc });
 }
-

@@ -2,10 +2,14 @@
 
 import { useMemo, useState } from "react";
 import { RefreshCw } from "lucide-react";
+import { fetchApiJson } from "@/lib/api";
 
-type ApiResp =
-  | { ok: true; processed: number; cursor: string | null; done: boolean; failures: Array<{ playlist_key: string; error: string }> }
-  | { ok: false; error: string };
+type ThumbnailRefreshBatch = {
+  processed: number;
+  cursor: string | null;
+  done: boolean;
+  failures: Array<{ playlist_key: string; error: string }>;
+};
 
 export function RefreshSpotifyThumbnailsButton() {
   const [isRunning, setIsRunning] = useState(false);
@@ -29,20 +33,20 @@ export function RefreshSpotifyThumbnailsButton() {
     try {
       // Small batches to avoid rate limits / long request timeouts.
       for (let i = 0; i < 50; i++) {
-        const res = await fetch("/api/admin/spotify/refresh-playlist-thumbnails", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ cursor, limit: 5, force: true }),
-        });
+        const batch: ThumbnailRefreshBatch = await fetchApiJson<ThumbnailRefreshBatch>(
+          "/api/admin/spotify/refresh-playlist-thumbnails",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ cursor, limit: 5, force: true }),
+          },
+        );
 
-        const json = (await res.json()) as ApiResp;
-        if (!json.ok) throw new Error(json.error || "refresh failed");
+        setProcessedTotal((n) => n + (batch.processed ?? 0));
+        if (batch.failures?.length) setFailures((n) => n + batch.failures.length);
 
-        setProcessedTotal((n) => n + (json.processed ?? 0));
-        if (json.failures?.length) setFailures((n) => n + json.failures.length);
-
-        cursor = json.cursor ?? null;
-        if (json.done) break;
+        cursor = batch.cursor ?? null;
+        if (batch.done) break;
 
         // brief pause to keep things smooth
         await new Promise((r) => setTimeout(r, 200));

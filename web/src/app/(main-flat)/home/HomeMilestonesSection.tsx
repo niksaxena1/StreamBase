@@ -13,6 +13,7 @@ import { Modal } from "@/components/ui/Modal";
 import { TracksPerMilestoneChart } from "@/components/charts/TracksPerMilestoneChart";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
 import { type TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChart";
+import { fetchApiJson } from "@/lib/api";
 import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
 import { foldForSearch } from "@/lib/searchFold";
 import { slugifyForFilename, todayIsoDate } from "@/lib/csv";
@@ -77,14 +78,9 @@ export function HomeMilestonesSection(props: {
       if (!parsed.error && parsed.milestones.length) setCustomMilestones(parsed.milestones);
     }
 
-    void fetch("/api/user-settings/home-milestones")
-      .then(async (res) => {
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) return null;
-        return data as any;
-      })
+    void fetchApiJson<{ home_custom_milestones_streams: string | null }>("/api/user-settings/home-milestones")
       .then((data) => {
-        const csv = String(data?.home_custom_milestones_streams ?? "").trim();
+        const csv = String(data.home_custom_milestones_streams ?? "").trim();
         if (csv) {
           applySavedMilestones(csv);
           writeStoredString(HOME_MILESTONE_SETTINGS_STORAGE.customMilestones, csv);
@@ -112,10 +108,10 @@ export function HomeMilestonesSection(props: {
     let cancelled = false;
     async function load() {
       try {
-        const res = await fetch("/api/artists/options");
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) return;
-        const rows = Array.isArray((json as any)?.artists) ? ((json as any).artists as any[]) : [];
+        const json = await fetchApiJson<{ artists: Array<{ artist_id?: string; image_url?: string | null }> }>(
+          "/api/artists/options",
+        );
+        const rows = Array.isArray(json.artists) ? json.artists : [];
         const map = new Map<string, string | null>();
         for (const r of rows) {
           const id = String(r?.artist_id ?? "");
@@ -447,7 +443,7 @@ export function HomeMilestonesSection(props: {
               setMilestoneSettingsText("");
               setMilestoneSettingsError(null);
               removeStoredItem(HOME_MILESTONE_SETTINGS_STORAGE.customMilestones);
-              void fetch("/api/user-settings/home-milestones", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ home_custom_milestones_streams: null }) }).catch(() => {});
+              void fetchApiJson("/api/user-settings/home-milestones", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ home_custom_milestones_streams: null }) }).catch(() => {});
             }}>Reset to auto</Button>
             <div className="flex items-center gap-2">
               <Button type="button" variant="secondary" onClick={() => { setMilestoneSettingsOpen(false); setMilestoneSettingsError(null); }}>Cancel</Button>
@@ -456,7 +452,7 @@ export function HomeMilestonesSection(props: {
                 if (parsed.error) { setMilestoneSettingsError(parsed.error); return; }
                 setCustomMilestones(parsed.milestones);
                 writeStoredString(HOME_MILESTONE_SETTINGS_STORAGE.customMilestones, parsed.milestones.join(","));
-                void fetch("/api/user-settings/home-milestones", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ home_custom_milestones_streams: parsed.milestones.join(",") }) }).catch(() => {});
+                void fetchApiJson("/api/user-settings/home-milestones", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ home_custom_milestones_streams: parsed.milestones.join(",") }) }).catch(() => {});
                 setMilestoneSettingsOpen(false);
                 setMilestoneSettingsError(null);
               }}>Save</Button>

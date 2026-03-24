@@ -1,25 +1,24 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
 import { cachedQuery } from "@/lib/supabase/cache";
 import { CACHE_TTL_5MIN, CACHE_TTL_24H } from "@/lib/constants";
 import { logError } from "@/lib/logger";
+import { apiJsonErr, apiJsonOk } from "@/lib/api/server";
 
-// This route is querystring-driven and therefore dynamic; cache via cachedQuery keyed by latest run.
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
-    const type = searchParams.get("type"); // "track", "artist", or "playlist"
+    const type = searchParams.get("type");
     const id = searchParams.get("id");
 
     if (!type || !id) {
-      return NextResponse.json({ error: "Missing type or id" }, { status: 400 });
+      return apiJsonErr("Missing type or id", 400);
     }
 
     const sb = await supabaseServer();
 
-    // Use the canonical latest run date from playlist_daily_stats (fast, indexed).
     const { data: latestRun } = await cachedQuery(
       async () =>
         await sb
@@ -38,13 +37,15 @@ export async function GET(request: NextRequest) {
     const { data: payload } = await cachedQuery(
       async () => {
         if (type === "track") {
-          // Track: use latest snapshot date when available; fallback to "latest row".
           const q = sb.from("track_daily_streams_effective_public").select("streams_cumulative");
           const { data: trackStats } = latestRunDate
             ? await q.eq("date", latestRunDate).eq("isrc", id).maybeSingle()
             : await q.eq("isrc", id).order("date", { ascending: false }).limit(1).maybeSingle();
 
-          return { data: { type: "track", streams: Number((trackStats as any)?.streams_cumulative ?? 0) }, error: null };
+          return {
+            data: { type: "track" as const, streams: Number((trackStats as { streams_cumulative?: number } | null)?.streams_cumulative ?? 0) },
+            error: null,
+          };
         }
 
         if (!latestRunDate) {
@@ -56,8 +57,8 @@ export async function GET(request: NextRequest) {
             artist_id: id,
             run_date: latestRunDate,
           });
-          if (error) return { data: { type: "artist", streams: 0 }, error };
-          return { data: { type: "artist", streams: Number(totalStreams ?? 0) }, error: null };
+          if (error) return { data: { type: "artist" as const, streams: 0 }, error };
+          return { data: { type: "artist" as const, streams: Number(totalStreams ?? 0) }, error: null };
         }
 
         if (type === "playlist") {
@@ -65,8 +66,8 @@ export async function GET(request: NextRequest) {
             playlist_key: id,
             run_date: latestRunDate,
           });
-          if (error) return { data: { type: "playlist", streams: 0 }, error };
-          return { data: { type: "playlist", streams: Number(totalStreams ?? 0) }, error: null };
+          if (error) return { data: { type: "playlist" as const, streams: 0 }, error };
+          return { data: { type: "playlist" as const, streams: Number(totalStreams ?? 0) }, error: null };
         }
 
         return { data: null, error: new Error("Invalid type") };
@@ -75,11 +76,11 @@ export async function GET(request: NextRequest) {
       CACHE_TTL_24H,
     );
 
-    if (payload) return NextResponse.json(payload);
+    if (payload) return apiJsonOk(payload);
 
-    return NextResponse.json({ error: "Invalid type" }, { status: 400 });
+    return apiJsonErr("Invalid type", 400);
   } catch (error) {
     logError("Search stats error", error);
-    return NextResponse.json({ error: "Failed to fetch stats" }, { status: 500 });
+    return apiJsonErr("Failed to fetch stats", 500);
   }
 }

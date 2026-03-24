@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { SOT_DATA_LAG_DAYS } from "@/lib/sotDates";
+import { apiJsonErr, apiJsonOk, readJsonBodyOptional, requireAdmin } from "@/lib/api/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,22 +17,15 @@ function addDaysIso(dateIso: string, deltaDays: number): string {
 
 export async function POST(req: NextRequest) {
   const sb = await supabaseServer();
-  const { data: userData } = await sb.auth.getUser();
-  if (!userData.user) {
-    return NextResponse.json({ ok: false, error: "unauthenticated" }, { status: 401 });
-  }
+  const auth = await requireAdmin(sb);
+  if (!auth.ok) return auth.response;
 
-  const { data: isAdmin, error: adminErr } = await sb.rpc("is_admin");
-  if (adminErr) return NextResponse.json({ ok: false, error: adminErr.message }, { status: 500 });
-  if (!isAdmin) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
-
-  const rawBody: unknown = await req.json().catch(() => ({}));
-  const body =
-    rawBody && typeof rawBody === "object" ? (rawBody as Record<string, unknown>) : ({} as Record<string, unknown>);
+  const rawBody = await readJsonBodyOptional(req);
+  const body = rawBody;
 
   const dataDate = String(body.data_date ?? "").trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dataDate)) {
-    return NextResponse.json({ ok: false, error: "invalid data_date (expected YYYY-MM-DD)" }, { status: 400 });
+    return apiJsonErr("invalid data_date (expected YYYY-MM-DD)", 400);
   }
 
   const collectorsRaw = Array.isArray(body.collectors) ? (body.collectors as unknown[]) : [];
@@ -39,7 +33,7 @@ export async function POST(req: NextRequest) {
     .map((c) => String(c ?? "").trim().toUpperCase())
     .filter(Boolean);
   if (!collectors.length) {
-    return NextResponse.json({ ok: false, error: "missing collectors" }, { status: 400 });
+    return apiJsonErr("missing collectors", 400);
   }
 
   const svc = supabaseService();
@@ -56,7 +50,7 @@ export async function POST(req: NextRequest) {
     .order("date", { ascending: true });
 
   if (aggError) {
-    return NextResponse.json({ ok: false, error: aggError.message }, { status: 500 });
+    return apiJsonErr(aggError.message, 500);
   }
 
   type TrackInfo = {
@@ -221,10 +215,10 @@ export async function POST(req: NextRequest) {
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ ok: false, error: msg }, { status: 500 });
+    return apiJsonErr(msg, 500);
   }
 
   const collectorData: Record<string, CollectorBreakdown> = Object.fromEntries(collectorEntries);
 
-  return NextResponse.json({ ok: true, data_date: dataDate, collectors: collectorData });
+  return apiJsonOk({ ok: true as const, data_date: dataDate, collectors: collectorData });
 }

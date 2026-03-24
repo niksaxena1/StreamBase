@@ -10,6 +10,7 @@ import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { Alert } from "@/components/ui/Alert";
 import { TrackStreamsXYChart, type TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChart";
 import { ArtistStreamsXYChart, aggregateTracksToArtists } from "@/components/charts/ArtistStreamsXYChart";
+import { fetchApiJson } from "@/lib/api";
 import { foldForSearch } from "@/lib/searchFold";
 import { readStoredBool, writeStoredBool } from "@/lib/storage";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
@@ -72,10 +73,10 @@ export function HomeScatterSection(props: {
     let cancelled = false;
     async function load() {
       try {
-        const res = await fetch("/api/artists/options");
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) return;
-        const rows = Array.isArray((json as any)?.artists) ? ((json as any).artists as any[]) : [];
+        const json = await fetchApiJson<{ artists?: Array<{ artist_id?: string; image_url?: string | null }> }>(
+          "/api/artists/options",
+        );
+        const rows = Array.isArray(json.artists) ? json.artists : [];
         const map = new Map<string, string | null>();
         for (const r of rows) {
           const id = String(r?.artist_id ?? "");

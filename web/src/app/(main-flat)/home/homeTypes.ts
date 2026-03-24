@@ -1,3 +1,14 @@
+import type { TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChart";
+
+export type HomeDashboardSearchParams = {
+  scope?: string;
+  range?: string;
+  daily?: string;
+  xy_date?: string;
+  start?: string;
+  end?: string;
+};
+
 export type PlaylistDailyStatsRow = {
   date: string;
   track_count: number | null;
@@ -51,4 +62,25 @@ export type NegativeDailyStreamsRow = {
   date: string;
   daily_streams_delta: number;
   total_streams_cumulative: number;
+};
+
+/** Props assembled on the server for `HomeDashboardClient`. */
+export type HomeDashboardServerProps = {
+  sp: HomeDashboardSearchParams;
+  playlistKey: "all_catalog" | "releases" | "ext";
+  title: string;
+  rangeDays: number;
+  latest: PlaylistDailyStatsRow | null;
+  history: PlaylistDailyStatsRow[];
+  playlistImageUrl: string | null;
+  historyErrorMessage?: string | null;
+  trackScatterPoints: TrackStreamsXYPoint[];
+  trackScatterErrorMessage?: string | null;
+  trackScatterDataDate: string | null;
+  latestRunDate: string | null;
+  latestDataDate: string | null;
+  overrideAnnotations?: ManualOverrideAnnotation[];
+  artistWeekendDips: ArtistWeekendDipRow[];
+  trackWeekendDips: TrackWeekendDipRow[];
+  negativeDailyStreams: NegativeDailyStreamsRow[];
 };

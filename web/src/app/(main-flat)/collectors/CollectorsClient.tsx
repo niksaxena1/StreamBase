@@ -12,6 +12,7 @@ import { DailyStreamsWithMAChart } from "@/components/charts/DailyStreamsWithMAC
 import { MonthlyBarChart } from "@/components/charts/MonthlyBarChart";
 import { Sparkline } from "@/components/charts/Sparkline";
 import { StatCard } from "@/components/StatCard";
+import { fetchApiJson } from "@/lib/api";
 import { formatDateISO, formatInt, formatUsd2 } from "@/lib/format";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
 import { slugifyForFilename, todayIsoDate } from "@/lib/csv";
@@ -240,15 +241,16 @@ export function CollectorsClient(props: {
 
     async function load() {
       try {
-        const res = await fetch(
+        const obj = await fetchApiJson<{
+          ok?: boolean;
+          items?: unknown[];
+        }>(
           `/api/collectors/monthly-revenue-forecast?collector=${encodeURIComponent(props.selectedCollector)}`,
           { method: "GET" },
         );
-        const json: unknown = await res.json().catch(() => null);
-        const obj = json && typeof json === "object" ? (json as Record<string, unknown>) : null;
-        if (!res.ok || obj?.ok !== true) return;
+        if (obj.ok !== true) return;
 
-        const items = Array.isArray(obj?.items) ? (obj.items as unknown[]) : [];
+        const items = Array.isArray(obj.items) ? obj.items : [];
         const next: Record<string, number> = {};
         for (const it of items) {
           if (!it || typeof it !== "object") continue;
@@ -564,7 +566,10 @@ export function CollectorsClient(props: {
       setBreakdownLoading(true);
       setBreakdownError(null);
       try {
-        const res = await fetch("/api/collectors/date-breakdown", {
+        const obj = await fetchApiJson<{
+          ok?: boolean;
+          collectors?: Record<string, DateBreakdownCollector>;
+        }>("/api/collectors/date-breakdown", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -572,14 +577,11 @@ export function CollectorsClient(props: {
             collectors: comparisonCollectors,
           }),
         });
-        const json: unknown = await res.json().catch(() => null);
-        const obj = json && typeof json === "object" ? (json as Record<string, unknown>) : null;
-        if (!res.ok || obj?.ok !== true) {
-          const err = obj?.error;
-          throw new Error(typeof err === "string" ? err : `Request failed (${res.status})`);
+        if (obj.ok !== true) {
+          throw new Error("Request failed");
         }
         if (!cancelled) {
-          setBreakdownData((obj?.collectors ?? null) as Record<string, DateBreakdownCollector> | null);
+          setBreakdownData(obj.collectors ?? null);
         }
       } catch (e) {
         if (!cancelled) setBreakdownError(e instanceof Error ? e.message : String(e));
@@ -640,7 +642,7 @@ export function CollectorsClient(props: {
     setForecastSaving(true);
     setForecastError(null);
     try {
-      const res = await fetch("/api/collectors/monthly-revenue-forecast", {
+      const obj = await fetchApiJson<{ ok?: boolean }>("/api/collectors/monthly-revenue-forecast", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -649,11 +651,8 @@ export function CollectorsClient(props: {
           amount_usd: amountUsd,
         }),
       });
-      const json: unknown = await res.json().catch(() => null);
-      const obj = json && typeof json === "object" ? (json as Record<string, unknown>) : null;
-      if (!res.ok || obj?.ok !== true) {
-        const err = obj?.error;
-        throw new Error(typeof err === "string" ? err : `Request failed (${res.status})`);
+      if (obj.ok !== true) {
+        throw new Error("Request failed");
       }
 
       setActualRevenueByMonth((prev) => {
@@ -684,7 +683,11 @@ export function CollectorsClient(props: {
       setDrillLoading(true);
       setDrillError(null);
       try {
-        const res = await fetch("/api/collectors/comparison-drilldown", {
+        const obj = await fetchApiJson<{
+          ok?: boolean;
+          items?: unknown[];
+          done?: boolean;
+        }>("/api/collectors/comparison-drilldown", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -695,16 +698,13 @@ export function CollectorsClient(props: {
             limit: DRILL_PAGE_SIZE,
           }),
         });
-        const json: unknown = await res.json().catch(() => null);
-        const obj = json && typeof json === "object" ? (json as Record<string, unknown>) : null;
-        if (!res.ok || obj?.ok !== true) {
-          const err = obj?.error;
-          throw new Error(typeof err === "string" ? err : `Request failed (${res.status})`);
+        if (obj.ok !== true) {
+          throw new Error("Request failed");
         }
-        const newItems = Array.isArray(obj?.items) ? (obj.items as unknown[]) : [];
+        const newItems = Array.isArray(obj.items) ? obj.items : [];
         if (!cancelled) {
           setDrillItems((prev) => (drillOffset === 0 ? newItems : [...prev, ...newItems]));
-          setDrillDone(Boolean(obj?.done) || newItems.length < DRILL_PAGE_SIZE);
+          setDrillDone(Boolean(obj.done) || newItems.length < DRILL_PAGE_SIZE);
         }
       } catch (e) {
         if (!cancelled) setDrillError(e instanceof Error ? e.message : String(e));

@@ -1,6 +1,5 @@
-import { NextResponse } from "next/server";
-
 import { supabaseServer } from "@/lib/supabase/server";
+import { apiJsonErr, requireUser } from "@/lib/api/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { cachedQuery } from "@/lib/supabase/cache";
 import { retrieveDocs } from "@/lib/sai/docs";
@@ -30,23 +29,23 @@ function chunkText(s: string, size = 48): string[] {
 
 export async function POST(req: Request) {
   const sb = await supabaseServer();
-  const { data } = await sb.auth.getUser();
-  const user = data.user;
-  if (!user) return NextResponse.json({ error: "not authenticated" }, { status: 401 });
+  const auth = await requireUser(sb);
+  if (!auth.ok) return auth.response;
+  const user = auth.user;
 
   let body: Body;
   try {
     body = (await req.json()) as Body;
   } catch {
-    return NextResponse.json({ error: "invalid json" }, { status: 400 });
+    return apiJsonErr("invalid json", 400);
   }
 
   const conversationId = String(body.conversationId ?? "").trim();
   const message = String(body.message ?? "").trim();
   const envelope = (body.envelope ?? {}) as SaiEnvelope;
 
-  if (!conversationId) return NextResponse.json({ error: "missing conversationId" }, { status: 400 });
-  if (!message) return NextResponse.json({ error: "missing message" }, { status: 400 });
+  if (!conversationId) return apiJsonErr("missing conversationId", 400);
+  if (!message) return apiJsonErr("missing message", 400);
 
   const svc = supabaseService();
 
@@ -57,9 +56,9 @@ export async function POST(req: Request) {
     .eq("id", conversationId)
     .maybeSingle();
 
-  if (convoErr || !convo?.id) return NextResponse.json({ error: "conversation not found" }, { status: 404 });
-  if (String((convo as any).user_id) !== user.id) return NextResponse.json({ error: "forbidden" }, { status: 403 });
-  if ((convo as any).deleted_at) return NextResponse.json({ error: "conversation deleted" }, { status: 410 });
+  if (convoErr || !convo?.id) return apiJsonErr("conversation not found", 404);
+  if (String((convo as { user_id?: string }).user_id) !== user.id) return apiJsonErr("forbidden", 403);
+  if ((convo as { deleted_at?: unknown }).deleted_at) return apiJsonErr("conversation deleted", 410);
 
   // Persist user message immediately.
   await svc.from("sai_messages").insert([

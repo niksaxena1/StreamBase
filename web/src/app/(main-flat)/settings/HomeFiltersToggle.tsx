@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { fetchApiJson } from "@/lib/api";
 import { SAVED_FEEDBACK_MS } from "@/lib/constants";
+
+type HomeFiltersPayload = {
+  home_filters_enabled?: boolean;
+  configured?: boolean;
+};
 
 export function HomeFiltersToggle() {
   const [enabled, setEnabled] = useState(true);
@@ -13,15 +19,10 @@ export function HomeFiltersToggle() {
   useEffect(() => {
     setLoading(true);
     setError(null);
-    void fetch("/api/user-settings/home-filters")
-      .then(async (res) => {
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error((data as any)?.error ?? "Failed to load setting");
-        return data;
-      })
+    void fetchApiJson<HomeFiltersPayload>("/api/user-settings/home-filters")
       .then((data) => {
-        setEnabled((data as any)?.home_filters_enabled ?? true);
-        setConfigured((data as any)?.configured !== false);
+        setEnabled(data.home_filters_enabled ?? true);
+        setConfigured(data.configured !== false);
         setLoading(false);
       })
       .catch((e) => {
@@ -36,13 +37,11 @@ export function HomeFiltersToggle() {
     setEnabled(next);
 
     try {
-      const res = await fetch("/api/user-settings/home-filters", {
+      await fetchApiJson<HomeFiltersPayload>("/api/user-settings/home-filters", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ home_filters_enabled: next }),
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error((data as any)?.error ?? "Failed to update setting");
 
       setSaved(true);
       setTimeout(() => setSaved(false), SAVED_FEEDBACK_MS);

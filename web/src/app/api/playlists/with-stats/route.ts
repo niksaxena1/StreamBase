@@ -1,44 +1,29 @@
-import { NextResponse } from "next/server";
-
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
+import { apiJsonErr, apiJsonOk, requireAdmin } from "@/lib/api/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   const sb = await supabaseServer();
-  const { data: userData } = await sb.auth.getUser();
-  if (!userData.user) {
-    return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
-  }
-
-  const { data: isAdmin, error: adminErr } = await sb.rpc("is_admin");
-  if (adminErr) {
-    return NextResponse.json({ error: adminErr.message }, { status: 500 });
-  }
-  if (!isAdmin) {
-    return NextResponse.json({ error: "forbidden" }, { status: 403 });
-  }
+  const auth = await requireAdmin(sb);
+  if (!auth.ok) return auth.response;
 
   const svc = supabaseService();
 
-  // Fetch playlists first so we have the exact set of keys to query.
   const playlistsRes = await svc
     .from("playlists")
-    .select(
-      "playlist_key,display_name,is_catalog,playlist_type,collector,spotify_playlist_image_url",
-    )
+    .select("playlist_key,display_name,is_catalog,playlist_type,collector,spotify_playlist_image_url")
     .order("display_name", { ascending: true })
     .limit(2000);
 
   if (playlistsRes.error) {
-    return NextResponse.json({ error: playlistsRes.error.message }, { status: 500 });
+    return apiJsonErr(playlistsRes.error.message, 500);
   }
 
-  const playlistKeys = (playlistsRes.data ?? []).map((p: any) => String(p.playlist_key ?? "")).filter(Boolean);
+  const playlistKeys = (playlistsRes.data ?? []).map((p: { playlist_key?: unknown }) => String(p.playlist_key ?? "")).filter(Boolean);
 
-  // Find the single latest run date across all playlists — one fast query.
   const { data: latestDateRow } = await svc
     .from("playlist_daily_stats")
     .select("date")
@@ -48,12 +33,7 @@ export async function GET() {
 
   const latestDate = (latestDateRow as { date: string } | null)?.date ?? null;
 
-  // Fetch stats for only the latest date and only the known playlist keys.
-  // This replaces an unbounded all-time table scan with a precise point-in-time read.
-  const latestStats = new Map<
-    string,
-    { track_count: number; total_streams: number; daily_streams: number | null }
-  >();
+  const latestStats = new Map<string, { track_count: number; total_streams: number; daily_streams: number | null }>();
 
   if (latestDate && playlistKeys.length > 0) {
     const { data: statsRows, error: statsErr } = await svc
@@ -63,22 +43,27 @@ export async function GET() {
       .in("playlist_key", playlistKeys);
 
     if (statsErr) {
-      return NextResponse.json({ error: statsErr.message }, { status: 500 });
+      return apiJsonErr(statsErr.message, 500);
     }
 
     for (const s of statsRows ?? []) {
-      const pk = String((s as any).playlist_key ?? "");
+      const row = s as {
+        playlist_key?: unknown;
+        track_count?: unknown;
+        total_streams_cumulative?: unknown;
+        daily_streams_net?: unknown;
+      };
+      const pk = String(row.playlist_key ?? "");
       if (!pk) continue;
       latestStats.set(pk, {
-        track_count: Number((s as any).track_count ?? 0),
-        total_streams: Number((s as any).total_streams_cumulative ?? 0),
-        daily_streams:
-          (s as any).daily_streams_net != null ? Number((s as any).daily_streams_net) : null,
+        track_count: Number(row.track_count ?? 0),
+        total_streams: Number(row.total_streams_cumulative ?? 0),
+        daily_streams: row.daily_streams_net != null ? Number(row.daily_streams_net) : null,
       });
     }
   }
 
-  const playlists = (playlistsRes.data ?? []).map((p: any) => {
+  const playlists = (playlistsRes.data ?? []).map((p: Record<string, unknown>) => {
     const pk = String(p.playlist_key ?? "");
     const stats = latestStats.get(pk);
     return {
@@ -94,5 +79,5 @@ export async function GET() {
     };
   });
 
-  return NextResponse.json({ playlists }, { status: 200 });
+  return apiJsonOk({ playlists });
 }

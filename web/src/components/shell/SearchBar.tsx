@@ -11,6 +11,7 @@ import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { useKeyboardShortcutsSafe } from "@/components/keyboard";
 import { triggerRouteLoadingBarStart } from "@/lib/navigation/loadingBar";
 import { logError } from "@/lib/logger";
+import { fetchApiJson } from "@/lib/api";
 
 type SearchResult = {
   type: "track" | "artist" | "playlist";
@@ -297,13 +298,11 @@ export function SearchBar() {
     const timer = setTimeout(async () => {
       setIsLoading(true);
       try {
-        const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`, {
-          signal: controller.signal,
-        });
-        if (response.ok) {
-          const data = await response.json();
-          setResults(data.results || []);
-        }
+        const data = await fetchApiJson<{ results: SearchResult[] }>(
+          `/api/search?q=${encodeURIComponent(query)}`,
+          { signal: controller.signal },
+        );
+        setResults(data.results || []);
       } catch (error) {
         // Ignore aborts; log others.
         if ((error as any)?.name !== "AbortError") {
@@ -420,8 +419,9 @@ export function SearchBar() {
 
     setLoadingStats((prev) => ({ ...prev, [key]: true }));
 
-    fetch(`/api/search-stats?type=${result.type}&id=${encodeURIComponent(result.id)}`)
-      .then((res) => res.json())
+    fetchApiJson<{ streams: number }>(
+      `/api/search-stats?type=${result.type}&id=${encodeURIComponent(result.id)}`,
+    )
       .then((data) => {
         setHoveredResultStats((prev) => ({ ...prev, [key]: data }));
       })

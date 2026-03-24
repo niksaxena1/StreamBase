@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { fetchApiJson } from "@/lib/api";
 import { SAVED_FEEDBACK_MS } from "@/lib/constants";
+
+type ChartAxisZoomPayload = {
+  chart_zoom_daily_y_axis: boolean;
+  chart_zoom_daily_y_axis_collector_comparison: boolean;
+  configured?: boolean;
+};
 
 export function ChartAxisZoomSetting() {
   const [zoomDaily, setZoomDaily] = useState(true);
@@ -15,16 +22,11 @@ export function ChartAxisZoomSetting() {
   useEffect(() => {
     setLoading(true);
     setError(null);
-    void fetch("/api/user-settings/chart-y-axis-zoom")
-      .then(async (res) => {
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error((data as any)?.error ?? "Failed to load setting");
-        return data;
-      })
+    void fetchApiJson<ChartAxisZoomPayload>("/api/user-settings/chart-y-axis-zoom")
       .then((data) => {
-        setZoomDaily((data as any)?.chart_zoom_daily_y_axis ?? true);
-        setZoomCollector((data as any)?.chart_zoom_daily_y_axis_collector_comparison ?? true);
-        setConfigured((data as any)?.configured !== false);
+        setZoomDaily(data.chart_zoom_daily_y_axis ?? true);
+        setZoomCollector(data.chart_zoom_daily_y_axis_collector_comparison ?? true);
+        setConfigured(data.configured !== false);
         setLoading(false);
       })
       .catch((e) => {
@@ -38,7 +40,7 @@ export function ChartAxisZoomSetting() {
     setSaved(false);
     setSaving(true);
     try {
-      const res = await fetch("/api/user-settings/chart-y-axis-zoom", {
+      const data = await fetchApiJson<ChartAxisZoomPayload>("/api/user-settings/chart-y-axis-zoom", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -46,13 +48,9 @@ export function ChartAxisZoomSetting() {
           chart_zoom_daily_y_axis_collector_comparison: nextCollector,
         }),
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error((data as any)?.error ?? "Failed to update setting");
 
-      setZoomDaily(Boolean((data as any)?.chart_zoom_daily_y_axis ?? nextDaily));
-      setZoomCollector(
-        Boolean((data as any)?.chart_zoom_daily_y_axis_collector_comparison ?? nextCollector),
-      );
+      setZoomDaily(Boolean(data.chart_zoom_daily_y_axis ?? nextDaily));
+      setZoomCollector(Boolean(data.chart_zoom_daily_y_axis_collector_comparison ?? nextCollector));
       setSaved(true);
       setTimeout(() => setSaved(false), SAVED_FEEDBACK_MS);
 

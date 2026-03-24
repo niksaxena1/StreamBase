@@ -44,6 +44,38 @@ export async function fetchJson<T>(url: string, options?: RequestInit): Promise<
 }
 
 /**
+ * Parse JSON produced by `apiJsonOk` / `apiJsonErr` (`@/lib/api/server`).
+ * @throws Error with server `error` string when `success` is false or shape is invalid.
+ */
+export function parseApiJsonEnvelope<T>(raw: unknown): T {
+  if (!raw || typeof raw !== "object" || !("success" in raw)) {
+    throw new Error("Invalid API response");
+  }
+  const envelope = raw as ApiResponse<T>;
+  if (envelope.success) return envelope.data;
+  throw new Error(envelope.error || "Request failed");
+}
+
+/**
+ * `fetch` + `parseApiJsonEnvelope` for same-origin `/api/*` routes.
+ */
+export async function fetchApiJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, init);
+  let raw: unknown;
+  try {
+    raw = await res.json();
+  } catch {
+    throw new Error(`HTTP ${res.status}`);
+  }
+  try {
+    return parseApiJsonEnvelope<T>(raw);
+  } catch (e) {
+    if (e instanceof Error) throw e;
+    throw new Error(`HTTP ${res.status}`);
+  }
+}
+
+/**
  * Safe JSON parse with type assertion.
  * Returns null if parsing fails instead of throwing.
  */

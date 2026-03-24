@@ -3,7 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { DEFAULT_CHART_START_DATE_ISO, normalizeIsoDateOrNull } from "@/components/charts/chartUtils";
+import { fetchApiJson } from "@/lib/api";
 import { SAVED_FEEDBACK_MS } from "@/lib/constants";
+
+type ChartStartDatePayload = {
+  chart_start_date: string | null;
+  configured?: boolean;
+};
 
 export function ChartStartDateSetting() {
   const [dateText, setDateText] = useState<string>(DEFAULT_CHART_START_DATE_ISO);
@@ -21,16 +27,11 @@ export function ChartStartDateSetting() {
   useEffect(() => {
     setLoading(true);
     setError(null);
-    void fetch("/api/user-settings/chart-start-date")
-      .then(async (res) => {
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error((data as any)?.error ?? "Failed to load setting");
-        return data;
-      })
+    void fetchApiJson<ChartStartDatePayload>("/api/user-settings/chart-start-date")
       .then((data) => {
-        const d = normalizeIsoDateOrNull((data as any)?.chart_start_date) ?? DEFAULT_CHART_START_DATE_ISO;
+        const d = normalizeIsoDateOrNull(data.chart_start_date) ?? DEFAULT_CHART_START_DATE_ISO;
         setDateText(d);
-        setConfigured((data as any)?.configured !== false);
+        setConfigured(data.configured !== false);
         setLoading(false);
       })
       .catch((e) => {
@@ -44,16 +45,13 @@ export function ChartStartDateSetting() {
     setSaved(false);
     setSaving(true);
     try {
-      const res = await fetch("/api/user-settings/chart-start-date", {
+      const data = await fetchApiJson<ChartStartDatePayload>("/api/user-settings/chart-start-date", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ chart_start_date: nextDate }),
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error((data as any)?.error ?? "Failed to update setting");
 
-      const savedDate =
-        normalizeIsoDateOrNull((data as any)?.chart_start_date) ?? DEFAULT_CHART_START_DATE_ISO;
+      const savedDate = normalizeIsoDateOrNull(data.chart_start_date) ?? DEFAULT_CHART_START_DATE_ISO;
       setDateText(savedDate);
       setSaved(true);
       setTimeout(() => setSaved(false), SAVED_FEEDBACK_MS);

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { fetchApiJson } from "@/lib/api";
 import { usePathname, useSearchParams } from "next/navigation";
 
 type Role = "user" | "assistant";
@@ -79,8 +80,7 @@ export function SAIWidget() {
   useEffect(() => {
     let alive = true;
     // Fetch SAI enabled setting on mount
-    void fetch("/api/user-settings/sai")
-      .then((res) => res.json())
+    void fetchApiJson<{ sai_enabled?: boolean }>("/api/user-settings/sai")
       .then((data) => {
         if (alive) setSaiEnabled(data.sai_enabled ?? true);
       })
@@ -184,15 +184,16 @@ export function SAIWidget() {
     setIsStreaming(false);
     setQueue([]);
     setMessages([]);
-    const res = await fetch("/api/sai/new", { method: "POST" });
-    if (!res.ok) {
+    let cid: string | null = null;
+    try {
+      const json = await fetchApiJson<{ conversationId?: string }>("/api/sai/new", { method: "POST" });
+      cid = json.conversationId ?? null;
+    } catch {
       setMessages([
         { id: uuid(), role: "assistant", content: "Failed to create a new chat (are you logged in?)." },
       ]);
       return null;
     }
-    const json = (await res.json()) as { conversationId?: string };
-    const cid = json.conversationId ?? null;
     setConversationId(cid);
     return cid;
   }

@@ -1,21 +1,20 @@
-import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
 import { logError } from "@/lib/logger";
+import { apiJsonErr, apiJsonOk } from "@/lib/api/server";
 
-export const revalidate = 86400; // 24h ISR - artist labels change with daily data
+export const revalidate = 86400;
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const artistId = searchParams.get("artist_id");
 
   if (!artistId) {
-    return NextResponse.json({ artistName: null }, { status: 400 });
+    return apiJsonErr("missing artist_id", 400);
   }
 
   try {
     const sb = await supabaseServer();
-    
-    // Get artist name from first track that has this artist
+
     const { data: tracks } = await sb
       .from("tracks")
       .select("spotify_artist_names,spotify_artist_ids")
@@ -24,9 +23,9 @@ export async function GET(request: Request) {
 
     const artistName = tracks?.[0]?.spotify_artist_names?.[0] ?? null;
 
-    return NextResponse.json({ artistName });
+    return apiJsonOk({ artistName });
   } catch (error) {
     logError("Breadcrumb artist error", error);
-    return NextResponse.json({ artistName: null }, { status: 500 });
+    return apiJsonErr("lookup failed", 500);
   }
 }

@@ -1,7 +1,6 @@
-import { NextResponse } from "next/server";
-
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
+import { apiJsonErr, apiJsonOk, readJsonBody, requireAdmin } from "@/lib/api/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,46 +10,31 @@ const PAGE_LIMIT = 8000;
 
 export async function POST(req: Request) {
   const sb = await supabaseServer();
-  const { data: userData } = await sb.auth.getUser();
-  if (!userData.user) {
-    return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
-  }
+  const auth = await requireAdmin(sb);
+  if (!auth.ok) return auth.response;
 
-  const { data: isAdmin, error: adminErr } = await sb.rpc("is_admin");
-  if (adminErr) {
-    return NextResponse.json({ error: adminErr.message }, { status: 500 });
-  }
-  if (!isAdmin) {
-    return NextResponse.json({ error: "forbidden" }, { status: 403 });
-  }
-
-  let body: unknown;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "invalid JSON" }, { status: 400 });
-  }
-
-  const b = body as {
+  const parsed = await readJsonBody(req);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.body as {
     artistIds?: unknown;
     playlistKey?: unknown;
     hideNonPrimary?: unknown;
     offset?: unknown;
   };
 
-  const rawIds = Array.isArray(b.artistIds)
-    ? b.artistIds.filter((x): x is string => typeof x === "string" && x.trim().length > 0).map((s) => s.trim())
+  const rawIds = Array.isArray(body.artistIds)
+    ? body.artistIds.filter((x): x is string => typeof x === "string" && x.trim().length > 0).map((s) => s.trim())
     : [];
   const artistIds = [...new Set(rawIds)].slice(0, MAX_ARTISTS);
 
   const playlistKey =
-    typeof b.playlistKey === "string" && b.playlistKey.trim() ? b.playlistKey.trim() : null;
-  const hideNonPrimary = Boolean(b.hideNonPrimary);
-  const offsetRaw = typeof b.offset === "number" && Number.isFinite(b.offset) ? Math.floor(b.offset) : 0;
+    typeof body.playlistKey === "string" && body.playlistKey.trim() ? body.playlistKey.trim() : null;
+  const hideNonPrimary = Boolean(body.hideNonPrimary);
+  const offsetRaw = typeof body.offset === "number" && Number.isFinite(body.offset) ? Math.floor(body.offset) : 0;
   const offset = Math.max(0, offsetRaw);
 
   if (!artistIds.length) {
-    return NextResponse.json({ isrcs: [] as string[], hasMore: false });
+    return apiJsonOk({ isrcs: [] as string[], hasMore: false, nextOffset: null as number | null });
   }
 
   const svc = supabaseService();
@@ -64,7 +48,7 @@ export async function POST(req: Request) {
 
   if (error) {
     console.error("network_selection_scoped_isrcs:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiJsonErr(error.message, 500);
   }
 
   const rows = (data ?? []) as Array<{ isrc: string } | string>;
@@ -72,5 +56,5 @@ export async function POST(req: Request) {
   const hasMore = flat.length > PAGE_LIMIT;
   const isrcs = hasMore ? flat.slice(0, PAGE_LIMIT) : flat;
 
-  return NextResponse.json({ isrcs, hasMore, nextOffset: hasMore ? offset + PAGE_LIMIT : null });
+  return apiJsonOk({ isrcs, hasMore, nextOffset: hasMore ? offset + PAGE_LIMIT : null });
 }

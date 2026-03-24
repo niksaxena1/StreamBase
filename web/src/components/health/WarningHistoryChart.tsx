@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { fetchApiJson } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import {
   BarChart,
@@ -68,11 +69,9 @@ export function WarningHistoryChart() {
     void (async () => {
       setLoading(true);
       try {
-        const res = await fetch("/api/health-history");
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error((data as any)?.error ?? "Failed");
-        setDates((data as any)?.dates ?? []);
-        setCodes((data as any)?.codes ?? []);
+        const data = await fetchApiJson<{ dates: HistoryEntry[]; codes: string[] }>("/api/health-history");
+        setDates(data.dates ?? []);
+        setCodes(data.codes ?? []);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to load");
       } finally {

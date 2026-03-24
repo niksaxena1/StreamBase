@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
+import { apiJsonErr, apiJsonOk, readJsonBodyOptional, requireAdmin } from "@/lib/api/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,18 +22,11 @@ type Kind = "playlists" | "tracks" | "artists";
 
 export async function POST(req: NextRequest) {
   const sb = await supabaseServer();
-  const { data: userData } = await sb.auth.getUser();
-  if (!userData.user) {
-    return NextResponse.json({ ok: false, error: "unauthenticated" }, { status: 401 });
-  }
+  const auth = await requireAdmin(sb);
+  if (!auth.ok) return auth.response;
 
-  const { data: isAdmin, error: adminErr } = await sb.rpc("is_admin");
-  if (adminErr) return NextResponse.json({ ok: false, error: adminErr.message }, { status: 500 });
-  if (!isAdmin) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
-
-  const rawBody: unknown = await req.json().catch(() => ({}));
-  const body =
-    rawBody && typeof rawBody === "object" ? (rawBody as Record<string, unknown>) : ({} as Record<string, unknown>);
+  const rawBody = await readJsonBodyOptional(req);
+  const body = rawBody;
 
   const kindRaw = body.kind;
   const kind: Kind =
@@ -44,10 +38,10 @@ export async function POST(req: NextRequest) {
   const limit = Math.max(1, Math.min(Number(body.limit ?? 200) || 200, 500));
 
   if (!collector) {
-    return NextResponse.json({ ok: false, error: "missing collector" }, { status: 400 });
+    return apiJsonErr("missing collector", 400);
   }
   if (!isIsoDate(run_date)) {
-    return NextResponse.json({ ok: false, error: "invalid run_date (expected YYYY-MM-DD)" }, { status: 400 });
+    return apiJsonErr("invalid run_date (expected YYYY-MM-DD)", 400);
   }
 
   const svc = supabaseService();
@@ -60,7 +54,7 @@ export async function POST(req: NextRequest) {
       .order("display_order", { ascending: true, nullsFirst: false })
       .order("playlist_key", { ascending: true });
 
-    if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    if (error) return apiJsonErr(error.message, 500);
 
     const playlistRows = (playlists ?? []) as Array<Record<string, unknown>>;
     const keys = playlistRows.map((p) => String(p.playlist_key ?? "").trim()).filter(Boolean);
@@ -82,9 +76,9 @@ export async function POST(req: NextRequest) {
         .select("playlist_key,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net")
         .eq("date", run_date)
         .in("playlist_key", keys);
-      if (statsErr) return NextResponse.json({ ok: false, error: statsErr.message }, { status: 500 });
+      if (statsErr) return apiJsonErr(statsErr.message, 500);
 
-      for (const s of (stats ?? []) as any[]) {
+      for (const s of (stats ?? []) as Array<Record<string, unknown>>) {
         const k = String(s?.playlist_key ?? "").trim();
         if (!k) continue;
         statsByKey.set(k, {
@@ -115,7 +109,7 @@ export async function POST(req: NextRequest) {
       })
       .filter((p) => p.playlist_key);
 
-    return NextResponse.json({ ok: true, items, done: true }, { status: 200 });
+    return apiJsonOk({ ok: true as const, items, done: true as const });
   }
 
   if (kind === "tracks") {
@@ -127,32 +121,33 @@ export async function POST(req: NextRequest) {
       offset_rows: offset,
       limit_rows: limit,
     });
-    if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    if (error) return apiJsonErr(error.message, 500);
 
-    const rows = (data ?? []) as any[];
-    const items = rows.map((r) => ({
-      isrc: String(r?.isrc ?? ""),
-      name: (r?.name ?? null) as string | null,
-      album_image_url: (r?.album_image_url ?? null) as string | null,
-      artist_names: (r?.artist_names ?? null) as string[] | null,
-      artist_ids: (r?.artist_ids ?? null) as string[] | null,
-      total_streams_cumulative: r?.total_streams_cumulative == null ? null : Number(r.total_streams_cumulative),
-      daily_streams_delta: r?.daily_streams_delta == null ? null : Number(r.daily_streams_delta),
-    })).filter((t: any) => t.isrc);
+    const rows = (data ?? []) as Array<Record<string, unknown>>;
+    const items = rows
+      .map((r) => ({
+        isrc: String(r?.isrc ?? ""),
+        name: (r?.name ?? null) as string | null,
+        album_image_url: (r?.album_image_url ?? null) as string | null,
+        artist_names: (r?.artist_names ?? null) as string[] | null,
+        artist_ids: (r?.artist_ids ?? null) as string[] | null,
+        total_streams_cumulative: r?.total_streams_cumulative == null ? null : Number(r.total_streams_cumulative),
+        daily_streams_delta: r?.daily_streams_delta == null ? null : Number(r.daily_streams_delta),
+      }))
+      .filter((t) => t.isrc);
 
-    return NextResponse.json({ ok: true, items, done: items.length < limit }, { status: 200 });
+    return apiJsonOk({ ok: true as const, items, done: items.length < limit });
   }
 
-  // artists (includes track_count + total/daily streams)
   const { data, error } = await svc.rpc("collector_artists_stats_paged", {
     collector,
     run_date,
     offset_rows: offset,
     limit_rows: limit,
   });
-  if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+  if (error) return apiJsonErr(error.message, 500);
 
-  const rows = (data ?? []) as any[];
+  const rows = (data ?? []) as Array<Record<string, unknown>>;
   const items = rows
     .map((r) => ({
       artist_id: String(r?.artist_id ?? ""),
@@ -164,6 +159,5 @@ export async function POST(req: NextRequest) {
     }))
     .filter((a) => a.artist_id);
 
-  return NextResponse.json({ ok: true, items, done: items.length < limit }, { status: 200 });
+  return apiJsonOk({ ok: true as const, items, done: items.length < limit });
 }
-

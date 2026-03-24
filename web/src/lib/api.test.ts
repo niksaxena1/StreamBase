@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   isApiSuccess,
+  parseApiJsonEnvelope,
   safeJsonParse,
   getField,
   asArray,
@@ -13,6 +14,25 @@ import type { ApiResponse } from "./api";
 // ---------------------------------------------------------------------------
 // isApiSuccess
 // ---------------------------------------------------------------------------
+
+describe("parseApiJsonEnvelope", () => {
+  it("returns data for a success envelope", () => {
+    expect(parseApiJsonEnvelope<{ a: number }>({ success: true, data: { a: 1 } })).toEqual({ a: 1 });
+  });
+
+  it("throws with server error for a failure envelope", () => {
+    expect(() => parseApiJsonEnvelope({ success: false, error: "nope" })).toThrow("nope");
+  });
+
+  it("throws for a generic failure envelope without error text", () => {
+    expect(() => parseApiJsonEnvelope({ success: false })).toThrow("Request failed");
+  });
+
+  it("throws for malformed JSON shape", () => {
+    expect(() => parseApiJsonEnvelope(null)).toThrow("Invalid API response");
+    expect(() => parseApiJsonEnvelope({ foo: 1 })).toThrow("Invalid API response");
+  });
+});
 
 describe("isApiSuccess", () => {
   it("returns true for success response", () => {

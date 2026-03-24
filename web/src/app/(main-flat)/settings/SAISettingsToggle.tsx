@@ -1,7 +1,13 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { fetchApiJson } from "@/lib/api";
 import { SAVED_FEEDBACK_MS } from "@/lib/constants";
+
+type SaiSettingPayload = {
+  sai_enabled?: boolean;
+  configured?: boolean;
+};
 
 export function SAISettingsToggle() {
   const [saiEnabled, setSaiEnabled] = useState(true);
@@ -13,12 +19,7 @@ export function SAISettingsToggle() {
   // Fetch current setting
   useEffect(() => {
     setLoading(true);
-    void fetch("/api/user-settings/sai")
-      .then(async (res) => {
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error((data as any)?.error ?? "Failed to load setting");
-        return data;
-      })
+    void fetchApiJson<SaiSettingPayload>("/api/user-settings/sai")
       .then((data) => {
         setSaiEnabled(data.sai_enabled ?? true);
         setConfigured(data.configured !== false);
@@ -36,16 +37,11 @@ export function SAISettingsToggle() {
     setSaiEnabled(newValue);
 
     try {
-      const res = await fetch("/api/user-settings/sai", {
+      await fetchApiJson<SaiSettingPayload>("/api/user-settings/sai", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sai_enabled: newValue }),
       });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error((data as any)?.error ?? "Failed to update setting");
-      }
 
       setSaved(true);
       setTimeout(() => setSaved(false), SAVED_FEEDBACK_MS);

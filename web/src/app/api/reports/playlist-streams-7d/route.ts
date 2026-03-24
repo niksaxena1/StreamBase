@@ -4,6 +4,7 @@ import * as XLSX from "xlsx";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { dataDateFromRunDate } from "@/lib/sotDates";
+import { apiJsonErr, requireAdmin } from "@/lib/api/server";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -20,33 +21,13 @@ type PlaylistDailyStatsRow = {
   total_streams_cumulative: number | null;
 };
 
-async function requireAdmin() {
-  const sb = await supabaseServer();
-  const { data: userData } = await sb.auth.getUser();
-  if (!userData.user) {
-    return { ok: false as const, status: 401 as const, error: "unauthenticated" };
-  }
-
-  const { data: isAdmin, error: adminErr } = await sb.rpc("is_admin");
-  if (adminErr) {
-    return { ok: false as const, status: 500 as const, error: adminErr.message };
-  }
-  if (!isAdmin) {
-    return { ok: false as const, status: 403 as const, error: "forbidden" };
-  }
-
-  return { ok: true as const };
-}
-
 export async function GET() {
-  const auth = await requireAdmin();
-  if (!auth.ok) {
-    return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status });
-  }
+  const sb = await supabaseServer();
+  const auth = await requireAdmin(sb);
+  if (!auth.ok) return auth.response;
 
   const svc = supabaseService();
 
-  // Use Releases as the canonical "latest 7 days" date spine.
   const { data: releasesRows, error: releasesErr } = await svc
     .from("playlist_daily_stats")
     .select("date,total_streams_cumulative")
@@ -55,7 +36,7 @@ export async function GET() {
     .limit(7);
 
   if (releasesErr) {
-    return NextResponse.json({ ok: false, error: releasesErr.message }, { status: 500 });
+    return apiJsonErr(releasesErr.message, 500);
   }
 
   const runDatesDesc = ((releasesRows ?? []) as PlaylistDailyStatsRow[])
@@ -63,10 +44,10 @@ export async function GET() {
     .filter(Boolean);
 
   if (runDatesDesc.length === 0) {
-    return NextResponse.json({ ok: false, error: "No Releases rows found" }, { status: 404 });
+    return apiJsonErr("No Releases rows found", 404);
   }
 
-  const runDatesAsc = Array.from(new Set(runDatesDesc)).sort(); // YYYY-MM-DD sort is OK
+  const runDatesAsc = Array.from(new Set(runDatesDesc)).sort();
 
   const results = await Promise.all(
     PLAYLISTS.map(async (p) => {
@@ -123,9 +104,6 @@ export async function GET() {
   XLSX.utils.book_append_sheet(wb, ws, "Last 7 days");
 
   const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
-  // NextResponse expects a web-compatible BodyInit (Uint8Array/Blob/etc).
-  // Buffer is a Uint8Array subclass at runtime, but TS doesn't treat it as BodyInit here.
-  // Converting to Uint8Array keeps the bytes identical and satisfies types.
   const body = new Uint8Array(buf);
 
   const filename = "playlist_streams_last_7_days.xlsx";
@@ -137,4 +115,3 @@ export async function GET() {
     },
   });
 }
-

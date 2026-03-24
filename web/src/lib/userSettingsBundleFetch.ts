@@ -1,3 +1,5 @@
+import { fetchApiJson } from "@/lib/api";
+
 /**
  * Shared deduplicating fetch for user settings.
  *
@@ -31,12 +33,7 @@ let pending: Promise<UserSettingsBundle> | null = null;
 export function fetchUserSettingsBundle(): Promise<UserSettingsBundle> {
   if (pending) return pending;
 
-  pending = fetch("/api/user-settings/all", { method: "GET" })
-    .then(async (res) => {
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error((data as any)?.error ?? "Failed to load settings");
-      return data as UserSettingsBundle;
-    })
+  pending = fetchApiJson<UserSettingsBundle>("/api/user-settings/all", { method: "GET" })
     .finally(() => {
       // Clear after a short delay so concurrent callers that arrive within
       // the same microtask still share the request, but later refetches

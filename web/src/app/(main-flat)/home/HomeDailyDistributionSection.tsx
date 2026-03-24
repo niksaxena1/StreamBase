@@ -13,6 +13,7 @@ import { Modal } from "@/components/ui/Modal";
 import { DailyStreamsDistributionChart, DEFAULT_DAILY_BUCKETS } from "@/components/charts/DailyStreamsDistributionChart";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
 import { type TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChart";
+import { fetchApiJson } from "@/lib/api";
 import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
 import { foldForSearch } from "@/lib/searchFold";
 import { readStoredBool, writeStoredBool, readStoredString, writeStoredString, removeStoredItem } from "@/lib/storage";
@@ -67,10 +68,10 @@ export function HomeDailyDistributionSection(props: {
     let cancelled = false;
     async function load() {
       try {
-        const res = await fetch("/api/artists/options");
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) return;
-        const rows = Array.isArray((json as any)?.artists) ? ((json as any).artists as any[]) : [];
+        const json = await fetchApiJson<{ artists?: Array<{ artist_id?: string; image_url?: string | null }> }>(
+          "/api/artists/options",
+        );
+        const rows = Array.isArray(json.artists) ? json.artists : [];
         const map = new Map<string, string | null>();
         for (const r of rows) {
           const id = String(r?.artist_id ?? "");

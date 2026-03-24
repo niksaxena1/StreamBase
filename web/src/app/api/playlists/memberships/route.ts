@@ -1,7 +1,8 @@
-import { NextResponse, NextRequest } from "next/server";
+import { NextRequest } from "next/server";
 
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
+import { apiJsonErr, apiJsonOk, readJsonBodyOptional, requireAdmin } from "@/lib/api/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,35 +13,28 @@ function isIsoDate(s: unknown): s is string {
 
 export async function POST(req: NextRequest) {
   const sb = await supabaseServer();
-  const { data: userData } = await sb.auth.getUser();
-  if (!userData.user) {
-    return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
-  }
+  const auth = await requireAdmin(sb);
+  if (!auth.ok) return auth.response;
 
-  const { data: isAdmin, error: adminErr } = await sb.rpc("is_admin");
-  if (adminErr) return NextResponse.json({ error: adminErr.message }, { status: 500 });
-  if (!isAdmin) return NextResponse.json({ error: "forbidden" }, { status: 403 });
-
-  const body = await req.json().catch(() => ({}));
-  const date = (body as any)?.date;
-  const playlistKeysRaw = (body as any)?.playlist_keys;
+  const body = await readJsonBodyOptional(req);
+  const date = body.date;
+  const playlistKeysRaw = body.playlist_keys;
   const playlist_keys = Array.isArray(playlistKeysRaw)
-    ? playlistKeysRaw.map((x: any) => String(x ?? "").trim()).filter(Boolean)
+    ? playlistKeysRaw.map((x) => String(x ?? "").trim()).filter(Boolean)
     : [];
 
   if (!isIsoDate(date)) {
-    return NextResponse.json({ error: "invalid run_date (expected YYYY-MM-DD)" }, { status: 400 });
+    return apiJsonErr("invalid run_date (expected YYYY-MM-DD)", 400);
   }
   if (playlist_keys.length === 0) {
-    return NextResponse.json({ rows: [] }, { status: 200 });
+    return apiJsonOk({ rows: [] as Array<{ playlist_key: string; isrc: string }> });
   }
   if (playlist_keys.length > 25) {
-    return NextResponse.json({ error: "too many playlist keys (max 25)" }, { status: 400 });
+    return apiJsonErr("too many playlist keys (max 25)", 400);
   }
 
   const svc = supabaseService();
 
-  // PostgREST caps responses; page explicitly.
   const pageSize = 1000;
   const hardCap = 200_000;
   const out: Array<{ playlist_key: string; isrc: string }> = [];
@@ -57,8 +51,8 @@ export async function POST(req: NextRequest) {
       .order("isrc", { ascending: true })
       .range(from, to);
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    const rows = (data ?? []) as any[];
+    if (error) return apiJsonErr(error.message, 500);
+    const rows = (data ?? []) as Array<{ playlist_key?: unknown; isrc?: unknown }>;
     if (!rows.length) break;
 
     for (const r of rows) {
@@ -71,6 +65,5 @@ export async function POST(req: NextRequest) {
     if (rows.length < pageSize) break;
   }
 
-  return NextResponse.json({ rows: out }, { status: 200 });
+  return apiJsonOk({ rows: out });
 }
-

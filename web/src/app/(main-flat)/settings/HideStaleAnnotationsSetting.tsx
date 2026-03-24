@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { fetchApiJson } from "@/lib/api";
 import { SAVED_FEEDBACK_MS } from "@/lib/constants";
+
+type HideStalePayload = {
+  hide_stale_override_annotations?: boolean;
+  hide_stale_annotations_exclude_catalog?: boolean;
+  configured?: boolean;
+};
 
 function Toggle({
   checked,
@@ -50,16 +57,7 @@ export function HideStaleAnnotationsSetting() {
   useEffect(() => {
     setLoading(true);
     setError(null);
-    void fetch("/api/user-settings/hide-stale-annotations")
-      .then(async (res) => {
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok)
-          throw new Error(
-            (data as Record<string, unknown>)?.error as string ??
-              "Failed to load setting",
-          );
-        return data as Record<string, unknown>;
-      })
+    void fetchApiJson<HideStalePayload>("/api/user-settings/hide-stale-annotations")
       .then((data) => {
         setHidden(Boolean(data.hide_stale_override_annotations));
         setExcludeCatalog(Boolean(data.hide_stale_annotations_exclude_catalog));
@@ -77,14 +75,11 @@ export function HideStaleAnnotationsSetting() {
     setSaved(false);
     setSaving(true);
     try {
-      const res = await fetch("/api/user-settings/hide-stale-annotations", {
+      const data = await fetchApiJson<HideStalePayload>("/api/user-settings/hide-stale-annotations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(patch),
       });
-      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-      if (!res.ok)
-        throw new Error((data.error as string) ?? "Failed to update setting");
 
       setHidden(Boolean(data.hide_stale_override_annotations));
       setExcludeCatalog(Boolean(data.hide_stale_annotations_exclude_catalog));
