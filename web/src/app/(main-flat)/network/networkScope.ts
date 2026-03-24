@@ -148,3 +148,11 @@ export function formatNetworkScopeLabel(
   }
   return "All Catalog";
 }
+
+/** Stable string for camera persistence, selection fetch keys, and graph-identity effects. */
+export function networkScopeIdentity(scope: NetworkScopeState): string {
+  if (scope.mode === "catalog") return "c";
+  if (scope.mode === "playlist") return `p:${scope.playlistKey ?? ""}`;
+  const keys = [...scope.customPlaylistKeys].sort().join(",");
+  return `u:${keys}:${scope.customPlaylistMode}`;
+}
