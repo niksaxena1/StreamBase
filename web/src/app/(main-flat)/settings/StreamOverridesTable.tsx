@@ -9,6 +9,7 @@ import { MenuSelect } from "@/components/ui/MenuSelect";
 import { IconButton } from "@/components/ui/Button";
 import { InlineDatePicker } from "@/components/ui/InlineDatePicker";
 import { downloadCsv, todayIsoDate } from "@/lib/csv";
+import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
 import { showToast } from "@/lib/toast";
 
 interface StreamOverride {
@@ -310,28 +311,31 @@ export function StreamOverridesTable({
                     >
                       <td className="px-4 py-3 font-mono text-xs">{formatDateDisplay(o.date)}</td>
                       <td className="px-4 py-3">
-                        <Link
-                          href={`/tracks/${isrc}`}
-                          className="flex items-center gap-2 group"
-                        >
-                          {imageUrl ? (
-                            <Image
-                              src={imageUrl}
-                              alt={name}
-                              width={32}
-                              height={32}
-                              className="h-8 w-8 rounded-lg object-cover sb-ring flex-shrink-0"
+                        <div className="flex items-center gap-2">
+                          <Link href={`/tracks/${isrc}`} className="flex shrink-0 items-center group">
+                            {imageUrl ? (
+                              <Image
+                                src={imageUrl}
+                                alt={name}
+                                width={32}
+                                height={32}
+                                className="h-8 w-8 rounded-lg object-cover sb-ring flex-shrink-0"
+                              />
+                            ) : (
+                              <div className="h-8 w-8 rounded-lg sb-ring bg-white/60 dark:bg-white/10 flex-shrink-0" />
+                            )}
+                          </Link>
+                          <div className="min-w-0 flex-1">
+                            <Link href={`/tracks/${isrc}`} className="block group">
+                              <div className="truncate text-sm font-medium group-hover:underline">{name}</div>
+                            </Link>
+                            <CopyableIsrc
+                              isrc={isrc}
+                              className="mt-0.5 block truncate font-mono text-[11px]"
+                              style={{ color: "var(--sb-muted)" }}
                             />
-                          ) : (
-                            <div className="h-8 w-8 rounded-lg sb-ring bg-white/60 dark:bg-white/10 flex-shrink-0" />
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <div className="font-medium text-sm truncate group-hover:underline">{name}</div>
-                            <div className="font-mono text-[11px] truncate" style={{ color: "var(--sb-muted)" }}>
-                              {isrc}
-                            </div>
                           </div>
-                        </Link>
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-right font-mono text-xs">
                         {Intl.NumberFormat().format(Number(o.streams_cumulative_override ?? 0))}

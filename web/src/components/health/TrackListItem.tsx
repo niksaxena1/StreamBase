@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
+import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
 import type { TrackBase } from "@/lib/health/types";
 
 /**
@@ -102,12 +103,10 @@ export function TrackListItem({
         )}
 
         <div className="mt-0.5 flex items-center gap-2">
-          <Link
-            href={`/tracks/${track.isrc}`}
+          <CopyableIsrc
+            isrc={track.isrc}
             className="font-mono text-[10px] sb-positive underline hover:opacity-80"
-          >
-            {track.isrc}
-          </Link>
+          />
           {actions}
         </div>
       </div>

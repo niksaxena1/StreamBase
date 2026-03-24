@@ -21,6 +21,7 @@ import { Modal } from "@/components/ui/Modal";
 import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
 import { useThemeColors, getChartTooltipStyle } from "@/components/charts/useThemeColors";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
+import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
 import { todayIsoDate } from "@/lib/csv";
 import type { TrackFilterResult } from "./filterTypes";
@@ -283,7 +284,11 @@ export function FilterConcentrationView({
                   </TableCell>
                   <TableCell className="hidden sm:table-cell">
                     {showIsrc ? (
-                      <span className="font-mono text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>{t.isrc}</span>
+                      <CopyableIsrc
+                        isrc={t.isrc}
+                        className="font-mono text-xs opacity-40"
+                        style={{ color: "var(--sb-muted)" }}
+                      />
                     ) : distro ? (
                       <div className="flex items-center gap-1.5 min-w-0">
                         {distro.imageUrl ? (

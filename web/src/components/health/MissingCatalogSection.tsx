@@ -4,6 +4,7 @@ import Link from "next/link";
 import { fetchMissingCatalogTracks } from "@/lib/health/fetchWarningDetails";
 import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
+import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
 import { ExportMissingTracksButton } from "@/components/health/ExportMissingTracksButton";
 import { SectionHeader } from "@/components/ui/SectionHeader";
 
@@ -72,12 +73,10 @@ export async function MissingCatalogSection({
                     {track.name || track.isrc}
                   </Link>
                   <div className="mt-0.5">
-                    <Link
-                      href={`/tracks/${track.isrc}`}
-                      className="font-mono text-[10px] text-lime-600 dark:text-lime-400 underline hover:opacity-80"
-                    >
-                      {track.isrc}
-                    </Link>
+                    <CopyableIsrc
+                      isrc={track.isrc}
+                      className="font-mono text-[10px] text-lime-600 underline hover:opacity-80 dark:text-lime-400"
+                    />
                   </div>
                 </div>
               </div>

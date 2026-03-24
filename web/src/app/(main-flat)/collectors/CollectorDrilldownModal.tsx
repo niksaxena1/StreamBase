@@ -8,6 +8,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import { IconButton } from "@/components/ui/Button";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
+import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
 import { formatDateISO, formatInt, formatUsd2 } from "@/lib/format";
 
 import type {
@@ -551,12 +552,11 @@ function TrackDrillTable({
               ) : (
                 <span className="opacity-30">—</span>
               )}
-              <div
+              <CopyableIsrc
+                isrc={String(t.isrc)}
                 className="font-mono text-[11px] opacity-40"
                 style={{ color: "var(--sb-muted)" }}
-              >
-                {String(t.isrc)}
-              </div>
+              />
             </TableCell>
             {isTracksMetric ? null : (
               <>

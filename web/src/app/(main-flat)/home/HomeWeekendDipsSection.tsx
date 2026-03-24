@@ -12,6 +12,7 @@ import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import type { ArtistWeekendDipRow, TrackWeekendDipRow } from "./homeTypes";
 import { readStoredBool, readStoredNumber, writeStoredBool, writeStoredNumber } from "@/lib/storage";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
+import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
 import { todayIsoDate } from "@/lib/csv";
 
 const STORAGE_KEY_OPEN = "sb:home-weekend-dips-open";
@@ -292,8 +293,14 @@ export function HomeWeekendDipsSection(props: {
                             >
                               {t.name ?? t.isrc}
                             </Link>
-                            <div className="text-[10px] opacity-50 truncate">
-                              {(t.artist_name ?? "—")}{t.isrc ? ` · ${t.isrc}` : ""}
+                            <div className="truncate text-[10px] opacity-50">
+                              {(t.artist_name ?? "—")}
+                              {t.isrc ? (
+                                <>
+                                  {" · "}
+                                  <CopyableIsrc inline isrc={t.isrc} className="font-mono" />
+                                </>
+                              ) : null}
                             </div>
                           </div>
                         </div>

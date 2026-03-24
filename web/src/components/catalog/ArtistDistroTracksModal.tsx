@@ -6,6 +6,7 @@ import Image from "next/image";
 import { ExternalLink, ChevronDown, ChevronUp } from "lucide-react";
 
 import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
+import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
 import { Modal } from "@/components/ui/Modal";
 import { formatInt } from "@/lib/format";
 
@@ -229,9 +230,11 @@ export function ArtistDistroTracksModal({
                           })}
                       </span>
                     ) : (
-                      <span className="text-xs font-mono opacity-40" style={{ color: "var(--sb-muted)" }}>
-                        {track.isrc}
-                      </span>
+                      <CopyableIsrc
+                        isrc={track.isrc}
+                        className="text-xs font-mono opacity-40"
+                        style={{ color: "var(--sb-muted)" }}
+                      />
                     )}
                   </TableCell>
                   <TableCell>

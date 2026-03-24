@@ -66,6 +66,18 @@ async function getLatestTwoStreamDates(
 
 const MAX_ISRCS = 4000;
 
+type DistroPlaylistDetail = {
+  key: string;
+  name: string;
+  imageUrl: string | null;
+};
+
+type TrackArtistDetail = {
+  id: string;
+  name: string;
+  imageUrl: string | null;
+};
+
 type IsrcBatchDetailRow = {
   isrc: string;
   name: string | null;
@@ -78,6 +90,10 @@ type IsrcBatchDetailRow = {
   artistsOnTrack: string;
   /** Comma-separated distro playlist display names (playlist_type = Distro, active membership) */
   distroPlaylists: string;
+  /** Distro playlists this ISRC is active in (thumbnails + keys for linking). */
+  distroPlaylistDetails: DistroPlaylistDetail[];
+  /** Credited artists with Spotify IDs and optional cached images. */
+  trackArtists: TrackArtistDetail[];
 };
 
 export async function POST(req: Request) {
@@ -126,13 +142,16 @@ export async function POST(req: Request) {
       spotify_track_id: string | null;
       release_date: string | null;
       spotify_artist_names: string[] | null;
+      spotify_artist_ids: string[] | null;
     }
   >();
 
   for (const part of chunk(isrcs, 200)) {
     const { data, error } = await svc
       .from("tracks")
-      .select("isrc,name,spotify_album_image_url,spotify_track_id,release_date,spotify_artist_names")
+      .select(
+        "isrc,name,spotify_album_image_url,spotify_track_id,release_date,spotify_artist_names,spotify_artist_ids",
+      )
       .in("isrc", part);
 
     if (error) {
@@ -146,6 +165,7 @@ export async function POST(req: Request) {
       spotify_track_id: string | null;
       release_date: string | null;
       spotify_artist_names: string[] | null;
+      spotify_artist_ids: string[] | null;
     }>) {
       if (!wanted.has(r.isrc) || metaByIsrc.has(r.isrc)) continue;
       const rd = r.release_date;
@@ -156,27 +176,55 @@ export async function POST(req: Request) {
         spotify_track_id: typeof tid === "string" && tid.trim() ? tid.trim() : null,
         release_date: typeof rd === "string" ? rd : rd != null ? String(rd) : null,
         spotify_artist_names: Array.isArray(r.spotify_artist_names) ? r.spotify_artist_names : null,
+        spotify_artist_ids: Array.isArray(r.spotify_artist_ids) ? r.spotify_artist_ids : null,
       });
     }
   }
 
-  const distroNamesByIsrc = new Map<string, string[]>();
+  const allArtistIds = new Set<string>();
+  for (const m of metaByIsrc.values()) {
+    for (const raw of m.spotify_artist_ids ?? []) {
+      const id = String(raw ?? "").trim();
+      if (id) allArtistIds.add(id);
+    }
+  }
+
+  const artistImageById = new Map<string, string | null>();
+  if (allArtistIds.size > 0) {
+    for (const part of chunk([...allArtistIds], 200)) {
+      const { data: imgRows, error: imgErr } = await svc
+        .from("spotify_artist_images")
+        .select("artist_id,image_url")
+        .in("artist_id", part);
+      if (imgErr) {
+        console.error("isrc-batch-details: artist images", imgErr);
+        break;
+      }
+      for (const row of (imgRows ?? []) as Array<{ artist_id: string; image_url: string | null }>) {
+        artistImageById.set(String(row.artist_id), row.image_url ?? null);
+      }
+    }
+  }
+
+  const distroDetailsByIsrc = new Map<string, DistroPlaylistDetail[]>();
 
   const { data: distroPlaylistRows } = await svc
     .from("playlists")
-    .select("playlist_key,display_name")
+    .select("playlist_key,display_name,spotify_playlist_image_url")
     .eq("playlist_type", "Distro");
 
   const distroPlaylists = ((distroPlaylistRows ?? []) as Array<{
     playlist_key: string;
     display_name: string | null;
+    spotify_playlist_image_url: string | null;
   }>).map((p) => ({
     key: p.playlist_key,
     name: (p.display_name ?? p.playlist_key).trim(),
+    imageUrl: p.spotify_playlist_image_url ?? null,
   }));
 
   const distroKeys = distroPlaylists.map((p) => p.key);
-  const distroNameByKey = new Map(distroPlaylists.map((p) => [p.key, p.name]));
+  const distroMetaByKey = new Map(distroPlaylists.map((p) => [p.key, p]));
 
   if (distroKeys.length && isrcs.length) {
     const membershipRows: Array<{ isrc: string; playlist_key: string }> = [];
@@ -203,11 +251,17 @@ export async function POST(req: Request) {
     }
 
     for (const r of membershipRows) {
-      const label = distroNameByKey.get(r.playlist_key);
-      if (!label) continue;
-      if (!distroNamesByIsrc.has(r.isrc)) distroNamesByIsrc.set(r.isrc, []);
-      const list = distroNamesByIsrc.get(r.isrc)!;
-      if (!list.includes(label)) list.push(label);
+      const pl = distroMetaByKey.get(r.playlist_key);
+      if (!pl) continue;
+      if (!distroDetailsByIsrc.has(r.isrc)) distroDetailsByIsrc.set(r.isrc, []);
+      const list = distroDetailsByIsrc.get(r.isrc)!;
+      if (!list.some((x) => x.key === pl.key)) {
+        list.push({ key: pl.key, name: pl.name, imageUrl: pl.imageUrl });
+      }
+    }
+
+    for (const [, list] of distroDetailsByIsrc) {
+      list.sort((a, b) => a.name.localeCompare(b.name));
     }
   }
 
@@ -247,7 +301,26 @@ export async function POST(req: Request) {
     if (total !== null && prev !== null) {
       daily = Math.max(0, total - prev);
     }
-    const distroList = (distroNamesByIsrc.get(isrc) ?? []).slice().sort((a, b) => a.localeCompare(b));
+    const distroDetailList = distroDetailsByIsrc.get(isrc) ?? [];
+    const distroNameList = distroDetailList.map((d) => d.name);
+
+    const ids = meta?.spotify_artist_ids ?? [];
+    const names = meta?.spotify_artist_names ?? [];
+    const nArt = Math.max(ids.length, names.length);
+    const trackArtists: TrackArtistDetail[] = [];
+    const seenArtist = new Set<string>();
+    for (let i = 0; i < nArt; i++) {
+      const id = String(ids[i] ?? "").trim();
+      if (!id || seenArtist.has(id)) continue;
+      seenArtist.add(id);
+      const nm = String(names[i] ?? "").trim() || id;
+      trackArtists.push({
+        id,
+        name: nm,
+        imageUrl: artistImageById.get(id) ?? null,
+      });
+    }
+
     return {
       isrc,
       name: meta?.name ?? null,
@@ -257,7 +330,9 @@ export async function POST(req: Request) {
       totalStreams: total,
       dailyStreams: daily,
       artistsOnTrack: joinArtistsForSpreadsheet(meta?.spotify_artist_names ?? null),
-      distroPlaylists: joinArtistsForSpreadsheet(distroList),
+      distroPlaylists: joinArtistsForSpreadsheet(distroNameList),
+      distroPlaylistDetails: distroDetailList,
+      trackArtists,
     };
   });
 

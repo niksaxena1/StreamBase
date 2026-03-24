@@ -23,6 +23,7 @@ import { readStoredBool, readStoredNumber, readStoredString, writeStoredBool, wr
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
 import { todayIsoDate } from "@/lib/csv";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
+import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
 import { Modal } from "@/components/ui/Modal";
 import { useThemeColors, getChartTooltipStyle } from "@/components/charts/useThemeColors";
 import type { TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChart";
@@ -589,7 +590,11 @@ export function HomeConcentrationSection(props: {
                       </TableCell>
                       <TableCell className="hidden sm:table-cell">
                         {showIsrcInDistroCol ? (
-                          <span className="font-mono text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>{p.isrc}</span>
+                          <CopyableIsrc
+                            isrc={p.isrc}
+                            className="font-mono text-xs opacity-40"
+                            style={{ color: "var(--sb-muted)" }}
+                          />
                         ) : p.distroPlaylistName ? (
                           <div className="flex items-center gap-1.5 min-w-0">
                             {p.distroPlaylistImageUrl ? (

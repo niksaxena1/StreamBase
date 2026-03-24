@@ -25,6 +25,7 @@ import { IconButton } from "@/components/ui/Button";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { useMetric } from "@/components/metrics/MetricContext";
 import { SectionHeader } from "@/components/ui/SectionHeader";
+import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
 import { RememberTrackSelection } from "@/components/dashboard/RememberTrackSelection";
 import { GranularitySelect, RangeSelect, handleGranularityWithRangeRestore, granularityLabel } from "@/components/ui/GranularitySelect";
 import type { Granularity } from "@/components/ui/GranularitySelect";
@@ -580,7 +581,11 @@ export function CatalogPageClient(props: {
                         </TableCell>
                         <TableCell className="hidden sm:table-cell">
                           {showIsrcInDistroCol ? (
-                            <span className="font-mono text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>{t.isrc}</span>
+                            <CopyableIsrc
+                              isrc={t.isrc}
+                              className="font-mono text-xs opacity-40"
+                              style={{ color: "var(--sb-muted)" }}
+                            />
                           ) : t.distroPlaylistName ? (
                             <div className="flex items-center gap-1.5 min-w-0">
                               {t.distroPlaylistImageUrl ? (
@@ -595,7 +600,11 @@ export function CatalogPageClient(props: {
                           )}
                         </TableCell>
                         <TableCell mono className="text-xs" style={{ color: "var(--sb-muted)" }}>
-                          {showIsrcOnMobile ? t.isrc : (t.releaseDate ? formatDateISO(t.releaseDate) : null)}
+                          {showIsrcOnMobile ? (
+                            <CopyableIsrc isrc={t.isrc} className="text-xs" style={{ color: "var(--sb-muted)" }} />
+                          ) : t.releaseDate ? (
+                            formatDateISO(t.releaseDate)
+                          ) : null}
                         </TableCell>
                         <TableCell numeric className="font-medium" style={topTracksNumberStyle}>
                           {t.total === null
@@ -756,7 +765,11 @@ export function CatalogPageClient(props: {
                         </TableCell>
                         <TableCell className="hidden sm:table-cell">
                           {showIsrcInDistroCol ? (
-                            <span className="font-mono text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>{t.isrc}</span>
+                            <CopyableIsrc
+                              isrc={t.isrc}
+                              className="font-mono text-xs opacity-40"
+                              style={{ color: "var(--sb-muted)" }}
+                            />
                           ) : t.distroPlaylistName ? (
                             <div className="flex items-center gap-1.5 min-w-0">
                               {t.distroPlaylistImageUrl ? (
@@ -771,7 +784,11 @@ export function CatalogPageClient(props: {
                           )}
                         </TableCell>
                         <TableCell mono className="text-xs" style={{ color: "var(--sb-muted)" }}>
-                          {showIsrcOnMobile ? t.isrc : (t.releaseDate ? formatDateISO(t.releaseDate) : null)}
+                          {showIsrcOnMobile ? (
+                            <CopyableIsrc isrc={t.isrc} className="text-xs" style={{ color: "var(--sb-muted)" }} />
+                          ) : t.releaseDate ? (
+                            formatDateISO(t.releaseDate)
+                          ) : null}
                         </TableCell>
                         <TableCell numeric className="font-medium" style={topTracksNumberStyle}>
                           {t.daily === null
@@ -861,8 +878,9 @@ export function CatalogPageClient(props: {
                     <span>•</span>
                   </>
                 ) : null}
-                <span>
-                  ISRC: <span className="font-mono">{props.isrc}</span>
+                <span className="inline-flex flex-wrap items-center gap-1">
+                  ISRC:{" "}
+                  <CopyableIsrc isrc={props.isrc} className="font-mono" />
                 </span>
               </div>
             </div>

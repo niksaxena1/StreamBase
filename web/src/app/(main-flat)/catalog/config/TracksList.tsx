@@ -6,6 +6,7 @@ import Image from "next/image";
 import { ExternalLink, ChevronDown } from "lucide-react";
 
 import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
+import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { foldForSearch } from "@/lib/searchFold";
 import { useMetric } from "@/components/metrics/MetricContext";
@@ -193,7 +194,7 @@ export function TracksList({ tracks, searchQuery, sortBy = "name", sortAsc = tru
               )}
             </TableCell>
             <TableCell mono className="text-xs" style={{ color: "var(--sb-muted)" }}>
-              {track.isrc}
+              <CopyableIsrc isrc={track.isrc} className="text-xs" style={{ color: "var(--sb-muted)" }} />
             </TableCell>
             <TableCell className="text-xs" style={{ color: "var(--sb-muted)" }}>
               {track.release_date ?? "—"}

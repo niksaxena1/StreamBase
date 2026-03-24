@@ -3,6 +3,7 @@
 import { useState, useMemo, type ReactNode } from "react";
 import Image from "next/image";
 import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/GlassTable";
+import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
 import { TrackExclusionForm } from "./TrackExclusionForm";
 import { showToast } from "@/lib/toast";
 
@@ -137,7 +138,10 @@ export function HealthExclusionsSection({
                   )}
                   <div className="flex-1 min-w-0">
                     <div className="font-medium truncate">{name}</div>
-                    <div className="font-mono text-[10px] opacity-60 truncate">{isrc}</div>
+                    <CopyableIsrc
+                      isrc={isrc}
+                      className="block truncate font-mono text-[10px] opacity-60"
+                    />
                   </div>
                 </div>
               </TableCell>

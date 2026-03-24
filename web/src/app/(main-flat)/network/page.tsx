@@ -22,6 +22,8 @@ export type GraphNode = {
 export type SharedTrack = {
   isrc: string;
   name: string | null;
+  /** From `tracks.spotify_album_image_url` when the RPC migration is applied. */
+  album_image_url?: string | null;
 };
 
 export type GraphEdge = {

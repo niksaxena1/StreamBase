@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { useMetric } from "@/components/metrics/MetricContext";
@@ -27,20 +28,20 @@ import {
   ImageIcon,
   Scaling,
   UserRound,
+  UserX,
   ListMusic,
   Disc3,
   Table2,
   SquareDashed,
   HelpCircle,
   Download,
+  ExternalLink,
   Loader2,
   X,
   Filter,
-  Link2,
   Music,
 } from "lucide-react";
 import { formatDateISO, formatInt, formatUsd2 } from "@/lib/format";
-import { showToast } from "@/lib/toast";
 import { slugifyForFilename, todayIsoDate } from "@/lib/csv";
 import {
   downloadNetworkViewXlsx,
@@ -49,11 +50,13 @@ import {
   type NetworkViewExportEdge,
 } from "@/lib/networkViewXlsx";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
-import { useThemeColors } from "@/components/charts/useThemeColors";
+import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
+import { useThemeColors, type ThemeColors } from "@/components/charts/useThemeColors";
 import { IconButton } from "@/components/ui/Button";
 import { MenuSelect, type MenuSelectOption } from "@/components/ui/MenuSelect";
 import { Modal } from "@/components/ui/Modal";
 import { GlassTable, TableRow, TableCell, EmptyState } from "@/components/ui/GlassTable";
+import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
 import {
   ArtistDistroTracksModal,
   type ArtistDistroTrackRow,
@@ -391,6 +394,306 @@ function linkEndpointId(end: unknown): string {
   return String(end);
 }
 
+function collaborationLinkKey(link: FGLinkObj): string {
+  const a = linkEndpointId(link.source);
+  const b = linkEndpointId(link.target);
+  return a < b ? `${a}\0${b}` : `${b}\0${a}`;
+}
+
+function hexToRgba(hex: string, alpha: number): string {
+  const h = hex.replace("#", "").trim();
+  const full =
+    h.length === 3
+      ? h
+          .split("")
+          .map((c) => c + c)
+          .join("")
+      : h;
+  if (full.length !== 6) return `rgba(0,0,0,${alpha})`;
+  const n = parseInt(full, 16);
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+/**
+ * Catalog deep links from network: primary click/tap stays on the network (`onPrimaryAction`);
+ * Ctrl/Cmd+click follows the link unless `onCtrlClick` is set; touch/pen long-press opens Catalog unless
+ * `onLongPressOverride` is set (same timing as graph marquee).
+ */
+function NetworkCatalogRoutedLink({
+  href,
+  onPrimaryAction,
+  className,
+  title: titleProp,
+  onCtrlClick,
+  onLongPressOverride,
+  children,
+}: {
+  href: string;
+  onPrimaryAction: () => void;
+  className?: string;
+  title?: string;
+  /** When set, Ctrl/Cmd+click runs this instead of navigating to `href`. */
+  onCtrlClick?: () => void;
+  /** When set, touch/pen long-press runs this instead of `router.push(href)`. */
+  onLongPressOverride?: () => void;
+  children: React.ReactNode;
+}) {
+  const router = useRouter();
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
+  const longPressPointerIdRef = useRef<number | null>(null);
+  const skipNextClickRef = useRef(false);
+
+  const clearLongPress = useCallback(() => {
+    if (longPressTimerRef.current != null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    longPressStartRef.current = null;
+    longPressPointerIdRef.current = null;
+  }, []);
+
+  useEffect(() => () => clearLongPress(), [clearLongPress]);
+
+  const defaultTitle =
+    "Click or tap: stay on network · Ctrl or ⌘+click: open in Catalog · Touch long-press: open Catalog";
+
+  return (
+    <Link
+      href={href}
+      className={className}
+      title={titleProp ?? defaultTitle}
+      onClick={(e) => {
+        if (skipNextClickRef.current) {
+          e.preventDefault();
+          e.stopPropagation();
+          skipNextClickRef.current = false;
+          return;
+        }
+        if (e.ctrlKey || e.metaKey) {
+          if (onCtrlClick) {
+            e.preventDefault();
+            e.stopPropagation();
+            onCtrlClick();
+          }
+          return;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        onPrimaryAction();
+      }}
+      onPointerDown={(e: ReactPointerEvent<HTMLAnchorElement>) => {
+        if (e.button !== 0) return;
+        const pt = e.pointerType;
+        if (pt !== "touch" && pt !== "pen") return;
+        clearLongPress();
+        longPressStartRef.current = { x: e.clientX, y: e.clientY };
+        longPressPointerIdRef.current = e.pointerId;
+        longPressTimerRef.current = window.setTimeout(() => {
+          longPressTimerRef.current = null;
+          longPressStartRef.current = null;
+          longPressPointerIdRef.current = null;
+          skipNextClickRef.current = true;
+          try {
+            void navigator.vibrate?.(25);
+          } catch {
+            // ignore
+          }
+          if (onLongPressOverride) {
+            onLongPressOverride();
+          } else {
+            router.push(href);
+          }
+        }, NETWORK_LONG_PRESS_MS);
+      }}
+      onPointerMove={(e: ReactPointerEvent<HTMLAnchorElement>) => {
+        if (longPressTimerRef.current == null || e.pointerId !== longPressPointerIdRef.current) return;
+        const start = longPressStartRef.current;
+        if (!start) return;
+        const dx = e.clientX - start.x;
+        const dy = e.clientY - start.y;
+        if (Math.hypot(dx, dy) > NETWORK_LONG_PRESS_MOVE_PX) {
+          clearLongPress();
+        }
+      }}
+      onPointerUp={clearLongPress}
+      onPointerCancel={clearLongPress}
+    >
+      {children}
+    </Link>
+  );
+}
+
+function NetworkCatalogArtistLink({
+  artistId,
+  onNetworkSelectArtist,
+  onDistroGesture,
+  className,
+  title,
+  children,
+}: {
+  artistId: string;
+  onNetworkSelectArtist?: (id: string) => void;
+  /** Ctrl/Cmd+click and touch long-press call this instead of opening Catalog (e.g. distro modal). */
+  onDistroGesture?: () => void;
+  className?: string;
+  title?: string;
+  children: React.ReactNode;
+}) {
+  const href = `/catalog?artist_id=${encodeURIComponent(artistId)}`;
+  return (
+    <NetworkCatalogRoutedLink
+      href={href}
+      className={className}
+      title={title}
+      onPrimaryAction={() => onNetworkSelectArtist?.(artistId)}
+      onCtrlClick={onDistroGesture}
+      onLongPressOverride={onDistroGesture}
+    >
+      {children}
+    </NetworkCatalogRoutedLink>
+  );
+}
+
+function NetworkLinkCollaborationTooltipContent({
+  link,
+  frozen,
+  accentColor,
+  colors,
+  onArtistPrimary,
+  onArtistDistroGesture,
+  onFrozenTrackOpenDetail,
+}: {
+  link: FGLinkObj;
+  frozen: boolean;
+  accentColor: string;
+  colors: ThemeColors;
+  onArtistPrimary: (artistId: string) => void;
+  /** Frozen tooltip: Ctrl/Cmd+click or long-press on artist name → same as Ctrl+click on graph node. */
+  onArtistDistroGesture: (artistId: string, artistName: string) => void;
+  /** Frozen tooltip: plain click on track title → track detail modal. */
+  onFrozenTrackOpenDetail: (isrc: string, displayName: string) => void;
+}) {
+  const edge = link as unknown as GraphEdge;
+  const srcNode = typeof link.source === "object" ? (link.source as FGNodeObj) : null;
+  const tgtNode = typeof link.target === "object" ? (link.target as FGNodeObj) : null;
+  const srcName = srcNode?.name ?? String(link.source);
+  const tgtName = tgtNode?.name ?? String(link.target);
+  const srcId = linkEndpointId(link.source);
+  const tgtId = linkEndpointId(link.target);
+  const tracks = (edge.shared_tracks ?? []) as SharedTrack[];
+
+  const panelStyle: CSSProperties = {
+    backgroundColor: colors.card,
+    color: colors.text,
+    borderColor: frozen ? hexToRgba(accentColor, 0.7) : colors.border,
+    boxShadow: frozen
+      ? `0 0 0 1px ${hexToRgba(accentColor, 0.7)}, 0 10px 30px ${hexToRgba(accentColor, 0.18)}, var(--sb-shadow-compact)`
+      : "var(--sb-shadow-compact)",
+    backgroundImage: frozen
+      ? `radial-gradient(80% 70% at 25% 20%, ${hexToRgba(accentColor, 0.18)} 0%, transparent 55%), radial-gradient(70% 60% at 85% 85%, ${hexToRgba(accentColor, 0.12)} 0%, transparent 60%)`
+      : undefined,
+  };
+
+  const artistBlock = (id: string, name: string, imageUrl: string | null | undefined) => (
+    <div className="flex min-w-0 max-w-[118px] flex-col items-center gap-1">
+      {imageUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element -- Spotify CDN; small tooltip
+        <img
+          src={imageUrl}
+          alt=""
+          className="h-10 w-10 shrink-0 rounded-full object-cover sb-ring"
+          loading="lazy"
+          decoding="async"
+        />
+      ) : (
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full sb-ring bg-white/60 dark:bg-white/10">
+          <UserRound className="h-4 w-4 opacity-40" aria-hidden />
+        </div>
+      )}
+      <NetworkCatalogArtistLink
+        artistId={id}
+        onNetworkSelectArtist={onArtistPrimary}
+        onDistroGesture={
+          frozen ? () => onArtistDistroGesture(id, name) : undefined
+        }
+        title={
+          frozen
+            ? "Click: focus on graph · Ctrl/⌘+click or long-press: distro tracks (same as node)"
+            : undefined
+        }
+        className="w-full truncate text-center text-[11px] font-semibold hover:underline"
+      >
+        {name}
+      </NetworkCatalogArtistLink>
+    </div>
+  );
+
+  return (
+    <div className="rounded-lg border p-3" style={panelStyle}>
+      {frozen ? (
+        <div className="mb-2 flex items-start justify-center gap-2">
+          {artistBlock(srcId, srcName, srcNode?.image_url)}
+          <span className="select-none pt-7 text-xs opacity-50" style={{ color: colors.muted }}>
+            ×
+          </span>
+          {artistBlock(tgtId, tgtName, tgtNode?.image_url)}
+        </div>
+      ) : (
+        <div className="text-xs font-semibold" style={{ color: colors.accent }}>
+          {srcName} &times; {tgtName}
+        </div>
+      )}
+      <div className={frozen ? "mt-2 text-xs" : "mt-1 text-xs"} style={{ color: colors.muted }}>
+        {tracks.length} shared track{tracks.length !== 1 ? "s" : ""}
+      </div>
+      {tracks.length > 0 ? (
+        <ul className="mt-1.5 max-h-[140px] space-y-1 overflow-y-auto text-xs">
+          {tracks.slice(0, 10).map((t, i) => (
+            <li key={i} className="flex max-w-[280px] items-center gap-2">
+              {t.album_image_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={t.album_image_url}
+                  alt=""
+                  className="h-5 w-5 shrink-0 rounded object-cover"
+                />
+              ) : (
+                <span
+                  className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-white/10"
+                  aria-hidden
+                >
+                  <Disc3 className="h-3 w-3 opacity-40" />
+                </span>
+              )}
+              {frozen ? (
+                <NetworkCatalogRoutedLink
+                  href={`/catalog?isrc=${encodeURIComponent(t.isrc)}`}
+                  className="sb-link-hover min-w-0 truncate font-medium"
+                  title="Click: track details · Ctrl/⌘+click or long-press: Catalog"
+                  onPrimaryAction={() =>
+                    onFrozenTrackOpenDetail(t.isrc, String(t.name ?? t.isrc))
+                  }
+                >
+                  {t.name ?? t.isrc}
+                </NetworkCatalogRoutedLink>
+              ) : (
+                <span className="min-w-0 truncate">{t.name ?? t.isrc}</span>
+              )}
+            </li>
+          ))}
+          {tracks.length > 10 ? (
+            <li style={{ color: colors.muted }}>&hellip; and {tracks.length - 10} more</li>
+          ) : null}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /*  Image cache (loads artist images for Canvas rendering)             */
 /* ------------------------------------------------------------------ */
@@ -533,6 +836,9 @@ export function NetworkGraphClient({
   const [hoveredNode, setHoveredNode] = useState<FGNodeObj | null>(null);
   const [hoveredLink, setHoveredLink] = useState<FGLinkObj | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
+  /** Pinned collaboration edge tooltip (mouse click or touch long-press on a link). */
+  const [pinnedLink, setPinnedLink] = useState<FGLinkObj | null>(null);
+  const [pinnedTooltipPos, setPinnedTooltipPos] = useState<{ x: number; y: number } | null>(null);
 
   const [distroModalOpen, setDistroModalOpen] = useState(false);
   const [distroLoading, setDistroLoading] = useState(false);
@@ -558,15 +864,63 @@ export function NetworkGraphClient({
   const longPressTimerRef = useRef<number | null>(null);
   const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
   const touchPointerDownRef = useRef(false);
+  /** Touch/pen: long-press on a node opens distro modal (desktop: Ctrl/Cmd+click). */
+  const nodeDistroLongPressTimerRef = useRef<number | null>(null);
+  const nodeDistroLongPressStartRef = useRef<{ x: number; y: number } | null>(null);
+  const nodeDistroLongPressTargetRef = useRef<{ id: string; name: string } | null>(null);
+  const nodeDistroLongPressPointerIdRef = useRef<number | null>(null);
+  const suppressNextNodeClickRef = useRef(false);
+
+  const pinnedLinkRef = useRef<FGLinkObj | null>(null);
+  const pinnedLinkKeyRef = useRef<string | null>(null);
+  const skipNextLinkClickRef = useRef(false);
+  const linkPinLongPressTimerRef = useRef<number | null>(null);
+  const linkPinLongPressStartRef = useRef<{ x: number; y: number } | null>(null);
+  const linkPinLongPressPointerIdRef = useRef<number | null>(null);
+  const linkPinPendingKeyRef = useRef<string | null>(null);
+  const lastPointerClientRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const lastContainerPointerTypeRef = useRef<string | null>(null);
+  const lastPointerIdRef = useRef<number | null>(null);
+
+  const clearNodeDistroLongPress = useCallback(() => {
+    if (nodeDistroLongPressTimerRef.current != null) {
+      window.clearTimeout(nodeDistroLongPressTimerRef.current);
+      nodeDistroLongPressTimerRef.current = null;
+    }
+    nodeDistroLongPressStartRef.current = null;
+    nodeDistroLongPressTargetRef.current = null;
+    nodeDistroLongPressPointerIdRef.current = null;
+  }, []);
 
   const clearNetworkLongPress = useCallback(() => {
     if (longPressTimerRef.current != null) {
       window.clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
     }
-  }, []);
+    clearNodeDistroLongPress();
+  }, [clearNodeDistroLongPress]);
 
   useEffect(() => () => clearNetworkLongPress(), [clearNetworkLongPress]);
+
+  const clearLinkPinLongPress = useCallback(() => {
+    if (linkPinLongPressTimerRef.current != null) {
+      window.clearTimeout(linkPinLongPressTimerRef.current);
+      linkPinLongPressTimerRef.current = null;
+    }
+    linkPinLongPressStartRef.current = null;
+    linkPinLongPressPointerIdRef.current = null;
+    linkPinPendingKeyRef.current = null;
+  }, []);
+
+  const clearPinnedLink = useCallback(() => {
+    setPinnedLink(null);
+    setPinnedTooltipPos(null);
+    pinnedLinkKeyRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    pinnedLinkRef.current = pinnedLink;
+  }, [pinnedLink]);
 
   const [streamTotals, setStreamTotals] = useState<{
     total: number | null;
@@ -592,6 +946,20 @@ export function NetworkGraphClient({
     });
     ro.observe(el);
     return () => ro.disconnect();
+  }, []);
+
+  /**
+   * d3-zoom uses [minZoom, maxZoom] as hard limits. 0.3 blocked pinch / zoom-to-fit on phones when the laid-out graph
+   * is much larger than the viewport. Coarse pointers use a very low floor (0.012) so the map can shrink further.
+   */
+  const [graphMinZoom, setGraphMinZoom] = useState(0.3);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(pointer: coarse)");
+    const sync = () => setGraphMinZoom(mq.matches ? 0.012 : 0.3);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
   }, []);
 
   useEffect(() => {
@@ -971,6 +1339,63 @@ export function NetworkGraphClient({
     return { nodes: fnodes, links: flinks };
   }, [nodes, edges, combinedVisibleNodeIds]);
 
+  /** Screen hit-test aligned with `nodePointerAreaPaint` (touch long-press → distro modal). */
+  const pickVisibleNodeAtClientPos = useCallback(
+    (clientX: number, clientY: number): FGNodeObj | null => {
+      const fg = fgRef.current;
+      const host = containerRef.current;
+      if (!fg || !host) return null;
+      const r = host.getBoundingClientRect();
+      const px = clientX - r.left;
+      const py = clientY - r.top;
+      if (px < 0 || py < 0 || px > dimensions.width || py > dimensions.height) return null;
+      let k: number;
+      try {
+        k = fg.zoom();
+      } catch {
+        return null;
+      }
+      if (!Number.isFinite(k) || k < 0.001) return null;
+
+      let best: FGNodeObj | null = null;
+      let bestD = Infinity;
+      for (const n of graphData.nodes as FGNodeObj[]) {
+        const nx = n.x;
+        const ny = n.y;
+        if (!Number.isFinite(nx) || !Number.isFinite(ny)) continue;
+        const gx = nx as number;
+        const gy = ny as number;
+        const baseSize = scaleByTracks
+          ? scaleLinear(n.track_count ?? 1, minTrackCount, maxTrackCount, 3, 16)
+          : 5;
+        const hitSize = Math.max(baseSize, 6);
+        const hitR = hitSize * k;
+        let scr: { x: number; y: number };
+        try {
+          scr = fg.graph2ScreenCoords(gx, gy);
+        } catch {
+          continue;
+        }
+        const dx = px - scr.x;
+        const dy = py - scr.y;
+        const d = Math.hypot(dx, dy);
+        if (d <= hitR && d < bestD) {
+          bestD = d;
+          best = n;
+        }
+      }
+      return best;
+    },
+    [
+      dimensions.width,
+      dimensions.height,
+      graphData.nodes,
+      scaleByTracks,
+      minTrackCount,
+      maxTrackCount,
+    ],
+  );
+
   const visibleTableArtistIdsKey = useMemo(
     () =>
       [...graphData.nodes]
@@ -1345,19 +1770,6 @@ export function NetworkGraphClient({
     },
     [searchParams, pushNetworkUrl],
   );
-
-  const copyShareablePageLink = useCallback(() => {
-    if (typeof window === "undefined") return;
-    const url = window.location.href;
-    void navigator.clipboard
-      .writeText(url)
-      .then(() => {
-        showToast("Link copied to clipboard", "success");
-      })
-      .catch(() => {
-        showToast("Could not copy — copy the address bar manually", "error");
-      });
-  }, []);
 
   const prevSelectionHydrateKey = useRef("");
   useEffect(() => {
@@ -1889,6 +2301,12 @@ export function NetworkGraphClient({
   const handleNodeClick = useCallback(
     (node: FGNodeObj, event: MouseEvent) => {
       const id = node.id as string;
+      if (suppressNextNodeClickRef.current) {
+        suppressNextNodeClickRef.current = false;
+        event.preventDefault?.();
+        event.stopPropagation?.();
+        return;
+      }
       if (event.ctrlKey || event.metaKey) {
         event.preventDefault();
         event.stopPropagation();
@@ -1910,7 +2328,9 @@ export function NetworkGraphClient({
   const handleBackgroundClick = useCallback(() => {
     setSelectedNodeId(null);
     setRangeSelection([]);
-  }, []);
+    clearPinnedLink();
+    clearLinkPinLongPress();
+  }, [clearPinnedLink, clearLinkPinLongPress]);
 
   const onBoxPointerDownCapture = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -1926,6 +2346,10 @@ export function NetworkGraphClient({
       ) {
         return;
       }
+
+      lastPointerClientRef.current = { x: e.clientX, y: e.clientY };
+      lastContainerPointerTypeRef.current = e.pointerType;
+      lastPointerIdRef.current = e.pointerId;
 
       const pt = e.pointerType;
 
@@ -1973,6 +2397,32 @@ export function NetworkGraphClient({
         }
 
         clearNetworkLongPress();
+        const hitNode = pickVisibleNodeAtClientPos(e.clientX, e.clientY);
+        if (hitNode) {
+          touchPointerDownRef.current = true;
+          nodeDistroLongPressPointerIdRef.current = e.pointerId;
+          nodeDistroLongPressStartRef.current = { x: e.clientX, y: e.clientY };
+          nodeDistroLongPressTargetRef.current = {
+            id: String(hitNode.id),
+            name: String(hitNode.name ?? hitNode.id),
+          };
+          nodeDistroLongPressTimerRef.current = window.setTimeout(() => {
+            nodeDistroLongPressTimerRef.current = null;
+            if (!touchPointerDownRef.current) return;
+            const target = nodeDistroLongPressTargetRef.current;
+            clearNodeDistroLongPress();
+            if (!target) return;
+            try {
+              void navigator.vibrate?.(25);
+            } catch {
+              // ignore
+            }
+            suppressNextNodeClickRef.current = true;
+            void openArtistDistroModal(target.id, target.name);
+          }, NETWORK_LONG_PRESS_MS);
+          return;
+        }
+
         touchPointerDownRef.current = true;
         longPressStartRef.current = { x: e.clientX, y: e.clientY };
         const pid = e.pointerId;
@@ -2005,11 +2455,45 @@ export function NetworkGraphClient({
         }, NETWORK_LONG_PRESS_MS);
       }
     },
-    [boxSelectArmed, clearNetworkLongPress],
+    [
+      boxSelectArmed,
+      clearNetworkLongPress,
+      clearNodeDistroLongPress,
+      pickVisibleNodeAtClientPos,
+      openArtistDistroModal,
+    ],
   );
 
   const onBoxPointerMoveCapture = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
+      if (
+        nodeDistroLongPressTimerRef.current != null &&
+        e.pointerId === nodeDistroLongPressPointerIdRef.current
+      ) {
+        const start = nodeDistroLongPressStartRef.current;
+        if (start) {
+          const dx = e.clientX - start.x;
+          const dy = e.clientY - start.y;
+          if (Math.hypot(dx, dy) > NETWORK_LONG_PRESS_MOVE_PX) {
+            clearNodeDistroLongPress();
+          }
+        }
+      }
+
+      if (
+        linkPinLongPressTimerRef.current != null &&
+        e.pointerId === linkPinLongPressPointerIdRef.current
+      ) {
+        const start = linkPinLongPressStartRef.current;
+        if (start) {
+          const dx = e.clientX - start.x;
+          const dy = e.clientY - start.y;
+          if (Math.hypot(dx, dy) > NETWORK_LONG_PRESS_MOVE_PX) {
+            clearLinkPinLongPress();
+          }
+        }
+      }
+
       const d = selectDragRef.current;
       if (d && e.pointerId === d.pointerId) {
         e.preventDefault();
@@ -2039,7 +2523,7 @@ export function NetworkGraphClient({
         longPressStartRef.current = null;
       }
     },
-    [clearNetworkLongPress],
+    [clearNetworkLongPress, clearNodeDistroLongPress, clearLinkPinLongPress],
   );
 
   const finalizeBoxSelect = useCallback(
@@ -2104,9 +2588,12 @@ export function NetworkGraphClient({
       touchPointerDownRef.current = false;
       clearNetworkLongPress();
       longPressStartRef.current = null;
+      if (e.pointerId === linkPinLongPressPointerIdRef.current) {
+        clearLinkPinLongPress();
+      }
       finalizeBoxSelect(e);
     },
-    [clearNetworkLongPress, finalizeBoxSelect],
+    [clearNetworkLongPress, clearLinkPinLongPress, finalizeBoxSelect],
   );
 
   const onBoxPointerCancelCapture = useCallback(
@@ -2129,6 +2616,20 @@ export function NetworkGraphClient({
     [clearNetworkLongPress],
   );
 
+  /**
+   * D3-zoom (force-graph) listens for touch events on the canvas, separate from pointer events.
+   * Pointer capture + preventDefault on the container does not stop touchstart/touchmove, so the graph
+   * still panned during one-finger region drag. When "Select region" is armed, ignore single-touch
+   * zoom/pan in D3; two-finger touches still pass through for pinch and two-finger pan.
+   */
+  const graphTouchPanZoomFilter = useCallback((ev: MouseEvent) => {
+    if (!boxSelectArmed) return true;
+    if (typeof TouchEvent !== "undefined" && ev instanceof TouchEvent) {
+      return ev.touches.length >= 2;
+    }
+    return true;
+  }, [boxSelectArmed]);
+
   const handleNodeHover = useCallback((node: FGNodeObj | null) => {
     setHoveredNode(node);
     if (!node) {
@@ -2136,18 +2637,59 @@ export function NetworkGraphClient({
     }
   }, []);
 
-  const handleLinkHover = useCallback((link: FGLinkObj | null) => {
-    setHoveredLink(link);
-    if (!link) {
-      setTooltipPos(null);
-    }
-  }, []);
+  const handleLinkHover = useCallback(
+    (link: FGLinkObj | null) => {
+      if (link) {
+        setHoveredLink(link);
+        const pt = lastContainerPointerTypeRef.current;
+        if ((pt === "touch" || pt === "pen") && !pinnedLinkRef.current) {
+          clearLinkPinLongPress();
+          const key = collaborationLinkKey(link);
+          linkPinPendingKeyRef.current = key;
+          linkPinLongPressStartRef.current = {
+            x: lastPointerClientRef.current.x,
+            y: lastPointerClientRef.current.y,
+          };
+          linkPinLongPressPointerIdRef.current = lastPointerIdRef.current;
+          linkPinLongPressTimerRef.current = window.setTimeout(() => {
+            linkPinLongPressTimerRef.current = null;
+            if (linkPinPendingKeyRef.current !== key) return;
+            if (pinnedLinkRef.current) return;
+            const host = containerRef.current;
+            if (!host) return;
+            const r = host.getBoundingClientRect();
+            const p = lastPointerClientRef.current;
+            try {
+              void navigator.vibrate?.(25);
+            } catch {
+              // ignore
+            }
+            skipNextLinkClickRef.current = true;
+            setPinnedLink(link);
+            setPinnedTooltipPos({ x: p.x - r.left, y: p.y - r.top });
+            pinnedLinkKeyRef.current = key;
+            window.setTimeout(() => {
+              skipNextLinkClickRef.current = false;
+            }, 700);
+          }, NETWORK_LONG_PRESS_MS);
+        }
+      } else {
+        clearLinkPinLongPress();
+        if (!pinnedLinkRef.current) {
+          setHoveredLink(null);
+          setTooltipPos(null);
+        }
+      }
+    },
+    [clearLinkPinLongPress],
+  );
 
-  // Track mouse position for tooltip
+  // Track mouse position for tooltip (frozen link tooltip stays at the pin point)
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     const onMove = (e: MouseEvent) => {
+      if (pinnedLinkRef.current) return;
       const rect = el.getBoundingClientRect();
       setTooltipPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
     };
@@ -2173,6 +2715,60 @@ export function NetworkGraphClient({
       fgRef.current?.zoom(4, 800);
     },
     [graphData.nodes],
+  );
+
+  const handleTooltipArtistPrimary = useCallback(
+    (artistId: string) => {
+      clearPinnedLink();
+      setRangeSelection([]);
+      focusOnArtist(artistId);
+    },
+    [clearPinnedLink, focusOnArtist],
+  );
+
+  const [frozenTooltipTrackModal, setFrozenTooltipTrackModal] = useState<{
+    isrc: string;
+    fallbackTitle: string;
+  } | null>(null);
+
+  const openFrozenTooltipTrackDetail = useCallback(
+    (isrc: string, displayName: string) => {
+      clearPinnedLink();
+      setFrozenTooltipTrackModal({ isrc, fallbackTitle: displayName });
+    },
+    [clearPinnedLink],
+  );
+
+  const handleLinkClick = useCallback(
+    (link: FGLinkObj, event: MouseEvent) => {
+      if (skipNextLinkClickRef.current) {
+        skipNextLinkClickRef.current = false;
+        event.preventDefault?.();
+        event.stopPropagation?.();
+        return;
+      }
+      if (event.ctrlKey || event.metaKey) return;
+
+      const pte = (event as unknown as PointerEvent).pointerType;
+      if (pte === "touch" || pte === "pen") return;
+
+      event.preventDefault?.();
+      event.stopPropagation?.();
+
+      const key = collaborationLinkKey(link);
+      if (pinnedLinkKeyRef.current === key) {
+        clearPinnedLink();
+        return;
+      }
+
+      const host = containerRef.current;
+      if (!host) return;
+      const r = host.getBoundingClientRect();
+      setPinnedLink(link);
+      setPinnedTooltipPos({ x: event.clientX - r.left, y: event.clientY - r.top });
+      pinnedLinkKeyRef.current = key;
+    },
+    [clearPinnedLink],
   );
 
   /* -------- Reset -------- */
@@ -2201,6 +2797,8 @@ export function NetworkGraphClient({
     setNetworkAdvStreamStatsError(null);
     setNetworkAdvStreamStatsLoading(false);
     setNetworkAdvModalOpen(false);
+    clearPinnedLink();
+    clearLinkPinLongPress();
     pushNetworkUrl({
       scope: DEFAULT_NETWORK_SCOPE,
       selectedIds: [],
@@ -2214,7 +2812,7 @@ export function NetworkGraphClient({
       tableSortDir: "asc",
     });
     fgRef.current?.zoomToFit(600, 40);
-  }, [pushNetworkUrl]);
+  }, [pushNetworkUrl, clearPinnedLink, clearLinkPinLongPress]);
 
   /* -------- Initial zoom-to-fit -------- */
 
@@ -2293,6 +2891,22 @@ export function NetworkGraphClient({
   /* -------- Tooltip content -------- */
 
   const tooltipContent = useMemo(() => {
+    const activeEdge = pinnedLink ?? hoveredLink;
+    if (activeEdge) {
+      return (
+        <NetworkLinkCollaborationTooltipContent
+          link={activeEdge}
+          frozen={Boolean(pinnedLink)}
+          accentColor={colors.accent}
+          colors={colors}
+          onArtistPrimary={handleTooltipArtistPrimary}
+          onArtistDistroGesture={(artistId, artistName) => {
+            void openArtistDistroModal(artistId, artistName);
+          }}
+          onFrozenTrackOpenDetail={openFrozenTooltipTrackDetail}
+        />
+      );
+    }
     if (hoveredNode) {
       const n = hoveredNode as FGNode;
       const id = n.id as string;
@@ -2325,47 +2939,14 @@ export function NetworkGraphClient({
         </div>
       );
     }
-    if (hoveredLink) {
-      const link = hoveredLink as unknown as GraphEdge;
-      const srcNode = typeof hoveredLink.source === "object"
-        ? (hoveredLink.source as FGNodeObj)
-        : null;
-      const tgtNode = typeof hoveredLink.target === "object"
-        ? (hoveredLink.target as FGNodeObj)
-        : null;
-      const srcName = srcNode?.name ?? link.source;
-      const tgtName = tgtNode?.name ?? link.target;
-      const tracks = (link.shared_tracks ?? []) as SharedTrack[];
-
-      return (
-        <div className="space-y-1.5">
-          <div className="text-xs font-semibold" style={{ color: colors.accent }}>
-            {srcName} &times; {tgtName}
-          </div>
-          <div className="text-xs" style={{ color: colors.muted }}>
-            {tracks.length} shared track{tracks.length !== 1 ? "s" : ""}
-          </div>
-          {tracks.length > 0 && (
-            <ul className="text-xs space-y-0.5 max-h-[140px] overflow-y-auto" style={{ color: colors.text }}>
-              {tracks.slice(0, 10).map((t, i) => (
-                <li key={i} className="truncate max-w-[240px]">
-                  &bull; {t.name ?? t.isrc}
-                </li>
-              ))}
-              {tracks.length > 10 && (
-                <li style={{ color: colors.muted }}>
-                  &hellip; and {tracks.length - 10} more
-                </li>
-              )}
-            </ul>
-          )}
-        </div>
-      );
-    }
     return null;
   }, [
-    hoveredNode,
+    pinnedLink,
     hoveredLink,
+    hoveredNode,
+    handleTooltipArtistPrimary,
+    openArtistDistroModal,
+    openFrozenTooltipTrackDetail,
     trackCollabFilterMap,
     graphDegreeMap,
     hideNonPrimary,
@@ -2406,6 +2987,15 @@ export function NetworkGraphClient({
           setSearchOpen(false);
           return;
         }
+        if (frozenTooltipTrackModal) {
+          setFrozenTooltipTrackModal(null);
+          return;
+        }
+        if (pinnedLink) {
+          clearPinnedLink();
+          clearLinkPinLongPress();
+          return;
+        }
         if (rangeSelection.length > 0) {
           setRangeSelection([]);
           return;
@@ -2442,9 +3032,13 @@ export function NetworkGraphClient({
     distroModalOpen,
     shortcutsOpen,
     searchOpen,
+    frozenTooltipTrackModal,
+    pinnedLink,
     rangeSelection.length,
     selectedNodeId,
     closeDistroModal,
+    clearPinnedLink,
+    clearLinkPinLongPress,
   ]);
 
   const networkAdvAppliedCount =
@@ -2521,12 +3115,11 @@ export function NetworkGraphClient({
         open={shortcutsOpen}
         onClose={() => setShortcutsOpen(false)}
         title="Help"
-        subtitle="Shortcuts, toolbar, and graph"
         maxWidthClassName="max-w-md"
       >
         <div className="space-y-4 text-sm" style={{ color: "var(--sb-text)" }}>
           <section>
-            <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--sb-muted)" }}>
+            <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: colors.accent }}>
               Keyboard
             </h3>
             <ul className="list-none space-y-2">
@@ -2540,7 +3133,9 @@ export function NetworkGraphClient({
               </li>
               <li>
                 <kbd className="rounded border px-1.5 py-0.5 font-mono text-[11px]" style={{ borderColor: "var(--sb-border)" }}>Esc</kbd>{" "}
-                <span style={{ color: "var(--sb-muted)" }}>Close modals, then clear box selection, then clear focused artist</span>
+                <span style={{ color: "var(--sb-muted)" }}>
+                  Close modals, then clear a pinned collaboration tooltip, then box selection, then focused artist
+                </span>
               </li>
               <li>
                 <kbd className="rounded border px-1.5 py-0.5 font-mono text-[11px]" style={{ borderColor: "var(--sb-border)" }}>F</kbd>{" "}
@@ -2550,7 +3145,7 @@ export function NetworkGraphClient({
           </section>
 
           <section>
-            <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--sb-muted)" }}>
+            <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: colors.accent }}>
               Graph & selection
             </h3>
             <ul className="list-none space-y-2" style={{ color: "var(--sb-muted)" }}>
@@ -2559,12 +3154,20 @@ export function NetworkGraphClient({
                 <span style={{ color: "var(--sb-text)", fontWeight: 600 }}>Select region</span> then drag.
               </li>
               <li>
-                <span style={{ color: "var(--sb-text)" }}>Distro tracks:</span> Ctrl+click an artist node (when not box-selecting).
+                <span style={{ color: "var(--sb-text)" }}>Distro tracks:</span> Ctrl/Cmd+click an artist node on desktop. Touch /
+                pen: press and hold ~{(NETWORK_LONG_PRESS_MS / 1000).toFixed(2)}s on a node (keep still; same timing as charts).
               </li>
               <li>
-                Touch / pen: hold still ~{(NETWORK_LONG_PRESS_MS / 1000).toFixed(2)}s, then drag a box. Dragging without holding
-                pans the graph. <span style={{ color: "var(--sb-text)", fontWeight: 600 }}>Select region</span> starts a marquee
-                immediately.
+                <span style={{ color: "var(--sb-text)" }}>Collaboration edges:</span> hover for shared tracks. Click an edge
+                (desktop) or press and hold ~{(NETWORK_LONG_PRESS_MS / 1000).toFixed(2)}s (touch / pen) to pin a rich tooltip
+                (artist avatars, track list). In the pinned tooltip: click a track for stream/revenue details and distro
+                playlists; Ctrl/⌘+click or long-press an artist for distro tracks (same as a node). Dismiss: canvas background,
+                click the same edge again, or Esc.
+              </li>
+              <li>
+                Touch / pen on empty canvas: hold still ~{(NETWORK_LONG_PRESS_MS / 1000).toFixed(2)}s, then drag a box. Dragging
+                without holding pans the graph. <span style={{ color: "var(--sb-text)", fontWeight: 600 }}>Select region</span>{" "}
+                starts a marquee immediately.
               </li>
               <li>
                 A faint grid moves with the graph. Zooming in can show finer dashed lines; x=0 and y=0 are slightly bolder when
@@ -2574,7 +3177,7 @@ export function NetworkGraphClient({
           </section>
 
           <section>
-            <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--sb-muted)" }}>
+            <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: colors.accent }}>
               Toolbar filters
             </h3>
             <ul className="list-none space-y-2" style={{ color: "var(--sb-muted)" }}>
@@ -2587,8 +3190,8 @@ export function NetworkGraphClient({
                 <code className="font-mono text-[11px]">net_pl_m</code>.
               </li>
               <li>
-                <span style={{ color: "var(--sb-text)" }}>Co-artists</span>: choose Up to / At least, enter 0–999 (blank = no
-                limit), blur or Enter to apply. <span style={{ color: "var(--sb-text)" }}>Playlist</span> vs{" "}
+                <span style={{ color: "var(--sb-text)" }}>Co-artists</span>: min / max 0–999 (either or both; blank = open bound),
+                blur or Enter to apply. <span style={{ color: "var(--sb-text)" }}>Playlist</span> vs{" "}
                 <span style={{ color: "var(--sb-text)" }}>Lead only</span> changes what we count as a co-artist.
               </li>
               <li>
@@ -2599,7 +3202,7 @@ export function NetworkGraphClient({
           </section>
 
           <section>
-            <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--sb-muted)" }}>
+            <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: colors.accent }}>
               Toggles
             </h3>
             <ul className="list-none space-y-2" style={{ color: "var(--sb-muted)" }}>
@@ -2629,7 +3232,7 @@ export function NetworkGraphClient({
           </section>
 
           <section>
-            <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--sb-muted)" }}>
+            <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: colors.accent }}>
               Export & link
             </h3>
             <p className="text-[13px] leading-snug" style={{ color: "var(--sb-muted)" }}>
@@ -2637,10 +3240,10 @@ export function NetworkGraphClient({
               Collaborations, Tracks, Tracks unique) for the current scope and toolbar filters.
             </p>
             <p className="text-[13px] leading-snug mt-2" style={{ color: "var(--sb-muted)" }}>
-              Use the toolbar <span style={{ color: "var(--sb-text)" }}>Copy link</span> button (chain icon) to copy the full
-              address bar URL. Anyone signed in as an <span style={{ color: "var(--sb-text)" }}>admin</span> can open it and get
-              the same scope, toolbar filters, table on/off, table sort, and multi-select (
-              <code className="font-mono text-[11px]">sel=</code>, up to {MAX_SEL_URL} ids).
+              Copy the address bar URL to share the view. Anyone signed in as an{" "}
+              <span style={{ color: "var(--sb-text)" }}>admin</span> can open it and get the same scope, toolbar filters, table
+              on/off, table sort, and multi-select (<code className="font-mono text-[11px]">sel=</code>, up to {MAX_SEL_URL}{" "}
+              ids).
             </p>
             <p className="text-[13px] leading-snug mt-2" style={{ color: "var(--sb-muted)" }}>
               The URL encodes scope (<code className="font-mono text-[11px]">playlist=…</code> or custom{" "}
@@ -2656,9 +3259,9 @@ export function NetworkGraphClient({
               <code className="font-mono text-[11px]">streams_daily</code>).
             </p>
             <p className="text-[13px] leading-snug mt-2" style={{ color: "var(--sb-muted)" }}>
-              <span style={{ color: "var(--sb-text)" }}>Not</span> in the URL:{" "}
-              <span style={{ color: "var(--sb-text)" }}>Funnel</span> (advanced filter) — presets stay on this device; pan/zoom
-              is saved in local storage per graph identity. Re-apply the funnel or align the camera after opening a shared link.
+              The advanced filter (<span style={{ color: "var(--sb-text)" }}>Funnel</span>) is not stored in the URL — presets
+              stay on this device; pan/zoom is saved in local storage per graph identity. Re-apply the funnel or align the camera
+              after opening a shared link.
             </p>
           </section>
         </div>
@@ -2708,7 +3311,11 @@ export function NetworkGraphClient({
             color: colors.text,
           }}
         >
-          <span className="shrink-0 pl-0.5" style={{ color: colors.muted }}>
+          <span
+            className="shrink-0 pl-0.5"
+            style={{ color: colors.muted }}
+            title="Filter artists by how many distinct other artists share at least one in-scope track with them. Min and max are inclusive (0–999); leave either blank for no bound. Blur or press Enter to apply. Use Playlist vs Lead only to choose how co-artists are counted."
+          >
             Co-artists
           </span>
           <input
@@ -2767,6 +3374,7 @@ export function NetworkGraphClient({
               type="button"
               className="px-2 py-1 font-medium transition-colors"
               aria-label="Co-artist count: playlist-wide (any credit on scoped tracks)"
+              title="Playlist: count distinct co-artists from every credit on in-scope tracks—any position on the track, not only where this artist is lead."
               style={{
                 backgroundColor:
                   collabCountBasis === "playlist"
@@ -2788,6 +3396,7 @@ export function NetworkGraphClient({
               type="button"
               className="px-2 py-1 font-medium transition-colors border-l"
               aria-label="Co-artist count: lead rows only"
+              title="Lead only: count co-artists only on ISRCs where this artist is the primary (first Spotify credit) on that track."
               style={{
                 borderColor: colors.border,
                 backgroundColor:
@@ -2816,7 +3425,11 @@ export function NetworkGraphClient({
             color: colors.text,
           }}
         >
-          <span className="shrink-0 pl-0.5" style={{ color: colors.muted }}>
+          <span
+            className="shrink-0 pl-0.5"
+            style={{ color: colors.muted }}
+            title="Filter visible nodes by each artist's in-scope track count (the same track_count used on the graph). Min and max are inclusive; leave blank for no bound."
+          >
             Node tracks
           </span>
           <input
@@ -2882,23 +3495,153 @@ export function NetworkGraphClient({
           />
         </div>
 
-        <div className="w-px h-5" style={{ backgroundColor: colors.border }} />
+        {/* Icon toggles before search so narrow viewports don’t place Scale/Images on a row beside the search field */}
+        <div className="flex flex-nowrap items-center gap-1.5 sm:gap-2 shrink-0 overflow-x-auto min-w-0 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+          <ToggleButton
+            active={scaleByTracks}
+            onClick={() => pushNetworkUrl({ scaleByTracks: !scaleByTracks })}
+            icon={<Scaling size={14} />}
+            title="Scale by tracks"
+            colors={colors}
+          />
+
+          <ToggleButton
+            active={showImages}
+            onClick={() => pushNetworkUrl({ showImages: !showImages })}
+            icon={<ImageIcon size={14} />}
+            title="Show images"
+            colors={colors}
+          />
+
+          <ToggleButton
+            active={boxSelectArmed}
+            onClick={() => setBoxSelectArmed((v) => !v)}
+            icon={<SquareDashed size={14} />}
+            title="Select region"
+            colors={colors}
+          />
+
+          <ToggleButton
+            active={hideNonPrimary}
+            onClick={() => pushNetworkUrl({ hideNonPrimary: !hideNonPrimary })}
+          icon={<UserX size={14} />}
+          title="Hide non-primary"
+            colors={colors}
+          />
+
+          <ToggleButton
+            active={tableView}
+            onClick={() => pushNetworkUrl({ tableView: !tableView })}
+            icon={<Table2 size={14} />}
+            title="Table view"
+            colors={colors}
+          />
+
+          <IconButton
+            type="button"
+            variant="ghost"
+            size="sm"
+            title="Advanced filters"
+            aria-label="Open advanced artist filters"
+            onClick={() => setNetworkAdvModalOpen(true)}
+            className="!h-8 !w-8 shrink-0 !rounded-lg"
+            style={{
+              color: networkAdvAppliedCount > 0 ? colors.accent : colors.muted,
+              backgroundColor:
+                networkAdvAppliedCount > 0
+                  ? colors.isDark
+                    ? "rgba(212,255,77,0.12)"
+                    : "rgba(168,214,46,0.15)"
+                  : colors.isDark
+                    ? "rgba(255,255,255,0.06)"
+                    : "rgba(0,0,0,0.04)",
+            }}
+          >
+            <Filter className="h-3.5 w-3.5" aria-hidden />
+          </IconButton>
+
+          <div className="w-px h-5 shrink-0 self-center" style={{ backgroundColor: colors.border }} />
+
+          {xlsxExportPhase ? (
+            <span
+              className="text-[11px] tabular-nums truncate max-w-[7rem] sm:max-w-[14rem] shrink-0"
+              style={{ color: colors.muted }}
+            >
+              {xlsxExportPhase}
+            </span>
+          ) : null}
+
+          <IconButton
+            type="button"
+            variant="ghost"
+            size="sm"
+            title="Download Excel"
+            aria-label="Download Excel export of current network view"
+            disabled={xlsxExporting}
+            onClick={() => void handleExportViewXlsx()}
+            className="!h-8 !w-8 shrink-0 !rounded-lg"
+            style={{
+              color: colors.muted,
+              backgroundColor: colors.isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)",
+            }}
+          >
+            {xlsxExporting ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+            ) : (
+              <Download className="h-3.5 w-3.5" aria-hidden />
+            )}
+          </IconButton>
+
+          <IconButton
+            type="button"
+            variant="ghost"
+            size="sm"
+            title="Help"
+            aria-label="Help and shortcuts"
+            onClick={() => setShortcutsOpen(true)}
+            className="!h-8 !w-8 shrink-0 !rounded-lg"
+            style={{
+              color: colors.muted,
+              backgroundColor: colors.isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)",
+            }}
+          >
+            <HelpCircle className="h-3.5 w-3.5" aria-hidden />
+          </IconButton>
+
+          <IconButton
+            type="button"
+            variant="ghost"
+            size="sm"
+            title="Reset"
+            aria-label="Reset network view — clear selection, filters, search, saved camera; fit graph"
+            onClick={handleReset}
+            className="!h-8 !w-8 shrink-0 !rounded-lg"
+            style={{
+              color: colors.muted,
+              backgroundColor: colors.isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)",
+            }}
+          >
+            <RotateCcw className="h-3.5 w-3.5" aria-hidden />
+          </IconButton>
+        </div>
+
+        <div className="w-px h-5 max-sm:hidden shrink-0" style={{ backgroundColor: colors.border }} />
 
         {/* Search */}
-        <div className="relative">
+        <div className="relative min-w-0 w-full max-sm:basis-full sm:w-auto sm:max-w-md shrink sm:shrink-0">
           <div
-            className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm"
+            className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm w-full min-w-0"
             style={{
               backgroundColor: colors.isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)",
               color: colors.text,
             }}
           >
-            <Search size={14} style={{ color: colors.muted }} />
+            <Search size={14} className="shrink-0" style={{ color: colors.muted }} />
             <input
               ref={searchInputRef}
               type="text"
               placeholder="Search artist…"
-              className="bg-transparent outline-none w-44 placeholder:opacity-40"
+              className="bg-transparent outline-none min-w-0 flex-1 sm:w-44 sm:flex-initial placeholder:opacity-40"
               style={{ color: colors.text }}
               value={searchQuery}
               onChange={(e) => {
@@ -2916,7 +3659,7 @@ export function NetworkGraphClient({
           {/* Search dropdown */}
           {searchOpen && searchResults.length > 0 && (
             <div
-              className="absolute top-full left-0 mt-1 rounded-lg shadow-lg z-50 overflow-hidden max-h-[300px] overflow-y-auto w-64"
+              className="absolute top-full left-0 right-0 sm:right-auto mt-1 rounded-lg shadow-lg z-50 overflow-hidden max-h-[300px] overflow-y-auto w-full sm:w-64 min-w-0"
               style={{
                 backgroundColor: colors.card,
                 border: `1px solid ${colors.border}`,
@@ -2954,153 +3697,6 @@ export function NetworkGraphClient({
             </div>
           )}
         </div>
-
-        {/* Divider */}
-        <div className="w-px h-5" style={{ backgroundColor: colors.border }} />
-
-        <ToggleButton
-          active={scaleByTracks}
-          onClick={() => pushNetworkUrl({ scaleByTracks: !scaleByTracks })}
-          icon={<Scaling size={14} />}
-          title="Scale by tracks"
-          colors={colors}
-        />
-
-        <ToggleButton
-          active={showImages}
-          onClick={() => pushNetworkUrl({ showImages: !showImages })}
-          icon={<ImageIcon size={14} />}
-          title="Show images"
-          colors={colors}
-        />
-
-        <ToggleButton
-          active={boxSelectArmed}
-          onClick={() => setBoxSelectArmed((v) => !v)}
-          icon={<SquareDashed size={14} />}
-          title="Select region"
-          colors={colors}
-        />
-
-        <ToggleButton
-          active={hideNonPrimary}
-          onClick={() => pushNetworkUrl({ hideNonPrimary: !hideNonPrimary })}
-          icon={<UserRound size={14} />}
-          title="Hide non-primary"
-          colors={colors}
-        />
-
-        <ToggleButton
-          active={tableView}
-          onClick={() => pushNetworkUrl({ tableView: !tableView })}
-          icon={<Table2 size={14} />}
-          title="Table view"
-          colors={colors}
-        />
-
-        <IconButton
-          type="button"
-          variant="ghost"
-          size="sm"
-          title="Advanced filters"
-          aria-label="Open advanced artist filters"
-          onClick={() => setNetworkAdvModalOpen(true)}
-          className="!h-8 !w-8 shrink-0 !rounded-lg"
-          style={{
-            color: networkAdvAppliedCount > 0 ? colors.accent : colors.muted,
-            backgroundColor:
-              networkAdvAppliedCount > 0
-                ? colors.isDark
-                  ? "rgba(212,255,77,0.12)"
-                  : "rgba(168,214,46,0.15)"
-                : colors.isDark
-                  ? "rgba(255,255,255,0.06)"
-                  : "rgba(0,0,0,0.04)",
-          }}
-        >
-          <Filter className="h-3.5 w-3.5" aria-hidden />
-        </IconButton>
-
-        {/* Divider */}
-        <div className="w-px h-5" style={{ backgroundColor: colors.border }} />
-
-        {xlsxExportPhase ? (
-          <span
-            className="text-[11px] tabular-nums truncate max-w-[7rem] sm:max-w-[14rem]"
-            style={{ color: colors.muted }}
-          >
-            {xlsxExportPhase}
-          </span>
-        ) : null}
-
-        <IconButton
-          type="button"
-          variant="ghost"
-          size="sm"
-          title="Download Excel"
-          aria-label="Download Excel export of current network view"
-          disabled={xlsxExporting}
-          onClick={() => void handleExportViewXlsx()}
-          className="!h-8 !w-8 shrink-0 !rounded-lg"
-          style={{
-            color: colors.muted,
-            backgroundColor: colors.isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)",
-          }}
-        >
-          {xlsxExporting ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-          ) : (
-            <Download className="h-3.5 w-3.5" aria-hidden />
-          )}
-        </IconButton>
-
-        <IconButton
-          type="button"
-          variant="ghost"
-          size="sm"
-          title="Copy link to this view"
-          aria-label="Copy shareable link to the clipboard"
-          onClick={() => copyShareablePageLink()}
-          className="!h-8 !w-8 shrink-0 !rounded-lg"
-          style={{
-            color: colors.muted,
-            backgroundColor: colors.isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)",
-          }}
-        >
-          <Link2 className="h-3.5 w-3.5" aria-hidden />
-        </IconButton>
-
-        <IconButton
-          type="button"
-          variant="ghost"
-          size="sm"
-          title="Help"
-          aria-label="Help and shortcuts"
-          onClick={() => setShortcutsOpen(true)}
-          className="!h-8 !w-8 shrink-0 !rounded-lg"
-          style={{
-            color: colors.muted,
-            backgroundColor: colors.isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)",
-          }}
-        >
-          <HelpCircle className="h-3.5 w-3.5" aria-hidden />
-        </IconButton>
-
-        <IconButton
-          type="button"
-          variant="ghost"
-          size="sm"
-          title="Reset"
-          aria-label="Reset network view — clear selection, filters, search, saved camera; fit graph"
-          onClick={handleReset}
-          className="!h-8 !w-8 shrink-0 !rounded-lg"
-          style={{
-            color: colors.muted,
-            backgroundColor: colors.isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)",
-          }}
-        >
-          <RotateCcw className="h-3.5 w-3.5" aria-hidden />
-        </IconButton>
 
         {activeFiltersSummary.length > 0 ? (
           <div
@@ -3156,7 +3752,7 @@ export function NetworkGraphClient({
               <span className="opacity-70"> — full </span>
             </>
           ) : null}
-          {nodes.length} artists &middot; {edges.length} collaborations
+          {nodes.length} artists &middot; {edges.length} collabs
         </div>
       </div>
 
@@ -3235,6 +3831,14 @@ export function NetworkGraphClient({
         error={distroError}
       />
 
+      <FrozenEdgeTrackDetailModal
+        open={frozenTooltipTrackModal != null}
+        onClose={() => setFrozenTooltipTrackModal(null)}
+        isrc={frozenTooltipTrackModal?.isrc ?? null}
+        fallbackTitle={frozenTooltipTrackModal?.fallbackTitle ?? ""}
+        onFocusArtistOnNetwork={focusOnArtist}
+      />
+
       <SelectionCollabsModal
         open={selectionCollabsModalOpen}
         onClose={() => setSelectionCollabsModalOpen(false)}
@@ -3257,6 +3861,11 @@ export function NetworkGraphClient({
         hideNonPrimary={hideNonPrimary}
         scopeLabel={formatNetworkScopeLabel(networkScope, playlistNameByKey)}
         expectedTrackCount={streamTotals.trackCount}
+        onTrackRowPrimary={() => {
+          setSelectionScopedTracksOpen(false);
+          const id = rangeSelection[0];
+          if (id) focusOnArtist(id);
+        }}
       />
 
       {/* Selected artist info panel */}
@@ -3346,34 +3955,55 @@ export function NetworkGraphClient({
           onNodeClick={handleNodeClick}
           onNodeHover={handleNodeHover}
           onLinkHover={handleLinkHover}
+          onLinkClick={handleLinkClick}
           onBackgroundClick={handleBackgroundClick}
           linkHoverPrecision={6}
           enableNodeDrag={true}
+          enablePanInteraction={graphTouchPanZoomFilter}
           // Engine
           d3AlphaDecay={0.02}
           d3VelocityDecay={0.3}
           warmupTicks={80}
           cooldownTime={3000}
           onEngineStop={onEngineStop}
-          minZoom={0.3}
+          minZoom={graphMinZoom}
           maxZoom={20}
         />
 
-        {/* Tooltip overlay */}
-        {tooltipContent && tooltipPos && (
-          <div
-            className="absolute pointer-events-none z-50 rounded-lg px-3 py-2 shadow-lg max-w-[280px]"
-            style={{
-              left: tooltipPos.x + 14,
-              top: tooltipPos.y + 14,
-              backgroundColor: colors.card,
-              border: `1px solid ${colors.border}`,
-              backdropFilter: "blur(12px)",
-            }}
-          >
-            {tooltipContent}
-          </div>
-        )}
+        {/* Tooltip overlay — link tooltips can be pinned (mouse click / touch long-press) like home XY chart */}
+        {tooltipContent &&
+          (pinnedLink
+            ? pinnedTooltipPos != null
+            : tooltipPos != null && (hoveredNode != null || hoveredLink != null)) && (
+            <div
+              className={`absolute z-50 max-w-[320px] ${pinnedLink ? "pointer-events-auto" : "pointer-events-none"}`}
+              style={{
+                left:
+                  (pinnedLink ? pinnedTooltipPos!.x : tooltipPos!.x) + 14,
+                top: (pinnedLink ? pinnedTooltipPos!.y : tooltipPos!.y) + 14,
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+              onPointerUp={(e) => e.stopPropagation()}
+            >
+              <ViewportAwareTooltip>
+                {pinnedLink ? (
+                  tooltipContent
+                ) : (
+                  <div
+                    className="rounded-lg px-3 py-2 shadow-lg backdrop-blur-md max-w-[280px]"
+                    style={{
+                      backgroundColor: colors.card,
+                      border: `1px solid ${colors.border}`,
+                    }}
+                  >
+                    {tooltipContent}
+                  </div>
+                )}
+              </ViewportAwareTooltip>
+            </div>
+          )}
         </div>
         {tableView ? (
           <NetworkArtistsTable
@@ -3766,7 +4396,298 @@ type IsrcDetailPayload = {
   dailyStreams: number | null;
   artistsOnTrack?: string;
   distroPlaylists?: string;
+  distroPlaylistDetails?: Array<{ key: string; name: string; imageUrl: string | null }>;
+  trackArtists?: Array<{ id: string; name: string; imageUrl: string | null }>;
 };
+
+function ModalDistroPlaylistLink({
+  playlistKey,
+  name,
+  imageUrl,
+  onPrimaryNavigate,
+}: {
+  playlistKey: string;
+  name: string;
+  imageUrl: string | null;
+  onPrimaryNavigate?: () => void;
+}) {
+  const router = useRouter();
+  const href = `/playlists?playlist_key=${encodeURIComponent(playlistKey)}`;
+  return (
+    <Link
+      href={href}
+      className="flex max-w-[148px] min-w-0 items-center gap-1.5 rounded-md border px-1.5 py-1 text-left text-[11px] transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.06]"
+      style={{ borderColor: "var(--sb-border)", color: "var(--sb-text)" }}
+      title={`${name} · Click: open playlist · Ctrl/⌘+click: new tab`}
+      onClick={(e) => {
+        if (e.ctrlKey || e.metaKey) return;
+        e.preventDefault();
+        onPrimaryNavigate?.();
+        router.push(href);
+      }}
+    >
+      {imageUrl ? (
+        <NextImage
+          src={imageUrl}
+          alt=""
+          width={28}
+          height={28}
+          className="h-7 w-7 shrink-0 rounded object-cover sb-ring"
+        />
+      ) : (
+        <div
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded sb-ring bg-white/60 dark:bg-white/10"
+          aria-hidden
+        >
+          <Music className="h-3.5 w-3.5 opacity-45" />
+        </div>
+      )}
+      <span className="min-w-0 flex-1 truncate font-medium leading-tight">{name}</span>
+    </Link>
+  );
+}
+
+function FrozenEdgeTrackDetailModal({
+  open,
+  onClose,
+  isrc,
+  fallbackTitle,
+  onFocusArtistOnNetwork,
+}: {
+  open: boolean;
+  onClose: () => void;
+  isrc: string | null;
+  fallbackTitle: string;
+  /** Plain click on an artist link: close modal and focus this artist on the network graph. */
+  onFocusArtistOnNetwork?: (artistId: string) => void;
+}) {
+  const { formatFromStreamCount, totalColumnLabel, dailyColumnLabel, metricColor } = useNetworkMetricStreams();
+  const [detail, setDetail] = useState<IsrcDetailPayload | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (!open || !isrc) {
+      setDetail(null);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    fetch("/api/admin/isrc-batch-details", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isrcs: [isrc] }),
+    })
+      .then((res) => res.json())
+      .then((j: { tracks?: IsrcDetailPayload[]; error?: string }) => {
+        if (cancelled) return;
+        if (j.error) {
+          setDetail(null);
+          setError(j.error);
+          return;
+        }
+        const t = j.tracks?.find((x) => x.isrc === isrc) ?? null;
+        setDetail(t ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setDetail(null);
+          setError("Failed to load track details");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, isrc]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  const displayTitle = ((detail?.name ?? fallbackTitle).trim() || isrc || "Track") as string;
+  const spotifyUrl =
+    detail?.spotify_track_id && String(detail.spotify_track_id).trim() !== ""
+      ? `https://open.spotify.com/track/${detail.spotify_track_id}`
+      : null;
+  const distroText = (detail?.distroPlaylists ?? "").trim();
+  const distroRows = detail?.distroPlaylistDetails;
+  const artistRows = detail?.trackArtists;
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={displayTitle}
+      subtitle={isrc ? `ISRC · ${isrc}` : undefined}
+      maxWidthClassName="max-w-lg"
+    >
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm opacity-70" style={{ color: "var(--sb-muted)" }}>
+          <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
+          Loading…
+        </div>
+      ) : error ? (
+        <div className="text-sm" style={{ color: "var(--sb-error)" }}>
+          {error}
+        </div>
+      ) : (
+        <div className="space-y-4 text-sm" style={{ color: "var(--sb-text)" }}>
+          {/* Art + metrics (left) · release + distro (right) — stacks on narrow viewports */}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
+            <div className="flex min-w-0 gap-3">
+              {detail?.spotify_album_image_url ? (
+                <NextImage
+                  src={detail.spotify_album_image_url}
+                  alt=""
+                  width={72}
+                  height={72}
+                  className="h-[72px] w-[72px] shrink-0 rounded-lg object-cover sb-ring"
+                />
+              ) : (
+                <div className="flex h-[72px] w-[72px] shrink-0 items-center justify-center rounded-lg sb-ring bg-white/60 dark:bg-white/10">
+                  <Disc3 className="h-8 w-8 opacity-40" aria-hidden />
+                </div>
+              )}
+              <div className="min-w-0 space-y-2">
+                <div>
+                  <div
+                    className="text-[10px] font-medium uppercase tracking-wide opacity-70"
+                    style={{ color: "var(--sb-muted)" }}
+                  >
+                    {totalColumnLabel}
+                  </div>
+                  <div
+                    className="mt-0.5 font-mono text-lg font-semibold tabular-nums leading-tight"
+                    style={{ color: metricColor }}
+                  >
+                    {formatFromStreamCount(detail?.totalStreams)}
+                  </div>
+                </div>
+                <div>
+                  <div
+                    className="text-[10px] font-medium uppercase tracking-wide opacity-70"
+                    style={{ color: "var(--sb-muted)" }}
+                  >
+                    {dailyColumnLabel}
+                  </div>
+                  <div
+                    className="mt-0.5 font-mono text-base font-semibold tabular-nums leading-tight"
+                    style={{ color: metricColor }}
+                  >
+                    {formatFromStreamCount(detail?.dailyStreams)}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div
+              className="min-w-0 flex-1 space-y-2.5 border-t pt-3 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0"
+              style={{ borderColor: "var(--sb-border)" }}
+            >
+              <div>
+                <div
+                  className="text-[10px] font-medium uppercase tracking-wide opacity-70"
+                  style={{ color: "var(--sb-muted)" }}
+                >
+                  Release date
+                </div>
+                <div className="mt-0.5 font-mono text-xs tabular-nums">
+                  {detail?.release_date ? formatDateISO(detail.release_date) : "—"}
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <div
+                  className="text-[10px] font-medium uppercase tracking-wide opacity-70"
+                  style={{ color: "var(--sb-muted)" }}
+                >
+                  Distro playlists
+                </div>
+                {distroRows && distroRows.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {distroRows.map((p) => (
+                      <ModalDistroPlaylistLink
+                        key={p.key}
+                        playlistKey={p.key}
+                        name={p.name}
+                        imageUrl={p.imageUrl}
+                        onPrimaryNavigate={onClose}
+                      />
+                    ))}
+                  </div>
+                ) : distroText ? (
+                  <div className="whitespace-pre-wrap break-words text-[11px] leading-snug opacity-90">
+                    {distroText}
+                  </div>
+                ) : (
+                  <div className="text-[11px] opacity-70">—</div>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <div
+              className="text-[11px] font-medium uppercase tracking-wide opacity-70"
+              style={{ color: "var(--sb-muted)" }}
+            >
+              Artists
+            </div>
+            {artistRows && artistRows.length > 0 ? (
+              <div className="flex flex-wrap gap-3">
+                {artistRows.map((a) => (
+                  <div key={a.id} className="flex w-[96px] flex-col items-center gap-1">
+                    {a.imageUrl ? (
+                      <NextImage
+                        src={a.imageUrl}
+                        alt=""
+                        width={40}
+                        height={40}
+                        className="h-10 w-10 shrink-0 rounded-full object-cover sb-ring"
+                      />
+                    ) : (
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full sb-ring bg-white/60 dark:bg-white/10">
+                        <UserRound className="h-4 w-4 opacity-40" aria-hidden />
+                      </div>
+                    )}
+                    <NetworkCatalogArtistLink
+                      artistId={a.id}
+                      title="Click: focus on network graph · Ctrl/⌘+click or long-press: Catalog"
+                      onNetworkSelectArtist={(id) => {
+                        onClose();
+                        onFocusArtistOnNetwork?.(id);
+                      }}
+                      className="w-full truncate text-center text-[11px] font-semibold hover:underline"
+                    >
+                      {a.name}
+                    </NetworkCatalogArtistLink>
+                  </div>
+                ))}
+              </div>
+            ) : detail?.artistsOnTrack ? (
+              <div className="text-xs leading-snug opacity-90">{detail.artistsOnTrack}</div>
+            ) : (
+              <div className="text-xs opacity-70">—</div>
+            )}
+          </div>
+          {spotifyUrl ? (
+            <a
+              href={spotifyUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-xs font-medium underline underline-offset-2 opacity-90 hover:opacity-100"
+              style={{ color: "var(--sb-accent)" }}
+            >
+              Open in Spotify
+              <ExternalLink className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            </a>
+          ) : null}
+        </div>
+      )}
+    </Modal>
+  );
+}
 
 function SelectionScopedTracksModal({
   open,
@@ -3777,6 +4698,7 @@ function SelectionScopedTracksModal({
   hideNonPrimary,
   scopeLabel,
   expectedTrackCount,
+  onTrackRowPrimary,
 }: {
   open: boolean;
   onClose: () => void;
@@ -3787,6 +4709,8 @@ function SelectionScopedTracksModal({
   hideNonPrimary: boolean;
   scopeLabel: string;
   expectedTrackCount: number | null;
+  /** Plain click / tap on track title: stay on network (e.g. close modal + refocus graph). */
+  onTrackRowPrimary: (isrc: string) => void;
 }) {
   const { metricColor, formatFromStreamCount, totalColumnLabel, dailyColumnLabel, displayMetric } =
     useNetworkMetricStreams();
@@ -3942,7 +4866,8 @@ function SelectionScopedTracksModal({
             Deduped in-scope tracks for the selected artists.{" "}
             {displayMetric === "revenue"
               ? "Est. revenue uses your payout rate × latest cumulative stream totals in the data."
-              : "Stream totals use the latest cumulative day in your data."}
+              : "Stream totals use the latest cumulative day in your data."}{" "}
+            Track title: click or tap to return to the graph (modal closes); Ctrl/⌘+click or long-press opens Catalog.
           </span>
         )}
       </div>
@@ -3989,12 +4914,13 @@ function SelectionScopedTracksModal({
                       </div>
                     )}
                     <div className="min-w-0">
-                      <Link
+                      <NetworkCatalogRoutedLink
                         href={`/catalog?isrc=${encodeURIComponent(isrc)}`}
                         className="sb-link-hover block truncate text-sm font-medium"
+                        onPrimaryAction={() => onTrackRowPrimary(isrc)}
                       >
                         {displayName}
-                      </Link>
+                      </NetworkCatalogRoutedLink>
                       {d?.artistsOnTrack ? (
                         <div className="mt-0.5 text-[10px] leading-snug opacity-70 line-clamp-2">
                           {d.artistsOnTrack}
@@ -4015,9 +4941,11 @@ function SelectionScopedTracksModal({
                 </TableCell>
                 <TableCell className="align-top" mono>
                   <div className="min-w-0 space-y-0.5">
-                    <div className="font-mono text-[11px] opacity-70" style={{ color: "var(--sb-muted)" }}>
-                      {isrc}
-                    </div>
+                    <CopyableIsrc
+                      isrc={isrc}
+                      className="block font-mono text-[11px] opacity-70"
+                      style={{ color: "var(--sb-muted)" }}
+                    />
                     <div className="text-[10px] opacity-55" style={{ color: "var(--sb-muted)" }}>
                       {releaseRaw ? formatDateISO(releaseRaw) : "—"}
                     </div>
@@ -4048,35 +4976,6 @@ function SelectionArtistAvatar({ url }: { url: string | null }) {
     >
       <UserRound className="h-3.5 w-3.5 opacity-40" aria-hidden />
     </div>
-  );
-}
-
-/** Catalog artist link; Ctrl/Cmd+click selects that node on the network graph (same modifier as the canvas). */
-function NetworkCatalogArtistLink({
-  artistId,
-  onNetworkSelectArtist,
-  className,
-  children,
-}: {
-  artistId: string;
-  onNetworkSelectArtist?: (id: string) => void;
-  className?: string;
-  children: React.ReactNode;
-}) {
-  const href = `/catalog?artist_id=${encodeURIComponent(artistId)}`;
-  return (
-    <Link
-      href={href}
-      className={className}
-      onClick={(e) => {
-        if (e.ctrlKey || e.metaKey) {
-          e.preventDefault();
-          onNetworkSelectArtist?.(artistId);
-        }
-      }}
-    >
-      {children}
-    </Link>
   );
 }
 
@@ -4237,8 +5136,8 @@ function SelectionCollabsModal({
             {displayMetric === "revenue"
               ? "Est. revenue uses your payout rate × stream totals (same source as catalog)."
               : "Stream totals use the latest cumulative day in your data (same as catalog)."}{" "}
-            Ctrl/⌘+click an artist (name or photo) to select only them on the graph; playlist / filters stay
-            the same and this dialog closes.
+            Click or tap an artist (name or photo) to select only them on the graph (this dialog closes). Ctrl/⌘+click or
+            long-press opens Catalog. Playlist / filters stay the same.
           </span>
         )}
       </div>
@@ -4331,12 +5230,13 @@ function SelectionCollabsModal({
                       </div>
                     )}
                     <div className="min-w-0">
-                      <Link
+                      <NetworkCatalogRoutedLink
                         href={`/catalog?artist_id=${encodeURIComponent(r.artistIdFirst)}&isrc=${encodeURIComponent(r.isrc)}`}
                         className="sb-link-hover block truncate text-sm font-medium"
+                        onPrimaryAction={() => onNetworkSelectArtist?.(r.artistIdFirst)}
                       >
                         {displayName}
-                      </Link>
+                      </NetworkCatalogRoutedLink>
                     </div>
                   </div>
                 </TableCell>
@@ -4352,9 +5252,11 @@ function SelectionCollabsModal({
                 </TableCell>
                 <TableCell className="align-top" mono>
                   <div className="min-w-0 space-y-0.5">
-                    <div className="font-mono text-[11px] opacity-70" style={{ color: "var(--sb-muted)" }}>
-                      {r.isrc}
-                    </div>
+                    <CopyableIsrc
+                      isrc={r.isrc}
+                      className="block font-mono text-[11px] opacity-70"
+                      style={{ color: "var(--sb-muted)" }}
+                    />
                     <div className="text-[10px] opacity-55" style={{ color: "var(--sb-muted)" }}>
                       {releaseRaw ? formatDateISO(releaseRaw) : "—"}
                     </div>

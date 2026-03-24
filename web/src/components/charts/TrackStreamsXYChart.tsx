@@ -12,6 +12,7 @@ import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
 import { ScatterCohortOverlay } from "@/components/charts/ScatterCohortOverlay";
 import { clientToSvgUserPoint, pointInPolygon } from "@/components/charts/scatterCohortHitTest";
 import { buildTrackReleaseCohortGroups, type CohortHitRegion } from "@/components/charts/trackReleaseCohorts";
+import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
 
 export type TrackStreamsXYPoint = {
   isrc: string;
@@ -198,8 +199,8 @@ const CustomTooltip = ({
             </div>
             {showRich ? (
               <div className="space-y-0.5 opacity-60">
-                <div>
-                  ISRC: <span className="font-mono">{p.isrc}</span>
+                <div className="flex flex-wrap items-center gap-1">
+                  ISRC: <CopyableIsrc isrc={p.isrc} className="font-mono" />
                 </div>
                 {releaseDate ? (
                   <div>

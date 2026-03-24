@@ -6,6 +6,7 @@ import Image from "next/image";
 import { ExternalLink, Music } from "lucide-react";
 
 import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
+import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
 
 type Track = {
@@ -86,7 +87,7 @@ export function TracksList({ tracks, searchQuery }: TracksListProps) {
             ) : null}
           </TableCell>
           <TableCell mono className="text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>
-            {track.isrc}
+            <CopyableIsrc isrc={track.isrc} className="text-xs opacity-100" style={{ color: "var(--sb-muted)" }} />
           </TableCell>
           <TableCell>
             {track.externalUrl ? (

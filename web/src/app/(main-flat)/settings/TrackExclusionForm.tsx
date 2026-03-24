@@ -6,6 +6,7 @@ import { Alert } from "@/components/ui/Alert";
 import { Button, IconButton } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Chip } from "@/components/ui/Chip";
+import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
 import { showToast } from "@/lib/toast";
 
 type Track = {
@@ -181,7 +182,7 @@ export function TrackExclusionForm({
                     onClick={() => setSelectedTrackIsrcs((prev) => prev.filter((x) => x !== isrc))}
                     title="Remove"
                   >
-                    <span className="font-mono opacity-70">{isrc}</span>
+                    <CopyableIsrc inline isrc={isrc} className="font-mono opacity-70" />
                     <span className="max-w-[260px] truncate opacity-80">{meta?.label ?? "selected"}</span>
                     <span className="opacity-50">✕</span>
                   </Chip>

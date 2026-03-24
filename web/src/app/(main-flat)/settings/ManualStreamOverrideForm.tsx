@@ -6,6 +6,7 @@ import { Combobox, type ComboboxOption } from "@/components/ui/Combobox";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
 import { InlineDatePicker } from "@/components/ui/InlineDatePicker";
 import { showToast } from "@/lib/toast";
 
@@ -181,7 +182,7 @@ export function ManualStreamOverrideForm({
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <div className="font-medium truncate">{name}</div>
-                      <span className="font-mono text-[10px] opacity-60">{isrc}</span>
+                      <CopyableIsrc inline isrc={isrc} className="font-mono text-[10px] opacity-60" />
                     </div>
                     <div className="mt-0.5 text-[11px] opacity-70 truncate">
                       {artists ? `${artists} • ` : ""}

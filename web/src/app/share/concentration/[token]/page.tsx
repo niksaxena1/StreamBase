@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import React from "react";
 
 import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/GlassTable";
+import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
 import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
 import { parseConcentrationShareSnapshotV1 } from "@/lib/share/concentrationSnapshot";
 import { formatShareSnapshotCreatedAtAbuDhabi } from "@/lib/share/formatShareCreatedAt";
@@ -157,9 +158,11 @@ export default async function SharedConcentrationPage(props: PageProps) {
                     </TableCell>
                     <TableCell className="hidden sm:table-cell">
                       {snap.showIsrcColumn ? (
-                        <span className="font-mono text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>
-                          {p.isrc}
-                        </span>
+                        <CopyableIsrc
+                          isrc={p.isrc}
+                          className="font-mono text-xs opacity-40"
+                          style={{ color: "var(--sb-muted)" }}
+                        />
                       ) : p.distroPlaylistName ? (
                         <div className="flex items-center gap-1.5 min-w-0">
                           {p.distroPlaylistImageUrl ? (

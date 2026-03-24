@@ -14,6 +14,7 @@ import { foldForSearch } from "@/lib/searchFold";
 import { readStoredBool, writeStoredBool } from "@/lib/storage";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
 import { todayIsoDate } from "@/lib/csv";
+import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
 import { HOME_DETAILS_STORAGE } from "./homeUtils";
 
 export function HomeScatterSection(props: {
@@ -419,9 +420,12 @@ export function HomeScatterSection(props: {
                           </div>
                         ) : null}
                       </div>
-                      <div className="shrink-0 font-mono text-[11px] opacity-60" style={{ color: "var(--sb-muted)" }}>
-                        {m.isrc}
-                      </div>
+                      <CopyableIsrc
+                        inline
+                        isrc={m.isrc}
+                        className="shrink-0 font-mono text-[11px] opacity-60"
+                        style={{ color: "var(--sb-muted)" }}
+                      />
                     </button>
                   ))
                 ) : (

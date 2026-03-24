@@ -28,6 +28,7 @@ import { MenuSelect, type MenuSelectOption } from "@/components/ui/MenuSelect";
 import { Chip, ChipGroup } from "@/components/ui/Chip";
 import { Input } from "@/components/ui/Input";
 import { IconButton } from "@/components/ui/Button";
+import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { useMetric } from "@/components/metrics/MetricContext";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
@@ -1665,7 +1666,11 @@ export function CollectorsClient(props: {
                     </TableCell>
                     <TableCell className="hidden sm:table-cell">
                       {showIsrcInDistroCol ? (
-                        <span className="font-mono text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>{t.isrc}</span>
+                        <CopyableIsrc
+                          isrc={t.isrc}
+                          className="font-mono text-xs opacity-40"
+                          style={{ color: "var(--sb-muted)" }}
+                        />
                       ) : distroNames.length ? (
                         <div className="flex items-center gap-1.5 min-w-0">
                           {distroImages[0] ? (
@@ -1685,7 +1690,13 @@ export function CollectorsClient(props: {
                       className="whitespace-nowrap text-xs opacity-40"
                       style={{ color: "var(--sb-muted)" }}
                     >
-                      {showIsrcOnMobile ? t.isrc : (t.release_date ? formatDateISO(t.release_date) : <span className="opacity-30">—</span>)}
+                      {showIsrcOnMobile ? (
+                        <CopyableIsrc isrc={t.isrc} className="text-xs opacity-100" style={{ color: "var(--sb-muted)" }} />
+                      ) : t.release_date ? (
+                        formatDateISO(t.release_date)
+                      ) : (
+                        <span className="opacity-30">—</span>
+                      )}
                     </TableCell>
                     <TableCell
                       className={tracksTableIsRevenue ? "font-medium" : "sb-positive font-medium"}
