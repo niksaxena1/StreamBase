@@ -669,20 +669,29 @@ function NetworkLinkCollaborationTooltipContent({
                   <Disc3 className="h-3 w-3 opacity-40" />
                 </span>
               )}
-              {frozen ? (
-                <NetworkCatalogRoutedLink
-                  href={`/catalog?isrc=${encodeURIComponent(t.isrc)}`}
-                  className="sb-link-hover min-w-0 truncate font-medium"
-                  title="Click: track details · Ctrl/⌘+click or long-press: Catalog"
-                  onPrimaryAction={() =>
-                    onFrozenTrackOpenDetail(t.isrc, String(t.name ?? t.isrc))
-                  }
-                >
-                  {t.name ?? t.isrc}
-                </NetworkCatalogRoutedLink>
-              ) : (
-                <span className="min-w-0 truncate">{t.name ?? t.isrc}</span>
-              )}
+              <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                {frozen ? (
+                  <NetworkCatalogRoutedLink
+                    href={`/catalog?isrc=${encodeURIComponent(t.isrc)}`}
+                    className="sb-link-hover min-w-0 flex-1 truncate font-medium"
+                    title="Click: track details · Ctrl/⌘+click or long-press: Catalog"
+                    onPrimaryAction={() =>
+                      onFrozenTrackOpenDetail(t.isrc, String(t.name ?? t.isrc))
+                    }
+                  >
+                    {t.name ?? t.isrc}
+                  </NetworkCatalogRoutedLink>
+                ) : (
+                  <span className="min-w-0 flex-1 truncate">{t.name ?? t.isrc}</span>
+                )}
+                <CopyableIsrc
+                  inline
+                  isrc={t.isrc}
+                  className="shrink-0 font-mono text-[9px] opacity-70 hover:opacity-100"
+                  style={{ color: colors.muted }}
+                  title="Copy ISRC"
+                />
+              </div>
             </li>
           ))}
           {tracks.length > 10 ? (
@@ -4522,7 +4531,17 @@ function FrozenEdgeTrackDetailModal({
       open={open}
       onClose={onClose}
       title={displayTitle}
-      subtitle={isrc ? `ISRC · ${isrc}` : undefined}
+      subtitle={
+        isrc ? (
+          <span className="inline-flex flex-wrap items-center gap-1.5">
+            <span className="opacity-80">ISRC</span>
+            <span className="opacity-40" aria-hidden>
+              ·
+            </span>
+            <CopyableIsrc isrc={isrc} className="font-mono text-[11px] opacity-95" />
+          </span>
+        ) : undefined
+      }
       maxWidthClassName="max-w-lg"
     >
       {loading ? (

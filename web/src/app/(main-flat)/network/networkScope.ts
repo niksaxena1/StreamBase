@@ -98,6 +98,15 @@ export function parseNetworkScope(
   return { ...DEFAULT_NETWORK_SCOPE };
 }
 
+/** Parse `hide_non_primary` search param for the collaboration graph RPC. */
+export function parseHideNonPrimary(v: string | string[] | undefined): boolean {
+  if (v === undefined) return false;
+  const s = Array.isArray(v) ? v[0] : v;
+  if (typeof s !== "string") return false;
+  const t = s.trim().toLowerCase();
+  return t === "1" || t === "true" || t === "yes";
+}
+
 /** Write scope to URLSearchParams (clears conflicting keys first). */
 export function appendNetworkScopeToSearchParams(
   p: URLSearchParams,

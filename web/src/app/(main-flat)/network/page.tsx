@@ -1,10 +1,9 @@
-import { Suspense } from "react";
 import { redirect } from "next/navigation";
 
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { NetworkGraphClient } from "./NetworkGraphClient";
-import { parseNetworkScope } from "./networkScope";
+import { parseHideNonPrimary, parseNetworkScope } from "./networkScope";
 
 export const dynamic = "force-dynamic";
 
@@ -43,14 +42,6 @@ export type NetworkPlaylistOption = {
   display_name: string;
   spotify_playlist_image_url: string | null;
 };
-
-function parseHideNonPrimary(v: string | string[] | undefined): boolean {
-  if (v === undefined) return false;
-  const s = Array.isArray(v) ? v[0] : v;
-  if (typeof s !== "string") return false;
-  const t = s.trim().toLowerCase();
-  return t === "1" || t === "true" || t === "yes";
-}
 
 export default async function NetworkPage({
   searchParams,
@@ -126,14 +117,6 @@ export default async function NetworkPage({
   };
 
   return (
-    <Suspense
-      fallback={
-        <div className="flex h-[calc(100vh-64px)] items-center justify-center text-sm" style={{ color: "var(--sb-muted)" }}>
-          Loading network…
-        </div>
-      }
-    >
-      <NetworkGraphClient nodes={graph.nodes} edges={graph.edges} playlists={playlists} hideNonPrimary={hideNonPrimary} />
-    </Suspense>
+    <NetworkGraphClient nodes={graph.nodes} edges={graph.edges} playlists={playlists} hideNonPrimary={hideNonPrimary} />
   );
 }
