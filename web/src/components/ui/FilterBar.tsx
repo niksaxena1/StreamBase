@@ -21,7 +21,11 @@ export function FilterBar(props: {
     >
       <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
         {props.left ? <div className="min-w-0">{props.left}</div> : null}
-        {props.right ? <div className="flex flex-wrap items-center gap-2">{props.right}</div> : null}
+        {props.right ? (
+          <div className="flex w-full flex-shrink-0 flex-wrap items-center justify-end gap-2 lg:w-auto">
+            {props.right}
+          </div>
+        ) : null}
       </div>
     </div>
   );

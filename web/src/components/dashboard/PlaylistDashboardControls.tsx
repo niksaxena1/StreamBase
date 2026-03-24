@@ -5,6 +5,7 @@ import { useEffect } from "react";
 
 import { Combobox } from "@/components/ui/Combobox";
 import { FilterBar } from "@/components/ui/FilterBar";
+import { PlaylistMembershipStats } from "@/components/dashboard/PlaylistMembershipStats";
 
 type PlaylistOption = {
   playlist_key: string;
@@ -17,6 +18,10 @@ type PlaylistOption = {
 export function PlaylistDashboardControls(props: {
   playlists: PlaylistOption[];
   playlistKey: string;
+  /** Track count for the selected playlist (as of latest stats row), if known */
+  trackCount: number | null;
+  /** Distinct credited artists on those tracks at the same run date, if known */
+  artistCount: number | null;
 }) {
   const router = useRouter();
   const sp = useSearchParams();
@@ -41,36 +46,41 @@ export function PlaylistDashboardControls(props: {
     router.push(`?${next.toString()}`);
   }
 
+  const showStats =
+    (props.trackCount != null && Number.isFinite(props.trackCount)) ||
+    (props.artistCount != null && Number.isFinite(props.artistCount));
+
   return (
     <FilterBar
       left={
-        <div className="flex items-center gap-2">
-          <div className="flex-1 min-w-0">
-            <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                <div className="flex items-center gap-2">
-                  <div className="text-xs font-medium">Playlist</div>
-                  <div className="sb-ring rounded-xl bg-black/10 px-2.5 py-1.5 dark:bg-white/10 min-w-[280px] w-full max-w-[400px]">
-                    <Combobox
-                      ariaLabel="Select playlist"
-                      value={props.playlistKey}
-                      options={props.playlists.map((p) => ({
-                        value: p.playlist_key,
-                        label: p.display_name,
-                        imageUrl: p.playlist_key === "all_catalog" ? null : p.spotify_playlist_image_url,
-                        isAllCatalog: p.playlist_key === "all_catalog",
-                        trackCount: p.track_count,
-                      }))}
-                      placeholder="Type a playlist…"
-                      onChange={onSelectPlaylist}
-                      imageShape="square"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <div className="shrink-0 text-xs font-medium">Playlist</div>
+          <div className="sb-ring w-full min-w-[280px] max-w-[400px] rounded-xl bg-black/10 px-2.5 py-1.5 dark:bg-white/10">
+            <Combobox
+              ariaLabel="Select playlist"
+              value={props.playlistKey}
+              options={props.playlists.map((p) => ({
+                value: p.playlist_key,
+                label: p.display_name,
+                imageUrl: p.playlist_key === "all_catalog" ? null : p.spotify_playlist_image_url,
+                isAllCatalog: p.playlist_key === "all_catalog",
+                trackCount: p.track_count,
+              }))}
+              placeholder="Type a playlist…"
+              onChange={onSelectPlaylist}
+              imageShape="square"
+            />
           </div>
         </div>
+      }
+      right={
+        showStats ? (
+          <PlaylistMembershipStats
+            trackCount={props.trackCount}
+            artistCount={props.artistCount}
+            className="hidden lg:flex"
+          />
+        ) : null
       }
     />
   );

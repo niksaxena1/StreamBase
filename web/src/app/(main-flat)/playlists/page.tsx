@@ -18,6 +18,7 @@ import { PageHeader } from "@/components/shell/PageHeader";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { PlaylistHistory30dDetails, type PlaylistHistoryRow } from "./PlaylistHistory30dDetails";
 import { PlaylistHeaderSelects } from "./PlaylistGranularitySelect";
+import { PlaylistMembershipStats } from "@/components/dashboard/PlaylistMembershipStats";
 
 // Uses Supabase session cookies; this route must be dynamic in Next 16.
 export const dynamic = "force-dynamic";
@@ -268,6 +269,35 @@ export default async function PlaylistsPage({
   const latestSourceRunId = (latest as PlaylistDailyStatsRow | null)?.source_run_id ?? null;
   const prevDate = (prev as { date: string } | null)?.date ?? null;
 
+  const { data: playlistArtistCountRaw } = await cachedQuery(
+    async () => {
+      if (!latestDate) return { data: null, error: null };
+      return await svc.rpc("playlist_distinct_artist_count", {
+        playlist_key: playlistKey,
+        run_date: latestDate,
+      });
+    },
+    `playlist-distinct-artist-count-v1-${playlistKey}-${latestDate}-rb${rollbackDate ?? "live"}`,
+    3600,
+  );
+
+  function parseRpcBigint(v: unknown): number | null {
+    if (v == null) return null;
+    if (typeof v === "number" && Number.isFinite(v)) return Math.trunc(v);
+    if (typeof v === "string" && v.trim() !== "") {
+      const n = Number(v);
+      return Number.isFinite(n) ? Math.trunc(n) : null;
+    }
+    return null;
+  }
+
+  const playlistArtistCount = parseRpcBigint(playlistArtistCountRaw);
+
+  const playlistTrackCountDisplay =
+    (latest as PlaylistDailyStatsRow | null)?.track_count ??
+    statsMap.get(playlistKey) ??
+    null;
+
   const hist = (history ?? []) as PlaylistDailyStatsRow[];
 
   // Manual stream override annotations for charts (run-date scoped; UI shows data-date).
@@ -388,6 +418,9 @@ export default async function PlaylistsPage({
   );
   const removedTracksCount = Array.isArray(removedRows) ? removedRows.length : 0;
 
+  const playlistTrackCountNumeric =
+    playlistTrackCountDisplay != null ? Number(playlistTrackCountDisplay) : null;
+
   return (
     <div className="space-y-4">
       <PageHeader
@@ -439,23 +472,35 @@ export default async function PlaylistsPage({
           )
         }
         actions={
-          <>
-            <PlaylistHeaderSelects rangeDays={rangeDays} latestDataDate={latestDate ? dataDateFromRunDate(latestDate) : null} />
-            <Link
-              href="/playlists/config"
-              className="sb-ring grid h-8 w-8 place-items-center rounded-full bg-white/70 text-xs font-medium transition hover:bg-white dark:bg-white/10 dark:hover:bg-white/15"
-              aria-label="Playlist config"
-              title="Playlist config"
-            >
-              <List className="h-4 w-4" style={{ color: "var(--sb-text)" }} />
-            </Link>
-          </>
+          <div className="flex w-full min-w-0 items-center gap-2 lg:w-auto">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <PlaylistHeaderSelects
+                rangeDays={rangeDays}
+                latestDataDate={latestDate ? dataDateFromRunDate(latestDate) : null}
+              />
+              <Link
+                href="/playlists/config"
+                className="sb-ring grid h-8 w-8 shrink-0 place-items-center rounded-full bg-white/70 text-xs font-medium transition hover:bg-white dark:bg-white/10 dark:hover:bg-white/15"
+                aria-label="Playlist config"
+                title="Playlist config"
+              >
+                <List className="h-4 w-4" style={{ color: "var(--sb-text)" }} />
+              </Link>
+            </div>
+            <PlaylistMembershipStats
+              trackCount={playlistTrackCountNumeric}
+              artistCount={playlistArtistCount}
+              className="ml-auto shrink-0 lg:hidden"
+            />
+          </div>
         }
       />
 
         <PlaylistDashboardControls
           playlists={playlistOptions}
           playlistKey={playlistKey}
+          trackCount={playlistTrackCountNumeric}
+          artistCount={playlistArtistCount}
         />
 
         <PlaylistPageClient

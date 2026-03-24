@@ -186,8 +186,6 @@ function parseTrackCountBounds(sp: URLSearchParams): { min: number | null; max: 
   };
 }
 
-type CollabFilterMode = "le" | "ge";
-
 /** What “co-artist count” means for the filter + export. */
 type CollabCountBasis = "playlist" | "primary_rows";
 
@@ -235,18 +233,40 @@ function appendNetworkTableSortParams(
   if (dir === "desc") p.set("tbl_dir", "desc");
 }
 
-function parseCollabDegreeFilter(sp: URLSearchParams): { n: number | null; mode: CollabFilterMode } {
+/** Inclusive co-artist count range from `collab_min` / `collab_max` (0–999 each). */
+function parseCollabRangeBounds(sp: URLSearchParams): { min: number | null; max: number | null } {
   const parseN = (raw: string | null): number | null => {
     if (raw == null || raw === "") return null;
     const n = parseInt(raw, 10);
     if (!Number.isFinite(n) || n < 0 || n > 999) return null;
     return n;
   };
-  const minN = parseN(sp.get("collab_min"));
-  const maxN = parseN(sp.get("collab_max"));
-  if (minN != null) return { n: minN, mode: "ge" };
-  if (maxN != null) return { n: maxN, mode: "le" };
-  return { n: null, mode: "le" };
+  let min = parseN(sp.get("collab_min"));
+  let max = parseN(sp.get("collab_max"));
+  if (min != null && max != null && min > max) {
+    [min, max] = [max, min];
+  }
+  return { min, max };
+}
+
+function collabRangeIsActive(min: number | null, max: number | null): boolean {
+  return min != null || max != null;
+}
+
+function coartistCountInRange(cnt: number, min: number | null, max: number | null): boolean {
+  if (!collabRangeIsActive(min, max)) return true;
+  if (min != null && cnt < min) return false;
+  if (max != null && cnt > max) return false;
+  return true;
+}
+
+function formatCollabRangeSummary(min: number | null, max: number | null): string {
+  if (!collabRangeIsActive(min, max)) return "";
+  if (min != null && max != null) {
+    return min === max ? `${min}` : `${min}–${max}`;
+  }
+  if (min != null) return `≥${min}`;
+  return `≤${max!}`;
 }
 
 /** Non-empty draft must be digits only; clamps to 0–999. */
@@ -273,8 +293,8 @@ function buildNetworkQueryString(args: {
   scaleByTracks: boolean;
   showImages: boolean;
   tableView: boolean;
-  collabFilterN: number | null;
-  collabFilterMode: CollabFilterMode;
+  collabMin: number | null;
+  collabMax: number | null;
   collabCountBasis: CollabCountBasis;
   trackCountMin: number | null;
   trackCountMax: number | null;
@@ -288,10 +308,8 @@ function buildNetworkQueryString(args: {
   if (args.scaleByTracks) p.set("scale_tracks", "1");
   if (!args.showImages) p.set("images", "0");
   if (args.tableView) p.set("table", "1");
-  if (args.collabFilterN != null) {
-    if (args.collabFilterMode === "ge") p.set("collab_min", String(args.collabFilterN));
-    else p.set("collab_max", String(args.collabFilterN));
-  }
+  if (args.collabMin != null) p.set("collab_min", String(args.collabMin));
+  if (args.collabMax != null) p.set("collab_max", String(args.collabMax));
   if (args.collabCountBasis === "primary_rows") p.set("co_basis", "primary");
   if (args.trackCountMin != null) p.set("tc_min", String(args.trackCountMin));
   if (args.trackCountMax != null) p.set("tc_max", String(args.trackCountMax));
@@ -449,15 +467,19 @@ export function NetworkGraphClient({
   const [scaleByTracks, setScaleByTracks] = useState(() => readNetworkToggles(searchParams).scaleByTracks);
   const [showImages, setShowImages] = useState(() => readNetworkToggles(searchParams).showImages);
   const [tableView, setTableView] = useState(() => readNetworkToggles(searchParams).tableView);
-  const [collabFilterN, setCollabFilterN] = useState<number | null>(() =>
-    parseCollabDegreeFilter(searchParams).n,
+  const [collabFilterMin, setCollabFilterMin] = useState<number | null>(() =>
+    parseCollabRangeBounds(searchParams).min,
   );
-  const [collabFilterMode, setCollabFilterMode] = useState<CollabFilterMode>(() =>
-    parseCollabDegreeFilter(searchParams).mode,
+  const [collabFilterMax, setCollabFilterMax] = useState<number | null>(() =>
+    parseCollabRangeBounds(searchParams).max,
   );
-  const [collabInputDraft, setCollabInputDraft] = useState(() => {
-    const { n } = parseCollabDegreeFilter(searchParams);
-    return n == null ? "" : String(n);
+  const [collabMinDraft, setCollabMinDraft] = useState(() => {
+    const { min } = parseCollabRangeBounds(searchParams);
+    return min == null ? "" : String(min);
+  });
+  const [collabMaxDraft, setCollabMaxDraft] = useState(() => {
+    const { max } = parseCollabRangeBounds(searchParams);
+    return max == null ? "" : String(max);
   });
   const [collabCountBasis, setCollabCountBasis] = useState<CollabCountBasis>(() =>
     parseCollabCountBasis(searchParams),
@@ -577,10 +599,11 @@ export function NetworkGraphClient({
     setScaleByTracks(r.scaleByTracks);
     setShowImages(r.showImages);
     setTableView(r.tableView);
-    const cf = parseCollabDegreeFilter(searchParams);
-    setCollabFilterN(cf.n);
-    setCollabFilterMode(cf.mode);
-    setCollabInputDraft(cf.n == null ? "" : String(cf.n));
+    const cf = parseCollabRangeBounds(searchParams);
+    setCollabFilterMin(cf.min);
+    setCollabFilterMax(cf.max);
+    setCollabMinDraft(cf.min == null ? "" : String(cf.min));
+    setCollabMaxDraft(cf.max == null ? "" : String(cf.max));
     setCollabCountBasis(parseCollabCountBasis(searchParams));
     const tc = parseTrackCountBounds(searchParams);
     setTrackCountMin(tc.min);
@@ -674,13 +697,10 @@ export function NetworkGraphClient({
   );
 
   const collabFilterExportLabel = useMemo(() => {
-    if (collabFilterN == null) return "None";
-    const base =
-      collabFilterMode === "le"
-        ? `≤${collabFilterN} (up to)`
-        : `≥${collabFilterN} (at least)`;
-    return `${base}; ${collabCountBasis === "playlist" ? "playlist-wide" : "primary rows"}`;
-  }, [collabFilterN, collabFilterMode, collabCountBasis]);
+    if (!collabRangeIsActive(collabFilterMin, collabFilterMax)) return "None";
+    const range = formatCollabRangeSummary(collabFilterMin, collabFilterMax);
+    return `Co-artists ${range}; ${collabCountBasis === "playlist" ? "playlist-wide" : "primary rows"}`;
+  }, [collabFilterMin, collabFilterMax, collabCountBasis]);
 
   // Compute node size range
   const { minTrackCount, maxTrackCount } = useMemo(() => {
@@ -713,15 +733,14 @@ export function NetworkGraphClient({
   }, [nodes, collabCountBasis]);
 
   const collabVisibleNodeIds = useMemo(() => {
-    if (collabFilterN === null) return null;
+    if (!collabRangeIsActive(collabFilterMin, collabFilterMax)) return null;
     const s = new Set<string>();
     for (const node of nodes) {
       const cnt = trackCollabFilterMap.get(node.id) ?? 0;
-      const ok = collabFilterMode === "le" ? cnt <= collabFilterN : cnt >= collabFilterN;
-      if (ok) s.add(node.id);
+      if (coartistCountInRange(cnt, collabFilterMin, collabFilterMax)) s.add(node.id);
     }
     return s;
-  }, [nodes, trackCollabFilterMap, collabFilterN, collabFilterMode]);
+  }, [nodes, trackCollabFilterMap, collabFilterMin, collabFilterMax]);
 
   const { trackCountMinEffective, trackCountMaxEffective } = useMemo(() => {
     const a = trackCountMin;
@@ -877,13 +896,8 @@ export function NetworkGraphClient({
   }, [edges, combinedVisibleNodeIds]);
 
   const collabDegreeMatchesFilter = useCallback(
-    (deg: number) =>
-      collabFilterN === null
-        ? true
-        : collabFilterMode === "le"
-          ? deg <= collabFilterN
-          : deg >= collabFilterN,
-    [collabFilterN, collabFilterMode],
+    (deg: number) => coartistCountInRange(deg, collabFilterMin, collabFilterMax),
+    [collabFilterMin, collabFilterMax],
   );
 
   const nodePassesTrackCountBounds = useCallback(
@@ -899,7 +913,7 @@ export function NetworkGraphClient({
   );
 
   useEffect(() => {
-    if (collabFilterN === null) return;
+    if (!collabRangeIsActive(collabFilterMin, collabFilterMax)) return;
     setRangeSelection((prev) => {
       const next = prev.filter((id) =>
         collabDegreeMatchesFilter(trackCollabFilterMap.get(id) ?? 0),
@@ -910,7 +924,7 @@ export function NetworkGraphClient({
       if (!prev) return null;
       return collabDegreeMatchesFilter(trackCollabFilterMap.get(prev) ?? 0) ? prev : null;
     });
-  }, [collabFilterN, collabFilterMode, trackCollabFilterMap, collabDegreeMatchesFilter]);
+  }, [collabFilterMin, collabFilterMax, trackCollabFilterMap, collabDegreeMatchesFilter]);
 
   useEffect(() => {
     if (trackCountMinEffective == null && trackCountMaxEffective == null) return;
@@ -935,13 +949,13 @@ export function NetworkGraphClient({
 
   const cameraScope = useMemo(
     () =>
-      `${networkScopeIdentityStr}|${hideNonPrimary ? "1" : "0"}|${nodeIdKey}|c:${collabFilterMode}:${collabFilterN ?? "x"}|b:${collabCountBasis}|tc:${trackCountMinEffective ?? "x"}:${trackCountMaxEffective ?? "x"}|tbl:${tableView ? "1" : "0"}`,
+      `${networkScopeIdentityStr}|${hideNonPrimary ? "1" : "0"}|${nodeIdKey}|c:${collabFilterMin ?? "x"}:${collabFilterMax ?? "x"}|b:${collabCountBasis}|tc:${trackCountMinEffective ?? "x"}:${trackCountMaxEffective ?? "x"}|tbl:${tableView ? "1" : "0"}`,
     [
       networkScopeIdentityStr,
       hideNonPrimary,
       nodeIdKey,
-      collabFilterMode,
-      collabFilterN,
+      collabFilterMin,
+      collabFilterMax,
       collabCountBasis,
       trackCountMinEffective,
       trackCountMaxEffective,
@@ -1264,8 +1278,8 @@ export function NetworkGraphClient({
       scaleByTracks: boolean;
       showImages: boolean;
       tableView: boolean;
-      collabFilterN: number | null;
-      collabFilterMode: CollabFilterMode;
+      collabMin: number | null;
+      collabMax: number | null;
       collabCountBasis: CollabCountBasis;
       trackCountMin: number | null;
       trackCountMax: number | null;
@@ -1280,8 +1294,8 @@ export function NetworkGraphClient({
         scaleByTracks: patch.scaleByTracks ?? scaleByTracks,
         showImages: patch.showImages ?? showImages,
         tableView: patch.tableView ?? tableView,
-        collabFilterN: patch.collabFilterN !== undefined ? patch.collabFilterN : collabFilterN,
-        collabFilterMode: patch.collabFilterMode ?? collabFilterMode,
+        collabMin: patch.collabMin !== undefined ? patch.collabMin : collabFilterMin,
+        collabMax: patch.collabMax !== undefined ? patch.collabMax : collabFilterMax,
         collabCountBasis: patch.collabCountBasis ?? collabCountBasis,
         trackCountMin: patch.trackCountMin !== undefined ? patch.trackCountMin : trackCountMin,
         trackCountMax: patch.trackCountMax !== undefined ? patch.trackCountMax : trackCountMax,
@@ -1300,14 +1314,27 @@ export function NetworkGraphClient({
       scaleByTracks,
       showImages,
       tableView,
-      collabFilterN,
-      collabFilterMode,
+      collabFilterMin,
+      collabFilterMax,
       collabCountBasis,
       trackCountMin,
       trackCountMax,
       rangeSelection,
     ],
   );
+
+  const commitCollabRange = useCallback(() => {
+    let min = parseCollabInputDraft(collabMinDraft);
+    let max = parseCollabInputDraft(collabMaxDraft);
+    if (min != null && max != null && min > max) {
+      [min, max] = [max, min];
+    }
+    setCollabFilterMin(min);
+    setCollabFilterMax(max);
+    setCollabMinDraft(min == null ? "" : String(min));
+    setCollabMaxDraft(max == null ? "" : String(max));
+    pushNetworkUrl({ collabMin: min, collabMax: max });
+  }, [collabMinDraft, collabMaxDraft, pushNetworkUrl]);
 
   const cycleTableSortColumn = useCallback(
     (key: NetworkTableSortKey) => {
@@ -1352,8 +1379,8 @@ export function NetworkGraphClient({
       scaleByTracks,
       showImages,
       tableView,
-      collabFilterN,
-      collabFilterMode,
+      collabMin: collabFilterMin,
+      collabMax: collabFilterMax,
       collabCountBasis,
       trackCountMin,
       trackCountMax,
@@ -1374,8 +1401,8 @@ export function NetworkGraphClient({
     scaleByTracks,
     showImages,
     tableView,
-    collabFilterN,
-    collabFilterMode,
+    collabFilterMin,
+    collabFilterMax,
     collabCountBasis,
     trackCountMin,
     trackCountMax,
@@ -2159,9 +2186,10 @@ export function NetworkGraphClient({
     setSelectedNodeId(null);
     setRangeSelection([]);
     setSearchQuery("");
-    setCollabFilterN(null);
-    setCollabFilterMode("le");
-    setCollabInputDraft("");
+    setCollabFilterMin(null);
+    setCollabFilterMax(null);
+    setCollabMinDraft("");
+    setCollabMaxDraft("");
     setCollabCountBasis("playlist");
     setTrackCountMin(null);
     setTrackCountMax(null);
@@ -2176,8 +2204,8 @@ export function NetworkGraphClient({
     pushNetworkUrl({
       scope: DEFAULT_NETWORK_SCOPE,
       selectedIds: [],
-      collabFilterN: null,
-      collabFilterMode: "le",
+      collabMin: null,
+      collabMax: null,
       collabCountBasis: "playlist",
       trackCountMin: null,
       trackCountMax: null,
@@ -2204,8 +2232,8 @@ export function NetworkGraphClient({
     networkScopeIdentityStr,
     hideNonPrimary,
     nodeIdKey,
-    collabFilterN,
-    collabFilterMode,
+    collabFilterMin,
+    collabFilterMax,
     collabCountBasis,
     trackCountMinEffective,
     trackCountMaxEffective,
@@ -2426,9 +2454,9 @@ export function NetworkGraphClient({
 
   const activeFiltersSummary = useMemo(() => {
     const parts: string[] = [];
-    if (collabFilterN != null) {
+    if (collabRangeIsActive(collabFilterMin, collabFilterMax)) {
       parts.push(
-        `Co-artists ${collabFilterMode === "le" ? "≤" : "≥"}${collabFilterN} (${collabCountBasis === "playlist" ? "playlist-wide" : "lead rows"})`,
+        `Co-artists ${formatCollabRangeSummary(collabFilterMin, collabFilterMax)} (${collabCountBasis === "playlist" ? "playlist-wide" : "lead rows"})`,
       );
     }
     if (trackCountMinEffective != null || trackCountMaxEffective != null) {
@@ -2445,8 +2473,8 @@ export function NetworkGraphClient({
     }
     return parts;
   }, [
-    collabFilterN,
-    collabFilterMode,
+    collabFilterMin,
+    collabFilterMax,
     collabCountBasis,
     trackCountMinEffective,
     trackCountMaxEffective,
@@ -2618,8 +2646,8 @@ export function NetworkGraphClient({
               The URL encodes scope (<code className="font-mono text-[11px]">playlist=…</code> or custom{" "}
               <code className="font-mono text-[11px]">net_scope</code> / <code className="font-mono text-[11px]">net_pl</code> /{" "}
               <code className="font-mono text-[11px]">net_pl_m</code>), toggles,{" "}
-              <code className="font-mono text-[11px]">collab_max</code> /{" "}
-              <code className="font-mono text-[11px]">collab_min</code>,{" "}
+              <code className="font-mono text-[11px]">collab_min</code> /{" "}
+              <code className="font-mono text-[11px]">collab_max</code> (inclusive range; either or both),{" "}
               <code className="font-mono text-[11px]">co_basis=primary</code>,{" "}
               <code className="font-mono text-[11px]">tc_min</code> / <code className="font-mono text-[11px]">tc_max</code>,{" "}
               <code className="font-mono text-[11px]">table=1</code>,{" "}
@@ -2683,67 +2711,22 @@ export function NetworkGraphClient({
           <span className="shrink-0 pl-0.5" style={{ color: colors.muted }}>
             Co-artists
           </span>
-          <div className="flex rounded-md overflow-hidden border shrink-0" style={{ borderColor: colors.border }}>
-            <button
-              type="button"
-              className="px-2 py-1 font-medium transition-colors"
-              aria-label="Co-artists: up to N"
-              style={{
-                backgroundColor:
-                  collabFilterMode === "le"
-                    ? colors.isDark
-                      ? "rgba(212,255,77,0.14)"
-                      : "rgba(168,214,46,0.2)"
-                    : "transparent",
-                color: collabFilterMode === "le" ? colors.text : colors.muted,
-              }}
-              onClick={() => {
-                if (collabFilterMode === "le") return;
-                setCollabFilterMode("le");
-                pushNetworkUrl({ collabFilterMode: "le" });
-              }}
-            >
-              Up to
-            </button>
-            <button
-              type="button"
-              className="px-2 py-1 font-medium transition-colors border-l"
-              aria-label="Co-artists: at least N"
-              style={{
-                borderColor: colors.border,
-                backgroundColor:
-                  collabFilterMode === "ge"
-                    ? colors.isDark
-                      ? "rgba(212,255,77,0.14)"
-                      : "rgba(168,214,46,0.2)"
-                    : "transparent",
-                color: collabFilterMode === "ge" ? colors.text : colors.muted,
-              }}
-              onClick={() => {
-                if (collabFilterMode === "ge") return;
-                setCollabFilterMode("ge");
-                pushNetworkUrl({ collabFilterMode: "ge" });
-              }}
-            >
-              At least
-            </button>
-          </div>
           <input
             type="text"
             inputMode="numeric"
             autoComplete="off"
-            placeholder="Any"
-            aria-label="Filter by co-artist count on tracks"
+            placeholder="Min"
+            aria-label="Minimum co-artist count on tracks (inclusive)"
             className="w-11 min-w-0 rounded px-1.5 py-1 font-mono text-xs tabular-nums outline-none border"
             style={{
               borderColor: colors.border,
               backgroundColor: colors.isDark ? "rgba(0,0,0,0.25)" : "rgba(255,255,255,0.7)",
               color: colors.text,
             }}
-            value={collabInputDraft}
+            value={collabMinDraft}
             onChange={(e) => {
               const v = e.target.value;
-              if (v === "" || /^\d*$/.test(v)) setCollabInputDraft(v);
+              if (v === "" || /^\d*$/.test(v)) setCollabMinDraft(v);
             }}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
@@ -2751,16 +2734,34 @@ export function NetworkGraphClient({
                 (e.target as HTMLInputElement).blur();
               }
             }}
-            onBlur={() => {
-              const parsed = parseCollabInputDraft(collabInputDraft);
-              setCollabFilterN(parsed);
-              setCollabInputDraft(parsed == null ? "" : String(parsed));
-              pushNetworkUrl({ collabFilterN: parsed });
-            }}
+            onBlur={commitCollabRange}
           />
-          <span className="shrink-0" style={{ color: colors.muted }}>
-            count:
-          </span>
+          <span style={{ color: colors.muted }}>–</span>
+          <input
+            type="text"
+            inputMode="numeric"
+            autoComplete="off"
+            placeholder="Max"
+            aria-label="Maximum co-artist count on tracks (inclusive)"
+            className="w-11 min-w-0 rounded px-1.5 py-1 font-mono text-xs tabular-nums outline-none border"
+            style={{
+              borderColor: colors.border,
+              backgroundColor: colors.isDark ? "rgba(0,0,0,0.25)" : "rgba(255,255,255,0.7)",
+              color: colors.text,
+            }}
+            value={collabMaxDraft}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === "" || /^\d*$/.test(v)) setCollabMaxDraft(v);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                (e.target as HTMLInputElement).blur();
+              }
+            }}
+            onBlur={commitCollabRange}
+          />
           <div className="flex rounded-md overflow-hidden border shrink-0" style={{ borderColor: colors.border }}>
             <button
               type="button"
@@ -3128,18 +3129,17 @@ export function NetworkGraphClient({
               {" · "}
             </span>
           ) : null}
-          {collabFilterN != null ||
+          {collabRangeIsActive(collabFilterMin, collabFilterMax) ||
           trackCountMinEffective != null ||
           trackCountMaxEffective != null ||
           networkAdvAppliedCount > 0 ? (
             <>
               <span className="whitespace-nowrap">
                 {graphData.nodes.length} visible
-                {collabFilterN != null ? (
+                {collabRangeIsActive(collabFilterMin, collabFilterMax) ? (
                   <>
                     {" "}
-                    ({collabFilterMode === "le" ? "≤" : "≥"}
-                    {collabFilterN} co-artists)
+                    ({formatCollabRangeSummary(collabFilterMin, collabFilterMax)} co-artists)
                   </>
                 ) : null}
                 {(trackCountMinEffective != null || trackCountMaxEffective != null) && (
