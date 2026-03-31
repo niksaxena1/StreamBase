@@ -1,8 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { BookOpen, LogOut, Network, Settings, User, Moon, Sun } from "lucide-react";
 
@@ -35,27 +34,15 @@ function cx(...parts: Array<string | false | null | undefined>) {
 }
 
 export function UserMenu() {
-  const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [theme, setTheme] = useState<Theme>(() => readTheme());
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
-  // On /catalog + /playlists, some page content uses sticky/high z-index layers.
-  // The header itself is a stacking context, so we render the dropdown in a portal there
-  // to guarantee it sits above charts/tables/filters.
-  const useHighZPortal = useMemo(() => {
-    const p = (pathname ?? "").toLowerCase();
-    return (
-      p === "/catalog" ||
-      p.startsWith("/catalog/") ||
-      p === "/playlists" ||
-      p.startsWith("/playlists/") ||
-      p === "/network"
-    );
-  }, [pathname]);
-
+  // Portal to body + fixed positioning: the header is z-20; page content (e.g. sticky
+  // settings nav, charts, filters) can share z-20+ and paint after the header in DOM order,
+  // which traps an in-header absolute menu behind those layers. A body portal escapes that.
   const [portalPos, setPortalPos] = useState<{ top: number; right: number } | null>(null);
 
   useEffect(() => {
@@ -70,7 +57,7 @@ export function UserMenu() {
       if (!el) return;
       const target = e.target as Node | null;
       if (target && el.contains(target)) return;
-      if (useHighZPortal && target && menuRef.current?.contains(target)) return;
+      if (target && menuRef.current?.contains(target)) return;
       setOpen(false);
     }
 
@@ -80,10 +67,10 @@ export function UserMenu() {
       document.removeEventListener("mousedown", onDocPointerDown, true);
       document.removeEventListener("touchstart", onDocPointerDown, true);
     };
-  }, [open, useHighZPortal]);
+  }, [open]);
 
-  useEffect(() => {
-    if (!open || !useHighZPortal) return;
+  useLayoutEffect(() => {
+    if (!open) return;
 
     const updatePos = () => {
       const btn = buttonRef.current;
@@ -103,7 +90,7 @@ export function UserMenu() {
       window.removeEventListener("resize", updatePos);
       window.removeEventListener("scroll", updatePos, true);
     };
-  }, [open, useHighZPortal]);
+  }, [open]);
 
   async function logout() {
     try {
@@ -120,11 +107,8 @@ export function UserMenu() {
   const menuContent = (
     <div
       ref={menuRef}
-      className={cx(
-        "sb-card p-1",
-        useHighZPortal ? "fixed z-[120] w-44" : "absolute right-0 top-full z-50 mt-2 w-44",
-      )}
-      style={useHighZPortal ? { top: portalPos?.top ?? 0, right: portalPos?.right ?? 0 } : undefined}
+      className="sb-card fixed z-[120] w-44 p-1"
+      style={{ top: portalPos?.top ?? 0, right: portalPos?.right ?? 0 }}
       onMouseDown={(e) => e.stopPropagation()}
     >
       <button
@@ -198,11 +182,7 @@ export function UserMenu() {
         <User className="h-4 w-4" />
       </IconButton>
 
-      {open
-        ? useHighZPortal && typeof document !== "undefined"
-          ? createPortal(menuContent, document.body)
-          : menuContent
-        : null}
+      {open && typeof document !== "undefined" ? createPortal(menuContent, document.body) : null}
     </div>
   );
 }
