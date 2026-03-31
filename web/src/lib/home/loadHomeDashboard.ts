@@ -8,6 +8,7 @@ import type {
   HomeDashboardServerProps,
   ManualOverrideAnnotation,
   NegativeDailyStreamsRow,
+  ArtificialStreamSpikeRow,
   PlaylistDailyStatsRow,
   TrackWeekendDipRow,
 } from "@/app/(main-flat)/home/homeTypes";
@@ -272,20 +273,66 @@ export async function loadHomeDashboardData(args: {
     rangeDays = Math.max(1, Math.min(365, calculatedDays));
   }
 
+  const customRangeStart = sanitizeIsoDate(sp.start);
+  const customRangeEnd = sanitizeIsoDate(sp.end);
+
   const scope = (sp.scope ?? "all_catalog").toLowerCase();
   const playlistKey: "all_catalog" | "releases" | "ext" =
     scope === "releases" ? "releases" : scope === "ext" ? "ext" : "all_catalog";
 
   let hideStaleAnnotations = false;
+  let userArtificialSpikeRatio: number | null = null;
+  let userIncludeWeekendsOverride: boolean | null = null;
   try {
     const { data: uSettings } = await sb
       .from("user_settings")
-      .select("hide_stale_override_annotations")
+      .select(
+        "hide_stale_override_annotations, artificial_streams_spike_ratio, artificial_streams_include_weekends_user",
+      )
       .eq("user_id", userId)
       .maybeSingle();
-    hideStaleAnnotations = Boolean((uSettings as Record<string, unknown> | null)?.hide_stale_override_annotations);
+    const us = uSettings as Record<string, unknown> | null;
+    hideStaleAnnotations = Boolean(us?.hide_stale_override_annotations);
+    const ur = us?.artificial_streams_spike_ratio;
+    if (ur != null && Number.isFinite(Number(ur))) userArtificialSpikeRatio = Number(ur);
+    if (typeof us?.artificial_streams_include_weekends_user === "boolean") {
+      userIncludeWeekendsOverride = us.artificial_streams_include_weekends_user;
+    }
   } catch {
     // graceful fallback
+  }
+
+  let artificialSpikeRatio = 1.25;
+  let artificialMinBaseline = 50;
+  let artificialGraceDays = 14;
+  let artificialThresholdCrossing = 1500;
+  let artificialIncludeWeekends = false;
+  try {
+    const { data: hcRows } = await svc
+      .from("health_config")
+      .select("key,value_numeric")
+      .in("key", [
+        "artificial_streams_spike_ratio",
+        "artificial_streams_min_baseline",
+        "artificial_streams_new_track_grace_days",
+        "artificial_streams_threshold_crossing_max",
+        "artificial_streams_include_weekends",
+      ]);
+    for (const row of (hcRows ?? []) as Array<{ key?: string; value_numeric?: unknown }>) {
+      const k = row.key;
+      const v = row.value_numeric;
+      if (v == null || !Number.isFinite(Number(v))) continue;
+      const n = Number(v);
+      if (k === "artificial_streams_spike_ratio") artificialSpikeRatio = n;
+      if (k === "artificial_streams_min_baseline") artificialMinBaseline = n;
+      if (k === "artificial_streams_new_track_grace_days") artificialGraceDays = Math.round(n);
+      if (k === "artificial_streams_threshold_crossing_max") artificialThresholdCrossing = Math.round(n);
+      if (k === "artificial_streams_include_weekends") artificialIncludeWeekends = Boolean(Math.round(n));
+    }
+    if (userArtificialSpikeRatio != null) artificialSpikeRatio = userArtificialSpikeRatio;
+    if (userIncludeWeekendsOverride !== null) artificialIncludeWeekends = userIncludeWeekendsOverride;
+  } catch {
+    // defaults above
   }
 
   let overrideBuster = "0";
@@ -343,6 +390,23 @@ export async function loadHomeDashboardData(args: {
 
   const latestDataDate = latestRunDate ? dataDateFromRunDate(latestRunDate) : null;
   const selectedDataDate = sanitizeIsoDate(sp.xy_date) ?? latestDataDate;
+
+  /** Data dates for UI (matches Home date picker). RPC uses run dates — see spikeFilterRunStart/End. */
+  let artificialSpikeDateStart: string | null = null;
+  let artificialSpikeDateEnd: string | null = null;
+  let spikeFilterRunStart: string | null = null;
+  let spikeFilterRunEnd: string | null = null;
+  if (customRangeStart && customRangeEnd) {
+    artificialSpikeDateStart = customRangeStart;
+    artificialSpikeDateEnd = customRangeEnd;
+    spikeFilterRunStart = addDaysISO(customRangeStart, SOT_DATA_LAG_DAYS);
+    spikeFilterRunEnd = addDaysISO(customRangeEnd, SOT_DATA_LAG_DAYS);
+  } else if (latestRunDate && latestDataDate) {
+    artificialSpikeDateEnd = latestDataDate;
+    artificialSpikeDateStart = addDaysISO(latestDataDate, -(rangeDays - 1));
+    spikeFilterRunEnd = latestRunDate;
+    spikeFilterRunStart = addDaysIso(latestRunDate, -(rangeDays - 1));
+  }
   const selectedRunDate = selectedDataDate ? addDaysISO(selectedDataDate, SOT_DATA_LAG_DAYS) : latestRunDate;
 
   const scatterCacheKey = `home-track-scatter-v10-${selectedRunDate ?? "none"}`;
@@ -482,7 +546,14 @@ export async function loadHomeDashboardData(args: {
     return out;
   })();
 
-  const [{ data: artistWeekendDips }, { data: trackWeekendDips }, { data: negativeDailyStreams }] = await Promise.all([
+  const artificialSpikesCacheKey = `home-artificial-stream-spikes-v3-${userId}-${artificialSpikeRatio}-${artificialMinBaseline}-${artificialGraceDays}-${artificialThresholdCrossing}-${artificialIncludeWeekends ? "wknd1" : "wknd0"}-${spikeFilterRunStart ?? "none"}-${spikeFilterRunEnd ?? "none"}`;
+
+  const [
+    { data: artistWeekendDips },
+    { data: trackWeekendDips },
+    { data: negativeDailyStreams },
+    { data: artificialStreamSpikesRaw },
+  ] = await Promise.all([
     cachedQuery(
       async () => {
         return await svc.rpc("home_artist_weekend_dips", {
@@ -510,7 +581,40 @@ export async function loadHomeDashboardData(args: {
       `home-negative-daily-v2-${userId}`,
       CACHE_TTL_1H,
     ),
+    cachedQuery(
+      async () => {
+        const { data, error } = await svc.rpc("home_artificial_stream_spikes", {
+          p_spike_ratio: artificialSpikeRatio,
+          p_min_baseline: artificialMinBaseline,
+          p_grace_days: artificialGraceDays,
+          p_threshold_crossing_max: artificialThresholdCrossing,
+          p_include_weekends: artificialIncludeWeekends,
+          p_start_date: spikeFilterRunStart,
+          p_end_date: spikeFilterRunEnd,
+        });
+        return { data, error };
+      },
+      artificialSpikesCacheKey,
+      CACHE_TTL_1H,
+    ),
   ]);
+
+  const artificialStreamSpikes: ArtificialStreamSpikeRow[] = ((artificialStreamSpikesRaw ?? []) as Record<string, unknown>[]).map(
+    (r) => ({
+      isrc: String(r.isrc ?? "").trim(),
+      name: typeof r.name === "string" ? r.name : String(r.isrc ?? ""),
+      artist_names: Array.isArray(r.artist_names) ? (r.artist_names as string[]) : null,
+      artist_ids: Array.isArray(r.artist_ids) ? (r.artist_ids as string[]) : null,
+      album_image_url: typeof r.album_image_url === "string" ? r.album_image_url : null,
+      date: String(r.date ?? "").slice(0, 10),
+      daily_streams: Number(r.daily_streams ?? 0) || 0,
+      avg_same_dow:
+        r.avg_same_dow != null && Number.isFinite(Number(r.avg_same_dow)) ? Number(r.avg_same_dow) : null,
+      spike_ratio:
+        r.spike_ratio != null && Number.isFinite(Number(r.spike_ratio)) ? Number(r.spike_ratio) : null,
+      streams_cumulative: Number(r.streams_cumulative ?? 0) || 0,
+    }),
+  );
 
   return {
     sp,
@@ -530,5 +634,11 @@ export async function loadHomeDashboardData(args: {
     artistWeekendDips: (artistWeekendDips as ArtistWeekendDipRow[] | null) ?? [],
     trackWeekendDips: (trackWeekendDips as TrackWeekendDipRow[] | null) ?? [],
     negativeDailyStreams: (negativeDailyStreams as NegativeDailyStreamsRow[] | null) ?? [],
+    artificialStreamSpikes,
+    artificialStreamSpikeRatio: artificialSpikeRatio,
+    artificialMinBaseline: artificialMinBaseline,
+    artificialIncludeWeekends,
+    artificialSpikeDateStart,
+    artificialSpikeDateEnd,
   };
 }

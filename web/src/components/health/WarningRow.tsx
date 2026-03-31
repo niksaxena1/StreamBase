@@ -19,6 +19,7 @@ import type {
   ExcludedZeroedTrack,
   NegativeDailyStreamTrack,
   OverlapTrack,
+  ArtificialStreamTrack,
 } from "@/lib/health/types";
 
 // ---------------------------------------------------------------------------
@@ -144,6 +145,7 @@ function formatCodeLabel(code: string) {
   if (raw === "total_streams_decreased") return "Total Streams Decreased";
   if (raw === "excluded_track_streams_zeroed") return "Excluded Track Zeroed";
   if (raw === "distro_overlap") return "Distro Overlap";
+  if (raw === "artificial_stream_spike") return "Artificial Stream Spike";
   return raw
     .split("_")
     .filter(Boolean)
@@ -238,7 +240,8 @@ export function WarningRow({
       expandedData.type === "catalog_missing_stream_snapshots" ||
       expandedData.type === "catalog_streams_missing_prev_nonzero" ||
       expandedData.type === "individual_tracks_stale" ||
-      expandedData.type === "excluded_track_streams_zeroed";
+      expandedData.type === "excluded_track_streams_zeroed" ||
+      expandedData.type === "artificial_stream_spike";
     if (!wantsThumbs) return [];
 
     const src = expandedData.tracks;
@@ -932,6 +935,62 @@ function ExpandedContent({
                         {delta.toLocaleString()}
                       </div>
                     )
+                  }
+                />
+              );
+            })}
+          </div>
+          {data.note && (
+            <div className="text-xs opacity-60 p-2 rounded bg-white/30 dark:bg-white/5">
+              {data.note}
+            </div>
+          )}
+        </div>
+      ) : (
+        <FallbackNote note={data.note} />
+      );
+
+    case "artificial_stream_spike":
+      return Array.isArray(data.tracks) && data.tracks.length > 0 ? (
+        <div className="space-y-3">
+          <div className="text-xs font-medium opacity-70 mb-3 flex items-center gap-2">
+            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium bg-amber-500/20 text-amber-800 dark:bg-amber-500/25 dark:text-amber-200">
+              Same-weekday spike
+            </span>
+            <span>
+              Tracks vs prior same weekdays ({data.tracks.length}):
+            </span>
+          </div>
+          <div className="space-y-1">
+            {(data.tracks as ArtificialStreamTrack[]).map((t) => {
+              const daily =
+                typeof t.daily_today === "number" && Number.isFinite(t.daily_today)
+                  ? t.daily_today
+                  : null;
+              const avg =
+                typeof t.avg_same_dow === "number" && Number.isFinite(t.avg_same_dow)
+                  ? t.avg_same_dow
+                  : null;
+              const ratio =
+                typeof t.spike_ratio === "number" && Number.isFinite(t.spike_ratio)
+                  ? t.spike_ratio
+                  : null;
+              const parts: string[] = [];
+              if (daily !== null) parts.push(`today ${daily.toLocaleString()}`);
+              if (avg !== null) parts.push(`avg ${avg.toLocaleString(undefined, { maximumFractionDigits: 1 })}`);
+              if (ratio !== null) parts.push(`${ratio.toFixed(2)}×`);
+              const label = parts.length ? parts.join(" · ") : "—";
+              return (
+                <TrackListItem
+                  key={`${t.isrc}-spike`}
+                  track={t}
+                  compact
+                  className="rounded-lg px-2.5 py-2"
+                  style={{ backgroundColor: "var(--sb-surface)" }}
+                  trailing={
+                    <div className="flex-shrink-0 ml-2 text-[10px] font-mono font-medium px-2 py-1 rounded bg-amber-500/15 text-amber-900 dark:text-amber-100/90">
+                      {label}
+                    </div>
                   }
                 />
               );

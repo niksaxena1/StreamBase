@@ -280,7 +280,8 @@ Defined in `web/env.example`:
 - `OPENAI_EMBED_MODEL` (optional; default `text-embedding-3-small`)
 - `OPENAI_CHAT_MODEL` (optional; default `gpt-4o-mini`)
 - `SAI_EMBED_DIMS` (optional; default `1536`)
-- `SAI_ADMIN_TOKEN` (optional, server-only; secures admin-only SAI endpoints like reindex/diagnostics)
+- `SAI_ADMIN_TOKEN` (optional, server-only; secures admin-only SAI endpoints like reindex/diagnostics; send as header `x-sai-admin-token`)
+- `SB_HEALTH_DEBUG_TOKEN` (optional, server-only; with `debug=1` on `/api/health-summary`, send as header `x-sb-health-debug-token`)
 
 ### Environment variables (ingestion)
 
@@ -699,25 +700,28 @@ Notes:
 
 ## API routes (Next.js)
 
-- `/api/search`
+- `/api/search` (**authenticated**)
   - unified search via Postgres RPC `search_all(q, max_results)`
   - hydrates artist images using DB cache `spotify_artist_images`
-- `/api/search-stats`
+- `/api/search-stats` (**authenticated**)
   - hover stats using:
     - `track_daily_streams` (track)
     - `artist_total_streams_for_date` (artist)
     - `playlist_total_streams_for_date` (playlist)
-- `/api/health-summary`
+- `/api/health-summary` (**authenticated session**)
   - lightweight polling payload for header banner
-- `/api/breadcrumb/artist`, `/api/breadcrumb/track`
+  - optional debug: `?debug=1` plus header `x-sb-health-debug-token` matching `SB_HEALTH_DEBUG_TOKEN` (do not pass tokens in query strings)
+- `/api/breadcrumb/artist`, `/api/breadcrumb/track` (**authenticated**)
   - dynamic labels for breadcrumbs
-- `/api/spotify-track`
+- `/api/spotify-track` (**authenticated**)
   - best-effort Spotify lookup by ISRC (for album image)
-- `/api/spotify-track-batch`
+- `/api/spotify-track-batch` (**authenticated**)
   - batch Spotify lookup by ISRC (bounded to 50 ISRCs, concurrency-limited)
 - `/api/cron/ensure-partitions`
   - ops endpoint used by Vercel Cron to keep `track_daily_streams` monthly partitions created ahead of time
   - requires `CRON_SECRET` (Authorization: Bearer)
+- `/api/exports` (**JWT-validated session**)
+  - redirects to a short-lived signed URL for a Storage object (`bucket` + `key` query params); requires logged-in user
 - `/api/user-settings/*`
   - persisted per-user UI preferences (rate, currency display, chart zoom/start date, home filters/milestones, SAI toggle)
 - `/api/collectors/comparison-drilldown`
@@ -735,7 +739,7 @@ Notes:
 - `/api/sai/*` (optional)
   - `/api/sai/chat`, `/api/sai/new`: chat endpoints
   - `/api/sai/docs/reindex`: (admin token) builds embeddings index for `/docs`
-  - `/api/sai/diagnostics`: (admin token) environment + DB capability checks
+  - `/api/sai/diagnostics`: header `x-sai-admin-token` (same as `SAI_ADMIN_TOKEN`) — environment + DB capability checks
 
 Files live under:
 

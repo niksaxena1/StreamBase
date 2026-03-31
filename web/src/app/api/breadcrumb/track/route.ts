@@ -1,6 +1,6 @@
 import { supabaseServer } from "@/lib/supabase/server";
 import { logError } from "@/lib/logger";
-import { apiJsonErr, apiJsonOk } from "@/lib/api/server";
+import { apiJsonErr, apiJsonOk, requireSessionUser } from "@/lib/api/server";
 
 export const revalidate = 86400;
 
@@ -14,6 +14,8 @@ export async function GET(request: Request) {
 
   try {
     const sb = await supabaseServer();
+    const auth = await requireSessionUser(sb);
+    if (!auth.ok) return auth.response;
 
     const { data: track } = await sb
       .from("tracks")

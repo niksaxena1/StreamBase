@@ -23,6 +23,14 @@ STALE_SOURCE_DATA_IDENTICAL_RATIO = 0.90  # 90% of tracks identical → stale_so
 TRACK_COUNT_SWING_HARD_FAIL_RATIO = 0.70  # 70% catalog swing → abort ingestion
 INDIVIDUAL_TRACKS_STALE_CRITICAL_COUNT = 15  # >= N stale tracks → critical (else warn)
 
+# Artificial stream spike detection (same-day-of-week baseline; see migrations/add_artificial_streams_detection.sql)
+ARTIFICIAL_STREAMS_SPIKE_RATIO = 1.25
+ARTIFICIAL_STREAMS_MIN_BASELINE = 50.0
+ARTIFICIAL_STREAMS_LOOKBACK_WEEKS = 4.0
+ARTIFICIAL_STREAMS_NEW_TRACK_GRACE_DAYS = 14.0
+ARTIFICIAL_STREAMS_THRESHOLD_CROSSING_MAX = 1500.0
+ARTIFICIAL_STREAMS_INCLUDE_WEEKENDS = 0.0
+
 # Canonical keys mirrored in the health_config table seed.
 _HEALTH_CONFIG_DEFAULTS: Dict[str, float] = {
     "track_count_swing_warn_ratio": TRACK_COUNT_SWING_WARN_RATIO,
@@ -31,6 +39,12 @@ _HEALTH_CONFIG_DEFAULTS: Dict[str, float] = {
     "catalog_track_count_drop_critical": float(CATALOG_TRACK_COUNT_DROP_CRITICAL),
     "stale_source_data_identical_ratio": STALE_SOURCE_DATA_IDENTICAL_RATIO,
     "individual_tracks_stale_critical_count": float(INDIVIDUAL_TRACKS_STALE_CRITICAL_COUNT),
+    "artificial_streams_spike_ratio": ARTIFICIAL_STREAMS_SPIKE_RATIO,
+    "artificial_streams_min_baseline": ARTIFICIAL_STREAMS_MIN_BASELINE,
+    "artificial_streams_lookback_weeks": ARTIFICIAL_STREAMS_LOOKBACK_WEEKS,
+    "artificial_streams_new_track_grace_days": ARTIFICIAL_STREAMS_NEW_TRACK_GRACE_DAYS,
+    "artificial_streams_threshold_crossing_max": ARTIFICIAL_STREAMS_THRESHOLD_CROSSING_MAX,
+    "artificial_streams_include_weekends": ARTIFICIAL_STREAMS_INCLUDE_WEEKENDS,
 }
 
 
@@ -223,6 +237,168 @@ def load_health_config(pg: "Postgrest") -> Dict[str, float]:
     except Exception:
         pass  # Table not yet migrated — use module-level defaults
     return config
+
+
+def pg_dow(d: date) -> int:
+    """Match PostgreSQL EXTRACT(DOW FROM date): 0=Sunday .. 6=Saturday."""
+    return (d.weekday() + 1) % 7
+
+
+def _daily_streams_positive_delta(cum_by_date: Dict[date, int], d: date) -> Optional[int]:
+    prev = d - timedelta(days=1)
+    if prev not in cum_by_date or d not in cum_by_date:
+        return None
+    today_v = int(cum_by_date[d])
+    prev_v = int(cum_by_date[prev])
+    if today_v <= prev_v:
+        return None
+    return today_v - prev_v
+
+
+def detect_artificial_stream_spikes(
+    pg: "Postgrest",
+    run_date: date,
+    catalog_streams_today: Dict[str, int],
+    prev_streams: Dict[str, int],
+    cfg: Dict[str, float],
+) -> List[dict]:
+    """
+    Per-track spike vs same-day-of-week baseline (last N prior weekdays, N=config lookback).
+    Mirrors logic in SQL home_artificial_stream_spikes (raw track_daily_streams, not effective view).
+    """
+    spike_ratio_th = float(cfg.get("artificial_streams_spike_ratio", ARTIFICIAL_STREAMS_SPIKE_RATIO))
+    min_baseline = float(cfg.get("artificial_streams_min_baseline", ARTIFICIAL_STREAMS_MIN_BASELINE))
+    lookback_weeks = max(1, int(cfg.get("artificial_streams_lookback_weeks", ARTIFICIAL_STREAMS_LOOKBACK_WEEKS)))
+    grace_days = int(cfg.get("artificial_streams_new_track_grace_days", ARTIFICIAL_STREAMS_NEW_TRACK_GRACE_DAYS))
+    threshold_max = int(cfg.get("artificial_streams_threshold_crossing_max", ARTIFICIAL_STREAMS_THRESHOLD_CROSSING_MAX))
+    include_weekends = bool(int(cfg.get("artificial_streams_include_weekends", ARTIFICIAL_STREAMS_INCLUDE_WEEKENDS) or 0))
+
+    if not include_weekends and run_date.weekday() in (5, 6):
+        return []
+
+    start_hist = run_date - timedelta(days=35)
+    try:
+        history_rows = pg.select_all(
+            "track_daily_streams",
+            "date,isrc,streams_cumulative",
+            f"date=gte.{start_hist.isoformat()}&date=lte.{run_date.isoformat()}",
+            page_size=1000,
+        )
+    except Exception as e:
+        print(f"  ⚠ Artificial stream spike history load failed: {e}")
+        return []
+
+    cum_by_isrc: Dict[str, Dict[date, int]] = {}
+    for r in history_rows:
+        isrc = norm_isrc(r.get("isrc") or "")
+        if not isrc:
+            continue
+        ds = r.get("date")
+        if isinstance(ds, str):
+            try:
+                d = date.fromisoformat(ds[:10])
+            except Exception:
+                continue
+        elif isinstance(ds, date):
+            d = ds
+        else:
+            continue
+        try:
+            v = int(r.get("streams_cumulative") or 0)
+        except Exception:
+            continue
+        cum_by_isrc.setdefault(isrc, {})[d] = v
+
+    for isrc, v in catalog_streams_today.items():
+        ni = norm_isrc(isrc)
+        if ni:
+            cum_by_isrc.setdefault(ni, {})[run_date] = int(v)
+
+    all_isrcs = sorted({norm_isrc(i) for i in catalog_streams_today.keys() if norm_isrc(i)})
+    first_seen_by: Dict[str, Optional[date]] = {}
+    chunk_sz = 80
+    for i in range(0, len(all_isrcs), chunk_sz):
+        part = [x for x in all_isrcs[i : i + chunk_sz] if x]
+        if not part:
+            continue
+        filt = "isrc=in.(" + ",".join(part) + ")"
+        try:
+            rows = pg.select("tracks", "isrc,first_seen", filt)
+        except Exception:
+            continue
+        for row in rows or []:
+            ii = norm_isrc(row.get("isrc") or "")
+            if not ii:
+                continue
+            fs = row.get("first_seen")
+            parsed: Optional[date] = None
+            if isinstance(fs, str) and len(fs) >= 10:
+                try:
+                    parsed = date.fromisoformat(fs[:10])
+                except Exception:
+                    parsed = None
+            elif isinstance(fs, date):
+                parsed = fs
+            first_seen_by[ii] = parsed
+
+    target_dow = pg_dow(run_date)
+    flagged: List[dict] = []
+
+    for isrc_raw, today_total in catalog_streams_today.items():
+        isrc = norm_isrc(isrc_raw)
+        if not isrc:
+            continue
+        prev_total = prev_streams.get(isrc)
+        if prev_total is None:
+            continue
+        prev_total = int(prev_total)
+        today_total = int(today_total)
+        daily_today = today_total - prev_total
+        if daily_today <= 0:
+            continue
+        if prev_total == 0 and today_total <= threshold_max:
+            continue
+
+        cum_map: Dict[date, int] = dict(cum_by_isrc.get(isrc, {}))
+        cum_map[run_date] = today_total
+        fs = first_seen_by.get(isrc)
+        first_observed = min(cum_map.keys()) if cum_map else None
+        effective_first_seen = fs
+        if first_observed is not None and (effective_first_seen is None or effective_first_seen > first_observed):
+            effective_first_seen = first_observed
+        if effective_first_seen is not None and (run_date - effective_first_seen).days < grace_days:
+            continue
+
+        same_dow_dailies: List[int] = []
+        for d in sorted(cum_map.keys()):
+            if d >= run_date:
+                break
+            if pg_dow(d) != target_dow:
+                continue
+            dd = _daily_streams_positive_delta(cum_map, d)
+            if dd is not None:
+                same_dow_dailies.append(dd)
+
+        window = same_dow_dailies[-lookback_weeks:]
+        if len(window) < 2:
+            continue
+        avg_same = sum(window) / float(len(window))
+        if avg_same < min_baseline:
+            continue
+        ratio = daily_today / avg_same
+        if ratio >= spike_ratio_th:
+            flagged.append(
+                {
+                    "isrc": isrc,
+                    "daily_today": daily_today,
+                    "avg_same_dow": round(avg_same, 4),
+                    "spike_ratio": round(ratio, 4),
+                    "streams_cumulative": today_total,
+                }
+            )
+
+    flagged.sort(key=lambda x: (-float(x.get("spike_ratio") or 0), str(x.get("isrc") or "")))
+    return flagged
 
 
 def main():
@@ -927,6 +1103,38 @@ def main():
             pg.insert("ingestion_warnings", swing_hard_fail)
             raise SystemExit("Critical export integrity checks failed (track_count swing). Aborting ingestion.")
 
+        # Preserve the earliest known first_seen when refreshing track metadata.
+        if track_meta:
+            meta_isrcs = sorted(track_meta.keys())
+            chunk_sz = 200
+            for i in range(0, len(meta_isrcs), chunk_sz):
+                part = [x for x in meta_isrcs[i : i + chunk_sz] if x]
+                if not part:
+                    continue
+                filt = "isrc=in.(" + ",".join(part) + ")"
+                try:
+                    rows = pg.select("tracks", "isrc,first_seen", filt)
+                except Exception:
+                    rows = []
+                for row in rows or []:
+                    ii = norm_isrc(row.get("isrc") or "")
+                    if not ii or ii not in track_meta:
+                        continue
+                    fs = row.get("first_seen")
+                    existing_first_seen: Optional[date] = None
+                    if isinstance(fs, str) and len(fs) >= 10:
+                        try:
+                            existing_first_seen = date.fromisoformat(fs[:10])
+                        except Exception:
+                            existing_first_seen = None
+                    elif isinstance(fs, date):
+                        existing_first_seen = fs
+                    if existing_first_seen is None:
+                        continue
+                    current_first_seen = date.fromisoformat(str(track_meta[ii]["first_seen"])[:10])
+                    if existing_first_seen < current_first_seen:
+                        track_meta[ii]["first_seen"] = existing_first_seen.isoformat()
+
         # tracks + daily snapshots
         pg.upsert("tracks", list(track_meta.values()), on_conflict="isrc")
         pg.upsert(
@@ -1306,6 +1514,69 @@ def main():
         except Exception as overlap_err:
             # Don't block ingestion if overlap check fails
             print(f"  ⚠ Distro overlap check failed: {overlap_err}")
+
+        # --- Artificial stream spike detection (same-day-of-week baseline) ---
+        try:
+            spike_hits = detect_artificial_stream_spikes(
+                pg, run_date, catalog_streams_today, prev_streams, _cfg
+            )
+            if spike_hits:
+                warn_rows.append(
+                    {
+                        "run_id": run_id,
+                        "run_date": run_date.isoformat(),
+                        "playlist_key": "all_catalog",
+                        "severity": "warn",
+                        "code": "artificial_stream_spike",
+                        "message": (
+                            f"{len(spike_hits)} track(s) exceeded the artificial-stream spike threshold "
+                            f"vs same-weekday baseline"
+                        ),
+                        "details_json": {
+                            "flagged_tracks": spike_hits[:200],
+                            "flagged_tracks_total": len(spike_hits),
+                            "threshold_config": {
+                                "artificial_streams_spike_ratio": float(
+                                    _cfg.get("artificial_streams_spike_ratio", ARTIFICIAL_STREAMS_SPIKE_RATIO)
+                                ),
+                                "artificial_streams_min_baseline": float(
+                                    _cfg.get("artificial_streams_min_baseline", ARTIFICIAL_STREAMS_MIN_BASELINE)
+                                ),
+                                "artificial_streams_lookback_weeks": int(
+                                    _cfg.get("artificial_streams_lookback_weeks", ARTIFICIAL_STREAMS_LOOKBACK_WEEKS)
+                                ),
+                                "artificial_streams_new_track_grace_days": int(
+                                    _cfg.get(
+                                        "artificial_streams_new_track_grace_days",
+                                        ARTIFICIAL_STREAMS_NEW_TRACK_GRACE_DAYS,
+                                    )
+                                ),
+                                "artificial_streams_threshold_crossing_max": int(
+                                    _cfg.get(
+                                        "artificial_streams_threshold_crossing_max",
+                                        ARTIFICIAL_STREAMS_THRESHOLD_CROSSING_MAX,
+                                    )
+                                ),
+                                "artificial_streams_include_weekends": bool(
+                                    int(
+                                        _cfg.get(
+                                            "artificial_streams_include_weekends",
+                                            ARTIFICIAL_STREAMS_INCLUDE_WEEKENDS,
+                                        )
+                                        or 0
+                                    )
+                                ),
+                            },
+                            "note": (
+                                "Daily streams vs average of prior same weekdays (lookback weeks). "
+                                "Not proof of botting — playlist adds and viral moments can spike."
+                            ),
+                        },
+                    }
+                )
+                print(f"  ⚠ Artificial stream spikes: {len(spike_hits)} track(s) flagged")
+        except Exception as spike_err:
+            print(f"  ⚠ Artificial stream spike check failed: {spike_err}")
 
         pg.upsert("playlist_daily_stats", stats_rows, on_conflict="date,playlist_key")
         if warn_rows:

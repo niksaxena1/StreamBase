@@ -8,6 +8,7 @@ import type {
   PrevNonzeroTrack,
   ExcludedZeroedTrack,
   NegativeDailyStreamTrack,
+  ArtificialStreamTrack,
   DriftTrack,
   DriftData,
   OverlapTrack,
@@ -23,6 +24,7 @@ import type {
   IndividualTracksStaleDetailsJson,
   ExcludedTrackZeroedDetailsJson,
   TotalStreamsDecreasedDetailsJson,
+  ArtificialStreamSpikeDetailsJson,
 } from "./types";
 import { normalizeIsrc, normalizeKey } from "./types";
 import { logError } from "@/lib/logger";
@@ -260,6 +262,31 @@ function extractExcludedZeroed(
       const isrc = normalizeIsrc(r.isrc);
       const prev = Number(r.prev_streams ?? NaN);
       return { isrc, prev_streams: Number.isFinite(prev) ? prev : null };
+    })
+    .filter((r) => Boolean(r.isrc))
+    .slice(0, 200);
+}
+
+function extractArtificialStreamSpike(
+  dj: Record<string, unknown> | null,
+): TrackSample[] {
+  const details = dj as ArtificialStreamSpikeDetailsJson | null;
+  const raw = details?.flagged_tracks;
+  if (!Array.isArray(raw)) return [];
+  return (raw as Array<Record<string, unknown>>)
+    .map((r) => {
+      const isrc = normalizeIsrc(r.isrc);
+      const daily = Number(r.daily_today ?? NaN);
+      const avg = Number(r.avg_same_dow ?? NaN);
+      const ratio = Number(r.spike_ratio ?? NaN);
+      const cum = Number(r.streams_cumulative ?? NaN);
+      return {
+        isrc,
+        daily_today: Number.isFinite(daily) ? daily : null,
+        avg_same_dow: Number.isFinite(avg) ? avg : null,
+        spike_ratio: Number.isFinite(ratio) ? ratio : null,
+        streams_cumulative: Number.isFinite(cum) ? cum : null,
+      };
     })
     .filter((r) => Boolean(r.isrc))
     .slice(0, 200);
@@ -605,6 +632,7 @@ function patchMessage(
   overlapTracks: OverlapTrack[] | null,
   decreasedMap: Map<string, Array<TrackBase & Record<string, unknown>> | null>,
   negativeStreamTracks: NegativeDailyStreamTrack[] | null,
+  artificialStreamMap: Map<string, Array<TrackBase & Record<string, unknown>> | null>,
   playlistMeta: Map<string, PlaylistMeta>,
 ): string {
   if (w.code === "non_catalog_tracks_present" && w.playlist_key) {
@@ -652,6 +680,12 @@ function patchMessage(
   }
   if (w.code === "negative_daily_streams" && Array.isArray(negativeStreamTracks)) {
     return `${negativeStreamTracks.length} track(s) had negative daily streams`;
+  }
+  if (w.code === "artificial_stream_spike") {
+    const akey = String(w.playlist_key ?? "global");
+    const tracks = artificialStreamMap.get(akey);
+    if (Array.isArray(tracks))
+      return `${tracks.length} track(s) exceeded same-weekday stream spike threshold`;
   }
   if (w.code === "total_streams_decreased") {
     const key = String(w.playlist_key ?? "global");
@@ -701,6 +735,7 @@ function buildExpandedData(
   driftResult: { map: Map<string, DriftData>; loaded: boolean },
   overlapTracks: OverlapTrack[] | null,
   negativeStreamTracks: NegativeDailyStreamTrack[] | null,
+  artificialStreamMap: Map<string, Array<TrackBase & Record<string, unknown>> | null>,
 ): WarningExpandedData {
   const key = String(w.playlist_key ?? "global");
   const noteFromDetails = (w.details_json as Record<string, unknown> | null)?.note as
@@ -852,6 +887,17 @@ function buildExpandedData(
         note: "Tracks with negative daily stream deltas (corrections, deduplication, or anomalies).",
       };
     }
+    case "artificial_stream_spike": {
+      const rawArt = artificialStreamMap.get(key);
+      if (!Array.isArray(rawArt) || rawArt.length === 0) return null;
+      return {
+        type: "artificial_stream_spike",
+        tracks: rawArt as ArtificialStreamTrack[],
+        note:
+          noteFromDetails ??
+          "Daily streams vs average of prior same weekdays. Not proof of botting — playlist adds and viral moments can spike.",
+      };
+    }
     default:
       return null;
   }
@@ -928,6 +974,7 @@ export async function fetchDisplayedWarnings(
     (w) => w.code === "entity_distro_drift" && w.playlist_key && runDate,
   );
   const overlapW = warnings.filter((w) => w.code === "distro_overlap");
+  const artificialW = warnings.filter((w) => w.code === "artificial_stream_spike" && runDate);
 
   // #4: Run ALL fetchers in parallel
   // track_daily_streams.date stores the run date, so overrides use the same convention.
@@ -944,6 +991,7 @@ export async function fetchDisplayedWarnings(
     driftResult,
     overlapTracks,
     negativeStreamTracks,
+    artificialStreamMap,
     overriddenIsrcs,
   ] = await Promise.all([
     fetchNonCatalogTracks(svc, ncW, runDate, excl),
@@ -958,6 +1006,7 @@ export async function fetchDisplayedWarnings(
     fetchDriftData(svc, driftW, runDate),
     fetchOverlapTracks(svc, overlapW, runDate),
     fetchNegativeStreamTracks(svc, runDate),
+    fetchDetailsTracks(svc, artificialW, extractArtificialStreamSpike),
     loadOverriddenIsrcs(svc, runDate),
   ]);
 
@@ -1004,6 +1053,7 @@ export async function fetchDisplayedWarnings(
       overlapTracks,
       decreasedMap,
       negativeStreamTracks,
+      artificialStreamMap,
       metaMap,
     ),
     playlistMeta: w.playlist_key
@@ -1023,6 +1073,7 @@ export async function fetchDisplayedWarnings(
       driftResult,
       overlapTracks,
       negativeStreamTracks,
+      artificialStreamMap,
     ),
   }));
 

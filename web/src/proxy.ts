@@ -47,7 +47,14 @@ export const config = {
     "/collectors/:path*",
     "/health/:path*",
     "/exports/:path*",
-    "/api/exports/:path*",
+    "/api/exports",
+    "/api/search",
+    "/api/search-stats",
+    "/api/breadcrumb/:path*",
+    "/api/spotify-track",
+    "/api/spotify-track-batch",
+    "/api/health-summary",
+    "/api/sai/models",
   ],
 };
 

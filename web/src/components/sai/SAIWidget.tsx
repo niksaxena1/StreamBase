@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { fetchApiJson } from "@/lib/api";
 import { usePathname, useSearchParams } from "next/navigation";
 
@@ -20,6 +22,8 @@ type UiMessage = {
 };
 
 type QueueItem = { id: string; content: string };
+
+type ModelInfo = { id: string; label: string; provider: string };
 
 function uuid() {
   return `${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`;
@@ -57,6 +61,39 @@ function safeGet(k: string): string | null {
   }
 }
 
+function AssistantMarkdown({ text }: { text: string }) {
+  if (!text) return null;
+  return (
+    <div
+      className={[
+        "text-black/80 dark:text-white/75",
+        "[&_p]:my-1.5 [&_p]:leading-relaxed",
+        "[&_ul]:my-1.5 [&_ul]:list-disc [&_ul]:pl-4",
+        "[&_ol]:my-1.5 [&_ol]:list-decimal [&_ol]:pl-4",
+        "[&_li]:my-0.5",
+        "[&_strong]:font-semibold",
+        "[&_code]:rounded [&_code]:bg-black/10 [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-[13px] dark:[&_code]:bg-white/15",
+        "[&_pre]:my-2 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-black/10 [&_pre]:p-2 [&_pre]:text-[13px] dark:[&_pre]:bg-white/10",
+        "[&_a]:underline [&_a]:underline-offset-2",
+        "[&_h1]:text-base [&_h1]:font-semibold [&_h1]:mt-2 [&_h2]:text-sm [&_h2]:font-semibold [&_h2]:mt-2 [&_h3]:text-sm [&_h3]:font-medium [&_h3]:mt-1.5",
+      ].join(" ")}
+    >
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          a: ({ href, children, ...rest }) => (
+            <a href={href} style={{ color: "var(--sb-positive)" }} {...rest}>
+              {children}
+            </a>
+          ),
+        }}
+      >
+        {text}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
 export function SAIWidget() {
   const pathname = usePathname() ?? "/";
   const searchParams = useSearchParams();
@@ -69,17 +106,36 @@ export function SAIWidget() {
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [copiedAt, setCopiedAt] = useState<number | null>(null);
   const [saiEnabled, setSaiEnabled] = useState(true);
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string>(() => safeGet("sai:model") ?? "");
+  const [showModelPicker, setShowModelPicker] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const modelPickerRef = useRef<HTMLDivElement>(null);
 
   const envelope = useMemo(
     () => buildEnvelope(pathname, new URLSearchParams(searchParams?.toString() ?? "")),
     [pathname, searchParams],
   );
 
+  const handleModelSelect = useCallback((modelId: string) => {
+    setSelectedModel(modelId);
+    setShowModelPicker(false);
+    try { localStorage.setItem("sai:model", modelId); } catch {}
+  }, []);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (modelPickerRef.current && !modelPickerRef.current.contains(e.target as Node)) {
+        setShowModelPicker(false);
+      }
+    }
+    if (showModelPicker) document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showModelPicker]);
+
   useEffect(() => {
     let alive = true;
-    // Fetch SAI enabled setting on mount
     void fetchApiJson<{ sai_enabled?: boolean }>("/api/user-settings/sai")
       .then((data) => {
         if (alive) setSaiEnabled(data.sai_enabled ?? true);
@@ -87,7 +143,18 @@ export function SAIWidget() {
       .catch(() => {
         if (alive) setSaiEnabled(true);
       });
+    void fetch("/api/sai/models")
+      .then((r) => r.json())
+      .then((data: { models?: ModelInfo[]; default?: string }) => {
+        if (!alive) return;
+        setModels(data.models ?? []);
+        if (!selectedModel && data.default) {
+          setSelectedModel(data.default);
+        }
+      })
+      .catch(() => {});
     return () => { alive = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -147,9 +214,10 @@ export function SAIWidget() {
           lines.push("");
           lines.push("Calculated from:");
           for (const t of toolCalls) {
-            const templateId = String(t?.templateId ?? "");
+            const tool = String(t?.tool ?? "tool");
+            const templateId = t?.templateId != null ? String(t.templateId) : "";
             const params = t?.params && Object.keys(t.params).length ? JSON.stringify(t.params) : "";
-            lines.push(`- template=${templateId}${params ? ` params=${params}` : ""}`);
+            lines.push(`- ${tool}${templateId ? ` · ${templateId}` : ""}${params ? ` params=${params}` : ""}`);
           }
         }
 
@@ -217,7 +285,7 @@ export function SAIWidget() {
         return await fetch("/api/sai/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ conversationId: convoId, message: t, envelope }),
+          body: JSON.stringify({ conversationId: convoId, message: t, envelope, model: selectedModel || undefined }),
         });
       }
 
@@ -264,8 +332,15 @@ export function SAIWidget() {
             setMessages((prev) =>
               prev.map((m) => (m.id === assistantId ? { ...m, meta: { ...(m.meta ?? {}), ...(ev.meta ?? {}) } } : m)),
             );
+          } else if (ev.type === "error" && typeof ev.error === "string") {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId
+                  ? { ...m, content: `**Error:** ${ev.error}` }
+                  : m,
+              ),
+            );
           } else if (ev.type === "done") {
-            // ensure final
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === assistantId
@@ -340,37 +415,74 @@ export function SAIWidget() {
           />
 
           <div className="absolute bottom-0 right-0 top-0 w-full max-w-[520px] bg-[var(--sb-bg)] sm:bottom-4 sm:right-4 sm:top-4 sm:rounded-2xl sb-ring flex flex-col">
-            <div className="sb-glass rounded-none sm:rounded-2xl px-3 py-2 flex items-center justify-between">
-              <div className="min-w-0">
-                <div className="font-display text-sm font-semibold tracking-tight">SAI</div>
-                <div className="text-[11px] opacity-60">Truth-first assistant</div>
+            <div className="sb-glass rounded-none sm:rounded-2xl px-3 py-2 flex flex-col gap-1.5">
+              <div className="flex items-center justify-between">
+                <div className="min-w-0">
+                  <div className="font-display text-sm font-semibold tracking-tight">SAI</div>
+                  <div className="text-[11px] opacity-60">Truth-first assistant</div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void copyChat()}
+                    className="sb-ring rounded-full bg-white/70 px-2.5 py-1.5 text-[11px] font-medium transition hover:opacity-80 dark:bg-white/10"
+                    title="Copy this chat"
+                  >
+                    {copiedAt ? "Copied" : "Copy chat"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void newChat()}
+                    className="sb-ring rounded-full bg-white/70 px-2.5 py-1.5 text-[11px] font-medium transition hover:opacity-80 dark:bg-white/10"
+                    title="New chat (purge)"
+                  >
+                    New chat
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOpen(false)}
+                    className="sb-ring rounded-full bg-white/70 px-2.5 py-1.5 text-[11px] font-medium transition hover:opacity-80 dark:bg-white/10"
+                    title="Close"
+                  >
+                    Close
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => void copyChat()}
-                  className="sb-ring rounded-full bg-white/70 px-2.5 py-1.5 text-[11px] font-medium transition hover:opacity-80 dark:bg-white/10"
-                  title="Copy this chat"
-                >
-                  {copiedAt ? "Copied" : "Copy chat"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void newChat()}
-                  className="sb-ring rounded-full bg-white/70 px-2.5 py-1.5 text-[11px] font-medium transition hover:opacity-80 dark:bg-white/10"
-                  title="New chat (purge)"
-                >
-                  New chat
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setOpen(false)}
-                  className="sb-ring rounded-full bg-white/70 px-2.5 py-1.5 text-[11px] font-medium transition hover:opacity-80 dark:bg-white/10"
-                  title="Close"
-                >
-                  Close
-                </button>
-              </div>
+
+              {models.length > 1 && (
+                <div className="relative" ref={modelPickerRef}>
+                  <button
+                    type="button"
+                    onClick={() => setShowModelPicker((v) => !v)}
+                    className="sb-ring flex items-center gap-1.5 rounded-lg bg-white/50 px-2 py-1 text-[11px] font-medium transition hover:bg-white/70 dark:bg-white/8 dark:hover:bg-white/12"
+                  >
+                    <span className="opacity-50">Model:</span>
+                    <span>{(models.find((m) => m.id === selectedModel)?.label ?? selectedModel) || "Default"}</span>
+                    <svg className="h-3 w-3 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                  </button>
+
+                  {showModelPicker && (
+                    <div className="absolute left-0 top-full z-10 mt-1 w-64 rounded-xl border bg-[var(--sb-bg)] p-1 shadow-xl" style={{ borderColor: "var(--sb-border)" }}>
+                      {models.map((m) => (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => handleModelSelect(m.id)}
+                          className={[
+                            "flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-[12px] transition",
+                            m.id === selectedModel
+                              ? "bg-black/8 font-medium dark:bg-white/10"
+                              : "hover:bg-black/5 dark:hover:bg-white/5",
+                          ].join(" ")}
+                        >
+                          <span>{m.label}</span>
+                          <span className="text-[10px] opacity-40 uppercase">{m.provider}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-2">
@@ -383,7 +495,8 @@ export function SAIWidget() {
                   <div
                     key={m.id}
                     className={[
-                      "rounded-xl border p-2 text-sm whitespace-pre-wrap",
+                      "rounded-xl border p-2 text-sm",
+                      m.role === "user" ? "whitespace-pre-wrap" : "",
                       m.role === "user"
                         ? "bg-white/70 dark:bg-white/10 ml-8"
                         : "bg-black/[0.03] dark:bg-white/[0.04] mr-8",
@@ -391,7 +504,16 @@ export function SAIWidget() {
                     style={{ borderColor: "var(--sb-border)" }}
                   >
                     <div className="text-[11px] font-medium opacity-60 mb-1">{m.role === "user" ? "You" : "SAI"}</div>
-                    <div className="text-black/80 dark:text-white/75">{m.content}</div>
+                    {m.role === "user" ? (
+                      <div className="text-black/80 dark:text-white/75">{m.content}</div>
+                    ) : m.content ? (
+                      <AssistantMarkdown text={m.content} />
+                    ) : isStreaming ? (
+                      <div className="flex items-center gap-1.5 text-[13px] opacity-50">
+                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-current animate-pulse" />
+                        Thinking...
+                      </div>
+                    ) : null}
 
                     {m.role === "assistant" && m.meta?.citations?.length ? (
                       <div className="mt-2 text-[11px] opacity-70">
@@ -417,11 +539,22 @@ export function SAIWidget() {
                         <div className="mt-1 space-y-1">
                           {m.meta.toolCalls.map((t: any, idx: number) => (
                             <div key={idx} className="font-mono">
-                              template={t.templateId}
+                              {String(t?.tool ?? "tool")}
+                              {t?.templateId != null && t.templateId !== "" ? ` · ${String(t.templateId)}` : ""}
                               {t.params && Object.keys(t.params).length ? ` params=${JSON.stringify(t.params)}` : ""}
+                              {t?.notes ? <span className="opacity-50"> → {String(t.notes)}</span> : null}
                             </div>
                           ))}
                         </div>
+                      </div>
+                    ) : null}
+
+                    {m.role === "assistant" && m.meta?.warnings?.length ? (
+                      <div className="mt-2 rounded-lg bg-red-500/10 px-2 py-1.5 text-[11px] text-red-400">
+                        <div className="font-medium">Warnings</div>
+                        {m.meta.warnings.map((w: string, idx: number) => (
+                          <div key={idx} className="mt-0.5 font-mono opacity-80">{w}</div>
+                        ))}
                       </div>
                     ) : null}
                   </div>
@@ -472,7 +605,7 @@ export function SAIWidget() {
                 </button>
               </div>
               <div className="mt-1 text-[11px] opacity-60">
-                Enter to send • Shift+Enter for newline • Accuracy-first: will cite sources or say unsure.
+                Enter to send • Shift+Enter for newline • Tool-backed data + docs search; answers stream live.
               </div>
             </div>
           </div>

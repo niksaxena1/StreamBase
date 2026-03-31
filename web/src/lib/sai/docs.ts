@@ -214,3 +214,13 @@ export async function retrieveDocs(query: string, opts?: { maxChunks?: number })
   return { citations, contextText, confidence, method: "lexical" };
 }
 
+/** Append doc citations without duplicating chunk ids (for multi search_docs calls per turn). */
+export function mergeDocCitations(target: SaiCitation[], incoming: SaiCitation[]) {
+  const seen = new Set(target.map((c) => c.chunkId));
+  for (const c of incoming) {
+    if (seen.has(c.chunkId)) continue;
+    seen.add(c.chunkId);
+    target.push(c);
+  }
+}
+

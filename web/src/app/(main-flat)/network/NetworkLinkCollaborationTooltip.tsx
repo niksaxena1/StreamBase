@@ -17,6 +17,7 @@ export function NetworkLinkCollaborationTooltipContent({
   onArtistPrimary,
   onArtistDistroGesture,
   onFrozenTrackOpenDetail,
+  onOpenSharedTracksFullList,
 }: {
   link: FGLinkObj;
   frozen: boolean;
@@ -27,6 +28,8 @@ export function NetworkLinkCollaborationTooltipContent({
   onArtistDistroGesture: (artistId: string, artistName: string) => void;
   /** Frozen tooltip: plain click on track title → track detail modal. */
   onFrozenTrackOpenDetail: (isrc: string, displayName: string) => void;
+  /** Frozen tooltip with more than 10 tracks: click “… and N more” → full list modal. */
+  onOpenSharedTracksFullList?: () => void;
 }) {
   const edge = link as unknown as GraphEdge;
   const srcNode = typeof link.source === "object" ? (link.source as FGNodeObj) : null;
@@ -146,7 +149,25 @@ export function NetworkLinkCollaborationTooltipContent({
             </li>
           ))}
           {tracks.length > 10 ? (
-            <li style={{ color: colors.muted }}>&hellip; and {tracks.length - 10} more</li>
+            <li style={{ color: colors.muted }}>
+              {onOpenSharedTracksFullList ? (
+                <button
+                  type="button"
+                  className="text-left underline decoration-dotted underline-offset-2 hover:opacity-100"
+                  style={{ color: colors.accent }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenSharedTracksFullList();
+                  }}
+                >
+                  &hellip; and {tracks.length - 10} more
+                </button>
+              ) : (
+                <>
+                  &hellip; and {tracks.length - 10} more
+                </>
+              )}
+            </li>
           ) : null}
         </ul>
       ) : null}

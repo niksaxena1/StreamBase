@@ -23,8 +23,8 @@ export type SaiCitation = {
 };
 
 export type SaiToolCall = {
-  tool: "data_query";
-  templateId: string;
+  tool: string;
+  templateId?: string | null;
   params: Record<string, unknown>;
   rowCount?: number | null;
   notes?: string | null;
@@ -32,7 +32,6 @@ export type SaiToolCall = {
 
 export type SaiAssistantMeta = {
   envelope?: SaiEnvelope;
-  plan?: unknown;
   retrieval?: { method: "vector" | "lexical"; confidence: "high" | "medium" | "low" } | null;
   citations?: SaiCitation[];
   toolCalls?: SaiToolCall[];
@@ -45,3 +44,11 @@ export type SaiStreamEvent =
   | { type: "done"; message: { role: "assistant"; content: string; meta?: SaiAssistantMeta } }
   | { type: "error"; error: string };
 
+/** Mutable accumulator while a single chat turn runs (tools push here). */
+export type SaiTurnContext = {
+  citations: SaiCitation[];
+  toolCalls: SaiToolCall[];
+  warnings: string[];
+  /** Set by search_docs for assistant meta (last successful retrieval wins). */
+  retrievalOverride?: { method: "vector" | "lexical"; confidence: "high" | "medium" | "low" };
+};

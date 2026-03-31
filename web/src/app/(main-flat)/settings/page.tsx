@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/shell/PageHeader";
 import { PurgeCacheButton } from "./PurgeCacheButton";
  import { SAISettingsToggle } from "./SAISettingsToggle";
 import { HomeFiltersToggle } from "./HomeFiltersToggle";
+import { HomeArtificialSpikesSectionToggle } from "./HomeArtificialSpikesSectionToggle";
 import { PayoutRateSetting } from "./PayoutRateSetting";
 import { WeekHighlightDaySetting } from "./WeekHighlightDaySetting";
 import { ChartStartDateSetting } from "./ChartStartDateSetting";
@@ -14,8 +15,10 @@ import { ChartAxisZoomSetting } from "./ChartAxisZoomSetting";
 import { WeekendDipSetting } from "./WeekendDipSetting";
 import { CurrencyDisplaySetting } from "./CurrencyDisplaySetting";
 import { StaleTrackThresholdSetting } from "./StaleTrackThresholdSetting";
+import { ArtificialStreamSpikeSetting } from "./ArtificialStreamSpikeSetting";
 import { RapidApiAutoFixSetting } from "./RapidApiAutoFixSetting";
 import { HideStaleAnnotationsSetting } from "./HideStaleAnnotationsSetting";
+import { NetworkBackgroundGridSetting } from "./NetworkBackgroundGridSetting";
 import { ManualStreamOverrideForm } from "./ManualStreamOverrideForm";
 import { StreamOverridesTable, StreamOverridesTableDownloadButton } from "./StreamOverridesTable";
 import { SectionHeader } from "@/components/ui/SectionHeader";
@@ -648,6 +651,7 @@ export default async function SettingsPage() {
     { id: "home", label: "Home" },
     { id: "revenue", label: "Revenue" },
     { id: "charts", label: "Charts" },
+    { id: "network", label: "Network" },
     { id: "health", label: "Health" },
     { id: "cache", label: "Cache" },
     { id: "exclusions", label: `Exclusions (${totalExclusions})` },
@@ -695,6 +699,7 @@ export default async function SettingsPage() {
         >
           <SectionHeader title="Home" subtitle="Customize what appears on the Home dashboard." />
           <HomeFiltersToggle />
+          <HomeArtificialSpikesSectionToggle />
         </div>
 
         <div
@@ -721,12 +726,22 @@ export default async function SettingsPage() {
         </div>
 
         <div
+          id="network"
+          className="scroll-mt-14 space-y-2 rounded-xl border p-4"
+          style={{ borderColor: "var(--sb-border)" }}
+        >
+          <SectionHeader title="Network" subtitle="Collaboration Network page preferences." />
+          <NetworkBackgroundGridSetting />
+        </div>
+
+        <div
           id="health"
           className="scroll-mt-14 space-y-2 rounded-xl border p-4"
           style={{ borderColor: "var(--sb-border)" }}
         >
           <SectionHeader title="Health" subtitle="Configure data-quality detection thresholds used during daily ingestion." />
           <StaleTrackThresholdSetting />
+          <ArtificialStreamSpikeSetting />
           <RapidApiAutoFixSetting />
         </div>
 

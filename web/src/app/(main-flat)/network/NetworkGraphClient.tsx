@@ -61,6 +61,7 @@ import {
 import { NetworkAdvancedFilterModal } from "./NetworkAdvancedFilterModal";
 import { NetworkCustomScopeModal } from "./NetworkCustomScopeModal";
 import { FrozenEdgeTrackDetailModal } from "./FrozenEdgeTrackDetailModal";
+import { SharedTracksListModal } from "./SharedTracksListModal";
 import { NetworkArtistsTable } from "./NetworkArtistsTable";
 import { NetworkLinkCollaborationTooltipContent } from "./NetworkLinkCollaborationTooltip";
 import {
@@ -72,7 +73,9 @@ import { SelectedArtistPanel, ToggleButton } from "./NetworkSelectedArtistPanel"
 import {
   CAMERA_SAVE_MS,
   LS_NETWORK_CAMERA,
+  LS_NETWORK_SHOW_GRID,
   MAX_SEL_URL,
+  readNetworkShowGridFromStorage,
   NETWORK_GRID_MAX_LINES_PER_AXIS,
   NETWORK_GRID_MINOR_MAX_LINES_PER_AXIS,
   NETWORK_GRID_MINOR_MAX_PX,
@@ -120,7 +123,7 @@ import {
   parseNetworkScope,
   type NetworkScopeState,
 } from "./networkScope";
-import type { GraphNode, GraphEdge, NetworkPlaylistOption } from "./page";
+import type { GraphNode, GraphEdge, NetworkPlaylistOption, SharedTrack } from "./page";
 
 // Force-graph uses Canvas/WebGL — must skip SSR.
 const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), {
@@ -346,6 +349,21 @@ export function NetworkGraphClient({
 
   // Container sizing
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
+
+  const [showBackgroundGrid, setShowBackgroundGrid] = useState(true);
+  useEffect(() => {
+    setShowBackgroundGrid(readNetworkShowGridFromStorage());
+    const sync = () => setShowBackgroundGrid(readNetworkShowGridFromStorage());
+    window.addEventListener("sb:network-grid-updated", sync);
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === LS_NETWORK_SHOW_GRID || e.key === null) sync();
+    };
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener("sb:network-grid-updated", sync);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, []);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -1342,6 +1360,12 @@ export function NetworkGraphClient({
     [rangeSet, selectedNodeId],
   );
 
+  // Drop frozen link tooltip if focus mode changes and that edge is no longer in the highlighted set.
+  useEffect(() => {
+    if (!pinnedLink) return;
+    if (!isLinkHighlighted(pinnedLink)) clearPinnedLink();
+  }, [pinnedLink, isLinkHighlighted, clearPinnedLink, selectedNodeId, rangeSelection]);
+
   /* -------- Node rendering -------- */
 
   const nodeVal = useCallback(
@@ -1465,9 +1489,15 @@ export function NetworkGraphClient({
   const linkWidth = useCallback(
     (link: FGLinkObj) => {
       const w = (link as unknown as GraphEdge).weight ?? 1;
-      return Math.min(w * 0.8, 6);
+      let width = Math.min(w * 0.8, 6);
+      const key = collaborationLinkKey(link);
+      const hoverOrPin =
+        (hoveredLink != null && collaborationLinkKey(hoveredLink) === key) ||
+        (pinnedLink != null && collaborationLinkKey(pinnedLink) === key);
+      if (hoverOrPin) width = Math.min(width + 1.25, 8);
+      return width;
     },
-    [],
+    [hoveredLink, pinnedLink],
   );
 
   const linkColor = useCallback(
@@ -1475,12 +1505,21 @@ export function NetworkGraphClient({
       const hl = isLinkHighlighted(link);
       if (!hl) return colors.isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.03)";
       const w = (link as unknown as GraphEdge).weight ?? 1;
-      const a = Math.min(0.15 + w * 0.1, 0.6);
+      let a = Math.min(0.15 + w * 0.1, 0.6);
+      const key = collaborationLinkKey(link);
+      const isHover =
+        hoveredLink != null && collaborationLinkKey(hoveredLink) === key;
+      const isPinned =
+        pinnedLink != null && collaborationLinkKey(pinnedLink) === key;
+      // Brighter stroke for interactive focus: hover preview or frozen tooltip anchor.
+      if (isHover || isPinned) {
+        a = Math.min(a + 0.24, 0.92);
+      }
       return colors.isDark
         ? `rgba(212,255,77,${a})`
         : `rgba(168,214,46,${a})`;
     },
-    [isLinkHighlighted, colors],
+    [isLinkHighlighted, colors, hoveredLink, pinnedLink],
   );
 
   /** World-space grid (pans/zooms with the graph) for spatial reference while navigating. */
@@ -1490,6 +1529,7 @@ export function NetworkGraphClient({
       const w = dimensions.width;
       const h = dimensions.height;
       if (!fg || w < 8 || h < 8 || !Number.isFinite(globalScale) || globalScale < 0.001) return;
+      if (!showBackgroundGrid) return;
 
       let tl: { x: number; y: number };
       let br: { x: number; y: number };
@@ -1627,7 +1667,7 @@ export function NetworkGraphClient({
 
       ctx.restore();
     },
-    [dimensions.width, dimensions.height, colors.isDark],
+    [dimensions.width, dimensions.height, colors.isDark, showBackgroundGrid],
   );
 
   const closeDistroModal = useCallback(() => {
@@ -2010,12 +2050,15 @@ export function NetworkGraphClient({
 
   const handleLinkHover = useCallback(
     (link: FGLinkObj | null) => {
-      if (link) {
-        setHoveredLink(link);
+      // When an artist (or multi-select) is focused, ignore hover on dimmed links (no tooltip / pin).
+      const effective =
+        link && !isLinkHighlighted(link) ? null : link;
+      if (effective) {
+        setHoveredLink(effective);
         const pt = lastContainerPointerTypeRef.current;
         if ((pt === "touch" || pt === "pen") && !pinnedLinkRef.current) {
           clearLinkPinLongPress();
-          const key = collaborationLinkKey(link);
+          const key = collaborationLinkKey(effective);
           linkPinPendingKeyRef.current = key;
           linkPinLongPressStartRef.current = {
             x: lastPointerClientRef.current.x,
@@ -2026,6 +2069,7 @@ export function NetworkGraphClient({
             linkPinLongPressTimerRef.current = null;
             if (linkPinPendingKeyRef.current !== key) return;
             if (pinnedLinkRef.current) return;
+            if (!isLinkHighlighted(effective)) return;
             const host = containerRef.current;
             if (!host) return;
             const r = host.getBoundingClientRect();
@@ -2036,7 +2080,7 @@ export function NetworkGraphClient({
               // ignore
             }
             skipNextLinkClickRef.current = true;
-            setPinnedLink(link);
+            setPinnedLink(effective);
             setPinnedTooltipPos({ x: p.x - r.left, y: p.y - r.top });
             pinnedLinkKeyRef.current = key;
             window.setTimeout(() => {
@@ -2052,7 +2096,7 @@ export function NetworkGraphClient({
         }
       }
     },
-    [clearLinkPinLongPress],
+    [clearLinkPinLongPress, isLinkHighlighted],
   );
 
   // Track mouse position for tooltip (frozen link tooltip stays at the pin point)
@@ -2102,6 +2146,25 @@ export function NetworkGraphClient({
     fallbackTitle: string;
   } | null>(null);
 
+  const [sharedTracksListModal, setSharedTracksListModal] = useState<{
+    tracks: SharedTrack[];
+    title: string;
+  } | null>(null);
+
+  const openSharedTracksListModal = useCallback(() => {
+    const link = pinnedLink;
+    if (!link) return;
+    const edge = link as unknown as GraphEdge;
+    const srcNode = typeof link.source === "object" ? (link.source as FGNodeObj) : null;
+    const tgtNode = typeof link.target === "object" ? (link.target as FGNodeObj) : null;
+    const srcName = srcNode?.name ?? String(link.source);
+    const tgtName = tgtNode?.name ?? String(link.target);
+    setSharedTracksListModal({
+      tracks: (edge.shared_tracks ?? []) as SharedTrack[],
+      title: `${srcName} × ${tgtName}`,
+    });
+  }, [pinnedLink]);
+
   const openFrozenTooltipTrackDetail = useCallback(
     (isrc: string, displayName: string) => {
       clearPinnedLink();
@@ -2116,6 +2179,14 @@ export function NetworkGraphClient({
         skipNextLinkClickRef.current = false;
         event.preventDefault?.();
         event.stopPropagation?.();
+        return;
+      }
+      // Dimmed links (outside focused ego network / internal multi-select) act like background:
+      // clear selection and exit focus mode.
+      if (!isLinkHighlighted(link)) {
+        event.preventDefault?.();
+        event.stopPropagation?.();
+        handleBackgroundClick();
         return;
       }
       if (event.ctrlKey || event.metaKey) return;
@@ -2139,7 +2210,7 @@ export function NetworkGraphClient({
       setPinnedTooltipPos({ x: event.clientX - r.left, y: event.clientY - r.top });
       pinnedLinkKeyRef.current = key;
     },
-    [clearPinnedLink],
+    [clearPinnedLink, handleBackgroundClick, isLinkHighlighted],
   );
 
   /* -------- Reset -------- */
@@ -2275,6 +2346,12 @@ export function NetworkGraphClient({
             void openArtistDistroModal(artistId, artistName);
           }}
           onFrozenTrackOpenDetail={openFrozenTooltipTrackDetail}
+          onOpenSharedTracksFullList={
+            pinnedLink &&
+            ((pinnedLink as unknown as GraphEdge).shared_tracks?.length ?? 0) > 10
+              ? openSharedTracksListModal
+              : undefined
+          }
         />
       );
     }
@@ -2318,6 +2395,7 @@ export function NetworkGraphClient({
     handleTooltipArtistPrimary,
     openArtistDistroModal,
     openFrozenTooltipTrackDetail,
+    openSharedTracksListModal,
     trackCollabFilterMap,
     graphDegreeMap,
     hideNonPrimary,
@@ -2362,6 +2440,10 @@ export function NetworkGraphClient({
           setFrozenTooltipTrackModal(null);
           return;
         }
+        if (sharedTracksListModal) {
+          setSharedTracksListModal(null);
+          return;
+        }
         if (pinnedLink) {
           clearPinnedLink();
           clearLinkPinLongPress();
@@ -2404,6 +2486,7 @@ export function NetworkGraphClient({
     shortcutsOpen,
     searchOpen,
     frozenTooltipTrackModal,
+    sharedTracksListModal,
     pinnedLink,
     rangeSelection.length,
     selectedNodeId,
@@ -3208,6 +3291,17 @@ export function NetworkGraphClient({
         isrc={frozenTooltipTrackModal?.isrc ?? null}
         fallbackTitle={frozenTooltipTrackModal?.fallbackTitle ?? ""}
         onFocusArtistOnNetwork={focusOnArtist}
+      />
+
+      <SharedTracksListModal
+        open={sharedTracksListModal != null}
+        onClose={() => setSharedTracksListModal(null)}
+        title={sharedTracksListModal?.title ?? ""}
+        tracks={sharedTracksListModal?.tracks ?? []}
+        onTrackOpenDetail={(isrc, displayName) => {
+          setSharedTracksListModal(null);
+          openFrozenTooltipTrackDetail(isrc, displayName);
+        }}
       />
 
       <SelectionCollabsModal

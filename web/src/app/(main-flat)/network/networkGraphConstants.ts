@@ -1,6 +1,18 @@
 /** localStorage key for persisted camera (zoom / center). */
 export const LS_NETWORK_CAMERA = "sb:network:camera:v1";
 
+/** localStorage key: `"0"` = hide world-space background grid; default (missing) = show. */
+export const LS_NETWORK_SHOW_GRID = "sb:network:showGrid:v1";
+
+export function readNetworkShowGridFromStorage(): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    return window.localStorage.getItem(LS_NETWORK_SHOW_GRID) !== "0";
+  } catch {
+    return true;
+  }
+}
+
 /** Production site for Excel export links (catalog URLs, Summary page URL) — not the dev server origin. */
 export const SPOTIBASE_PUBLIC_ORIGIN = "https://spotibase.vercel.app";
 

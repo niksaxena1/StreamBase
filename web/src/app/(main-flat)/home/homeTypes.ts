@@ -64,6 +64,20 @@ export type NegativeDailyStreamsRow = {
   total_streams_cumulative: number;
 };
 
+/** Row from `home_artificial_stream_spikes` RPC (run date in `date`). */
+export type ArtificialStreamSpikeRow = {
+  isrc: string;
+  name: string;
+  artist_names: string[] | null;
+  artist_ids: string[] | null;
+  album_image_url: string | null;
+  date: string;
+  daily_streams: number;
+  avg_same_dow: number | null;
+  spike_ratio: number | null;
+  streams_cumulative: number;
+};
+
 /** Props assembled on the server for `HomeDashboardClient`. */
 export type HomeDashboardServerProps = {
   sp: HomeDashboardSearchParams;
@@ -83,4 +97,11 @@ export type HomeDashboardServerProps = {
   artistWeekendDips: ArtistWeekendDipRow[];
   trackWeekendDips: TrackWeekendDipRow[];
   negativeDailyStreams: NegativeDailyStreamsRow[];
+  artificialStreamSpikes: ArtificialStreamSpikeRow[];
+  artificialStreamSpikeRatio: number;
+  artificialMinBaseline: number;
+  artificialIncludeWeekends: boolean;
+  /** When set (custom Home date range), spike RPC only uses rows in this window. */
+  artificialSpikeDateStart: string | null;
+  artificialSpikeDateEnd: string | null;
 };

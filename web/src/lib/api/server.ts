@@ -18,10 +18,23 @@ export type RequireUserResult =
   | { ok: true; user: User }
   | { ok: false; response: NextResponse };
 
+/** Validates JWT with Supabase Auth (network). Prefer for sensitive routes (exports, mutations). */
 export async function requireUser(sb: SupabaseClient): Promise<RequireUserResult> {
   const { data: userData } = await sb.auth.getUser();
   if (!userData.user) return { ok: false, response: apiJsonErr("unauthenticated", 401) };
   return { ok: true, user: userData.user };
+}
+
+/**
+ * Same-origin hot paths only: uses session from cookies without forcing a full Auth validation round-trip.
+ * Use after edge/cookie gating for logged-in users; pair with `requireUser` when you need strong JWT verification.
+ */
+export async function requireSessionUser(sb: SupabaseClient): Promise<RequireUserResult> {
+  const {
+    data: { session },
+  } = await sb.auth.getSession();
+  if (!session?.user) return { ok: false, response: apiJsonErr("unauthenticated", 401) };
+  return { ok: true, user: session.user };
 }
 
 export type RequireAdminResult =

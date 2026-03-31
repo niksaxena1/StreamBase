@@ -58,6 +58,13 @@ export type NegativeDailyStreamTrack = TrackBase & {
   total_streams_cumulative?: number | null;
 };
 
+export type ArtificialStreamTrack = TrackBase & {
+  daily_today?: number | null;
+  avg_same_dow?: number | null;
+  spike_ratio?: number | null;
+  streams_cumulative?: number | null;
+};
+
 export type DriftTrack = TrackBase & {
   source_playlist_key?: string | null;
 };
@@ -156,6 +163,19 @@ export type TotalStreamsDecreasedDetailsJson = {
   note?: string;
 };
 
+export type ArtificialStreamSpikeDetailsJson = {
+  flagged_tracks?: {
+    isrc: string;
+    daily_today?: number;
+    avg_same_dow?: number;
+    spike_ratio?: number;
+    streams_cumulative?: number;
+  }[];
+  flagged_tracks_total?: number;
+  threshold_config?: Record<string, unknown>;
+  note?: string;
+};
+
 // ---------------------------------------------------------------------------
 // Discriminated union for expanded data passed to WarningRow
 // ---------------------------------------------------------------------------
@@ -200,6 +220,11 @@ export type WarningExpandedData =
   | {
       type: "negative_daily_streams";
       tracks: NegativeDailyStreamTrack[] | null;
+      note?: string;
+    }
+  | {
+      type: "artificial_stream_spike";
+      tracks: ArtificialStreamTrack[] | null;
       note?: string;
     }
   | null;

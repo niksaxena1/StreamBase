@@ -3,12 +3,16 @@ import { supabaseServer } from "@/lib/supabase/server";
 import { cachedQuery } from "@/lib/supabase/cache";
 import { CACHE_TTL_5MIN, CACHE_TTL_24H } from "@/lib/constants";
 import { logError } from "@/lib/logger";
-import { apiJsonErr, apiJsonOk } from "@/lib/api/server";
+import { apiJsonErr, apiJsonOk, requireSessionUser } from "@/lib/api/server";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {
+    const sb = await supabaseServer();
+    const auth = await requireSessionUser(sb);
+    if (!auth.ok) return auth.response;
+
     const searchParams = request.nextUrl.searchParams;
     const type = searchParams.get("type");
     const id = searchParams.get("id");
@@ -16,8 +20,6 @@ export async function GET(request: NextRequest) {
     if (!type || !id) {
       return apiJsonErr("Missing type or id", 400);
     }
-
-    const sb = await supabaseServer();
 
     const { data: latestRun } = await cachedQuery(
       async () =>

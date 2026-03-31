@@ -30,6 +30,7 @@ import type {
   ArtistWeekendDipRow,
   TrackWeekendDipRow,
   NegativeDailyStreamsRow,
+  ArtificialStreamSpikeRow,
   HomeDashboardServerProps,
 } from "./home/homeTypes";
 import { rollSum } from "./home/homeUtils";
@@ -37,6 +38,7 @@ import { HomeScatterSection } from "./home/HomeScatterSection";
 import { HomeMilestonesSection } from "./home/HomeMilestonesSection";
 import { HomeDailyDistributionSection } from "./home/HomeDailyDistributionSection";
 import { HomeNegativeStreamsSection } from "./home/HomeNegativeStreamsSection";
+import { HomeArtificialStreamsSection } from "./home/HomeArtificialStreamsSection";
 import { HomeWeekendDipsSection } from "./home/HomeWeekendDipsSection";
 import { HomeHistorySection } from "./home/HomeHistorySection";
 import { HomeFilterBuilderSection } from "./home/HomeFilterBuilderSection";
@@ -96,6 +98,12 @@ function HomeDashboardInner(props: {
   artistWeekendDips: ArtistWeekendDipRow[];
   trackWeekendDips: TrackWeekendDipRow[];
   negativeDailyStreams: NegativeDailyStreamsRow[];
+  artificialStreamSpikes: ArtificialStreamSpikeRow[];
+  artificialStreamSpikeRatio: number;
+  artificialMinBaseline: number;
+  artificialIncludeWeekends: boolean;
+  artificialSpikeDateStart: string | null;
+  artificialSpikeDateEnd: string | null;
 }) {
   const { metric } = useMetric();
   useCurrencyDisplay();
@@ -118,8 +126,10 @@ function HomeDashboardInner(props: {
   // User setting: show/hide Filters section on Home
   const [homeFiltersEnabled, setHomeFiltersEnabled] = useState(true);
   const [homeFiltersConfigured, setHomeFiltersConfigured] = useState(true);
+  const [homeSpikesSectionEnabled, setHomeSpikesSectionEnabled] = useState(true);
+  const [homeSpikesSectionConfigured, setHomeSpikesSectionConfigured] = useState(true);
 
-  // Fetch Home Filters setting (shares request with other context providers).
+  // Fetch Home Filters + spikes section visibility (shares request with other context providers).
   useEffect(() => {
     let cancelled = false;
 
@@ -129,6 +139,8 @@ function HomeDashboardInner(props: {
         if (cancelled) return;
         setHomeFiltersEnabled(data.home_filters_enabled ?? true);
         setHomeFiltersConfigured(data.configured !== false);
+        setHomeSpikesSectionEnabled(data.home_artificial_spikes_section_enabled ?? true);
+        setHomeSpikesSectionConfigured(data.configured !== false);
       } catch {
         // ignore
       }
@@ -142,9 +154,11 @@ function HomeDashboardInner(props: {
     }
 
     window.addEventListener("sb:home-filters-setting-updated", onUpdated as any);
+    window.addEventListener("sb:home-artificial-spikes-section-setting-updated", onUpdated as any);
     return () => {
       cancelled = true;
       window.removeEventListener("sb:home-filters-setting-updated", onUpdated as any);
+      window.removeEventListener("sb:home-artificial-spikes-section-setting-updated", onUpdated as any);
     };
   }, []);
 
@@ -430,6 +444,17 @@ function HomeDashboardInner(props: {
       <HomeDailyDistributionSection trackScatterPoints={props.trackScatterPoints} />
 
       <HomeNegativeStreamsSection negativeDailyStreams={props.negativeDailyStreams} />
+
+      {homeSpikesSectionConfigured && homeSpikesSectionEnabled ? (
+        <HomeArtificialStreamsSection
+          artificialStreamSpikes={props.artificialStreamSpikes}
+          artificialStreamSpikeRatio={props.artificialStreamSpikeRatio}
+          artificialMinBaseline={props.artificialMinBaseline}
+          artificialIncludeWeekends={props.artificialIncludeWeekends}
+          artificialSpikeDateStart={props.artificialSpikeDateStart}
+          artificialSpikeDateEnd={props.artificialSpikeDateEnd}
+        />
+      ) : null}
 
       <HomeWeekendDipsSection
         artistWeekendDips={props.artistWeekendDips}

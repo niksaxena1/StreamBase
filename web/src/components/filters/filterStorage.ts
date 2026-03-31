@@ -2,6 +2,7 @@
  * Filter Storage Utilities
  *
  * Persists saved filters via the /api/filters/saved endpoint (Supabase-backed).
+ * Presets are shared across all authenticated users (team-wide).
  * All CRUD operations are async.
  */
 
@@ -15,7 +16,7 @@ const API_BASE = "/api/filters/saved";
 // CRUD
 // ---------------------------------------------------------------------------
 
-/** Fetch all saved filters for the current user. */
+/** Fetch all team saved filters. */
 export async function loadSavedFilters(): Promise<FilterConfig[]> {
   try {
     const data = await fetchApiJson<{ filters: FilterConfig[] }>(API_BASE);

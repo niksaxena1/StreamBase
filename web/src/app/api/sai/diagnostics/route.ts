@@ -7,10 +7,11 @@ import { apiJsonErr, apiJsonOk } from "@/lib/api/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/** Prefer header `x-sai-admin-token` (matches `/api/sai/docs/reindex`); avoids secrets in URLs/logs. */
 function requireToken(req: NextRequest): string | null {
   const token = process.env.SAI_ADMIN_TOKEN ?? "";
   if (!token) return "SAI_ADMIN_TOKEN not configured";
-  const got = req.nextUrl.searchParams.get("token") ?? "";
+  const got = req.headers.get("x-sai-admin-token") ?? "";
   if (got !== token) return "invalid token";
   return null;
 }

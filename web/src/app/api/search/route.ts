@@ -4,7 +4,7 @@ import { supabaseService } from "@/lib/supabase/service";
 import { cachedQuery } from "@/lib/supabase/cache";
 import { getArtistsCached } from "@/lib/spotify";
 import { logError } from "@/lib/logger";
-import { apiJsonErr, apiJsonOk } from "@/lib/api/server";
+import { apiJsonErr, apiJsonOk, requireSessionUser } from "@/lib/api/server";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +28,10 @@ function hashKey(input: string): string {
 
 export async function GET(request: NextRequest) {
   try {
+    const sb = await supabaseServer();
+    const auth = await requireSessionUser(sb);
+    if (!auth.ok) return auth.response;
+
     const searchParams = request.nextUrl.searchParams;
     const queryRaw = searchParams.get("q")?.trim();
 
@@ -35,7 +39,6 @@ export async function GET(request: NextRequest) {
       return apiJsonOk({ results: [] as SearchResult[] });
     }
 
-    const sb = await supabaseServer();
     const svc = supabaseService();
 
     const { data: latestRun } = await cachedQuery(
