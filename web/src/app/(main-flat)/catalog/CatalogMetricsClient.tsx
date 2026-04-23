@@ -23,6 +23,7 @@ type ChartDataPoint = {
 type DailyDataPoint = {
   date: string;
   daily: number | null;
+  ma7?: number | null;
 };
 
 export function CatalogMetricsClient(props: {
@@ -86,9 +87,24 @@ export function CatalogMetricsClient(props: {
   }, [metric, props.dailyArtistDesc, streamPayoutPerStreamUsd]);
 
   const dailyWithMaDesc = useMemo(() => {
-    if (props.granularity === "daily") return computeDailyRollingAvg7(dailyDescRaw);
-    return aggregateDailySeries(dailyDescRaw, props.granularity);
-  }, [dailyDescRaw, props.granularity]);
+    if (props.granularity !== "daily") {
+      return aggregateDailySeries(dailyDescRaw, props.granularity);
+    }
+    // "Tracks" metric: synthetic zeros — keep local MA7. Streams/revenue: server precomputes
+    // MA7 using a 6-day lookback before the range (same idea as the home dashboard).
+    if (metric === "tracks") {
+      return computeDailyRollingAvg7(dailyDescRaw);
+    }
+    const rev = streamPayoutPerStreamUsd;
+    return props.dailyArtistDesc.map((p) => ({
+      date: dataDateFromRunDate(p.date),
+      daily: p.daily == null ? null : p.daily * (metric === "revenue" ? rev : 1),
+      ma7:
+        p.ma7 == null || p.ma7 === undefined
+          ? null
+          : p.ma7 * (metric === "revenue" ? rev : 1),
+    }));
+  }, [dailyDescRaw, props.granularity, props.dailyArtistDesc, metric, streamPayoutPerStreamUsd]);
 
   const gl = granularityLabel(props.granularity).toLowerCase();
   const cumulativeLabel = metric === "revenue" ? "Est. revenue (total)" : metric === "streams" ? "Total streams" : "Track count";

@@ -7,6 +7,8 @@ export type ChartDataPoint = {
 export type DailyDataPoint = {
   date: string;
   daily: number | null;
+  /** Present when precomputed on the server (7-day window may include days before the visible range). */
+  ma7?: number | null;
 };
 
 export type ArtistOption = { id: string; name: string; imageUrl?: string | null };

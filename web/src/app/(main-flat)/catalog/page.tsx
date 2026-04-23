@@ -17,6 +17,9 @@ import { logError, logWarn } from "@/lib/logger";
 const CATALOG_ARTIST_DROPDOWN_MAX_TRACKS = API_LOOKUP_DROPDOWN_MAX;
 const CATALOG_ARTIST_THUMBNAILS_MAX = API_LOOKUP_THUMBNAILS_MAX;
 
+/** Extra days to load before the chart range so MA7 matches home (window uses days before the first visible day). */
+const MA7_LOOKBACK_DAYS = 6;
+
 function sumLastNDays(desc: Array<{ date: string; daily: number | null }>, days: number) {
   return desc.slice(0, days).reduce((acc, r) => acc + Number(r.daily ?? 0), 0);
 }
@@ -403,6 +406,8 @@ export default async function CatalogPage({
 
   const latestRunDate = (latestRun as PlaylistDailyStatsRow | null)?.date ?? null;
   const startRunDate = latestRunDate ? addDays(latestRunDate, -rangeDays) : null;
+  const maPaddedStartRunDate =
+    latestRunDate && startRunDate ? addDays(startRunDate, -MA7_LOOKBACK_DAYS) : null;
 
   const isrc = requestedIsrc || null;
 
@@ -425,15 +430,15 @@ export default async function CatalogPage({
 
   // Artist series + top tracks are computed in Postgres (scales to large tables).
   const [{ data: seriesRows }, { data: topTotalRows }, { data: topDailyRows }] = await Promise.all([
-    latestRunDate && startRunDate
+    latestRunDate && startRunDate && maPaddedStartRunDate
       ? cachedQuery(
           async () =>
             await svc.rpc("catalog_artist_series", {
               artist_id: artistId,
-              start_date: startRunDate,
+              start_date: maPaddedStartRunDate,
               end_date: latestRunDate,
             }),
-          `catalog-artist-series-${artistId}-${startRunDate}-${latestRunDate}-ov${overrideBuster}`,
+          `catalog-artist-series-${artistId}-${maPaddedStartRunDate}-${latestRunDate}-ov${overrideBuster}`,
           CACHE_TTL_1H,
         )
       : Promise.resolve({ data: [] as CatalogArtistSeriesRow[], error: null }),
@@ -463,22 +468,28 @@ export default async function CatalogPage({
       : Promise.resolve({ data: [] as CatalogTopTrackRow[], error: null }),
   ]);
 
-  const cumSeriesAscRun = ((seriesRows ?? []) as CatalogArtistSeriesRow[])
+  const cumSeriesAscRunFull = ((seriesRows ?? []) as CatalogArtistSeriesRow[])
     .map((r) => ({ date: r.date, value: Number(r.streams_cumulative ?? 0) }))
     .sort((a, b) => a.date.localeCompare(b.date));
+
+  const cumSeriesAscRun = startRunDate
+    ? cumSeriesAscRunFull.filter((p) => p.date >= startRunDate)
+    : cumSeriesAscRunFull;
 
   // Keep dates as RUN dates in server payload; UI shifts to "data date" for display.
   const cumSeriesAsc = cumSeriesAscRun;
 
   const latestCum = cumSeriesAscRun.length ? cumSeriesAscRun[cumSeriesAscRun.length - 1].value : 0;
 
-  const dailyArtistAscRun = cumSeriesAscRun.map((p, idx) => {
+  const dailyArtistAscRunFull = cumSeriesAscRunFull.map((p, idx) => {
     if (idx === 0) return { date: p.date, daily: null };
-    const prev = cumSeriesAscRun[idx - 1].value;
+    const prev = cumSeriesAscRunFull[idx - 1].value;
     return { date: p.date, daily: p.value - prev };
   });
-  const dailyArtistDesc = [...dailyArtistAscRun].reverse();
-  const dailyArtistWithMaDesc = computeDailyRollingAvg7(dailyArtistDesc);
+  const dailyArtistDescFull = [...dailyArtistAscRunFull].reverse();
+  const dailyArtistDesc = startRunDate
+    ? computeDailyRollingAvg7(dailyArtistDescFull).filter((p) => p.date >= startRunDate)
+    : computeDailyRollingAvg7(dailyArtistDescFull);
 
   const artist24h = dailyArtistDesc[0]?.daily ?? 0;
   const artist7d = sumLastNDays(dailyArtistDesc, 7);
@@ -595,14 +606,19 @@ export default async function CatalogPage({
 
   // Selected track panels (optional). Wrap in cachedQuery: series data only changes
   // when a new ingestion run completes (daily), but can include many paginated rows.
-  const trackSeries = isrc && latestRunDate && startRunDate
+  const trackSeries = isrc && latestRunDate && startRunDate && maPaddedStartRunDate
     ? (
         await cachedQuery(
           async () => ({
-            data: await fetchAllTrackSeries(svc, { isrc, startDate: startRunDate, endDate: latestRunDate, maxRows: API_LOOKUP_TRACK_MAX }),
+            data: await fetchAllTrackSeries(svc, {
+              isrc,
+              startDate: maPaddedStartRunDate,
+              endDate: latestRunDate,
+              maxRows: API_LOOKUP_TRACK_MAX,
+            }),
             error: null,
           }),
-          `catalog-track-series-${isrc}-${startRunDate}-${latestRunDate}-ov${overrideBuster}`,
+          `catalog-track-series-${isrc}-${maPaddedStartRunDate}-${latestRunDate}-ov${overrideBuster}`,
           CACHE_TTL_1H,
         )
       ).data ?? []
@@ -635,11 +651,15 @@ export default async function CatalogPage({
       note: (r.note ?? "").trim() || `Manual override (ISRC: ${isrc})`,
     }));
 
-  const trackCumDesc = (trackSeries ?? []).map((r) => ({
+  const trackSeriesInRange = startRunDate
+    ? (trackSeries ?? []).filter((r) => r.date >= startRunDate)
+    : (trackSeries ?? []);
+
+  const trackCumDesc = trackSeriesInRange.map((r) => ({
     date: r.date,
     value: Number(r.streams_cumulative ?? 0),
   }));
-  // Compute daily deltas based on RUN ordering but display DATA dates.
+  // Compute daily deltas based on RUN ordering but display DATA dates (include pad before range for MA7).
   const trackCumDescRun = (trackSeries ?? []).map((r) => ({
     date: r.date,
     value: Number(r.streams_cumulative ?? 0),
@@ -650,14 +670,14 @@ export default async function CatalogPage({
     const prev = trackCumAscRun[idx - 1].value;
     return { date: p.date, daily: p.value - prev };
   });
-  const trackDailyDesc = [...trackDailyAsc]
-    .reverse()
-    .map((p) => ({ ...p }));
-  const trackDailyWithMaDesc = computeDailyRollingAvg7(trackDailyDesc);
-  const track24h = trackDailyDesc[0]?.daily ?? 0;
-  const track7d = sumLastNDays(trackDailyDesc, 7);
-  const track28d = sumLastNDays(trackDailyDesc, 28);
-  const track30d = sumLastNDays(trackDailyDesc, 30);
+  const trackDailyDescFull = [...trackDailyAsc].reverse().map((p) => ({ ...p }));
+  const trackDailyWithMaDesc = startRunDate
+    ? computeDailyRollingAvg7(trackDailyDescFull).filter((p) => p.date >= startRunDate)
+    : computeDailyRollingAvg7(trackDailyDescFull);
+  const track24h = trackDailyWithMaDesc[0]?.daily ?? 0;
+  const track7d = sumLastNDays(trackDailyWithMaDesc, 7);
+  const track28d = sumLastNDays(trackDailyWithMaDesc, 28);
+  const track30d = sumLastNDays(trackDailyWithMaDesc, 30);
 
   const trackOptions = artistTracks
     .map((t) => ({ 
