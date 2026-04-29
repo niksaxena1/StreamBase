@@ -78,6 +78,45 @@ def fetch_rapidapi_streams(isrc: str, api_key: str) -> int | None:
     return val if val >= 0 else None
 
 
+def enrich_fixed_tracks(pg: Postgrest, fixed: list) -> list:
+    if not fixed:
+        return fixed
+
+    isrcs = [str(f.get("isrc", "")).strip().upper() for f in fixed if f.get("isrc")]
+    if not isrcs:
+        return fixed
+
+    try:
+        isrc_filter = ",".join(isrcs)
+        rows = pg.select(
+            "tracks",
+            "isrc,name,spotify_artist_names",
+            f"isrc=in.({isrc_filter})",
+        )
+    except Exception as e:
+        print(f"Warning: could not enrich fixed track metadata ({e}).")
+        return fixed
+
+    meta_by_isrc = {}
+    for row in rows:
+        isrc = str(row.get("isrc", "")).strip().upper()
+        if not isrc:
+            continue
+        artist_names = row.get("spotify_artist_names")
+        if not isinstance(artist_names, list):
+            artist_names = None
+        meta_by_isrc[isrc] = {
+            "track_name": row.get("name") or None,
+            "artist_names": artist_names,
+        }
+
+    enriched = []
+    for f in fixed:
+        isrc = str(f.get("isrc", "")).strip().upper()
+        enriched.append({**f, **meta_by_isrc.get(isrc, {})})
+    return enriched
+
+
 def main():
     supabase_url = os.environ.get("SUPABASE_URL", "").strip()
     service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
@@ -216,6 +255,7 @@ def main():
     else:
         print("\n  No overrides to write.")
 
+    fixed = enrich_fixed_tracks(pg, fixed)
     print(f"\nDone. Attempted={attempted}, Fixed={len(fixed)}")
     write_summary(run_date, attempted, len(fixed), fixed)
 
@@ -225,7 +265,16 @@ def write_summary(run_date: str, attempted: int, fixed_count: int, fixed: list):
         "run_date": run_date,
         "attempted": attempted,
         "fixed": fixed_count,
-        "tracks": [{"isrc": f["isrc"], "stale": f["stale"], "new": f["streams"]} for f in fixed],
+        "tracks": [
+            {
+                "isrc": f["isrc"],
+                "track_name": f.get("track_name"),
+                "artist_names": f.get("artist_names"),
+                "stale": f["stale"],
+                "new": f["streams"],
+            }
+            for f in fixed
+        ],
     }
     out = Path(".artifacts") / "stale_fix_summary.json"
     out.parent.mkdir(parents=True, exist_ok=True)

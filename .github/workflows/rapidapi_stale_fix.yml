@@ -53,7 +53,6 @@ jobs:
           fi
 
           FIXED=$(python3 -c "import json; d=json.load(open('.artifacts/stale_fix_summary.json')); print(d.get('fixed', 0))" 2>/dev/null || echo "0")
-          ATTEMPTED=$(python3 -c "import json; d=json.load(open('.artifacts/stale_fix_summary.json')); print(d.get('attempted', 0))" 2>/dev/null || echo "0")
           RUN_DATE=$(python3 -c "import json; d=json.load(open('.artifacts/stale_fix_summary.json')); print(d.get('run_date', '?'))" 2>/dev/null || echo "?")
 
           if [ "$FIXED" != "0" ]; then
@@ -65,15 +64,36 @@ jobs:
           echo "subject=${SUBJECT}" >> "$GITHUB_OUTPUT"
           TRACK_DETAILS=""
           if [ -f ".artifacts/stale_fix_summary.json" ]; then
-            TRACK_DETAILS=$(python3 -c "import json,sys; d=json.load(open('.artifacts/stale_fix_summary.json')); [print('  %s: %s -> %s  (+%s)' % (t['isrc'], '{:,}'.format(t['stale']), '{:,}'.format(t['new']), '{:,}'.format(t['new']-t['stale']))) for t in d.get('tracks',[])]" 2>/dev/null || echo "")
+            TRACK_DETAILS=$(python3 - <<'PY' 2>/dev/null || echo ""
+          import json
+
+          with open(".artifacts/stale_fix_summary.json", encoding="utf-8") as f:
+              data = json.load(f)
+
+          for idx, track in enumerate(data.get("tracks", []), start=1):
+              isrc = str(track.get("isrc") or "?")
+              track_name = str(track.get("track_name") or "Unknown Track")
+              artists = track.get("artist_names")
+              if isinstance(artists, list):
+                  artist_name = ", ".join(str(a).strip() for a in artists if str(a).strip())
+              else:
+                  artist_name = ""
+              artist_name = artist_name or "Unknown Artist"
+              stale = int(track.get("stale") or 0)
+              new = int(track.get("new") or 0)
+              delta = new - stale
+              print(f"{idx}. {artist_name} - {track_name}")
+              print(f"   ISRC: {isrc}")
+              print(f"   {stale:,} -> {new:,} (+{delta:,})")
+              if idx < len(data.get("tracks", [])):
+                  print()
+          PY
+          )
           fi
 
           {
             echo 'body<<ENDOFBODY'
-            echo "RapidAPI Stale Track Fix results for ${RUN_DATE}:"
-            echo ""
-            echo "  Attempted: ${ATTEMPTED}"
-            echo "  Fixed: ${FIXED}"
+            echo "Fixed ${FIXED} stale tracks for ${RUN_DATE}"
             echo ""
             if [ -n "$TRACK_DETAILS" ]; then
               echo "$TRACK_DETAILS"
