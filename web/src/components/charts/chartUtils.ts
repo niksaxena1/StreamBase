@@ -1,5 +1,3 @@
-import { AED_PER_USD, getCurrencyDisplay } from "@/lib/format";
-
 export type ManualOverrideTooltipItem = {
   note: string;
   title?: string;
@@ -269,30 +267,6 @@ export function formatTooltipDateSmart(value: string): string {
       return value;
     default:
       return formatTooltipDateDaily(value);
-  }
-}
-
-export function formatUsdCompact(n: number, fallback: (n: number) => string): string {
-  // NOTE: Despite the name, this is the shared "money compact" formatter for charts.
-  // It respects the global currency display mode (USD vs AED) since we store money in USD.
-  try {
-    const mode = getCurrencyDisplay();
-    if (mode === "AED") {
-      const aed = n * AED_PER_USD;
-      const num = new Intl.NumberFormat("en-US", {
-        notation: "compact",
-        maximumFractionDigits: 1,
-      }).format(aed);
-      return `AED ${num}`;
-    }
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      notation: "compact",
-      maximumFractionDigits: 1,
-    }).format(n);
-  } catch {
-    return fallback(n);
   }
 }
 

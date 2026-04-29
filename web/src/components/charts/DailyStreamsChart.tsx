@@ -13,7 +13,7 @@ import {
   YAxis,
 } from "recharts";
 import { memo, useId } from "react";
-import { formatInt, formatUsd } from "@/lib/format";
+import { formatCompactMoney, formatInt, formatUsd } from "@/lib/format";
 import {
   computePaddedDomain,
   computeWeekendDipMap,
@@ -21,7 +21,6 @@ import {
   getSundayAccentColor,
   isHighlightDayDateUtc,
   formatKmbTick,
-  formatUsdCompact,
   formatXAxisTick,
 } from "@/components/charts/chartUtils";
 import { useChartCopyToClipboard } from "@/components/charts/useChartCopyToClipboard";
@@ -162,7 +161,7 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
 
   const fmtYTick = (n: number) => {
     if (yTickFormat === "int") return formatInt(n);
-    if (yTickFormat === "usd_compact") return formatUsdCompact(n, formatUsd);
+    if (yTickFormat === "usd_compact") return formatCompactMoney(n, formatUsd);
     return formatKmbTick(n);
   };
 

@@ -5,8 +5,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import type { PointerEvent, MouseEvent } from "react";
 import { CartesianGrid, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis } from "recharts";
 
-import { formatInt, formatUsd, formatUsd2 } from "@/lib/format";
-import { formatKmbTick, formatUsdCompact } from "@/components/charts/chartUtils";
+import { formatCompactMoney, formatInt, formatUsd, formatUsd2 } from "@/lib/format";
+import { formatKmbTick } from "@/components/charts/chartUtils";
 import { useThemeColors } from "@/components/charts/useThemeColors";
 import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
 import { ScatterCohortOverlay } from "@/components/charts/ScatterCohortOverlay";
@@ -412,7 +412,7 @@ export function TrackStreamsXYChart({
 
   const fmtAxisTick = useCallback(
     (n: number) => {
-      if (mode === "revenue") return formatUsdCompact(n, formatUsd);
+      if (mode === "revenue") return formatCompactMoney(n, formatUsd);
       return formatKmbTick(n);
     },
     [mode],

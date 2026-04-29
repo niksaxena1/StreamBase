@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
+  formatCompactMoney,
   formatInt,
   formatMoney,
   formatUsd,
@@ -49,9 +50,9 @@ describe("formatMoney", () => {
     expect(formatMoney(Infinity)).toBe("—");
   });
 
-  it("formats USD with default 0 decimals", () => {
+  it("formats USD with default 2 decimals", () => {
     const result = formatMoney(1234);
-    expect(result).toBe("$1,234");
+    expect(result).toBe("$1,234.00");
   });
 
   it("formats USD with 2 decimals", () => {
@@ -67,9 +68,9 @@ describe("formatMoney", () => {
     expect(result).toContain("367");
   });
 
-  it("formatUsd returns 0 decimal places", () => {
+  it("formatUsd returns 2 decimal places", () => {
     const result = formatUsd(99.99);
-    expect(result).toBe("$100");
+    expect(result).toBe("$99.99");
   });
 
   it("formatUsd2 returns 2 decimal places", () => {
@@ -79,6 +80,38 @@ describe("formatMoney", () => {
 
   it("formatUsd handles null", () => {
     expect(formatUsd(null)).toBe("—");
+  });
+});
+
+describe("formatCompactMoney", () => {
+  beforeEach(() => {
+    setCurrencyDisplay("USD");
+    vi.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("formats compact USD with exactly 2 decimals", () => {
+    expect(formatCompactMoney(3_000)).toBe("$3.00K");
+    expect(formatCompactMoney(1_000_000)).toBe("$1.00M");
+  });
+
+  it("formats compact AED with the existing conversion and prefix", () => {
+    setCurrencyDisplay("AED");
+
+    expect(formatCompactMoney(1_000_000)).toBe("AED 3.67M");
+  });
+
+  it("uses the caller fallback when compact formatting throws", () => {
+    vi.spyOn(Intl, "NumberFormat").mockImplementation(
+      function NumberFormatMock() {
+        throw new Error("format unavailable");
+      } as unknown as typeof Intl.NumberFormat,
+    );
+
+    expect(formatCompactMoney(1234.5, (n) => `fallback:${n.toFixed(2)}`)).toBe("fallback:1234.50");
   });
 });
 

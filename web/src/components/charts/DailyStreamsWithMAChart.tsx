@@ -13,7 +13,7 @@ import {
 } from "recharts";
 import { useId } from "react";
 
-import { formatInt, formatUsd } from "@/lib/format";
+import { formatCompactMoney, formatInt, formatUsd } from "@/lib/format";
 import {
   computePaddedDomain,
   computeWeekendDipMap,
@@ -21,7 +21,6 @@ import {
   getSundayAccentColor,
   isHighlightDayDateUtc,
   formatKmbTick,
-  formatUsdCompact,
   formatXAxisTick,
 } from "@/components/charts/chartUtils";
 import { useChartCopyToClipboard } from "@/components/charts/useChartCopyToClipboard";
@@ -129,7 +128,7 @@ export function DailyStreamsWithMAChart({
 
   const fmtYTick = (n: number) => {
     if (yTickFormat === "int") return formatInt(n);
-    if (yTickFormat === "usd_compact") return formatUsdCompact(n, formatUsd);
+    if (yTickFormat === "usd_compact") return formatCompactMoney(n, formatUsd);
     return formatKmbTick(n);
   };
 

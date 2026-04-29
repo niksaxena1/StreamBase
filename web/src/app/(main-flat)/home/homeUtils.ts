@@ -1,6 +1,6 @@
 import type { PlaylistDailyStatsRow } from "./homeTypes";
 import { formatMilestoneCompact, generateAutoMilestonesFromMax as generateAutoMilestonesFromMaxShared } from "@/lib/milestones";
-import { AED_PER_USD, getCurrencyDisplay } from "@/lib/format";
+import { formatCompactMoney } from "@/lib/format";
 
 // ============================================================================
 // Storage keys
@@ -160,27 +160,9 @@ export function formatMilestoneForInput(n: number): string {
   return formatMilestoneCompact(n, { case: "lower" });
 }
 
-export function formatUsdCompact(n: number): string {
+function formatHomeCompactMoney(n: number): string {
   // Keep Home milestone labels consistent with the rest of the app’s currency display setting.
-  try {
-    const mode = getCurrencyDisplay();
-    if (mode === "AED") {
-      const aed = n * AED_PER_USD;
-      const num = new Intl.NumberFormat("en-US", {
-        notation: "compact",
-        maximumFractionDigits: aed < 1000 ? 0 : 1,
-      }).format(aed);
-      return `AED ${num}`;
-    }
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      notation: "compact",
-      maximumFractionDigits: n < 1000 ? 0 : 1,
-    }).format(n);
-  } catch {
-    return `$${Math.round(n).toLocaleString("en-US")}`;
-  }
+  return formatCompactMoney(n);
 }
 
 export function formatMilestoneHeaderLabel(
@@ -190,7 +172,7 @@ export function formatMilestoneHeaderLabel(
 ): string {
   if (mode !== "revenue") return formatMilestoneForInput(streamsMilestone).toUpperCase();
   const usd = Math.max(0, streamsMilestone * Math.max(0, payoutPerStreamUsd));
-  return formatUsdCompact(usd);
+  return formatHomeCompactMoney(usd);
 }
 
 export function generateAutoMilestonesFromMax(maxStreams: number): number[] {

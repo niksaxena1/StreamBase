@@ -25,7 +25,7 @@ export function formatMoney(
   const n = Number(nUsd);
   if (!Number.isFinite(n)) return "—";
 
-  const min = opts?.minimumFractionDigits ?? 0;
+  const min = opts?.minimumFractionDigits ?? 2;
   const max = opts?.maximumFractionDigits ?? min;
 
   if (currencyDisplay === "AED") {
@@ -55,8 +55,36 @@ function formatAedNumber(
   return `AED ${num}`;
 }
 
+export function formatCompactMoney(
+  nUsd: number,
+  fallback: (nUsd: number) => string = (n) =>
+    `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+): string {
+  try {
+    if (currencyDisplay === "AED") {
+      const aed = nUsd * AED_PER_USD;
+      const num = new Intl.NumberFormat("en-US", {
+        notation: "compact",
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(aed);
+      return `AED ${num}`;
+    }
+
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      notation: "compact",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(nUsd);
+  } catch {
+    return fallback(nUsd);
+  }
+}
+
 export function formatUsd(n: number | null | undefined): string {
-  return formatMoney(n, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  return formatMoney(n, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 export function formatUsd2(n: number | null | undefined): string {
@@ -93,4 +121,3 @@ export function formatDateOrdinalDMonYYYY(iso: string | null | undefined): strin
 
   return `${day}${ordinalSuffix(day)} ${month} ${year}`;
 }
-

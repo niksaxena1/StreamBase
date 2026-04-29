@@ -12,14 +12,13 @@ import {
   YAxis,
 } from "recharts";
 import { useCallback, useId, useMemo, useRef } from "react";
-import { formatInt, formatUsd2 } from "@/lib/format";
+import { formatCompactMoney, formatInt, formatUsd2 } from "@/lib/format";
 import {
   computePaddedDomain,
   computeWeekendDipMap,
   extractWeekendDipFromRechartsPayload,
   filterBucketedSeriesFromIsoDate,
   formatKmbTick,
-  formatUsdCompact,
   getSundayAccentColor,
   isHighlightDayDateUtc,
 } from "@/components/charts/chartUtils";
@@ -445,7 +444,7 @@ export function CollectorComparisonChart({
 
   const formatYTick = (n: number) => {
     if (mode === "percentage") return `${n.toFixed(0)}%`;
-    if (metric === "revenue") return formatUsdCompact(n, formatUsd2);
+    if (metric === "revenue") return formatCompactMoney(n, formatUsd2);
     return formatKmbTick(n);
   };
 

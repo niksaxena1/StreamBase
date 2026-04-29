@@ -13,8 +13,8 @@ import {
 } from "recharts";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { PointerEvent, MouseEvent } from "react";
-import { formatInt, formatUsd } from "@/lib/format";
-import { formatKmbTick, formatUsdCompact } from "@/components/charts/chartUtils";
+import { formatCompactMoney, formatInt, formatUsd } from "@/lib/format";
+import { formatKmbTick } from "@/components/charts/chartUtils";
 import { useThemeColors } from "@/components/charts/useThemeColors";
 import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
 import { useCurrencyDisplay } from "@/components/currency/CurrencyDisplayContext";
@@ -104,7 +104,7 @@ const formatMilestoneLabel = (n: number) => formatMilestoneCompact(n, { case: "u
 
 function formatRevenueMilestoneLabel(streamsMilestone: number, payoutPerStreamUsd: number): string {
   const usd = Math.max(0, Number(streamsMilestone) * Math.max(0, payoutPerStreamUsd));
-  return formatUsdCompact(usd, formatUsd);
+  return formatCompactMoney(usd, formatUsd);
 }
 
 /**

@@ -13,8 +13,8 @@ import {
 } from "recharts";
 import { useCallback, useEffect, useId, useMemo, useRef } from "react";
 import type { PointerEvent, MouseEvent } from "react";
-import { formatInt, formatUsd } from "@/lib/format";
-import { formatKmbTick, formatUsdCompact } from "@/components/charts/chartUtils";
+import { formatCompactMoney, formatInt, formatUsd } from "@/lib/format";
+import { formatKmbTick } from "@/components/charts/chartUtils";
 import { useThemeColors } from "@/components/charts/useThemeColors";
 import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
 import { useCurrencyDisplay } from "@/components/currency/CurrencyDisplayContext";
@@ -55,9 +55,9 @@ function formatBucketRangeLabel(
     const minUsd = min * payoutPerStreamUsd;
     const maxUsd = max !== null ? max * payoutPerStreamUsd : null;
     if (maxUsd === null) {
-      return `${formatUsdCompact(minUsd, formatUsd)}+`;
+      return `${formatCompactMoney(minUsd, formatUsd)}+`;
     }
-    return `${formatUsdCompact(minUsd, formatUsd)} – ${formatUsdCompact(maxUsd, formatUsd)}`;
+    return `${formatCompactMoney(minUsd, formatUsd)} – ${formatCompactMoney(maxUsd, formatUsd)}`;
   }
   // Streams mode
   if (max === null) {

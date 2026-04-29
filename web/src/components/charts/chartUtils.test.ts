@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { setCurrencyDisplay } from "@/lib/format";
+import { formatCompactMoney, setCurrencyDisplay } from "@/lib/format";
 import {
   isIsoDateString,
   normalizeIsoDateOrNull,
@@ -8,7 +8,6 @@ import {
   filterBucketedSeriesFromIsoDate,
   computePaddedDomain,
   formatKmbTick,
-  formatUsdCompact,
   extractOverrideItemsFromRechartsPayload,
   computeWeekendDipMap,
   extractWeekendDipFromRechartsPayload,
@@ -238,23 +237,22 @@ describe("formatKmbTick", () => {
 });
 
 // ============================================================================
-// formatUsdCompact
+// formatCompactMoney
 // ============================================================================
 
-describe("formatUsdCompact", () => {
+describe("formatCompactMoney", () => {
   beforeEach(() => {
     setCurrencyDisplay("USD");
   });
 
   it("formats USD in compact notation", () => {
-    const result = formatUsdCompact(1_000_000, (n) => `$${n}`);
-    // $1M or similar
-    expect(result).toMatch(/\$1M|\$1,000K/i);
+    const result = formatCompactMoney(1_000_000, (n) => `$${n}`);
+    expect(result).toMatch(/\$1\.00M|\$1,000\.00K/i);
   });
 
   it("uses fallback on error", () => {
     // Force an edge case — this just verifies the fallback path is available
-    const result = formatUsdCompact(0, () => "fallback");
+    const result = formatCompactMoney(0, () => "fallback");
     expect(typeof result).toBe("string");
   });
 });

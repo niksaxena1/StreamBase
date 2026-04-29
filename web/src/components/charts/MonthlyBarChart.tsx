@@ -11,8 +11,8 @@ import {
   Scatter,
 } from "recharts";
 import { useCallback, useId, useRef } from "react";
-import { formatInt, formatUsd } from "@/lib/format";
-import { filterMonthlySeriesFromIsoDate, formatKmbTick, formatUsdCompact } from "@/components/charts/chartUtils";
+import { formatCompactMoney, formatInt, formatUsd } from "@/lib/format";
+import { filterMonthlySeriesFromIsoDate, formatKmbTick } from "@/components/charts/chartUtils";
 import { useThemeColors } from "@/components/charts/useThemeColors";
 import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
 import { useChartStartDate } from "@/components/charts/ChartStartDateContext";
@@ -238,7 +238,7 @@ export function MonthlyBarChart({
 
   const fmtYTick = (n: number) => {
     if (yTickFormat === "int") return formatInt(n);
-    if (yTickFormat === "usd_compact") return formatUsdCompact(n, formatUsd);
+    if (yTickFormat === "usd_compact") return formatCompactMoney(n, formatUsd);
     return formatKmbTick(n);
   };
 
