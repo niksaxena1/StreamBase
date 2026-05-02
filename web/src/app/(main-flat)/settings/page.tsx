@@ -14,6 +14,7 @@ import { ChartStartDateSetting } from "./ChartStartDateSetting";
 import { ChartAxisZoomSetting } from "./ChartAxisZoomSetting";
 import { WeekendDipSetting } from "./WeekendDipSetting";
 import { CurrencyDisplaySetting } from "./CurrencyDisplaySetting";
+import { RevenueDecimalDisplaySetting } from "./RevenueDecimalDisplaySetting";
 import { StaleTrackThresholdSetting } from "./StaleTrackThresholdSetting";
 import { ArtificialStreamSpikeSetting } from "./ArtificialStreamSpikeSetting";
 import { RapidApiAutoFixSetting } from "./RapidApiAutoFixSetting";
@@ -247,7 +248,7 @@ export default async function SettingsPage() {
 
   // Manual stream overrides (best-effort; table may not exist yet).
   // Paginate to fetch ALL overrides — batch interpolation can easily exceed 500 rows.
-  let streamOverrides: Array<{
+  const streamOverrides: Array<{
     id: number;
     date: string;
     isrc: string;
@@ -710,6 +711,7 @@ export default async function SettingsPage() {
           <SectionHeader title="Revenue" subtitle="Configure how estimated revenue is calculated from streams." />
           <PayoutRateSetting />
           <CurrencyDisplaySetting />
+          <RevenueDecimalDisplaySetting />
         </div>
 
         <div

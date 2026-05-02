@@ -10,6 +10,7 @@ import { WeekendDipProvider } from "@/components/charts/WeekendDipContext";
 import { CurrencyDisplayProvider } from "@/components/currency/CurrencyDisplayContext";
 import { MetricProvider } from "@/components/metrics/MetricContext";
 import { PayoutRateProvider } from "@/components/payout/PayoutRateContext";
+import { RevenueDecimalDisplayProvider } from "@/components/revenue/RevenueDecimalDisplayContext";
 import { RollbackProvider } from "@/components/rollback/RollbackContext";
 import { supabaseServer } from "@/lib/supabase/server";
 
@@ -40,12 +41,14 @@ export async function AuthedAppLayout({
               <ChartAxisZoomProvider>
                 <WeekendDipProvider>
                   <MetricProvider defaultMetric="streams">
-                    <RollbackProvider>
-                      <AppShell {...appShellProps}>
-                        <ErrorBoundary>{children}</ErrorBoundary>
-                      </AppShell>
-                      <KeyboardShortcutsHelp />
-                    </RollbackProvider>
+                    <RevenueDecimalDisplayProvider>
+                      <RollbackProvider>
+                        <AppShell {...appShellProps}>
+                          <ErrorBoundary>{children}</ErrorBoundary>
+                        </AppShell>
+                        <KeyboardShortcutsHelp />
+                      </RollbackProvider>
+                    </RevenueDecimalDisplayProvider>
                   </MetricProvider>
                 </WeekendDipProvider>
               </ChartAxisZoomProvider>

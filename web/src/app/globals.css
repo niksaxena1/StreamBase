@@ -156,6 +156,21 @@ body {
   line-height: 1.35;
 }
 
+.sb-revenue-decimal-part {
+  color: color-mix(in srgb, currentColor 45%, var(--sb-muted) 55%);
+  fill: currentColor;
+  opacity: 0.48;
+}
+
+html[data-revenue-decimal-display="normal"] .sb-revenue-decimal-part {
+  color: currentColor;
+  opacity: 1;
+}
+
+html[data-revenue-decimal-display="hidden"] .sb-revenue-decimal-part {
+  display: none;
+}
+
 /* Custom Scrollbars */
 ::-webkit-scrollbar {
   width: 6px;

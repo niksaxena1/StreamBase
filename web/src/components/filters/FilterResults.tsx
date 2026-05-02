@@ -595,7 +595,7 @@ function PlaylistsTable({
           </TableCell>
           <TableCell numeric mono empty={playlist.est_monthly_revenue == null} emptyFallback="—" style={{ color: "var(--sb-muted)" }}>
             {playlist.est_monthly_revenue != null
-              ? formatMoney(playlist.est_monthly_revenue, { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+              ? formatMoney(playlist.est_monthly_revenue, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
               : null}
           </TableCell>
           <TableCell className="w-10">{null}</TableCell>

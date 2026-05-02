@@ -55,7 +55,7 @@ export function AnimatedCounter({
 }) {
   const { currencyDisplay } = useCurrencyDisplay();
   const safeValue = Number.isFinite(value) ? value : 0;
-  const maxUsdDigits = usdMaximumFractionDigits ?? 0;
+  const maxUsdDigits = usdMaximumFractionDigits ?? 2;
   const minUsdDigits = usdMinimumFractionDigits ?? (maxUsdDigits > 0 ? maxUsdDigits : 0);
 
   // SSR-safe: render the final value on the server to avoid hydration mismatch.

@@ -12,6 +12,7 @@ import { useKeyboardShortcutsSafe } from "@/components/keyboard";
 import { triggerRouteLoadingBarStart } from "@/lib/navigation/loadingBar";
 import { logError } from "@/lib/logger";
 import { fetchApiJson } from "@/lib/api";
+import { formatSearchHoverStat } from "@/components/shell/searchBarFormat";
 
 type SearchResult = {
   type: "track" | "artist" | "playlist";
@@ -50,19 +51,6 @@ const TYPE_FILTERS: { value: TypeFilter; label: string; icon: typeof Music }[] =
   { value: "track", label: "Tracks", icon: Music },
   { value: "playlist", label: "Playlists", icon: ListMusic },
 ];
-
-function formatStreams(streams: number) {
-  if (streams >= 1_000_000) return `${(streams / 1_000_000).toFixed(1)}M`;
-  if (streams >= 1_000) return `${(streams / 1_000).toFixed(1)}K`;
-  return String(streams);
-}
-
-function formatRevenueCompact(revenue: number) {
-  if (revenue >= 1_000_000) return `$${(revenue / 1_000_000).toFixed(1)}M`;
-  if (revenue >= 1_000) return `$${(revenue / 1_000).toFixed(1)}K`;
-  if (revenue >= 1) return `$${revenue.toFixed(2)}`;
-  return `$${revenue.toFixed(2)}`;
-}
 
 function getShortcutLabel() {
   // This app runs in many environments; keep it simple & readable.
@@ -213,11 +201,7 @@ function ResultItem({
                 : "var(--sb-accent)",
         }}
       >
-        {isLoadingStats ? "…" : stats ? (
-          metric === "revenue"
-            ? formatRevenueCompact(stats.streams * streamPayoutPerStreamUsd)
-            : formatStreams(stats.streams)
-        ) : ""}
+        {isLoadingStats ? "…" : stats ? formatSearchHoverStat(metric, stats.streams, streamPayoutPerStreamUsd) : ""}
       </div>
     </div>
   );
