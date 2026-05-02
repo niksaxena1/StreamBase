@@ -70,7 +70,7 @@ function deriveArtists(points: TrackStreamsXYPoint[]) {
 }
 
 // Build the Lorenz curve data: for each track (sorted by value desc),
-// compute cumulative % of streams (x) and the track index / total (y).
+// compute track count (x) and cumulative % of streams (y).
 function buildLorenzCurve(
   sorted: TrackStreamsXYPoint[],
   grandTotal: number,
@@ -692,19 +692,19 @@ export function HomeConcentrationSection(props: {
                   vertical={false}
                 />
                 <XAxis
-                  dataKey="cumPct"
+                  dataKey="trackCount"
                   type="number"
-                  domain={[0, 100]}
-                  tickFormatter={(v) => `${v}%`}
+                  domain={[0, sorted.length]}
                   stroke={colors.muted}
                   fontSize={10}
                   tickLine={false}
                   axisLine={false}
                 />
                 <YAxis
-                  dataKey="trackCount"
+                  dataKey="cumPct"
                   type="number"
-                  domain={[0, sorted.length]}
+                  domain={[0, 100]}
+                  tickFormatter={(v) => `${v}%`}
                   stroke={colors.muted}
                   fontSize={10}
                   tickLine={false}
@@ -714,10 +714,10 @@ export function HomeConcentrationSection(props: {
                 <Tooltip
                   contentStyle={getChartTooltipStyle(colors)}
                   formatter={((value: number | undefined, name: string | undefined) => {
-                    if (name === "trackCount") return [`${value ?? 0} tracks`, "Tracks"];
+                    if (name === "cumPct") return [`${value ?? 0}%`, "Streams"];
                     return [value ?? 0, name ?? ""];
                   }) as never}
-                  labelFormatter={(label) => `${label}% of streams`}
+                  labelFormatter={(label) => `${label} tracks`}
                 />
 
                 {/* Perfect equality line (diagonal) */}
@@ -729,7 +729,7 @@ export function HomeConcentrationSection(props: {
 
                 {/* The Lorenz curve */}
                 <Area
-                  dataKey="trackCount"
+                  dataKey="cumPct"
                   stroke={colors.accentStroke}
                   strokeWidth={2}
                   fill="url(#lorenzFill)"
@@ -741,20 +741,20 @@ export function HomeConcentrationSection(props: {
                 {thresholdPoint && (
                   <>
                     <ReferenceLine
-                      x={thresholdPoint.cumPct}
+                      x={thresholdPoint.trackCount}
                       stroke={colors.positive}
                       strokeDasharray="4 4"
                       strokeOpacity={0.6}
                     />
                     <ReferenceLine
-                      y={thresholdPoint.trackCount}
+                      y={thresholdPoint.cumPct}
                       stroke={colors.positive}
                       strokeDasharray="4 4"
                       strokeOpacity={0.6}
                     />
                     <ReferenceDot
-                      x={thresholdPoint.cumPct}
-                      y={thresholdPoint.trackCount}
+                      x={thresholdPoint.trackCount}
+                      y={thresholdPoint.cumPct}
                       r={5}
                       fill={colors.positive}
                       stroke={colors.bg}
