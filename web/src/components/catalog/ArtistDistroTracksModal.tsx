@@ -8,7 +8,9 @@ import { ExternalLink, ChevronDown, ChevronUp } from "lucide-react";
 import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
 import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
 import { Modal } from "@/components/ui/Modal";
-import { formatInt } from "@/lib/format";
+import { useMetric } from "@/components/metrics/MetricContext";
+import { usePayoutRate } from "@/components/payout/PayoutRateContext";
+import { formatInt, formatUsd2 } from "@/lib/format";
 
 export type DistroPlaylist = { key: string; name: string; imageUrl: string | null };
 
@@ -71,6 +73,24 @@ export function ArtistDistroTracksModal({
   loading?: boolean;
   error?: string | null;
 }) {
+  const { metric } = useMetric();
+  const { streamPayoutPerStreamUsd } = usePayoutRate();
+  // Same as TracksList / catalog tables: row-level streams when global metric is "tracks".
+  const displayMetric = metric === "tracks" ? "streams" : metric;
+  const metricColor =
+    displayMetric === "revenue" ? "#10b981" : "var(--sb-positive)";
+
+  const formatMetricCell = (value: number | null) => {
+    if (value === null) return "—";
+    if (displayMetric === "revenue") return formatUsd2(value * streamPayoutPerStreamUsd);
+    return formatInt(value);
+  };
+
+  const totalColumnLabel =
+    displayMetric === "revenue" ? "Total Revenue" : "Total Streams";
+  const dailyColumnLabel =
+    displayMetric === "revenue" ? "Daily Revenue" : "Daily Streams";
+
   const [modalSort, setModalSort] = useState<{ key: ModalSortKey; asc: boolean } | null>({
     key: "total",
     asc: false,
@@ -162,13 +182,23 @@ export function ArtistDistroTracksModal({
             "DISTRO",
             {
               label: (
-                <SortHeader label="Total" sortKey="total" current={modalSort} onSort={handleModalSort} />
+                <SortHeader
+                  label={totalColumnLabel}
+                  sortKey="total"
+                  current={modalSort}
+                  onSort={handleModalSort}
+                />
               ),
               align: "right" as const,
             },
             {
               label: (
-                <SortHeader label="Daily" sortKey="daily" current={modalSort} onSort={handleModalSort} />
+                <SortHeader
+                  label={dailyColumnLabel}
+                  sortKey="daily"
+                  current={modalSort}
+                  onSort={handleModalSort}
+                />
               ),
               align: "right" as const,
             },
@@ -261,11 +291,11 @@ export function ArtistDistroTracksModal({
                       </span>
                     )}
                   </TableCell>
-                  <TableCell numeric className="font-medium text-xs" style={{ color: "var(--sb-positive)" }}>
-                    {track.totalStreams != null ? formatInt(track.totalStreams) : "—"}
+                  <TableCell numeric className="font-medium text-xs" style={{ color: metricColor }}>
+                    {formatMetricCell(track.totalStreams)}
                   </TableCell>
-                  <TableCell numeric className="font-medium text-xs" style={{ color: "var(--sb-positive)" }}>
-                    {track.dailyStreams != null ? formatInt(track.dailyStreams) : "—"}
+                  <TableCell numeric className="font-medium text-xs" style={{ color: metricColor }}>
+                    {formatMetricCell(track.dailyStreams)}
                   </TableCell>
                   <TableCell>
                     {track.externalUrl ? (
