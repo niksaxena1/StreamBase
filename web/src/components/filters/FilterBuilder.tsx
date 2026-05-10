@@ -47,6 +47,8 @@ function cx(...parts: Array<string | false | null | undefined>) {
 }
 
 const STORAGE_KEY_OPEN = "sb:filters:section_open";
+const ARTIST_STATUS_IN_HOUSE = "__artist_status:in_house";
+const ARTIST_STATUS_NIH = "__artist_status:nih";
 
 function extractValuesFromFilter(f: FilterConfig | null, fieldName: string): string[] {
   if (!f) return [];
@@ -96,6 +98,7 @@ type FilterBuilderProps = {
   artistImages: Map<string, { name: string; image_url: string | null; in_house?: boolean }>;
   // Dynamic options for select fields
   artistOptions: Array<{ value: string; label: string; imageUrl?: string | null }>;
+  trackArtistOptions?: Array<{ value: string; label: string; imageUrl?: string | null }>;
   playlistOptions: Array<{ value: string; label: string; imageUrl?: string | null; isAllCatalog?: boolean }>;
   asOfRunDate?: string | null;
 };
@@ -108,6 +111,7 @@ export function FilterBuilder({
   onDateScopeChange,
   artistImages,
   artistOptions,
+  trackArtistOptions,
   playlistOptions,
   asOfRunDate = null,
 }: FilterBuilderProps) {
@@ -246,9 +250,11 @@ export function FilterBuilder({
   // Dynamic options map for FilterCondition
   const dynamicOptions = useMemo(() => ({
     artists: artistOptions,
+    "tracks.artist": trackArtistOptions ?? artistOptions,
+    "playlists.contains_artist": trackArtistOptions ?? artistOptions,
     playlists: playlistOptions,
     tracks: trackOptions,
-  }), [artistOptions, playlistOptions, trackOptions]);
+  }), [artistOptions, playlistOptions, trackArtistOptions, trackOptions]);
   
   // Whether the current filter uses movement fields
   const showMovementDateRange = currentFilter?.entityType === "tracks" &&
@@ -408,7 +414,11 @@ export function FilterBuilder({
             if (containsArtistIds.length > 0) {
               for (const t of trackData) {
                 const ids = t.spotify_artist_ids ?? [];
-                if (ids.some((id) => containsArtistIds.includes(id))) {
+                const inHouseIds = new Set(t._in_house_artist_ids ?? []);
+                const matchesArtist = ids.some((id) => containsArtistIds.includes(id));
+                const matchesInHouse = containsArtistIds.includes(ARTIST_STATUS_IN_HOUSE) && ids.some((id) => inHouseIds.has(id));
+                const matchesNih = containsArtistIds.includes(ARTIST_STATUS_NIH) && ids.some((id) => !inHouseIds.has(id));
+                if (matchesArtist || matchesInHouse || matchesNih) {
                   allIsrcs.push(t.isrc);
                 }
               }

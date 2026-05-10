@@ -7,6 +7,11 @@ import { FilterBuilder, type TrackDataPoint, type PlaylistDataPoint, type DateDa
 import { fetchApiJson } from "@/lib/api";
 import { addDaysISO, dataDateFromRunDate, SOT_DATA_LAG_DAYS } from "@/lib/sotDates";
 
+const TRACK_ARTIST_STATUS_OPTIONS = [
+  { value: "__artist_status:in_house", label: "In-House" },
+  { value: "__artist_status:nih", label: "NIH" },
+];
+
 export function HomeFilterBuilderSection({
   trackScatterPoints,
   trackScatterDataDate,
@@ -261,6 +266,11 @@ export function HomeFilterBuilderSection({
       .sort((a, b) => b.trackCount - a.trackCount);
   }, [trackScatterPoints, artistImagesById]);
 
+  const trackArtistOptions = useMemo(
+    () => [...TRACK_ARTIST_STATUS_OPTIONS, ...artistOptions],
+    [artistOptions],
+  );
+
   // Build artist images map for aggregation
   const artistImages = useMemo(() => {
     const map = new Map<string, { name: string; image_url: string | null; in_house: boolean }>();
@@ -284,6 +294,7 @@ export function HomeFilterBuilderSection({
       onDateScopeChange={setDateScopePlaylistKey}
       artistImages={artistImages}
       artistOptions={artistOptions}
+      trackArtistOptions={trackArtistOptions}
       playlistOptions={playlistOptions}
       asOfRunDate={asOfRunDate}
     />

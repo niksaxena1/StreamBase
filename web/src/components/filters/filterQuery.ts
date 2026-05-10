@@ -17,6 +17,9 @@ import type {
 } from "./filterTypes";
 import { foldForSearch } from "@/lib/searchFold";
 
+const ARTIST_STATUS_IN_HOUSE = "__artist_status:in_house";
+const ARTIST_STATUS_NIH = "__artist_status:nih";
+
 // ============================================================================
 // Track Data Type (from home page scatter points)
 // ============================================================================
@@ -460,6 +463,9 @@ function getRowValue(row: DataRow, field: string, entityType: string): unknown {
     const inHouseIds = row["_in_house_artist_ids"] as string[] | undefined;
     return Array.isArray(inHouseIds) && inHouseIds.length > 0 ? "in_house" : "nih";
   }
+  if (field === "is_in_house") {
+    return row["in_house_status"] === "in_house";
+  }
 
   // --- Track computed fields ---
   if (field === "artist_count") {
@@ -649,7 +655,12 @@ function compareIn(rowValue: unknown, filterValue: FilterValue, row: DataRow, fi
   if (field === "artist") {
     const artistIds = row["spotify_artist_ids"] as string[] | undefined;
     if (!Array.isArray(artistIds)) return false;
-    return filterValue.some(v => artistIds.includes(v));
+    const inHouseIds = new Set((row["_in_house_artist_ids"] as string[] | undefined) ?? []);
+    return filterValue.some((v) => {
+      if (v === ARTIST_STATUS_IN_HOUSE) return artistIds.some((id) => inHouseIds.has(id));
+      if (v === ARTIST_STATUS_NIH) return artistIds.some((id) => !inHouseIds.has(id));
+      return artistIds.includes(v);
+    });
   }
   
   // Special handling for playlist field (check playlist_keys array)

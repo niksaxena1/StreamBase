@@ -49,13 +49,16 @@ export function FilterCondition({
   
   // Get options for this field (either static or dynamic)
   const fieldOptions = fieldDef?.options ?? (
-    fieldDef?.optionsSource ? dynamicOptions[fieldDef.optionsSource] ?? [] : []
+    fieldDef?.optionsSource
+      ? dynamicOptions[`${entityType}.${fieldDef.key}`] ?? dynamicOptions[fieldDef.optionsSource] ?? []
+      : []
   );
 
   const operatorOptionsForCombobox: ComboboxOption[] = (fieldDef?.operators ?? []).map((op) => ({
     value: String(op),
     label: getOperatorLabel(op, fieldDef?.type ?? "text"),
   }));
+  const showOperatorSelector = operatorOptionsForCombobox.length > 1;
   
   function handleFieldChange(newField: string) {
     const newFieldDef = getFieldDefinition(entityType, newField);
@@ -117,8 +120,8 @@ export function FilterCondition({
         />
       </div>
       
-      {/* Operator selector (only show if field is selected) */}
-      {fieldDef && (
+      {/* Operator selector (only show if there is a real choice) */}
+      {fieldDef && showOperatorSelector && (
         <div className="sb-ring w-full lg:min-w-[160px] lg:max-w-[200px] rounded-xl bg-white/70 px-3 py-2 dark:bg-white/5">
           <Combobox
             value={condition.operator}
@@ -195,6 +198,7 @@ export function ConditionSummary({
   if (!fieldDef) return null;
   
   const operatorLabel = getOperatorLabel(condition.operator, fieldDef.type);
+  const showOperatorLabel = fieldDef.operators.length > 1;
   
   // Format value for display
   let valueLabel = "";
@@ -208,7 +212,11 @@ export function ConditionSummary({
     valueLabel = `${start} - ${end}`;
   } else if (Array.isArray(condition.value)) {
     // Multi-select: show labels
-    const opts = fieldDef.options ?? (fieldDef.optionsSource ? dynamicOptions[fieldDef.optionsSource] ?? [] : []);
+    const opts = fieldDef.options ?? (
+      fieldDef.optionsSource
+        ? dynamicOptions[`${entityType}.${fieldDef.key}`] ?? dynamicOptions[fieldDef.optionsSource] ?? []
+        : []
+    );
     const labels = condition.value
       .map(v => opts.find(o => o.value === v)?.label ?? v)
       .slice(0, 2);
@@ -229,7 +237,7 @@ export function ConditionSummary({
       )}
     >
       <span className="font-medium">{fieldDef.label}</span>
-      <span style={{ color: "var(--sb-muted)" }}>{operatorLabel}</span>
+      {showOperatorLabel && <span style={{ color: "var(--sb-muted)" }}>{operatorLabel}</span>}
       <span className="font-medium">{valueLabel}</span>
     </span>
   );

@@ -162,19 +162,6 @@ const TRACK_FIELDS: FilterFieldDefinition[] = [
     helpText: "Matches tracks where any credited artist matches",
   },
   {
-    key: "artist_in_house_status",
-    label: "Artist Status",
-    type: "select",
-    operators: ["eq", "neq"],
-    description: "Whether any credited artist is tagged as In-House",
-    options: [
-      { value: "in_house", label: "In-House" },
-      { value: "nih", label: "NIH" },
-    ],
-    placeholder: "Select status...",
-    helpText: "NIH is the default when no credited artist is tagged In-House",
-  },
-  {
     key: "playlist",
     label: "In Playlist",
     type: "multi-select",
@@ -370,16 +357,15 @@ const ARTIST_FIELDS: FilterFieldDefinition[] = [
     placeholder: "Search artist name...",
   },
   {
-    key: "in_house_status",
-    label: "In-House Status",
-    type: "select",
-    operators: ["eq", "neq"],
-    description: "Artist status from Catalog Config",
+    key: "is_in_house",
+    label: "Is In-House",
+    type: "boolean",
+    operators: ["eq"],
+    description: "Whether the artist is tagged as In-House in Catalog Config",
     options: [
-      { value: "in_house", label: "In-House" },
-      { value: "nih", label: "NIH" },
+      { value: "true", label: "Yes" },
+      { value: "false", label: "No" },
     ],
-    placeholder: "Select status...",
     helpText: "Artists are NIH unless they have been tagged In-House",
   },
   {

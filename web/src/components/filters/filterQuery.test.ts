@@ -77,6 +77,7 @@ const sampleTracks: TrackDataPoint[] = [
     spotify_track_id: "t3",
     spotify_album_image_url: null,
     playlist_keys: ["label_x"],
+    _in_house_artist_ids: ["a1"],
   },
 ];
 
@@ -236,6 +237,30 @@ describe("filterTracksClientSide", () => {
     const results = filterTracksClientSide(sampleTracks, filter);
     expect(results).toHaveLength(3);
   });
+
+  it("filters tracks by artist in-house status bucket", () => {
+    const filter = makeFilter({
+      groups: [makeGroup([makeCond({ field: "artist", operator: "in", value: ["__artist_status:in_house"] })])],
+    });
+    const results = filterTracksClientSide(sampleTracks, filter);
+    expect(results.map((r) => r.isrc)).toEqual(["GB1111111111"]);
+  });
+
+  it("filters tracks by artist NIH status bucket", () => {
+    const filter = makeFilter({
+      groups: [makeGroup([makeCond({ field: "artist", operator: "in", value: ["__artist_status:nih"] })])],
+    });
+    const results = filterTracksClientSide(sampleTracks, filter);
+    expect(results.map((r) => r.isrc)).toEqual(["US1234567890", "US0987654321", "GB1111111111"]);
+  });
+
+  it("excludes tracks with any in-house artist via artist none-of bucket", () => {
+    const filter = makeFilter({
+      groups: [makeGroup([makeCond({ field: "artist", operator: "not_in", value: ["__artist_status:in_house"] })])],
+    });
+    const results = filterTracksClientSide(sampleTracks, filter);
+    expect(results.map((r) => r.isrc)).toEqual(["US1234567890", "US0987654321"]);
+  });
 });
 
 // ============================================================================
@@ -266,7 +291,7 @@ describe("filterArtistsClientSide", () => {
   it("filters artists by in-house status", () => {
     const filter = makeFilter({
       entityType: "artists",
-      groups: [makeGroup([makeCond({ field: "in_house_status", operator: "eq", value: "in_house" })])],
+      groups: [makeGroup([makeCond({ field: "is_in_house", operator: "eq", value: "true" })])],
     });
     const results = filterArtistsClientSide(sampleArtists, filter);
     expect(results).toHaveLength(1);
