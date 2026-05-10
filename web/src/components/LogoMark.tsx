@@ -49,7 +49,7 @@ export function LogoMark({ size = 18 }: { size?: number }) {
   return (
     <Image
       src={logoSrc}
-      alt="SpotiBase"
+      alt="SBase"
       width={size}
       height={size}
       className="object-contain"

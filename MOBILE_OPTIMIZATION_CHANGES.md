@@ -6,7 +6,7 @@
 
 ## Overview
 
-Comprehensive mobile optimization improvements across the SpotiBase web application to ensure reliable, accessible, and responsive mobile browsing experience. All changes follow Apple HIG (Human Interface Guidelines) for touch targets and modern mobile best practices.
+Comprehensive mobile optimization improvements across the SBase web application to ensure reliable, accessible, and responsive mobile browsing experience. All changes follow Apple HIG (Human Interface Guidelines) for touch targets and modern mobile best practices.
 
 ---
 

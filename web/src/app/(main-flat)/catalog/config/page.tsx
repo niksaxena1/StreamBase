@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { getArtistsCached } from "@/lib/spotify";
@@ -5,6 +7,10 @@ import { ArtistsConfigClient } from "./ArtistsConfigClient";
 import { TracksConfigClient } from "./TracksConfigClient";
 
 export const revalidate = 86400; // 24h ISR - catalog config uses daily snapshots
+
+export const metadata: Metadata = {
+  title: "Catalog Config",
+};
 
 export type DistroPlaylist = { key: string; name: string; imageUrl: string | null };
 

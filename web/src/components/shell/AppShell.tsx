@@ -25,7 +25,7 @@ export function AppShell(props: { children: ReactNode; mainSurface?: MainSurface
       */}
       <MobileNavWithBadge />
 
-      {/* SAI (SpotiBase AI) assistant - also outside main hierarchy */}
+      {/* SAI (SBase AI) assistant - also outside main hierarchy */}
       <LazyAIWidget />
 
       <div className="sb-app-shell min-h-dvh">
@@ -65,7 +65,7 @@ export function AppShell(props: { children: ReactNode; mainSurface?: MainSurface
                       className="font-display text-sm font-semibold tracking-tight transition-opacity hover:opacity-80"
                       suppressHydrationWarning
                     >
-                      SpotiBase
+                      SBase
                     </Link>
                     <Breadcrumbs />
                   </div>
@@ -103,7 +103,7 @@ export function AppShell(props: { children: ReactNode; mainSurface?: MainSurface
               </a>
               {" "}exports • Updated daily via{" "}
               <a
-                href="https://github.com/niksaxena1/SpotiBase/actions"
+                href="https://github.com/niksaxena1/SBase/actions"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="hover:underline"

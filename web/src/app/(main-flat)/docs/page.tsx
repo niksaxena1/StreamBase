@@ -1,5 +1,6 @@
 import path from "node:path";
 import { readdir, readFile } from "node:fs/promises";
+import type { Metadata } from "next";
 
 import { DocsClient } from "./DocsClient";
 import { supabaseServer } from "@/lib/supabase/server";
@@ -10,6 +11,10 @@ import { cachedQuery } from "@/lib/supabase/cache";
 // Mark it dynamic so the auth guard in `web/src/app/(main-flat)/layout.tsx` is evaluated per-request,
 // rather than being statically rendered/cached as "logged out".
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = {
+  title: "Docs",
+};
 
 function filePath(): string {
   // `process.cwd()` is `web/` when running the Next app.

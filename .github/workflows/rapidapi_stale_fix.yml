@@ -57,7 +57,7 @@ jobs:
 
           if [ "$FIXED" != "0" ]; then
             SHOULD_NOTIFY="true"
-            SUBJECT="[SpotiBase] Auto-fix: ${FIXED} stale track(s) corrected via RapidAPI"
+            SUBJECT="[SBase] Auto-fix: ${FIXED} stale track(s) corrected via RapidAPI"
           fi
 
           echo "should_notify=$SHOULD_NOTIFY" >> "$GITHUB_OUTPUT"

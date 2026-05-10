@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import type { Metadata } from "next";
 
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
@@ -19,6 +20,10 @@ import type {
 import { CollectorsPageWrapper } from "./CollectorsPageWrapper";
 
 export const revalidate = 86400; // 24h ISR - data updates daily
+
+export const metadata: Metadata = {
+  title: "Collectors",
+};
 
 const COLLECTORS = ["A", "K", "N", "PL", "TG", "NL"] as const;
 type CollectorKey = (typeof COLLECTORS)[number];
@@ -506,4 +511,3 @@ export default async function CollectorsPage({
     />
   );
 }
-

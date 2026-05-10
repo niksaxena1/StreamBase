@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import type { Metadata } from "next";
 
 import { formatDateISO } from "@/lib/format";
 import { supabaseServer } from "@/lib/supabase/server";
@@ -19,6 +20,10 @@ import { WarningsSection } from "@/components/health/WarningsSection";
 import { MissingCatalogSection } from "@/components/health/MissingCatalogSection";
 
 export const revalidate = 60;
+
+export const metadata: Metadata = {
+  title: "Health",
+};
 
 type HealthPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;

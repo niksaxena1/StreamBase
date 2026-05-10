@@ -77,7 +77,7 @@ jobs:
         shell: bash
         run: |
           SHOULD_NOTIFY="false"
-          SUBJECT="[SpotiBase] Dashboard Sync: unknown issue"
+          SUBJECT="[SBase] Dashboard Sync: unknown issue"
           SKIPPED="?"
           ERRORS="?"
           TOTAL="?"
@@ -94,14 +94,14 @@ jobs:
 
             if [ "$SKIPPED" -gt 0 ] || [ "$ERRORS" -gt 0 ]; then
               SHOULD_NOTIFY="true"
-              SUBJECT="[SpotiBase] Dashboard Sync: ${SKIPPED} skipped, ${ERRORS} errors"
+              SUBJECT="[SBase] Dashboard Sync: ${SKIPPED} skipped, ${ERRORS} errors"
             fi
           fi
 
           # Always notify on hard failure (even without summary).
           if [ "${{ job.status }}" = "failure" ]; then
             SHOULD_NOTIFY="true"
-            SUBJECT="[SpotiBase] Dashboard Sync FAILED"
+            SUBJECT="[SBase] Dashboard Sync FAILED"
           fi
 
           echo "should_notify=$SHOULD_NOTIFY" >> "$GITHUB_OUTPUT"

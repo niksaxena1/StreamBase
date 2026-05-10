@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import type { Metadata } from "next";
 import { Suspense } from "react";
 import { List, ExternalLink, Music } from "lucide-react";
 import { redirect } from "next/navigation";
@@ -19,9 +20,14 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { PlaylistHistory30dDetails, type PlaylistHistoryRow } from "./PlaylistHistory30dDetails";
 import { PlaylistHeaderSelects } from "./PlaylistGranularitySelect";
 import { PlaylistMembershipStats } from "@/components/dashboard/PlaylistMembershipStats";
+import { DocumentTitle } from "@/components/shell/DocumentTitle";
 
 // Uses Supabase session cookies; this route must be dynamic in Next 16.
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = {
+  title: "Playlists",
+};
 
 type PlaylistRow = {
   playlist_key: string;
@@ -423,6 +429,7 @@ export default async function PlaylistsPage({
 
   return (
     <div className="space-y-4">
+      <DocumentTitle title={title} />
       <PageHeader
         icon={
           playlistKey === "all_catalog" ? (

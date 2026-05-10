@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { revalidatePath, revalidateTag } from "next/cache";
+import type { Metadata } from "next";
 
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
@@ -28,6 +29,10 @@ import { HealthExclusionsSection, type ExclusionTabConfig } from "./HealthExclus
 import { SettingsNav } from "./SettingsNav";
 
 export const revalidate = 86400; // 24h ISR - admin config changes are infrequent
+
+export const metadata: Metadata = {
+  title: "Settings",
+};
 
 async function requireAdmin() {
   const sb = await supabaseServer();
@@ -674,7 +679,7 @@ export default async function SettingsPage() {
         title="Settings"
         subtitle={
           <>
-            Admin settings for SpotiBase.{" "}
+            Admin settings for SBase.{" "}
             <span className="opacity-50">Data as of {lastRefreshed}</span>
           </>
         }

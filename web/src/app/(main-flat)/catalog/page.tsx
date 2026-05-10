@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import type { Metadata } from "next";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { supabaseServer } from "@/lib/supabase/server";
@@ -26,6 +27,10 @@ function sumLastNDays(desc: Array<{ date: string; daily: number | null }>, days:
 
 // Uses Supabase session cookies; this route must be dynamic in Next 16.
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = {
+  title: "Catalog",
+};
 
 type TrackRow = {
   isrc: string;

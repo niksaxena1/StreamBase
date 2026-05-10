@@ -173,7 +173,7 @@ export default async function PlaylistSettingsPage() {
             Playlist Settings
           </h1>
           <p className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
-            Paste a Spotify playlist URL/URI/ID to enable playlist thumbnails in SpotiBase.
+            Paste a Spotify playlist URL/URI/ID to enable playlist thumbnails in SBase.
           </p>
         </div>
         <div className="flex items-center gap-2">

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+import type { Metadata } from "next";
 
 import { supabaseServer } from "@/lib/supabase/server";
 import { getArtists } from "@/lib/spotify";
@@ -8,6 +9,10 @@ import { ArtistsConfigClient } from "./ArtistsConfigClient";
 import { TracksConfigClient } from "./TracksConfigClient";
 
 export const revalidate = 86400; // 24h ISR - artist config from daily snapshots
+
+export const metadata: Metadata = {
+  title: "Artist Config",
+};
 
 type TrackRow = {
   isrc: string;

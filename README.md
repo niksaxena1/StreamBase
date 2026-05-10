@@ -1,6 +1,6 @@
-# SpotiBase
+# SBase
 
-SpotiBase is a web app + automated pipeline that ingests daily SpotOnTrack CSV exports to build a long-term, queryable database of Spotify stream counts for your catalog and operational playlists.
+SBase is a web app + automated pipeline that ingests daily SpotOnTrack CSV exports to build a long-term, queryable database of Spotify stream counts for your catalog and operational playlists.
 
 For the current milestone, this repo contains the **daily exporter** (GitHub Actions + Playwright) that downloads CSV exports from SpotOnTrack dashboards.
 

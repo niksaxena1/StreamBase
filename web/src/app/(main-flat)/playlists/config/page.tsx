@@ -1,9 +1,15 @@
+import type { Metadata } from "next";
+
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { getPlaylist } from "@/lib/spotify";
 import { PlaylistsConfigClient } from "./PlaylistsConfigClient";
 
 export const revalidate = 86400; // 24h ISR - playlist config is slow-changing
+
+export const metadata: Metadata = {
+  title: "Playlist Config",
+};
 
 type PlaylistRow = {
   playlist_key: string;

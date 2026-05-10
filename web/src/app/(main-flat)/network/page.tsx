@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import type { Metadata } from "next";
 
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
@@ -6,6 +7,10 @@ import { NetworkGraphClient } from "./NetworkGraphClient";
 import { parseHideNonPrimary, parseNetworkScope } from "./networkScope";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = {
+  title: "Network",
+};
 
 export type GraphNode = {
   id: string;

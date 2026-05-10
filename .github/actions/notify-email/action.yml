@@ -1,5 +1,5 @@
 name: Send Email Notification
-description: Sends an email notification via Gmail SMTP for SpotiBase CI alerts
+description: Sends an email notification via Gmail SMTP for SBase CI alerts
 
 inputs:
   password:
@@ -25,4 +25,4 @@ runs:
         subject: ${{ inputs.subject }}
         body: ${{ inputs.body }}
         to: nikhil.auh@gmail.com
-        from: SpotiBase CI <nikhil.auh@gmail.com>
+        from: SBase CI <nikhil.auh@gmail.com>

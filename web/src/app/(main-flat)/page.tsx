@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import type { Metadata } from "next";
 
 import { loadHomeDashboardData } from "@/lib/home/loadHomeDashboard";
 import { supabaseServer } from "@/lib/supabase/server";
@@ -7,6 +8,10 @@ import { HomeDashboardClient } from "./HomeDashboardClient";
 
 // Uses Supabase session cookies; this route must be dynamic in Next 16.
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = {
+  title: "Home",
+};
 
 export default async function Home({
   searchParams,

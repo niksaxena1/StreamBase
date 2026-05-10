@@ -15,7 +15,7 @@
 }
 
 :root {
-  /* SpotiBase design tokens (light-first) */
+  /* SBase design tokens (light-first) */
   --sb-bg: #f0f0f0;
   --sb-surface: rgba(255, 255, 255, 0.82);
   --sb-card: rgba(255, 255, 255, 0.95);

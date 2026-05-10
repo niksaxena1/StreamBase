@@ -19,6 +19,7 @@ import { downloadCsv, slugifyForFilename, todayIsoDate } from "@/lib/csv";
 import { dataDateFromRunDate } from "@/lib/sotDates";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { PageHeader } from "@/components/shell/PageHeader";
+import { DocumentTitle } from "@/components/shell/DocumentTitle";
 import { hrefWithPatchedSearchParams } from "@/lib/searchParams";
 import { FilterBar } from "@/components/ui/FilterBar";
 import { IconButton } from "@/components/ui/Button";
@@ -89,6 +90,7 @@ export function CatalogPageClient(props: {
   const router = useRouter();
   const sp = useSearchParams();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
+  const pageTitle = props.selectedTrack?.name ?? props.artistName ?? "Catalog";
   const [granularity, setGranularityRaw] = useSharedGranularity("sb:catalog:granularity");
   const datePickerRef = useRef<DateRangePickerHandle>(null);
   const hasCustomRange = Boolean(sp?.get("start") && sp?.get("end"));
@@ -294,6 +296,7 @@ export function CatalogPageClient(props: {
 
   return (
     <>
+      <DocumentTitle title={pageTitle} />
       <RememberTrackSelection artistId={props.artistId} hasTrack={!!props.isrc} />
       <PageHeader
         title="Catalog"

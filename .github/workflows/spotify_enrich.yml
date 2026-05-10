@@ -52,7 +52,7 @@ jobs:
         uses: ./.github/actions/notify-email
         with:
           password: ${{ secrets.NOTIFY_SMTP_PASSWORD }}
-          subject: "[SpotiBase] Spotify Enrichment FAILED"
+          subject: "[SBase] Spotify Enrichment FAILED"
           body: |
             The Spotify Enrichment workflow failed.
 

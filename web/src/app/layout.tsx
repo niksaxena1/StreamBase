@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist_Mono, Inter, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import { TopRouteLoadingBar } from "@/components/shell/TopRouteLoadingBar";
+import { APP_SHORT_NAME } from "@/lib/pageTitle";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -19,7 +20,10 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SpotiBase",
+  title: {
+    default: APP_SHORT_NAME,
+    template: "%s",
+  },
   description: "Automated daily Spotify stream tracking from SpotOnTrack exports",
 };
 
