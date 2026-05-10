@@ -18,6 +18,7 @@ interface InlineDatePickerProps {
   markedDates?: string[];
   /** If true, only `markedDates` are selectable (others are disabled/faded). */
   restrictToMarked?: boolean;
+  disabled?: boolean;
   className?: string;
 }
 
@@ -31,6 +32,7 @@ export function InlineDatePicker({
   clearLabel = "Clear",
   markedDates,
   restrictToMarked = false,
+  disabled = false,
   className,
 }: InlineDatePickerProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -142,7 +144,9 @@ export function InlineDatePicker({
       <button
         ref={buttonRef}
         type="button"
+        disabled={disabled}
         onClick={() => {
+          if (disabled) return;
           if (!isOpen) {
             setDisplayMonth(selected ?? maxDate ?? new Date());
           }
@@ -151,6 +155,7 @@ export function InlineDatePicker({
         className={[
           "sb-ring flex items-center gap-2 rounded-xl bg-white/70 px-3 py-2 text-sm outline-none transition",
           "hover:bg-white dark:bg-white/5 dark:hover:bg-white/10",
+          disabled ? "cursor-not-allowed opacity-50" : "",
           className,
         ]
           .filter(Boolean)
@@ -175,7 +180,13 @@ export function InlineDatePicker({
               />
               <div
                 className="fixed z-50 w-[280px] sb-card shadow-lg overflow-hidden"
-                style={{ top: popoverPos.top, left: popoverPos.left }}
+                style={{
+                  top: popoverPos.top,
+                  left: popoverPos.left,
+                  backgroundColor: "color-mix(in srgb, var(--sb-card) 92%, var(--sb-bg))",
+                  backdropFilter: "blur(18px)",
+                  WebkitBackdropFilter: "blur(18px)",
+                }}
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => e.stopPropagation()}
               >

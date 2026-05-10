@@ -420,10 +420,23 @@ details > summary::-webkit-details-marker {
 /* Native select dropdown theming (affects the opened option menu too) */
 .sb-native-select {
   color-scheme: light;
+  background-color: color-mix(in srgb, var(--sb-card) 78%, transparent);
+  color: var(--sb-text);
 }
 
 html[data-theme="dark"] .sb-native-select {
   color-scheme: dark;
+}
+
+.sb-native-select option,
+.sb-native-select optgroup {
+  background-color: var(--sb-card);
+  color: var(--sb-text);
+}
+
+.sb-native-select option:checked {
+  background-color: var(--sb-accent);
+  color: #000;
 }
 
 /* ============================================================================

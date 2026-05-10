@@ -17,6 +17,7 @@ export type UserSettingsBundle = {
   configured: boolean;
   stream_payout_rate_per_k_usd: number;
   currency_display: string;
+  revenue_decimal_display?: string;
   home_filters_enabled: boolean;
   /** Omitted when `configured` is false (e.g. schema not migrated). */
   home_artificial_spikes_section_enabled?: boolean;

@@ -9,6 +9,8 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
+import { fetchApiJson } from "@/lib/api";
+import { fetchUserSettingsBundle, invalidateUserSettingsBundle } from "@/lib/userSettingsBundleFetch";
 
 const STORAGE_KEY = "sb:revenue:mute-decimals";
 const UPDATED_EVENT = "sb:revenue-decimal-display-updated";
@@ -189,6 +191,24 @@ export function RevenueDecimalDisplayProvider({ children }: { children: ReactNod
   const hideRevenueDecimals = revenueDecimalDisplayMode === "hidden";
 
   useEffect(() => {
+    let cancelled = false;
+    void fetchUserSettingsBundle()
+      .then((data) => {
+        if (cancelled || data.configured === false) return;
+        const next = parseStoredSetting(String(data.revenue_decimal_display ?? "normal"));
+        writeStoredSetting(next);
+        window.dispatchEvent(new Event(UPDATED_EVENT));
+      })
+      .catch(() => {
+        // Keep the local preference if the settings bundle cannot be fetched.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     document.documentElement.dataset.revenueDecimalDisplay = revenueDecimalDisplayMode;
     document.documentElement.dataset.revenueDecimalsMuted = muteRevenueDecimals ? "true" : "false";
 
@@ -228,6 +248,20 @@ export function RevenueDecimalDisplayProvider({ children }: { children: ReactNod
   const setRevenueDecimalDisplayMode = useCallback((next: RevenueDecimalDisplayMode) => {
     writeStoredSetting(next);
     window.dispatchEvent(new Event(UPDATED_EVENT));
+    void fetchApiJson<{ revenue_decimal_display: RevenueDecimalDisplayMode }>("/api/user-settings/revenue-decimals", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ revenue_decimal_display: next }),
+    })
+      .then((data) => {
+        const saved = parseStoredSetting(String(data.revenue_decimal_display ?? next));
+        writeStoredSetting(saved);
+        invalidateUserSettingsBundle();
+        window.dispatchEvent(new Event(UPDATED_EVENT));
+      })
+      .catch(() => {
+        // Local storage keeps the UI responsive even if the remote save fails.
+      });
   }, []);
 
   const setMuteRevenueDecimals = useCallback((next: boolean) => {

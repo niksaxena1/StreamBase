@@ -137,6 +137,7 @@ export type ArtistFilterResult = {
   image_url: string | null;
   first_seen: string | null;
   last_seen: string | null;
+  in_house_status: "in_house" | "nih";
 };
 
 export type PlaylistFilterResult = {

@@ -466,6 +466,7 @@ function ArtistsTable({
         { label: <SortHeader columnKey="total_streams" align="right">Total Streams</SortHeader>, align: "right" },
         { label: <SortHeader columnKey="daily_streams" align="right">Daily</SortHeader>, align: "right" },
         { label: <SortHeader columnKey="track_count" align="right">Tracks</SortHeader>, align: "right" },
+        { label: <SortHeader columnKey="in_house_status">Status</SortHeader> },
         { label: "" },
       ]}
       maxBodyHeightClassName="max-h-[440px] overflow-auto"
@@ -501,6 +502,18 @@ function ArtistsTable({
             {artist.daily_streams != null ? formatInt(artist.daily_streams) : null}
           </TableCell>
           <TableCell numeric mono style={{ color: "var(--sb-muted)" }}>{formatInt(artist.track_count)}</TableCell>
+          <TableCell>
+            <span
+              className={[
+                "rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+                artist.in_house_status === "in_house"
+                  ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300"
+                  : "bg-black/5 text-black/40 dark:bg-white/5 dark:text-white/35",
+              ].join(" ")}
+            >
+              {artist.in_house_status === "in_house" ? "In-House" : "NIH"}
+            </span>
+          </TableCell>
           <TableCell className="w-10">
             <a
               href={`https://open.spotify.com/artist/${artist.artist_id}`}

@@ -42,9 +42,10 @@ export function SettingsNav({ sections }: { sections: Section[] }) {
 
   return (
     <nav
-      className="sticky top-0 z-20 -mx-3 flex flex-wrap gap-1.5 border-b px-4 py-2 backdrop-blur-lg"
+      className="sticky top-0 z-20 -mx-3 flex flex-wrap gap-1.5 rounded-2xl border px-4 py-2 backdrop-blur-md"
       style={{
-        backgroundColor: "color-mix(in srgb, var(--sb-bg) 80%, transparent)",
+        background:
+          "linear-gradient(to bottom, color-mix(in srgb, var(--sb-bg) 70%, transparent), color-mix(in srgb, var(--sb-bg) 24%, transparent) 65%, transparent)",
         borderColor: "var(--sb-border)",
       }}
     >

@@ -8,8 +8,10 @@ import { ArrowLeft, Download } from "lucide-react";
 import { SearchBox } from "./SearchBox";
 import { ArtistsList } from "./ArtistsList";
 import { MenuSelect } from "@/components/ui/MenuSelect";
+import { fetchApiJson } from "@/lib/api";
 import { downloadCsv, todayIsoDate } from "@/lib/csv";
 import { foldForSearch } from "@/lib/searchFold";
+import { showToast } from "@/lib/toast";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { useMetric } from "@/components/metrics/MetricContext";
 
@@ -25,6 +27,7 @@ type Artist = {
   trackCount: number;
   dailyTrackCount: number;
   distroPlaylists: DistroPlaylist[];
+  inHouse: boolean;
 };
 
 type TrackRow = {
@@ -45,12 +48,16 @@ type ArtistsConfigClientProps = {
 };
 
 type SortOption = "name" | "total" | "daily" | "tracks";
+type InHouseFilter = "all" | "in_house" | "nih";
 
 export function ArtistsConfigClient({ artists, totalCount, allTracks }: ArtistsConfigClientProps) {
+  const [artistRows, setArtistRows] = useState(artists);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<SortOption>("name");
   const [sortAsc, setSortAsc] = useState(true);
   const [distroFilter, setDistroFilter] = useState<string | null>(null);
+  const [inHouseFilter, setInHouseFilter] = useState<InHouseFilter>("all");
+  const [savingArtistId, setSavingArtistId] = useState<string | null>(null);
   const { streamPayoutPerStreamUsd } = usePayoutRate();
   const { metric } = useMetric();
   const sortValue = `${sortBy}-${sortAsc ? "asc" : "desc"}` as const;
@@ -58,17 +65,23 @@ export function ArtistsConfigClient({ artists, totalCount, allTracks }: ArtistsC
   // Derive unique distro playlists for the filter dropdown
   const availableDistros = useMemo(() => {
     const map = new Map<string, DistroPlaylist>();
-    for (const artist of artists) {
+    for (const artist of artistRows) {
       for (const d of artist.distroPlaylists) {
         if (!map.has(d.key)) map.set(d.key, d);
       }
     }
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
-  }, [artists]);
+  }, [artistRows]);
 
   // Filter and sort artists (shared between CSV export and list)
   const filteredAndSorted = useMemo(() => {
-    let result = [...artists];
+    let result = [...artistRows];
+
+    if (inHouseFilter === "in_house") {
+      result = result.filter((artist) => artist.inHouse);
+    } else if (inHouseFilter === "nih") {
+      result = result.filter((artist) => !artist.inHouse);
+    }
 
     // Filter by distro playlist
     if (distroFilter) {
@@ -116,9 +129,38 @@ export function ArtistsConfigClient({ artists, totalCount, allTracks }: ArtistsC
     });
 
     return result;
-  }, [artists, distroFilter, searchQuery, sortBy, sortAsc, metric, streamPayoutPerStreamUsd]);
+  }, [artistRows, distroFilter, inHouseFilter, searchQuery, sortBy, sortAsc, metric, streamPayoutPerStreamUsd]);
 
   const selectedDistro = distroFilter ? availableDistros.find((d) => d.key === distroFilter) : null;
+
+  async function handleToggleInHouse(artistId: string, nextInHouse: boolean) {
+    const artist = artistRows.find((a) => a.id === artistId);
+    if (!artist) return;
+
+    const previousRows = artistRows;
+    setSavingArtistId(artistId);
+    setArtistRows((rows) =>
+      rows.map((row) => (row.id === artistId ? { ...row, inHouse: nextInHouse } : row)),
+    );
+
+    try {
+      await fetchApiJson("/api/admin/artists/in-house", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          artist_id: artist.id,
+          artist_name: artist.name,
+          in_house: nextInHouse,
+        }),
+      });
+      showToast(nextInHouse ? "Marked In-House" : "Marked NIH", "success");
+    } catch (err) {
+      setArtistRows(previousRows);
+      showToast(err instanceof Error ? err.message : "Could not save artist status", "error");
+    } finally {
+      setSavingArtistId(null);
+    }
+  }
 
   return (
     <>
@@ -158,6 +200,7 @@ export function ArtistsConfigClient({ artists, totalCount, allTracks }: ArtistsC
                     "Daily Revenue (USD)": dailyRevenueUsd,
                     "Total Tracks": artist.trackCount,
                     "Daily Tracks": artist.dailyTrackCount,
+                    "In-House Status": artist.inHouse ? "In-House" : "NIH",
                     "Distro Playlists": artist.distroPlaylists.map((d) => d.name).join(", "),
                     "Spotify URL": artist.externalUrl,
                   };
@@ -213,6 +256,17 @@ export function ArtistsConfigClient({ artists, totalCount, allTracks }: ArtistsC
               />
             </div>
           )}
+          <MenuSelect
+            value={inHouseFilter}
+            onChange={(v) => setInHouseFilter((v || "all") as InHouseFilter)}
+            ariaLabel="Filter by in-house status"
+            align="right"
+            options={[
+              { value: "all", label: "All status" },
+              { value: "in_house", label: "In-House" },
+              { value: "nih", label: "NIH" },
+            ]}
+          />
           <SearchBox
             onSearchChange={setSearchQuery}
             placeholder="Search artists…"
@@ -242,12 +296,15 @@ export function ArtistsConfigClient({ artists, totalCount, allTracks }: ArtistsC
       </div>
 
       <ArtistsList
-        artists={artists}
+        artists={artistRows}
         searchQuery={searchQuery}
         sortBy={sortBy}
         sortAsc={sortAsc}
         distroFilter={distroFilter}
+        inHouseFilter={inHouseFilter}
         allTracks={allTracks}
+        savingArtistId={savingArtistId}
+        onToggleInHouse={handleToggleInHouse}
       />
     </>
   );

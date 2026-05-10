@@ -81,7 +81,7 @@ const sampleTracks: TrackDataPoint[] = [
 ];
 
 const sampleArtists: ArtistDataPoint[] = [
-  { artist_id: "a1", artist_name: "Artist A", total_streams: 7_000_000, track_count: 2, daily_streams: 13000, image_url: null },
+  { artist_id: "a1", artist_name: "Artist A", total_streams: 7_000_000, track_count: 2, daily_streams: 13000, image_url: null, in_house_status: "in_house" },
   { artist_id: "b1", artist_name: "Artist B", total_streams: 100_000, track_count: 1, daily_streams: 500, image_url: null },
 ];
 
@@ -262,6 +262,16 @@ describe("filterArtistsClientSide", () => {
     expect(results).toHaveLength(1);
     expect(results[0].artist_name).toBe("Artist B");
   });
+
+  it("filters artists by in-house status", () => {
+    const filter = makeFilter({
+      entityType: "artists",
+      groups: [makeGroup([makeCond({ field: "in_house_status", operator: "eq", value: "in_house" })])],
+    });
+    const results = filterArtistsClientSide(sampleArtists, filter);
+    expect(results).toHaveLength(1);
+    expect(results[0].artist_id).toBe("a1");
+  });
 });
 
 // ============================================================================
@@ -336,6 +346,15 @@ describe("aggregateTracksToArtistData", () => {
     const artistA = result.find((a) => a.artist_id === "a1");
     expect(artistA!.playlist_keys).toContain("releases");
     expect(artistA!.playlist_keys).toContain("label_x");
+  });
+
+  it("marks artists as in-house from artist metadata", () => {
+    const artistImages = new Map<string, { name: string; image_url: string | null; in_house?: boolean }>();
+    artistImages.set("a1", { name: "Artist A", image_url: null, in_house: true });
+
+    const result = aggregateTracksToArtistData(sampleTracks, artistImages);
+    expect(result.find((a) => a.artist_id === "a1")?.in_house_status).toBe("in_house");
+    expect(result.find((a) => a.artist_id === "b1")?.in_house_status).toBe("nih");
   });
 
   it("handles empty tracks", () => {

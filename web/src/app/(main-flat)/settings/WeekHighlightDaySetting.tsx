@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { MenuSelect } from "@/components/ui/MenuSelect";
 import { fetchApiJson } from "@/lib/api";
 import { SAVED_FEEDBACK_MS } from "@/lib/constants";
 
@@ -99,23 +100,20 @@ export function WeekHighlightDaySetting() {
       </div>
 
       <div className="mt-3 flex items-center gap-2">
-        <select
+        <MenuSelect
           value={String(day)}
-          onChange={(e) => {
-            const next = normalizeDay(e.target.value);
+          options={DAYS.map((d) => ({ value: String(d.value), label: d.label }))}
+          onChange={(value) => {
+            const next = normalizeDay(value);
             setDay(next);
             if (!loading && !saving && configured) void save(next);
           }}
           disabled={loading || saving || !configured}
-          className="sb-ring h-9 w-48 rounded-lg bg-white/60 px-3 text-sm dark:bg-white/10"
-          aria-label="Week highlight day"
-        >
-          {DAYS.map((d) => (
-            <option key={d.value} value={String(d.value)}>
-              {d.label}
-            </option>
-          ))}
-        </select>
+          className="w-full max-w-[468px]"
+          buttonClassName="h-9 w-full rounded-xl px-3 text-sm"
+          menuClassName="max-h-64 overflow-y-auto"
+          ariaLabel="Week highlight day"
+        />
 
         <button
           type="button"
@@ -134,4 +132,3 @@ export function WeekHighlightDaySetting() {
     </div>
   );
 }
-

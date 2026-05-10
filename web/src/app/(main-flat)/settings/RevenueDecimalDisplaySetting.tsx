@@ -15,7 +15,7 @@ export function RevenueDecimalDisplaySetting() {
             Show, mute, or hide the cents portion of revenue values so whole-dollar amounts are easier to scan.
           </p>
         </div>
-        <div className="text-[10px] opacity-60">Local display preference</div>
+        <div className="text-[10px] opacity-60">Saved per user</div>
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">

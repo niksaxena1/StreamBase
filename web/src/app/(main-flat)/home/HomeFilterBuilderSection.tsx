@@ -21,6 +21,7 @@ export function HomeFilterBuilderSection({
   const [dateData, setDateData] = useState<DateDataPoint[]>([]);
   const [dateScopePlaylistKey, setDateScopePlaylistKey] = useState("all_catalog");
   const [artistImagesById, setArtistImagesById] = useState<Map<string, string | null>>(new Map());
+  const [inHouseArtistIds, setInHouseArtistIds] = useState<Set<string>>(new Set());
   const [trackDatesMap, setTrackDatesMap] = useState<Map<string, { first_seen: string | null; last_seen: string | null }>>(new Map());
 
   useEffect(() => {
@@ -186,13 +187,18 @@ export function HomeFilterBuilderSection({
         const obj = await fetchApiJson<{ artists?: unknown[] }>("/api/artists/options");
         const rows = Array.isArray(obj.artists) ? obj.artists : [];
         const map = new Map<string, string | null>();
+        const inHouse = new Set<string>();
         for (const r of rows) {
           const row = r as Record<string, unknown>;
           const id = String(row?.artist_id ?? "");
           if (!id) continue;
           map.set(id, (row?.image_url ?? null) as string | null);
+          if (row?.in_house === true) inHouse.add(id);
         }
-        if (!cancelled) setArtistImagesById(map);
+        if (!cancelled) {
+          setArtistImagesById(map);
+          setInHouseArtistIds(inHouse);
+        }
       } catch {
         // ignore
       }
@@ -218,9 +224,10 @@ export function HomeFilterBuilderSection({
         spotify_track_id: p.spotify_track_id ?? ((p.artist_ids?.length ?? 0) > 0 ? "enriched" : null),
         spotify_album_image_url: p.album_image_url,
         playlist_keys: [],
+        _in_house_artist_ids: (p.artist_ids ?? []).filter((id) => inHouseArtistIds.has(id)),
       };
     });
-  }, [trackScatterPoints, trackDatesMap]);
+  }, [trackScatterPoints, trackDatesMap, inHouseArtistIds]);
 
   // Extract unique artists from tracks for the artist selector
   const artistOptions = useMemo(() => {
@@ -256,12 +263,12 @@ export function HomeFilterBuilderSection({
 
   // Build artist images map for aggregation
   const artistImages = useMemo(() => {
-    const map = new Map<string, { name: string; image_url: string | null }>();
+    const map = new Map<string, { name: string; image_url: string | null; in_house: boolean }>();
     for (const opt of artistOptions) {
-      map.set(opt.value, { name: opt.label, image_url: opt.imageUrl });
+      map.set(opt.value, { name: opt.label, image_url: opt.imageUrl, in_house: inHouseArtistIds.has(opt.value) });
     }
     return map;
-  }, [artistOptions]);
+  }, [artistOptions, inHouseArtistIds]);
 
   const asOfRunDate = useMemo(() => {
     if (!trackScatterDataDate) return null;

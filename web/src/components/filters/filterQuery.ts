@@ -42,6 +42,7 @@ export type TrackDataPoint = {
   _moved_distro_playlists?: { name: string; imageUrl: string | null }[];
   _moved_entity_playlists?: { name: string; imageUrl: string | null }[];
   _has_duplicate_title?: boolean;
+  _in_house_artist_ids?: string[];
 };
 
 export type ArtistDataPoint = {
@@ -56,6 +57,7 @@ export type ArtistDataPoint = {
   track_names?: string[];
   first_seen?: string | null;
   last_seen?: string | null;
+  in_house_status?: "in_house" | "nih";
 };
 
 export type PlaylistDataPoint = {
@@ -146,6 +148,7 @@ export function filterArtistsClientSide(
       image_url: a.image_url,
       first_seen: a.first_seen ?? null,
       last_seen: a.last_seen ?? null,
+      in_house_status: a.in_house_status ?? "nih",
     });
   }
   return out;
@@ -212,7 +215,7 @@ export function filterDatesClientSide(
  */
 export function aggregateTracksToArtistData(
   tracks: TrackDataPoint[],
-  artistImages: Map<string, { name: string; image_url: string | null }>
+  artistImages: Map<string, { name: string; image_url: string | null; in_house?: boolean }>
 ): ArtistDataPoint[] {
   const artistMap = new Map<string, {
     artist_id: string;
@@ -226,6 +229,7 @@ export function aggregateTracksToArtistData(
     track_names: string[];
     first_seen: string | null;
     last_seen: string | null;
+    in_house_status: "in_house" | "nih";
   }>();
   
   for (const track of tracks) {
@@ -252,6 +256,7 @@ export function aggregateTracksToArtistData(
           track_names: [],
           first_seen: null,
           last_seen: null,
+          in_house_status: imageInfo?.in_house ? "in_house" : "nih",
         });
       }
       
@@ -266,6 +271,7 @@ export function aggregateTracksToArtistData(
       if (fs && (!entry.first_seen || fs < entry.first_seen)) entry.first_seen = fs;
       const ls = track.last_seen;
       if (ls && (!entry.last_seen || ls > entry.last_seen)) entry.last_seen = ls;
+      if (track._in_house_artist_ids?.includes(id)) entry.in_house_status = "in_house";
     }
   }
   
@@ -281,6 +287,7 @@ export function aggregateTracksToArtistData(
     track_names: a.track_names,
     first_seen: a.first_seen,
     last_seen: a.last_seen,
+    in_house_status: a.in_house_status,
   }));
 }
 
@@ -448,6 +455,10 @@ function getRowValue(row: DataRow, field: string, entityType: string): unknown {
   // --- Duplicate title ---
   if (field === "has_duplicate_title") {
     return (row["_has_duplicate_title"] as boolean | undefined) ?? false;
+  }
+  if (field === "artist_in_house_status") {
+    const inHouseIds = row["_in_house_artist_ids"] as string[] | undefined;
+    return Array.isArray(inHouseIds) && inHouseIds.length > 0 ? "in_house" : "nih";
   }
 
   // --- Track computed fields ---

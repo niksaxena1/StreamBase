@@ -3407,6 +3407,7 @@ export function NetworkGraphClient({
           // Node
           nodeId="id"
           nodeVal={nodeVal}
+          nodeLabel={() => ""}
           nodeCanvasObject={nodeCanvasObject}
           nodeCanvasObjectMode={() => "replace" as const}
           nodePointerAreaPaint={nodePointerAreaPaint}
@@ -3490,4 +3491,3 @@ export function NetworkGraphClient({
     </div>
   );
 }
-

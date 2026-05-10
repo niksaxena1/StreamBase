@@ -6,7 +6,7 @@ import { getArtistsCached } from "@/lib/spotify";
 import { ArtistsConfigClient } from "./ArtistsConfigClient";
 import { TracksConfigClient } from "./TracksConfigClient";
 
-export const revalidate = 86400; // 24h ISR - catalog config uses daily snapshots
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Catalog Config",
@@ -127,7 +127,15 @@ export default async function CatalogConfigPage() {
 
   // Fetch artist data using DB-cached Spotify lookups (avoids live API round-trips)
   const artistIds = artists.map((a) => a.id);
-  const artistDataMap = await getArtistsCached(svc, artistIds);
+  const [artistDataMap, inHouseRows] = await Promise.all([
+    getArtistsCached(svc, artistIds),
+    svc.from("artist_in_house_tags").select("artist_id").in("artist_id", artistIds),
+  ]);
+  const inHouseArtistIds = new Set(
+    ((inHouseRows.data ?? []) as Array<{ artist_id: string | null }>)
+      .map((row) => row.artist_id)
+      .filter((artistId): artistId is string => Boolean(artistId)),
+  );
 
   // Prepare artist data with images and external URLs
   const artistsWithData = artists.map((artist) => {
@@ -137,6 +145,7 @@ export default async function CatalogConfigPage() {
       name: artist.name,
       imageUrl: artistData?.imageUrl ?? null,
       externalUrl: artistData?.externalUrl ?? `https://open.spotify.com/artist/${artist.id}`,
+      inHouse: inHouseArtistIds.has(artist.id),
     };
   });
   

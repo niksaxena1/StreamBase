@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { DEFAULT_CHART_START_DATE_ISO, normalizeIsoDateOrNull } from "@/components/charts/chartUtils";
+import { InlineDatePicker } from "@/components/ui/InlineDatePicker";
 import { fetchApiJson } from "@/lib/api";
 import { SAVED_FEEDBACK_MS } from "@/lib/constants";
 
@@ -11,7 +12,19 @@ type ChartStartDatePayload = {
   configured?: boolean;
 };
 
-export function ChartStartDateSetting() {
+function clampToAvailableDataRange(dateIso: string, minDataDateIso?: string | null, maxDataDateIso?: string | null) {
+  if (minDataDateIso && dateIso < minDataDateIso) return minDataDateIso;
+  if (maxDataDateIso && dateIso > maxDataDateIso) return maxDataDateIso;
+  return dateIso;
+}
+
+export function ChartStartDateSetting({
+  minDataDateIso,
+  maxDataDateIso,
+}: {
+  minDataDateIso?: string | null;
+  maxDataDateIso?: string | null;
+}) {
   const [dateText, setDateText] = useState<string>(DEFAULT_CHART_START_DATE_ISO);
   const [loading, setLoading] = useState(true);
   const [configured, setConfigured] = useState(true);
@@ -21,15 +34,23 @@ export function ChartStartDateSetting() {
 
   const parsed = useMemo(() => {
     const norm = normalizeIsoDateOrNull(dateText);
-    return norm ? { ok: true as const, value: norm } : { ok: false as const, error: "Use YYYY-MM-DD." };
-  }, [dateText]);
+    if (!norm) return { ok: false as const, error: "Use YYYY-MM-DD." };
+    if (minDataDateIso && norm < minDataDateIso) {
+      return { ok: false as const, error: `Choose ${minDataDateIso} or later.` };
+    }
+    if (maxDataDateIso && norm > maxDataDateIso) {
+      return { ok: false as const, error: `Choose ${maxDataDateIso} or earlier.` };
+    }
+    return { ok: true as const, value: norm };
+  }, [dateText, minDataDateIso, maxDataDateIso]);
 
   useEffect(() => {
     setLoading(true);
     setError(null);
     void fetchApiJson<ChartStartDatePayload>("/api/user-settings/chart-start-date")
       .then((data) => {
-        const d = normalizeIsoDateOrNull(data.chart_start_date) ?? DEFAULT_CHART_START_DATE_ISO;
+        const savedDate = normalizeIsoDateOrNull(data.chart_start_date) ?? DEFAULT_CHART_START_DATE_ISO;
+        const d = clampToAvailableDataRange(savedDate, minDataDateIso, maxDataDateIso);
         setDateText(d);
         setConfigured(data.configured !== false);
         setLoading(false);
@@ -38,7 +59,7 @@ export function ChartStartDateSetting() {
         setError(e instanceof Error ? e.message : "Failed to load setting");
         setLoading(false);
       });
-  }, []);
+  }, [minDataDateIso, maxDataDateIso]);
 
   async function save(nextDate: string | null) {
     setError(null);
@@ -90,17 +111,18 @@ export function ChartStartDateSetting() {
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <input
-          type="date"
+        <InlineDatePicker
           value={dateText}
-          onChange={(e) => {
+          onChange={(next) => {
             setError(null);
             setSaved(false);
-            setDateText(e.target.value);
+            setDateText(next);
           }}
-          className="sb-ring h-9 w-48 rounded-lg bg-white/60 px-3 text-sm dark:bg-white/10"
+          placeholder="Pick start date"
+          min={minDataDateIso ?? undefined}
+          max={maxDataDateIso ?? undefined}
           disabled={loading || saving || !configured}
-          aria-label="Chart start date"
+          className="h-9 w-48 justify-start"
         />
 
         <button
@@ -120,8 +142,9 @@ export function ChartStartDateSetting() {
         <button
           type="button"
           onClick={() => {
-            setDateText(DEFAULT_CHART_START_DATE_ISO);
-            void save(DEFAULT_CHART_START_DATE_ISO);
+            const next = clampToAvailableDataRange(DEFAULT_CHART_START_DATE_ISO, minDataDateIso, maxDataDateIso);
+            setDateText(next);
+            void save(next);
           }}
           disabled={loading || saving || !configured}
           className={[
@@ -137,4 +160,3 @@ export function ChartStartDateSetting() {
     </div>
   );
 }
-

@@ -93,7 +93,7 @@ type FilterBuilderProps = {
   dateScopePlaylistKey?: string;
   onDateScopeChange?: (key: string) => void;
   // Artist image map
-  artistImages: Map<string, { name: string; image_url: string | null }>;
+  artistImages: Map<string, { name: string; image_url: string | null; in_house?: boolean }>;
   // Dynamic options for select fields
   artistOptions: Array<{ value: string; label: string; imageUrl?: string | null }>;
   playlistOptions: Array<{ value: string; label: string; imageUrl?: string | null; isAllCatalog?: boolean }>;
@@ -898,7 +898,7 @@ export function FilterBuilder({
             <div className="mt-4 p-4 rounded-xl border border-dashed flex items-center justify-center gap-2" style={{ borderColor: "var(--sb-border)" }}>
               <Play className="h-4 w-4" style={{ color: "var(--sb-muted)" }} />
               <span className="text-sm" style={{ color: "var(--sb-muted)" }}>
-                Click "Apply Filter" to see results
+                Click &quot;Apply Filter&quot; to see results
               </span>
             </div>
           )}

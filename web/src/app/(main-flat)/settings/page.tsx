@@ -27,6 +27,7 @@ import { SectionHeader } from "@/components/ui/SectionHeader";
 import { CollapsibleSection } from "@/components/ui/CollapsibleSection";
 import { HealthExclusionsSection, type ExclusionTabConfig } from "./HealthExclusionsSection";
 import { SettingsNav } from "./SettingsNav";
+import { dataDateFromRunDate } from "@/lib/sotDates";
 
 export const revalidate = 86400; // 24h ISR - admin config changes are infrequent
 
@@ -57,6 +58,39 @@ export default async function SettingsPage() {
     .limit(1)
     .maybeSingle();
   const latestRunDate = (latestRun?.run_date as string | null) ?? null;
+
+  let earliestDataDate: string | null = null;
+  let latestDataDate: string | null = null;
+  try {
+    const [earliestResult, latestResult] = await Promise.all([
+      svc
+        .from("track_daily_streams_effective_public")
+        .select("date")
+        .order("date", { ascending: true })
+        .limit(1)
+        .maybeSingle(),
+      svc
+        .from("track_daily_streams_effective_public")
+        .select("date")
+        .order("date", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+    const earliestRunDate = String(earliestResult.data?.date ?? "").trim();
+    const latestSnapshotRunDate = String(latestResult.data?.date ?? "").trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(earliestRunDate)) {
+      earliestDataDate = dataDateFromRunDate(earliestRunDate);
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(latestSnapshotRunDate)) {
+      latestDataDate = dataDateFromRunDate(latestSnapshotRunDate);
+    }
+  } catch {
+    // Keep the picker usable if the aggregate view is unavailable.
+  }
+
+  if (!latestDataDate && latestRunDate) {
+    latestDataDate = dataDateFromRunDate(latestRunDate);
+  }
 
   // Run date options for date pickers (limit to recent history for perf/UX).
   let runDateOptions: string[] = [];
@@ -726,7 +760,7 @@ export default async function SettingsPage() {
         >
           <SectionHeader title="Charts" subtitle="Visual preferences for time-series charts." />
           <WeekHighlightDaySetting />
-          <ChartStartDateSetting />
+          <ChartStartDateSetting minDataDateIso={earliestDataDate} maxDataDateIso={latestDataDate} />
           <ChartAxisZoomSetting />
           <WeekendDipSetting />
           <HideStaleAnnotationsSetting />

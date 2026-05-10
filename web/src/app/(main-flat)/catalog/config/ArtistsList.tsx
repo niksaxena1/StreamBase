@@ -25,6 +25,7 @@ type Artist = {
   trackCount: number;
   dailyTrackCount: number;
   distroPlaylists: DistroPlaylist[];
+  inHouse: boolean;
 };
 
 type TrackRow = {
@@ -39,6 +40,7 @@ type TrackRow = {
 };
 
 type SortOption = "name" | "total" | "daily" | "tracks";
+type InHouseFilter = "all" | "in_house" | "nih";
 
 type ArtistsListProps = {
   artists: Artist[];
@@ -46,7 +48,10 @@ type ArtistsListProps = {
   sortBy?: SortOption;
   sortAsc?: boolean;
   distroFilter?: string | null;
+  inHouseFilter?: InHouseFilter;
   allTracks?: TrackRow[];
+  savingArtistId?: string | null;
+  onToggleInHouse?: (artistId: string, nextInHouse: boolean) => void;
 };
 
 const INITIAL_RENDER_CAP = 150;
@@ -57,7 +62,10 @@ export function ArtistsList({
   sortBy = "name",
   sortAsc = true,
   distroFilter,
+  inHouseFilter = "all",
   allTracks = [],
+  savingArtistId = null,
+  onToggleInHouse,
 }: ArtistsListProps) {
   const { metric } = useMetric();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
@@ -73,6 +81,12 @@ export function ArtistsList({
 
   const filteredAndSortedArtists = useMemo(() => {
     let result = [...artists];
+
+    if (inHouseFilter === "in_house") {
+      result = result.filter((artist) => artist.inHouse);
+    } else if (inHouseFilter === "nih") {
+      result = result.filter((artist) => !artist.inHouse);
+    }
 
     // Filter by distro playlist
     if (distroFilter) {
@@ -120,7 +134,7 @@ export function ArtistsList({
     });
 
     return result;
-  }, [artists, distroFilter, metric, searchQuery, sortBy, sortAsc, streamPayoutPerStreamUsd]);
+  }, [artists, distroFilter, inHouseFilter, metric, searchQuery, sortBy, sortAsc, streamPayoutPerStreamUsd]);
 
   // Color scheme based on metric
   const metricColor =
@@ -175,7 +189,7 @@ export function ArtistsList({
 
   return (
     <div className="flex flex-col space-y-2">
-      <GlassTable headers={["", "Artist", "Tracks", getTotalMetricLabel(), getDailyMetricLabel(), "DISTRO", "ID", ""]}>
+      <GlassTable headers={["", "Artist", "Tracks", getTotalMetricLabel(), getDailyMetricLabel(), "Status", "DISTRO", "ID", ""]}>
         {visibleArtists.map((artist) => {
           const dailyMetricValue = getDailyMetricValue(artist);
 
@@ -216,6 +230,23 @@ export function ArtistsList({
               <span style={{ color: metricColor }} className="font-medium text-xs">
                 {formatValue(dailyMetricValue)}
               </span>
+            </TableCell>
+            <TableCell>
+              <button
+                type="button"
+                onClick={() => onToggleInHouse?.(artist.id, !artist.inHouse)}
+                disabled={!onToggleInHouse || savingArtistId === artist.id}
+                className={[
+                  "sb-ring rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide transition",
+                  artist.inHouse
+                    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300"
+                    : "border-transparent bg-black/5 text-black/40 hover:bg-black/10 dark:bg-white/5 dark:text-white/35 dark:hover:bg-white/10",
+                ].join(" ")}
+                title={artist.inHouse ? "Mark as NIH" : "Mark as In-House"}
+                aria-label={`${artist.name}: ${artist.inHouse ? "mark as NIH" : "mark as In-House"}`}
+              >
+                {artist.inHouse ? "In-House" : "NIH"}
+              </button>
             </TableCell>
             <TableCell>
               {artist.distroPlaylists.length === 0 ? (
@@ -273,7 +304,7 @@ export function ArtistsList({
         })}
         {hasMore && (
           <TableRow>
-            <TableCell className="py-3 text-center" colSpan={8}>
+            <TableCell className="py-3 text-center" colSpan={9}>
               <button
                 type="button"
                 onClick={() => setRenderCap((prev) => prev + INITIAL_RENDER_CAP)}
@@ -288,7 +319,7 @@ export function ArtistsList({
         )}
         {!filteredAndSortedArtists.length && (
           <TableRow>
-            <TableCell className="py-8 text-center opacity-50" colSpan={8}>
+            <TableCell className="py-8 text-center opacity-50" colSpan={9}>
               {searchQuery.trim() ? "No artists found matching your search." : "No artists found."}
             </TableCell>
           </TableRow>
