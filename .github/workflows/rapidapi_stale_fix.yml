@@ -199,14 +199,15 @@ jobs:
           provider_chips = []
           for provider, count in providers.items():
               color = "#bef264" if provider == "Beat Analytics" else "#93c5fd"
-              bg = "#26351b" if provider == "Beat Analytics" else "#17263d"
+              bg = "#1e2718" if provider == "Beat Analytics" else "#151f31"
+              border = "#33451f" if provider == "Beat Analytics" else "#243653"
               provider_chips.append(
-                  f'<span style="display:inline-block;margin:0 6px 6px 0;padding:4px 8px;border-radius:999px;'
-                  f'background:{bg};color:{color};font-size:12px;font-weight:700;">{esc(provider)} {count}</span>'
+                  f'<span style="display:inline-block;margin:0 6px 6px 0;padding:4px 9px;border:1px solid {border};border-radius:999px;'
+                  f'background:{bg};color:{color};font-size:12px;font-weight:600;">{esc(provider)} <span style="color:#ededed;">{count}</span></span>'
               )
           provider_chips.append(
-              '<span style="display:inline-block;margin:0 6px 6px 0;padding:4px 8px;border-radius:999px;'
-              'background:#232326;color:#a1a1aa;font-size:12px;font-weight:700;">0 paid overage</span>'
+              '<span style="display:inline-block;margin:0 6px 6px 0;padding:4px 9px;border:1px solid #2c2d32;border-radius:999px;'
+              'background:#1b1b1f;color:#a1a1aa;font-size:12px;font-weight:600;">0 paid overage</span>'
           )
 
           rows = []
@@ -231,7 +232,7 @@ jobs:
               )
               rows.append(f"""
                 <tr>
-                  <td style="padding:8px 0;border-top:1px solid #25262b;">
+                  <td style="padding:9px 0;border-top:1px solid #25262b;">
                     <table role="presentation" cellspacing="0" cellpadding="0" style="border-collapse:collapse;">
                       <tr>
                         <td style="width:40px;padding:0 10px 0 0;vertical-align:middle;">
@@ -244,8 +245,8 @@ jobs:
                       </tr>
                     </table>
                   </td>
-                  <td style="padding:8px 10px;border-top:1px solid #25262b;font:11px ui-monospace,SFMono-Regular,Menlo,monospace;color:#84cc16;white-space:nowrap;">{isrc}</td>
-                  <td style="padding:8px 0;border-top:1px solid #25262b;text-align:right;white-space:nowrap;">
+                  <td style="padding:9px 10px;border-top:1px solid #25262b;font:11px ui-monospace,SFMono-Regular,Menlo,monospace;color:#a3e635;white-space:nowrap;">{isrc}</td>
+                  <td style="padding:9px 0;border-top:1px solid #25262b;text-align:right;white-space:nowrap;">
                     <div style="font:12px ui-monospace,SFMono-Regular,Menlo,monospace;color:#ededed;font-weight:650;">{fmt_int(new)}</div>
                     <div style="font:11px ui-monospace,SFMono-Regular,Menlo,monospace;color:#8b8d94;margin-top:2px;">from {fmt_int(stale)} <span style="color:#22c55e;font-weight:800;">{delta_text}</span></div>
                   </td>
@@ -262,29 +263,25 @@ jobs:
           html_body = f"""<!doctype html>
           <html>
             <body style="margin:0;padding:24px;background:#0a0a0c;color:#ededed;font-family:Inter,Arial,Helvetica,sans-serif;font-size:14px;line-height:1.35;">
-              <div style="max-width:700px;margin:0 auto;border:1px solid #2b2d31;border-radius:16px;background:#141419;overflow:hidden;box-shadow:0 12px 32px rgba(0,0,0,.40);">
-                <div style="padding:20px 22px;border-bottom:1px solid #25262b;background:#10120f;">
-                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;">
+              <div style="max-width:700px;margin:0 auto;border:1px solid #2a2b30;border-radius:14px;background:#141419;overflow:hidden;box-shadow:0 12px 32px rgba(0,0,0,.34);">
+                <div style="padding:18px 22px 16px;border-bottom:1px solid #25262b;background:#10120f;">
+                  <div style="font-size:11px;color:#d4ff4d;font-weight:700;letter-spacing:.06em;text-transform:uppercase;">SBase</div>
+                  <div style="margin-top:5px;font-size:22px;font-weight:650;color:#ededed;line-height:1.18;">Auto-fix complete</div>
+                  <div style="margin-top:7px;font-size:13px;color:#a1a1aa;">
+                    <span style="color:#ededed;font-weight:600;">{fixed}</span> stale track{'s' if fixed != 1 else ''} fixed
+                    <span style="color:#575a61;">&nbsp;/&nbsp;</span>
+                    Run date <span style="color:#ededed;font-weight:600;">{run_date}</span>
+                  </div>
+                </div>
+                <div style="padding:14px 22px 20px;">
+                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;margin-bottom:13px;">
                     <tr>
-                      <td style="vertical-align:top;">
-                        <div style="font-size:11px;color:#d4ff4d;font-weight:700;letter-spacing:.06em;text-transform:uppercase;">SBase</div>
-                        <div style="margin-top:5px;font-size:24px;font-weight:650;color:#ededed;line-height:1.15;">Auto-fix complete</div>
-                        <div style="margin-top:6px;font-size:13px;color:#9ca3af;">Run date: <span style="color:#e4e4e7;font-weight:700;">{run_date}</span></div>
-                      </td>
-                      <td style="vertical-align:top;text-align:right;width:120px;">
-                        <div style="display:inline-block;padding:8px 10px;border-radius:12px;background:#202516;border:1px solid #34451f;">
-                          <div style="font-size:26px;line-height:1;color:#d4ff4d;font-weight:700;">{fixed}</div>
-                          <div style="margin-top:3px;font-size:11px;color:#a1a1aa;font-weight:650;text-transform:uppercase;letter-spacing:.04em;">fixed</div>
-                        </div>
+                      <td style="padding:0;">
+                        <div style="font-size:11px;color:#9ca3af;font-weight:650;text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px;">Providers used</div>
+                        <div>{''.join(provider_chips)}</div>
                       </td>
                     </tr>
                   </table>
-                </div>
-                <div style="padding:16px 22px 20px;">
-                  <div style="padding:10px 12px;border:1px solid #282a2f;border-radius:12px;background:#18181c;margin-bottom:14px;">
-                    <div style="font-size:11px;color:#9ca3af;font-weight:650;text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px;">Providers used</div>
-                    <div>{''.join(provider_chips)}</div>
-                  </div>
                   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;margin-bottom:4px;">
                     <tr>
                       <td style="font-size:11px;color:#9ca3af;text-transform:uppercase;letter-spacing:.05em;font-weight:650;padding-bottom:7px;">Track</td>
