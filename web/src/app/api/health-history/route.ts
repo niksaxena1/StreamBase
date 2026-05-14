@@ -1,6 +1,7 @@
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { apiJsonErr, apiJsonOk, requireUser } from "@/lib/api/server";
+import { getActiveWarningSummary } from "@/lib/health/activeWarnings";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -81,8 +82,28 @@ export async function GET() {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, warnings]) => ({ date, warnings }));
 
+  const activeByDate = new Map<string, number>();
+  await Promise.all(
+    dates.map(async ({ date }) => {
+      const summary = await getActiveWarningSummary(date);
+      activeByDate.set(date, summary.criticalCount + summary.warnCount);
+    }),
+  );
+
   return apiJsonOk(
-    { dates, codes: Array.from(allCodes).sort() },
+    {
+      dates: dates.map((entry) => {
+        const detected = Object.values(entry.warnings).reduce((sum, n) => sum + Number(n ?? 0), 0);
+        const active = Math.min(activeByDate.get(entry.date) ?? detected, detected);
+        return {
+          ...entry,
+          detected,
+          active,
+          resolved: Math.max(0, detected - active),
+        };
+      }),
+      codes: Array.from(allCodes).sort(),
+    },
     { headers: { "Cache-Control": "max-age=300, stale-while-revalidate=3600" } },
   );
 }

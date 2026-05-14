@@ -336,6 +336,21 @@ function extractRemoved(
     .slice(0, 200);
 }
 
+function samplesToTracks(samples: TrackSample[]): Array<TrackBase & Record<string, unknown>> {
+  return samples.map((sample) => {
+    const { isrc, ...extra } = sample;
+    return {
+      isrc,
+      name: null,
+      spotify_track_id: null,
+      artist_names: null,
+      artist_ids: null,
+      album_image_url: null,
+      ...extra,
+    };
+  });
+}
+
 // ---------------------------------------------------------------------------
 // RPC-based fetchers (non_catalog, swing, enrichment, drift, overlap)
 // ---------------------------------------------------------------------------
@@ -749,6 +764,15 @@ function buildExpandedData(
       const tracks = w.playlist_key ? ncMap.get(w.playlist_key) : undefined;
       if (tracks && tracks.length > 0)
         return { type: "non_catalog_tracks_present", tracks };
+      const details = w.details_json as { missing_isrcs_sample?: string[] } | null;
+      const fallback = Array.isArray(details?.missing_isrcs_sample)
+        ? samplesToTracks(
+            details.missing_isrcs_sample
+              .map((isrc) => ({ isrc: normalizeIsrc(isrc) }))
+              .filter((t) => Boolean(t.isrc)),
+          )
+        : [];
+      if (fallback.length > 0) return { type: "non_catalog_tracks_present", tracks: fallback };
       return null;
     }
     case "track_count_swing": {
@@ -772,10 +796,12 @@ function buildExpandedData(
     case "catalog_missing_stream_snapshots": {
       const raw = catalogMissingMap.get(key);
       if (raw === undefined) return null;
-      if (Array.isArray(raw) && raw.length === 0) return null;
+      const fallback = samplesToTracks(extractCatalogMissing(w.details_json));
+      const tracks = Array.isArray(raw) && raw.length > 0 ? raw : fallback;
+      if (tracks.length === 0) return null;
       return {
         type: "catalog_missing_stream_snapshots",
-        tracks: raw as TrackBase[] | null,
+        tracks: tracks as TrackBase[] | null,
         note:
           noteFromDetails ??
           "These tracks appeared in a catalog export but had missing/invalid stream totals and were not written to track_daily_streams.",
@@ -784,10 +810,12 @@ function buildExpandedData(
     case "catalog_streams_missing_prev_nonzero": {
       const raw = prevNonzeroMap.get(key);
       if (raw === undefined) return null;
-      if (Array.isArray(raw) && raw.length === 0) return null;
+      const fallback = samplesToTracks(extractPrevNonzero(w.details_json));
+      const tracks = Array.isArray(raw) && raw.length > 0 ? raw : fallback;
+      if (tracks.length === 0) return null;
       return {
         type: "catalog_streams_missing_prev_nonzero",
-        tracks: raw as PrevNonzeroTrack[] | null,
+        tracks: tracks as PrevNonzeroTrack[] | null,
         note:
           noteFromDetails ??
           "SpotOnTrack export had missing/blank stream totals for tracks that had non-zero cumulative streams yesterday.",
@@ -796,10 +824,12 @@ function buildExpandedData(
     case "individual_tracks_stale": {
       const raw = staleMap.get(key);
       if (raw === undefined) return null;
-      if (Array.isArray(raw) && raw.length === 0) return null;
+      const fallback = samplesToTracks(extractStale(w.details_json));
+      const tracks = Array.isArray(raw) && raw.length > 0 ? raw : fallback;
+      if (tracks.length === 0) return null;
       return {
         type: "individual_tracks_stale",
-        tracks: raw as StaleTrack[] | null,
+        tracks: tracks as StaleTrack[] | null,
         note:
           noteFromDetails ??
           "Tracks with stale stream data were detected during ingestion. Check the Health page after the next run for details.",
@@ -932,20 +962,81 @@ export type PaginatedWarnings = {
   page: number;
   pageSize: number;
   totalPages: number;
+  summary: {
+    detected: number;
+    active: number;
+    resolved: number;
+    overrideCount: number;
+    providerCalls: Array<{
+      provider: string;
+      calls: number;
+    }>;
+  };
 };
 
 const DEFAULT_PAGE_SIZE = 20;
+export type WarningAuditView = "active" | "resolved" | "all";
+
+function warningIdentity(w: Pick<WarningRow, "code" | "playlist_key">): string {
+  return `${normalizeKey(w.code)}\0${normalizeKey(w.playlist_key)}`;
+}
 
 export async function fetchDisplayedWarnings(
   runDate: string,
   playlistMeta: Record<string, PlaylistMeta>,
   page = 1,
   pageSize = DEFAULT_PAGE_SIZE,
+  view: WarningAuditView = "active",
 ): Promise<PaginatedWarnings> {
   const svc = supabaseService();
-  const { warnings } = await getActiveWarningSummary(runDate);
+  const { warnings: activeWarnings } = await getActiveWarningSummary(runDate);
   const excl = await loadExclusions(svc);
   const metaMap = new Map(Object.entries(playlistMeta));
+  const [{ data: rawRows }, overrideCountResult, { data: usageRows }] = await Promise.all([
+    svc
+      .from("ingestion_warnings")
+      .select("severity,code,playlist_key,message,run_date,details_json")
+      .eq("run_date", runDate)
+      .in("severity", ["critical", "warn"])
+      .order("playlist_key", { ascending: true })
+      .limit(2000),
+    svc
+      .from("track_daily_stream_overrides")
+      .select("isrc", { count: "exact", head: true })
+      .eq("date", runDate),
+    svc
+      .from("stream_lookup_usage")
+      .select("provider,calls")
+      .eq("usage_date", runDate),
+  ]);
+
+  const rawWarnings: WarningRow[] = ((rawRows ?? []) as Array<Record<string, unknown>>).map((w) => ({
+    severity: String(w.severity ?? ""),
+    code: String(w.code ?? ""),
+    playlist_key: w.playlist_key ? String(w.playlist_key) : null,
+    message: String(w.message ?? ""),
+    run_date: String(w.run_date ?? ""),
+    details_json: (w.details_json ?? null) as Record<string, unknown> | null,
+  }));
+  const activeKeys = new Set(activeWarnings.map(warningIdentity));
+  const warnings =
+    view === "active"
+      ? activeWarnings
+      : view === "resolved"
+        ? rawWarnings.filter((w) => !activeKeys.has(warningIdentity(w)))
+        : rawWarnings;
+  const summary = {
+    detected: rawWarnings.length,
+    active: activeWarnings.length,
+    resolved: rawWarnings.filter((w) => !activeKeys.has(warningIdentity(w))).length,
+    overrideCount: overrideCountResult.count ?? 0,
+    providerCalls: ((usageRows ?? []) as Array<{ provider?: string; calls?: number }>)
+      .map((row) => ({
+        provider: String(row.provider ?? ""),
+        calls: Number(row.calls ?? 0),
+      }))
+      .filter((row) => row.provider && Number.isFinite(row.calls)),
+  };
 
   // Group warnings by code
   const ncW = warnings.filter(
@@ -984,8 +1075,8 @@ export async function fetchDisplayedWarnings(
     ncMap,
     swingMap,
     enrichMap,
-    catalogMissingMap,
-    prevNonzeroMap,
+    catalogMissingMapRaw,
+    prevNonzeroMapRaw,
     staleMapRaw,
     excludedZeroedMap,
     decreasedMap,
@@ -1012,17 +1103,41 @@ export async function fetchDisplayedWarnings(
     loadOverriddenIsrcs(svc, runDate),
   ]);
 
-  // Filter overridden ISRCs out of stale track results
+  // Filter overridden ISRCs out of warnings that can be resolved by stream overrides.
+  const filterOverridden = (
+    tracks: Array<TrackBase & Record<string, unknown>> | null,
+  ) => {
+    if (!tracks || overriddenIsrcs.size === 0) return tracks;
+    const filtered = tracks.filter(
+      (t) => !overriddenIsrcs.has(normalizeIsrc(t.isrc)),
+    );
+    return filtered.length > 0 ? filtered : null;
+  };
+  const shouldFilterOverriddenDetails = view === "active";
+
   const staleMap = new Map<string, Array<TrackBase & Record<string, unknown>> | null>();
   for (const [key, tracks] of staleMapRaw) {
-    if (!tracks || overriddenIsrcs.size === 0) {
-      staleMap.set(key, tracks);
-    } else {
-      const filtered = tracks.filter(
-        (t) => !overriddenIsrcs.has(normalizeIsrc(t.isrc)),
-      );
-      staleMap.set(key, filtered.length > 0 ? filtered : null);
-    }
+    staleMap.set(key, shouldFilterOverriddenDetails ? filterOverridden(tracks) : tracks);
+  }
+
+  const catalogMissingMap = new Map<string, Array<TrackBase & Record<string, unknown>> | null>();
+  for (const [key, tracks] of catalogMissingMapRaw) {
+    catalogMissingMap.set(key, shouldFilterOverriddenDetails ? filterOverridden(tracks) : tracks);
+  }
+
+  const prevNonzeroMap = new Map<string, Array<TrackBase & Record<string, unknown>> | null>();
+  for (const [key, tracks] of prevNonzeroMapRaw) {
+    prevNonzeroMap.set(key, shouldFilterOverriddenDetails ? filterOverridden(tracks) : tracks);
+  }
+
+  const decreasedMapFiltered = new Map<string, Array<TrackBase & Record<string, unknown>> | null>();
+  for (const [key, tracks] of decreasedMap) {
+    decreasedMapFiltered.set(key, shouldFilterOverriddenDetails ? filterOverridden(tracks) : tracks);
+  }
+
+  const removedMapFiltered = new Map<string, Array<TrackBase & Record<string, unknown>> | null>();
+  for (const [key, tracks] of removedMap) {
+    removedMapFiltered.set(key, shouldFilterOverriddenDetails ? filterOverridden(tracks) : tracks);
   }
 
   // Sort & build DisplayedWarning[]
@@ -1043,21 +1158,24 @@ export async function fetchDisplayedWarnings(
     code: w.code,
     playlist_key: w.playlist_key,
     run_date: w.run_date,
-    message: patchMessage(
-      w,
-      ncMap,
-      swingMap,
-      enrichMap,
-      catalogMissingMap,
-      prevNonzeroMap,
-      staleMap,
-      driftResult,
-      overlapTracks,
-      decreasedMap,
-      negativeStreamTracks,
-      artificialStreamMap,
-      metaMap,
-    ),
+    resolutionStatus: activeKeys.has(warningIdentity(w)) ? "active" : "resolved",
+    message: activeKeys.has(warningIdentity(w)) || w.code === "total_streams_decreased"
+      ? patchMessage(
+          w,
+          ncMap,
+          swingMap,
+          enrichMap,
+          catalogMissingMap,
+          prevNonzeroMap,
+          staleMap,
+          driftResult,
+          overlapTracks,
+          decreasedMapFiltered,
+          negativeStreamTracks,
+          artificialStreamMap,
+          metaMap,
+        )
+      : w.message,
     playlistMeta: w.playlist_key
       ? metaMap.get(w.playlist_key) ?? null
       : null,
@@ -1070,8 +1188,8 @@ export async function fetchDisplayedWarnings(
       prevNonzeroMap,
       staleMap,
       excludedZeroedMap,
-      decreasedMap,
-      removedMap,
+      decreasedMapFiltered,
+      removedMapFiltered,
       driftResult,
       overlapTracks,
       negativeStreamTracks,
@@ -1085,7 +1203,7 @@ export async function fetchDisplayedWarnings(
   const start = (safePage - 1) * pageSize;
   const pageWarnings = all.slice(start, start + pageSize);
 
-  return { warnings: pageWarnings, totalCount, page: safePage, pageSize, totalPages };
+  return { warnings: pageWarnings, totalCount, page: safePage, pageSize, totalPages, summary };
 }
 
 // ---------------------------------------------------------------------------

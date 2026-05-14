@@ -119,6 +119,15 @@ export async function POST(request: NextRequest) {
       return apiJsonErr("overrides must be a non-empty array", 400);
     }
 
+    const rawNotePrefix = String(body.notePrefix ?? "stale-fix").trim();
+    const notePrefix = [
+      "stale-fix",
+      "missing-snapshot-fix",
+      "prev-nonzero-fix",
+    ].includes(rawNotePrefix)
+      ? rawNotePrefix
+      : "stale-fix";
+
     const validated: {
       isrc: string;
       streams_cumulative: number;
@@ -149,8 +158,8 @@ export async function POST(request: NextRequest) {
       isrc: v.isrc,
       streams_cumulative_override: v.streams_cumulative,
       note: v.providerLabel
-        ? `stale-fix: ${v.providerLabel} manual`
-        : "stale-fix: stream lookup manual",
+        ? `${notePrefix}: ${v.providerLabel} manual`
+        : `${notePrefix}: stream lookup manual`,
       created_by: user.id,
     }));
 

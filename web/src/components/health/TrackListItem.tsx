@@ -15,6 +15,7 @@ export function TrackListItem({
   track,
   thumbOverrides,
   compact,
+  dense,
   align = "center",
   inlineExtra,
   actions,
@@ -25,6 +26,7 @@ export function TrackListItem({
   track: TrackBase;
   thumbOverrides?: Record<string, string | null>;
   compact?: boolean;
+  dense?: boolean;
   align?: "center" | "start";
   inlineExtra?: React.ReactNode;
   actions?: React.ReactNode;
@@ -40,7 +42,8 @@ export function TrackListItem({
   return (
     <div
       className={[
-        "flex gap-3 text-xs",
+        "flex min-w-0 text-xs",
+        dense ? "gap-2" : "gap-3",
         align === "start" ? "items-start" : "items-center",
         className,
       ]
@@ -53,14 +56,56 @@ export function TrackListItem({
         <img
           src={imageUrl}
           alt="Album cover"
-          className="h-10 w-10 rounded object-cover sb-ring flex-shrink-0"
+          className={[
+            dense ? "h-8 w-8" : "h-10 w-10",
+            "rounded object-cover sb-ring flex-shrink-0",
+          ].join(" ")}
         />
       ) : (
-        <div className="h-10 w-10 rounded sb-ring bg-white/60 flex-shrink-0" />
+        <div
+          className={[
+            dense ? "h-8 w-8" : "h-10 w-10",
+            "rounded sb-ring bg-white/60 flex-shrink-0",
+          ].join(" ")}
+        />
       )}
 
       <div className="flex-1 min-w-0">
-        {compact ? (
+        {dense ? (
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="flex min-w-0 items-baseline gap-1.5">
+                <Link
+                  href={`/tracks/${track.isrc}`}
+                  className="truncate font-medium hover:underline"
+                  style={{ color: "var(--sb-text)" }}
+                >
+                  {track.name || track.isrc}
+                </Link>
+                {track.artist_names && track.artist_names.length > 0 && (
+                  <span className="min-w-0 truncate opacity-55">
+                    <ArtistLinks
+                      artistNames={track.artist_names}
+                      artistIds={track.artist_ids ?? undefined}
+                    />
+                  </span>
+                )}
+              </div>
+              {inlineExtra ? (
+                <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] opacity-75">
+                  {inlineExtra}
+                </div>
+              ) : null}
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <CopyableIsrc
+                isrc={track.isrc}
+                className="font-mono text-[9px] opacity-35 hover:opacity-80"
+              />
+              {actions}
+            </div>
+          </div>
+        ) : compact ? (
           <>
             <div className="truncate">
               <Link
@@ -81,28 +126,34 @@ export function TrackListItem({
             )}
           </>
         ) : (
-          <div className="flex items-center gap-2 flex-wrap">
-            <Link
-              href={`/tracks/${track.isrc}`}
-              className="font-medium hover:underline"
-              style={{ color: "var(--sb-text)" }}
-            >
-              {track.name || track.isrc}
-            </Link>
-            {track.artist_names && track.artist_names.length > 0 && (
-              <span className="opacity-60">
-                by{" "}
-                <ArtistLinks
-                  artistNames={track.artist_names}
-                  artistIds={track.artist_ids ?? undefined}
-                />
-              </span>
-            )}
-            {inlineExtra}
+          <div className="min-w-0">
+            <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+              <Link
+                href={`/tracks/${track.isrc}`}
+                className="font-medium hover:underline"
+                style={{ color: "var(--sb-text)" }}
+              >
+                {track.name || track.isrc}
+              </Link>
+              {track.artist_names && track.artist_names.length > 0 && (
+                <span className="min-w-0 opacity-60">
+                  by{" "}
+                  <ArtistLinks
+                    artistNames={track.artist_names}
+                    artistIds={track.artist_ids ?? undefined}
+                  />
+                </span>
+              )}
+            </div>
+            {inlineExtra ? (
+              <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px]">
+                {inlineExtra}
+              </div>
+            ) : null}
           </div>
         )}
 
-        <div className="mt-0.5 flex items-center gap-2">
+        <div className={["mt-0.5 flex items-center gap-2", dense ? "hidden" : ""].join(" ")}>
           <CopyableIsrc
             isrc={track.isrc}
             className="font-mono text-[10px] sb-positive underline hover:opacity-80"
@@ -111,7 +162,17 @@ export function TrackListItem({
         </div>
       </div>
 
-      {trailing}
+      {trailing ? (
+        <div
+          className={[
+            dense
+              ? "ml-auto flex min-w-0 max-w-full flex-shrink flex-wrap items-center justify-end gap-1"
+              : "flex-shrink-0",
+          ].join(" ")}
+        >
+          {trailing}
+        </div>
+      ) : null}
     </div>
   );
 }

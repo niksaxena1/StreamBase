@@ -242,4 +242,5 @@ export type DisplayedWarning = {
   run_date: string;
   playlistMeta: PlaylistMeta | null;
   expandedData: WarningExpandedData;
+  resolutionStatus?: "active" | "resolved";
 };

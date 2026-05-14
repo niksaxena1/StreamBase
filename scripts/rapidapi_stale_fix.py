@@ -25,6 +25,7 @@ import json
 import os
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List
 
@@ -124,6 +125,44 @@ def attach_spotify_track_ids(pg: Postgrest, candidates: list) -> list:
         {**c, "spotify_track_id": spotify_by_isrc.get(str(c.get("isrc", "")).strip().upper()) or None}
         for c in candidates
     ]
+
+
+def today_usage(pg: Postgrest, run_date: str, existing: list) -> dict:
+    try:
+        rows = pg.select(
+            "stream_lookup_usage",
+            "provider,calls",
+            f"usage_date=eq.{run_date}",
+        )
+        usage = {"beat_analytics": 0, "music_metrics": 0}
+        for row in rows:
+            provider = str(row.get("provider") or "")
+            if provider in usage:
+                usage[provider] = int(row.get("calls") or 0)
+        return usage
+    except Exception:
+        return {
+            "beat_analytics": sum(1 for r in existing if "Beat Analytics" in str(r.get("note", ""))),
+            "music_metrics": sum(1 for r in existing if "Music Metrics" in str(r.get("note", ""))),
+        }
+
+
+def record_provider_call(pg: Postgrest, run_date: str, provider: str, current_usage: dict):
+    current_usage[provider] = int(current_usage.get(provider, 0)) + 1
+    try:
+        pg.upsert(
+            "stream_lookup_usage",
+            [
+                {
+                    "usage_date": run_date,
+                    "provider": provider,
+                    "calls": current_usage[provider],
+                }
+            ],
+            "usage_date,provider",
+        )
+    except Exception:
+        pass
 
 
 def enrich_fixed_tracks(pg: Postgrest, fixed: list) -> list:
@@ -226,8 +265,10 @@ def main():
         f"date=eq.{run_date}&note=like.{OVERRIDE_NOTE_PREFIX}*auto*",
     )
     existing_isrcs = {str(r.get("isrc", "")).strip().upper() for r in existing}
-    existing_beat = sum(1 for r in existing if "Beat Analytics" in str(r.get("note", "")))
-    existing_music = sum(1 for r in existing if "Music Metrics" in str(r.get("note", "")))
+    usage_date = datetime.now(timezone.utc).date().isoformat()
+    usage = today_usage(pg, usage_date, existing)
+    existing_beat = usage["beat_analytics"]
+    existing_music = usage["music_metrics"]
     already_fixed = len(existing_isrcs)
     budget = max(0, daily_cap - already_fixed)
     beat_budget = max(0, min(BEAT_ANALYTICS_DAILY_CAP - existing_beat, budget))
@@ -271,6 +312,7 @@ def main():
 
         if beat_key and c.get("spotify_track_id") and beat_attempted < beat_budget:
             beat_attempted += 1
+            record_provider_call(pg, usage_date, "beat_analytics", usage)
             try:
                 api_val = fetch_beat_analytics_streams(c["spotify_track_id"], beat_key)
                 if api_val is not None:
@@ -280,6 +322,7 @@ def main():
 
         if api_val is None and music_key and music_attempted < music_budget:
             music_attempted += 1
+            record_provider_call(pg, usage_date, "music_metrics", usage)
             try:
                 api_val = fetch_music_metrics_streams(isrc, music_key)
                 if api_val is not None:

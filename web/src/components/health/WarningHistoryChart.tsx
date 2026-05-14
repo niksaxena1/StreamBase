@@ -17,6 +17,9 @@ import {
 type HistoryEntry = {
   date: string;
   warnings: Record<string, number>;
+  detected?: number;
+  active?: number;
+  resolved?: number;
 };
 
 /** Readable labels for warning codes. */
@@ -86,7 +89,7 @@ export function WarningHistoryChart() {
       const runDate = data?.date ?? data?.activeLabel;
       if (!runDate || typeof runDate !== "string") return;
       const dataDate = runDateToDataDate(runDate);
-      router.push(`/health?date=${dataDate}`);
+      router.push(`/health?date=${dataDate}&view=all`);
       window.scrollTo({ top: 0, behavior: "smooth" });
     },
     [router],
@@ -122,6 +125,9 @@ export function WarningHistoryChart() {
   // Transform data for Recharts: each date becomes an object with code counts
   const chartData = dates.map((d) => ({
     date: d.date,
+    detected: d.detected ?? Object.values(d.warnings).reduce((sum, n) => sum + Number(n ?? 0), 0),
+    active: d.active ?? 0,
+    resolved: d.resolved ?? 0,
     ...d.warnings,
   }));
 
@@ -130,7 +136,7 @@ export function WarningHistoryChart() {
       <h3 className="text-sm font-semibold mb-1">Warning History</h3>
       <p className="text-xs opacity-70 mb-3">
         Warning counts per day over the past 30 days (critical/warn only).
-        Click a bar to view that day&apos;s warnings.
+        Click a bar to audit everything detected that day.
       </p>
 
       <div className="w-full cursor-pointer" style={{ height: 220 }}>
@@ -175,7 +181,11 @@ export function WarningHistoryChart() {
                 borderRadius: 8,
                 fontSize: 11,
               }}
-              labelFormatter={(v) => `${String(v)} (click to view)`}
+              labelFormatter={(v, payload) => {
+                const row = payload?.[0]?.payload as HistoryEntry | undefined;
+                if (!row) return `${String(v)} (click to view)`;
+                return `${String(v)} · ${row.detected ?? 0} detected, ${row.resolved ?? 0} resolved, ${row.active ?? 0} active`;
+              }}
               formatter={(value: number | undefined, name: string | undefined) => {
                 const key = name ?? "";
                 return [value ?? 0, CODE_LABELS[key] ?? key] as const;

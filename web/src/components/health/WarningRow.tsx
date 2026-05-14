@@ -153,6 +153,183 @@ function formatCodeLabel(code: string) {
     .join(" ");
 }
 
+function TotalDecreaseMessage({ message }: { message: string }) {
+  const match = message.match(
+    /^Total streams decreased ([^(]+) \(([^→]+) → ([^)]+)\)(.*)$/u,
+  );
+  if (!match) return <>{message}</>;
+
+  const [, delta, from, to, suffix] = match;
+  return (
+    <span className="inline-flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+      <span className="font-medium">Streams decreased</span>
+      <span className="font-mono font-semibold text-red-600 dark:text-red-400">
+        {delta.trim()}
+      </span>
+      <span className="font-mono text-[11px] opacity-50">
+        {from.trim()} to {to.trim()}
+      </span>
+      {suffix.trim() ? (
+        <span className="text-[11px] opacity-60">{suffix.replace(/^—\s*/, "")}</span>
+      ) : null}
+    </span>
+  );
+}
+
+function CountLeadMessage({
+  message,
+  tone,
+}: {
+  message: string;
+  tone: "red" | "amber" | "purple" | "blue" | "green";
+}) {
+  const match = message.match(/^(\d[\d,]*) track\(s\)(.*)$/i);
+  if (!match) return <>{message}</>;
+
+  const [, count, rest] = match;
+  const toneClass =
+    tone === "red"
+      ? "text-red-600 dark:text-red-400"
+      : tone === "amber"
+        ? "text-amber-700 dark:text-amber-300"
+        : tone === "purple"
+          ? "text-purple-700 dark:text-purple-300"
+          : tone === "blue"
+            ? "text-blue-700 dark:text-blue-300"
+            : "text-green-700 dark:text-green-400";
+
+  return (
+    <span className="inline-flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+      <span className={["font-mono font-semibold", toneClass].join(" ")}>
+        {count}
+      </span>
+      <span className="font-medium text-[var(--sb-text)]">track(s)</span>
+      <span className="opacity-60">{rest.trim()}</span>
+    </span>
+  );
+}
+
+function EmbeddedTrackCountMessage({
+  message,
+  tone,
+}: {
+  message: string;
+  tone: "red" | "amber" | "purple" | "blue" | "green";
+}) {
+  const match = message.match(/^(.*?)(\d[\d,]*) track\(s\)(.*)$/i);
+  if (!match) return <CountLeadMessage message={message} tone={tone} />;
+
+  const [, before, count, after] = match;
+  const toneClass =
+    tone === "red"
+      ? "text-red-600 dark:text-red-400"
+      : tone === "amber"
+        ? "text-amber-700 dark:text-amber-300"
+        : tone === "purple"
+          ? "text-purple-700 dark:text-purple-300"
+          : tone === "blue"
+            ? "text-blue-700 dark:text-blue-300"
+            : "text-green-700 dark:text-green-400";
+
+  return (
+    <span className="inline-flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+      <span className="font-medium text-[var(--sb-text)]">{before.trim()}</span>
+      <span className={["font-mono font-semibold", toneClass].join(" ")}>
+        {count}
+      </span>
+      <span className="font-medium text-[var(--sb-text)]">track(s)</span>
+      <span className="opacity-60">{after.trim()}</span>
+    </span>
+  );
+}
+
+function DriftMessage({ message }: { message: string }) {
+  const match = message.match(
+    /^Entity\/Distro mismatch for (.*): (\d[\d,]*) extra in Distro, (\d[\d,]*) missing from Distro$/i,
+  );
+  if (!match) return <>{message}</>;
+
+  const [, name, extra, missing] = match;
+  return (
+    <span className="inline-flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+      <span className="font-medium">Entity/Distro mismatch</span>
+      <span className="opacity-60">{name}</span>
+      <span className="font-mono font-semibold text-amber-700 dark:text-amber-300">
+        {extra} extra
+      </span>
+      <span className="font-mono font-semibold text-blue-700 dark:text-blue-300">
+        {missing} missing
+      </span>
+    </span>
+  );
+}
+
+function MissingSnapshotMessage({ message }: { message: string }) {
+  const match = message.match(/^Missing catalog stream snapshots for (\d[\d,]*) track\(s\)(.*)$/i);
+  if (!match) return <EmbeddedTrackCountMessage message={message} tone="red" />;
+  const [, count, rest] = match;
+  return (
+    <span className="inline-flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+      <span className="font-medium text-[var(--sb-text)]">Missing catalog stream snapshots</span>
+      <span className="font-mono font-semibold text-red-600 dark:text-red-400">
+        {count}
+      </span>
+      <span className="font-medium text-[var(--sb-text)]">track(s)</span>
+      <span className="opacity-60">{rest.trim()}</span>
+    </span>
+  );
+}
+
+function PrevNonzeroMessage({ message }: { message: string }) {
+  const match = message.match(/^(\d[\d,]*) catalog track\(s\)(.*)$/i);
+  if (match) {
+    const [, count, rest] = match;
+    return (
+      <span className="inline-flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+        <span className="font-medium text-[var(--sb-text)]">Missing stream totals</span>
+        <span className="font-mono font-semibold text-red-600 dark:text-red-400">
+          {count}
+        </span>
+        <span className="font-medium text-[var(--sb-text)]">track(s)</span>
+        <span className="opacity-60">{rest.trim()}</span>
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+      <span className="font-medium text-[var(--sb-text)]">Missing stream totals</span>
+      <span className="opacity-60">
+        had previous non-zero cumulative streams and are recorded as missing today.
+      </span>
+    </span>
+  );
+}
+
+function WarningMessage({ code, message }: { code: string; message: string }) {
+  if (code === "total_streams_decreased") {
+    return <TotalDecreaseMessage message={message} />;
+  }
+  if (code === "artificial_stream_spike") {
+    return <CountLeadMessage message={message} tone="amber" />;
+  }
+  if (code === "individual_tracks_stale") {
+    return <CountLeadMessage message={message} tone="red" />;
+  }
+  if (code === "catalog_missing_stream_snapshots") {
+    return <MissingSnapshotMessage message={message} />;
+  }
+  if (code === "catalog_streams_missing_prev_nonzero") {
+    return <PrevNonzeroMessage message={message} />;
+  }
+  if (code === "non_catalog_tracks_present") {
+    return <EmbeddedTrackCountMessage message={message} tone="red" />;
+  }
+  if (code === "entity_distro_drift") {
+    return <DriftMessage message={message} />;
+  }
+  return <>{message}</>;
+}
+
 function DriftPlaylistChip({
   playlistKey,
   meta,
@@ -207,6 +384,7 @@ type WarningRowProps = {
     code: string;
     playlist_key: string | null;
     message: string;
+    resolutionStatus?: "active" | "resolved";
   };
   playlistMeta: PlaylistMeta | null;
   expandedData: WarningExpandedData;
@@ -293,26 +471,28 @@ export function WarningRow({
           <span
             className={[
               "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium",
-              warning.severity === "critical"
+              warning.resolutionStatus === "resolved"
+                ? "bg-green-500/15 text-green-700 dark:bg-green-500/20 dark:text-green-400"
+                : warning.severity === "critical"
                 ? "bg-red-500/20 text-red-700 dark:bg-red-500/30 dark:text-red-300"
                 : warning.severity === "warn"
                   ? "bg-orange-500/20 text-orange-700 dark:bg-orange-500/30 dark:text-orange-300"
                   : "bg-blue-500/20 text-blue-700 dark:bg-blue-500/30 dark:text-blue-300",
             ].join(" ")}
           >
-            {warning.severity}
+            {warning.resolutionStatus === "resolved" ? "resolved" : warning.severity}
           </span>
         </TableCell>
 
         {/* Code */}
-        <TableCell className="hidden sm:table-cell text-xs font-medium">
+        <TableCell className="hidden xl:table-cell text-xs font-medium">
           <div className="truncate" title={warning.code}>
             {formatCodeLabel(warning.code)}
           </div>
         </TableCell>
 
         {/* Playlist */}
-        <TableCell className="hidden sm:table-cell">
+        <TableCell className="hidden xl:table-cell">
           {warning.playlist_key ? (
             <Link
               href={`/playlists?playlist_key=${encodeURIComponent(String(warning.playlist_key))}`}
@@ -378,10 +558,17 @@ export function WarningRow({
               </button>
             )}
             <div className="min-w-0 flex-1">
-              <div className="truncate">{warning.message}</div>
+              <div className="min-w-0 break-words xl:truncate">
+                <WarningMessage code={warning.code} message={warning.message} />
+                {warning.resolutionStatus === "resolved" ? (
+                  <span className="mt-0.5 block text-[10px] font-medium text-green-700 dark:text-green-400 xl:ml-2 xl:mt-0 xl:inline">
+                    Resolved after ingestion
+                  </span>
+                ) : null}
+              </div>
 
               {/* Mobile meta: code + playlist inline */}
-              <div className="mt-1 flex items-center gap-2 text-[11px] opacity-70 sm:hidden min-w-0">
+              <div className="mt-1 flex items-center gap-2 text-[11px] opacity-70 xl:hidden min-w-0">
                 <span className="truncate">
                   {formatCodeLabel(warning.code)}
                 </span>
@@ -449,6 +636,7 @@ export function WarningRow({
               allPlaylistMeta={allPlaylistMeta}
               runDate={runDate}
               playlistKey={warning.playlist_key}
+              isResolved={warning.resolutionStatus === "resolved"}
             />
           </TableCell>
         </TableRow>
@@ -467,19 +655,27 @@ function ExpandedContent({
   allPlaylistMeta,
   runDate,
   playlistKey,
+  isResolved,
 }: {
   data: NonNullable<WarningExpandedData>;
   thumbByIsrc: Record<string, string | null>;
   allPlaylistMeta: Record<string, PlaylistMeta>;
   runDate?: string | null;
   playlistKey: string | null;
+  isResolved: boolean;
 }) {
   switch (data.type) {
     case "non_catalog_tracks_present":
       return (
         <TrackSection label="Non-catalog tracks" count={data.tracks.length}>
           {data.tracks.map((t) => (
-            <TrackListItem key={t.isrc} track={t} />
+            <TrackListItem
+              key={t.isrc}
+              track={t}
+              dense
+              className="rounded-md px-2 py-1.5"
+              style={{ backgroundColor: "var(--sb-surface)" }}
+            />
           ))}
         </TrackSection>
       );
@@ -490,7 +686,13 @@ function ExpandedContent({
           {data.swing.added.length > 0 && (
             <TrackSection label="Added tracks" count={data.swing.added.length}>
               {data.swing.added.map((t) => (
-                <TrackListItem key={t.isrc} track={t} />
+                <TrackListItem
+                  key={t.isrc}
+                  track={t}
+                  dense
+                  className="rounded-md px-2 py-1.5"
+                  style={{ backgroundColor: "var(--sb-surface)" }}
+                />
               ))}
             </TrackSection>
           )}
@@ -500,7 +702,13 @@ function ExpandedContent({
               count={data.swing.removed.length}
             >
               {data.swing.removed.map((t) => (
-                <TrackListItem key={t.isrc} track={t} />
+                <TrackListItem
+                  key={t.isrc}
+                  track={t}
+                  dense
+                  className="rounded-md px-2 py-1.5"
+                  style={{ backgroundColor: "var(--sb-surface)" }}
+                />
               ))}
             </TrackSection>
           )}
@@ -515,6 +723,9 @@ function ExpandedContent({
               key={t.isrc}
               track={t}
               thumbOverrides={thumbByIsrc}
+              dense
+              className="rounded-md px-2 py-1.5"
+              style={{ backgroundColor: "var(--sb-surface)" }}
             />
           ))}
         </TrackSection>
@@ -524,31 +735,91 @@ function ExpandedContent({
 
     case "catalog_missing_stream_snapshots":
       return Array.isArray(data.tracks) && data.tracks.length > 0 ? (
-        <TrackSection
-          label="Missing catalog stream snapshots"
-          count={data.tracks.length}
-        >
-          {data.tracks.map((t) => (
-            <TrackListItem
-              key={t.isrc}
-              track={t}
-              thumbOverrides={thumbByIsrc}
-              actions={
-                runDate ? (
-                  <QuickOverrideButton
-                    isrc={t.isrc.trim().toUpperCase()}
-                    date={runDate}
-                  />
-                ) : undefined
-              }
-            />
-          ))}
-        </TrackSection>
+        isResolved ? (
+          <TrackSection
+            label="Affected tracks"
+            count={data.tracks.length}
+            note="Resolved by stream overrides after ingestion."
+          >
+            {data.tracks.map((t) => (
+              <TrackListItem
+                key={t.isrc}
+                track={t}
+                thumbOverrides={thumbByIsrc}
+                dense
+                className="rounded-md px-2 py-1.5"
+                style={{ backgroundColor: "var(--sb-surface)" }}
+              />
+            ))}
+          </TrackSection>
+        ) : runDate ? (
+          <StaleTrackResolver
+            tracks={data.tracks as TrackBase[]}
+            thumbOverrides={thumbByIsrc}
+            runDate={runDate}
+            mode="missing_snapshot"
+          />
+        ) : (
+          <TrackSection
+            label="Missing catalog stream snapshots"
+            count={data.tracks.length}
+          >
+            {data.tracks.map((t) => (
+              <TrackListItem
+                key={t.isrc}
+                track={t}
+                thumbOverrides={thumbByIsrc}
+              />
+            ))}
+          </TrackSection>
+        )
       ) : (
         <FallbackNote note={data.note} />
       );
 
     case "catalog_streams_missing_prev_nonzero":
+      if (isResolved && Array.isArray(data.tracks) && data.tracks.length > 0) {
+        return (
+          <TrackSection
+            label="Affected tracks"
+            count={data.tracks.length}
+            note="Resolved by stream overrides after ingestion."
+          >
+            {(data.tracks as PrevNonzeroTrack[]).map((t) => {
+              const prev =
+                typeof t.prev_streams_cumulative === "number" &&
+                Number.isFinite(t.prev_streams_cumulative)
+                  ? t.prev_streams_cumulative
+                  : null;
+              return (
+                <TrackListItem
+                  key={t.isrc}
+                  track={t}
+                  thumbOverrides={thumbByIsrc}
+                  dense
+                  className="rounded-md px-2 py-1.5"
+                  style={{ backgroundColor: "var(--sb-surface)" }}
+                  trailing={
+                    prev !== null ? (
+                      <MetricPill label="prev" value={prev.toLocaleString()} />
+                    ) : undefined
+                  }
+                />
+              );
+            })}
+          </TrackSection>
+        );
+      }
+      if (runDate && Array.isArray(data.tracks) && data.tracks.length > 0) {
+        return (
+          <StaleTrackResolver
+            tracks={data.tracks as PrevNonzeroTrack[]}
+            thumbOverrides={thumbByIsrc}
+            runDate={runDate}
+            mode="prev_nonzero"
+          />
+        );
+      }
       return Array.isArray(data.tracks) && data.tracks.length > 0 ? (
         <TrackSection
           label="Missing stream totals with prior non-zero"
@@ -587,7 +858,49 @@ function ExpandedContent({
 
     case "individual_tracks_stale":
       return Array.isArray(data.tracks) && data.tracks.length > 0 ? (
-        runDate ? (
+        isResolved ? (
+          <TrackSection
+            label="Affected tracks"
+            count={data.tracks.length}
+            note="Resolved by stream overrides after ingestion."
+          >
+            {(data.tracks as StaleTrack[]).map((t) => {
+              const cumulative =
+                typeof t.streams_cumulative === "number" &&
+                Number.isFinite(t.streams_cumulative)
+                  ? t.streams_cumulative
+                  : null;
+              const avg =
+                typeof t.avg_daily_7d === "number" &&
+                Number.isFinite(t.avg_daily_7d)
+                  ? t.avg_daily_7d
+                  : null;
+              return (
+                <TrackListItem
+                  key={t.isrc}
+                  track={t}
+                  thumbOverrides={thumbByIsrc}
+                  dense
+                  className="rounded-md px-2 py-1.5"
+                  style={{ backgroundColor: "var(--sb-surface)" }}
+                  trailing={
+                    <div className="flex flex-shrink-0 items-center gap-1.5">
+                      {cumulative !== null ? (
+                        <MetricPill label="total" value={cumulative.toLocaleString()} />
+                      ) : null}
+                      {avg !== null ? (
+                        <MetricPill
+                          label="avg/day"
+                          value={avg.toLocaleString(undefined, { maximumFractionDigits: 1 })}
+                        />
+                      ) : null}
+                    </div>
+                  }
+                />
+              );
+            })}
+          </TrackSection>
+        ) : runDate ? (
           <StaleTrackResolver
             tracks={data.tracks as StaleTrack[]}
             thumbOverrides={thumbByIsrc}
@@ -609,6 +922,9 @@ function ExpandedContent({
                   key={t.isrc}
                   track={t}
                   thumbOverrides={thumbByIsrc}
+                  dense
+                  className="rounded-md px-2 py-1.5"
+                  style={{ backgroundColor: "var(--sb-surface)" }}
                   inlineExtra={
                     <>
                       {cumulative !== null && (
@@ -652,6 +968,9 @@ function ExpandedContent({
               key={t.isrc}
               track={t}
               thumbOverrides={thumbByIsrc}
+              dense
+              className="rounded-md px-2 py-1.5"
+              style={{ backgroundColor: "var(--sb-surface)" }}
               inlineExtra={
                 typeof t.prev_streams === "number" &&
                 Number.isFinite(t.prev_streams) ? (
@@ -705,15 +1024,17 @@ function ExpandedContent({
                     <TrackListItem
                       key={t.isrc}
                       track={t}
-                      compact
-                      className="rounded-lg px-2.5 py-2"
+                      dense
+                      className="rounded-md px-2 py-1.5"
                       style={{ backgroundColor: "var(--sb-surface)" }}
                       trailing={
                         prev !== null ? (
-                          <div className="flex-shrink-0 ml-2 flex items-center gap-1.5 text-[10px] font-mono">
-                            <span className="px-2 py-1 rounded bg-red-500/10 text-red-600 dark:text-red-400 font-medium">
-                              −{prev.toLocaleString()} streams
-                            </span>
+                          <div className="flex-shrink-0 ml-2">
+                            <MetricPill
+                              tone="red"
+                              label="removed"
+                              value={`-${prev.toLocaleString()}`}
+                            />
                           </div>
                         ) : undefined
                       }
@@ -753,21 +1074,24 @@ function ExpandedContent({
                     <TrackListItem
                       key={t.isrc}
                       track={t}
-                      compact
-                      className="rounded-lg px-2.5 py-2"
+                      dense
+                      className="rounded-md px-2 py-1.5"
                       style={{ backgroundColor: "var(--sb-surface)" }}
                       trailing={
-                        <div className="flex-shrink-0 ml-2 flex items-center gap-2 text-[10px] font-mono">
-                          {prev !== null && today !== null && (
-                            <span className="opacity-70">
-                              {prev.toLocaleString()} → {today.toLocaleString()}
-                            </span>
-                          )}
-                          {delta !== null && (
-                            <span className="px-2 py-1 rounded bg-red-500/10 text-red-600 dark:text-red-400 font-medium">
-                              {delta.toLocaleString()}
-                            </span>
-                          )}
+                        <div className="mt-1 flex max-w-full flex-shrink-0 flex-wrap items-center justify-end gap-1.5 xl:ml-2 xl:mt-0">
+                          {prev !== null ? (
+                            <MetricPill label="from" value={prev.toLocaleString()} />
+                          ) : null}
+                          {today !== null ? (
+                            <MetricPill label="to" value={today.toLocaleString()} />
+                          ) : null}
+                          {delta !== null ? (
+                            <MetricPill
+                              tone="red"
+                              label="by"
+                              value={delta.toLocaleString()}
+                            />
+                          ) : null}
                         </div>
                       }
                     />
@@ -1015,19 +1339,50 @@ function ExpandedContent({
 function TrackSection({
   label,
   count,
+  note,
   children,
 }: {
   label: string;
   count: number;
+  note?: string;
   children: React.ReactNode;
 }) {
   return (
     <div className="space-y-2">
-      <div className="text-xs font-medium opacity-70 mb-2">
-        {label} ({count}):
+      <div className="flex flex-wrap items-center gap-2 text-xs font-medium opacity-70 mb-2">
+        <span>{label} ({count}):</span>
+        {note ? (
+          <span className="rounded-full bg-green-500/10 px-2 py-0.5 text-[10px] text-green-700 dark:text-green-400">
+            {note}
+          </span>
+        ) : null}
       </div>
       <div className="space-y-2">{children}</div>
     </div>
+  );
+}
+
+function MetricPill({
+  label,
+  value,
+  tone = "neutral",
+}: {
+  label: string;
+  value: string;
+  tone?: "neutral" | "red";
+}) {
+  return (
+    <span
+      className={[
+        "inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-mono sb-ring",
+        tone === "red"
+          ? "bg-red-500/10 text-red-600 dark:text-red-400"
+          : "bg-white/5",
+      ].join(" ")}
+    >
+      <span className="font-sans opacity-55">{label}</span>
+      <span>{value}</span>
+    </span>
   );
 }
 

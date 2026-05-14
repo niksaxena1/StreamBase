@@ -1,7 +1,13 @@
 import { unstable_cache } from "next/cache";
 import { supabaseService } from "@/lib/supabase/service";
 import { normalizeKey, normalizeIsrc } from "./types";
-import type { WarningRow, IndividualTracksStaleDetailsJson } from "./types";
+import type {
+  WarningRow,
+  CatalogMissingSnapshotsDetailsJson,
+  IndividualTracksStaleDetailsJson,
+  PrevNonzeroDetailsJson,
+  TotalStreamsDecreasedDetailsJson,
+} from "./types";
 
 // Re-export for backward compatibility
 export { normalizeKey } from "./types";
@@ -331,6 +337,38 @@ async function computeActiveWarnings(
         const remaining = affected.filter(
           (t) => !overriddenIsrcs.has(normalizeIsrc(t.isrc)),
         );
+        return remaining.length > 0;
+      }
+    }
+    if (w.code === "catalog_missing_stream_snapshots" && overriddenIsrcs.size > 0) {
+      const details = w.details_json as CatalogMissingSnapshotsDetailsJson | null;
+      const affected = details?.missing_isrcs_sample;
+      if (Array.isArray(affected) && affected.length > 0) {
+        const remaining = affected.filter(
+          (isrc) => !overriddenIsrcs.has(normalizeIsrc(isrc)),
+        );
+        return remaining.length > 0;
+      }
+    }
+    if (w.code === "catalog_streams_missing_prev_nonzero" && overriddenIsrcs.size > 0) {
+      const details = w.details_json as PrevNonzeroDetailsJson | null;
+      const affected = details?.affected_isrcs_with_prev_sample;
+      if (Array.isArray(affected) && affected.length > 0) {
+        const remaining = affected.filter(
+          (t) => !overriddenIsrcs.has(normalizeIsrc(t.isrc)),
+        );
+        return remaining.length > 0;
+      }
+    }
+    if (w.code === "total_streams_decreased" && overriddenIsrcs.size > 0) {
+      const details = w.details_json as TotalStreamsDecreasedDetailsJson | null;
+      const decreased = details?.decreased_tracks ?? [];
+      const removed = details?.removed_tracks ?? [];
+      const affected = [...decreased, ...removed]
+        .map((t) => normalizeIsrc(t.isrc))
+        .filter(Boolean);
+      if (affected.length > 0) {
+        const remaining = affected.filter((isrc) => !overriddenIsrcs.has(isrc));
         return remaining.length > 0;
       }
     }

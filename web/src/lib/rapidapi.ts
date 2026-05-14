@@ -7,6 +7,11 @@ export const STREAM_LOOKUP_PROVIDER_LABELS: Record<StreamLookupProvider, string>
   music_metrics: "Music Metrics",
 };
 
+export const STREAM_LOOKUP_PROVIDER_DAILY_CAPS: Record<StreamLookupProvider, number> = {
+  beat_analytics: 50,
+  music_metrics: 20,
+};
+
 export const BEAT_ANALYTICS_RAPIDAPI_HOST =
   "spotify-statistics-and-stream-count.p.rapidapi.com";
 

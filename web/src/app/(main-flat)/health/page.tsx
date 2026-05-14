@@ -35,6 +35,11 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
     Array.isArray(v) ? v[0] : v;
   const dateFilter = getFirst(sp.date);
   const pageParam = Math.max(1, parseInt(getFirst(sp.page) ?? "1", 10) || 1);
+  const viewParamRaw = getFirst(sp.view);
+  const warningView =
+    viewParamRaw === "resolved" || viewParamRaw === "all"
+      ? viewParamRaw
+      : "active";
 
   // ---- Auth ----
   const sb = await supabaseServer();
@@ -149,6 +154,7 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
           playlistMeta={playlistMeta}
           page={pageParam}
           dateParam={dateFilter ?? null}
+          view={warningView}
         />
       </Suspense>
 
