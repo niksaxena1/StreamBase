@@ -233,11 +233,14 @@ def main():
                 sys.exit(0)
             cap_val = row.get("rapidapi_auto_fix_daily_cap")
             if isinstance(cap_val, int) and 1 <= cap_val <= 1000:
-                daily_cap = cap_val
+                daily_cap = min(cap_val, DAILY_CAP)
     except Exception as e:
         print(f"Warning: could not read auto-fix settings ({e}). Using defaults.")
 
-    print(f"Daily cap: {daily_cap}")
+    print(
+        f"Daily free cap: {daily_cap} "
+        f"(Beat Analytics {BEAT_ANALYTICS_DAILY_CAP}/day + Music Metrics {MUSIC_METRICS_DAILY_CAP}/day)"
+    )
 
     warnings = pg.select(
         "ingestion_warnings",

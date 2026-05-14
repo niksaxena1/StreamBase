@@ -6,7 +6,13 @@ permissions:
 on:
   schedule:
     - cron: "15 11 * * *" # 11:15 UTC daily (~1h15m after ingestion)
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      mock_email_preview:
+        description: Send a mock styled email without calling RapidAPI
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   fix:
@@ -26,11 +32,92 @@ jobs:
 
       - name: Run stale-fix script
         id: fix
+        if: ${{ github.event.inputs.mock_email_preview != 'true' }}
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          BEAT_ANALYTICS_RAPIDAPI_KEY: ${{ secrets.BEAT_ANALYTICS_RAPIDAPI_KEY }}
+          MUSIC_METRICS_RAPIDAPI_KEY: ${{ secrets.MUSIC_METRICS_RAPIDAPI_KEY }}
           RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
         run: python scripts/rapidapi_stale_fix.py
+
+      - name: Create mock email preview summary
+        if: ${{ github.event.inputs.mock_email_preview == 'true' }}
+        shell: bash
+        run: |
+          mkdir -p .artifacts
+          cat > .artifacts/stale_fix_summary.json <<'JSON'
+          {
+            "fixed": 8,
+            "run_date": "2026-05-15",
+            "tracks": [
+              {
+                "provider": "Beat Analytics",
+                "isrc": "SE6A92124216",
+                "track_name": "Can't Take My Eyes off You",
+                "artist_names": ["Joongle"],
+                "stale": 1791521,
+                "new": 1793472
+              },
+              {
+                "provider": "Beat Analytics",
+                "isrc": "SE6SA2447903",
+                "track_name": "Stay",
+                "artist_names": ["Iaco", "AgusAlvarez", "Gina Livia"],
+                "stale": 780157,
+                "new": 781167
+              },
+              {
+                "provider": "Beat Analytics",
+                "isrc": "SE6XY2535580",
+                "track_name": "Dark Days Are Over",
+                "artist_names": ["Blaikz", "Shunichi Komazu", "lisawanderlust"],
+                "stale": 578248,
+                "new": 579565
+              },
+              {
+                "provider": "Beat Analytics",
+                "isrc": "SE62M2206959",
+                "track_name": "With A Little Help From My Friends",
+                "artist_names": ["Pinkloud", "Snoozegod", "planet emi"],
+                "stale": 1106974,
+                "new": 1107083
+              },
+              {
+                "provider": "Beat Analytics",
+                "isrc": "SE6TI2182987",
+                "track_name": "Fuck I'm Lonely",
+                "artist_names": ["Joongle"],
+                "stale": 454131,
+                "new": 454418
+              },
+              {
+                "provider": "Music Metrics",
+                "isrc": "GX89G2304488",
+                "track_name": "VHS",
+                "artist_names": ["AtcG", "Nino Lucarelli"],
+                "stale": 1295641,
+                "new": 1295671
+              },
+              {
+                "provider": "Music Metrics",
+                "isrc": "SE60E2277376",
+                "track_name": "Viva La Vida",
+                "artist_names": ["Joongle", "Piple"],
+                "stale": 1145666,
+                "new": 1146566
+              },
+              {
+                "provider": "Music Metrics",
+                "isrc": "SE6XY2545679",
+                "track_name": "365",
+                "artist_names": ["Ugg'A", "Oliver Roberts"],
+                "stale": 1129653,
+                "new": 1130648
+              }
+            ]
+          }
+          JSON
 
       - name: Check results for notification
         id: notify_check
@@ -39,7 +126,6 @@ jobs:
         run: |
           SHOULD_NOTIFY="false"
           SUBJECT=""
-          BODY=""
 
           if [ ! -f ".artifacts/stale_fix_summary.json" ]; then
             echo "should_notify=false" >> "$GITHUB_OUTPUT"
@@ -47,6 +133,9 @@ jobs:
             {
               echo 'body<<ENDOFBODY'
               echo 'No summary file found.'
+              echo 'ENDOFBODY'
+              echo 'html_body<<ENDOFBODY'
+              echo ''
               echo 'ENDOFBODY'
             } >> "$GITHUB_OUTPUT"
             exit 0
@@ -62,46 +151,125 @@ jobs:
 
           echo "should_notify=$SHOULD_NOTIFY" >> "$GITHUB_OUTPUT"
           echo "subject=${SUBJECT}" >> "$GITHUB_OUTPUT"
-          TRACK_DETAILS=""
-          if [ -f ".artifacts/stale_fix_summary.json" ]; then
-            TRACK_DETAILS=$(python3 - <<'PY' 2>/dev/null || echo ""
+          export RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          python3 - <<'PY'
+          import html
           import json
+          import os
+          from collections import Counter
+          from pathlib import Path
+
+          run_url = os.environ.get("RUN_URL", "")
 
           with open(".artifacts/stale_fix_summary.json", encoding="utf-8") as f:
               data = json.load(f)
 
-          for idx, track in enumerate(data.get("tracks", []), start=1):
-              isrc = str(track.get("isrc") or "?")
-              track_name = str(track.get("track_name") or "Unknown Track")
+          tracks = data.get("tracks", [])
+          fixed = int(data.get("fixed") or 0)
+          run_date_raw = str(data.get("run_date") or "?")
+          run_date = html.escape(run_date_raw)
+          providers = Counter(str(t.get("provider") or "stream lookup") for t in tracks)
+
+          def esc(value):
+              return html.escape(str(value or ""))
+
+          def fmt_int(value):
+              try:
+                  return f"{int(value):,}"
+              except Exception:
+                  return "?"
+
+          plain_lines = [
+              f"SBase auto-fix complete for {run_date_raw}",
+              f"Fixed: {fixed} stale track(s)",
+          ]
+          for provider, count in providers.items():
+              plain_lines.append(f"{provider}: {count}")
+          plain_lines.append("Paid overage: 0")
+          plain_lines.append("")
+
+          provider_chips = []
+          for provider, count in providers.items():
+              color = "#bef264" if provider == "Beat Analytics" else "#93c5fd"
+              bg = "rgba(190,242,100,.14)" if provider == "Beat Analytics" else "rgba(147,197,253,.14)"
+              provider_chips.append(
+                  f'<span style="display:inline-block;margin:0 6px 6px 0;padding:4px 8px;border-radius:999px;'
+                  f'background:{bg};color:{color};font-size:12px;font-weight:700;">{esc(provider)} {count}</span>'
+              )
+          provider_chips.append(
+              '<span style="display:inline-block;margin:0 6px 6px 0;padding:4px 8px;border-radius:999px;'
+              'background:rgba(255,255,255,.07);color:#9ca3af;font-size:12px;font-weight:700;">0 paid overage</span>'
+          )
+
+          rows = []
+          for track in tracks:
+              isrc = esc(track.get("isrc") or "?")
+              title = esc(track.get("track_name") or "Unknown Track")
               artists = track.get("artist_names")
               if isinstance(artists, list):
-                  artist_name = ", ".join(str(a).strip() for a in artists if str(a).strip())
+                  artist = ", ".join(str(a).strip() for a in artists if str(a).strip())
               else:
-                  artist_name = ""
-              artist_name = artist_name or "Unknown Artist"
+                  artist = ""
+              artist_plain = artist or "Unknown Artist"
+              artist = esc(artist_plain)
               stale = int(track.get("stale") or 0)
               new = int(track.get("new") or 0)
               delta = new - stale
-              print(f"{idx}. {artist_name} - {track_name}")
-              print(f"   ISRC: {isrc}")
-              print(f"   {stale:,} -> {new:,} (+{delta:,})")
-              if idx < len(data.get("tracks", [])):
-                  print()
-          PY
-          )
-          fi
+              delta_text = f"+{delta:,}" if delta >= 0 else f"{delta:,}"
+              plain_lines.append(
+                  f"- {track.get('track_name') or 'Unknown Track'} - {artist_plain} "
+                  f"({track.get('isrc') or '?'}) {stale:,} -> {new:,} ({delta_text})"
+              )
+              rows.append(f"""
+                <tr>
+                  <td style="padding:8px 0;border-top:1px solid rgba(255,255,255,.08);">
+                    <div style="font-size:13px;font-weight:700;color:#f9fafb;line-height:1.25;">{title}</div>
+                    <div style="font-size:12px;color:#9ca3af;line-height:1.25;">{artist}</div>
+                  </td>
+                  <td style="padding:8px 10px;border-top:1px solid rgba(255,255,255,.08);font:12px ui-monospace,SFMono-Regular,Menlo,monospace;color:#84cc16;white-space:nowrap;">{isrc}</td>
+                  <td style="padding:8px 0;border-top:1px solid rgba(255,255,255,.08);text-align:right;white-space:nowrap;">
+                    <span style="font:12px ui-monospace,SFMono-Regular,Menlo,monospace;color:#9ca3af;">{fmt_int(stale)} &rarr; {fmt_int(new)}</span>
+                    <span style="font:12px ui-monospace,SFMono-Regular,Menlo,monospace;color:#22c55e;font-weight:800;margin-left:6px;">({delta_text})</span>
+                  </td>
+                </tr>
+              """)
 
-          {
-            echo 'body<<ENDOFBODY'
-            echo "Fixed ${FIXED} stale tracks for ${RUN_DATE}"
-            echo ""
-            if [ -n "$TRACK_DETAILS" ]; then
-              echo "$TRACK_DETAILS"
-              echo ""
-            fi
-            echo "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-            echo 'ENDOFBODY'
-          } >> "$GITHUB_OUTPUT"
+          plain_lines.append("")
+          plain_lines.append(f"Workflow run: {run_url}")
+          plain_body = "\n".join(plain_lines)
+          track_rows = "".join(rows) or (
+              '<tr><td colspan="3" style="padding:12px 0;border-top:1px solid rgba(255,255,255,.08);color:#9ca3af;">No track details available.</td></tr>'
+          )
+
+          html_body = f"""<!doctype html>
+          <html>
+            <body style="margin:0;padding:24px;background:#09090b;color:#f9fafb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;">
+              <div style="max-width:680px;margin:0 auto;border:1px solid rgba(255,255,255,.10);border-radius:14px;background:#151518;overflow:hidden;">
+                <div style="padding:18px 20px;border-bottom:1px solid rgba(255,255,255,.08);background:#111315;">
+                  <div style="font-size:12px;color:#bef264;font-weight:800;letter-spacing:.04em;text-transform:uppercase;">SBase</div>
+                  <div style="margin-top:4px;font-size:22px;font-weight:800;color:#f9fafb;">Auto-fix complete</div>
+                  <div style="margin-top:4px;font-size:13px;color:#9ca3af;">Run date: {run_date}</div>
+                </div>
+                <div style="padding:16px 20px;">
+                  <div style="font-size:16px;font-weight:800;color:#f9fafb;margin-bottom:10px;">{fixed} stale track{'s' if fixed != 1 else ''} fixed</div>
+                  <div style="margin-bottom:12px;">{''.join(provider_chips)}</div>
+                  <div style="font-size:12px;color:#9ca3af;text-transform:uppercase;letter-spacing:.05em;font-weight:800;margin:12px 0 4px;">Fixed tracks</div>
+                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;">
+                    {track_rows}
+                  </table>
+                  <div style="margin-top:18px;">
+                    <a href="{html.escape(run_url)}" style="display:inline-block;padding:9px 12px;border-radius:8px;background:#bef264;color:#111827;text-decoration:none;font-size:13px;font-weight:800;">View workflow run</a>
+                  </div>
+                </div>
+              </div>
+            </body>
+          </html>"""
+
+          output_path = Path(os.environ["GITHUB_OUTPUT"])
+          with output_path.open("a", encoding="utf-8") as output:
+              output.write(f"body<<ENDOFBODY\n{plain_body}\nENDOFBODY\n")
+              output.write(f"html_body<<ENDOFBODY\n{html_body}\nENDOFBODY\n")
+          PY
 
       - name: Send notification email
         if: always() && steps.notify_check.outputs.should_notify == 'true'
@@ -110,3 +278,4 @@ jobs:
           password: ${{ secrets.NOTIFY_SMTP_PASSWORD }}
           subject: ${{ steps.notify_check.outputs.subject }}
           body: ${{ steps.notify_check.outputs.body }}
+          html_body: ${{ steps.notify_check.outputs.html_body }}

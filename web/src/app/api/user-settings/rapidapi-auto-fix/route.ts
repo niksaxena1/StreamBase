@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 const DEFAULT_ENABLED = true;
 const DEFAULT_DAILY_CAP = 70;
-const MAX_DAILY_CAP = 1000;
+const MAX_DAILY_CAP = 70;
 
 export async function GET() {
   const sb = await supabaseServer();

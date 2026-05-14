@@ -10,7 +10,7 @@ type RapidApiAutoFixPayload = {
   configured?: boolean;
 };
 
-const MAX_CAP = 1000;
+const MAX_CAP = 70;
 const DEFAULT_CAP = 70;
 
 export function RapidApiAutoFixSetting() {
@@ -102,8 +102,8 @@ export function RapidApiAutoFixSetting() {
           <h3 className="text-sm font-medium">Stream lookup auto-fix</h3>
           <p className="mt-1 text-xs opacity-70">
             When enabled, the scheduled job automatically corrects stale tracks
-            via Beat Analytics first, then Music Metrics as a fallback. Disable
-            to suppress all automatic overrides without removing your API key.
+            via Beat Analytics first, then Music Metrics as a fallback. It only
+            uses the free daily lookup budget; paid overage stays manual.
           </p>
         </div>
 
@@ -159,7 +159,7 @@ export function RapidApiAutoFixSetting() {
               disabled={controlsDisabled}
               className="sb-ring h-9 w-24 rounded-lg bg-white/60 px-2 text-sm dark:bg-white/10 disabled:opacity-40"
             />
-            <span className="text-xs opacity-50">max {MAX_CAP}</span>
+            <span className="text-xs opacity-50">max {MAX_CAP} free calls/day</span>
             {capDirty && (
               <button
                 type="button"

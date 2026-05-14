@@ -9,8 +9,12 @@ inputs:
     description: Email subject line
     required: true
   body:
-    description: Email body (plain text)
+    description: Plain text email body
     required: true
+  html_body:
+    description: Optional HTML email body
+    required: false
+    default: ""
 
 runs:
   using: composite
@@ -24,5 +28,6 @@ runs:
         password: ${{ inputs.password }}
         subject: ${{ inputs.subject }}
         body: ${{ inputs.body }}
+        html_body: ${{ inputs.html_body }}
         to: nikhil.auh@gmail.com
         from: SBase CI <nikhil.auh@gmail.com>
