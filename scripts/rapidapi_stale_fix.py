@@ -176,7 +176,7 @@ def enrich_fixed_tracks(pg: Postgrest, fixed: list) -> list:
     try:
         rows = pg.select(
             "tracks",
-            "isrc,name,spotify_artist_names",
+            "isrc,name,spotify_artist_names,spotify_album_image_url",
             f"isrc=in.({','.join(isrcs)})",
         )
     except Exception as e:
@@ -194,6 +194,7 @@ def enrich_fixed_tracks(pg: Postgrest, fixed: list) -> list:
         meta_by_isrc[isrc] = {
             "track_name": row.get("name") or None,
             "artist_names": artist_names,
+            "album_image_url": row.get("spotify_album_image_url") or None,
         }
 
     return [
@@ -378,6 +379,7 @@ def write_summary(run_date: str, attempted: int, fixed_count: int, fixed: list):
                 "isrc": f["isrc"],
                 "track_name": f.get("track_name"),
                 "artist_names": f.get("artist_names"),
+                "album_image_url": f.get("album_image_url"),
                 "stale": f["stale"],
                 "new": f["streams"],
                 "provider": f.get("provider"),
