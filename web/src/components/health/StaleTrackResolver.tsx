@@ -10,6 +10,8 @@ type LookupResult = {
   isrc: string;
   streams: number | null;
   status: "ok" | "failed" | "suspicious";
+  provider?: "beat_analytics" | "music_metrics";
+  providerLabel?: string;
   error?: string;
 };
 
@@ -39,6 +41,7 @@ export function StaleTrackResolver({
 
     const isrcs = tracks.map((t) => t.isrc.trim().toUpperCase());
     const staleStreams: Record<string, number> = {};
+    const spotifyTrackIds: Record<string, string> = {};
     for (const t of tracks) {
       const isrc = t.isrc.trim().toUpperCase();
       if (
@@ -47,13 +50,15 @@ export function StaleTrackResolver({
       ) {
         staleStreams[isrc] = t.streams_cumulative;
       }
+      const spotifyTrackId = t.spotify_track_id?.trim();
+      if (spotifyTrackId) spotifyTrackIds[isrc] = spotifyTrackId;
     }
 
     try {
       const data = await fetchApiJson<{ results: LookupResult[] }>("/api/rapidapi-stale-lookup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ isrcs, staleStreams }),
+        body: JSON.stringify({ isrcs, staleStreams, spotifyTrackIds }),
       });
       const map = new Map<string, LookupResult>();
       const autoSelect = new Set<string>();
@@ -105,9 +110,19 @@ export function StaleTrackResolver({
       .map((isrc) => {
         const r = results.get(isrc);
         if (!r || r.streams == null) return null;
-        return { isrc, streams_cumulative: r.streams };
+        return {
+          isrc,
+          streams_cumulative: r.streams,
+          provider: r.provider,
+          providerLabel: r.providerLabel,
+        };
       })
-      .filter(Boolean) as { isrc: string; streams_cumulative: number }[];
+      .filter(Boolean) as {
+        isrc: string;
+        streams_cumulative: number;
+        provider?: "beat_analytics" | "music_metrics";
+        providerLabel?: string;
+      }[];
 
     try {
       await fetchApiJson("/api/health-actions", {
@@ -132,6 +147,13 @@ export function StaleTrackResolver({
   const selectableCount = Array.from(results.values()).filter(
     (r) => r.streams != null,
   ).length;
+  const beatAnalyticsEligibleCount = tracks.filter((t) => t.spotify_track_id?.trim()).length;
+  const lookupTooltip =
+    beatAnalyticsEligibleCount > 0
+      ? `Uses Beat Analytics first for ${beatAnalyticsEligibleCount.toLocaleString()} track${
+          beatAnalyticsEligibleCount === 1 ? "" : "s"
+        } with Spotify IDs, then Music Metrics as the fallback.`
+      : "Uses Music Metrics. Beat Analytics needs Spotify track IDs, and none are available for this stale-track set.";
 
   return (
     <div className="space-y-3">
@@ -149,14 +171,16 @@ export function StaleTrackResolver({
             <button
               type="button"
               onClick={handleFetch}
+              title={lookupTooltip}
+              aria-label={`Fetch stream counts. ${lookupTooltip}`}
               className="inline-flex items-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-lg transition-all
                 bg-[var(--sb-accent)]/15 text-[var(--sb-positive)] hover:bg-[var(--sb-accent)]/25
                 sb-ring"
             >
               <SpotifyIcon />
-              Fetch Spotify Streams
+              Fetch Stream Counts
               <span className="opacity-60 font-normal">
-                ({tracks.length} API call{tracks.length !== 1 ? "s" : ""})
+                ({tracks.length} lookup{tracks.length !== 1 ? "s" : ""})
               </span>
             </button>
           </div>
@@ -173,7 +197,7 @@ export function StaleTrackResolver({
               />
             </div>
             <span className="text-[10px] opacity-60 animate-pulse">
-              Fetching from Spotify...
+              Checking stream providers...
             </span>
           </div>
         )}
@@ -306,11 +330,11 @@ function StaleStreamInfo({
         </span>
       )}
 
-      {/* Spotify result */}
+      {/* Stream provider result */}
       {result && result.status === "ok" && result.streams != null && (
         <>
           <span className="text-green-700 dark:text-green-400 font-medium">
-            → Spotify:{" "}
+            → {result.providerLabel ?? "Provider"}:{" "}
             <span className="font-mono">
               {result.streams.toLocaleString()}
             </span>
@@ -326,7 +350,7 @@ function StaleStreamInfo({
       {result && result.status === "suspicious" && result.streams != null && (
         <>
           <span className="text-amber-400 font-medium">
-            → Spotify:{" "}
+            → {result.providerLabel ?? "Provider"}:{" "}
             <span className="font-mono">
               {result.streams.toLocaleString()}
             </span>

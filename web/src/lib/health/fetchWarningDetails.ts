@@ -157,7 +157,7 @@ async function fetchDetailsTracks(
   const { data: trackRows, error } = await svc
     .from("tracks")
     .select(
-      "isrc,name,spotify_artist_names,spotify_artist_ids,spotify_album_image_url",
+      "isrc,name,spotify_track_id,spotify_artist_names,spotify_artist_ids,spotify_album_image_url",
     )
     .in("isrc", [...allIsrcs]);
 
@@ -172,6 +172,7 @@ async function fetchDetailsTracks(
     metaByIsrc.set(isrc, {
       isrc,
       name: (t.name ?? null) as string | null,
+      spotify_track_id: (t.spotify_track_id ?? null) as string | null,
       artist_names: (t.spotify_artist_names ?? null) as string[] | null,
       artist_ids: (t.spotify_artist_ids ?? null) as string[] | null,
       album_image_url: (t.spotify_album_image_url ?? null) as string | null,
@@ -185,6 +186,7 @@ async function fetchDetailsTracks(
       return {
         isrc,
         name: meta?.name ?? null,
+        spotify_track_id: meta?.spotify_track_id ?? null,
         artist_names: meta?.artist_names ?? null,
         artist_ids: meta?.artist_ids ?? null,
         album_image_url: meta?.album_image_url ?? null,

@@ -70,3 +70,7 @@ __pycache__/
 
 # Local workflow artifact downloads
 .artifacts/
+
+# Local agent worktrees and scratch dependencies
+.claude/worktrees/
+tmp/

@@ -1,15 +1,21 @@
 """
-Auto-fix stale tracks via RapidAPI.
+Auto-fix stale tracks via stream lookup providers.
 
 Runs as a standalone scheduled job (separate from ingestion). Queries the DB
 for the latest individual_tracks_stale warning, fetches corrected stream
-counts from RapidAPI, and writes overrides to track_daily_stream_overrides.
+counts from Beat Analytics first and Music Metrics as a fallback, and writes
+overrides to track_daily_stream_overrides.
 
-Caps at 20 API calls per day (per run_date) to stay within the free tier.
+Caps at 70 API calls per day (per run_date) by default: 50 Beat Analytics
+calls plus 20 Music Metrics calls. The existing user setting can lower the
+overall cap.
 
 Usage:
     export SUPABASE_URL="https://your-project.supabase.co"
     export SUPABASE_SERVICE_ROLE_KEY="..."
+    export BEAT_ANALYTICS_RAPIDAPI_KEY="..."
+    export MUSIC_METRICS_RAPIDAPI_KEY="..."
+    # Optional legacy fallback for both providers:
     export RAPIDAPI_KEY="..."
 
     python scripts/rapidapi_stale_fix.py
@@ -19,16 +25,19 @@ import json
 import os
 import sys
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import List
 
 import requests
 
-DAILY_CAP = 20
-RAPIDAPI_HOST = "spotify-track-streams-playback-count1.p.rapidapi.com"
-RAPIDAPI_ENDPOINT = f"https://{RAPIDAPI_HOST}/tracks/spotify_track_streams"
-OVERRIDE_NOTE = "stale-fix: RapidAPI auto"
+DAILY_CAP = 70
+BEAT_ANALYTICS_DAILY_CAP = 50
+MUSIC_METRICS_DAILY_CAP = 20
+BEAT_ANALYTICS_HOST = "spotify-statistics-and-stream-count.p.rapidapi.com"
+BEAT_ANALYTICS_ENDPOINT = f"https://{BEAT_ANALYTICS_HOST}/track"
+MUSIC_METRICS_HOST = "spotify-track-streams-playback-count1.p.rapidapi.com"
+MUSIC_METRICS_ENDPOINT = f"https://{MUSIC_METRICS_HOST}/tracks/spotify_track_streams"
+OVERRIDE_NOTE_PREFIX = "stale-fix:"
 RATE_LIMIT_MS = 1100
 
 
@@ -65,17 +74,56 @@ class Postgrest:
             raise RuntimeError(f"RPC {fn_name} failed: {r.status_code} {r.text[:500]}")
 
 
-def fetch_rapidapi_streams(isrc: str, api_key: str) -> int | None:
+def fetch_beat_analytics_streams(spotify_track_id: str, api_key: str) -> int | None:
     headers = {
-        "x-rapidapi-host": RAPIDAPI_HOST,
+        "x-rapidapi-host": BEAT_ANALYTICS_HOST,
+        "x-rapidapi-key": api_key,
+        "Content-Type": "application/json",
+    }
+    r = requests.get(f"{BEAT_ANALYTICS_ENDPOINT}/{spotify_track_id}", headers=headers, timeout=30)
+    data = r.json() if r.ok else {}
+    if data.get("streamCount") is None:
+        return None
+    val = int(data["streamCount"])
+    return val if val >= 0 else None
+
+
+def fetch_music_metrics_streams(isrc: str, api_key: str) -> int | None:
+    headers = {
+        "x-rapidapi-host": MUSIC_METRICS_HOST,
         "x-rapidapi-key": api_key,
     }
-    r = requests.get(RAPIDAPI_ENDPOINT, headers=headers, params={"isrc": isrc}, timeout=30)
+    r = requests.get(MUSIC_METRICS_ENDPOINT, headers=headers, params={"isrc": isrc}, timeout=30)
     data = r.json() if r.ok else {}
     if data.get("result") != "success" or data.get("streams") is None:
         return None
     val = int(data["streams"])
     return val if val >= 0 else None
+
+
+def attach_spotify_track_ids(pg: Postgrest, candidates: list) -> list:
+    isrcs = [str(c.get("isrc", "")).strip().upper() for c in candidates if c.get("isrc")]
+    if not isrcs:
+        return candidates
+
+    try:
+        rows = pg.select(
+            "tracks",
+            "isrc,spotify_track_id",
+            f"isrc=in.({','.join(isrcs)})",
+        )
+    except Exception as e:
+        print(f"Warning: could not load Spotify track IDs ({e}).")
+        return candidates
+
+    spotify_by_isrc = {
+        str(row.get("isrc", "")).strip().upper(): str(row.get("spotify_track_id") or "").strip()
+        for row in rows
+    }
+    return [
+        {**c, "spotify_track_id": spotify_by_isrc.get(str(c.get("isrc", "")).strip().upper()) or None}
+        for c in candidates
+    ]
 
 
 def enrich_fixed_tracks(pg: Postgrest, fixed: list) -> list:
@@ -87,11 +135,10 @@ def enrich_fixed_tracks(pg: Postgrest, fixed: list) -> list:
         return fixed
 
     try:
-        isrc_filter = ",".join(isrcs)
         rows = pg.select(
             "tracks",
             "isrc,name,spotify_artist_names",
-            f"isrc=in.({isrc_filter})",
+            f"isrc=in.({','.join(isrcs)})",
         )
     except Exception as e:
         print(f"Warning: could not enrich fixed track metadata ({e}).")
@@ -110,28 +157,28 @@ def enrich_fixed_tracks(pg: Postgrest, fixed: list) -> list:
             "artist_names": artist_names,
         }
 
-    enriched = []
-    for f in fixed:
-        isrc = str(f.get("isrc", "")).strip().upper()
-        enriched.append({**f, **meta_by_isrc.get(isrc, {})})
-    return enriched
+    return [
+        {**f, **meta_by_isrc.get(str(f.get("isrc", "")).strip().upper(), {})}
+        for f in fixed
+    ]
 
 
 def main():
     supabase_url = os.environ.get("SUPABASE_URL", "").strip()
     service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
-    api_key = os.environ.get("RAPIDAPI_KEY", "").strip()
+    legacy_api_key = os.environ.get("RAPIDAPI_KEY", "").strip()
+    beat_key = os.environ.get("BEAT_ANALYTICS_RAPIDAPI_KEY", "").strip() or legacy_api_key
+    music_key = os.environ.get("MUSIC_METRICS_RAPIDAPI_KEY", "").strip() or legacy_api_key
 
     if not supabase_url or not service_key:
         print("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.")
         sys.exit(1)
-    if not api_key:
-        print("RAPIDAPI_KEY is not set. Skipping stale-fix.")
+    if not beat_key and not music_key:
+        print("No stream lookup provider key is set. Skipping stale-fix.")
         sys.exit(0)
 
     pg = Postgrest(supabase_url, service_key)
 
-    # Check whether the user has disabled the auto-fix or changed the daily cap.
     daily_cap = DAILY_CAP
     try:
         settings_rows = pg.select(
@@ -142,7 +189,7 @@ def main():
         if settings_rows:
             row = settings_rows[0]
             if row.get("rapidapi_auto_fix_enabled") is False:
-                print("RapidAPI auto-fix is disabled in settings. Skipping.")
+                print("Stream lookup auto-fix is disabled in settings. Skipping.")
                 write_summary("", 0, 0, [])
                 sys.exit(0)
             cap_val = row.get("rapidapi_auto_fix_daily_cap")
@@ -153,7 +200,6 @@ def main():
 
     print(f"Daily cap: {daily_cap}")
 
-    # Find the latest individual_tracks_stale warning.
     warnings = pg.select(
         "ingestion_warnings",
         "run_date,details_json",
@@ -174,24 +220,27 @@ def main():
 
     print(f"Found {len(affected_tracks)} stale track(s) for run_date={run_date}")
 
-    # Check how many auto-fixes already exist for this run date.
     existing = pg.select(
         "track_daily_stream_overrides",
-        "isrc",
-        f"date=eq.{run_date}&note=eq.{OVERRIDE_NOTE}",
+        "isrc,note",
+        f"date=eq.{run_date}&note=like.{OVERRIDE_NOTE_PREFIX}*auto*",
     )
     existing_isrcs = {str(r.get("isrc", "")).strip().upper() for r in existing}
+    existing_beat = sum(1 for r in existing if "Beat Analytics" in str(r.get("note", "")))
+    existing_music = sum(1 for r in existing if "Music Metrics" in str(r.get("note", "")))
     already_fixed = len(existing_isrcs)
     budget = max(0, daily_cap - already_fixed)
+    beat_budget = max(0, min(BEAT_ANALYTICS_DAILY_CAP - existing_beat, budget))
+    music_budget = max(0, min(MUSIC_METRICS_DAILY_CAP - existing_music, budget))
 
-    print(f"  Already fixed today: {already_fixed}/{daily_cap}  |  Budget remaining: {budget}")
+    print(f"  Already fixed today: {already_fixed}/{daily_cap} | Budget remaining: {budget}")
+    print(f"  Provider budget: Beat Analytics={beat_budget}, Music Metrics={music_budget}")
 
     if budget <= 0:
         print("Daily cap reached. Exiting.")
         write_summary(run_date, 0, 0, [])
         sys.exit(0)
 
-    # Filter out tracks that are already overridden, take up to budget.
     candidates = []
     for t in affected_tracks:
         isrc = str(t.get("isrc", "")).strip().upper()
@@ -199,51 +248,64 @@ def main():
         if not isrc or isrc in existing_isrcs:
             continue
         candidates.append({"isrc": isrc, "stale_streams": streams})
-    candidates = candidates[:budget]
+    candidates = attach_spotify_track_ids(pg, candidates[:budget])
 
     if not candidates:
         print("All stale tracks already fixed or none eligible. Nothing to do.")
         write_summary(run_date, 0, 0, [])
         sys.exit(0)
 
-    print(f"  Fetching from RapidAPI for {len(candidates)} track(s)...")
+    print(f"  Fetching stream counts for {len(candidates)} track(s)...")
 
     fixed: List[dict] = []
     attempted = 0
+    beat_attempted = 0
+    music_attempted = 0
 
     for i, c in enumerate(candidates):
         isrc = c["isrc"]
         stale = c["stale_streams"]
         attempted += 1
+        api_val = None
+        provider = None
 
-        try:
-            api_val = fetch_rapidapi_streams(isrc, api_key)
-        except Exception as e:
-            print(f"    {isrc}: API error — {e}")
-            if i < len(candidates) - 1:
-                time.sleep(RATE_LIMIT_MS / 1000)
-            continue
+        if beat_key and c.get("spotify_track_id") and beat_attempted < beat_budget:
+            beat_attempted += 1
+            try:
+                api_val = fetch_beat_analytics_streams(c["spotify_track_id"], beat_key)
+                if api_val is not None:
+                    provider = "Beat Analytics"
+            except Exception as e:
+                print(f"    {isrc}: Beat Analytics error - {e}")
+
+        if api_val is None and music_key and music_attempted < music_budget:
+            music_attempted += 1
+            try:
+                api_val = fetch_music_metrics_streams(isrc, music_key)
+                if api_val is not None:
+                    provider = "Music Metrics"
+            except Exception as e:
+                print(f"    {isrc}: Music Metrics error - {e}")
 
         if api_val is None:
-            print(f"    {isrc}: no data from API")
+            print(f"    {isrc}: no data from stream providers")
         elif api_val < stale:
-            print(f"    {isrc}: suspicious (API={api_val:,} < stale={stale:,}), skipping")
+            print(f"    {isrc}: suspicious ({provider}={api_val:,} < stale={stale:,}), skipping")
         else:
             delta = api_val - stale
-            print(f"    {isrc}: OK  stale={stale:,} → API={api_val:,}  (+{delta:,})")
-            fixed.append({"isrc": isrc, "streams": api_val, "stale": stale})
+            print(f"    {isrc}: OK stale={stale:,} -> {provider}={api_val:,} (+{delta:,})")
+            fixed.append({"isrc": isrc, "streams": api_val, "stale": stale, "provider": provider})
 
         if i < len(candidates) - 1:
             time.sleep(RATE_LIMIT_MS / 1000)
 
-    # Write overrides.
     if fixed:
         rows = [
             {
                 "date": run_date,
                 "isrc": f["isrc"],
                 "streams_cumulative_override": f["streams"],
-                "note": OVERRIDE_NOTE,
+                "note": f"stale-fix: {f.get('provider') or 'stream lookup'} auto",
             }
             for f in fixed
         ]
@@ -272,6 +334,7 @@ def write_summary(run_date: str, attempted: int, fixed_count: int, fixed: list):
                 "artist_names": f.get("artist_names"),
                 "stale": f["stale"],
                 "new": f["streams"],
+                "provider": f.get("provider"),
             }
             for f in fixed
         ],

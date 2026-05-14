@@ -119,7 +119,11 @@ export async function POST(request: NextRequest) {
       return apiJsonErr("overrides must be a non-empty array", 400);
     }
 
-    const validated: { isrc: string; streams_cumulative: number }[] = [];
+    const validated: {
+      isrc: string;
+      streams_cumulative: number;
+      providerLabel: string | null;
+    }[] = [];
     for (const entry of rawOverrides) {
       const e = entry as Record<string, unknown>;
       const isrc = String(e.isrc ?? "").trim().toUpperCase();
@@ -130,17 +134,23 @@ export async function POST(request: NextRequest) {
       if (!Number.isFinite(sc) || !Number.isInteger(sc) || sc < 0) {
         return apiJsonErr(`Invalid streams_cumulative for ${isrc}`, 400);
       }
-      validated.push({ isrc, streams_cumulative: sc });
+      const providerLabel = String(e.providerLabel ?? "").trim();
+      validated.push({
+        isrc,
+        streams_cumulative: sc,
+        providerLabel: providerLabel || null,
+      });
     }
 
     const svc = supabaseService();
-    const note = "stale-fix: RapidAPI manual";
 
     const rows = validated.map((v) => ({
       date,
       isrc: v.isrc,
       streams_cumulative_override: v.streams_cumulative,
-      note,
+      note: v.providerLabel
+        ? `stale-fix: ${v.providerLabel} manual`
+        : "stale-fix: stream lookup manual",
       created_by: user.id,
     }));
 

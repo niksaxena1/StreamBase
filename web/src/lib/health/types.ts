@@ -25,6 +25,7 @@ export function normalizeIsrc(raw: unknown): string {
 export type TrackBase = {
   isrc: string;
   name: string | null;
+  spotify_track_id?: string | null;
   artist_names?: string[] | null;
   artist_ids?: string[] | null;
   album_image_url?: string | null;

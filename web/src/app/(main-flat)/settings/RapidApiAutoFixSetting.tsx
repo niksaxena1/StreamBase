@@ -11,7 +11,7 @@ type RapidApiAutoFixPayload = {
 };
 
 const MAX_CAP = 1000;
-const DEFAULT_CAP = 20;
+const DEFAULT_CAP = 70;
 
 export function RapidApiAutoFixSetting() {
   const [enabled, setEnabled] = useState(true);
@@ -99,11 +99,11 @@ export function RapidApiAutoFixSetting() {
     <div className="sb-ring rounded-2xl bg-white/70 p-3 dark:bg-white/5">
       <div className="flex items-center justify-between gap-4">
         <div className="flex-1">
-          <h3 className="text-sm font-medium">RapidAPI auto-fix</h3>
+          <h3 className="text-sm font-medium">Stream lookup auto-fix</h3>
           <p className="mt-1 text-xs opacity-70">
             When enabled, the scheduled job automatically corrects stale tracks
-            via the RapidAPI Spotify endpoint each day. Disable to suppress all
-            automatic overrides without removing your API key.
+            via Beat Analytics first, then Music Metrics as a fallback. Disable
+            to suppress all automatic overrides without removing your API key.
           </p>
         </div>
 
@@ -124,7 +124,7 @@ export function RapidApiAutoFixSetting() {
               ]
                 .filter(Boolean)
                 .join(" ")}
-              aria-label={enabled ? "Disable RapidAPI auto-fix" : "Enable RapidAPI auto-fix"}
+              aria-label={enabled ? "Disable stream lookup auto-fix" : "Enable stream lookup auto-fix"}
             >
               <span
                 className={[

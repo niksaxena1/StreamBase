@@ -114,9 +114,9 @@ export function HideStaleAnnotationsSetting() {
             Hide stale-fix override annotations
           </h3>
           <p className="mt-1 text-xs opacity-70">
-            When enabled, chart annotations for stale-track overrides (RapidAPI
-            auto/manual fixes) are hidden. Overrides for zeroed-stream tracks
-            are not affected.
+            When enabled, chart annotations for stale-track overrides (stream
+            provider auto/manual fixes) are hidden. Overrides for zeroed-stream
+            tracks are not affected.
           </p>
         </div>
 
