@@ -6,11 +6,17 @@ import { SectionHeader } from "@/components/ui/SectionHeader";
 import { WarningRow } from "@/components/health/WarningRow";
 
 const PROVIDER_LABELS: Record<string, string> = {
+  dashydata: "DashyData",
+  music_analytics: "MusicAnalytics",
+  checkleakedcc: "CheckLeakedCC",
   beat_analytics: "Beat Analytics",
   music_metrics: "Music Metrics",
 };
 
 const PROVIDER_URLS: Record<string, string> = {
+  dashydata: "https://rapidapi.com/dashydata-dashydata-default/api/spotify-song-streams-api",
+  music_analytics: "https://rapidapi.com/MusicAnalyticsApi/api/spotify-stream-count",
+  checkleakedcc: "https://rapidapi.com/airaudoeduardo/api/spotify81",
   beat_analytics: "https://rapidapi.com/beat-analytics-beat-analytics-default/api/spotify-statistics-and-stream-count",
   music_metrics: "https://rapidapi.com/music-metrics-music-metrics-default/api/spotify-track-streams-playback-count1",
 };

@@ -754,7 +754,7 @@ function ExpandedContent({
           </TrackSection>
         ) : runDate ? (
           <StaleTrackResolver
-            tracks={data.tracks as TrackBase[]}
+            tracks={data.tracks as PrevNonzeroTrack[]}
             thumbOverrides={thumbByIsrc}
             runDate={runDate}
             mode="missing_snapshot"

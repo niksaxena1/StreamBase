@@ -102,7 +102,7 @@ export function RapidApiAutoFixSetting() {
           <h3 className="text-sm font-medium">Stream lookup auto-fix</h3>
           <p className="mt-1 text-xs opacity-70">
             When enabled, the scheduled job automatically corrects stale tracks
-            via Beat Analytics first, then Music Metrics as a fallback. It only
+            via Beat Analytics first, then Music Metrics, then CheckLeakedCC. It only
             uses the free daily lookup budget; paid overage stays manual.
           </p>
         </div>

@@ -10,13 +10,14 @@ type LookupResult = {
   isrc: string;
   streams: number | null;
   status: "ok" | "failed" | "suspicious";
-  provider?: "beat_analytics" | "music_metrics";
+  provider?: "dashydata" | "music_analytics" | "checkleakedcc" | "beat_analytics" | "music_metrics";
   providerLabel?: string;
   error?: string;
 };
 
 type ProviderQuota = {
   providerLabel: string;
+  window: "daily" | "monthly";
   cap: number;
   used: number;
   remaining: number;
@@ -30,6 +31,9 @@ type QuotaPayload = {
     date: string;
     configured: boolean;
     providers: {
+      dashydata: ProviderQuota;
+      music_analytics: ProviderQuota;
+      checkleakedcc: ProviderQuota;
       beat_analytics: ProviderQuota;
       music_metrics: ProviderQuota;
     };
@@ -40,8 +44,12 @@ type QuotaPayload = {
 type Phase = "idle" | "fetching" | "review" | "applying" | "done";
 type ResolverMode = "stale" | "missing_snapshot" | "prev_nonzero";
 type LookupTrack = TrackBase & Partial<StaleTrack> & Partial<PrevNonzeroTrack>;
+type TestableProvider = "beat_analytics" | "music_metrics" | "music_analytics" | "checkleakedcc" | "dashydata";
 
 const PROVIDER_URLS = {
+  dashydata: "https://rapidapi.com/dashydata-dashydata-default/api/spotify-song-streams-api",
+  music_analytics: "https://rapidapi.com/MusicAnalyticsApi/api/spotify-stream-count",
+  checkleakedcc: "https://rapidapi.com/airaudoeduardo/api/spotify81",
   beat_analytics: "https://rapidapi.com/beat-analytics-beat-analytics-default/api/spotify-statistics-and-stream-count",
   music_metrics: "https://rapidapi.com/music-metrics-music-metrics-default/api/spotify-track-streams-playback-count1",
 } as const;
@@ -68,7 +76,7 @@ const MODE_COPY: Record<
     fetchLabel: "Resolve Missing Snapshots",
     applyLabel: "Apply Snapshot Overrides",
     notePrefix: "missing-snapshot-fix",
-    baselineLabel: "total",
+    baselineLabel: "prev",
   },
   prev_nonzero: {
     title: "Missing stream totals with prior non-zero",
@@ -99,8 +107,12 @@ export function StaleTrackResolver({
   const [applyError, setApplyError] = useState("");
   const [appliedCount, setAppliedCount] = useState(0);
   const [quota, setQuota] = useState<QuotaPayload["quota"] | null>(null);
+  const [quotaLoaded, setQuotaLoaded] = useState(false);
+  const [quotaError, setQuotaError] = useState("");
   const [allowMusicMetricsOverage, setAllowMusicMetricsOverage] = useState(false);
   const [showOverageConfirm, setShowOverageConfirm] = useState(false);
+  const [testProvider, setTestProvider] = useState<TestableProvider>("music_analytics");
+  const [testingProvider, setTestingProvider] = useState<TestableProvider | null>(null);
   const copy = MODE_COPY[mode];
 
   const refreshLookupState = useCallback(async () => {
@@ -109,6 +121,7 @@ export function StaleTrackResolver({
         `/api/rapidapi-stale-lookup?date=${encodeURIComponent(runDate)}&context=${encodeURIComponent(mode)}`,
       );
       setQuota(data.quota);
+      setQuotaError("");
       if (Array.isArray(data.results) && data.results.length > 0) {
         const map = new Map<string, LookupResult>();
         const autoSelect = new Set<string>();
@@ -121,8 +134,11 @@ export function StaleTrackResolver({
         setSelected(autoSelect);
         setPhase("review");
       }
-    } catch {
+    } catch (e) {
       setQuota(null);
+      setQuotaError(e instanceof Error ? e.message : "Could not load provider usage");
+    } finally {
+      setQuotaLoaded(true);
     }
   }, [runDate]);
 
@@ -143,19 +159,29 @@ export function StaleTrackResolver({
   const remainingLookups = quota
     ? quota.providers.beat_analytics.remaining +
       quota.providers.music_metrics.remaining +
+      quota.providers.music_analytics.remaining +
+      quota.providers.checkleakedcc.remaining +
+      quota.providers.dashydata.remaining +
       (allowMusicMetricsOverage ? sourceTracks.length : 0)
-    : 70;
+    : 2120;
   const lookupLimit = Math.max(0, Math.min(sourceTracks.length, remainingLookups));
   const lookupTracks = useMemo(() => sourceTracks.slice(0, lookupLimit), [sourceTracks, lookupLimit]);
   const overageNeeded = quota != null && sourceTracks.length > (
-    quota.providers.beat_analytics.remaining + quota.providers.music_metrics.remaining
+    quota.providers.beat_analytics.remaining +
+      quota.providers.music_metrics.remaining +
+      quota.providers.music_analytics.remaining +
+      quota.providers.checkleakedcc.remaining +
+      quota.providers.dashydata.remaining
   );
   const estimatedOverageCalls = quota
     ? Math.max(
         0,
         Math.min(sourceTracks.length, lookupLimit) -
           quota.providers.beat_analytics.remaining -
-          quota.providers.music_metrics.remaining,
+          quota.providers.music_metrics.remaining -
+          quota.providers.music_analytics.remaining -
+          quota.providers.checkleakedcc.remaining -
+          quota.providers.dashydata.remaining,
       )
     : 0;
   const estimatedOverageCostUsd = estimatedOverageCalls * 0.5;
@@ -253,6 +279,49 @@ export function StaleTrackResolver({
     }
   }, [allowMusicMetricsOverage, estimatedOverageCalls, lookupTracks, mode, phase, refreshLookupState, results, showOverageConfirm]);
 
+  const handleProviderTest = useCallback(async () => {
+    const track = tracks.find((t) => t.spotify_track_id?.trim());
+    if (!track) {
+      setApplyError("No track with a Spotify ID is available for a provider test.");
+      return;
+    }
+    setTestingProvider(testProvider);
+    setApplyError("");
+    const isrc = track.isrc.trim().toUpperCase();
+    const baseline = getBaseline(track, mode);
+    try {
+      const data = await fetchApiJson<{ results: LookupResult[]; quota?: QuotaPayload["quota"] }>("/api/rapidapi-stale-lookup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          isrcs: [isrc],
+          staleStreams: typeof baseline === "number" ? { [isrc]: baseline } : {},
+          spotifyTrackIds: { [isrc]: track.spotify_track_id?.trim() },
+          preferredProvider: testProvider,
+          allowMusicMetricsOverage:
+            testProvider === "music_metrics" && allowMusicMetricsOverage,
+          context: mode,
+        }),
+      });
+      const result = data.results[0];
+      if (result) {
+        const next = new Map(results);
+        next.set(isrc, result);
+        setResults(next);
+        if (result.status === "ok" && result.streams != null) {
+          setSelected(new Set([isrc]));
+          setPhase("review");
+        }
+      }
+      if (data.quota) setQuota(data.quota);
+      await refreshLookupState();
+    } catch (e) {
+      setApplyError(e instanceof Error ? e.message : "Provider test failed");
+    } finally {
+      setTestingProvider(null);
+    }
+  }, [allowMusicMetricsOverage, mode, refreshLookupState, results, testProvider, tracks]);
+
   const toggleSelect = useCallback((isrc: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -295,7 +364,7 @@ export function StaleTrackResolver({
       .filter(Boolean) as {
         isrc: string;
         streams_cumulative: number;
-        provider?: "beat_analytics" | "music_metrics";
+        provider?: "dashydata" | "music_analytics" | "checkleakedcc" | "beat_analytics" | "music_metrics";
         providerLabel?: string;
       }[];
 
@@ -324,11 +393,11 @@ export function StaleTrackResolver({
     const r = results.get(t.isrc.trim().toUpperCase());
     return r?.streams != null;
   }).length;
-  const beatAnalyticsEligibleCount = lookupTracks.filter((t) => t.spotify_track_id?.trim()).length;
+  const spotifyIdEligibleCount = lookupTracks.filter((t) => t.spotify_track_id?.trim()).length;
   const lookupTooltip =
-    beatAnalyticsEligibleCount > 0
-      ? "Uses Beat Analytics first, up to its 50/day hard cap for tracks with Spotify IDs. Then uses Music Metrics for fallback or remaining free calls."
-      : "Uses Music Metrics. Beat Analytics needs Spotify track IDs, and none are available for this stale-track set.";
+    spotifyIdEligibleCount > 0
+      ? "Uses Beat Analytics first (50 free/day), then Music Metrics (20 free/day), then MusicAnalytics (50 free/month), then CheckLeakedCC (1000 free/month), then DashyData (1000 free/month). Paid Music Metrics is only used if you allow overage."
+      : "Uses Music Metrics. Beat Analytics, MusicAnalytics, CheckLeakedCC, and DashyData need Spotify track IDs, and none are available for this track set.";
   const lookupButtonLabel =
     lookupLimit < sourceTracks.length
       ? `${lookupLimit.toLocaleString()} of ${sourceTracks.length.toLocaleString()} lookup${sourceTracks.length === 1 ? "" : "s"}`
@@ -347,18 +416,38 @@ export function StaleTrackResolver({
                 href={PROVIDER_URLS.beat_analytics}
                 label={quota.providers.beat_analytics.providerLabel}
               />
-              {`: ${quota.providers.beat_analytics.used}/${quota.providers.beat_analytics.cap} used, ${quota.providers.beat_analytics.remaining} left · `}
+              {`: ${quota.providers.beat_analytics.used}/${quota.providers.beat_analytics.cap} used · `}
               <ProviderLink
                 href={PROVIDER_URLS.music_metrics}
                 label={quota.providers.music_metrics.providerLabel}
               />
-              {`: ${quota.providers.music_metrics.used}/${quota.providers.music_metrics.cap} free used, ${quota.providers.music_metrics.remaining} free left`}
+              {`: ${quota.providers.music_metrics.used}/${quota.providers.music_metrics.cap} free used`}
               {quota.providers.music_metrics.overageCalls > 0
                 ? `, ${quota.providers.music_metrics.overageCalls} paid overage`
                 : ""}
+              {" · "}
+              <ProviderLink
+                href={PROVIDER_URLS.music_analytics}
+                label={quota.providers.music_analytics.providerLabel}
+              />
+              {`: ${quota.providers.music_analytics.used}/${quota.providers.music_analytics.cap} used this month`}
+              {" · "}
+              <ProviderLink
+                href={PROVIDER_URLS.checkleakedcc}
+                label={quota.providers.checkleakedcc.providerLabel}
+              />
+              {`: ${quota.providers.checkleakedcc.used}/${quota.providers.checkleakedcc.cap} used this month`}
+              {" · "}
+              <ProviderLink
+                href={PROVIDER_URLS.dashydata}
+                label={quota.providers.dashydata.providerLabel}
+              />
+              {`: ${quota.providers.dashydata.used}/${quota.providers.dashydata.cap} used this month`}
             </>
           ) : (
-            "Quota: checking provider usage..."
+            quotaLoaded
+              ? `Quota unavailable: ${quotaError || "could not load provider usage"}`
+              : "Quota: checking provider usage..."
           )}
           {quota && !quota.configured ? " (temporary local tracking until the quota migration is applied)" : ""}
         </div>
@@ -425,6 +514,34 @@ export function StaleTrackResolver({
                 ({lookupButtonLabel})
               </span>
             </button>
+            {spotifyIdEligibleCount > 0 ? (
+              <div className="inline-flex items-center gap-1">
+                <select
+                  value={testProvider}
+                  onChange={(e) => setTestProvider(e.target.value as TestableProvider)}
+                  className="rounded bg-white/5 px-2 py-1 text-[10px] sb-ring"
+                  aria-label="Provider to test"
+                >
+                  <option value="beat_analytics">Beat Analytics</option>
+                  <option value="music_metrics">Music Metrics</option>
+                  <option value="music_analytics">MusicAnalytics</option>
+                  <option value="checkleakedcc">CheckLeakedCC</option>
+                  <option value="dashydata">DashyData</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={handleProviderTest}
+                  disabled={
+                    testingProvider != null ||
+                    quota?.providers[testProvider].remaining === 0
+                  }
+                  title={`Run exactly one lookup through ${quota?.providers[testProvider].providerLabel ?? testProvider} only, for smoke testing.`}
+                  className="text-[10px] px-2 py-1 rounded sb-ring bg-white/5 hover:bg-white/10 disabled:opacity-40"
+                >
+                  {testingProvider ? "Testing..." : "Test provider"}
+                </button>
+              </div>
+            ) : null}
           </div>
         )}
 
@@ -606,9 +723,21 @@ function StaleStreamInfo({
               {result.streams.toLocaleString()}
             </span>
           </span>
-          {stale != null && result.streams > stale && (
-            <span className="text-green-700/70 dark:text-green-500/70 text-[10px] font-mono">
-              (+{(result.streams - stale).toLocaleString()})
+          {stale != null ? (
+            <span className="inline-flex flex-wrap items-center gap-1 text-[10px] font-mono">
+              <span className="opacity-50">
+                from {stale.toLocaleString()}
+              </span>
+              <span className="text-green-700 dark:text-green-400">
+                to {result.streams.toLocaleString()}
+              </span>
+              <span className="text-green-700/70 dark:text-green-500/70">
+                by +{(result.streams - stale).toLocaleString()}
+              </span>
+            </span>
+          ) : (
+            <span className="font-mono text-green-700 dark:text-green-400">
+              to {result.streams.toLocaleString()}
             </span>
           )}
         </>
@@ -667,7 +796,7 @@ function ProviderLink({ href, label }: { href: string; label: string }) {
 
 function getBaseline(track: LookupTrack, mode: ResolverMode): number | null {
   const value =
-    mode === "prev_nonzero"
+    mode === "prev_nonzero" || mode === "missing_snapshot"
       ? track.prev_streams_cumulative
       : track.streams_cumulative;
   return typeof value === "number" && Number.isFinite(value) ? value : null;

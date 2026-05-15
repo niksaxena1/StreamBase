@@ -123,6 +123,10 @@ export type MissingEnrichmentDetailsJson = {
 
 export type CatalogMissingSnapshotsDetailsJson = {
   missing_isrcs_sample?: string[];
+  missing_isrcs_with_prev_sample?: {
+    isrc: string;
+    prev_streams_cumulative: number;
+  }[];
   note?: string;
 };
 
@@ -191,7 +195,7 @@ export type WarningExpandedData =
     }
   | {
       type: "catalog_missing_stream_snapshots";
-      tracks: TrackBase[] | null;
+      tracks: PrevNonzeroTrack[] | null;
       note?: string;
     }
   | {

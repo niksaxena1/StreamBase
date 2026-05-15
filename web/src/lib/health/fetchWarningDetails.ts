@@ -199,6 +199,49 @@ async function fetchDetailsTracks(
   return result;
 }
 
+async function addPreviousStreamBaselines(
+  svc: Svc,
+  map: Map<string, Array<TrackBase & Record<string, unknown>> | null>,
+  runDate: string | null,
+) {
+  if (!runDate) return;
+  const d = new Date(`${runDate}T00:00:00Z`);
+  if (!Number.isFinite(d.getTime())) return;
+  d.setUTCDate(d.getUTCDate() - 1);
+  const prevDate = d.toISOString().slice(0, 10);
+  const isrcs = [
+    ...new Set(
+      [...map.values()]
+        .flatMap((tracks) => tracks ?? [])
+        .map((t) => normalizeIsrc(t.isrc))
+        .filter(Boolean),
+    ),
+  ];
+  if (isrcs.length === 0) return;
+
+  const { data } = await svc
+    .from("track_daily_streams")
+    .select("isrc,streams_cumulative")
+    .eq("date", prevDate)
+    .in("isrc", isrcs);
+
+  const prevByIsrc = new Map<string, number>();
+  for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+    const isrc = normalizeIsrc(row.isrc);
+    const prev = Number(row.streams_cumulative ?? NaN);
+    if (isrc && Number.isFinite(prev)) prevByIsrc.set(isrc, prev);
+  }
+
+  for (const tracks of map.values()) {
+    if (!tracks) continue;
+    for (const track of tracks) {
+      if (typeof track.prev_streams_cumulative === "number") continue;
+      const prev = prevByIsrc.get(normalizeIsrc(track.isrc));
+      if (prev !== undefined) track.prev_streams_cumulative = prev;
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Per-warning-type sample extractors (used with fetchDetailsTracks)
 // ---------------------------------------------------------------------------
@@ -207,6 +250,20 @@ function extractCatalogMissing(
   dj: Record<string, unknown> | null,
 ): TrackSample[] {
   const details = dj as CatalogMissingSnapshotsDetailsJson | null;
+  const withPrev = details?.missing_isrcs_with_prev_sample;
+  if (Array.isArray(withPrev) && withPrev.length > 0) {
+    return (withPrev as Array<Record<string, unknown>>)
+      .map((r) => {
+        const isrc = normalizeIsrc(r.isrc);
+        const prev = Number(r.prev_streams_cumulative ?? NaN);
+        return {
+          isrc,
+          prev_streams_cumulative: Number.isFinite(prev) ? prev : null,
+        };
+      })
+      .filter((r) => Boolean(r.isrc))
+      .slice(0, 200);
+  }
   const raw = details?.missing_isrcs_sample;
   if (!Array.isArray(raw)) return [];
   return (raw as unknown[])
@@ -801,7 +858,7 @@ function buildExpandedData(
       if (tracks.length === 0) return null;
       return {
         type: "catalog_missing_stream_snapshots",
-        tracks: tracks as TrackBase[] | null,
+        tracks: tracks as PrevNonzeroTrack[] | null,
         note:
           noteFromDetails ??
           "These tracks appeared in a catalog export but had missing/invalid stream totals and were not written to track_daily_streams.",
@@ -1124,6 +1181,7 @@ export async function fetchDisplayedWarnings(
   for (const [key, tracks] of catalogMissingMapRaw) {
     catalogMissingMap.set(key, shouldFilterOverriddenDetails ? filterOverridden(tracks) : tracks);
   }
+  await addPreviousStreamBaselines(svc, catalogMissingMap, runDate);
 
   const prevNonzeroMap = new Map<string, Array<TrackBase & Record<string, unknown>> | null>();
   for (const [key, tracks] of prevNonzeroMapRaw) {

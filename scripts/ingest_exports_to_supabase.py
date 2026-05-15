@@ -801,6 +801,13 @@ def main():
         missing_snapshot_isrcs = sorted(expected_catalog_isrcs - present_snapshot_isrcs)
 
         if missing_snapshot_isrcs:
+            missing_snapshot_with_prev = [
+                {
+                    "isrc": isrc,
+                    "prev_streams_cumulative": int(prev_streams.get(isrc, 0) or 0),
+                }
+                for isrc in missing_snapshot_isrcs[:200]
+            ]
             missing_by_playlist: Dict[str, int] = {}
             sample_by_playlist: Dict[str, List[str]] = {}
             for pl_key, isrcs in playlist_to_isrcs.items():
@@ -827,6 +834,7 @@ def main():
                             "present_stream_snapshots_count": len(present_snapshot_isrcs),
                             "missing_stream_snapshots_count": len(missing_snapshot_isrcs),
                             "missing_isrcs_sample": missing_snapshot_isrcs[:200],
+                            "missing_isrcs_with_prev_sample": missing_snapshot_with_prev,
                             "missing_by_playlist": missing_by_playlist,
                             "missing_isrcs_sample_by_playlist": sample_by_playlist,
                             "note": "These tracks appeared in a catalog export but had missing/invalid stream totals and were not written to track_daily_streams.",
