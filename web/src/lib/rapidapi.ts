@@ -1,14 +1,12 @@
 import { RAPIDAPI_RATE_LIMIT_MS } from "@/lib/constants";
 
 export type StreamLookupProvider =
-  | "dashydata"
   | "music_analytics"
   | "checkleakedcc"
   | "beat_analytics"
   | "music_metrics";
 
 export const STREAM_LOOKUP_PROVIDER_LABELS: Record<StreamLookupProvider, string> = {
-  dashydata: "DashyData",
   music_analytics: "MusicAnalytics",
   checkleakedcc: "CheckLeakedCC",
   beat_analytics: "Beat Analytics",
@@ -16,7 +14,6 @@ export const STREAM_LOOKUP_PROVIDER_LABELS: Record<StreamLookupProvider, string>
 };
 
 export const STREAM_LOOKUP_PROVIDER_CAPS: Record<StreamLookupProvider, number> = {
-  dashydata: 1000,
   music_analytics: 50,
   checkleakedcc: 1000,
   beat_analytics: 50,
@@ -27,7 +24,6 @@ export const STREAM_LOOKUP_PROVIDER_WINDOWS: Record<
   StreamLookupProvider,
   "daily" | "monthly"
 > = {
-  dashydata: "monthly",
   music_analytics: "monthly",
   checkleakedcc: "monthly",
   beat_analytics: "daily",
@@ -40,7 +36,6 @@ export const STREAM_LOOKUP_PROVIDER_DAILY_CAPS = {
 } as const;
 
 export const STREAM_LOOKUP_PROVIDER_MONTHLY_CAPS = {
-  dashydata: STREAM_LOOKUP_PROVIDER_CAPS.dashydata,
   music_analytics: STREAM_LOOKUP_PROVIDER_CAPS.music_analytics,
   checkleakedcc: STREAM_LOOKUP_PROVIDER_CAPS.checkleakedcc,
 } as const;
@@ -49,9 +44,6 @@ export const MUSIC_ANALYTICS_RAPIDAPI_HOST = "spotify-stream-count.p.rapidapi.co
 
 export const MUSIC_ANALYTICS_ENDPOINT = `https://${MUSIC_ANALYTICS_RAPIDAPI_HOST}/v1/spotify/tracks`;
 
-export const DASHYDATA_RAPIDAPI_HOST = "spotify-song-streams-api.p.rapidapi.com";
-
-export const DASHYDATA_ENDPOINT = `https://${DASHYDATA_RAPIDAPI_HOST}/song/streams`;
 
 export const CHECKLEAKEDCC_RAPIDAPI_HOST = "spotify81.p.rapidapi.com";
 

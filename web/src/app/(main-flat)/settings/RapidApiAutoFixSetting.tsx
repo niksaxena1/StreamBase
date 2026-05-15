@@ -1,22 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { fetchApiJson } from "@/lib/api";
 import { SAVED_FEEDBACK_MS } from "@/lib/constants";
 
 type RapidApiAutoFixPayload = {
   rapidapi_auto_fix_enabled?: boolean;
-  rapidapi_auto_fix_daily_cap?: number;
   configured?: boolean;
 };
 
-const MAX_CAP = 70;
-const DEFAULT_CAP = 70;
-
 export function RapidApiAutoFixSetting() {
   const [enabled, setEnabled] = useState(true);
-  const [capText, setCapText] = useState(String(DEFAULT_CAP));
-  const [savedCap, setSavedCap] = useState(DEFAULT_CAP);
   const [loading, setLoading] = useState(true);
   const [configured, setConfigured] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -29,11 +23,6 @@ export function RapidApiAutoFixSetting() {
     void fetchApiJson<RapidApiAutoFixPayload>("/api/user-settings/rapidapi-auto-fix")
       .then((data) => {
         setEnabled(data.rapidapi_auto_fix_enabled !== false);
-        const cap = typeof data.rapidapi_auto_fix_daily_cap === "number"
-          ? data.rapidapi_auto_fix_daily_cap
-          : DEFAULT_CAP;
-        setCapText(String(cap));
-        setSavedCap(cap);
         setConfigured(data.configured !== false);
         setLoading(false);
       })
@@ -42,18 +31,6 @@ export function RapidApiAutoFixSetting() {
         setLoading(false);
       });
   }, []);
-
-  const capValidation = useMemo(() => {
-    const s = capText.trim();
-    if (!s) return { ok: false as const, error: "Required." };
-    if (!/^\d+$/.test(s)) return { ok: false as const, error: "Must be a whole number." };
-    const n = Number(s);
-    if (n < 1) return { ok: false as const, error: "Must be at least 1." };
-    if (n > MAX_CAP) return { ok: false as const, error: `Max is ${MAX_CAP}.` };
-    return { ok: true as const, value: n };
-  }, [capText]);
-
-  const capDirty = capValidation.ok && capValidation.value !== savedCap;
 
   async function savePatch(patch: Record<string, unknown>, rollback?: () => void) {
     setError(null);
@@ -67,11 +44,6 @@ export function RapidApiAutoFixSetting() {
       });
 
       setEnabled(data.rapidapi_auto_fix_enabled !== false);
-      const cap = typeof data.rapidapi_auto_fix_daily_cap === "number"
-        ? data.rapidapi_auto_fix_daily_cap
-        : DEFAULT_CAP;
-      setCapText(String(cap));
-      setSavedCap(cap);
       setSaved(true);
       setTimeout(() => setSaved(false), SAVED_FEEDBACK_MS);
     } catch (e) {
@@ -88,11 +60,6 @@ export function RapidApiAutoFixSetting() {
     void savePatch({ rapidapi_auto_fix_enabled: next }, () => setEnabled(!next));
   }
 
-  function saveCap() {
-    if (!capValidation.ok) return;
-    void savePatch({ rapidapi_auto_fix_daily_cap: capValidation.value });
-  }
-
   const controlsDisabled = loading || saving || !configured;
 
   return (
@@ -102,8 +69,9 @@ export function RapidApiAutoFixSetting() {
           <h3 className="text-sm font-medium">Stream lookup auto-fix</h3>
           <p className="mt-1 text-xs opacity-70">
             When enabled, the scheduled job automatically corrects stale tracks
-            via Beat Analytics first, then Music Metrics, then CheckLeakedCC. It only
-            uses the free daily lookup budget; paid overage stays manual.
+            via Beat Analytics first, then Music Metrics, then MusicAnalytics,
+            then CheckLeakedCC. It fixes every stale track when fewer than 500
+            are stale, using free provider quotas only; paid overage stays manual.
           </p>
         </div>
 
@@ -142,40 +110,6 @@ export function RapidApiAutoFixSetting() {
           )}
         </div>
       </div>
-
-      {enabled && configured && !loading && (
-        <div className="mt-3 border-t border-black/10 pt-3 dark:border-white/10">
-          <div className="flex flex-wrap items-center gap-3 pl-3">
-            <label htmlFor="rapidapi-daily-cap" className="text-xs font-medium opacity-70">
-              Daily cap
-            </label>
-            <input
-              id="rapidapi-daily-cap"
-              type="number"
-              min={1}
-              max={MAX_CAP}
-              value={capText}
-              onChange={(e) => setCapText(e.target.value)}
-              disabled={controlsDisabled}
-              className="sb-ring h-9 w-24 rounded-lg bg-white/60 px-2 text-sm dark:bg-white/10 disabled:opacity-40"
-            />
-            <span className="text-xs opacity-50">max {MAX_CAP} free calls/day</span>
-            {capDirty && (
-              <button
-                type="button"
-                onClick={saveCap}
-                disabled={controlsDisabled}
-                className="sb-ring inline-flex h-9 items-center justify-center rounded-lg bg-black px-3 text-xs font-medium text-white hover:bg-black/90 disabled:opacity-50 dark:bg-white dark:text-black dark:hover:bg-white/90"
-              >
-                Save
-              </button>
-            )}
-            {!capValidation.ok && capText !== String(savedCap) && (
-              <span className="text-xs text-red-600 dark:text-red-400">{capValidation.error}</span>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

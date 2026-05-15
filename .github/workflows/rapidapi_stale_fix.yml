@@ -40,7 +40,6 @@ jobs:
           MUSIC_METRICS_RAPIDAPI_KEY: ${{ secrets.MUSIC_METRICS_RAPIDAPI_KEY }}
           MUSIC_ANALYTICS_RAPIDAPI_KEY: ${{ secrets.MUSIC_ANALYTICS_RAPIDAPI_KEY }}
           CHECKLEAKEDCC_RAPIDAPI_KEY: ${{ secrets.CHECKLEAKEDCC_RAPIDAPI_KEY }}
-          DASHYDATA_RAPIDAPI_KEY: ${{ secrets.DASHYDATA_RAPIDAPI_KEY }}
           RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
         run: python scripts/rapidapi_stale_fix.py
 

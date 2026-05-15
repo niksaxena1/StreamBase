@@ -10,7 +10,7 @@ type LookupResult = {
   isrc: string;
   streams: number | null;
   status: "ok" | "failed" | "suspicious";
-  provider?: "dashydata" | "music_analytics" | "checkleakedcc" | "beat_analytics" | "music_metrics";
+  provider?: "music_analytics" | "checkleakedcc" | "beat_analytics" | "music_metrics";
   providerLabel?: string;
   error?: string;
 };
@@ -31,7 +31,6 @@ type QuotaPayload = {
     date: string;
     configured: boolean;
     providers: {
-      dashydata: ProviderQuota;
       music_analytics: ProviderQuota;
       checkleakedcc: ProviderQuota;
       beat_analytics: ProviderQuota;
@@ -44,10 +43,9 @@ type QuotaPayload = {
 type Phase = "idle" | "fetching" | "review" | "applying" | "done";
 type ResolverMode = "stale" | "missing_snapshot" | "prev_nonzero";
 type LookupTrack = TrackBase & Partial<StaleTrack> & Partial<PrevNonzeroTrack>;
-type TestableProvider = "beat_analytics" | "music_metrics" | "music_analytics" | "checkleakedcc" | "dashydata";
+type TestableProvider = "beat_analytics" | "music_metrics" | "music_analytics" | "checkleakedcc";
 
 const PROVIDER_URLS = {
-  dashydata: "https://rapidapi.com/dashydata-dashydata-default/api/spotify-song-streams-api",
   music_analytics: "https://rapidapi.com/MusicAnalyticsApi/api/spotify-stream-count",
   checkleakedcc: "https://rapidapi.com/airaudoeduardo/api/spotify81",
   beat_analytics: "https://rapidapi.com/beat-analytics-beat-analytics-default/api/spotify-statistics-and-stream-count",
@@ -161,17 +159,15 @@ export function StaleTrackResolver({
       quota.providers.music_metrics.remaining +
       quota.providers.music_analytics.remaining +
       quota.providers.checkleakedcc.remaining +
-      quota.providers.dashydata.remaining +
       (allowMusicMetricsOverage ? sourceTracks.length : 0)
-    : 2120;
+    : 1120;
   const lookupLimit = Math.max(0, Math.min(sourceTracks.length, remainingLookups));
   const lookupTracks = useMemo(() => sourceTracks.slice(0, lookupLimit), [sourceTracks, lookupLimit]);
   const overageNeeded = quota != null && sourceTracks.length > (
     quota.providers.beat_analytics.remaining +
       quota.providers.music_metrics.remaining +
       quota.providers.music_analytics.remaining +
-      quota.providers.checkleakedcc.remaining +
-      quota.providers.dashydata.remaining
+      quota.providers.checkleakedcc.remaining
   );
   const estimatedOverageCalls = quota
     ? Math.max(
@@ -180,8 +176,7 @@ export function StaleTrackResolver({
           quota.providers.beat_analytics.remaining -
           quota.providers.music_metrics.remaining -
           quota.providers.music_analytics.remaining -
-          quota.providers.checkleakedcc.remaining -
-          quota.providers.dashydata.remaining,
+          quota.providers.checkleakedcc.remaining,
       )
     : 0;
   const estimatedOverageCostUsd = estimatedOverageCalls * 0.5;
@@ -364,7 +359,7 @@ export function StaleTrackResolver({
       .filter(Boolean) as {
         isrc: string;
         streams_cumulative: number;
-        provider?: "dashydata" | "music_analytics" | "checkleakedcc" | "beat_analytics" | "music_metrics";
+        provider?: "music_analytics" | "checkleakedcc" | "beat_analytics" | "music_metrics";
         providerLabel?: string;
       }[];
 
@@ -396,8 +391,8 @@ export function StaleTrackResolver({
   const spotifyIdEligibleCount = lookupTracks.filter((t) => t.spotify_track_id?.trim()).length;
   const lookupTooltip =
     spotifyIdEligibleCount > 0
-      ? "Uses Beat Analytics first (50 free/day), then Music Metrics (20 free/day), then MusicAnalytics (50 free/month), then CheckLeakedCC (1000 free/month), then DashyData (1000 free/month). Paid Music Metrics is only used if you allow overage."
-      : "Uses Music Metrics. Beat Analytics, MusicAnalytics, CheckLeakedCC, and DashyData need Spotify track IDs, and none are available for this track set.";
+      ? "Uses Beat Analytics first (50 free/day), then Music Metrics (20 free/day), then MusicAnalytics (50 free/month), then CheckLeakedCC (1000 free/month). Paid Music Metrics is only used if you allow overage."
+      : "Uses Music Metrics. Beat Analytics, MusicAnalytics, and CheckLeakedCC need Spotify track IDs, and none are available for this track set.";
   const lookupButtonLabel =
     lookupLimit < sourceTracks.length
       ? `${lookupLimit.toLocaleString()} of ${sourceTracks.length.toLocaleString()} lookup${sourceTracks.length === 1 ? "" : "s"}`
@@ -437,12 +432,6 @@ export function StaleTrackResolver({
                 label={quota.providers.checkleakedcc.providerLabel}
               />
               {`: ${quota.providers.checkleakedcc.used}/${quota.providers.checkleakedcc.cap} used this month`}
-              {" · "}
-              <ProviderLink
-                href={PROVIDER_URLS.dashydata}
-                label={quota.providers.dashydata.providerLabel}
-              />
-              {`: ${quota.providers.dashydata.used}/${quota.providers.dashydata.cap} used this month`}
             </>
           ) : (
             quotaLoaded
@@ -526,7 +515,6 @@ export function StaleTrackResolver({
                   <option value="music_metrics">Music Metrics</option>
                   <option value="music_analytics">MusicAnalytics</option>
                   <option value="checkleakedcc">CheckLeakedCC</option>
-                  <option value="dashydata">DashyData</option>
                 </select>
                 <button
                   type="button"

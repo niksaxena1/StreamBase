@@ -34,12 +34,11 @@ from typing import List
 
 import requests
 
-DAILY_CAP = 70
+MAX_AUTO_FIX_TRACKS = 500
 BEAT_ANALYTICS_DAILY_CAP = 50
 MUSIC_METRICS_DAILY_CAP = 20
 MUSIC_ANALYTICS_MONTHLY_CAP = 50
 CHECKLEAKEDCC_MONTHLY_CAP = 1000
-DASHYDATA_MONTHLY_CAP = 1000
 BEAT_ANALYTICS_HOST = "spotify-statistics-and-stream-count.p.rapidapi.com"
 BEAT_ANALYTICS_ENDPOINT = f"https://{BEAT_ANALYTICS_HOST}/track"
 MUSIC_METRICS_HOST = "spotify-track-streams-playback-count1.p.rapidapi.com"
@@ -48,8 +47,6 @@ MUSIC_ANALYTICS_HOST = "spotify-stream-count.p.rapidapi.com"
 MUSIC_ANALYTICS_ENDPOINT = f"https://{MUSIC_ANALYTICS_HOST}/v1/spotify/tracks"
 CHECKLEAKEDCC_HOST = "spotify81.p.rapidapi.com"
 CHECKLEAKEDCC_ENDPOINT = f"https://{CHECKLEAKEDCC_HOST}/partner/track/count"
-DASHYDATA_HOST = "spotify-song-streams-api.p.rapidapi.com"
-DASHYDATA_ENDPOINT = f"https://{DASHYDATA_HOST}/song/streams"
 OVERRIDE_NOTE_PREFIX = "stale-fix:"
 RATE_LIMIT_MS = 1100
 
@@ -157,20 +154,6 @@ def fetch_music_analytics_streams(spotify_track_id: str, api_key: str) -> int | 
     return val if val >= 0 else None
 
 
-def fetch_dashydata_streams(spotify_track_id: str, api_key: str) -> int | None:
-    headers = {
-        "x-rapidapi-host": DASHYDATA_HOST,
-        "x-rapidapi-key": api_key,
-        "Content-Type": "application/json",
-    }
-    r = requests.get(f"{DASHYDATA_ENDPOINT}/{spotify_track_id}", headers=headers, timeout=30)
-    data = r.json() if r.ok else {}
-    if data.get("streams") is None:
-        return None
-    val = int(data["streams"])
-    return val if val >= 0 else None
-
-
 def attach_spotify_track_ids(pg: Postgrest, candidates: list) -> list:
     isrcs = [str(c.get("isrc", "")).strip().upper() for c in candidates if c.get("isrc")]
     if not isrcs:
@@ -204,17 +187,16 @@ def usage_for_period(pg: Postgrest, run_date: str, existing: list) -> dict:
             "usage_date,provider,calls",
             f"usage_date=gte.{month_start}&usage_date=lte.{run_date}",
         )
-        usage = {"dashydata": 0, "music_analytics": 0, "checkleakedcc": 0, "beat_analytics": 0, "music_metrics": 0}
+        usage = {"music_analytics": 0, "checkleakedcc": 0, "beat_analytics": 0, "music_metrics": 0}
         for row in rows:
             provider = str(row.get("provider") or "")
-            if provider in ("dashydata", "music_analytics", "checkleakedcc"):
+            if provider in ("music_analytics", "checkleakedcc"):
                 usage[provider] += int(row.get("calls") or 0)
             elif provider in ("beat_analytics", "music_metrics") and str(row.get("usage_date")) == run_date:
                 usage[provider] = int(row.get("calls") or 0)
         return usage
     except Exception:
         return {
-            "dashydata": sum(1 for r in existing if "DashyData" in str(r.get("note", ""))),
             "music_analytics": sum(1 for r in existing if "MusicAnalytics" in str(r.get("note", ""))),
             "checkleakedcc": sum(1 for r in existing if "CheckLeakedCC" in str(r.get("note", ""))),
             "beat_analytics": sum(1 for r in existing if "Beat Analytics" in str(r.get("note", ""))),
@@ -286,22 +268,20 @@ def main():
     music_key = os.environ.get("MUSIC_METRICS_RAPIDAPI_KEY", "").strip() or legacy_api_key
     music_analytics_key = os.environ.get("MUSIC_ANALYTICS_RAPIDAPI_KEY", "").strip() or legacy_api_key
     checkleakedcc_key = os.environ.get("CHECKLEAKEDCC_RAPIDAPI_KEY", "").strip() or legacy_api_key
-    dashydata_key = os.environ.get("DASHYDATA_RAPIDAPI_KEY", "").strip() or legacy_api_key
 
     if not supabase_url or not service_key:
         print("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.")
         sys.exit(1)
-    if not beat_key and not music_key and not music_analytics_key and not checkleakedcc_key and not dashydata_key:
+    if not beat_key and not music_key and not music_analytics_key and not checkleakedcc_key:
         print("No stream lookup provider key is set. Skipping stale-fix.")
         sys.exit(0)
 
     pg = Postgrest(supabase_url, service_key)
 
-    daily_cap = DAILY_CAP
     try:
         settings_rows = pg.select(
             "user_settings",
-            "rapidapi_auto_fix_enabled,rapidapi_auto_fix_daily_cap",
+            "rapidapi_auto_fix_enabled",
             "limit=1",
         )
         if settings_rows:
@@ -310,15 +290,15 @@ def main():
                 print("Stream lookup auto-fix is disabled in settings. Skipping.")
                 write_summary("", 0, 0, [])
                 sys.exit(0)
-            cap_val = row.get("rapidapi_auto_fix_daily_cap")
-            if isinstance(cap_val, int) and 1 <= cap_val <= 1000:
-                daily_cap = min(cap_val, DAILY_CAP)
     except Exception as e:
         print(f"Warning: could not read auto-fix settings ({e}). Using defaults.")
 
     print(
-        f"Daily free cap: {daily_cap} "
-        f"(Beat Analytics {BEAT_ANALYTICS_DAILY_CAP}/day + Music Metrics {MUSIC_METRICS_DAILY_CAP}/day)"
+        f"Auto-fix ceiling: fewer than {MAX_AUTO_FIX_TRACKS} stale track(s); free providers only "
+        f"(Beat Analytics {BEAT_ANALYTICS_DAILY_CAP}/day + "
+        f"Music Metrics {MUSIC_METRICS_DAILY_CAP}/day + "
+        f"MusicAnalytics {MUSIC_ANALYTICS_MONTHLY_CAP}/month + "
+        f"CheckLeakedCC {CHECKLEAKEDCC_MONTHLY_CAP}/month)"
     )
 
     warnings = pg.select(
@@ -341,10 +321,10 @@ def main():
 
     print(f"Found {len(affected_tracks)} stale track(s) for run_date={run_date}")
 
-    if len(affected_tracks) > DAILY_CAP:
+    if len(affected_tracks) >= MAX_AUTO_FIX_TRACKS:
         print(
-            f"Stale warning exceeds full free-provider capacity "
-            f"({len(affected_tracks)} > {DAILY_CAP}). Skipping auto-fix."
+            f"Stale warning reached the auto-fix safety threshold "
+            f"({len(affected_tracks)} >= {MAX_AUTO_FIX_TRACKS}). Skipping auto-fix."
         )
         write_summary(run_date, 0, 0, [])
         sys.exit(0)
@@ -357,24 +337,22 @@ def main():
     existing_isrcs = {str(r.get("isrc", "")).strip().upper() for r in existing}
     usage_date = datetime.now(timezone.utc).date().isoformat()
     usage = usage_for_period(pg, usage_date, existing)
-    existing_dashydata = usage["dashydata"]
     existing_music_analytics = usage["music_analytics"]
     existing_checkleakedcc = usage["checkleakedcc"]
     existing_beat = usage["beat_analytics"]
     existing_music = usage["music_metrics"]
     already_fixed = len(existing_isrcs)
-    budget = max(0, daily_cap - already_fixed)
+    budget = max(0, len(affected_tracks) - already_fixed)
     beat_budget = max(0, min(BEAT_ANALYTICS_DAILY_CAP - existing_beat, budget))
     music_budget = max(0, min(MUSIC_METRICS_DAILY_CAP - existing_music, budget))
     music_analytics_budget = max(0, min(MUSIC_ANALYTICS_MONTHLY_CAP - existing_music_analytics, budget))
     checkleakedcc_budget = max(0, min(CHECKLEAKEDCC_MONTHLY_CAP - existing_checkleakedcc, budget))
-    dashydata_budget = max(0, min(DASHYDATA_MONTHLY_CAP - existing_dashydata, budget))
 
-    print(f"  Already fixed today: {already_fixed}/{daily_cap} | Budget remaining: {budget}")
+    print(f"  Already fixed today: {already_fixed} | Remaining stale tracks: {budget}")
     print(
         f"  Provider budget: Beat Analytics={beat_budget}, "
         f"Music Metrics={music_budget}, MusicAnalytics={music_analytics_budget}, "
-        f"CheckLeakedCC={checkleakedcc_budget}, DashyData={dashydata_budget}"
+        f"CheckLeakedCC={checkleakedcc_budget}"
     )
 
     if budget <= 0:
@@ -404,7 +382,6 @@ def main():
     music_attempted = 0
     music_analytics_attempted = 0
     checkleakedcc_attempted = 0
-    dashydata_attempted = 0
 
     for i, c in enumerate(candidates):
         isrc = c["isrc"]
@@ -463,20 +440,6 @@ def main():
             except Exception as e:
                 print(f"    {isrc}: CheckLeakedCC error - {e}")
 
-        if (
-            api_val is None
-            and dashydata_key
-            and c.get("spotify_track_id")
-            and dashydata_attempted < dashydata_budget
-        ):
-            dashydata_attempted += 1
-            record_provider_call(pg, usage_date, "dashydata", usage)
-            try:
-                api_val = fetch_dashydata_streams(c["spotify_track_id"], dashydata_key)
-                if api_val is not None:
-                    provider = "DashyData"
-            except Exception as e:
-                print(f"    {isrc}: DashyData error - {e}")
 
         if api_val is None:
             print(f"    {isrc}: no data from stream providers")

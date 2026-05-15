@@ -8,8 +8,6 @@ import {
   BEAT_ANALYTICS_RAPIDAPI_HOST,
   CHECKLEAKEDCC_ENDPOINT,
   CHECKLEAKEDCC_RAPIDAPI_HOST,
-  DASHYDATA_ENDPOINT,
-  DASHYDATA_RAPIDAPI_HOST,
   MUSIC_ANALYTICS_ENDPOINT,
   MUSIC_ANALYTICS_RAPIDAPI_HOST,
   MUSIC_METRICS_ENDPOINT,
@@ -86,11 +84,6 @@ export async function POST(request: NextRequest) {
     process.env.RAPIDAPI_KEY ??
     ""
   ).trim();
-  const dashyDataKey = (
-    process.env.DASHYDATA_RAPIDAPI_KEY ??
-    process.env.RAPIDAPI_KEY ??
-    ""
-  ).trim();
   const musicAnalyticsKey = (
     process.env.MUSIC_ANALYTICS_RAPIDAPI_KEY ??
     process.env.RAPIDAPI_KEY ??
@@ -106,7 +99,7 @@ export async function POST(request: NextRequest) {
     process.env.RAPIDAPI_KEY ??
     ""
   ).trim();
-  if (!dashyDataKey && !musicAnalyticsKey && !checkLeakedCcKey && !beatAnalyticsKey && !musicMetricsKey) {
+  if (!musicAnalyticsKey && !checkLeakedCcKey && !beatAnalyticsKey && !musicMetricsKey) {
     return apiJsonErr(
       "No stream lookup provider key is configured on the server",
       503,
@@ -130,7 +123,6 @@ export async function POST(request: NextRequest) {
       .filter(Boolean)
       .slice(
         0,
-          STREAM_LOOKUP_PROVIDER_CAPS.dashydata +
           STREAM_LOOKUP_PROVIDER_CAPS.checkleakedcc +
           STREAM_LOOKUP_PROVIDER_CAPS.music_analytics +
           STREAM_LOOKUP_PROVIDER_CAPS.beat_analytics +
@@ -165,7 +157,6 @@ export async function POST(request: NextRequest) {
   const delayMs = RAPIDAPI_DELAY_MS;
   const quota = await loadQuotaState();
   const remaining: Record<StreamLookupProvider, number> = {
-    dashydata: quota.providers.dashydata.remaining,
     music_analytics: quota.providers.music_analytics.remaining,
     checkleakedcc: quota.providers.checkleakedcc.remaining,
     beat_analytics: quota.providers.beat_analytics.remaining,
@@ -178,7 +169,6 @@ export async function POST(request: NextRequest) {
       const lookup = await lookupStreams({
         isrc,
         spotifyTrackId: spotifyTrackIds[isrc],
-        dashyDataKey,
         musicAnalyticsKey,
         checkLeakedCcKey,
         beatAnalyticsKey,
@@ -305,7 +295,7 @@ function normalizeLookupContext(raw: unknown): LookupContext {
 }
 
 function normalizeProvider(raw: unknown): StreamLookupProvider | null {
-  return raw === "dashydata" || raw === "music_analytics" || raw === "checkleakedcc" || raw === "beat_analytics" || raw === "music_metrics"
+  return raw === "music_analytics" || raw === "checkleakedcc" || raw === "beat_analytics" || raw === "music_metrics"
     ? raw
     : null;
 }
@@ -314,7 +304,6 @@ async function lookupStreams({
   isrc,
   spotifyTrackId,
   checkLeakedCcKey,
-  dashyDataKey,
   musicAnalyticsKey,
   beatAnalyticsKey,
   musicMetricsKey,
@@ -325,7 +314,6 @@ async function lookupStreams({
   isrc: string;
   spotifyTrackId?: string;
   checkLeakedCcKey: string;
-  dashyDataKey: string;
   musicAnalyticsKey: string;
   beatAnalyticsKey: string;
   musicMetricsKey: string;
@@ -333,21 +321,6 @@ async function lookupStreams({
   allowMusicMetricsOverage: boolean;
   preferredProvider: StreamLookupProvider | null;
 }): Promise<ProviderLookup> {
-  if (preferredProvider === "dashydata") {
-    if (!spotifyTrackId) {
-      return { streams: null, provider: "dashydata", error: "DashyData requires a Spotify track ID" };
-    }
-    if (!dashyDataKey) {
-      return { streams: null, provider: "dashydata", error: "DashyData is not configured" };
-    }
-    if (remaining.dashydata <= 0) {
-      return { streams: null, provider: "dashydata", error: "DashyData monthly quota is exhausted" };
-    }
-    remaining.dashydata -= 1;
-    await recordProviderCall("dashydata");
-    return lookupDashyData(spotifyTrackId, dashyDataKey);
-  }
-
   if (preferredProvider === "music_analytics") {
     if (!spotifyTrackId) {
       return { streams: null, provider: "music_analytics", error: "MusicAnalytics requires a Spotify track ID" };
@@ -369,7 +342,6 @@ async function lookupStreams({
       isrc,
       spotifyTrackId,
       checkLeakedCcKey,
-      dashyDataKey,
       musicAnalyticsKey,
       beatAnalyticsKey,
       musicMetricsKey,
@@ -425,17 +397,6 @@ async function lookupStreams({
     }
   }
 
-  if (dashyDataKey && spotifyTrackId && remaining.dashydata > 0) {
-    remaining.dashydata -= 1;
-    await recordProviderCall("dashydata");
-    try {
-      const dashyData = await lookupDashyData(spotifyTrackId, dashyDataKey);
-      if (dashyData.streams != null) return dashyData;
-    } catch {
-      // Fall through to paid Music Metrics below.
-    }
-  }
-
   if (musicMetricsKey && allowMusicMetricsOverage) {
     remaining.music_metrics -= 1;
     await recordProviderCall("music_metrics");
@@ -470,7 +431,6 @@ async function lookupPreferredProvider({
   isrc,
   spotifyTrackId,
   checkLeakedCcKey,
-  dashyDataKey,
   musicAnalyticsKey,
   beatAnalyticsKey,
   musicMetricsKey,
@@ -481,7 +441,6 @@ async function lookupPreferredProvider({
   isrc: string;
   spotifyTrackId?: string;
   checkLeakedCcKey: string;
-  dashyDataKey: string;
   musicAnalyticsKey: string;
   beatAnalyticsKey: string;
   musicMetricsKey: string;
@@ -532,7 +491,6 @@ async function lookupPreferredProvider({
 async function loadQuotaState(): Promise<QuotaState> {
   const date = todayKey();
   const used: Record<StreamLookupProvider, number> = {
-    dashydata: 0,
     music_analytics: 0,
     checkleakedcc: 0,
     beat_analytics: 0,
@@ -551,7 +509,7 @@ async function loadQuotaState(): Promise<QuotaState> {
     if (error) throw error;
 
     for (const row of (data ?? []) as Array<{ usage_date?: string; provider?: string; calls?: number }>) {
-      if (row.provider === "dashydata" || row.provider === "checkleakedcc" || row.provider === "music_analytics") {
+      if (row.provider === "checkleakedcc" || row.provider === "music_analytics") {
         used[row.provider] += Number(row.calls ?? 0);
       } else if (
         (row.provider === "beat_analytics" || row.provider === "music_metrics") &&
@@ -563,7 +521,6 @@ async function loadQuotaState(): Promise<QuotaState> {
   } catch (e) {
     configured = !isSchemaMissing(e);
     const fallback = memoryUsage.__spotibaseStreamLookupUsage?.[date] ?? {};
-    used.dashydata = Number(fallback.dashydata ?? 0);
     used.music_analytics = Number(fallback.music_analytics ?? 0);
     used.checkleakedcc = Number(fallback.checkleakedcc ?? 0);
     used.beat_analytics = Number(fallback.beat_analytics ?? 0);
@@ -574,7 +531,6 @@ async function loadQuotaState(): Promise<QuotaState> {
     date,
     configured,
     providers: {
-      dashydata: quotaForProvider("dashydata", used.dashydata),
       music_analytics: quotaForProvider("music_analytics", used.music_analytics),
       checkleakedcc: quotaForProvider("checkleakedcc", used.checkleakedcc),
       beat_analytics: quotaForProvider("beat_analytics", used.beat_analytics),
@@ -689,27 +645,6 @@ async function lookupMusicAnalytics(
   };
 }
 
-async function lookupDashyData(
-  spotifyTrackId: string,
-  apiKey: string,
-): Promise<ProviderLookup> {
-  const url = new URL(`${DASHYDATA_ENDPOINT}/${encodeURIComponent(spotifyTrackId)}`);
-  const res = await fetch(url.toString(), {
-    headers: {
-      "x-rapidapi-host": DASHYDATA_RAPIDAPI_HOST,
-      "x-rapidapi-key": apiKey,
-      "Content-Type": "application/json",
-    },
-    signal: AbortSignal.timeout(30000),
-  });
-  const payload = (await res.json().catch(() => ({}))) as { streams?: number };
-  const streams = Number(payload.streams);
-  return {
-    streams: res.ok && Number.isFinite(streams) ? streams : null,
-    provider: "dashydata",
-    error: res.ok ? "No stream count from DashyData" : "DashyData request failed",
-  };
-}
 
 async function lookupBeatAnalytics(
   spotifyTrackId: string,
