@@ -406,33 +406,41 @@ export function StaleTrackResolver({
         </div>
         <div className="basis-full text-[10px] opacity-60">
           {quota ? (
-            <>
-              <ProviderLink
+            <div className="flex flex-wrap items-center gap-1.5">
+              <QuotaToken
                 href={PROVIDER_URLS.beat_analytics}
-                label={quota.providers.beat_analytics.providerLabel}
+                quota={quota.providers.beat_analytics}
+                suffix="day"
+                tone="daily"
               />
-              {`: ${quota.providers.beat_analytics.used}/${quota.providers.beat_analytics.cap} used · `}
-              <ProviderLink
+              <QuotaToken
                 href={PROVIDER_URLS.music_metrics}
-                label={quota.providers.music_metrics.providerLabel}
+                quota={quota.providers.music_metrics}
+                suffix="free"
+                tone="daily"
               />
-              {`: ${quota.providers.music_metrics.used}/${quota.providers.music_metrics.cap} free used`}
-              {quota.providers.music_metrics.overageCalls > 0
-                ? `, ${quota.providers.music_metrics.overageCalls} paid overage`
-                : ""}
-              {" · "}
-              <ProviderLink
+              <QuotaToken
                 href={PROVIDER_URLS.music_analytics}
-                label={quota.providers.music_analytics.providerLabel}
+                quota={quota.providers.music_analytics}
+                suffix="mo"
+                tone="monthly"
               />
-              {`: ${quota.providers.music_analytics.used}/${quota.providers.music_analytics.cap} used this month`}
-              {" · "}
-              <ProviderLink
+              <QuotaToken
                 href={PROVIDER_URLS.checkleakedcc}
-                label={quota.providers.checkleakedcc.providerLabel}
+                quota={quota.providers.checkleakedcc}
+                suffix="mo"
+                tone="monthly"
               />
-              {`: ${quota.providers.checkleakedcc.used}/${quota.providers.checkleakedcc.cap} used this month`}
-            </>
+              {quota.providers.music_metrics.overageCalls > 0 ? (
+                <span className="rounded-md border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-amber-700 dark:text-amber-300">
+                  Music Metrics{" "}
+                  <span className="font-medium tabular-nums">
+                    {quota.providers.music_metrics.overageCalls}
+                  </span>{" "}
+                  paid
+                </span>
+              ) : null}
+            </div>
           ) : (
             quotaLoaded
               ? `Quota unavailable: ${quotaError || "could not load provider usage"}`
@@ -505,17 +513,20 @@ export function StaleTrackResolver({
             </button>
             {spotifyIdEligibleCount > 0 ? (
               <div className="inline-flex items-center gap-1">
-                <select
-                  value={testProvider}
-                  onChange={(e) => setTestProvider(e.target.value as TestableProvider)}
-                  className="rounded bg-white/5 px-2 py-1 text-[10px] sb-ring"
-                  aria-label="Provider to test"
-                >
-                  <option value="beat_analytics">Beat Analytics</option>
-                  <option value="music_metrics">Music Metrics</option>
-                  <option value="music_analytics">MusicAnalytics</option>
-                  <option value="checkleakedcc">CheckLeakedCC</option>
-                </select>
+                <label className="relative inline-flex items-center">
+                  <select
+                    value={testProvider}
+                    onChange={(e) => setTestProvider(e.target.value as TestableProvider)}
+                    className="h-7 appearance-none rounded-lg border border-white/10 bg-white/[0.06] py-1 pl-2.5 pr-7 text-[10px] font-medium text-[var(--sb-text)] shadow-sm outline-none transition hover:bg-white/[0.09] focus:border-[var(--sb-accent)]/40 focus:bg-white/[0.1] sb-ring"
+                    aria-label="Provider to test"
+                  >
+                    <option value="beat_analytics">Beat Analytics</option>
+                    <option value="music_metrics">Music Metrics</option>
+                    <option value="music_analytics">MusicAnalytics</option>
+                    <option value="checkleakedcc">CheckLeakedCC</option>
+                  </select>
+                  <ChevronDownIcon />
+                </label>
                 <button
                   type="button"
                   onClick={handleProviderTest}
@@ -524,7 +535,7 @@ export function StaleTrackResolver({
                     quota?.providers[testProvider].remaining === 0
                   }
                   title={`Run exactly one lookup through ${quota?.providers[testProvider].providerLabel ?? testProvider} only, for smoke testing.`}
-                  className="text-[10px] px-2 py-1 rounded sb-ring bg-white/5 hover:bg-white/10 disabled:opacity-40"
+                  className="h-7 rounded-lg border border-white/10 bg-white/[0.06] px-2.5 text-[10px] font-medium text-[var(--sb-text)] transition hover:bg-white/[0.1] disabled:cursor-not-allowed disabled:opacity-40 sb-ring"
                 >
                   {testingProvider ? "Testing..." : "Test provider"}
                 </button>
@@ -768,6 +779,23 @@ function SpotifyIcon() {
   );
 }
 
+function ChevronDownIcon() {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      className="pointer-events-none absolute right-2 h-3 w-3 opacity-55"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="m4 6 4 4 4-4" />
+    </svg>
+  );
+}
+
 function ProviderLink({ href, label }: { href: string; label: string }) {
   return (
     <a
@@ -779,6 +807,33 @@ function ProviderLink({ href, label }: { href: string; label: string }) {
     >
       {label}
     </a>
+  );
+}
+
+function QuotaToken({
+  href,
+  quota,
+  suffix,
+  tone,
+}: {
+  href: string;
+  quota: ProviderQuota;
+  suffix: string;
+  tone: "daily" | "monthly";
+}) {
+  const toneClass =
+    tone === "daily"
+      ? "border-lime-500/15 bg-lime-500/[0.06]"
+      : "border-sky-500/15 bg-sky-500/[0.06]";
+
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 ${toneClass}`}>
+      <ProviderLink href={href} label={quota.providerLabel} />
+      <span className="font-medium tabular-nums text-[var(--sb-text)]">
+        {quota.used}/{quota.cap}
+      </span>
+      <span className="opacity-55">{suffix}</span>
+    </span>
   );
 }
 
