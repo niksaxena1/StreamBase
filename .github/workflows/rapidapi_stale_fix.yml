@@ -50,7 +50,9 @@ jobs:
           mkdir -p .artifacts
           cat > .artifacts/stale_fix_summary.json <<'JSON'
           {
+            "status": "completed",
             "fixed": 8,
+            "affected": 8,
             "run_date": "2026-05-15",
             "tracks": [
               {
@@ -117,7 +119,16 @@ jobs:
                 "new": 1146566
               },
               {
-                "provider": "Music Metrics",
+                "provider": "MusicAnalytics",
+                "isrc": "SE5BU1822404",
+                "track_name": "Paris in the Rain",
+                "artist_names": ["Lone Tusker"],
+                "album_image_url": "https://placehold.co/68x68/202124/d4ff4d/png?text=PR",
+                "stale": 1559241,
+                "new": 1559312
+              },
+              {
+                "provider": "CheckLeakedCC",
                 "isrc": "SE6XY2545679",
                 "track_name": "365",
                 "artist_names": ["Ugg'A", "Oliver Roberts"],
@@ -152,11 +163,16 @@ jobs:
           fi
 
           FIXED=$(python3 -c "import json; d=json.load(open('.artifacts/stale_fix_summary.json')); print(d.get('fixed', 0))" 2>/dev/null || echo "0")
+          STATUS=$(python3 -c "import json; d=json.load(open('.artifacts/stale_fix_summary.json')); print(d.get('status', 'completed'))" 2>/dev/null || echo "completed")
+          AFFECTED=$(python3 -c "import json; d=json.load(open('.artifacts/stale_fix_summary.json')); print(d.get('affected', 0))" 2>/dev/null || echo "0")
           RUN_DATE=$(python3 -c "import json; d=json.load(open('.artifacts/stale_fix_summary.json')); print(d.get('run_date', '?'))" 2>/dev/null || echo "?")
 
           if [ "$FIXED" != "0" ]; then
             SHOULD_NOTIFY="true"
             SUBJECT="[SBase] Auto-fix: ${FIXED} stale track(s) corrected via RapidAPI"
+          elif [ "$STATUS" = "skipped_too_many" ]; then
+            SHOULD_NOTIFY="true"
+            SUBJECT="[SBase] Auto-fix skipped: ${AFFECTED} stale track(s) exceeded safety threshold"
           fi
 
           echo "should_notify=$SHOULD_NOTIFY" >> "$GITHUB_OUTPUT"
@@ -176,6 +192,8 @@ jobs:
 
           tracks = data.get("tracks", [])
           fixed = int(data.get("fixed") or 0)
+          status = str(data.get("status") or "completed")
+          affected = int(data.get("affected") or 0)
           run_date_raw = str(data.get("run_date") or "?")
           run_date = html.escape(run_date_raw)
           providers = Counter(str(t.get("provider") or "stream lookup") for t in tracks)
@@ -189,10 +207,17 @@ jobs:
               except Exception:
                   return "?"
 
-          plain_lines = [
-              f"SBase auto-fix complete for {run_date_raw}",
-              f"Fixed: {fixed} stale track(s)",
-          ]
+          if status == "skipped_too_many":
+              plain_lines = [
+                  f"SBase auto-fix skipped for {run_date_raw}",
+                  f"Stale tracks: {affected}",
+                  "Reason: stale-track count reached the 500-track safety threshold.",
+              ]
+          else:
+              plain_lines = [
+                  f"SBase auto-fix complete for {run_date_raw}",
+                  f"Fixed: {fixed} stale track(s)",
+              ]
           for provider, count in providers.items():
               plain_lines.append(f"{provider}: {count}")
           plain_lines.append("Paid overage: 0")
@@ -200,9 +225,10 @@ jobs:
 
           provider_chips = []
           for provider, count in providers.items():
-              color = "#bef264" if provider == "Beat Analytics" else "#93c5fd"
-              bg = "#1e2718" if provider == "Beat Analytics" else "#151f31"
-              border = "#33451f" if provider == "Beat Analytics" else "#243653"
+              if provider in {"Beat Analytics", "Music Metrics"}:
+                  color, bg, border = "#bef264", "#1e2718", "#33451f"
+              else:
+                  color, bg, border = "#93c5fd", "#151f31", "#243653"
               provider_chips.append(
                   f'<span style="display:inline-block;margin:0 6px 6px 0;padding:4px 9px;border:1px solid {border};border-radius:999px;'
                   f'background:{bg};color:{color};font-size:12px;font-weight:600;">{esc(provider)} <span style="color:#ededed;">{count}</span></span>'
@@ -268,9 +294,9 @@ jobs:
               <div style="max-width:700px;margin:0 auto;border:1px solid #2a2b30;border-radius:14px;background:#141419;overflow:hidden;box-shadow:0 12px 32px rgba(0,0,0,.34);">
                 <div style="padding:18px 22px 16px;border-bottom:1px solid #25262b;background:#10120f;">
                   <div style="font-size:11px;color:#d4ff4d;font-weight:700;letter-spacing:.06em;text-transform:uppercase;">SBase</div>
-                  <div style="margin-top:5px;font-size:22px;font-weight:650;color:#ededed;line-height:1.18;">Auto-fix complete</div>
+                  <div style="margin-top:5px;font-size:22px;font-weight:650;color:#ededed;line-height:1.18;">{'Auto-fix skipped' if status == 'skipped_too_many' else 'Auto-fix complete'}</div>
                   <div style="margin-top:7px;font-size:13px;color:#a1a1aa;">
-                    <span style="color:#ededed;font-weight:600;">{fixed}</span> stale track{'s' if fixed != 1 else ''} fixed
+                    {f'<span style="color:#ededed;font-weight:600;">{affected}</span> stale tracks exceeded safety threshold' if status == 'skipped_too_many' else f'<span style="color:#ededed;font-weight:600;">{fixed}</span> stale track{"s" if fixed != 1 else ""} fixed'}
                     <span style="color:#575a61;">&nbsp;/&nbsp;</span>
                     Run date <span style="color:#ededed;font-weight:600;">{run_date}</span>
                   </div>

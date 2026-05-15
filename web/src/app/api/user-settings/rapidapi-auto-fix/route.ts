@@ -9,8 +9,6 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const DEFAULT_ENABLED = true;
-const DEFAULT_DAILY_CAP = 70;
-const MAX_DAILY_CAP = 70;
 
 export async function GET() {
   const sb = await supabaseServer();
@@ -20,7 +18,7 @@ export async function GET() {
   const svc = supabaseService();
   const { data: settings, error } = await svc
     .from("user_settings")
-    .select("rapidapi_auto_fix_enabled, rapidapi_auto_fix_daily_cap")
+    .select("rapidapi_auto_fix_enabled")
     .eq("user_id", auth.user.id)
     .maybeSingle();
 
@@ -28,7 +26,6 @@ export async function GET() {
     if (isSchemaMissing(error)) {
       return apiJsonOk({
         rapidapi_auto_fix_enabled: DEFAULT_ENABLED,
-        rapidapi_auto_fix_daily_cap: DEFAULT_DAILY_CAP,
         configured: false as const,
       });
     }
@@ -37,11 +34,8 @@ export async function GET() {
 
   const row = settings as Record<string, unknown> | null;
   const enabled = row?.rapidapi_auto_fix_enabled;
-  const cap = row?.rapidapi_auto_fix_daily_cap;
-
   return apiJsonOk({
     rapidapi_auto_fix_enabled: typeof enabled === "boolean" ? enabled : DEFAULT_ENABLED,
-    rapidapi_auto_fix_daily_cap: typeof cap === "number" ? cap : DEFAULT_DAILY_CAP,
     configured: true as const,
   });
 }
@@ -67,14 +61,6 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  if (body.rapidapi_auto_fix_daily_cap !== undefined) {
-    const raw = Number(body.rapidapi_auto_fix_daily_cap);
-    if (!Number.isInteger(raw) || raw < 1 || raw > MAX_DAILY_CAP) {
-      return apiJsonErr(`rapidapi_auto_fix_daily_cap must be an integer between 1 and ${MAX_DAILY_CAP}.`, 400);
-    }
-    patch.rapidapi_auto_fix_daily_cap = raw;
-  }
-
   if (Object.keys(patch).length === 1) {
     return apiJsonErr("No recognised field provided.", 400);
   }
@@ -83,7 +69,7 @@ export async function POST(request: NextRequest) {
   const { data: upserted, error } = await svc
     .from("user_settings")
     .upsert([patch], { onConflict: "user_id" })
-    .select("rapidapi_auto_fix_enabled, rapidapi_auto_fix_daily_cap")
+    .select("rapidapi_auto_fix_enabled")
     .maybeSingle();
 
   if (error) {
@@ -95,13 +81,9 @@ export async function POST(request: NextRequest) {
 
   const row = upserted as Record<string, unknown> | null;
   const savedEnabled = row?.rapidapi_auto_fix_enabled;
-  const savedCap = row?.rapidapi_auto_fix_daily_cap;
-
   return apiJsonOk({
     rapidapi_auto_fix_enabled:
       typeof savedEnabled === "boolean" ? savedEnabled : (patch.rapidapi_auto_fix_enabled ?? DEFAULT_ENABLED),
-    rapidapi_auto_fix_daily_cap:
-      typeof savedCap === "number" ? savedCap : (patch.rapidapi_auto_fix_daily_cap ?? DEFAULT_DAILY_CAP),
     configured: true as const,
   });
 }

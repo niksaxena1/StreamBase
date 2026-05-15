@@ -3,20 +3,18 @@ Auto-fix stale tracks via stream lookup providers.
 
 Runs as a standalone scheduled job (separate from ingestion). Queries the DB
 for the latest individual_tracks_stale warning, fetches corrected stream
-counts from Beat Analytics first, Music Metrics second, and CheckLeakedCC
-third, and writes
-overrides to track_daily_stream_overrides.
+counts from Beat Analytics first, Music Metrics second, MusicAnalytics third,
+and CheckLeakedCC fourth, then writes overrides to track_daily_stream_overrides.
 
-Caps automated repairs at 70 API calls per day (per run_date) by default:
-50 Beat Analytics calls plus 20 Music Metrics calls. CheckLeakedCC is available
-after those free daily pools, but the automated run still respects the existing
-user-controlled repair cap.
+Repairs all stale tracks while the batch is below the 500-track safety
+threshold. Automated runs only use free provider quotas and never paid overage.
 
 Usage:
     export SUPABASE_URL="https://your-project.supabase.co"
     export SUPABASE_SERVICE_ROLE_KEY="..."
     export BEAT_ANALYTICS_RAPIDAPI_KEY="..."
     export MUSIC_METRICS_RAPIDAPI_KEY="..."
+    export MUSIC_ANALYTICS_RAPIDAPI_KEY="..."
     export CHECKLEAKEDCC_RAPIDAPI_KEY="..."
     # Optional legacy fallback for both providers:
     export RAPIDAPI_KEY="..."
@@ -282,14 +280,12 @@ def main():
         settings_rows = pg.select(
             "user_settings",
             "rapidapi_auto_fix_enabled",
-            "limit=1",
+            "rapidapi_auto_fix_enabled=eq.false&limit=1",
         )
         if settings_rows:
-            row = settings_rows[0]
-            if row.get("rapidapi_auto_fix_enabled") is False:
-                print("Stream lookup auto-fix is disabled in settings. Skipping.")
-                write_summary("", 0, 0, [])
-                sys.exit(0)
+            print("Stream lookup auto-fix is disabled in settings. Skipping.")
+            write_summary("", 0, 0, [], status="disabled")
+            sys.exit(0)
     except Exception as e:
         print(f"Warning: could not read auto-fix settings ({e}). Using defaults.")
 
@@ -326,7 +322,7 @@ def main():
             f"Stale warning reached the auto-fix safety threshold "
             f"({len(affected_tracks)} >= {MAX_AUTO_FIX_TRACKS}). Skipping auto-fix."
         )
-        write_summary(run_date, 0, 0, [])
+        write_summary(run_date, 0, 0, [], status="skipped_too_many", affected_count=len(affected_tracks))
         sys.exit(0)
 
     existing = pg.select(
@@ -356,8 +352,8 @@ def main():
     )
 
     if budget <= 0:
-        print("Daily cap reached. Exiting.")
-        write_summary(run_date, 0, 0, [])
+        print("No stale tracks remain eligible for auto-fix. Exiting.")
+        write_summary(run_date, 0, 0, [], status="nothing_to_do", affected_count=len(affected_tracks))
         sys.exit(0)
 
     candidates = []
@@ -371,7 +367,7 @@ def main():
 
     if not candidates:
         print("All stale tracks already fixed or none eligible. Nothing to do.")
-        write_summary(run_date, 0, 0, [])
+        write_summary(run_date, 0, 0, [], status="nothing_to_do", affected_count=len(affected_tracks))
         sys.exit(0)
 
     print(f"  Fetching stream counts for {len(candidates)} track(s)...")
@@ -473,12 +469,21 @@ def main():
 
     fixed = enrich_fixed_tracks(pg, fixed)
     print(f"\nDone. Attempted={attempted}, Fixed={len(fixed)}")
-    write_summary(run_date, attempted, len(fixed), fixed)
+    write_summary(run_date, attempted, len(fixed), fixed, affected_count=len(affected_tracks))
 
 
-def write_summary(run_date: str, attempted: int, fixed_count: int, fixed: list):
+def write_summary(
+    run_date: str,
+    attempted: int,
+    fixed_count: int,
+    fixed: list,
+    status: str = "completed",
+    affected_count: int = 0,
+):
     summary = {
+        "status": status,
         "run_date": run_date,
+        "affected": affected_count,
         "attempted": attempted,
         "fixed": fixed_count,
         "tracks": [
