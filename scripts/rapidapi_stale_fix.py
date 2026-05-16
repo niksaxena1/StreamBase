@@ -47,6 +47,9 @@ CHECKLEAKEDCC_HOST = "spotify81.p.rapidapi.com"
 CHECKLEAKEDCC_ENDPOINT = f"https://{CHECKLEAKEDCC_HOST}/partner/track/count"
 OVERRIDE_NOTE_PREFIX = "stale-fix:"
 RATE_LIMIT_MS = 1100
+REQUEST_TIMEOUT_SECONDS = 12
+OVERRIDE_FLUSH_BATCH_SIZE = 25
+MAX_RUNTIME_SECONDS = 40 * 60
 
 
 class Postgrest:
@@ -88,7 +91,11 @@ def fetch_beat_analytics_streams(spotify_track_id: str, api_key: str) -> int | N
         "x-rapidapi-key": api_key,
         "Content-Type": "application/json",
     }
-    r = requests.get(f"{BEAT_ANALYTICS_ENDPOINT}/{spotify_track_id}", headers=headers, timeout=30)
+    r = requests.get(
+        f"{BEAT_ANALYTICS_ENDPOINT}/{spotify_track_id}",
+        headers=headers,
+        timeout=REQUEST_TIMEOUT_SECONDS,
+    )
     data = r.json() if r.ok else {}
     if data.get("streamCount") is None:
         return None
@@ -101,7 +108,12 @@ def fetch_music_metrics_streams(isrc: str, api_key: str) -> int | None:
         "x-rapidapi-host": MUSIC_METRICS_HOST,
         "x-rapidapi-key": api_key,
     }
-    r = requests.get(MUSIC_METRICS_ENDPOINT, headers=headers, params={"isrc": isrc}, timeout=30)
+    r = requests.get(
+        MUSIC_METRICS_ENDPOINT,
+        headers=headers,
+        params={"isrc": isrc},
+        timeout=REQUEST_TIMEOUT_SECONDS,
+    )
     data = r.json() if r.ok else {}
     if data.get("result") != "success" or data.get("streams") is None:
         return None
@@ -119,7 +131,7 @@ def fetch_checkleakedcc_streams(spotify_track_id: str, isrc: str, api_key: str) 
         CHECKLEAKEDCC_ENDPOINT,
         headers=headers,
         params={"spotify_track_id": spotify_track_id, "isrc": isrc},
-        timeout=30,
+        timeout=REQUEST_TIMEOUT_SECONDS,
     )
     data = r.json() if r.ok else {}
     if data.get("result") != "success" or data.get("streams") is None:
@@ -137,7 +149,7 @@ def fetch_music_analytics_streams(spotify_track_id: str, api_key: str) -> int | 
     r = requests.get(
         f"{MUSIC_ANALYTICS_ENDPOINT}/{spotify_track_id}/streams/current",
         headers=headers,
-        timeout=30,
+        timeout=REQUEST_TIMEOUT_SECONDS,
     )
     data = r.json() if r.ok else {}
     raw = (
@@ -258,6 +270,27 @@ def enrich_fixed_tracks(pg: Postgrest, fixed: list) -> list:
     ]
 
 
+def build_override_rows(run_date: str, fixed: list) -> list:
+    return [
+        {
+            "date": run_date,
+            "isrc": f["isrc"],
+            "streams_cumulative_override": f["streams"],
+            "note": f"stale-fix: {f.get('provider') or 'stream lookup'} auto",
+        }
+        for f in fixed
+    ]
+
+
+def flush_override_batch(pg: Postgrest, run_date: str, pending: list) -> int:
+    if not pending:
+        return 0
+    pg.upsert("track_daily_stream_overrides", build_override_rows(run_date, pending), "date,isrc")
+    flushed = len(pending)
+    pending.clear()
+    return flushed
+
+
 def main():
     supabase_url = os.environ.get("SUPABASE_URL", "").strip()
     service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
@@ -372,14 +405,25 @@ def main():
 
     print(f"  Fetching stream counts for {len(candidates)} track(s)...")
 
+    started_at = time.monotonic()
     fixed: List[dict] = []
+    pending_overrides: List[dict] = []
     attempted = 0
     beat_attempted = 0
     music_attempted = 0
     music_analytics_attempted = 0
     checkleakedcc_attempted = 0
+    stopped_early = False
 
     for i, c in enumerate(candidates):
+        if time.monotonic() - started_at >= MAX_RUNTIME_SECONDS:
+            stopped_early = True
+            print(
+                f"  Reached graceful runtime ceiling after {attempted} attempt(s); "
+                "stopping before the workflow timeout."
+            )
+            break
+
         isrc = c["isrc"]
         stale = c["stale_streams"]
         attempted += 1
@@ -444,22 +488,21 @@ def main():
         else:
             delta = api_val - stale
             print(f"    {isrc}: OK stale={stale:,} -> {provider}={api_val:,} (+{delta:,})")
-            fixed.append({"isrc": isrc, "streams": api_val, "stale": stale, "provider": provider})
+            item = {"isrc": isrc, "streams": api_val, "stale": stale, "provider": provider}
+            fixed.append(item)
+            pending_overrides.append(item)
+            if len(pending_overrides) >= OVERRIDE_FLUSH_BATCH_SIZE:
+                flushed = flush_override_batch(pg, run_date, pending_overrides)
+                print(f"  Persisted {flushed} override(s) mid-run.")
 
         if i < len(candidates) - 1:
             time.sleep(RATE_LIMIT_MS / 1000)
 
+    flushed = flush_override_batch(pg, run_date, pending_overrides)
+    if flushed:
+        print(f"  Persisted final {flushed} override(s).")
+
     if fixed:
-        rows = [
-            {
-                "date": run_date,
-                "isrc": f["isrc"],
-                "streams_cumulative_override": f["streams"],
-                "note": f"stale-fix: {f.get('provider') or 'stream lookup'} auto",
-            }
-            for f in fixed
-        ]
-        pg.upsert("track_daily_stream_overrides", rows, "date,isrc")
         print(f"\n  Wrote {len(fixed)} override(s). Triggering recompute...")
 
         pg.rpc("spotibase_recompute_playlist_daily_stats_cascade", {"p_start_date": run_date})
@@ -469,7 +512,14 @@ def main():
 
     fixed = enrich_fixed_tracks(pg, fixed)
     print(f"\nDone. Attempted={attempted}, Fixed={len(fixed)}")
-    write_summary(run_date, attempted, len(fixed), fixed, affected_count=len(affected_tracks))
+    write_summary(
+        run_date,
+        attempted,
+        len(fixed),
+        fixed,
+        status="partial_runtime_limit" if stopped_early else "completed",
+        affected_count=len(affected_tracks),
+    )
 
 
 def write_summary(

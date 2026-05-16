@@ -17,7 +17,7 @@ on:
 jobs:
   fix:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v4
@@ -169,7 +169,11 @@ jobs:
 
           if [ "$FIXED" != "0" ]; then
             SHOULD_NOTIFY="true"
-            SUBJECT="[SBase] Auto-fix: ${FIXED} stale track(s) corrected via RapidAPI"
+            if [ "$STATUS" = "partial_runtime_limit" ]; then
+              SUBJECT="[SBase] Auto-fix partial: ${FIXED} stale track(s) corrected before runtime limit"
+            else
+              SUBJECT="[SBase] Auto-fix: ${FIXED} stale track(s) corrected via RapidAPI"
+            fi
           elif [ "$STATUS" = "skipped_too_many" ]; then
             SHOULD_NOTIFY="true"
             SUBJECT="[SBase] Auto-fix skipped: ${AFFECTED} stale track(s) exceeded safety threshold"
@@ -212,6 +216,12 @@ jobs:
                   f"SBase auto-fix skipped for {run_date_raw}",
                   f"Stale tracks: {affected}",
                   "Reason: stale-track count reached the 500-track safety threshold.",
+              ]
+          elif status == "partial_runtime_limit":
+              plain_lines = [
+                  f"SBase auto-fix partially completed for {run_date_raw}",
+                  f"Fixed: {fixed} of {affected} stale track(s)",
+                  "Reason: graceful runtime ceiling reached before the workflow timeout.",
               ]
           else:
               plain_lines = [
@@ -294,9 +304,9 @@ jobs:
               <div style="max-width:700px;margin:0 auto;border:1px solid #2a2b30;border-radius:14px;background:#141419;overflow:hidden;box-shadow:0 12px 32px rgba(0,0,0,.34);">
                 <div style="padding:18px 22px 16px;border-bottom:1px solid #25262b;background:#10120f;">
                   <div style="font-size:11px;color:#d4ff4d;font-weight:700;letter-spacing:.06em;text-transform:uppercase;">SBase</div>
-                  <div style="margin-top:5px;font-size:22px;font-weight:650;color:#ededed;line-height:1.18;">{'Auto-fix skipped' if status == 'skipped_too_many' else 'Auto-fix complete'}</div>
+                  <div style="margin-top:5px;font-size:22px;font-weight:650;color:#ededed;line-height:1.18;">{'Auto-fix skipped' if status == 'skipped_too_many' else 'Auto-fix partial' if status == 'partial_runtime_limit' else 'Auto-fix complete'}</div>
                   <div style="margin-top:7px;font-size:13px;color:#a1a1aa;">
-                    {f'<span style="color:#ededed;font-weight:600;">{affected}</span> stale tracks exceeded safety threshold' if status == 'skipped_too_many' else f'<span style="color:#ededed;font-weight:600;">{fixed}</span> stale track{"s" if fixed != 1 else ""} fixed'}
+                    {f'<span style="color:#ededed;font-weight:600;">{affected}</span> stale tracks exceeded safety threshold' if status == 'skipped_too_many' else f'<span style="color:#ededed;font-weight:600;">{fixed}</span> of <span style="color:#ededed;font-weight:600;">{affected}</span> stale tracks fixed before runtime limit' if status == 'partial_runtime_limit' else f'<span style="color:#ededed;font-weight:600;">{fixed}</span> stale track{"s" if fixed != 1 else ""} fixed'}
                     <span style="color:#575a61;">&nbsp;/&nbsp;</span>
                     Run date <span style="color:#ededed;font-weight:600;">{run_date}</span>
                   </div>
