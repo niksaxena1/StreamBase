@@ -195,6 +195,9 @@ jobs:
               data = json.load(f)
 
           tracks = data.get("tracks", [])
+          email_track_limit = 40
+          visible_tracks = tracks[:email_track_limit]
+          omitted_track_count = max(0, len(tracks) - len(visible_tracks))
           fixed = int(data.get("fixed") or 0)
           status = str(data.get("status") or "completed")
           affected = int(data.get("affected") or 0)
@@ -249,7 +252,7 @@ jobs:
           )
 
           rows = []
-          for track in tracks:
+          for track in visible_tracks:
               isrc = esc(track.get("isrc") or "?")
               title = esc(track.get("track_name") or "Unknown Track")
               image_url = esc(track.get("album_image_url") or "")
@@ -287,6 +290,16 @@ jobs:
                   <td style="padding:9px 0;border-top:1px solid #25262b;text-align:right;white-space:nowrap;">
                     <div style="font:12px ui-monospace,SFMono-Regular,Menlo,monospace;color:#ededed;font-weight:650;">{fmt_int(new)}</div>
                     <div style="font:11px ui-monospace,SFMono-Regular,Menlo,monospace;color:#8b8d94;margin-top:2px;">from {fmt_int(stale)} <span style="color:#22c55e;font-weight:800;">{delta_text}</span></div>
+                  </td>
+                </tr>
+              """)
+
+          if omitted_track_count:
+              plain_lines.append(f"...and {omitted_track_count} more fixed track(s)")
+              rows.append(f"""
+                <tr>
+                  <td colspan="3" style="padding:12px 0;border-top:1px solid #25262b;color:#a1a1aa;font-size:12px;">
+                    {omitted_track_count} more fixed track{"s" if omitted_track_count != 1 else ""} omitted from this compact email.
                   </td>
                 </tr>
               """)
