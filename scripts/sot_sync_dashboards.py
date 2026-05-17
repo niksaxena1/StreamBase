@@ -164,6 +164,16 @@ def wait_for_tracks_or_empty_state(page, timeout_ms: int = 15_000) -> None:
             pass
         time.sleep(0.25)
 
+
+def should_skip_empty_dashboard(dashboard_count: int, playlist_count: int) -> bool:
+    """
+    An empty dashboard is suspicious only when the source playlist is empty too.
+
+    Empty dashboards are valid during first-time bootstraps, when we intentionally
+    need to add every playlist track into a newly created dashboard.
+    """
+    return dashboard_count == 0 and playlist_count == 0
+
 def debug_dump(page, slug: str) -> Tuple[str, str]:
     """
     Save HTML + screenshot for post-mortem debugging.
@@ -748,7 +758,7 @@ def run_sync(
                 total_skipped += 1
                 continue
 
-            if len(dashboard_set) == 0:
+            if should_skip_empty_dashboard(len(dashboard_set), len(playlist_set)):
                 print("🛑 Safety: dashboard scan returned 0 after retries. Skipping.")
                 html_p, png_p = debug_dump(page, f"dashboard_empty_{task.playlist_key}")
                 log_row(
@@ -761,6 +771,9 @@ def run_sync(
                 )
                 total_skipped += 1
                 continue
+
+            if len(dashboard_set) == 0 and len(playlist_set) > 0:
+                print("🌱 Bootstrap: dashboard is empty; seeding it from the playlist.")
 
             to_add = list(playlist_set - dashboard_set)
             to_remove = list(dashboard_set - playlist_set) if not no_sync else []
@@ -946,4 +959,3 @@ if __name__ == "__main__":
             fail_on_errors=args.fail_on_errors,
         )
     )
-
