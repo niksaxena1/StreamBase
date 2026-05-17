@@ -125,7 +125,6 @@ class Spotify:
             "spotify_album_image_url": images[0]["url"] if images else None,
             "spotify_artist_ids": [artist.get("id") for artist in artists if artist.get("id")],
             "spotify_artist_names": [artist.get("name") for artist in artists if artist.get("name")],
-            "spotify_last_fetched_at": datetime.now(timezone.utc).isoformat(),
         }
 
 
@@ -134,7 +133,6 @@ ENRICHMENT_FIELDS = {
     "spotify_album_image_url": None,
     "spotify_artist_ids": None,
     "spotify_artist_names": None,
-    "spotify_last_fetched_at": None,
 }
 
 
@@ -159,7 +157,7 @@ def enrich_single(pg: Postgrest, sp: Spotify, isrc: str):
 def enrich_batch(pg: Postgrest, sp: Spotify, limit: int):
     candidates = pg.select(
         "tracks",
-        "isrc,name,spotify_artist_ids,spotify_last_fetched_at",
+        "isrc,name,spotify_artist_ids",
         "&".join(candidate_filters(limit)),
     )
     if not candidates:
