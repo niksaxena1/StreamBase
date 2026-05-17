@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
       .eq("user_id", auth.user.id)
       .maybeSingle();
     const datasetMode = normalizeDatasetMode(settings?.dataset_mode);
-    const dataClient = datasetMode === "competitor" ? sb.schema("competitor") : sb;
+    const dataClient = datasetMode === "competitor" ? svc.schema("competitor") : sb;
     const latestClient = datasetMode === "competitor" ? svc.schema("competitor") : svc;
 
     const { data: latestRun } = await cachedQuery(

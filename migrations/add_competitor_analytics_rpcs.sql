@@ -49,10 +49,10 @@ AS $$
   LEFT JOIN competitor.tracks t USING (isrc)
   LEFT JOIN competitor.track_daily_streams s
     ON s.isrc = m.isrc
-   AND s.date = run_date
-  WHERE m.playlist_key = playlist_key
-    AND m.valid_from <= run_date
-    AND (m.valid_to IS NULL OR m.valid_to >= run_date)
+   AND s.date = $2
+  WHERE m.playlist_key = $1
+    AND m.valid_from <= $2
+    AND (m.valid_to IS NULL OR m.valid_to >= $2)
   ORDER BY total DESC NULLS LAST, name ASC;
 $$;
 
@@ -82,10 +82,10 @@ AS $$
     m.valid_to::date AS valid_to
   FROM competitor.playlist_memberships m
   LEFT JOIN competitor.tracks t USING (isrc)
-  WHERE m.playlist_key = playlist_key
+  WHERE m.playlist_key = $1
     AND m.valid_to IS NOT NULL
   ORDER BY m.valid_to DESC, name ASC
-  LIMIT GREATEST(COALESCE(limit_rows, 500), 0);
+  LIMIT GREATEST(COALESCE($2, 500), 0);
 $$;
 
 CREATE OR REPLACE FUNCTION competitor.playlist_top_tracks_total(
@@ -117,12 +117,12 @@ AS $$
   LEFT JOIN competitor.tracks t USING (isrc)
   LEFT JOIN competitor.track_daily_streams s
     ON s.isrc = m.isrc
-   AND s.date = run_date
-  WHERE m.playlist_key = playlist_key
-    AND m.valid_from <= run_date
-    AND (m.valid_to IS NULL OR m.valid_to >= run_date)
+   AND s.date = $2
+  WHERE m.playlist_key = $1
+    AND m.valid_from <= $2
+    AND (m.valid_to IS NULL OR m.valid_to >= $2)
   ORDER BY total DESC NULLS LAST, name ASC
-  LIMIT GREATEST(COALESCE(limit_rows, 200), 0);
+  LIMIT GREATEST(COALESCE($3, 200), 0);
 $$;
 
 CREATE OR REPLACE FUNCTION competitor.catalog_artist_series(
@@ -142,8 +142,8 @@ AS $$
     COALESCE(SUM(s.streams_cumulative), 0)::bigint AS streams_cumulative
   FROM competitor.track_daily_streams s
   JOIN competitor.tracks t USING (isrc)
-  WHERE t.spotify_artist_ids @> ARRAY[artist_id]
-    AND s.date BETWEEN start_date AND end_date
+  WHERE t.spotify_artist_ids @> ARRAY[$1]
+    AND s.date BETWEEN $2 AND $3
   GROUP BY s.date
   ORDER BY s.date ASC;
 $$;
@@ -175,13 +175,13 @@ AS $$
   FROM competitor.tracks t
   LEFT JOIN competitor.track_daily_streams today
     ON today.isrc = t.isrc
-   AND today.date = run_date
+   AND today.date = $2
   LEFT JOIN competitor.track_daily_streams prev
     ON prev.isrc = t.isrc
-   AND prev.date = (run_date - INTERVAL '1 day')::date
-  WHERE t.spotify_artist_ids @> ARRAY[artist_id]
+   AND prev.date = ($2 - INTERVAL '1 day')::date
+  WHERE t.spotify_artist_ids @> ARRAY[$1]
   ORDER BY total DESC NULLS LAST, name ASC
-  LIMIT GREATEST(COALESCE(limit_rows, 1000), 0);
+  LIMIT GREATEST(COALESCE($3, 1000), 0);
 $$;
 
 CREATE OR REPLACE FUNCTION competitor.catalog_artist_top_tracks_daily(
@@ -200,7 +200,7 @@ LANGUAGE sql
 STABLE
 AS $$
   SELECT *
-  FROM competitor.catalog_artist_top_tracks_total(artist_id, run_date, limit_rows)
+  FROM competitor.catalog_artist_top_tracks_total($1, $2, $3)
   ORDER BY daily DESC NULLS LAST, total DESC NULLS LAST, name ASC;
 $$;
 
@@ -220,7 +220,7 @@ LANGUAGE sql
 STABLE
 AS $$
   WITH needle AS (
-    SELECT '%' || LOWER(TRIM(q)) || '%' AS q
+    SELECT '%' || LOWER(TRIM($1)) || '%' AS q
   ),
   track_rows AS (
     SELECT
@@ -283,5 +283,5 @@ AS $$
     SELECT * FROM playlist_rows
   ) rows
   ORDER BY rank_bucket, name ASC
-  LIMIT GREATEST(COALESCE(max_results, 30), 0);
+  LIMIT GREATEST(COALESCE($2, 30), 0);
 $$;
