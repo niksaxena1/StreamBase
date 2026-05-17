@@ -109,6 +109,40 @@ async function fetchTrackScatterPoints(svc: Svc, args: { runDate: string; prevDa
   return out;
 }
 
+async function fetchCompetitorTrackScatterPoints(
+  svc: Svc,
+  args: { labelKey: string; runDate: string; prevDate: string },
+) {
+  const pageSize = 1000;
+  const hardCap = HOME_SCATTER_HARD_CAP;
+  const out: Record<string, unknown>[] = [];
+  const seenIsrc = new Set<string>();
+
+  for (let offset = 0; offset < hardCap; offset += pageSize) {
+    const { data, error } = await svc
+      .schema("competitor")
+      .rpc("home_track_scatter_points_for_label", {
+        label_key: args.labelKey,
+        run_date: args.runDate,
+        prev_date: args.prevDate,
+      })
+      .range(offset, offset + pageSize - 1);
+
+    if (error) throw error;
+    const rows = (data ?? []) as Record<string, unknown>[];
+    if (!rows.length) break;
+    for (const r of rows) {
+      const isrc = String(r?.isrc ?? "").trim();
+      if (!isrc || seenIsrc.has(isrc)) continue;
+      seenIsrc.add(isrc);
+      out.push(r);
+    }
+    if (rows.length < pageSize) break;
+  }
+
+  return out;
+}
+
 function shortHash(s: string): string {
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
@@ -485,15 +519,21 @@ export async function loadHomeDashboardData(args: {
   const scatterCacheKey = `home-track-scatter-v10-${datasetMode}-${competitorLabelKey ?? "none"}-${selectedRunDate ?? "none"}`;
   const { data: trackScatterPoints, error: trackScatterErr } = await cachedQuery(
     async () => {
-      if (datasetMode === "competitor") return { data: [] as TrackStreamsXYPoint[], error: null };
       if (!selectedRunDate) return { data: [] as TrackStreamsXYPoint[], error: null };
 
       const prevRunDate = addDaysIso(selectedRunDate, -1);
 
-      const rows = await fetchTrackScatterPoints(svc, {
-        runDate: selectedRunDate,
-        prevDate: prevRunDate,
-      });
+      const rows =
+        datasetMode === "competitor" && competitorLabelKey
+          ? await fetchCompetitorTrackScatterPoints(svc, {
+              labelKey: competitorLabelKey,
+              runDate: selectedRunDate,
+              prevDate: prevRunDate,
+            })
+          : await fetchTrackScatterPoints(svc, {
+              runDate: selectedRunDate,
+              prevDate: prevRunDate,
+            });
 
       const points = rows
         .map((r: Record<string, unknown>) => {
@@ -521,7 +561,10 @@ export async function loadHomeDashboardData(args: {
         })
         .filter((p): p is TrackStreamsXYPoint => p !== null);
 
-      const distroByIsrc = await fetchDistroByIsrcForHome(svc, selectedRunDate, points.map((p) => p.isrc));
+      const distroByIsrc =
+        datasetMode === "competitor"
+          ? new Map<string, DistroPlaylistInfo>()
+          : await fetchDistroByIsrcForHome(svc, selectedRunDate, points.map((p) => p.isrc));
 
       const withDistro: TrackStreamsXYPoint[] = points.map((p) => {
         const d = distroByIsrc.get(p.isrc);

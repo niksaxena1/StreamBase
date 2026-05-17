@@ -6,6 +6,7 @@ import { getArtistsCached } from "@/lib/spotify";
 import { logError } from "@/lib/logger";
 import { apiJsonErr, apiJsonOk, requireSessionUser } from "@/lib/api/server";
 import { normalizeDatasetMode } from "@/lib/datasetMode";
+import { resolveCompetitorLabelKey } from "@/lib/competitorContext";
 
 export const dynamic = "force-dynamic";
 
@@ -43,10 +44,26 @@ export async function GET(request: NextRequest) {
     const svc = supabaseService();
     const { data: settings } = await svc
       .from("user_settings")
-      .select("dataset_mode")
+      .select("dataset_mode,competitor_label_key")
       .eq("user_id", auth.user.id)
       .maybeSingle();
     const datasetMode = normalizeDatasetMode(settings?.dataset_mode);
+    let competitorLabelKey =
+      typeof settings?.competitor_label_key === "string" && settings.competitor_label_key.trim()
+        ? settings.competitor_label_key.trim()
+        : null;
+    if (datasetMode === "competitor" && !competitorLabelKey) {
+      const { data: labels } = await svc
+        .schema("competitor")
+        .from("labels")
+        .select("label_key,display_name")
+        .eq("is_active", true)
+        .order("display_name", { ascending: true });
+      competitorLabelKey = resolveCompetitorLabelKey(
+        null,
+        (labels ?? []) as Array<{ label_key: string; display_name: string }>,
+      );
+    }
     const dataClient = datasetMode === "competitor" ? svc.schema("competitor") : sb;
     const latestClient = datasetMode === "competitor" ? svc.schema("competitor") : svc;
 
@@ -64,14 +81,21 @@ export async function GET(request: NextRequest) {
     const latestRunDate = (latestRun as { run_date?: string } | null)?.run_date ?? "none";
 
     const query = queryRaw.toLowerCase();
-    const key = `search-${datasetMode}-${hashKey(query)}-${latestRunDate}`;
+    const key = `search-${datasetMode}-${competitorLabelKey ?? "none"}-${hashKey(query)}-${latestRunDate}`;
 
     const { data: payload, error } = await cachedQuery(
       async () => {
-        const { data: rows, error: rpcErr } = await dataClient.rpc("search_all", {
-          q: queryRaw,
-          max_results: 40,
-        });
+        const { data: rows, error: rpcErr } =
+          datasetMode === "competitor" && competitorLabelKey
+            ? await dataClient.rpc("search_all_for_label", {
+                q: queryRaw,
+                label_key: competitorLabelKey,
+                max_results: 40,
+              })
+            : await dataClient.rpc("search_all", {
+                q: queryRaw,
+                max_results: 40,
+              });
         if (rpcErr) return { data: { results: [] as SearchResult[] }, error: rpcErr };
 
         const results: SearchResult[] = (rows ?? []).map(
