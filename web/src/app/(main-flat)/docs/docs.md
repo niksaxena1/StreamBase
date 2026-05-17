@@ -34,6 +34,8 @@ Where the main pieces live in this repo:
 
 GitHub Actions scheduled workflows use **UTC**. Below is the same schedule shown in **UTC** and **GMT+4** (GST / Asia/Abu_Dhabi).
 
+### Own-catalog schedule
+
 | Workflow | When (UTC) | When (GMT+4) | What it does |
 |---|---:|---:|---|
 | Dashboard sync (`sot_daily_dashboard_sync.yml`) | 09:00 + 09:30 (fallback) | 13:00 + 13:30 | Keeps SpotOnTrack dashboards in sync with `config/playlists.csv` |
