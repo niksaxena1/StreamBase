@@ -250,21 +250,77 @@ export default async function CatalogPage({
     const svc = supabaseService();
     const { data: datasetSettings } = await svc
       .from("user_settings")
-      .select("dataset_mode")
+      .select("dataset_mode,competitor_label_key")
       .eq("user_id", userData.user.id)
       .maybeSingle();
     const datasetMode = normalizeDatasetMode(datasetSettings?.dataset_mode);
 
     if (datasetMode === "competitor") {
       const comp = svc.schema("competitor");
+      const competitorLabelKey =
+        typeof datasetSettings?.competitor_label_key === "string" && datasetSettings.competitor_label_key.trim()
+          ? datasetSettings.competitor_label_key.trim()
+          : null;
       const artistId = (sp.artist_id ?? "").trim();
       const requestedIsrc = (sp.isrc ?? "").trim();
-      const { data: recentTracks } = await comp
-        .from("tracks")
-        .select("isrc,name,spotify_artist_ids,spotify_artist_names,spotify_album_image_url,release_date")
-        .not("spotify_artist_ids", "is", null)
-        .order("last_seen", { ascending: false })
-        .limit(5000);
+      const { data: competitorPlaylists } = competitorLabelKey
+        ? await comp
+            .from("playlists")
+            .select("playlist_key,display_name,display_order,spotify_playlist_id,spotify_playlist_image_url")
+            .eq("label_key", competitorLabelKey)
+        : {
+            data: [] as Array<{
+              playlist_key: string;
+              display_name: string | null;
+              display_order: number | null;
+              spotify_playlist_id: string | null;
+              spotify_playlist_image_url: string | null;
+            }>,
+          };
+      const competitorPlaylistRows = (competitorPlaylists ?? []) as Array<{
+        playlist_key: string;
+        display_name: string | null;
+        display_order: number | null;
+        spotify_playlist_id: string | null;
+        spotify_playlist_image_url: string | null;
+      }>;
+      const competitorPlaylistKeys = competitorPlaylistRows
+        .map((p) => p.playlist_key)
+        .filter(Boolean);
+      const competitorPlaylistMetaByKey = new Map(competitorPlaylistRows.map((p) => [p.playlist_key, p]));
+      const { data: latestRun } = competitorPlaylistKeys.length
+        ? await comp
+            .from("playlist_daily_stats")
+            .select("date")
+            .in("playlist_key", competitorPlaylistKeys)
+            .order("date", { ascending: false })
+            .limit(1)
+            .maybeSingle()
+        : { data: null };
+      const latestRunDate = (latestRun as PlaylistDailyStatsRow | null)?.date ?? null;
+      const { data: activeMemberships } =
+        latestRunDate && competitorPlaylistKeys.length
+          ? await comp
+              .from("playlist_memberships")
+              .select("isrc,playlist_key,valid_from")
+              .in("playlist_key", competitorPlaylistKeys)
+              .lte("valid_from", latestRunDate)
+              .or(`valid_to.is.null,valid_to.gte.${latestRunDate}`)
+          : { data: [] as Array<{ isrc: string; playlist_key: string; valid_from: string }> };
+      const competitorIsrcs = [
+        ...new Set(
+          ((activeMemberships ?? []) as Array<{ isrc: string }>).map((r) => r.isrc).filter(Boolean),
+        ),
+      ];
+      const { data: recentTracks } = competitorIsrcs.length
+        ? await comp
+            .from("tracks")
+            .select("isrc,name,spotify_artist_ids,spotify_artist_names,spotify_album_image_url,release_date")
+            .in("isrc", competitorIsrcs)
+            .not("spotify_artist_ids", "is", null)
+            .order("last_seen", { ascending: false })
+            .limit(5000)
+        : { data: [] as TrackRow[] };
       const competitorTracks = (recentTracks ?? []) as TrackRow[];
       const artists = deriveArtists(competitorTracks);
       const effectiveArtistId = artistId || artists[0]?.id || "";
@@ -273,38 +329,62 @@ export default async function CatalogPage({
       }
       const artistTracks = competitorTracks.filter((t) => (t.spotify_artist_ids ?? []).includes(effectiveArtistId));
       const selectedIsrc = requestedIsrc || artistTracks[0]?.isrc || null;
-      const { data: latestRun } = await comp
-        .from("playlist_daily_stats")
-        .select("date")
-        .order("date", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      const latestRunDate = (latestRun as PlaylistDailyStatsRow | null)?.date ?? null;
       const startRunDate = latestRunDate ? addDays(latestRunDate, -rangeDays) : null;
       const maPaddedStartRunDate = startRunDate ? addDays(startRunDate, -MA7_LOOKBACK_DAYS) : null;
-      const [{ data: seriesRows }, { data: topTotalRows }, { data: topDailyRows }] = await Promise.all([
-        latestRunDate && maPaddedStartRunDate
-          ? comp.rpc("catalog_artist_series", {
-              artist_id: effectiveArtistId,
-              start_date: maPaddedStartRunDate,
-              end_date: latestRunDate,
-            })
+      const artistIsrcs = artistTracks.map((t) => t.isrc);
+      const [{ data: artistSeriesRaw }, { data: todayRowsRaw }, { data: prevRowsRaw }] = await Promise.all([
+        latestRunDate && maPaddedStartRunDate && artistIsrcs.length
+          ? comp
+              .from("track_daily_streams")
+              .select("date,isrc,streams_cumulative")
+              .in("isrc", artistIsrcs)
+              .gte("date", maPaddedStartRunDate)
+              .lte("date", latestRunDate)
           : Promise.resolve({ data: [] }),
-        latestRunDate
-          ? comp.rpc("catalog_artist_top_tracks_total", {
-              artist_id: effectiveArtistId,
-              run_date: latestRunDate,
-              limit_rows: 1000,
-            })
+        latestRunDate && artistIsrcs.length
+          ? comp
+              .from("track_daily_streams")
+              .select("isrc,streams_cumulative")
+              .in("isrc", artistIsrcs)
+              .eq("date", latestRunDate)
           : Promise.resolve({ data: [] }),
-        latestRunDate
-          ? comp.rpc("catalog_artist_top_tracks_daily", {
-              artist_id: effectiveArtistId,
-              run_date: latestRunDate,
-              limit_rows: 1000,
-            })
+        latestRunDate && artistIsrcs.length
+          ? comp
+              .from("track_daily_streams")
+              .select("isrc,streams_cumulative")
+              .in("isrc", artistIsrcs)
+              .eq("date", addDays(latestRunDate, -1))
           : Promise.resolve({ data: [] }),
       ]);
+      const seriesByDate = new Map<string, number>();
+      for (const row of (artistSeriesRaw ?? []) as Array<{ date: string; streams_cumulative: number | null }>) {
+        seriesByDate.set(row.date, (seriesByDate.get(row.date) ?? 0) + Number(row.streams_cumulative ?? 0));
+      }
+      const seriesRows = [...seriesByDate.entries()].map(([date, streams_cumulative]) => ({ date, streams_cumulative }));
+      const todayByIsrc = new Map(
+        ((todayRowsRaw ?? []) as Array<{ isrc: string; streams_cumulative: number | null }>).map((r) => [
+          r.isrc,
+          Number(r.streams_cumulative ?? 0),
+        ]),
+      );
+      const prevByIsrc = new Map(
+        ((prevRowsRaw ?? []) as Array<{ isrc: string; streams_cumulative: number | null }>).map((r) => [
+          r.isrc,
+          Number(r.streams_cumulative ?? 0),
+        ]),
+      );
+      const topRows = artistTracks.map((t) => ({
+        isrc: t.isrc,
+        name: t.name,
+        album_image_url: t.spotify_album_image_url,
+        total: todayByIsrc.has(t.isrc) ? todayByIsrc.get(t.isrc)! : null,
+        daily:
+          todayByIsrc.has(t.isrc) && prevByIsrc.has(t.isrc)
+            ? todayByIsrc.get(t.isrc)! - prevByIsrc.get(t.isrc)!
+            : null,
+      }));
+      const topTotalRows = [...topRows].sort((a, b) => Number(b.total ?? -Infinity) - Number(a.total ?? -Infinity));
+      const topDailyRows = [...topRows].sort((a, b) => Number(b.daily ?? -Infinity) - Number(a.daily ?? -Infinity));
       const cumSeriesAscRunFull = ((seriesRows ?? []) as CatalogArtistSeriesRow[])
         .map((r) => ({ date: r.date, value: Number(r.streams_cumulative ?? 0) }))
         .sort((a, b) => a.date.localeCompare(b.date));
@@ -332,6 +412,25 @@ export default async function CatalogPage({
       const trackDailyWithMaDesc = computeDailyRollingAvg7([...trackDailyAsc].reverse());
       const artistName = artists.find((a) => a.id === effectiveArtistId)?.name ?? effectiveArtistId;
       const selectedTrackRow = artistTracks.find((t) => t.isrc === selectedIsrc) ?? null;
+      const selectedTrackPlaylistMemberships =
+        selectedIsrc && latestRunDate
+          ? ((activeMemberships ?? []) as Array<{ isrc: string; playlist_key: string; valid_from: string }>)
+              .filter((m) => m.isrc === selectedIsrc)
+              .map((m) => {
+                const meta = competitorPlaylistMetaByKey.get(m.playlist_key) ?? null;
+                return {
+                  playlistKey: m.playlist_key,
+                  playlistName: meta?.display_name ?? m.playlist_key,
+                  playlistType: "Competitor",
+                  displayOrder: meta?.display_order ?? null,
+                  addedRunDate: m.valid_from,
+                  removedRunDate: null,
+                  spotifyPlaylistId: meta?.spotify_playlist_id ?? null,
+                  spotifyPlaylistImageUrl: meta?.spotify_playlist_image_url ?? null,
+                  isCatalog: false,
+                };
+              })
+          : [];
       return (
         <div className="space-y-4">
           <CatalogPageClient
@@ -374,7 +473,7 @@ export default async function CatalogPage({
             track7d={sumLastNDays(trackDailyWithMaDesc, 7)}
             track28d={sumLastNDays(trackDailyWithMaDesc, 28)}
             track30d={sumLastNDays(trackDailyWithMaDesc, 30)}
-            selectedTrackPlaylistMemberships={[]}
+            selectedTrackPlaylistMemberships={selectedTrackPlaylistMemberships}
           />
         </div>
       );

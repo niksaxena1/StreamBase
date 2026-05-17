@@ -82,6 +82,7 @@ function ToggleLink(props: { href: string; active: boolean; children: React.Reac
 
 function HomeDashboardInner(props: {
   sp: { scope?: string; range?: string; daily?: string; xy_date?: string; start?: string; end?: string };
+  datasetMode: "own" | "competitor";
   playlistKey: "all_catalog" | "releases" | "ext";
   title: string;
   rangeDays: number;
@@ -361,16 +362,20 @@ function HomeDashboardInner(props: {
             </div>
           </div>
           <p className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
-            Overview of your catalog performance across all playlists.
+            {props.datasetMode === "competitor"
+              ? "Overview of the selected competitor across its tracked playlists."
+              : "Overview of your catalog performance across all playlists."}
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5">
-          <div className="sb-ring flex items-center gap-0.5 rounded-full bg-white/60 p-0.5 dark:bg-white/10">
-            <ToggleLink active={props.playlistKey === "all_catalog"} href={hrefWith(props.sp, { scope: "all_catalog" })}>All</ToggleLink>
-            <ToggleLink active={props.playlistKey === "releases"} href={hrefWith(props.sp, { scope: "releases" })}>Releases</ToggleLink>
-            <ToggleLink active={props.playlistKey === "ext"} href={hrefWith(props.sp, { scope: "ext" })}>Ext</ToggleLink>
-          </div>
+          {props.datasetMode === "own" ? (
+            <div className="sb-ring flex items-center gap-0.5 rounded-full bg-white/60 p-0.5 dark:bg-white/10">
+              <ToggleLink active={props.playlistKey === "all_catalog"} href={hrefWith(props.sp, { scope: "all_catalog" })}>All</ToggleLink>
+              <ToggleLink active={props.playlistKey === "releases"} href={hrefWith(props.sp, { scope: "releases" })}>Releases</ToggleLink>
+              <ToggleLink active={props.playlistKey === "ext"} href={hrefWith(props.sp, { scope: "ext" })}>Ext</ToggleLink>
+            </div>
+          ) : null}
 
           {granularity === "daily" && (
             <>
@@ -476,4 +481,3 @@ function HomeDashboardInner(props: {
 export function HomeDashboardClient(props: HomeDashboardServerProps) {
   return <HomeDashboardInner {...props} />;
 }
-

@@ -17,6 +17,8 @@ import { getRollbackDate, rollbackDataDateToRunDate } from "@/lib/rollback";
 import { SOT_DATA_LAG_DAYS, addDaysISO, dataDateFromRunDate } from "@/lib/sotDates";
 import { cachedQuery } from "@/lib/supabase/cache";
 import { supabaseService } from "@/lib/supabase/service";
+import { normalizeDatasetMode } from "@/lib/datasetMode";
+import { aggregateCompetitorPlaylistHistory } from "@/lib/competitorAnalytics";
 
 type Svc = ReturnType<typeof supabaseService>;
 
@@ -283,15 +285,23 @@ export async function loadHomeDashboardData(args: {
   let hideStaleAnnotations = false;
   let userArtificialSpikeRatio: number | null = null;
   let userIncludeWeekendsOverride: boolean | null = null;
+  let datasetMode: "own" | "competitor" = "own";
+  let competitorLabelKey: string | null = null;
+  let competitorLabelName: string | null = null;
   try {
     const { data: uSettings } = await sb
       .from("user_settings")
       .select(
-        "hide_stale_override_annotations, artificial_streams_spike_ratio, artificial_streams_include_weekends_user",
+        "hide_stale_override_annotations, artificial_streams_spike_ratio, artificial_streams_include_weekends_user, dataset_mode, competitor_label_key",
       )
       .eq("user_id", userId)
       .maybeSingle();
     const us = uSettings as Record<string, unknown> | null;
+    datasetMode = normalizeDatasetMode(us?.dataset_mode);
+    competitorLabelKey =
+      typeof us?.competitor_label_key === "string" && us.competitor_label_key.trim()
+        ? us.competitor_label_key.trim()
+        : null;
     hideStaleAnnotations = Boolean(us?.hide_stale_override_annotations);
     const ur = us?.artificial_streams_spike_ratio;
     if (ur != null && Number.isFinite(Number(ur))) userArtificialSpikeRatio = Number(ur);
@@ -369,8 +379,45 @@ export async function loadHomeDashboardData(args: {
           )
         ).data?.spotify_playlist_image_url ?? null;
 
+  if (datasetMode === "competitor" && competitorLabelKey) {
+    try {
+      const { data: label } = await svc
+        .schema("competitor")
+        .from("labels")
+        .select("display_name")
+        .eq("label_key", competitorLabelKey)
+        .maybeSingle();
+      competitorLabelName = (label as { display_name?: string | null } | null)?.display_name ?? competitorLabelKey;
+    } catch {
+      competitorLabelName = competitorLabelKey;
+    }
+  }
+
   const { data: history, error: historyErr } = await cachedQuery(
     async () => {
+      if (datasetMode === "competitor" && competitorLabelKey) {
+        const comp = svc.schema("competitor");
+        const { data: playlists } = await comp
+          .from("playlists")
+          .select("playlist_key")
+          .eq("label_key", competitorLabelKey);
+        const playlistKeys = ((playlists ?? []) as Array<{ playlist_key: string }>)
+          .map((p) => p.playlist_key)
+          .filter(Boolean);
+        if (!playlistKeys.length) return { data: [], error: null };
+
+        let q = comp
+          .from("playlist_daily_stats")
+          .select("date,playlist_key,track_count,total_streams_cumulative,daily_streams_net")
+          .in("playlist_key", playlistKeys);
+        if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
+        const res = await q.order("date", { ascending: false }).limit((rangeDays + 7) * playlistKeys.length);
+        return {
+          data: aggregateCompetitorPlaylistHistory((res.data ?? []) as any),
+          error: res.error,
+        };
+      }
+
       let q = svc
         .from("playlist_daily_stats")
         .select("date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net")
@@ -378,7 +425,7 @@ export async function loadHomeDashboardData(args: {
       if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
       return await q.order("date", { ascending: false }).limit(rangeDays + 7);
     },
-    `home-playlist-stats-v2-${playlistKey}-${rangeDays + 7}-${userId}-ov${overrideBuster}-rb${rollbackDate ?? "live"}`,
+    `home-playlist-stats-v3-${datasetMode}-${competitorLabelKey ?? "none"}-${playlistKey}-${rangeDays + 7}-${userId}-ov${overrideBuster}-rb${rollbackDate ?? "live"}`,
     CACHE_TTL_1H,
   );
 
@@ -386,7 +433,13 @@ export async function loadHomeDashboardData(args: {
   const latestRunDate = (latest as PlaylistDailyStatsRow | null)?.date ?? null;
 
   const title =
-    playlistKey === "releases" ? "Releases" : playlistKey === "ext" ? "ext" : "All Catalog";
+    datasetMode === "competitor"
+      ? competitorLabelName ?? competitorLabelKey ?? "Competitor"
+      : playlistKey === "releases"
+        ? "Releases"
+        : playlistKey === "ext"
+          ? "ext"
+          : "All Catalog";
 
   const latestDataDate = latestRunDate ? dataDateFromRunDate(latestRunDate) : null;
   const selectedDataDate = sanitizeIsoDate(sp.xy_date) ?? latestDataDate;
@@ -409,9 +462,10 @@ export async function loadHomeDashboardData(args: {
   }
   const selectedRunDate = selectedDataDate ? addDaysISO(selectedDataDate, SOT_DATA_LAG_DAYS) : latestRunDate;
 
-  const scatterCacheKey = `home-track-scatter-v10-${selectedRunDate ?? "none"}`;
+  const scatterCacheKey = `home-track-scatter-v10-${datasetMode}-${competitorLabelKey ?? "none"}-${selectedRunDate ?? "none"}`;
   const { data: trackScatterPoints, error: trackScatterErr } = await cachedQuery(
     async () => {
+      if (datasetMode === "competitor") return { data: [] as TrackStreamsXYPoint[], error: null };
       if (!selectedRunDate) return { data: [] as TrackStreamsXYPoint[], error: null };
 
       const prevRunDate = addDaysIso(selectedRunDate, -1);
@@ -465,6 +519,7 @@ export async function loadHomeDashboardData(args: {
   );
 
   const overrideAnnotations: ManualOverrideAnnotation[] = await (async () => {
+    if (datasetMode === "competitor") return [];
     const hist = ((history as PlaylistDailyStatsRow[] | null) ?? []) as PlaylistDailyStatsRow[];
     if (!hist.length) return [];
     const endRunDate = (hist[0]?.date ?? "").trim();
@@ -556,6 +611,7 @@ export async function loadHomeDashboardData(args: {
   ] = await Promise.all([
     cachedQuery(
       async () => {
+        if (datasetMode === "competitor") return { data: [], error: null };
         return await svc.rpc("home_artist_weekend_dips", {
           p_min_weekday_avg: 0,
           p_anchor_data_date: latestDataDate ?? null,
@@ -566,6 +622,7 @@ export async function loadHomeDashboardData(args: {
     ),
     cachedQuery(
       async () => {
+        if (datasetMode === "competitor") return { data: [], error: null };
         return await svc.rpc("home_track_weekend_dips", {
           p_min_weekday_avg: 0,
           p_anchor_data_date: latestDataDate ?? null,
@@ -576,6 +633,7 @@ export async function loadHomeDashboardData(args: {
     ),
     cachedQuery(
       async () => {
+        if (datasetMode === "competitor") return { data: [], error: null };
         return await svc.rpc("home_negative_daily_streams");
       },
       `home-negative-daily-v2-${userId}`,
@@ -583,6 +641,7 @@ export async function loadHomeDashboardData(args: {
     ),
     cachedQuery(
       async () => {
+        if (datasetMode === "competitor") return { data: [], error: null };
         const { data, error } = await svc.rpc("home_artificial_stream_spikes", {
           p_spike_ratio: artificialSpikeRatio,
           p_min_baseline: artificialMinBaseline,
@@ -618,6 +677,7 @@ export async function loadHomeDashboardData(args: {
 
   return {
     sp,
+    datasetMode,
     playlistKey,
     title,
     rangeDays,

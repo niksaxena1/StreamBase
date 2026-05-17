@@ -81,6 +81,7 @@ export type ArtificialStreamSpikeRow = {
 /** Props assembled on the server for `HomeDashboardClient`. */
 export type HomeDashboardServerProps = {
   sp: HomeDashboardSearchParams;
+  datasetMode: "own" | "competitor";
   playlistKey: "all_catalog" | "releases" | "ext";
   title: string;
   rangeDays: number;
