@@ -5,6 +5,7 @@ import { cachedQuery } from "@/lib/supabase/cache";
 import { getArtistsCached } from "@/lib/spotify";
 import { logError } from "@/lib/logger";
 import { apiJsonErr, apiJsonOk, requireSessionUser } from "@/lib/api/server";
+import { normalizeDatasetMode } from "@/lib/datasetMode";
 
 export const dynamic = "force-dynamic";
 
@@ -40,26 +41,34 @@ export async function GET(request: NextRequest) {
     }
 
     const svc = supabaseService();
+    const { data: settings } = await svc
+      .from("user_settings")
+      .select("dataset_mode")
+      .eq("user_id", auth.user.id)
+      .maybeSingle();
+    const datasetMode = normalizeDatasetMode(settings?.dataset_mode);
+    const dataClient = datasetMode === "competitor" ? sb.schema("competitor") : sb;
+    const latestClient = datasetMode === "competitor" ? svc.schema("competitor") : svc;
 
     const { data: latestRun } = await cachedQuery(
       async () =>
-        await svc
+        await latestClient
           .from("ingestion_runs")
           .select("run_date")
           .order("run_date", { ascending: false })
           .limit(1)
           .maybeSingle(),
-      "search-latest-ingestion-run",
+      `search-latest-ingestion-run-${datasetMode}`,
       600,
     );
     const latestRunDate = (latestRun as { run_date?: string } | null)?.run_date ?? "none";
 
     const query = queryRaw.toLowerCase();
-    const key = `search-${hashKey(query)}-${latestRunDate}`;
+    const key = `search-${datasetMode}-${hashKey(query)}-${latestRunDate}`;
 
     const { data: payload, error } = await cachedQuery(
       async () => {
-        const { data: rows, error: rpcErr } = await sb.rpc("search_all", {
+        const { data: rows, error: rpcErr } = await dataClient.rpc("search_all", {
           q: queryRaw,
           max_results: 40,
         });

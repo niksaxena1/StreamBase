@@ -13,6 +13,8 @@ import { PayoutRateProvider } from "@/components/payout/PayoutRateContext";
 import { RevenueDecimalDisplayProvider } from "@/components/revenue/RevenueDecimalDisplayContext";
 import { RollbackProvider } from "@/components/rollback/RollbackContext";
 import { supabaseServer } from "@/lib/supabase/server";
+import { supabaseService } from "@/lib/supabase/service";
+import { normalizeDatasetMode } from "@/lib/datasetMode";
 
 export async function AuthedAppLayout({
   children,
@@ -32,6 +34,14 @@ export async function AuthedAppLayout({
     redirect("/login");
   }
 
+  const svc = supabaseService();
+  const { data: settings } = await svc
+    .from("user_settings")
+    .select("dataset_mode")
+    .eq("user_id", session.user.id)
+    .maybeSingle();
+  const datasetMode = normalizeDatasetMode(settings?.dataset_mode);
+
   return (
     <KeyboardShortcutsProvider>
       <PayoutRateProvider>
@@ -43,7 +53,7 @@ export async function AuthedAppLayout({
                   <MetricProvider defaultMetric="streams">
                     <RevenueDecimalDisplayProvider>
                       <RollbackProvider>
-                        <AppShell {...appShellProps}>
+                        <AppShell {...appShellProps} datasetMode={datasetMode}>
                           <ErrorBoundary>{children}</ErrorBoundary>
                         </AppShell>
                         <KeyboardShortcutsHelp />

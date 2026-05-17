@@ -4,6 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { navItems } from "./SideRail";
+import type { DatasetMode } from "@/lib/datasetMode";
+import { navItemsForMode } from "@/lib/datasets";
 
 // Haptic feedback utility (#4)
 function triggerHaptic(style: "light" | "medium" = "light") {
@@ -17,10 +19,12 @@ export function MobileNav({
   healthBadgeCount = 0,
   healthHasCritical = false,
   healthInfoOnly = false,
+  datasetMode = "own",
 }: {
   healthBadgeCount?: number;
   healthHasCritical?: boolean;
   healthInfoOnly?: boolean;
+  datasetMode?: DatasetMode;
 }) {
   const pathname = usePathname();
   const [hasScrolled, setHasScrolled] = useState(false);
@@ -28,6 +32,7 @@ export function MobileNav({
   const scrollTimerRef = useRef<number | null>(null);
   const prevBadgeCount = useRef(healthBadgeCount);
   const [badgeAnimating, setBadgeAnimating] = useState(false);
+  const visibleNavItems = navItemsForMode(datasetMode, navItems);
   const navRef = useRef<HTMLElement>(null);
   const rafRef = useRef<number | null>(null);
 
@@ -172,7 +177,7 @@ export function MobileNav({
       ].join(" ")}
     >
       <div className="flex h-[72px] items-center justify-around px-1">
-        {navItems.map((item) => {
+        {visibleNavItems.map((item) => {
           const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
           const isHealth = item.href === "/health";
           const showBadge = isHealth && healthBadgeCount > 0;

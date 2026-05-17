@@ -14,6 +14,7 @@ import { getRollbackDate, rollbackDataDateToRunDate, capRunDate } from "@/lib/ro
 import { Alert } from "@/components/ui/Alert";
 import { CACHE_TTL_1H, API_LOOKUP_DROPDOWN_MAX, API_LOOKUP_THUMBNAILS_MAX, API_LOOKUP_PAGE_SIZE, API_LOOKUP_TRACK_MAX, API_LOOKUP_LIMIT_500 } from "@/lib/constants";
 import { logError, logWarn } from "@/lib/logger";
+import { normalizeDatasetMode } from "@/lib/datasetMode";
 
 const CATALOG_ARTIST_DROPDOWN_MAX_TRACKS = API_LOOKUP_DROPDOWN_MAX;
 const CATALOG_ARTIST_THUMBNAILS_MAX = API_LOOKUP_THUMBNAILS_MAX;
@@ -247,6 +248,137 @@ export default async function CatalogPage({
     // leaving stale cached data. Use the service-role client for all data reads here;
     // access is still gated above.
     const svc = supabaseService();
+    const { data: datasetSettings } = await svc
+      .from("user_settings")
+      .select("dataset_mode")
+      .eq("user_id", userData.user.id)
+      .maybeSingle();
+    const datasetMode = normalizeDatasetMode(datasetSettings?.dataset_mode);
+
+    if (datasetMode === "competitor") {
+      const comp = svc.schema("competitor");
+      const artistId = (sp.artist_id ?? "").trim();
+      const requestedIsrc = (sp.isrc ?? "").trim();
+      const { data: recentTracks } = await comp
+        .from("tracks")
+        .select("isrc,name,spotify_artist_ids,spotify_artist_names,spotify_album_image_url,release_date")
+        .not("spotify_artist_ids", "is", null)
+        .order("last_seen", { ascending: false })
+        .limit(5000);
+      const competitorTracks = (recentTracks ?? []) as TrackRow[];
+      const artists = deriveArtists(competitorTracks);
+      const effectiveArtistId = artistId || artists[0]?.id || "";
+      if (!artistId && effectiveArtistId) {
+        redirect(`/catalog?artist_id=${effectiveArtistId}`);
+      }
+      const artistTracks = competitorTracks.filter((t) => (t.spotify_artist_ids ?? []).includes(effectiveArtistId));
+      const selectedIsrc = requestedIsrc || artistTracks[0]?.isrc || null;
+      const { data: latestRun } = await comp
+        .from("playlist_daily_stats")
+        .select("date")
+        .order("date", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const latestRunDate = (latestRun as PlaylistDailyStatsRow | null)?.date ?? null;
+      const startRunDate = latestRunDate ? addDays(latestRunDate, -rangeDays) : null;
+      const maPaddedStartRunDate = startRunDate ? addDays(startRunDate, -MA7_LOOKBACK_DAYS) : null;
+      const [{ data: seriesRows }, { data: topTotalRows }, { data: topDailyRows }] = await Promise.all([
+        latestRunDate && maPaddedStartRunDate
+          ? comp.rpc("catalog_artist_series", {
+              artist_id: effectiveArtistId,
+              start_date: maPaddedStartRunDate,
+              end_date: latestRunDate,
+            })
+          : Promise.resolve({ data: [] }),
+        latestRunDate
+          ? comp.rpc("catalog_artist_top_tracks_total", {
+              artist_id: effectiveArtistId,
+              run_date: latestRunDate,
+              limit_rows: 1000,
+            })
+          : Promise.resolve({ data: [] }),
+        latestRunDate
+          ? comp.rpc("catalog_artist_top_tracks_daily", {
+              artist_id: effectiveArtistId,
+              run_date: latestRunDate,
+              limit_rows: 1000,
+            })
+          : Promise.resolve({ data: [] }),
+      ]);
+      const cumSeriesAscRunFull = ((seriesRows ?? []) as CatalogArtistSeriesRow[])
+        .map((r) => ({ date: r.date, value: Number(r.streams_cumulative ?? 0) }))
+        .sort((a, b) => a.date.localeCompare(b.date));
+      const cumSeriesAscRun = startRunDate ? cumSeriesAscRunFull.filter((p) => p.date >= startRunDate) : cumSeriesAscRunFull;
+      const dailyArtistAscRunFull = cumSeriesAscRunFull.map((p, idx) => ({
+        date: p.date,
+        daily: idx === 0 ? null : p.value - cumSeriesAscRunFull[idx - 1].value,
+      }));
+      const dailyArtistDesc = computeDailyRollingAvg7([...dailyArtistAscRunFull].reverse());
+      const trackSeries =
+        selectedIsrc && latestRunDate && maPaddedStartRunDate
+          ? ((await comp
+              .from("track_daily_streams")
+              .select("date,streams_cumulative")
+              .eq("isrc", selectedIsrc)
+              .gte("date", maPaddedStartRunDate)
+              .lte("date", latestRunDate)
+              .order("date", { ascending: false })).data ?? [])
+          : [];
+      const trackCumDesc = (trackSeries ?? []).map((r) => ({ date: r.date, value: Number(r.streams_cumulative ?? 0) }));
+      const trackDailyAsc = [...trackCumDesc].reverse().map((p, idx, arr) => ({
+        date: p.date,
+        daily: idx === 0 ? null : p.value - arr[idx - 1].value,
+      }));
+      const trackDailyWithMaDesc = computeDailyRollingAvg7([...trackDailyAsc].reverse());
+      const artistName = artists.find((a) => a.id === effectiveArtistId)?.name ?? effectiveArtistId;
+      const selectedTrackRow = artistTracks.find((t) => t.isrc === selectedIsrc) ?? null;
+      return (
+        <div className="space-y-4">
+          <CatalogPageClient
+            latestCum={cumSeriesAscRun.at(-1)?.value ?? 0}
+            latestDate={latestRunDate}
+            latestDataDate={latestRunDate ? dataDateFromRunDate(latestRunDate) : null}
+            rangeDays={rangeDays}
+            cumSeriesAsc={cumSeriesAscRun}
+            dailyArtistDesc={dailyArtistDesc}
+            artist24h={dailyArtistDesc[0]?.daily ?? 0}
+            artist7d={sumLastNDays(dailyArtistDesc, 7)}
+            artist28d={sumLastNDays(dailyArtistDesc, 28)}
+            artist30d={sumLastNDays(dailyArtistDesc, 30)}
+            trackCount={artistTracks.length}
+            artists={artists.map((a) => ({ ...a, imageUrl: null }))}
+            artistId={effectiveArtistId}
+            tracks={artistTracks.map((t) => ({ isrc: t.isrc, name: t.name ?? t.isrc, albumImageUrl: t.spotify_album_image_url ?? null }))}
+            isrc={selectedIsrc}
+            artistName={artistName}
+            artistImageUrl={null}
+            topByCumulative={(topTotalRows ?? []) as any}
+            topByDaily={(topDailyRows ?? []) as any}
+            selectedTrack={
+              selectedTrackRow
+                ? {
+                    name: selectedTrackRow.name,
+                    albumImageUrl: selectedTrackRow.spotify_album_image_url ?? null,
+                    spotifyTrackId: null,
+                    artistNames: selectedTrackRow.spotify_artist_names ?? null,
+                    artistIds: selectedTrackRow.spotify_artist_ids ?? null,
+                    releaseDate: selectedTrackRow.release_date ?? null,
+                  }
+                : null
+            }
+            trackCumDesc={trackCumDesc}
+            trackDailyWithMaDesc={trackDailyWithMaDesc}
+            trackOverrideAnnotations={[]}
+            artistOverrideAnnotations={[]}
+            track24h={trackDailyWithMaDesc[0]?.daily ?? 0}
+            track7d={sumLastNDays(trackDailyWithMaDesc, 7)}
+            track28d={sumLastNDays(trackDailyWithMaDesc, 28)}
+            track30d={sumLastNDays(trackDailyWithMaDesc, 30)}
+            selectedTrackPlaylistMemberships={[]}
+          />
+        </div>
+      );
+    }
 
     let hideStaleAnnotations = false;
     try {

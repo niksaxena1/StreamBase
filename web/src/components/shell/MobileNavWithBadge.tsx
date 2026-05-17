@@ -2,7 +2,7 @@ import { getActiveWarningSummary } from "@/lib/health/activeWarnings";
 import { MobileNav } from "./MobileNav";
 import { logError } from "@/lib/logger";
 
-export async function MobileNavWithBadge() {
+export async function MobileNavWithBadge({ datasetMode = "own" }: { datasetMode?: "own" | "competitor" }) {
   let badgeCount = 0;
   let hasCritical = false;
   let infoOnly = false;
@@ -17,5 +17,5 @@ export async function MobileNavWithBadge() {
     logError("[Health Badge] Failed to fetch health badge counts", error);
   }
 
-  return <MobileNav healthBadgeCount={badgeCount} healthHasCritical={hasCritical} healthInfoOnly={infoOnly} />;
+  return <MobileNav healthBadgeCount={badgeCount} healthHasCritical={hasCritical} healthInfoOnly={infoOnly} datasetMode={datasetMode} />;
 }

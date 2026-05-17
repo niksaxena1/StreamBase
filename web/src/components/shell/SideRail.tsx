@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import React from "react";
+import type { DatasetMode } from "@/lib/datasetMode";
+import { navItemsForMode } from "@/lib/datasets";
 
 export type Item = {
   href: string;
@@ -43,16 +45,19 @@ function SideRailContent({
   healthBadgeCount = 0,
   healthHasCritical = false,
   healthInfoOnly = false,
+  datasetMode = "own",
 }: {
   healthBadgeCount?: number;
   healthHasCritical?: boolean;
   healthInfoOnly?: boolean;
+  datasetMode?: DatasetMode;
 }) {
   const pathname = usePathname();
+  const visibleNavItems = navItemsForMode(datasetMode, navItems);
 
   return (
     <div className="sb-glass sticky top-3 z-30 flex flex-col items-center gap-2 px-2 py-2">
-      {navItems.map((it) => {
+      {visibleNavItems.map((it) => {
         const active = pathname ? (pathname === it.href || pathname.startsWith(`${it.href}/`)) : false;
         const isHealth = it.href === "/health";
 
@@ -159,14 +164,16 @@ export function SideRail({
   healthBadgeCount = 0,
   healthHasCritical = false,
   healthInfoOnly = false,
+  datasetMode = "own",
 }: {
   healthBadgeCount?: number;
   healthHasCritical?: boolean;
   healthInfoOnly?: boolean;
+  datasetMode?: DatasetMode;
 }) {
   return (
     <aside className="hidden w-[60px] shrink-0 sm:block">
-      <SideRailContent healthBadgeCount={healthBadgeCount} healthHasCritical={healthHasCritical} healthInfoOnly={healthInfoOnly} />
+      <SideRailContent healthBadgeCount={healthBadgeCount} healthHasCritical={healthHasCritical} healthInfoOnly={healthInfoOnly} datasetMode={datasetMode} />
     </aside>
   );
 }

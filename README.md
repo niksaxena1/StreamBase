@@ -77,3 +77,7 @@ cd web
 npm install
 npm run dev
 ```
+
+## Competitor Mode pilot
+
+SpotiBase now has a separated competitor-tracking pilot for Paraíso. Competitor data lives in its own `competitor` schema, uses `config/competitor_playlists.csv`, and is refreshed through the dedicated `SOT Competitor ...` GitHub Actions workflows. See `docs/COMPETITOR-MODE-OPERATIONS.md` for the first-run sequence.

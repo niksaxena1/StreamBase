@@ -21,6 +21,7 @@ import { PlaylistHistory30dDetails, type PlaylistHistoryRow } from "./PlaylistHi
 import { PlaylistHeaderSelects } from "./PlaylistGranularitySelect";
 import { PlaylistMembershipStats } from "@/components/dashboard/PlaylistMembershipStats";
 import { DocumentTitle } from "@/components/shell/DocumentTitle";
+import { normalizeDatasetMode } from "@/lib/datasetMode";
 
 // Uses Supabase session cookies; this route must be dynamic in Next 16.
 export const dynamic = "force-dynamic";
@@ -121,6 +122,113 @@ export default async function PlaylistsPage({
   // revalidation to fail and stale cached data to persist. Use the service role
   // client for cached reads; access is still gated above.
   const svc = supabaseService();
+  const { data: datasetSettings } = await svc
+    .from("user_settings")
+    .select("dataset_mode")
+    .eq("user_id", userData.user.id)
+    .maybeSingle();
+  const datasetMode = normalizeDatasetMode(datasetSettings?.dataset_mode);
+
+  if (datasetMode === "competitor") {
+    const comp = svc.schema("competitor");
+    const { data: competitorPlaylists } = await comp
+      .from("playlists")
+      .select("playlist_key,display_name,spotify_playlist_id,spotify_playlist_image_url")
+      .eq("is_active", true)
+      .order("display_order", { ascending: true, nullsFirst: false })
+      .order("display_name", { ascending: true });
+    const competitorOptions = (competitorPlaylists ?? []) as PlaylistRow[];
+    const effectivePlaylistKey = playlistKey || competitorOptions[0]?.playlist_key || "";
+    if (!playlistKey && effectivePlaylistKey) {
+      redirect(`/playlists?playlist_key=${effectivePlaylistKey}`);
+    }
+    const [{ data: latest }, { data: prev }, { data: history }, { data: latestCounts }] = await Promise.all([
+      comp
+        .from("playlist_daily_stats")
+        .select("date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net,source_run_id")
+        .eq("playlist_key", effectivePlaylistKey)
+        .order("date", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      comp
+        .from("playlist_daily_stats")
+        .select("date")
+        .eq("playlist_key", effectivePlaylistKey)
+        .order("date", { ascending: false })
+        .range(1, 1)
+        .maybeSingle(),
+      comp
+        .from("playlist_daily_stats")
+        .select("date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net,missing_streams_track_count")
+        .eq("playlist_key", effectivePlaylistKey)
+        .order("date", { ascending: false })
+        .limit(rangeDays),
+      comp.rpc("playlists_latest_track_counts", {
+        p_keys: competitorOptions.map((p) => p.playlist_key),
+      }),
+    ]);
+    const statsMap = new Map<string, number | null>(
+      (latestCounts ?? []).map((stat: any) => [String(stat.playlist_key), stat.track_count == null ? null : Number(stat.track_count)]),
+    );
+    const playlistOptions = competitorOptions.map((p) => ({
+      ...p,
+      is_catalog: true,
+      track_count: statsMap.get(p.playlist_key) ?? null,
+    }));
+    const currentPlaylist = playlistOptions.find((p) => p.playlist_key === effectivePlaylistKey);
+    const title = currentPlaylist?.display_name ?? effectivePlaylistKey;
+    const latestDate = (latest as PlaylistDailyStatsRow | null)?.date ?? null;
+    const prevDate = (prev as { date: string } | null)?.date ?? null;
+    const hist = (history ?? []) as PlaylistDailyStatsRow[];
+    const removedRows = await comp.rpc("playlist_removed_tracks", {
+      playlist_key: effectivePlaylistKey,
+      limit_rows: 500,
+    });
+    const currentRows = await comp.rpc("playlist_current_tracks", {
+      playlist_key: effectivePlaylistKey,
+      run_date: latestDate,
+    });
+    const removedTracksCount = Array.isArray(removedRows.data) ? removedRows.data.length : 0;
+    return (
+      <div className="space-y-4">
+        <DocumentTitle title={title} />
+        <PageHeader
+          title={title}
+          subtitle={latestDate ? <>Latest data date: <span className="font-mono">{formatDateISO(dataDateFromRunDate(latestDate))}</span></> : "No stats found for this playlist yet."}
+        />
+        <PlaylistDashboardControls
+          playlists={playlistOptions}
+          playlistKey={effectivePlaylistKey}
+          trackCount={(latest as PlaylistDailyStatsRow | null)?.track_count ?? null}
+          artistCount={null}
+        />
+        <PlaylistPageClient
+          latest={latest as PlaylistDailyStatsRow | null}
+          latestDate={latestDate}
+          rangeDays={rangeDays}
+          history={hist}
+          removedTracksCount={removedTracksCount}
+          playlistKey={effectivePlaylistKey}
+          overrideAnnotations={[]}
+        />
+        <div className="sb-card p-4">
+          <div className="mb-3 text-xs font-medium uppercase tracking-wider opacity-60">Current tracks</div>
+          <div className="space-y-2">
+            {((currentRows.data ?? []) as Array<{ isrc: string; name: string; artist_names: string[] | null; total: number | null }>).slice(0, 50).map((row) => (
+              <div key={row.isrc} className="flex items-center justify-between gap-3 text-sm">
+                <div className="min-w-0">
+                  <div className="truncate font-medium">{row.name}</div>
+                  <div className="truncate text-xs opacity-60">{(row.artist_names ?? []).join(", ")}</div>
+                </div>
+                <div className="shrink-0 font-mono text-xs opacity-70">{row.total?.toLocaleString() ?? "—"}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <PlaylistHistory30dDetails rows={hist as unknown as PlaylistHistoryRow[]} />
+      </div>
+    );
+  }
 
   let hideStaleAnnotations = false;
   try {

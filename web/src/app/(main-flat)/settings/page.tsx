@@ -28,6 +28,8 @@ import { CollapsibleSection } from "@/components/ui/CollapsibleSection";
 import { HealthExclusionsSection, type ExclusionTabConfig } from "./HealthExclusionsSection";
 import { SettingsNav } from "./SettingsNav";
 import { dataDateFromRunDate } from "@/lib/sotDates";
+import { normalizeDatasetMode } from "@/lib/datasetMode";
+import { DatasetModeSetting } from "./DatasetModeSetting";
 
 export const revalidate = 86400; // 24h ISR - admin config changes are infrequent
 
@@ -48,8 +50,14 @@ async function requireAdmin() {
 }
 
 export default async function SettingsPage() {
-  await requireAdmin();
+  const { userId } = await requireAdmin();
   const svc = supabaseService();
+  const { data: datasetSettings } = await svc
+    .from("user_settings")
+    .select("dataset_mode")
+    .eq("user_id", userId)
+    .maybeSingle();
+  const datasetMode = normalizeDatasetMode(datasetSettings?.dataset_mode);
 
   const { data: latestRun } = await svc
     .from("ingestion_runs")
@@ -687,6 +695,7 @@ export default async function SettingsPage() {
 
   // Section definitions for jump links
   const sections = [
+    { id: "dataset", label: "Dataset" },
     { id: "ai", label: "AI" },
     { id: "home", label: "Home" },
     { id: "revenue", label: "Revenue" },
@@ -723,6 +732,15 @@ export default async function SettingsPage() {
 
       {/* Quick settings — 2-column card grid on wider screens */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div
+          id="dataset"
+          className="scroll-mt-14 space-y-2 rounded-xl border p-4"
+          style={{ borderColor: "var(--sb-border)" }}
+        >
+          <SectionHeader title="Dataset" subtitle="Choose which world SpotiBase is looking at." />
+          <DatasetModeSetting initialMode={datasetMode} />
+        </div>
+
         <div
           id="ai"
           className="scroll-mt-14 space-y-2 rounded-xl border p-4"

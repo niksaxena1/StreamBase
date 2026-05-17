@@ -2,7 +2,7 @@ import { getActiveWarningSummary } from "@/lib/health/activeWarnings";
 import { SideRail } from "./SideRail";
 import { logError } from "@/lib/logger";
 
-export async function SideRailWithBadge() {
+export async function SideRailWithBadge({ datasetMode = "own" }: { datasetMode?: "own" | "competitor" }) {
   let badgeCount = 0;
   let hasCritical = false;
   let infoOnly = false;
@@ -17,5 +17,5 @@ export async function SideRailWithBadge() {
     logError("[Health Badge] Failed to fetch health badge counts", error);
   }
 
-  return <SideRail healthBadgeCount={badgeCount} healthHasCritical={hasCritical} healthInfoOnly={infoOnly} />;
+  return <SideRail healthBadgeCount={badgeCount} healthHasCritical={hasCritical} healthInfoOnly={infoOnly} datasetMode={datasetMode} />;
 }

@@ -14,8 +14,9 @@ import { LazyAIWidget } from "@/components/sai/LazyAIWidget";
 
 type MainSurface = "glass" | "plain";
 
-export function AppShell(props: { children: ReactNode; mainSurface?: MainSurface }) {
+export function AppShell(props: { children: ReactNode; mainSurface?: MainSurface; datasetMode?: "own" | "competitor" }) {
   const mainSurface = props.mainSurface ?? "glass";
+  const datasetMode = props.datasetMode ?? "own";
   return (
     <>
       {/* 
@@ -23,7 +24,7 @@ export function AppShell(props: { children: ReactNode; mainSurface?: MainSurface
         Placing fixed elements inside containers with transforms, filters, 
         or will-change can break fixed positioning in mobile browsers.
       */}
-      <MobileNavWithBadge />
+      <MobileNavWithBadge datasetMode={datasetMode} />
 
       {/* SAI (SBase AI) assistant - also outside main hierarchy */}
       <LazyAIWidget />
@@ -49,7 +50,7 @@ export function AppShell(props: { children: ReactNode; mainSurface?: MainSurface
         </div>
 
         <div className="mx-auto flex w-full max-w-[1600px] gap-3 px-3 py-3 pb-[calc(72px+env(safe-area-inset-bottom,0px)+24px)] sm:pb-3">
-          <SideRailWithBadge />
+          <SideRailWithBadge datasetMode={datasetMode} />
 
           <div className="flex min-w-0 flex-1 flex-col gap-3">
             {/* Top bar with breadcrumbs (glass) */}
@@ -68,6 +69,11 @@ export function AppShell(props: { children: ReactNode; mainSurface?: MainSurface
                       SBase
                     </Link>
                     <Breadcrumbs />
+                    {datasetMode === "competitor" ? (
+                      <span className="rounded-full bg-fuchsia-500/15 px-2 py-0.5 text-[10px] font-medium text-fuchsia-700 dark:text-fuchsia-200">
+                        Competitor Mode
+                      </span>
+                    ) : null}
                   </div>
                 </div>
 
@@ -117,4 +123,3 @@ export function AppShell(props: { children: ReactNode; mainSurface?: MainSurface
     </>
   );
 }
-

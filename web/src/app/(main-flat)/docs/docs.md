@@ -75,6 +75,7 @@ Implementation pointers:
 
 - Search UI: `web/src/components/shell/SearchBar.tsx`
 - Search API: `web/src/app/api/search/route.ts` (uses Postgres RPC `search_all`)
+- Competitor Mode uses the separate `competitor` schema plus a user setting named `dataset_mode`; when active, search and supported analytics surfaces read competitor data instead of own-catalog data.
 - Hover stats API: `web/src/app/api/search-stats/route.ts`
 
 ### View an artist’s total streams
