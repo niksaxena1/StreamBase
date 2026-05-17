@@ -102,6 +102,7 @@ def build_playlist_stats_row(
     run_date: str,
     playlist_key: str,
     streams_by_isrc: Dict[str, int],
+    all_isrcs: Set[str],
     previous_total: int,
     source_run_id: int,
 ) -> dict:
@@ -110,12 +111,12 @@ def build_playlist_stats_row(
     return {
         "date": run_date,
         "playlist_key": playlist_key,
-        "track_count": len(streams_by_isrc),
+        "track_count": len(all_isrcs),
         "total_streams_cumulative": total,
         "daily_streams_net": daily,
         "est_revenue_total": total * STREAM_PAYOUT_USD,
         "est_revenue_daily_net": daily * STREAM_PAYOUT_USD,
-        "missing_streams_track_count": 0,
+        "missing_streams_track_count": len(all_isrcs - set(streams_by_isrc)),
         "source_run_id": source_run_id,
     }
 
@@ -241,14 +242,12 @@ def main():
             )
 
         streams_by_isrc: Dict[str, int] = {}
+        all_isrcs: Set[str] = set()
         for row in iter_csv_rows(csv_path):
             isrc = norm_isrc(row.get("isrc") or "")
             if not isrc:
                 continue
-            streams = parse_stream_value(row.get("spotify_streams_total"))
-            if streams is None:
-                continue
-            streams_by_isrc[isrc] = streams
+            all_isrcs.add(isrc)
             all_track_rows[isrc] = {
                 "isrc": isrc,
                 "name": (row.get("name") or "").strip() or None,
@@ -256,6 +255,10 @@ def main():
                 "first_seen": run_date.isoformat(),
                 "last_seen": run_date.isoformat(),
             }
+            streams = parse_stream_value(row.get("spotify_streams_total"))
+            if streams is None:
+                continue
+            streams_by_isrc[isrc] = streams
 
         pg.upsert("tracks", list(all_track_rows.values()), on_conflict="isrc")
         pg.upsert(
@@ -284,6 +287,7 @@ def main():
                 run_date=run_date.isoformat(),
                 playlist_key=playlist.playlist_key,
                 streams_by_isrc=streams_by_isrc,
+                all_isrcs=all_isrcs,
                 previous_total=previous_total,
                 source_run_id=run_id,
             )
@@ -295,7 +299,7 @@ def main():
             f"playlist_key=eq.{playlist.playlist_key}&valid_to=is.null",
         )
         active_isrcs = {str(r["isrc"]) for r in active_rows}
-        today_isrcs = set(streams_by_isrc)
+        today_isrcs = all_isrcs
         new_isrcs = today_isrcs - active_isrcs
         removed_isrcs = active_isrcs - today_isrcs
         pg.insert(

@@ -40,13 +40,15 @@ class CompetitorIngestTests(unittest.TestCase):
             run_date="2026-05-17",
             playlist_key="paraiso_releases",
             streams_by_isrc={"AA1": 100, "BB2": 300},
+            all_isrcs={"AA1", "BB2", "CC3"},
             previous_total=250,
             source_run_id=7,
         )
 
-        self.assertEqual(row["track_count"], 2)
+        self.assertEqual(row["track_count"], 3)
         self.assertEqual(row["total_streams_cumulative"], 400)
         self.assertEqual(row["daily_streams_net"], 150)
+        self.assertEqual(row["missing_streams_track_count"], 1)
         self.assertEqual(row["source_run_id"], 7)
 
 
