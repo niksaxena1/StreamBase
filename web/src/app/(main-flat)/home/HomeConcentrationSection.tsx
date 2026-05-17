@@ -95,6 +95,7 @@ function buildLorenzCurve(
 export function HomeConcentrationSection(props: {
   trackScatterPoints: TrackStreamsXYPoint[];
   latestRunDate: string | null;
+  datasetMode?: "own" | "competitor";
 }) {
   const { metric } = useMetric();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
@@ -310,7 +311,9 @@ export function HomeConcentrationSection(props: {
         ? `${collectorId}: ${viewMode === "daily" ? "daily" : "total"} streams ranked by share${collectorLoading ? " (loading…)" : ""}`
         : filterMode === "playlist" && playlistKey
           ? `${selectedPlaylistName}: ${viewMode === "daily" ? "daily" : "total"} streams ranked by share${playlistLoading ? " (loading…)" : ""}`
-          : `All catalog tracks ranked by ${viewMode === "daily" ? "daily" : "total"} stream share`;
+          : `${props.datasetMode === "competitor" ? "Selected competitor" : "All catalog"} tracks ranked by ${
+              viewMode === "daily" ? "daily" : "total"
+            } stream share`;
 
   const concentrationSharePayload = useMemo((): ConcentrationShareSnapshotV1 | null => {
     if (sorted.length === 0) return null;

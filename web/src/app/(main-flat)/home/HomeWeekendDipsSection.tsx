@@ -38,6 +38,7 @@ function formatDip(pct: number | null): string {
 export function HomeWeekendDipsSection(props: {
   artistWeekendDips: ArtistWeekendDipRow[];
   trackWeekendDips: TrackWeekendDipRow[];
+  hasEnoughHistory?: boolean;
 }) {
   const { metric } = useMetric();
   const { showWeekendDip } = useWeekendDip();
@@ -104,6 +105,7 @@ export function HomeWeekendDipsSection(props: {
   }, [props.artistWeekendDips, props.trackWeekendDips, minWeekdayAvg, sortKey, sortDir, viewMode]);
 
   if (!showWeekendDip || metric === "tracks") return null;
+  const hasEnoughHistory = props.hasEnoughHistory ?? true;
 
   const metricValueClass = metric === "revenue" ? "font-medium" : "sb-positive font-medium";
   const metricValueStyle = metric === "revenue" ? ({ color: "#10b981" } as const) : undefined;
@@ -218,6 +220,9 @@ export function HomeWeekendDipsSection(props: {
 
       {/* Collapsible body */}
       {open && (
+        !hasEnoughHistory ? (
+          <div className="mt-3 text-sm opacity-70">Not enough daily history yet to calculate weekend dips.</div>
+        ) : (
         <div className="mt-3">
           <GlassTable
             headers={[
@@ -374,6 +379,7 @@ export function HomeWeekendDipsSection(props: {
             )}
           </GlassTable>
         </div>
+        )
       )}
     </details>
   );

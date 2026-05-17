@@ -301,6 +301,7 @@ function HomeDashboardInner(props: {
   const allCatalogAsOf = props.latest?.date
     ? formatDateISO(dataDateFromRunDate(props.latest.date))
     : null;
+  const hasTrendHistory = (props.history ?? []).length >= 2;
 
   // ============================================================================
   // Render
@@ -437,7 +438,20 @@ function HomeDashboardInner(props: {
         </Alert>
       ) : null}
 
-      <HomeConcentrationSection trackScatterPoints={props.trackScatterPoints} latestRunDate={props.latestRunDate} />
+      {props.datasetMode === "competitor" && !hasTrendHistory ? (
+        <div
+          className="rounded-xl border p-3 text-sm"
+          style={{ borderColor: "var(--sb-border)", background: "var(--sb-surface)" }}
+        >
+          Competitor tracking only has one daily snapshot so far. Total-based views are already useful; daily-change and trend panels will wake up once more history accumulates.
+        </div>
+      ) : null}
+
+      <HomeConcentrationSection
+        trackScatterPoints={props.trackScatterPoints}
+        latestRunDate={props.latestRunDate}
+        datasetMode={props.datasetMode}
+      />
 
       <HomeScatterSection
         trackScatterPoints={props.trackScatterPoints}
@@ -464,6 +478,7 @@ function HomeDashboardInner(props: {
       <HomeWeekendDipsSection
         artistWeekendDips={props.artistWeekendDips}
         trackWeekendDips={props.trackWeekendDips}
+        hasEnoughHistory={hasTrendHistory}
       />
 
       <HomeHistorySection history={props.history.slice(0, props.rangeDays)} />
