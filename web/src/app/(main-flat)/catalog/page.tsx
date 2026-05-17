@@ -15,6 +15,7 @@ import { Alert } from "@/components/ui/Alert";
 import { CACHE_TTL_1H, API_LOOKUP_DROPDOWN_MAX, API_LOOKUP_THUMBNAILS_MAX, API_LOOKUP_PAGE_SIZE, API_LOOKUP_TRACK_MAX, API_LOOKUP_LIMIT_500 } from "@/lib/constants";
 import { logError, logWarn } from "@/lib/logger";
 import { normalizeDatasetMode } from "@/lib/datasetMode";
+import { resolveCompetitorLabelKey } from "@/lib/competitorContext";
 
 const CATALOG_ARTIST_DROPDOWN_MAX_TRACKS = API_LOOKUP_DROPDOWN_MAX;
 const CATALOG_ARTIST_THUMBNAILS_MAX = API_LOOKUP_THUMBNAILS_MAX;
@@ -257,10 +258,21 @@ export default async function CatalogPage({
 
     if (datasetMode === "competitor") {
       const comp = svc.schema("competitor");
-      const competitorLabelKey =
+      let competitorLabelKey =
         typeof datasetSettings?.competitor_label_key === "string" && datasetSettings.competitor_label_key.trim()
           ? datasetSettings.competitor_label_key.trim()
           : null;
+      if (!competitorLabelKey) {
+        const { data: labels } = await comp
+          .from("labels")
+          .select("label_key,display_name")
+          .eq("is_active", true)
+          .order("display_name", { ascending: true });
+        competitorLabelKey = resolveCompetitorLabelKey(
+          null,
+          (labels ?? []) as Array<{ label_key: string; display_name: string }>,
+        );
+      }
       const artistId = (sp.artist_id ?? "").trim();
       const requestedIsrc = (sp.isrc ?? "").trim();
       const { data: competitorPlaylists } = competitorLabelKey

@@ -19,6 +19,7 @@ import { cachedQuery } from "@/lib/supabase/cache";
 import { supabaseService } from "@/lib/supabase/service";
 import { normalizeDatasetMode } from "@/lib/datasetMode";
 import { aggregateCompetitorPlaylistHistory } from "@/lib/competitorAnalytics";
+import { resolveCompetitorLabelKey } from "@/lib/competitorContext";
 
 type Svc = ReturnType<typeof supabaseService>;
 
@@ -392,8 +393,23 @@ export async function loadHomeDashboardData(args: {
       competitorLabelName = competitorLabelKey;
     }
   }
+  if (datasetMode === "competitor" && !competitorLabelKey) {
+    try {
+      const { data: labels } = await svc
+        .schema("competitor")
+        .from("labels")
+        .select("label_key,display_name")
+        .eq("is_active", true)
+        .order("display_name", { ascending: true });
+      const typedLabels = (labels ?? []) as Array<{ label_key: string; display_name: string }>;
+      competitorLabelKey = resolveCompetitorLabelKey(null, typedLabels);
+      competitorLabelName = typedLabels.find((label) => label.label_key === competitorLabelKey)?.display_name ?? competitorLabelKey;
+    } catch {
+      // Leave null and fall back below.
+    }
+  }
 
-  const { data: history, error: historyErr } = await cachedQuery(
+  const { data: history, error: historyErr } = await cachedQuery<PlaylistDailyStatsRow[]>(
     async () => {
       if (datasetMode === "competitor" && competitorLabelKey) {
         const comp = svc.schema("competitor");
@@ -413,7 +429,11 @@ export async function loadHomeDashboardData(args: {
         if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
         const res = await q.order("date", { ascending: false }).limit((rangeDays + 7) * playlistKeys.length);
         return {
-          data: aggregateCompetitorPlaylistHistory((res.data ?? []) as any),
+          data: aggregateCompetitorPlaylistHistory((res.data ?? []) as any).map((row) => ({
+            ...row,
+            est_revenue_total: null,
+            est_revenue_daily_net: null,
+          })),
           error: res.error,
         };
       }
