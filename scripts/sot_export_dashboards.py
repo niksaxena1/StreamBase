@@ -13,7 +13,7 @@ from playwright.sync_api import TimeoutError as PWTimeout
 from playwright.sync_api import sync_playwright
 
 NAV_TIMEOUT_MS = 45_000
-BTN_TIMEOUT_MS = 12_000
+BTN_TIMEOUT_MS = 60_000
 DOWNLOAD_TIMEOUT_MS = 60_000
 
 MAX_EXPORT_RETRIES = 5
