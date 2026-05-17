@@ -514,9 +514,24 @@ export async function loadHomeDashboardData(args: {
     spikeFilterRunEnd = latestRunDate;
     spikeFilterRunStart = addDaysIso(latestRunDate, -(rangeDays - 1));
   }
-  const selectedRunDate = selectedDataDate ? addDaysISO(selectedDataDate, SOT_DATA_LAG_DAYS) : latestRunDate;
+  let selectedRunDate = selectedDataDate ? addDaysISO(selectedDataDate, SOT_DATA_LAG_DAYS) : latestRunDate;
+  if (datasetMode === "competitor" && competitorLabelKey && !sp.xy_date) {
+    try {
+      const { data: latestTrackRow } = await svc
+        .schema("competitor")
+        .from("track_daily_streams")
+        .select("date")
+        .order("date", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const latestTrackRunDate = (latestTrackRow as { date?: string } | null)?.date ?? null;
+      if (latestTrackRunDate) selectedRunDate = latestTrackRunDate;
+    } catch {
+      // Keep the history-derived date as a safe fallback.
+    }
+  }
 
-  const scatterCacheKey = `home-track-scatter-v10-${datasetMode}-${competitorLabelKey ?? "none"}-${selectedRunDate ?? "none"}`;
+  const scatterCacheKey = `home-track-scatter-v11-${datasetMode}-${competitorLabelKey ?? "none"}-${selectedRunDate ?? "none"}`;
   const { data: trackScatterPoints, error: trackScatterErr } = await cachedQuery(
     async () => {
       if (!selectedRunDate) return { data: [] as TrackStreamsXYPoint[], error: null };
