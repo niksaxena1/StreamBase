@@ -36,6 +36,7 @@ export function ConcentrationFilterPicker({
   onSelectArtist,
   onSelectCollector,
   onSelectPlaylist,
+  allLabel = "All Catalog",
 }: {
   artists: { id: string; name: string; imageUrl: string | null }[];
   playlists: PlaylistOption[];
@@ -47,6 +48,7 @@ export function ConcentrationFilterPicker({
   onSelectArtist: (id: string) => void;
   onSelectCollector: (collector: string) => void;
   onSelectPlaylist: (key: string) => void;
+  allLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState<ExpandedSection>(null);
@@ -105,7 +107,7 @@ export function ConcentrationFilterPicker({
       ? <Image src={selectedPlaylist.spotify_playlist_image_url} alt={buttonLabel} width={16} height={16} className="h-4 w-4 rounded-sm object-cover flex-shrink-0" />
       : <div className="h-4 w-4 rounded-sm flex-shrink-0" style={{ backgroundColor: "var(--sb-surface)" }} />;
   } else {
-    buttonLabel = "All Catalog";
+    buttonLabel = allLabel;
     buttonThumb = <div className="h-4 w-4 rounded-sm bg-white/30 dark:bg-white/20 flex-shrink-0" />;
   }
 
@@ -142,7 +144,7 @@ export function ConcentrationFilterPicker({
           style={PICKER_PANEL_STYLE}
         >
           <div className="max-h-80 overflow-y-auto">
-            {/* All Catalog */}
+            {/* All */}
             <button
               type="button"
               onClick={() => { onSelectAll(); setOpen(false); }}
@@ -150,7 +152,7 @@ export function ConcentrationFilterPicker({
               style={{ color: "var(--sb-text)" }}
             >
               <div className="h-6 w-6 rounded-sm flex-shrink-0 flex items-center justify-center text-[9px]" style={{ backgroundColor: "var(--sb-surface)", color: "var(--sb-muted)" }}>★</div>
-              All Catalog
+              {allLabel}
             </button>
 
             {/* Divider */}

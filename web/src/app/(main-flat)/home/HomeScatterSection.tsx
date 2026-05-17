@@ -21,6 +21,7 @@ import { HOME_DETAILS_STORAGE } from "./homeUtils";
 export function HomeScatterSection(props: {
   trackScatterPoints: TrackStreamsXYPoint[];
   trackScatterErrorMessage?: string | null;
+  insufficientHistory?: boolean;
 }) {
   const { metric } = useMetric();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
@@ -490,7 +491,9 @@ export function HomeScatterSection(props: {
             />
           ) : (
             <div className="py-10 text-center text-xs" style={{ color: "var(--sb-muted)" }}>
-              No track points available yet.
+              {props.insufficientHistory
+                ? "Track points will appear once at least one competitor track snapshot is available."
+                : "No track points available yet."}
             </div>
           )
         ) : null}

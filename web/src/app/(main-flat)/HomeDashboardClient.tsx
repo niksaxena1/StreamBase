@@ -456,6 +456,7 @@ function HomeDashboardInner(props: {
       <HomeScatterSection
         trackScatterPoints={props.trackScatterPoints}
         trackScatterErrorMessage={props.trackScatterErrorMessage}
+        insufficientHistory={props.datasetMode === "competitor" && !hasTrendHistory}
       />
 
       <HomeMilestonesSection trackScatterPoints={props.trackScatterPoints} />

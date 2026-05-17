@@ -447,6 +447,7 @@ export function HomeConcentrationSection(props: {
                   onSelectArtist={(id) => { setFilterMode("artist"); setArtistId(id); setCollectorId(null); setPlaylistKey(null); }}
                   onSelectCollector={(c) => { setFilterMode("collector"); setCollectorId(c); setArtistId(null); setPlaylistKey(null); }}
                   onSelectPlaylist={(k) => { setFilterMode("playlist"); setPlaylistKey(k); setArtistId(null); setCollectorId(null); }}
+                  allLabel={props.datasetMode === "competitor" ? "Selected Competitor" : "All Catalog"}
                 />
 
                 <IconButton
