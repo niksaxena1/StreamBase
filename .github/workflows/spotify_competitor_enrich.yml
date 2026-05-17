@@ -1,0 +1,48 @@
+name: Spotify competitor enrichment
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Max competitor tracks to enrich per batch"
+        required: false
+        default: "500"
+  schedule:
+    # Offset from own-catalog Spotify enrichment to reduce shared-pressure overlap.
+    - cron: "20 12 * * *"
+
+concurrency:
+  group: spotify-competitor-enrich
+  cancel-in-progress: false
+
+jobs:
+  enrich:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
+      SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
+      LIMIT: ${{ inputs.limit || '500' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Enrich competitor tracks (batch 1)
+        run: python scripts/enrich_competitor_tracks_with_spotify.py --limit "${LIMIT}"
+
+      - name: Enrich competitor tracks (batch 2)
+        run: |
+          sleep 2
+          python scripts/enrich_competitor_tracks_with_spotify.py --limit "${LIMIT}"
