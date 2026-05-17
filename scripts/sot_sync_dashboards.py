@@ -611,12 +611,15 @@ def run_sync(
     no_sync: bool,
     dry_run: bool,
     limit: Optional[int],
+    only_playlist_keys: Optional[Set[str]],
     fail_on_errors: bool,
 ) -> int:
     email = (os.environ.get("SOT_EMAIL") or "").strip()
     password = (os.environ.get("SOT_PASSWORD") or "").strip()
 
     tasks = load_sync_tasks(config_path)
+    if only_playlist_keys:
+        tasks = [task for task in tasks if task.playlist_key in only_playlist_keys]
     if limit is not None:
         tasks = tasks[: max(0, int(limit))]
 
@@ -945,6 +948,11 @@ if __name__ == "__main__":
     ap.add_argument("--no-sync", action="store_true", help="Disable mirroring (add-only mode)")
     ap.add_argument("--dry-run", action="store_true", help="Preview changes only (no clicking)")
     ap.add_argument("--limit", type=int, default=None, help="Run only first N tasks (for testing)")
+    ap.add_argument(
+        "--only-playlist-keys",
+        default="",
+        help="Comma-separated playlist keys to sync (useful for targeted bootstrap runs)",
+    )
     ap.add_argument("--fail-on-errors", action="store_true", help="Exit non-zero if any add/remove errors occur")
     args = ap.parse_args()
 
@@ -956,6 +964,7 @@ if __name__ == "__main__":
             no_sync=args.no_sync,
             dry_run=args.dry_run,
             limit=args.limit,
+            only_playlist_keys={x.strip() for x in args.only_playlist_keys.split(",") if x.strip()} or None,
             fail_on_errors=args.fail_on_errors,
         )
     )

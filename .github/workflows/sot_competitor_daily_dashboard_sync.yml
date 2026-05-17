@@ -20,6 +20,10 @@ on:
         description: "Run only first N tasks (for testing)"
         required: false
         type: string
+      playlist_keys:
+        description: "Comma-separated playlist keys to sync"
+        required: false
+        type: string
 
 concurrency:
   group: sot-competitor-dashboard-sync
@@ -54,6 +58,7 @@ jobs:
           if [ "${{ inputs.dry_run }}" = "true" ]; then ARGS="$ARGS --dry-run"; fi
           if [ "${{ inputs.add_only }}" = "true" ]; then ARGS="$ARGS --no-sync"; fi
           if [ -n "${{ inputs.limit }}" ]; then ARGS="$ARGS --limit ${{ inputs.limit }}"; fi
+          if [ -n "${{ inputs.playlist_keys }}" ]; then ARGS="$ARGS --only-playlist-keys ${{ inputs.playlist_keys }}"; fi
           python scripts/sot_sync_dashboards.py --config config/competitor_playlists.csv --storage-state sot_state.json $ARGS
       - name: Upload sync log artifact
         if: always()
