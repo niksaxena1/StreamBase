@@ -1,0 +1,118 @@
+name: SOT Competitor Daily Export
+
+permissions:
+  actions: read
+  contents: read
+
+on:
+  schedule:
+    - cron: "15 10 * * *"
+    - cron: "15 11 * * *"
+  workflow_dispatch:
+    inputs:
+      run_date:
+        description: "Override run date (YYYY-MM-DD). Default: UTC today"
+        required: false
+        type: string
+      force_reingest:
+        description: "Force a re-ingest for this run date even if already marked success"
+        required: false
+        type: boolean
+        default: false
+      skip_sync_gate:
+        description: "Skip the Dashboard Sync success gate"
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: sot-competitor-export
+  cancel-in-progress: false
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compute run date (UTC)
+        id: run_date
+        shell: bash
+        run: |
+          RUN_DATE="${{ github.event.inputs.run_date }}"
+          if [ -z "$RUN_DATE" ]; then RUN_DATE=$(date -u +'%Y-%m-%d'); fi
+          echo "run_date=$RUN_DATE" >> "$GITHUB_OUTPUT"
+      - name: "Gate: require successful Competitor Dashboard Sync"
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.skip_sync_gate }}" = "true" ]; then exit 0; fi
+          RUN_DATE="${{ steps.run_date.outputs.run_date }}"
+          RUNS_ENDPOINT="repos/${GITHUB_REPOSITORY}/actions/workflows/sot_competitor_daily_dashboard_sync.yml/runs?branch=main&per_page=100"
+          OK="$(gh api "$RUNS_ENDPOINT" --jq '.workflow_runs | any(.[]; (.created_at | startswith("'"$RUN_DATE"'")) and .status=="completed" and .conclusion=="success")' || true)"
+          if [ "$OK" != "true" ]; then
+            echo "No successful competitor dashboard sync found for $RUN_DATE UTC."
+            exit 1
+          fi
+      - name: "Pre-check: skip if already ingested"
+        id: precheck
+        shell: bash
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          SHOULD_RUN="true"
+          RUN_DATE="${{ steps.run_date.outputs.run_date }}"
+          FORCE="${{ github.event.inputs.force_reingest }}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "$FORCE" = "true" ]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -n "$SUPABASE_URL" ] && [ -n "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            URL="$SUPABASE_URL/rest/v1/ingestion_runs?select=status&run_date=eq.$RUN_DATE&status=eq.success&limit=1"
+            HIT=$(curl -sS -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" -H "Accept-Profile: competitor" "$URL" || true)
+            if echo "$HIT" | grep -q "\"status\":\"success\""; then SHOULD_RUN="false"; fi
+          fi
+          echo "should_run=$SHOULD_RUN" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@v5
+        if: steps.precheck.outputs.should_run == 'true'
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        if: steps.precheck.outputs.should_run == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+      - name: Write storage state from secret
+        if: steps.precheck.outputs.should_run == 'true'
+        env:
+          SOT_STORAGE_STATE_B64: ${{ secrets.SOT_STORAGE_STATE_B64 }}
+        run: |
+          if [ -z "$SOT_STORAGE_STATE_B64" ]; then exit 0; fi
+          echo "$SOT_STORAGE_STATE_B64" | base64 --decode > sot_state.json
+      - name: Export competitor dashboards
+        if: steps.precheck.outputs.should_run == 'true'
+        env:
+          SOT_EMAIL: ${{ secrets.SOT_EMAIL }}
+          SOT_PASSWORD: ${{ secrets.SOT_PASSWORD }}
+        run: |
+          python scripts/sot_export_dashboards.py --config config/competitor_playlists.csv --storage-state sot_state.json --headless --fail-on-empty --auth-debug
+      - name: Upload competitor exports artifact
+        if: steps.precheck.outputs.should_run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sot-competitor-exports-${{ github.run_id }}
+          path: exports/
+          if-no-files-found: error
+      - name: Ingest competitor exports into Supabase
+        if: steps.precheck.outputs.should_run == 'true'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_STORAGE_BUCKET: ${{ secrets.SUPABASE_STORAGE_BUCKET }}
+          SUPABASE_STORAGE_PREFIX: competitor-exports
+        run: |
+          RUN_DATE="${{ steps.run_date.outputs.run_date }}"
+          python scripts/ingest_competitor_exports_to_supabase.py --config config/competitor_playlists.csv --exports-dir exports --run-date "$RUN_DATE"
