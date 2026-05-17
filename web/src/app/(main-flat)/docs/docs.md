@@ -42,6 +42,19 @@ GitHub Actions scheduled workflows use **UTC**. Below is the same schedule shown
 | Spotify enrichment (`spotify_enrich.yml`) | 12:00 | 16:00 | Enriches missing track metadata via Spotify |
 | Artist image cache refresh (`spotify_artist_image_refresh.yml`) | 17:00 (first Friday) | 21:00 (first Friday) | Refreshes cached Spotify artist images (monthly) |
 
+### Competitor Mode schedule
+
+Competitor workflows are intentionally separate from the own-catalog workflows: they use different workflow files, config, concurrency groups, and the `competitor` database schema.
+
+| Workflow | When (UTC) | When (GMT+4) | What it does |
+|---|---:|---:|---|
+| Competitor playlist refresh (`sot_competitor_daily_playlist_refresh.yml`) | 07:15 | 11:15 | Refreshes SpotOnTrack competitor playlists |
+| Competitor dashboard sync (`sot_competitor_daily_dashboard_sync.yml`) | 09:15 + 09:45 (fallback) | 13:15 + 13:45 | Mirrors competitor playlists into SpotOnTrack dashboards |
+| Competitor export (`sot_competitor_daily_export.yml`) | 10:15 + 11:15 (fallback) | 14:15 + 15:15 | Exports competitor dashboards and ingests them into the `competitor` schema |
+| Spotify competitor enrichment (`spotify_competitor_enrich.yml`) | 12:20 | 16:20 | Enriches competitor tracks with Spotify metadata |
+
+The competitor jobs are offset from the own-catalog jobs to reduce shared pressure on GitHub runners, SpotOnTrack, and Spotify API rate limits.
+
 Notes:
 
 - The export workflow has a **sync gate**: it blocks if there is no **successful** Dashboard Sync run for the same UTC date (unless you manually override).
