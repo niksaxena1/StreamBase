@@ -62,3 +62,4 @@ jobs:
           name: sot-competitor-dashboard-sync-${{ github.run_id }}
           path: .artifacts/
           if-no-files-found: warn
+          include-hidden-files: true

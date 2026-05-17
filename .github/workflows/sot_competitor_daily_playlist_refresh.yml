@@ -55,3 +55,4 @@ jobs:
           name: sot-competitor-playlist-refresh-${{ github.run_id }}
           path: .artifacts/
           if-no-files-found: warn
+          include-hidden-files: true
