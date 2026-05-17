@@ -16,7 +16,7 @@ export async function GET() {
 
   const svc = supabaseService();
   const baseSelect =
-    "stream_payout_rate_per_k_usd,currency_display,home_filters_enabled,home_artificial_spikes_section_enabled,home_custom_milestones_streams,chart_week_highlight_day,chart_start_date,chart_zoom_daily_y_axis,chart_zoom_daily_y_axis_collector_comparison,sai_enabled,stale_track_min_streams,stale_track_min_avg_daily,hide_stale_override_annotations";
+    "stream_payout_rate_per_k_usd,currency_display,home_filters_enabled,home_artificial_spikes_section_enabled,home_custom_milestones_streams,chart_week_highlight_day,chart_start_date,chart_zoom_daily_y_axis,chart_zoom_daily_y_axis_collector_comparison,sai_enabled,stale_track_min_streams,stale_track_min_avg_daily,hide_stale_override_annotations,dataset_mode,competitor_label_key";
   let { data: settings, error } = await svc
     .from("user_settings")
     .select(`${baseSelect},revenue_decimal_display`)
@@ -59,5 +59,7 @@ export async function GET() {
     stale_track_min_streams: row.stale_track_min_streams ?? DEFAULT_STALE_MIN_STREAMS,
     stale_track_min_avg_daily: row.stale_track_min_avg_daily ?? 10,
     hide_stale_override_annotations: row.hide_stale_override_annotations ?? false,
+    dataset_mode: row.dataset_mode ?? "own",
+    competitor_label_key: row.competitor_label_key ?? null,
   });
 }

@@ -22,6 +22,7 @@ import { PlaylistHeaderSelects } from "./PlaylistGranularitySelect";
 import { PlaylistMembershipStats } from "@/components/dashboard/PlaylistMembershipStats";
 import { DocumentTitle } from "@/components/shell/DocumentTitle";
 import { normalizeDatasetMode } from "@/lib/datasetMode";
+import { resolveCompetitorLabelKey } from "@/lib/competitorContext";
 
 // Uses Supabase session cookies; this route must be dynamic in Next 16.
 export const dynamic = "force-dynamic";
@@ -124,17 +125,24 @@ export default async function PlaylistsPage({
   const svc = supabaseService();
   const { data: datasetSettings } = await svc
     .from("user_settings")
-    .select("dataset_mode")
+    .select("dataset_mode,competitor_label_key")
     .eq("user_id", userData.user.id)
     .maybeSingle();
   const datasetMode = normalizeDatasetMode(datasetSettings?.dataset_mode);
 
   if (datasetMode === "competitor") {
     const comp = svc.schema("competitor");
+    const { data: activeLabels } = await comp
+      .from("labels")
+      .select("label_key,display_name")
+      .eq("is_active", true)
+      .order("display_name", { ascending: true });
+    const competitorLabelKey = resolveCompetitorLabelKey(datasetSettings?.competitor_label_key, activeLabels ?? []);
     const { data: competitorPlaylists } = await comp
       .from("playlists")
       .select("playlist_key,display_name,spotify_playlist_id,spotify_playlist_image_url")
       .eq("is_active", true)
+      .eq("label_key", competitorLabelKey)
       .order("display_order", { ascending: true, nullsFirst: false })
       .order("display_name", { ascending: true });
     const competitorOptions = (competitorPlaylists ?? []) as PlaylistRow[];

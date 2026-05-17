@@ -11,10 +11,17 @@ import { UserMenu } from "@/components/shell/UserMenu";
 import { GlobalMetricToggle } from "@/components/shell/GlobalMetricToggle";
 import { RollbackButtonWrapper } from "@/components/shell/RollbackButtonWrapper";
 import { LazyAIWidget } from "@/components/sai/LazyAIWidget";
+import { CompetitorLabelSelector } from "@/components/shell/CompetitorLabelSelector";
 
 type MainSurface = "glass" | "plain";
 
-export function AppShell(props: { children: ReactNode; mainSurface?: MainSurface; datasetMode?: "own" | "competitor" }) {
+export function AppShell(props: {
+  children: ReactNode;
+  mainSurface?: MainSurface;
+  datasetMode?: "own" | "competitor";
+  competitorLabels?: Array<{ label_key: string; display_name: string }>;
+  competitorLabelKey?: string | null;
+}) {
   const mainSurface = props.mainSurface ?? "glass";
   const datasetMode = props.datasetMode ?? "own";
   return (
@@ -73,6 +80,12 @@ export function AppShell(props: { children: ReactNode; mainSurface?: MainSurface
                       <span className="rounded-full bg-fuchsia-500/15 px-2 py-0.5 text-[10px] font-medium text-fuchsia-700 dark:text-fuchsia-200">
                         Competitor Mode
                       </span>
+                    ) : null}
+                    {datasetMode === "competitor" ? (
+                      <CompetitorLabelSelector
+                        labels={props.competitorLabels ?? []}
+                        initialLabelKey={props.competitorLabelKey ?? null}
+                      />
                     ) : null}
                   </div>
                 </div>
