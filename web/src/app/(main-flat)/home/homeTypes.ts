@@ -14,6 +14,7 @@ export type PlaylistDailyStatsRow = {
   track_count: number | null;
   total_streams_cumulative: number | null;
   daily_streams_net: number | null;
+  missing_streams_track_count?: number | null;
   est_revenue_total?: number | null;
   est_revenue_daily_net?: number | null;
 };

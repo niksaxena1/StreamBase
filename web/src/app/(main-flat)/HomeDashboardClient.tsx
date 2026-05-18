@@ -269,7 +269,16 @@ function HomeDashboardInner(props: {
       yTickFormat: "k" as const,
       color: undefined,
     };
-  }, [metric, granularity, props.history, props.latest, streamPayoutPerStreamUsd]);
+  }, [metric, granularity, props.history, props.latest, props.rangeDays, streamPayoutPerStreamUsd]);
+
+  const competitorBackfillNotice = useMemo(() => {
+    if (props.datasetMode !== "competitor" || props.history.length < 2) return null;
+    const latestMissing = Number(props.history[0]?.missing_streams_track_count ?? 0);
+    const previousMissing = Number(props.history[1]?.missing_streams_track_count ?? 0);
+    const filledSinceLastSnapshot = previousMissing - latestMissing;
+    if (filledSinceLastSnapshot <= 0) return null;
+    return { filledSinceLastSnapshot, latestMissing };
+  }, [props.datasetMode, props.history]);
 
   const chartDataDaily: ChartPoint[] = useMemo(
     () => aggregateChartPoints(series.daily, granularity) as ChartPoint[],
@@ -446,6 +455,18 @@ function HomeDashboardInner(props: {
           style={{ borderColor: "var(--sb-border)", background: "var(--sb-surface)" }}
         >
           Competitor tracking only has one daily snapshot so far. Total-based views are already useful; daily-change and trend panels will wake up once more history accumulates.
+        </div>
+      ) : null}
+
+      {competitorBackfillNotice ? (
+        <div
+          className="rounded-xl border p-3 text-sm"
+          style={{ borderColor: "var(--sb-border)", background: "var(--sb-surface)" }}
+        >
+          Daily competitor values are still stabilizing: {formatInt(competitorBackfillNotice.filledSinceLastSnapshot)} previously missing track totals were filled since the prior snapshot, so today&apos;s apparent growth includes historical backfill
+          {competitorBackfillNotice.latestMissing > 0
+            ? ` (${formatInt(competitorBackfillNotice.latestMissing)} tracks still missing totals).`
+            : "."}
         </div>
       ) : null}
 

@@ -1,7 +1,8 @@
 "use client";
 
 import Image from "next/image";
-import { useMemo, useState } from "react";
+import { useState } from "react";
+import { MenuSelect } from "@/components/ui/MenuSelect";
 
 type Label = { label_key: string; display_name: string; image_url: string | null };
 
@@ -14,11 +15,6 @@ export function CompetitorLabelSelector({
 }) {
   const [value, setValue] = useState(initialLabelKey ?? labels[0]?.label_key ?? "");
   const [saving, setSaving] = useState(false);
-  const activeLabel = useMemo(
-    () => labels.find((label) => label.label_key === value) ?? labels[0] ?? null,
-    [labels, value],
-  );
-
   if (!labels.length) return null;
 
   async function update(nextValue: string) {
@@ -36,32 +32,33 @@ export function CompetitorLabelSelector({
     }
   }
 
+  const options = labels.map((label) => ({
+    value: label.label_key,
+    label: label.display_name,
+    leading: label.image_url ? (
+      <Image
+        src={label.image_url}
+        alt=""
+        width={18}
+        height={18}
+        className="h-[18px] w-[18px] rounded object-cover sb-ring"
+      />
+    ) : (
+      <span className="block h-[18px] w-[18px] rounded bg-fuchsia-500/15 sb-ring" />
+    ),
+  }));
+
   return (
-    <label className="flex items-center gap-1 text-[11px]" style={{ color: "var(--sb-muted)" }}>
-      {activeLabel?.image_url ? (
-        <Image
-          src={activeLabel.image_url}
-          alt={activeLabel.display_name}
-          width={18}
-          height={18}
-          className="h-[18px] w-[18px] rounded object-cover sb-ring"
-        />
-      ) : (
-        <span className="h-[18px] w-[18px] rounded bg-fuchsia-500/15 sb-ring" />
-      )}
-      <select
-        className="rounded-md border px-2 py-1 text-xs"
-        style={{ borderColor: "var(--sb-border)", background: "var(--sb-surface)", color: "var(--sb-text)" }}
-        value={value}
-        disabled={saving}
-        onChange={(event) => update(event.target.value)}
-      >
-        {labels.map((label) => (
-          <option key={label.label_key} value={label.label_key}>
-            {label.display_name}
-          </option>
-        ))}
-      </select>
-    </label>
+    <MenuSelect
+      value={value}
+      options={options}
+      onChange={update}
+      disabled={saving}
+      ariaLabel="Select competitor"
+      className="min-w-[124px]"
+      buttonClassName="h-8 rounded-full px-2.5 py-1.5"
+      menuClassName="min-w-[160px]"
+      matchTriggerWidth={false}
+    />
   );
 }

@@ -23,6 +23,7 @@ import { PlaylistMembershipStats } from "@/components/dashboard/PlaylistMembersh
 import { DocumentTitle } from "@/components/shell/DocumentTitle";
 import { normalizeDatasetMode } from "@/lib/datasetMode";
 import { resolveCompetitorLabelKey } from "@/lib/competitorContext";
+import { CompetitorCurrentTracksTable, type CompetitorCurrentTrackRow } from "./CompetitorCurrentTracksTable";
 
 // Uses Supabase session cookies; this route must be dynamic in Next 16.
 export const dynamic = "force-dynamic";
@@ -205,6 +206,57 @@ export default async function PlaylistsPage({
       playlist_key: effectivePlaylistKey,
       run_date: latestDate,
     });
+    const currentTrackRows = ((currentRows.data ?? []) as CompetitorCurrentTrackRow[]);
+
+    // Older deployed versions of playlist_current_tracks predate the `daily`
+    // column. Keep the page useful while that migration rolls out by deriving
+    // the value from the two latest snapshots when needed.
+    if (
+      latestDate &&
+      prevDate &&
+      currentTrackRows.length > 0 &&
+      currentTrackRows.every((row) => row.daily == null)
+    ) {
+      const isrcs = currentTrackRows.map((row) => row.isrc);
+      const [{ data: latestTrackStats }, { data: prevTrackStats }] = await Promise.all([
+        comp.from("track_daily_streams").select("isrc,streams_cumulative").eq("date", latestDate).in("isrc", isrcs),
+        comp.from("track_daily_streams").select("isrc,streams_cumulative").eq("date", prevDate).in("isrc", isrcs),
+      ]);
+      const latestByIsrc = new Map(
+        (latestTrackStats ?? []).map((row: any) => [String(row.isrc), row.streams_cumulative == null ? null : Number(row.streams_cumulative)]),
+      );
+      const prevByIsrc = new Map(
+        (prevTrackStats ?? []).map((row: any) => [String(row.isrc), row.streams_cumulative == null ? null : Number(row.streams_cumulative)]),
+      );
+      for (const row of currentTrackRows) {
+        const currentTotal = latestByIsrc.get(row.isrc);
+        const previousTotal = prevByIsrc.get(row.isrc);
+        row.daily =
+          currentTotal == null || previousTotal == null
+            ? null
+            : currentTotal - previousTotal;
+      }
+    }
+    if (currentTrackRows.length > 0) {
+      const { data: trackMetaRows } = await comp
+        .from("tracks")
+        .select("isrc,release_date,spotify_artist_ids")
+        .in("isrc", currentTrackRows.map((row) => row.isrc));
+      const trackMetaByIsrc = new Map(
+        (trackMetaRows ?? []).map((row: any) => [
+          String(row.isrc),
+          {
+            release_date: row.release_date == null ? null : String(row.release_date),
+            artist_ids: Array.isArray(row.spotify_artist_ids) ? row.spotify_artist_ids.map(String) : null,
+          },
+        ]),
+      );
+      for (const row of currentTrackRows) {
+        const meta = trackMetaByIsrc.get(row.isrc);
+        row.release_date = meta?.release_date ?? null;
+        row.artist_ids = row.artist_ids ?? meta?.artist_ids ?? null;
+      }
+    }
     const removedTracksCount = Array.isArray(removedRows.data) ? removedRows.data.length : 0;
     return (
       <div className="space-y-4">
@@ -248,49 +300,7 @@ export default async function PlaylistsPage({
           playlistKey={effectivePlaylistKey}
           overrideAnnotations={[]}
         />
-        <div className="sb-card p-4">
-          <div className="mb-3 flex items-center justify-between gap-3 text-xs font-medium uppercase tracking-wider opacity-60">
-            <span>Current tracks</span>
-            <div className="hidden gap-6 sm:flex">
-              <span>Total</span>
-              <span>Daily</span>
-            </div>
-          </div>
-          <div className="space-y-2">
-            {((currentRows.data ?? []) as Array<{
-              isrc: string;
-              name: string;
-              album_image_url: string | null;
-              artist_names: string[] | null;
-              total: number | null;
-              daily?: number | null;
-            }>).slice(0, 50).map((row) => (
-              <div key={row.isrc} className="flex items-center justify-between gap-3 text-sm">
-                <div className="flex min-w-0 items-center gap-3">
-                  {row.album_image_url ? (
-                    <Image
-                      src={row.album_image_url}
-                      alt={row.name}
-                      width={32}
-                      height={32}
-                      className="h-8 w-8 rounded-lg object-cover sb-ring"
-                    />
-                  ) : (
-                    <div className="h-8 w-8 rounded-lg bg-white/10 sb-ring" />
-                  )}
-                  <div className="min-w-0">
-                    <div className="truncate font-medium">{row.name}</div>
-                    <div className="truncate text-xs opacity-60">{(row.artist_names ?? []).join(", ")}</div>
-                  </div>
-                </div>
-                <div className="flex shrink-0 items-center gap-6 font-mono text-xs opacity-70">
-                  <div className="min-w-20 text-right">{row.total?.toLocaleString() ?? "?"}</div>
-                  <div className="min-w-16 text-right">{row.daily == null ? "?" : `+${row.daily.toLocaleString()}`}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        <CompetitorCurrentTracksTable rows={currentTrackRows} />
         <PlaylistHistory30dDetails rows={hist as unknown as PlaylistHistoryRow[]} />
       </div>
     );

@@ -458,7 +458,7 @@ export async function loadHomeDashboardData(args: {
 
         let q = comp
           .from("playlist_daily_stats")
-          .select("date,playlist_key,track_count,total_streams_cumulative,daily_streams_net")
+          .select("date,playlist_key,track_count,total_streams_cumulative,daily_streams_net,missing_streams_track_count")
           .in("playlist_key", playlistKeys);
         if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
         const res = await q.order("date", { ascending: false }).limit((rangeDays + 7) * playlistKeys.length);
@@ -479,7 +479,7 @@ export async function loadHomeDashboardData(args: {
       if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
       return await q.order("date", { ascending: false }).limit(rangeDays + 7);
     },
-    `home-playlist-stats-v3-${datasetMode}-${competitorLabelKey ?? "none"}-${playlistKey}-${rangeDays + 7}-${userId}-ov${overrideBuster}-rb${rollbackDate ?? "live"}`,
+    `home-playlist-stats-v4-${datasetMode}-${competitorLabelKey ?? "none"}-${playlistKey}-${rangeDays + 7}-${userId}-ov${overrideBuster}-rb${rollbackDate ?? "live"}`,
     CACHE_TTL_1H,
   );
 
