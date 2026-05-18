@@ -249,15 +249,44 @@ export default async function PlaylistsPage({
           overrideAnnotations={[]}
         />
         <div className="sb-card p-4">
-          <div className="mb-3 text-xs font-medium uppercase tracking-wider opacity-60">Current tracks</div>
+          <div className="mb-3 flex items-center justify-between gap-3 text-xs font-medium uppercase tracking-wider opacity-60">
+            <span>Current tracks</span>
+            <div className="hidden gap-6 sm:flex">
+              <span>Total</span>
+              <span>Daily</span>
+            </div>
+          </div>
           <div className="space-y-2">
-            {((currentRows.data ?? []) as Array<{ isrc: string; name: string; artist_names: string[] | null; total: number | null }>).slice(0, 50).map((row) => (
+            {((currentRows.data ?? []) as Array<{
+              isrc: string;
+              name: string;
+              album_image_url: string | null;
+              artist_names: string[] | null;
+              total: number | null;
+              daily?: number | null;
+            }>).slice(0, 50).map((row) => (
               <div key={row.isrc} className="flex items-center justify-between gap-3 text-sm">
-                <div className="min-w-0">
-                  <div className="truncate font-medium">{row.name}</div>
-                  <div className="truncate text-xs opacity-60">{(row.artist_names ?? []).join(", ")}</div>
+                <div className="flex min-w-0 items-center gap-3">
+                  {row.album_image_url ? (
+                    <Image
+                      src={row.album_image_url}
+                      alt={row.name}
+                      width={32}
+                      height={32}
+                      className="h-8 w-8 rounded-lg object-cover sb-ring"
+                    />
+                  ) : (
+                    <div className="h-8 w-8 rounded-lg bg-white/10 sb-ring" />
+                  )}
+                  <div className="min-w-0">
+                    <div className="truncate font-medium">{row.name}</div>
+                    <div className="truncate text-xs opacity-60">{(row.artist_names ?? []).join(", ")}</div>
+                  </div>
                 </div>
-                <div className="shrink-0 font-mono text-xs opacity-70">{row.total?.toLocaleString() ?? "—"}</div>
+                <div className="flex shrink-0 items-center gap-6 font-mono text-xs opacity-70">
+                  <div className="min-w-20 text-right">{row.total?.toLocaleString() ?? "?"}</div>
+                  <div className="min-w-16 text-right">{row.daily == null ? "?" : `+${row.daily.toLocaleString()}`}</div>
+                </div>
               </div>
             ))}
           </div>
