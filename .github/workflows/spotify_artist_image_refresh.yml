@@ -12,8 +12,8 @@ on:
         required: false
         default: "31"
   schedule:
-    # First Friday of the month at 21:00 Asia/Abu_Dhabi (UTC+4) => 17:00 UTC
-    - cron: "0 17 1-7 * 5"
+    # First Friday of the month at 19:00 Asia/Abu_Dhabi (UTC+4) => 15:00 UTC
+    - cron: "0 15 1-7 * 5"
 
 concurrency:
   group: spotify-artist-image-refresh

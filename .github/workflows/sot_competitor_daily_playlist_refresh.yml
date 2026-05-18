@@ -2,7 +2,7 @@ name: SOT Competitor Daily Playlist Refresh
 
 on:
   schedule:
-    - cron: "15 7 * * *"
+    - cron: "15 5 * * *"
   workflow_dispatch:
     inputs:
       dry_run:

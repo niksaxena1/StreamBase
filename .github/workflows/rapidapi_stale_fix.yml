@@ -5,7 +5,7 @@ permissions:
 
 on:
   schedule:
-    - cron: "15 11 * * *" # 11:15 UTC daily (~1h15m after ingestion)
+    - cron: "15 9 * * *" # 09:15 UTC daily (~1h15m after ingestion)
   workflow_dispatch:
     inputs:
       mock_email_preview:

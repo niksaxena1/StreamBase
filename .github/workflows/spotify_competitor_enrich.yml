@@ -9,7 +9,7 @@ on:
         default: "500"
   schedule:
     # Offset from own-catalog Spotify enrichment to reduce shared-pressure overlap.
-    - cron: "20 12 * * *"
+    - cron: "20 10 * * *"
 
 concurrency:
   group: spotify-competitor-enrich

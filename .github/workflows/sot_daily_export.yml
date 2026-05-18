@@ -8,8 +8,8 @@ on:
   schedule:
     # Primary run + a 1h-later fallback to reduce missed schedules.
     # Idempotency is enforced via a Supabase pre-check (see steps below).
-    - cron: "0 10 * * *" # 10:00 UTC daily
-    - cron: "0 11 * * *" # 11:00 UTC daily (fallback)
+    - cron: "0 8 * * *" # 08:00 UTC daily
+    - cron: "0 9 * * *" # 09:00 UTC daily (fallback)
   workflow_dispatch:
     inputs:
       run_date:
@@ -251,7 +251,7 @@ jobs:
             if [ "$STALE_TRACKS_COUNT" != "0" ]; then
               echo "${STALE_TRACKS_COUNT} track(s) had zero daily stream growth despite"
               echo "having significant total streams (severity: ${STALE_TRACKS_SEVERITY:-warn})."
-              echo "The RapidAPI auto-fix is scheduled to run at 11:15 UTC and will"
+              echo "The RapidAPI auto-fix is scheduled to run at 09:15 UTC and will"
               echo "attempt to correct up to 20 tracks automatically."
               echo ""
             fi

@@ -2,11 +2,11 @@ name: SOT Daily Dashboard Sync
 
 on:
   schedule:
-    # Run 1 hour before the export workflow (export is 10:00 UTC).
+    # Run 1 hour before the export workflow (export is 08:00 UTC).
     # Two schedules for redundancy: if the first is missed or blocked, the
     # fallback 30 min later gets a second chance.
-    - cron: "0 9 * * *"
-    - cron: "30 9 * * *"
+    - cron: "0 7 * * *"
+    - cron: "30 7 * * *"
   workflow_dispatch:
     inputs:
       dry_run:
