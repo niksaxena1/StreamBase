@@ -168,6 +168,21 @@ class Postgrest:
             raise RuntimeError(f"Select {table} failed: {r.status_code} {r.text[:500]}")
         return r.json()
 
+    def select_all(self, table: str, select: str, filters: str, page_size: int = 1000) -> List[dict]:
+        out: List[dict] = []
+        offset = 0
+        while True:
+            url = f"{self.base}/{table}?select={select}&{filters}&limit={page_size}&offset={offset}"
+            r = requests.get(url, headers=self.h, timeout=180)
+            if r.status_code != 200:
+                raise RuntimeError(f"Select {table} failed: {r.status_code} {r.text[:500]}")
+            rows = r.json()
+            out.extend(rows)
+            if len(rows) < page_size:
+                break
+            offset += page_size
+        return out
+
 
 def parse_stream_value(raw: object) -> Optional[int]:
     s = str(raw or "").strip()
@@ -293,7 +308,7 @@ def main():
             )
         )
 
-        active_rows = pg.select(
+        active_rows = pg.select_all(
             "playlist_memberships",
             "id,isrc",
             f"playlist_key=eq.{playlist.playlist_key}&valid_to=is.null",
