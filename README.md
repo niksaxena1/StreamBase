@@ -78,6 +78,16 @@ npm install
 npm run dev
 ```
 
-## Competitor Mode pilot
+## Competitor Mode
 
-SpotiBase now has a separated competitor-tracking pilot for Paraíso. Competitor data lives in its own `competitor` schema, uses `config/competitor_playlists.csv`, and is refreshed through the dedicated `SOT Competitor ...` GitHub Actions workflows. See `docs/COMPETITOR-MODE-OPERATIONS.md` for the first-run sequence.
+SpotiBase also tracks competitor labels in a separated `competitor` schema. Competitor Mode currently supports:
+
+- multiple competitors, each with one or more playlists
+- Home / Playlists / Catalog / Search views scoped to the selected competitor
+- a dedicated `/competitors` operations page for playlist health and enrichment gaps
+- separate GitHub Actions, config, and ingestion tables so own-catalog workflows stay isolated
+
+See:
+
+- `docs/COMPETITOR-MODE-OPERATIONS.md` for operations
+- `AGENTS.md` for architecture/invariants future contributors should preserve

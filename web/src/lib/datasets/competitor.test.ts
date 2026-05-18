@@ -18,4 +18,12 @@ describe("dataset helpers", () => {
     ];
     expect(navItemsForMode("competitor", items).some((i) => i.href === "/collectors")).toBe(false);
   });
+
+  it("hides competitors in own mode", () => {
+    const items = [
+      { href: "/", label: "Home" },
+      { href: "/competitors", label: "Competitors" },
+    ];
+    expect(navItemsForMode("own", items).some((i) => i.href === "/competitors")).toBe(false);
+  });
 });

@@ -57,6 +57,17 @@ Competitor workflows are intentionally separate from the own-catalog workflows: 
 
 The competitor jobs are offset from the own-catalog jobs to reduce shared pressure on GitHub runners, SpotOnTrack, and Spotify API rate limits.
 
+### Competitor Mode pages
+
+Competitor Mode is a parallel analytics universe, not a merge into your own catalog:
+
+- **Home** ? overview for the selected competitor across all of its tracked playlists
+- **Playlists** ? playlist-level totals plus current tracks; daily per-track deltas appear once at least two snapshots exist
+- **Catalog** ? competitor artists and tracks
+- **Competitors** ? operations page for labels, playlists, latest exports, ingested counts, missing totals, warnings, and Spotify enrichment gaps
+
+The selected competitor is global. One competitor may own multiple playlists, and changing the selector changes supported competitor-aware surfaces across the app.
+
 Notes:
 
 - The export workflow has a **sync gate**: it blocks if there is no **successful** Dashboard Sync run for the same UTC date (unless you manually override).
@@ -91,6 +102,7 @@ Implementation pointers:
 - Search UI: `web/src/components/shell/SearchBar.tsx`
 - Search API: `web/src/app/api/search/route.ts` (uses Postgres RPC `search_all`)
 - Competitor Mode uses the separate `competitor` schema plus a user setting named `dataset_mode`; when active, search and supported analytics surfaces read competitor data instead of own-catalog data.
+- `/competitors` is the operational cockpit for the competitor subsystem and is intentionally hidden outside Competitor Mode.
 - Hover stats API: `web/src/app/api/search-stats/route.ts`
 
 ### View an artist’s total streams

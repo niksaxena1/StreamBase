@@ -33,6 +33,11 @@ export const navItems: Item[] = [
     shortcut: "3",
   },
   {
+    href: "/competitors",
+    label: "Competitors",
+    icon: (a) => <IconGrid active={a} />,
+  },
+  {
     href: "/collectors",
     label: "Collectors",
     icon: (a) => <IconUser active={a} />,
