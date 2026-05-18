@@ -300,16 +300,26 @@ export default async function CatalogPage({
         .map((p) => p.playlist_key)
         .filter(Boolean);
       const competitorPlaylistMetaByKey = new Map(competitorPlaylistRows.map((p) => [p.playlist_key, p]));
-      const { data: latestRun } = competitorPlaylistKeys.length
-        ? await comp
-            .from("playlist_daily_stats")
-            .select("date")
-            .in("playlist_key", competitorPlaylistKeys)
-            .order("date", { ascending: false })
-            .limit(1)
-            .maybeSingle()
-        : { data: null };
+      const [{ data: latestRun }, { data: recentPlaylistDates }] = competitorPlaylistKeys.length
+        ? await Promise.all([
+            comp
+              .from("playlist_daily_stats")
+              .select("date")
+              .in("playlist_key", competitorPlaylistKeys)
+              .order("date", { ascending: false })
+              .limit(1)
+              .maybeSingle(),
+            comp
+              .from("playlist_daily_stats")
+              .select("date")
+              .in("playlist_key", competitorPlaylistKeys)
+              .order("date", { ascending: false })
+              .limit(Math.max(competitorPlaylistKeys.length * 2, 2)),
+          ])
+        : [{ data: null }, { data: [] as PlaylistDailyStatsRow[] }];
       const latestRunDate = (latestRun as PlaylistDailyStatsRow | null)?.date ?? null;
+      const hasOnlyOneSnapshot =
+        new Set(((recentPlaylistDates ?? []) as PlaylistDailyStatsRow[]).map((row) => row.date)).size <= 1;
       const { data: activeMemberships } =
         latestRunDate && competitorPlaylistKeys.length
           ? await comp
@@ -446,6 +456,8 @@ export default async function CatalogPage({
       return (
         <div className="space-y-4">
           <CatalogPageClient
+            mode="competitor"
+            hasOnlyOneSnapshot={hasOnlyOneSnapshot}
             latestCum={cumSeriesAscRun.at(-1)?.value ?? 0}
             latestDate={latestRunDate}
             latestDataDate={latestRunDate ? dataDateFromRunDate(latestRunDate) : null}

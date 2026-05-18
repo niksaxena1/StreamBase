@@ -19,7 +19,7 @@ export function AppShell(props: {
   children: ReactNode;
   mainSurface?: MainSurface;
   datasetMode?: "own" | "competitor";
-  competitorLabels?: Array<{ label_key: string; display_name: string }>;
+  competitorLabels?: Array<{ label_key: string; display_name: string; image_url: string | null }>;
   competitorLabelKey?: string | null;
 }) {
   const mainSurface = props.mainSurface ?? "glass";

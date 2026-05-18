@@ -55,6 +55,8 @@ function SilentSortHeader({ label, onClick }: { label: ReactNode; onClick: () =>
 }
 
 export function CatalogPageClient(props: {
+  mode?: "own" | "competitor";
+  hasOnlyOneSnapshot?: boolean;
   latestCum: number;
   latestDate: string | null;
   latestDataDate?: string | null;
@@ -85,6 +87,8 @@ export function CatalogPageClient(props: {
   track30d: number;
   selectedTrackPlaylistMemberships: TrackPlaylistMembership[];
 }) {
+  const mode = props.mode ?? "own";
+  const isCompetitorMode = mode === "competitor";
   const { metric } = useMetric();
   const [isArtistExpanded, setIsArtistExpanded] = useState(true);
   const router = useRouter();
@@ -284,12 +288,14 @@ export function CatalogPageClient(props: {
           isrc: t.isrc,
           artists: (t.artistNames ?? []).join(", "),
           release_date: t.releaseDate ?? "",
-          distro_playlist: t.distroPlaylistName ?? "",
+          ...(isCompetitorMode ? {} : { distro_playlist: t.distroPlaylistName ?? "" }),
           [valueLabel]: raw == null ? null : isRevMode ? Number(raw) * streamPayoutPerStreamUsd : raw,
           share_pct: pctByIsrc.get(t.isrc)?.toFixed(2) ?? "",
         };
       }) as Array<Record<string, unknown>>,
-      headers: ["track", "isrc", "artists", "release_date", "distro_playlist", valueLabel, "share_pct"],
+      headers: isCompetitorMode
+        ? ["track", "isrc", "artists", "release_date", valueLabel, "share_pct"]
+        : ["track", "isrc", "artists", "release_date", "distro_playlist", valueLabel, "share_pct"],
       sortForExport: false,
     });
   }
@@ -341,6 +347,11 @@ export function CatalogPageClient(props: {
           </>
         }
       />
+      {props.hasOnlyOneSnapshot ? (
+        <div className="sb-card px-4 py-3 text-sm" style={{ color: "var(--sb-muted)" }}>
+          Competitor tracking only has one daily snapshot so far. Artist and track totals are ready; daily deltas will become useful after the next export lands.
+        </div>
+      ) : null}
 
       <FilterBar
         left={
@@ -494,7 +505,9 @@ export function CatalogPageClient(props: {
                     ),
                   },
                   {
-                    label: (
+                    label: isCompetitorMode ? (
+                      "ISRC"
+                    ) : (
                       <button
                         type="button"
                         onClick={() => setShowIsrcInDistroCol((v) => !v)}
@@ -583,7 +596,7 @@ export function CatalogPageClient(props: {
                           </div>
                         </TableCell>
                         <TableCell className="hidden sm:table-cell">
-                          {showIsrcInDistroCol ? (
+                          {isCompetitorMode || showIsrcInDistroCol ? (
                             <CopyableIsrc
                               isrc={t.isrc}
                               className="font-mono text-xs opacity-40"
@@ -678,7 +691,9 @@ export function CatalogPageClient(props: {
                     ),
                   },
                   {
-                    label: (
+                    label: isCompetitorMode ? (
+                      "ISRC"
+                    ) : (
                       <button
                         type="button"
                         onClick={() => setShowIsrcInDistroCol((v) => !v)}
@@ -767,7 +782,7 @@ export function CatalogPageClient(props: {
                           </div>
                         </TableCell>
                         <TableCell className="hidden sm:table-cell">
-                          {showIsrcInDistroCol ? (
+                          {isCompetitorMode || showIsrcInDistroCol ? (
                             <CopyableIsrc
                               isrc={t.isrc}
                               className="font-mono text-xs opacity-40"

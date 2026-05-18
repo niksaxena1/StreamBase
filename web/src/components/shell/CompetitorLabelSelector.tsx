@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import Image from "next/image";
+import { useMemo, useState } from "react";
 
-type Label = { label_key: string; display_name: string };
+type Label = { label_key: string; display_name: string; image_url: string | null };
 
 export function CompetitorLabelSelector({
   labels,
@@ -13,6 +14,10 @@ export function CompetitorLabelSelector({
 }) {
   const [value, setValue] = useState(initialLabelKey ?? labels[0]?.label_key ?? "");
   const [saving, setSaving] = useState(false);
+  const activeLabel = useMemo(
+    () => labels.find((label) => label.label_key === value) ?? labels[0] ?? null,
+    [labels, value],
+  );
 
   if (!labels.length) return null;
 
@@ -33,6 +38,17 @@ export function CompetitorLabelSelector({
 
   return (
     <label className="flex items-center gap-1 text-[11px]" style={{ color: "var(--sb-muted)" }}>
+      {activeLabel?.image_url ? (
+        <Image
+          src={activeLabel.image_url}
+          alt={activeLabel.display_name}
+          width={18}
+          height={18}
+          className="h-[18px] w-[18px] rounded object-cover sb-ring"
+        />
+      ) : (
+        <span className="h-[18px] w-[18px] rounded bg-fuchsia-500/15 sb-ring" />
+      )}
       <span>Competitor</span>
       <select
         className="rounded-md border px-2 py-1 text-xs"

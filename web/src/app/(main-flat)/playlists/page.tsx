@@ -150,6 +150,13 @@ export default async function PlaylistsPage({
     if (!playlistKey && effectivePlaylistKey) {
       redirect(`/playlists?playlist_key=${effectivePlaylistKey}`);
     }
+    if (playlistKey && !competitorOptions.some((playlist) => playlist.playlist_key === playlistKey)) {
+      redirect(
+        competitorOptions[0]?.playlist_key
+          ? `/playlists?playlist_key=${competitorOptions[0].playlist_key}`
+          : "/playlists",
+      );
+    }
     const [{ data: latest }, { data: prev }, { data: history }, { data: latestCounts }] = await Promise.all([
       comp
         .from("playlist_daily_stats")
@@ -185,9 +192,11 @@ export default async function PlaylistsPage({
     }));
     const currentPlaylist = playlistOptions.find((p) => p.playlist_key === effectivePlaylistKey);
     const title = currentPlaylist?.display_name ?? effectivePlaylistKey;
+    const playlistImageUrl = currentPlaylist?.spotify_playlist_image_url ?? null;
     const latestDate = (latest as PlaylistDailyStatsRow | null)?.date ?? null;
     const prevDate = (prev as { date: string } | null)?.date ?? null;
     const hist = (history ?? []) as PlaylistDailyStatsRow[];
+    const hasOnlyOneSnapshot = hist.length === 1;
     const removedRows = await comp.rpc("playlist_removed_tracks", {
       playlist_key: effectivePlaylistKey,
       limit_rows: 500,
@@ -203,7 +212,27 @@ export default async function PlaylistsPage({
         <PageHeader
           title={title}
           subtitle={latestDate ? <>Latest data date: <span className="font-mono">{formatDateISO(dataDateFromRunDate(latestDate))}</span></> : "No stats found for this playlist yet."}
+          icon={
+            playlistImageUrl ? (
+              <Image
+                src={playlistImageUrl}
+                alt={title}
+                width={56}
+                height={56}
+                className="h-14 w-14 rounded-xl object-cover sb-ring"
+              />
+            ) : (
+              <div className="grid h-14 w-14 place-items-center rounded-xl bg-fuchsia-500/10 sb-ring">
+                <Music className="h-5 w-5" />
+              </div>
+            )
+          }
         />
+        {hasOnlyOneSnapshot ? (
+          <div className="sb-card px-4 py-3 text-sm" style={{ color: "var(--sb-muted)" }}>
+            Competitor tracking only has one daily snapshot so far. Totals are ready; daily-change charts will become meaningful after the next export lands.
+          </div>
+        ) : null}
         <PlaylistDashboardControls
           playlists={playlistOptions}
           playlistKey={effectivePlaylistKey}

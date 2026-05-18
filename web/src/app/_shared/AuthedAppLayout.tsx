@@ -55,6 +55,29 @@ export async function AuthedAppLayout({
           ).data ?? []
         )
       : [];
+  const competitorPlaylistRows =
+    datasetMode === "competitor"
+      ? (
+          (
+            await svc
+              .schema("competitor")
+              .from("playlists")
+              .select("label_key,spotify_playlist_image_url,display_order")
+              .eq("is_active", true)
+              .order("display_order", { ascending: true, nullsFirst: false })
+          ).data ?? []
+        )
+      : [];
+  const competitorImageByLabel = new Map<string, string | null>();
+  for (const playlist of competitorPlaylistRows as Array<{ label_key: string; spotify_playlist_image_url: string | null }>) {
+    if (!competitorImageByLabel.has(playlist.label_key)) {
+      competitorImageByLabel.set(playlist.label_key, playlist.spotify_playlist_image_url ?? null);
+    }
+  }
+  const competitorLabelsWithImages = competitorLabels.map((label) => ({
+    ...label,
+    image_url: competitorImageByLabel.get(label.label_key) ?? null,
+  }));
   const competitorLabelKey = resolveCompetitorLabelKey(settings?.competitor_label_key, competitorLabels);
 
   return (
@@ -71,7 +94,7 @@ export async function AuthedAppLayout({
                         <AppShell
                           {...appShellProps}
                           datasetMode={datasetMode}
-                          competitorLabels={competitorLabels}
+                          competitorLabels={competitorLabelsWithImages}
                           competitorLabelKey={competitorLabelKey}
                         >
                           <ErrorBoundary>{children}</ErrorBoundary>
