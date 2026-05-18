@@ -49,7 +49,6 @@ export function CompetitorLabelSelector({
       ) : (
         <span className="h-[18px] w-[18px] rounded bg-fuchsia-500/15 sb-ring" />
       )}
-      <span>Competitor</span>
       <select
         className="rounded-md border px-2 py-1 text-xs"
         style={{ borderColor: "var(--sb-border)", background: "var(--sb-surface)", color: "var(--sb-text)" }}
