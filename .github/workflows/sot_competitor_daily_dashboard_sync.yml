@@ -2,8 +2,8 @@ name: SOT Competitor Daily Dashboard Sync
 
 on:
   schedule:
-    - cron: "15 7 * * *"
-    - cron: "45 7 * * *"
+    - cron: "15 6 * * *"
+    - cron: "45 6 * * *"
   workflow_dispatch:
     inputs:
       dry_run:

@@ -51,7 +51,7 @@ python scripts/sot_export_dashboards.py --config config/playlists.csv --storage-
 ### 4) Run the GitHub Action
 
 - Go to GitHub → Actions → `SOT Daily Export` → **Run workflow**
-- Or wait for the daily schedule (08:00 UTC primary, 09:00 UTC fallback)
+- Or wait for the daily schedule (07:30 UTC primary, 08:30 UTC fallback)
 
 The workflow uploads the `exports/` folder as an artifact.
 
