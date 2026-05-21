@@ -414,6 +414,7 @@ Data sources:
 - `playlists.collector` (assignment of playlists to collectors)
 - `collector_daily_agg` (time series aggregate table)
 - `collector_daily_compare` (compare view/table for the latest day)
+- Optional Settings toggle: `collector_entity_playlist_stats_enabled` switches TG to `tg_total` and PL to `p_total` using `collector_daily_agg_entity_playlists`, `collector_daily_compare_entity_playlists`, and scoped collector RPCs.
 - `playlist_daily_stats` (top playlists within the selected collector for the latest date)
 
 Where those collector tables come from:
@@ -471,6 +472,7 @@ Implementation pointers:
   - **Manual stream overrides**: repair missing/incorrect SpotOnTrack snapshots for specific (run date, ISRC) with an audit note
   - **Payout rate**: configure the USD-per-1000-streams rate used for revenue estimates across the app
   - **Currency display**: choose how revenue numbers are formatted
+  - **Collector stats scope**: optionally use `TG Total` / `P Total` entity playlists for TG and PL collector stats
   - **Chart preferences**: week highlight day, chart start date, y-axis zoom behavior
   - **Home dashboard filters**: toggle which scopes/sections appear on the Home page
   - **SAI toggle**: enable/disable the AI assistant chat widget
@@ -484,6 +486,7 @@ Files:
 DB setup:
 
 - Apply `migrations/add_user_settings_table.sql` (creates `user_settings` for per-user preferences)
+- Apply `migrations/add_collector_entity_playlist_stats_setting.sql` (adds the TG/PL entity-playlist collector stats toggle and scoped SQL objects)
 - Apply `migrations/add_track_daily_stream_overrides.sql` (creates `track_daily_stream_overrides` + effective views + recompute RPC)
 - Apply `migrations/adopt_track_daily_streams_effective.sql` (updates key RPCs to read the effective stream snapshots)
 
@@ -1009,6 +1012,7 @@ Checklist:
 - Views are created in `migrations/add_collectors_aggregate_views.sql`:
   - `collector_daily_agg`: sums `playlist_daily_stats` across all playlists assigned to a collector, per day
   - `collector_daily_compare`: adds window comparisons (yesterday delta, delta vs previous 7-day average)
+- `migrations/add_collector_entity_playlist_stats_setting.sql` adds an opt-in alternate scope where TG uses `tg_total` and PL uses `p_total`; other collectors remain assigned-playlist based.
 
 ### How to add/remove playlists from a collector
 
@@ -1074,6 +1078,7 @@ This section defines the “official meaning” of the most important metrics sh
 |---|---|---|
 | Collector aggregates | sums across all playlists assigned to a collector per day | `collector_daily_agg` view |
 | Collector compare deltas | yesterday delta and vs previous 7-day average | `collector_daily_compare` view |
+| TG/PL entity collector aggregates | when enabled in Settings, TG/PL use `TG Total` / `P Total` entity playlists | `collector_daily_agg_entity_playlists`, scoped collector RPCs |
 
 ---
 

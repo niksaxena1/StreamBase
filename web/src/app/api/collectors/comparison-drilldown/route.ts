@@ -45,14 +45,28 @@ export async function POST(req: NextRequest) {
   }
 
   const svc = supabaseService();
+  const { data: collectorSettings } = await svc
+    .from("user_settings")
+    .select("collector_entity_playlist_stats_enabled")
+    .eq("user_id", auth.user.id)
+    .maybeSingle();
+  const useEntityPlaylistsForTotals =
+    (collectorSettings as { collector_entity_playlist_stats_enabled?: unknown } | null)
+      ?.collector_entity_playlist_stats_enabled === true;
 
   if (kind === "playlists") {
-    const { data: playlists, error } = await svc
+    const playlistQuery = svc
       .from("playlists")
-      .select("playlist_key,display_name,spotify_playlist_image_url,playlist_type,display_order")
-      .eq("collector", collector)
-      .order("display_order", { ascending: true, nullsFirst: false })
-      .order("playlist_key", { ascending: true });
+      .select("playlist_key,display_name,spotify_playlist_image_url,playlist_type,display_order");
+    const { data: playlists, error } =
+      useEntityPlaylistsForTotals && collector === "TG"
+        ? await playlistQuery.eq("playlist_key", "tg_total")
+        : useEntityPlaylistsForTotals && collector === "PL"
+          ? await playlistQuery.eq("playlist_key", "p_total")
+          : await playlistQuery
+              .eq("collector", collector)
+              .order("display_order", { ascending: true, nullsFirst: false })
+              .order("playlist_key", { ascending: true });
 
     if (error) return apiJsonErr(error.message, 500);
 
@@ -114,13 +128,22 @@ export async function POST(req: NextRequest) {
 
   if (kind === "tracks") {
     const prev_date = addDaysIso(run_date, -1);
-    const { data, error } = await svc.rpc("collector_tracks_paged", {
-      collector,
-      run_date,
-      prev_date,
-      offset_rows: offset,
-      limit_rows: limit,
-    });
+    const { data, error } = useEntityPlaylistsForTotals
+      ? await svc.rpc("collector_tracks_paged_scoped", {
+          collector,
+          run_date,
+          prev_date,
+          offset_rows: offset,
+          limit_rows: limit,
+          p_use_entity_playlists: true,
+        })
+      : await svc.rpc("collector_tracks_paged", {
+          collector,
+          run_date,
+          prev_date,
+          offset_rows: offset,
+          limit_rows: limit,
+        });
     if (error) return apiJsonErr(error.message, 500);
 
     const rows = (data ?? []) as Array<Record<string, unknown>>;
@@ -139,12 +162,20 @@ export async function POST(req: NextRequest) {
     return apiJsonOk({ ok: true as const, items, done: items.length < limit });
   }
 
-  const { data, error } = await svc.rpc("collector_artists_stats_paged", {
-    collector,
-    run_date,
-    offset_rows: offset,
-    limit_rows: limit,
-  });
+  const { data, error } = useEntityPlaylistsForTotals
+    ? await svc.rpc("collector_artists_stats_paged_scoped", {
+        collector,
+        run_date,
+        offset_rows: offset,
+        limit_rows: limit,
+        p_use_entity_playlists: true,
+      })
+    : await svc.rpc("collector_artists_stats_paged", {
+        collector,
+        run_date,
+        offset_rows: offset,
+        limit_rows: limit,
+      });
   if (error) return apiJsonErr(error.message, 500);
 
   const rows = (data ?? []) as Array<Record<string, unknown>>;

@@ -62,8 +62,21 @@ export async function GET() {
     rows = (rawRows ?? []) as HistoryRow[];
   }
 
+  const { data: runRows } = await svc
+    .from("ingestion_runs")
+    .select("run_date")
+    .gte("run_date", thirtyDaysAgo)
+    .order("run_date", { ascending: true });
+
   const dateMap = new Map<string, Record<string, number>>();
   const allCodes = new Set<string>();
+
+  for (const r of runRows ?? []) {
+    const date = String((r as { run_date?: unknown }).run_date ?? "");
+    if (/^\d{4}-\d{2}-\d{2}$/.test(date) && !dateMap.has(date)) {
+      dateMap.set(date, {});
+    }
+  }
 
   for (const r of rows) {
     const date = String(r.run_date);

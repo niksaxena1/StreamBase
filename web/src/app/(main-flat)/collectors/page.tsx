@@ -18,6 +18,7 @@ import type {
   TopPlaylistRow,
 } from "./collectorsTypes";
 import { CollectorsPageWrapper } from "./CollectorsPageWrapper";
+import { getEffectiveCollectorPlaylists, type CollectorPlaylistScopeRow } from "./collectorsUtils";
 
 export const revalidate = 86400; // 24h ISR - data updates daily
 
@@ -41,12 +42,7 @@ function addDaysIso(dateIso: string, deltaDays: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-type PlaylistRow = {
-  playlist_key: string;
-  display_name: string;
-  collector: string | null;
-  spotify_playlist_image_url: string | null;
-};
+type PlaylistRow = CollectorPlaylistScopeRow;
 
 export default async function CollectorsPage({
   searchParams,
@@ -66,6 +62,21 @@ export default async function CollectorsPage({
   // IMPORTANT: These tables are protected by admin-only RLS. Use the service-role client
   // for cached reads; access is still gated above.
   const svc = supabaseService();
+
+  const { data: collectorSettings } = await svc
+    .from("user_settings")
+    .select("collector_entity_playlist_stats_enabled")
+    .eq("user_id", userData.user.id)
+    .maybeSingle();
+  const useEntityPlaylistsForTotals =
+    (collectorSettings as { collector_entity_playlist_stats_enabled?: unknown } | null)
+      ?.collector_entity_playlist_stats_enabled === true;
+  const collectorAggTable = useEntityPlaylistsForTotals
+    ? "collector_daily_agg_entity_playlists"
+    : "collector_daily_agg";
+  const collectorCompareTable = useEntityPlaylistsForTotals
+    ? "collector_daily_compare_entity_playlists"
+    : "collector_daily_compare";
 
   // Cache-buster: include count + max(id) in cache keys so both additions AND
   // removals of overrides invalidate stale collector aggregate caches.
@@ -126,10 +137,10 @@ export default async function CollectorsPage({
       const { data: compareRowsForDefault } = await cachedQuery(
         async () =>
           await svc
-            .from("collector_daily_compare")
+            .from(collectorCompareTable)
             .select("collector,daily_streams_net")
             .eq("date", latestRunDateForDefault),
-        `collectors-compare-for-default-${latestRunDateForDefault}`,
+        `collectors-compare-for-default-${latestRunDateForDefault}-entity${useEntityPlaylistsForTotals ? 1 : 0}`,
         CACHE_TTL_1H,
       );
 
@@ -213,24 +224,29 @@ export default async function CollectorsPage({
         await svc
           .from("playlists")
           .select("playlist_key,display_name,collector,spotify_playlist_image_url")
-          .in("collector", [...COLLECTORS]),
+          .or(`collector.in.(${[...COLLECTORS].join(",")}),playlist_key.in.(tg_total,p_total)`),
 
       compareToday: async () =>
         await svc
-          .from("collector_daily_compare")
+          .from(collectorCompareTable)
           .select(
             "collector,date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net,daily_streams_delta_yday,daily_streams_delta_ma7,est_revenue_daily_delta_yday,est_revenue_daily_delta_ma7,track_count_delta_yday,track_count_delta_ma7",
           )
           .eq("date", latestRunDate),
 
       artistCounts: async () =>
-        await svc.rpc("collector_artist_counts_for_date", {
-          run_date: latestRunDate,
-        }),
+        useEntityPlaylistsForTotals
+          ? await svc.rpc("collector_artist_counts_for_date_scoped", {
+              run_date: latestRunDate,
+              p_use_entity_playlists: true,
+            })
+          : await svc.rpc("collector_artist_counts_for_date", {
+              run_date: latestRunDate,
+            }),
 
       spark14: async () =>
         await svc
-          .from("collector_daily_agg")
+          .from(collectorAggTable)
           .select("collector,date,track_count,daily_streams_net,est_revenue_daily_net")
           .gte("date", sparkStart!)
           .lte("date", latestRunDate!)
@@ -238,7 +254,7 @@ export default async function CollectorsPage({
 
       series: async () =>
         await svc
-          .from("collector_daily_agg")
+          .from(collectorAggTable)
           .select(
             "date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net",
           )
@@ -250,7 +266,7 @@ export default async function CollectorsPage({
       // All-time series for monthly aggregation (not affected by date range selector)
       seriesAllTime: async () => {
         let q = svc
-          .from("collector_daily_agg")
+          .from(collectorAggTable)
           .select(
             "date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net",
           )
@@ -265,7 +281,7 @@ export default async function CollectorsPage({
       // Fetch all collectors data for comparison chart (date-range filtered for daily view)
       allCollectorsSeries: async () =>
         await svc
-          .from("collector_daily_agg")
+          .from(collectorAggTable)
           .select(
             "collector,date,track_count,daily_streams_net,est_revenue_daily_net",
           )
@@ -279,7 +295,7 @@ export default async function CollectorsPage({
         // Fetch daily data bounded by the date range (used when granularity === "daily").
         // For non-daily granularities, the client will call the bucketed RPC on demand.
         let q = svc
-          .from("collector_daily_agg")
+          .from(collectorAggTable)
           .select(
             "collector,date,track_count,daily_streams_net,est_revenue_daily_net",
           );
@@ -298,13 +314,22 @@ export default async function CollectorsPage({
 
         const all: Record<string, unknown>[] = [];
         for (let offset = 0; offset < hardCap; offset += pageSize) {
-          const { data, error } = await svc.rpc("collector_tracks_paged", {
-            collector: selectedCollector,
-            run_date: latestRunDate,
-            prev_date: prevRunDate,
-            offset_rows: offset,
-            limit_rows: pageSize,
-          });
+          const { data, error } = useEntityPlaylistsForTotals
+            ? await svc.rpc("collector_tracks_paged_scoped", {
+                collector: selectedCollector,
+                run_date: latestRunDate,
+                prev_date: prevRunDate,
+                offset_rows: offset,
+                limit_rows: pageSize,
+                p_use_entity_playlists: true,
+              })
+            : await svc.rpc("collector_tracks_paged", {
+                collector: selectedCollector,
+                run_date: latestRunDate,
+                prev_date: prevRunDate,
+                offset_rows: offset,
+                limit_rows: pageSize,
+              });
 
           if (error) throw error;
           const rows = (data ?? []) as Record<string, unknown>[];
@@ -316,17 +341,14 @@ export default async function CollectorsPage({
       },
     },
     // bump cache key when changing server-side track pagination behavior
-    `collectors-${selectedCollector}-${rangeStart}-${rangeEnd}-${latestRunDate}-tracksPaged1-artists1-ov${overrideBuster}-rb${rollbackDate ?? "live"}`,
+    `collectors-${selectedCollector}-${rangeStart}-${rangeEnd}-${latestRunDate}-tracksPagedScoped1-artistsScoped1-entity${useEntityPlaylistsForTotals ? 1 : 0}-ov${overrideBuster}-rb${rollbackDate ?? "live"}`,
     CACHE_TTL_1H,
   );
 
   const playlists = (results.playlistRows.data ?? []) as PlaylistRow[];
   const playlistCountByCollector = new Map<string, number>();
-  for (const c of COLLECTORS) playlistCountByCollector.set(c, 0);
-  for (const p of playlists) {
-    const c = (p.collector ?? "").toUpperCase();
-    if (!playlistCountByCollector.has(c)) continue;
-    playlistCountByCollector.set(c, (playlistCountByCollector.get(c) ?? 0) + 1);
+  for (const c of COLLECTORS) {
+    playlistCountByCollector.set(c, getEffectiveCollectorPlaylists(playlists, c, useEntityPlaylistsForTotals).length);
   }
 
   const compareRows = (results.compareToday.data ?? []) as Record<string, unknown>[];
@@ -417,9 +439,7 @@ export default async function CollectorsPage({
     date: dataDateFromRunDate(p.date),
   }));
 
-  const selectedPlaylists = playlists.filter(
-    (p) => (p.collector ?? "").toUpperCase() === selectedCollector,
-  );
+  const selectedPlaylists = getEffectiveCollectorPlaylists(playlists, selectedCollector, useEntityPlaylistsForTotals);
   const selectedKeys = selectedPlaylists.map((p) => p.playlist_key);
   const nameByKey = new Map(selectedPlaylists.map((p) => [p.playlist_key, p.display_name]));
   const imageByKey = new Map(
@@ -445,7 +465,7 @@ export default async function CollectorsPage({
               .in("playlist_key", selectedKeys)
               .order("est_revenue_daily_net", { ascending: false })
               .limit(15),
-          `collectors-top-${selectedCollector}-${latestRunDate}-ov${overrideBuster}`,
+          `collectors-top-${selectedCollector}-${latestRunDate}-entity${useEntityPlaylistsForTotals ? 1 : 0}-ov${overrideBuster}`,
           CACHE_TTL_1H,
         );
 

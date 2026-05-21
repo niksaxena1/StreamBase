@@ -91,6 +91,19 @@ async function computeActiveWarnings(
     details_json: (w.details_json ?? null) as Record<string, unknown> | null,
   }));
 
+  let artificialSpikeWarningsEnabled = true;
+  try {
+    const { data: artificialConfig } = await svc
+      .from("health_config")
+      .select("value_numeric")
+      .eq("key", "artificial_streams_warning_enabled")
+      .maybeSingle();
+    artificialSpikeWarningsEnabled =
+      Number((artificialConfig as { value_numeric?: unknown } | null)?.value_numeric ?? 1) !== 0;
+  } catch {
+    artificialSpikeWarningsEnabled = true;
+  }
+
   // 3. Load exclusion sets (best-effort) --------------------------------------
   const excludedGlobal = new Set<string>();
   const excludedByPlaylist = new Map<string, Set<string>>();
@@ -238,8 +251,8 @@ async function computeActiveWarnings(
             .select("isrc")
             .in("isrc", filtered)
             .is("spotify_artist_ids", null);
-          const stillMissing = (rows ?? []).filter(
-            (r: any) =>
+          const stillMissing = ((rows ?? []) as Array<Record<string, unknown>>).filter(
+            (r) =>
               !isExcludedEnrichment(
                 w.playlist_key!,
                 normalizeIsrc(r.isrc),
@@ -316,6 +329,9 @@ async function computeActiveWarnings(
 
   // 5. Build filtered list + inject synthetic negative_daily_streams warning ----
   const active = allWarnings.filter((w) => {
+    if (w.code === "artificial_stream_spike" && !artificialSpikeWarningsEnabled) {
+      return false;
+    }
     if (w.code === "non_catalog_tracks_present" && w.playlist_key) {
       return exclusionsEnabled ? ncActive.has(w.playlist_key) : true;
     }

@@ -30,6 +30,7 @@ ARTIFICIAL_STREAMS_LOOKBACK_WEEKS = 4.0
 ARTIFICIAL_STREAMS_NEW_TRACK_GRACE_DAYS = 14.0
 ARTIFICIAL_STREAMS_THRESHOLD_CROSSING_MAX = 1500.0
 ARTIFICIAL_STREAMS_INCLUDE_WEEKENDS = 0.0
+ARTIFICIAL_STREAMS_WARNING_ENABLED = 1.0
 
 # Canonical keys mirrored in the health_config table seed.
 _HEALTH_CONFIG_DEFAULTS: Dict[str, float] = {
@@ -45,6 +46,7 @@ _HEALTH_CONFIG_DEFAULTS: Dict[str, float] = {
     "artificial_streams_new_track_grace_days": ARTIFICIAL_STREAMS_NEW_TRACK_GRACE_DAYS,
     "artificial_streams_threshold_crossing_max": ARTIFICIAL_STREAMS_THRESHOLD_CROSSING_MAX,
     "artificial_streams_include_weekends": ARTIFICIAL_STREAMS_INCLUDE_WEEKENDS,
+    "artificial_streams_warning_enabled": ARTIFICIAL_STREAMS_WARNING_ENABLED,
 }
 
 
@@ -1525,66 +1527,73 @@ def main():
 
         # --- Artificial stream spike detection (same-day-of-week baseline) ---
         try:
-            spike_hits = detect_artificial_stream_spikes(
-                pg, run_date, catalog_streams_today, prev_streams, _cfg
+            artificial_warning_enabled = bool(
+                int(_cfg.get("artificial_streams_warning_enabled", ARTIFICIAL_STREAMS_WARNING_ENABLED) or 0)
             )
-            if spike_hits:
-                warn_rows.append(
-                    {
-                        "run_id": run_id,
-                        "run_date": run_date.isoformat(),
-                        "playlist_key": "all_catalog",
-                        "severity": "warn",
-                        "code": "artificial_stream_spike",
-                        "message": (
-                            f"{len(spike_hits)} track(s) exceeded the artificial-stream spike threshold "
-                            f"vs same-weekday baseline"
-                        ),
-                        "details_json": {
-                            "flagged_tracks": spike_hits[:200],
-                            "flagged_tracks_total": len(spike_hits),
-                            "threshold_config": {
-                                "artificial_streams_spike_ratio": float(
-                                    _cfg.get("artificial_streams_spike_ratio", ARTIFICIAL_STREAMS_SPIKE_RATIO)
-                                ),
-                                "artificial_streams_min_baseline": float(
-                                    _cfg.get("artificial_streams_min_baseline", ARTIFICIAL_STREAMS_MIN_BASELINE)
-                                ),
-                                "artificial_streams_lookback_weeks": int(
-                                    _cfg.get("artificial_streams_lookback_weeks", ARTIFICIAL_STREAMS_LOOKBACK_WEEKS)
-                                ),
-                                "artificial_streams_new_track_grace_days": int(
-                                    _cfg.get(
-                                        "artificial_streams_new_track_grace_days",
-                                        ARTIFICIAL_STREAMS_NEW_TRACK_GRACE_DAYS,
-                                    )
-                                ),
-                                "artificial_streams_threshold_crossing_max": int(
-                                    _cfg.get(
-                                        "artificial_streams_threshold_crossing_max",
-                                        ARTIFICIAL_STREAMS_THRESHOLD_CROSSING_MAX,
-                                    )
-                                ),
-                                "artificial_streams_include_weekends": bool(
-                                    int(
+            if artificial_warning_enabled:
+                spike_hits = detect_artificial_stream_spikes(
+                    pg, run_date, catalog_streams_today, prev_streams, _cfg
+                )
+                if spike_hits:
+                    warn_rows.append(
+                        {
+                            "run_id": run_id,
+                            "run_date": run_date.isoformat(),
+                            "playlist_key": "all_catalog",
+                            "severity": "warn",
+                            "code": "artificial_stream_spike",
+                            "message": (
+                                f"{len(spike_hits)} track(s) exceeded the artificial-stream spike threshold "
+                                f"vs same-weekday baseline"
+                            ),
+                            "details_json": {
+                                "flagged_tracks": spike_hits[:200],
+                                "flagged_tracks_total": len(spike_hits),
+                                "threshold_config": {
+                                    "artificial_streams_spike_ratio": float(
+                                        _cfg.get("artificial_streams_spike_ratio", ARTIFICIAL_STREAMS_SPIKE_RATIO)
+                                    ),
+                                    "artificial_streams_min_baseline": float(
+                                        _cfg.get("artificial_streams_min_baseline", ARTIFICIAL_STREAMS_MIN_BASELINE)
+                                    ),
+                                    "artificial_streams_lookback_weeks": int(
+                                        _cfg.get("artificial_streams_lookback_weeks", ARTIFICIAL_STREAMS_LOOKBACK_WEEKS)
+                                    ),
+                                    "artificial_streams_new_track_grace_days": int(
                                         _cfg.get(
-                                            "artificial_streams_include_weekends",
-                                            ARTIFICIAL_STREAMS_INCLUDE_WEEKENDS,
+                                            "artificial_streams_new_track_grace_days",
+                                            ARTIFICIAL_STREAMS_NEW_TRACK_GRACE_DAYS,
                                         )
-                                        or 0
-                                    )
+                                    ),
+                                    "artificial_streams_threshold_crossing_max": int(
+                                        _cfg.get(
+                                            "artificial_streams_threshold_crossing_max",
+                                            ARTIFICIAL_STREAMS_THRESHOLD_CROSSING_MAX,
+                                        )
+                                    ),
+                                    "artificial_streams_include_weekends": bool(
+                                        int(
+                                            _cfg.get(
+                                                "artificial_streams_include_weekends",
+                                                ARTIFICIAL_STREAMS_INCLUDE_WEEKENDS,
+                                            )
+                                            or 0
+                                        )
+                                    ),
+                                    "artificial_streams_warning_enabled": True,
+                                },
+                                "note": (
+                                    "Daily streams vs average of prior same weekdays (lookback weeks). "
+                                    "Not proof of botting - playlist adds and viral moments can spike."
                                 ),
                             },
-                            "note": (
-                                "Daily streams vs average of prior same weekdays (lookback weeks). "
-                                "Not proof of botting — playlist adds and viral moments can spike."
-                            ),
-                        },
-                    }
-                )
-                print(f"  ⚠ Artificial stream spikes: {len(spike_hits)} track(s) flagged")
+                        }
+                    )
+                    print(f"  WARN Artificial stream spikes: {len(spike_hits)} track(s) flagged")
+            else:
+                print("  INFO Artificial stream spike Health warning disabled by health_config")
         except Exception as spike_err:
-            print(f"  ⚠ Artificial stream spike check failed: {spike_err}")
+            print(f"  WARN Artificial stream spike check failed: {spike_err}")
 
         pg.upsert("playlist_daily_stats", stats_rows, on_conflict="date,playlist_key")
         if warn_rows:

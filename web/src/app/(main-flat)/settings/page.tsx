@@ -18,6 +18,7 @@ import { CurrencyDisplaySetting } from "./CurrencyDisplaySetting";
 import { RevenueDecimalDisplaySetting } from "./RevenueDecimalDisplaySetting";
 import { StaleTrackThresholdSetting } from "./StaleTrackThresholdSetting";
 import { ArtificialStreamSpikeSetting } from "./ArtificialStreamSpikeSetting";
+import { ArtificialStreamSpikeWarningToggle } from "./ArtificialStreamSpikeWarningToggle";
 import { RapidApiAutoFixSetting } from "./RapidApiAutoFixSetting";
 import { HideStaleAnnotationsSetting } from "./HideStaleAnnotationsSetting";
 import { NetworkBackgroundGridSetting } from "./NetworkBackgroundGridSetting";
@@ -30,6 +31,7 @@ import { SettingsNav } from "./SettingsNav";
 import { dataDateFromRunDate } from "@/lib/sotDates";
 import { normalizeDatasetMode } from "@/lib/datasetMode";
 import { DatasetModeSetting } from "./DatasetModeSetting";
+import { CollectorEntityPlaylistStatsSetting } from "./CollectorEntityPlaylistStatsSetting";
 
 export const revalidate = 86400; // 24h ISR - admin config changes are infrequent
 
@@ -696,6 +698,7 @@ export default async function SettingsPage() {
   // Section definitions for jump links
   const sections = [
     { id: "dataset", label: "Dataset" },
+    { id: "collectors", label: "Collectors" },
     { id: "ai", label: "AI" },
     { id: "home", label: "Home" },
     { id: "revenue", label: "Revenue" },
@@ -751,6 +754,15 @@ export default async function SettingsPage() {
         </div>
 
         <div
+          id="collectors"
+          className="scroll-mt-14 space-y-2 rounded-xl border p-4"
+          style={{ borderColor: "var(--sb-border)" }}
+        >
+          <SectionHeader title="Collectors" subtitle="Choose how collector totals are scoped." />
+          <CollectorEntityPlaylistStatsSetting />
+        </div>
+
+        <div
           id="home"
           className="scroll-mt-14 space-y-2 rounded-xl border p-4"
           style={{ borderColor: "var(--sb-border)" }}
@@ -800,6 +812,7 @@ export default async function SettingsPage() {
         >
           <SectionHeader title="Health" subtitle="Configure data-quality detection thresholds used during daily ingestion." />
           <StaleTrackThresholdSetting />
+          <ArtificialStreamSpikeWarningToggle />
           <ArtificialStreamSpikeSetting />
           <RapidApiAutoFixSetting />
         </div>

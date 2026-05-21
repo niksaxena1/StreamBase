@@ -7,6 +7,39 @@ import type {
   DrillTrackItem,
 } from "./collectorsTypes";
 
+export type CollectorPlaylistScopeRow = {
+  playlist_key: string;
+  display_name: string;
+  collector: string | null;
+  spotify_playlist_image_url: string | null;
+};
+
+const ENTITY_PLAYLIST_BY_COLLECTOR: Record<string, string> = {
+  PL: "p_total",
+  TG: "tg_total",
+};
+
+export function getEffectiveCollectorPlaylists(
+  playlists: CollectorPlaylistScopeRow[],
+  collector: string,
+  useEntityPlaylistsForTotals: boolean,
+): CollectorPlaylistScopeRow[] {
+  const normalizedCollector = collector.trim().toUpperCase();
+  const entityPlaylistKey = ENTITY_PLAYLIST_BY_COLLECTOR[normalizedCollector];
+
+  if (useEntityPlaylistsForTotals && entityPlaylistKey) {
+    const entityPlaylist = playlists.find((p) => p.playlist_key === entityPlaylistKey);
+    if (entityPlaylist) {
+      return [{
+        ...entityPlaylist,
+        collector: normalizedCollector,
+      }];
+    }
+  }
+
+  return playlists.filter((p) => (p.collector ?? "").toUpperCase() === normalizedCollector);
+}
+
 export function parseDrillPlaylistItem(x: unknown): DrillPlaylistItem | null {
   if (!x || typeof x !== "object") return null;
   const o = x as Record<string, unknown>;

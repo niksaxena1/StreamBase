@@ -37,12 +37,23 @@ export async function POST(req: NextRequest) {
   }
 
   const svc = supabaseService();
+  const { data: collectorSettings } = await svc
+    .from("user_settings")
+    .select("collector_entity_playlist_stats_enabled")
+    .eq("user_id", auth.user.id)
+    .maybeSingle();
+  const useEntityPlaylistsForTotals =
+    (collectorSettings as { collector_entity_playlist_stats_enabled?: unknown } | null)
+      ?.collector_entity_playlist_stats_enabled === true;
+  const collectorAggTable = useEntityPlaylistsForTotals
+    ? "collector_daily_agg_entity_playlists"
+    : "collector_daily_agg";
   const runDate = addDaysIso(dataDate, SOT_DATA_LAG_DAYS);
   const runDateMinus7 = addDaysIso(runDate, -7);
   const prevRunDate = addDaysIso(runDate, -1);
 
   const { data: aggRows, error: aggError } = await svc
-    .from("collector_daily_agg")
+    .from(collectorAggTable)
     .select("collector,date,daily_streams_net")
     .in("collector", collectors)
     .gte("date", runDateMinus7)
@@ -83,13 +94,22 @@ export async function POST(req: NextRequest) {
     const all: any[] = [];
     const hardCap = 50_000; // safety guard against runaway pagination
     for (let offset = 0; offset < hardCap; offset += 500) {
-      const { data, error } = await svc.rpc("collector_tracks_paged", {
-        collector,
-        run_date: runDate,
-        prev_date: prevDate,
-        offset_rows: offset,
-        limit_rows: 500,
-      });
+      const { data, error } = useEntityPlaylistsForTotals
+        ? await svc.rpc("collector_tracks_paged_scoped", {
+            collector,
+            run_date: runDate,
+            prev_date: prevDate,
+            offset_rows: offset,
+            limit_rows: 500,
+            p_use_entity_playlists: true,
+          })
+        : await svc.rpc("collector_tracks_paged", {
+            collector,
+            run_date: runDate,
+            prev_date: prevDate,
+            offset_rows: offset,
+            limit_rows: 500,
+          });
       if (error) throw new Error(error.message);
       if (!data?.length) break;
       all.push(...data);
@@ -120,13 +140,22 @@ export async function POST(req: NextRequest) {
       const deltaPct = avg7 > 0 ? ((dailyStreams - avg7) / avg7) * 100 : null;
 
       // Top tracks by daily delta
-      const { data: trackRows, error: trackError } = await svc.rpc("collector_tracks_paged", {
-        collector,
-        run_date: runDate,
-        prev_date: prevRunDate,
-        offset_rows: 0,
-        limit_rows: 10,
-      });
+      const { data: trackRows, error: trackError } = useEntityPlaylistsForTotals
+        ? await svc.rpc("collector_tracks_paged_scoped", {
+            collector,
+            run_date: runDate,
+            prev_date: prevRunDate,
+            offset_rows: 0,
+            limit_rows: 10,
+            p_use_entity_playlists: true,
+          })
+        : await svc.rpc("collector_tracks_paged", {
+            collector,
+            run_date: runDate,
+            prev_date: prevRunDate,
+            offset_rows: 0,
+            limit_rows: 10,
+          });
 
       if (trackError) throw new Error(trackError.message);
 
@@ -143,8 +172,8 @@ export async function POST(req: NextRequest) {
         .filter((t) => t.isrc);
 
       // Roster change detection: compare full track sets between the two dates
-      let rosterAdditions: RosterEntry[] = [];
-      let rosterRemovals: RosterEntry[] = [];
+      const rosterAdditions: RosterEntry[] = [];
+      const rosterRemovals: RosterEntry[] = [];
       let rosterCumulativeImpact = 0;
 
       try {
