@@ -35,7 +35,11 @@ export default async function Home({
   if (!session) redirect("/login");
 
   const { data: isAdmin } = await sb.rpc("is_admin");
-  if (!isAdmin) redirect("/login");
+  if (!isAdmin) {
+    const { data: canAccessPlaylistWatch } = await sb.rpc("can_access_playlist_watch");
+    if (canAccessPlaylistWatch) redirect("/playlist-watch");
+    redirect("/login");
+  }
 
   const svc = supabaseService();
 

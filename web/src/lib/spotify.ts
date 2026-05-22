@@ -132,6 +132,13 @@ export type SpotifyPlaylistLookup = {
   externalUrl: string | null;
 };
 
+export type SpotifyPlaylistFollowerLookup = SpotifyPlaylistLookup & {
+  ownerId: string | null;
+  ownerName: string | null;
+  followerCount: number;
+  trackCount: number | null;
+};
+
 export async function getPlaylist(playlistId: string): Promise<SpotifyPlaylistLookup> {
   type PlaylistResp = {
     id: string;
@@ -145,6 +152,35 @@ export async function getPlaylist(playlistId: string): Promise<SpotifyPlaylistLo
     name: p.name,
     imageUrl: p.images?.[0]?.url ?? null,
     externalUrl: p.external_urls?.spotify ?? null,
+  };
+}
+
+export async function getPlaylistWithFollowers(playlistId: string): Promise<SpotifyPlaylistFollowerLookup> {
+  type PlaylistResp = {
+    id: string;
+    name: string;
+    images: Array<{ url: string; height: number; width: number }>;
+    external_urls?: { spotify?: string };
+    owner?: { id?: string; display_name?: string };
+    followers?: { total?: number };
+    tracks?: { total?: number };
+    items?: { total?: number };
+  };
+  const fields = encodeURIComponent("id,name,owner(id,display_name),images,external_urls,followers(total),tracks(total),items(total)");
+  const p = await spotifyFetch<PlaylistResp>(`/playlists/${encodeURIComponent(playlistId)}?fields=${fields}`);
+  const followerCount = p.followers?.total;
+  if (typeof followerCount !== "number") {
+    throw new Error("Spotify playlist response did not include followers.total");
+  }
+  return {
+    playlistId: p.id,
+    name: p.name,
+    imageUrl: p.images?.[0]?.url ?? null,
+    externalUrl: p.external_urls?.spotify ?? null,
+    ownerId: p.owner?.id ?? null,
+    ownerName: p.owner?.display_name ?? null,
+    followerCount,
+    trackCount: p.tracks?.total ?? p.items?.total ?? null,
   };
 }
 

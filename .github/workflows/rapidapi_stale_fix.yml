@@ -170,13 +170,13 @@ jobs:
           if [ "$FIXED" != "0" ]; then
             SHOULD_NOTIFY="true"
             if [ "$STATUS" = "partial_runtime_limit" ]; then
-              SUBJECT="[SBase] Auto-fix partial: ${FIXED} stale track(s) corrected before runtime limit"
+              SUBJECT="[StreamBase] Auto-fix partial: ${FIXED} stale track(s) corrected before runtime limit"
             else
-              SUBJECT="[SBase] Auto-fix: ${FIXED} stale track(s) corrected via RapidAPI"
+              SUBJECT="[StreamBase] Auto-fix: ${FIXED} stale track(s) corrected via RapidAPI"
             fi
           elif [ "$STATUS" = "skipped_too_many" ]; then
             SHOULD_NOTIFY="true"
-            SUBJECT="[SBase] Auto-fix skipped: ${AFFECTED} stale track(s) exceeded safety threshold"
+            SUBJECT="[StreamBase] Auto-fix skipped: ${AFFECTED} stale track(s) exceeded safety threshold"
           fi
 
           echo "should_notify=$SHOULD_NOTIFY" >> "$GITHUB_OUTPUT"
@@ -216,19 +216,19 @@ jobs:
 
           if status == "skipped_too_many":
               plain_lines = [
-                  f"SBase auto-fix skipped for {run_date_raw}",
+                  f"StreamBase auto-fix skipped for {run_date_raw}",
                   f"Stale tracks: {affected}",
                   "Reason: stale-track count reached the 500-track safety threshold.",
               ]
           elif status == "partial_runtime_limit":
               plain_lines = [
-                  f"SBase auto-fix partially completed for {run_date_raw}",
+                  f"StreamBase auto-fix partially completed for {run_date_raw}",
                   f"Fixed: {fixed} of {affected} stale track(s)",
                   "Reason: graceful runtime ceiling reached before the workflow timeout.",
               ]
           else:
               plain_lines = [
-                  f"SBase auto-fix complete for {run_date_raw}",
+                  f"StreamBase auto-fix complete for {run_date_raw}",
                   f"Fixed: {fixed} stale track(s)",
               ]
           for provider, count in providers.items():
@@ -316,7 +316,7 @@ jobs:
             <body style="margin:0;padding:24px;background:#0a0a0c;color:#ededed;font-family:Inter,Arial,Helvetica,sans-serif;font-size:14px;line-height:1.35;">
               <div style="max-width:700px;margin:0 auto;border:1px solid #2a2b30;border-radius:14px;background:#141419;overflow:hidden;box-shadow:0 12px 32px rgba(0,0,0,.34);">
                 <div style="padding:18px 22px 16px;border-bottom:1px solid #25262b;background:#10120f;">
-                  <div style="font-size:11px;color:#d4ff4d;font-weight:700;letter-spacing:.06em;text-transform:uppercase;">SBase</div>
+                  <div style="font-size:11px;color:#d4ff4d;font-weight:700;letter-spacing:.06em;text-transform:uppercase;">StreamBase</div>
                   <div style="margin-top:5px;font-size:22px;font-weight:650;color:#ededed;line-height:1.18;">{'Auto-fix skipped' if status == 'skipped_too_many' else 'Auto-fix partial' if status == 'partial_runtime_limit' else 'Auto-fix complete'}</div>
                   <div style="margin-top:7px;font-size:13px;color:#a1a1aa;">
                     {f'<span style="color:#ededed;font-weight:600;">{affected}</span> stale tracks exceeded safety threshold' if status == 'skipped_too_many' else f'<span style="color:#ededed;font-weight:600;">{fixed}</span> of <span style="color:#ededed;font-weight:600;">{affected}</span> stale tracks fixed before runtime limit' if status == 'partial_runtime_limit' else f'<span style="color:#ededed;font-weight:600;">{fixed}</span> stale track{"s" if fixed != 1 else ""} fixed'}

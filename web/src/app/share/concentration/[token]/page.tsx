@@ -68,7 +68,7 @@ export default async function SharedConcentrationPage(props: PageProps) {
     <div className="min-h-dvh" style={{ background: "var(--sb-bg)", color: "var(--sb-text)" }}>
       <main id="main-content" className="mx-auto max-w-5xl px-4 py-8 space-y-4">
         <header className="space-y-1">
-          <p className="text-[11px] font-medium uppercase tracking-wider opacity-50">SBase · shared snapshot</p>
+          <p className="text-[11px] font-medium uppercase tracking-wider opacity-50">StreamBase · shared snapshot</p>
           <h1 className="text-lg font-semibold">{snap.title}</h1>
           <p className="text-sm opacity-60">{snap.subtitle}</p>
           {createdAtIso ? (

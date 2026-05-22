@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 
+import { APP_SHORT_NAME } from "@/lib/pageTitle";
+
 export function LogoMark({ size = 18 }: { size?: number }) {
   const [isDark, setIsDark] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -49,7 +51,7 @@ export function LogoMark({ size = 18 }: { size?: number }) {
   return (
     <Image
       src={logoSrc}
-      alt="SBase"
+      alt={APP_SHORT_NAME}
       width={size}
       height={size}
       className="object-contain"

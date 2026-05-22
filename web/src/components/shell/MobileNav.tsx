@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { navItems } from "./SideRail";
 import type { DatasetMode } from "@/lib/datasetMode";
 import { navItemsForMode } from "@/lib/datasets";
+import type { AppAccess } from "@/lib/appAccess";
 
 // Haptic feedback utility (#4)
 function triggerHaptic(style: "light" | "medium" = "light") {
@@ -20,11 +21,13 @@ export function MobileNav({
   healthHasCritical = false,
   healthInfoOnly = false,
   datasetMode = "own",
+  appAccess,
 }: {
   healthBadgeCount?: number;
   healthHasCritical?: boolean;
   healthInfoOnly?: boolean;
   datasetMode?: DatasetMode;
+  appAccess?: AppAccess;
 }) {
   const pathname = usePathname();
   const [hasScrolled, setHasScrolled] = useState(false);
@@ -32,7 +35,7 @@ export function MobileNav({
   const scrollTimerRef = useRef<number | null>(null);
   const prevBadgeCount = useRef(healthBadgeCount);
   const [badgeAnimating, setBadgeAnimating] = useState(false);
-  const visibleNavItems = navItemsForMode(datasetMode, navItems);
+  const visibleNavItems = navItemsForMode(datasetMode, navItems, appAccess);
   const navRef = useRef<HTMLElement>(null);
   const rafRef = useRef<number | null>(null);
 

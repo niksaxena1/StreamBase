@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import type { Metadata } from "next";
 
 import { LogoMark } from "@/components/LogoMark";
+import { APP_SHORT_NAME } from "@/lib/pageTitle";
 import LoginForm from "./ui";
 
 // Login reads `useSearchParams()` in a client component (next redirect), so avoid SSG/ISR prerender.
@@ -26,7 +27,7 @@ export default function LoginPage() {
             <LogoMark size={96} />
           </div>
           <h1 className="font-display text-3xl font-semibold tracking-tight">
-            SBase
+            {APP_SHORT_NAME}
           </h1>
           <p className="mt-2 text-sm dark:text-white/80">
             Sign in to your analytics dashboard
@@ -41,7 +42,7 @@ export default function LoginPage() {
         </div>
         
         <div className="mt-4 text-center text-[11px] opacity-40">
-          &copy; {new Date().getFullYear()} SBase. Internal use only.
+          &copy; {new Date().getFullYear()} {APP_SHORT_NAME}. Internal use only.
         </div>
       </div>
     </div>

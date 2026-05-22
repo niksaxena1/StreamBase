@@ -38,6 +38,10 @@ type DataPoint = {
   ma7?: number | null;
   _isPartial?: boolean;
   _bucketDays?: number;
+  /** Playlist Watch: companion metrics for dual-metric tooltip + copy */
+  _followersTotal?: number;
+  _followersDaily?: number;
+  _isBaselineDay?: boolean;
 };
 
 type ManualOverrideAnnotation = {
@@ -67,6 +71,7 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
   showMA7 = false,
   isCumulative = false,
   annotations,
+  ghost = false,
 }: {
   data: DataPoint[];
   valueLabel?: string;
@@ -78,6 +83,8 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
   showMA7?: boolean;
   isCumulative?: boolean;
   annotations?: ManualOverrideAnnotation[];
+  /** Faded backdrop layer (no tooltip, hidden axis labels). */
+  ghost?: boolean;
 }) {
   const gid = useId();
   const themeColors = useThemeColors();
@@ -135,6 +142,7 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
   const hasNegatives = !isCumulative && [...v, ...ma].some(
     (x) => typeof x === "number" && Number.isFinite(x) && (x as number) < 0,
   );
+  const allNonNegativeDaily = !isCumulative && !hasNegatives;
 
   const yAxisDomain = (() => {
     if (chartData.length === 0) return undefined;
@@ -144,12 +152,21 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
       return [Math.min(...values), Math.max(...values)] as [number, number];
     }
     if (!zoomDailyYAxis && !hasNegatives) return undefined;
-    return computePaddedDomain([...v, ...ma], { clampMinToZero: false, padRatio: 0.10, minAbsPad: 1 });
+    return computePaddedDomain([...v, ...ma], {
+      clampMinToZero: allNonNegativeDaily,
+      padRatio: 0.10,
+      minAbsPad: 1,
+    });
   })();
 
   const finiteValues = [...v, ...ma].filter((x): x is number => typeof x === "number" && Number.isFinite(x));
   const dataMax = finiteValues.length ? Math.max(...finiteValues) : 0;
   const dataMin = finiteValues.length ? Math.min(...finiteValues) : 0;
+  const domainIncludesZero =
+    !isCumulative &&
+    (hasNegatives ||
+      allNonNegativeDaily ||
+      (yAxisDomain != null && yAxisDomain[0] <= 0 && yAxisDomain[1] >= 0));
   const strokeZeroOffset = hasNegatives && dataMax > 0 && dataMin < 0
     ? `${(dataMax / (dataMax - dataMin) * 100).toFixed(2)}%`
     : null;
@@ -197,7 +214,7 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
   return (
     <div
       className="w-full overflow-visible outline-none"
-      {...containerProps}
+      {...(ghost ? {} : containerProps)}
     >
       <ResponsiveContainer width="100%" height={heightPx} minWidth={0} style={{ overflow: "visible" }}>
         <ChartComponent
@@ -230,11 +247,13 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
               </linearGradient>
             )}
           </defs>
-          <CartesianGrid
-            strokeDasharray="3 3"
-            vertical={false}
-            stroke="var(--sb-border)"
-          />
+          {!ghost ? (
+            <CartesianGrid
+              strokeDasharray="3 3"
+              vertical={false}
+              stroke="var(--sb-border)"
+            />
+          ) : null}
           <XAxis
             dataKey="date"
             tickFormatter={formatXAxisTick}
@@ -243,40 +262,43 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
             tickLine={false}
             axisLine={false}
             tickMargin={6}
+            hide={ghost}
           />
           <YAxis
             stroke="var(--sb-muted)"
             fontSize={10}
             tickLine={false}
             axisLine={false}
-            tickFormatter={(value) => fmtYTick(Number(value ?? 0))}
+            tickFormatter={ghost ? () => "" : (value) => fmtYTick(Number(value ?? 0))}
             domain={yAxisDomain}
           />
-          <Tooltip
-            allowEscapeViewBox={{ x: true, y: true }}
-            wrapperStyle={{ zIndex: 10000 }}
-            content={({ active, label, payload }) => (
-              <DailySeriesTooltip
-                active={active}
-                label={label as string}
-                payload={payload as TooltipPayload[]}
-                valueLabel={valueLabel}
-                fmtValue={fmtValue}
-                isDark={themeColors.isDark}
-                chartColor={effectiveColor}
-                isCumulative={isCumulative}
-                onValuesFormatted={(v) => {
-                  setTooltipValues(v);
-                }}
-              />
-            )}
-            cursor={{
-              stroke: effectiveColor,
-              strokeWidth: 1.5,
-              strokeDasharray: "5 5",
-              opacity: 0.8
-            }}
-          />
+          {!ghost ? (
+            <Tooltip
+              allowEscapeViewBox={{ x: true, y: true }}
+              wrapperStyle={{ zIndex: 10000 }}
+              content={({ active, label, payload }) => (
+                <DailySeriesTooltip
+                  active={active}
+                  label={label as string}
+                  payload={payload as TooltipPayload[]}
+                  valueLabel={valueLabel}
+                  fmtValue={fmtValue}
+                  isDark={themeColors.isDark}
+                  chartColor={effectiveColor}
+                  isCumulative={isCumulative}
+                  onValuesFormatted={(v) => {
+                    setTooltipValues(v);
+                  }}
+                />
+              )}
+              cursor={{
+                stroke: effectiveColor,
+                strokeWidth: 1.5,
+                strokeDasharray: "5 5",
+                opacity: 0.8
+              }}
+            />
+          ) : null}
           {/* Subtle highlight-day indicator (daily charts) */}
           {highlightDates.map((d) => (
             <ReferenceLine
@@ -317,13 +339,13 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
               }}
             />
           )}
-          {hasNegatives && (
+          {domainIncludesZero && (
             <ReferenceLine
               y={0}
-              stroke="#ef4444"
-              strokeOpacity={0.45}
-              strokeWidth={1}
-              strokeDasharray="3 3"
+              stroke={hasNegatives ? "#ef4444" : "var(--sb-muted)"}
+              strokeOpacity={hasNegatives ? 0.45 : 0.5}
+              strokeWidth={hasNegatives ? 1 : 1.25}
+              strokeDasharray="4 4"
               ifOverflow="hidden"
             />
           )}
@@ -331,11 +353,12 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
             type="monotone"
             dataKey="value"
             stroke={strokeZeroOffset ? `url(#${gid}-stroke)` : effectiveColor}
-            strokeWidth={2}
+            strokeWidth={ghost ? 1.6 : 2}
             fillOpacity={1}
             fill={`url(#${gid})`}
-            dot={dot}
-            activeDot={activeDot}
+            dot={ghost ? false : dot}
+            activeDot={ghost ? false : activeDot}
+            isAnimationActive={!ghost}
           />
           {hasMA7 && (
             <Line
@@ -352,7 +375,7 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
           )}
         </ChartComponent>
       </ResponsiveContainer>
-      {copyModal}
+      {ghost ? null : copyModal}
     </div>
   );
 });

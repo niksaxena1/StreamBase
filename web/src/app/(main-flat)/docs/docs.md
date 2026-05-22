@@ -1,20 +1,20 @@
-# SBase `/docs`
+# StreamBase `/docs`
 
 > **Where to edit this document**
 >
 > - `web/src/app/(main-flat)/docs/docs.md`
 > - Renderer/UI: `web/src/app/(main-flat)/docs/page.tsx` + `DocsClient.tsx`
 
-This page is the canonical, **human-first** description of how SBase works end-to-end (pipeline, UI, data model, operations).
+This page is the canonical, **human-first** description of how StreamBase works end-to-end (pipeline, UI, data model, operations).
 
 If you’re looking for “how do I use the app?” start with **Quick “How do I…?”** and **What each page does**.
 The **SAI / chatbot** sections are optional and live near the bottom.
 
 ---
 
-## What is SBase?
+## What is StreamBase?
 
-SBase is a **daily ingestion + analytics app** for SpotOnTrack exports: it turns CSV snapshots into a queryable Postgres dataset and a web UI for tracking your catalog and playlists over time.
+StreamBase is a **daily ingestion + analytics app** for SpotOnTrack exports: it turns CSV snapshots into a queryable Postgres dataset and a web UI for tracking your catalog and playlists over time.
 
 What you use it for:
 
@@ -162,14 +162,14 @@ What you’re seeing:
 
 ### Is a track unique by ISRC?
 
-Yes. In SBase, **ISRC is the primary track identity** (`tracks.isrc` and joins to `track_daily_streams.isrc`).
+Yes. In StreamBase, **ISRC is the primary track identity** (`tracks.isrc` and joins to `track_daily_streams.isrc`).
 
 ### What is the difference between Spotify track id and ISRC?
 
 - Spotify track id: identifies a specific Spotify track object (can vary by territory/duplicate uploads).
 - ISRC: the industry recording identifier; more stable across releases and systems.
 
-SBase uses ISRC because SpotOnTrack exports are ISRC-based and it’s the best stable join key.
+StreamBase uses ISRC because SpotOnTrack exports are ISRC-based and it’s the best stable join key.
 
 ### Why do dates look “2 days behind”?
 
@@ -580,7 +580,7 @@ Your DB may have additional columns; those are fine.
 
 | Field | Type (typical) | Meaning / usage |
 |---|---|---|
-| `isrc` | text (PK) | Track identity in SBase |
+| `isrc` | text (PK) | Track identity in StreamBase |
 | `name` | text | Track title (from export / enrichment) |
 | `release_date` | date/text | Release date from export when available |
 | `first_seen` | date | First ingestion date this ISRC appeared |
@@ -716,7 +716,7 @@ These are the warning codes emitted by the ingestion script today:
 | `entity_distro_drift` | warn | “Entity” playlist membership doesn’t match the union of its “Distro” playlists (extra/missing tracks) | ingestion compares membership sets for `playlist_type = 'Entity'` vs all related `playlist_type = 'Distro'` playlists using `entity_playlist_key` | Fix playlist mapping or membership; use Health expansion to see extra/missing tracks |
 | `distro_overlap` | warn | An ISRC appears in 2+ Distro playlists on the same day (should be exclusive) | ingestion checks overlapping membership across `playlist_type = 'Distro'` playlists | Fix distro assignment; use Health expansion / RPC to list overlapping tracks |
 | `high_zero_stream_rate` | warn | Catalog export has too many rows with 0 streams | ingestion computes zero-stream ratio for catalog playlists | Investigate SpotOnTrack data freshness; ensure correct dashboard/export format |
-| `catalog_streams_missing_prev_nonzero` | critical | SpotOnTrack export had missing/blank/non-numeric `spotify_streams_total` for track(s) that had non-zero cumulative streams yesterday. SBase records these as “missing snapshots” for today (no `track_daily_streams` row) | ingestion detects missing stream values in catalog exports and checks yesterday’s `track_daily_streams` | Treat as source instability; inspect raw CSV; decide later whether to impute/carry-forward |
+| `catalog_streams_missing_prev_nonzero` | critical | SpotOnTrack export had missing/blank/non-numeric `spotify_streams_total` for track(s) that had non-zero cumulative streams yesterday. StreamBase records these as “missing snapshots” for today (no `track_daily_streams` row) | ingestion detects missing stream values in catalog exports and checks yesterday’s `track_daily_streams` | Treat as source instability; inspect raw CSV; decide later whether to impute/carry-forward |
 | `catalog_missing_stream_snapshots` | critical | Explicit count of catalog tracks that appeared in catalog exports but did **not** get a valid `track_daily_streams` snapshot row today (missing/invalid stream totals) | ingestion compares “expected catalog ISRCs” vs today’s snapshot set | Treat as a data-quality break; inspect raw exports; consider re-ingest after fixing exporter |
 | `total_streams_decreased` | critical | A playlist’s `total_streams_cumulative` decreased vs yesterday (should not happen for cumulative snapshots) | ingestion computes `playlist_daily_stats` and checks monotonicity vs previous day | Investigate catalog snapshot integrity (missing/invalid stream totals) and source exports |
 | `non_catalog_tracks_present` | critical | Playlist contains tracks not present in catalog snapshot for that day | ingestion compares playlist ISRC set vs `track_daily_streams` ISRCs | If intentional: add exclusions in Settings; else fix catalog export/enrichment |
@@ -781,7 +781,7 @@ Files live under:
 
 ## Postgres RPCs (Supabase): why they exist and what they do
 
-SBase pushes “heavy computations” into Postgres for:
+StreamBase pushes “heavy computations” into Postgres for:
 
 - fewer roundtrips
 - correct, index-aware joins
@@ -991,7 +991,7 @@ Checklist:
 ### “Numbers don’t match Spotify”
 
 - Remember:
-  - SBase uses SpotOnTrack exports (lagged)
+  - StreamBase uses SpotOnTrack exports (lagged)
   - UI shows **data date** (run date minus 2 days)
   - Tables store cumulative snapshots; daily is derived by difference
 
@@ -1155,9 +1155,9 @@ These are “system rules” that future changes should preserve unless you inte
 
 - `track_daily_streams.streams_cumulative` is a **cumulative snapshot**, not a delta.
 - “Daily streams” are derived by difference of cumulative snapshots between adjacent days.
-- Cumulative snapshots should be **monotonic non-decreasing** per ISRC and (by summation) per playlist total. If totals decrease, SBase emits critical health warnings (see `total_streams_decreased`).
+- Cumulative snapshots should be **monotonic non-decreasing** per ISRC and (by summation) per playlist total. If totals decrease, StreamBase emits critical health warnings (see `total_streams_decreased`).
 - If SpotOnTrack exports contain missing/invalid `spotify_streams_total` values:
-  - SBase may record that day as a **missing snapshot** for affected ISRCs (no row in `track_daily_streams` for that date), because `streams_cumulative` is non-nullable in the current schema.
+  - StreamBase may record that day as a **missing snapshot** for affected ISRCs (no row in `track_daily_streams` for that date), because `streams_cumulative` is non-nullable in the current schema.
   - The Health page surfaces this via `catalog_streams_missing_prev_nonzero` and `catalog_missing_stream_snapshots`.
 
 ### Membership semantics
@@ -1258,7 +1258,7 @@ Notes:
   - `catalog_streams_missing_prev_nonzero`
   - `catalog_missing_stream_snapshots`
   - `total_streams_decreased`
-  These indicate “source data quality break”, not necessarily a bug in SBase.
+  These indicate “source data quality break”, not necessarily a bug in StreamBase.
 
 ### If you need rollback
 
@@ -1360,7 +1360,7 @@ Suggested lightweight additions:
 
 This section is only relevant if you enable the SAI chat button in `/settings`.
 
-### Can SAI (SBase Artificial Intelligence) read these docs later?
+### Can SAI (StreamBase AI) read these docs later?
 
 Yes — recommended approach is **RAG (retrieval augmented generation)**:
 

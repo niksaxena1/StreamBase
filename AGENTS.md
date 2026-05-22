@@ -1,8 +1,8 @@
-# Agent guide for SpotiBase
+# Agent guide for StreamBase
 
 ## Read this first
 
-SpotiBase has two analytics universes:
+StreamBase has two analytics universes:
 
 1. **Own catalog** in the `public` schema.
 2. **Competitors** in the isolated `competitor` schema.

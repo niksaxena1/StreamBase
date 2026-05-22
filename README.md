@@ -1,6 +1,6 @@
-# SBase
+# StreamBase
 
-SBase is a web app + automated pipeline that ingests daily SpotOnTrack CSV exports to build a long-term, queryable database of Spotify stream counts for your catalog and operational playlists.
+StreamBase is a web app + automated pipeline that ingests daily SpotOnTrack CSV exports to build a long-term, queryable database of Spotify stream counts for your catalog and operational playlists.
 
 For the current milestone, this repo contains the **daily exporter** (GitHub Actions + Playwright) that downloads CSV exports from SpotOnTrack dashboards.
 
@@ -80,7 +80,7 @@ npm run dev
 
 ## Competitor Mode
 
-SpotiBase also tracks competitor labels in a separated `competitor` schema. Competitor Mode currently supports:
+StreamBase also tracks competitor labels in a separated `competitor` schema. Competitor Mode currently supports:
 
 - multiple competitors, each with one or more playlists
 - Home / Playlists / Catalog / Search views scoped to the selected competitor

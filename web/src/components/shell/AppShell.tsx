@@ -12,6 +12,9 @@ import { GlobalMetricToggle } from "@/components/shell/GlobalMetricToggle";
 import { RollbackButtonWrapper } from "@/components/shell/RollbackButtonWrapper";
 import { LazyAIWidget } from "@/components/sai/LazyAIWidget";
 import { CompetitorLabelSelector } from "@/components/shell/CompetitorLabelSelector";
+import { AppFooter } from "@/components/shell/AppFooter";
+import type { AppAccess } from "@/lib/appAccess";
+import { APP_SHORT_NAME } from "@/lib/pageTitle";
 
 type MainSurface = "glass" | "plain";
 
@@ -19,11 +22,15 @@ export function AppShell(props: {
   children: ReactNode;
   mainSurface?: MainSurface;
   datasetMode?: "own" | "competitor";
+  appAccess?: AppAccess;
   competitorLabels?: Array<{ label_key: string; display_name: string; image_url: string | null }>;
   competitorLabelKey?: string | null;
 }) {
   const mainSurface = props.mainSurface ?? "glass";
   const datasetMode = props.datasetMode ?? "own";
+  const appAccess = props.appAccess;
+  const playlistWatchOnly = Boolean(appAccess?.playlistWatch && !appAccess.ownCatalog && !appAccess.competitor);
+  const homeHref = playlistWatchOnly ? "/playlist-watch" : "/";
   return (
     <>
       {/* 
@@ -31,10 +38,10 @@ export function AppShell(props: {
         Placing fixed elements inside containers with transforms, filters, 
         or will-change can break fixed positioning in mobile browsers.
       */}
-      <MobileNavWithBadge datasetMode={datasetMode} />
+      <MobileNavWithBadge datasetMode={datasetMode} appAccess={appAccess} />
 
-      {/* SAI (SBase AI) assistant - also outside main hierarchy */}
-      <LazyAIWidget />
+      {/* SAI assistant - also outside main hierarchy */}
+      {playlistWatchOnly ? null : <LazyAIWidget />}
 
       <div className="sb-app-shell min-h-dvh">
         {/* subtle accent glow - isolated with contain to prevent affecting fixed children */}
@@ -57,23 +64,23 @@ export function AppShell(props: {
         </div>
 
         <div className="mx-auto flex w-full max-w-[1600px] gap-3 px-3 py-3 pb-[calc(72px+env(safe-area-inset-bottom,0px)+24px)] sm:pb-3">
-          <SideRailWithBadge datasetMode={datasetMode} />
+          <SideRailWithBadge datasetMode={datasetMode} appAccess={appAccess} />
 
           <div className="flex min-w-0 flex-1 flex-col gap-3">
             {/* Top bar with breadcrumbs (glass) */}
             <header className="sb-glass px-3 py-2 relative z-20">
               <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
-                  <Link href="/" className="transition-opacity hover:opacity-80" suppressHydrationWarning>
+                  <Link href={homeHref} className="transition-opacity hover:opacity-80" suppressHydrationWarning>
                     <LogoMark />
                   </Link>
                   <div className="flex items-center gap-2">
                     <Link
-                      href="/"
+                      href={homeHref}
                       className="font-display text-sm font-semibold tracking-tight transition-opacity hover:opacity-80"
                       suppressHydrationWarning
                     >
-                      SBase
+                      {APP_SHORT_NAME}
                     </Link>
                     <Breadcrumbs />
                     {datasetMode === "competitor" ? (
@@ -91,14 +98,20 @@ export function AppShell(props: {
                 </div>
 
                 <div className="flex items-center gap-3 min-w-0 flex-1 sm:flex-initial">
-                  <div className="w-full max-w-xs sm:w-64 lg:w-80 xl:w-96">
-                    <SearchBar />
-                  </div>
+                  {playlistWatchOnly ? null : (
+                    <div className="w-full max-w-xs sm:w-64 lg:w-80 xl:w-96">
+                      <SearchBar />
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <RollbackButtonWrapper />
-                  <GlobalMetricToggle />
+                  {playlistWatchOnly ? null : (
+                    <>
+                      <RollbackButtonWrapper />
+                      <GlobalMetricToggle />
+                    </>
+                  )}
                   <UserMenu />
                 </div>
               </div>
@@ -110,26 +123,7 @@ export function AppShell(props: {
               {props.children}
             </main>
 
-            <footer className="px-2 pb-2 text-xs" style={{ color: "var(--sb-muted)" }}>
-              Data source:{" "}
-              <a
-                href="https://www.spotontrack.com/dashboard"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="hover:underline"
-              >
-                SpotOnTrack
-              </a>
-              {" "}exports • Updated daily via{" "}
-              <a
-                href="https://github.com/niksaxena1/SBase/actions"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="hover:underline"
-              >
-                GitHub Actions
-              </a>
-            </footer>
+            <AppFooter />
           </div>
         </div>
       </div>

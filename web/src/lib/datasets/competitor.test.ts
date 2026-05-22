@@ -26,4 +26,22 @@ describe("dataset helpers", () => {
     ];
     expect(navItemsForMode("own", items).some((i) => i.href === "/competitors")).toBe(false);
   });
+
+  it("shows only playlist watch when that is the only app access", () => {
+    const items = [
+      { href: "/", label: "Home" },
+      { href: "/playlists", label: "Playlists" },
+      { href: "/playlist-watch", label: "Playlist Watch" },
+      { href: "/health", label: "Health" },
+    ];
+
+    expect(
+      navItemsForMode("own", items, {
+        ownCatalog: false,
+        competitor: false,
+        playlistWatch: true,
+        playlistWatchAdmin: false,
+      }),
+    ).toEqual([{ href: "/playlist-watch", label: "Playlist Watch" }]);
+  });
 });

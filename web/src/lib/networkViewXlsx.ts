@@ -467,7 +467,7 @@ export async function downloadNetworkViewXlsx(args: {
     if (!isrc) continue;
     const er = enrich?.get(isrc);
     const catUrl = `${origin}/catalog?isrc=${encodeURIComponent(isrc)}`;
-    setLinkCell(wsTracks, XLSX.utils, r, catalogCol, "Catalog", catUrl, "Open in SBase catalog");
+    setLinkCell(wsTracks, XLSX.utils, r, catalogCol, "Catalog", catUrl, "Open in StreamBase catalog");
     const sid = er?.spotifyTrackId?.trim();
     if (sid) {
       setLinkCell(
@@ -518,7 +518,7 @@ export async function downloadNetworkViewXlsx(args: {
     if (!isrc) continue;
     const er = enrich?.get(isrc);
     const catUrl = `${origin}/catalog?isrc=${encodeURIComponent(isrc)}`;
-    setLinkCell(wsUnique, XLSX.utils, r, uCat, "Catalog", catUrl, "Open in SBase catalog");
+    setLinkCell(wsUnique, XLSX.utils, r, uCat, "Catalog", catUrl, "Open in StreamBase catalog");
     const sid = er?.spotifyTrackId?.trim();
     if (sid) {
       setLinkCell(

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import React from "react";
 import type { DatasetMode } from "@/lib/datasetMode";
 import { navItemsForMode } from "@/lib/datasets";
+import type { AppAccess } from "@/lib/appAccess";
 
 export type Item = {
   href: string;
@@ -43,6 +44,11 @@ export const navItems: Item[] = [
     icon: (a) => <IconUser active={a} />,
     shortcut: "4",
   },
+  {
+    href: "/playlist-watch",
+    label: "Watch",
+    icon: (a) => <IconEye active={a} />,
+  },
   { href: "/health", label: "Health", icon: (a) => <IconPulse active={a} />, shortcut: "5" },
 ];
 
@@ -51,14 +57,16 @@ function SideRailContent({
   healthHasCritical = false,
   healthInfoOnly = false,
   datasetMode = "own",
+  appAccess,
 }: {
   healthBadgeCount?: number;
   healthHasCritical?: boolean;
   healthInfoOnly?: boolean;
   datasetMode?: DatasetMode;
+  appAccess?: AppAccess;
 }) {
   const pathname = usePathname();
-  const visibleNavItems = navItemsForMode(datasetMode, navItems);
+  const visibleNavItems = navItemsForMode(datasetMode, navItems, appAccess);
 
   return (
     <div className="sb-glass sticky top-3 z-30 flex flex-col items-center gap-2 px-2 py-2">
@@ -170,15 +178,17 @@ export function SideRail({
   healthHasCritical = false,
   healthInfoOnly = false,
   datasetMode = "own",
+  appAccess,
 }: {
   healthBadgeCount?: number;
   healthHasCritical?: boolean;
   healthInfoOnly?: boolean;
   datasetMode?: DatasetMode;
+  appAccess?: AppAccess;
 }) {
   return (
     <aside className="hidden w-[60px] shrink-0 sm:block">
-      <SideRailContent healthBadgeCount={healthBadgeCount} healthHasCritical={healthHasCritical} healthInfoOnly={healthInfoOnly} datasetMode={datasetMode} />
+      <SideRailContent healthBadgeCount={healthBadgeCount} healthHasCritical={healthHasCritical} healthInfoOnly={healthInfoOnly} datasetMode={datasetMode} appAccess={appAccess} />
     </aside>
   );
 }
@@ -285,6 +295,25 @@ export function IconPulse(props: { active: boolean }) {
         strokeWidth="1.8"
         strokeLinejoin="round"
         strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+export function IconEye(props: { active: boolean }) {
+  const iconClass = "text-current";
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className={iconClass}>
+      <path
+        d="M2.5 12C4.5 7.5 8 5.5 12 5.5C16 5.5 19.5 7.5 21.5 12C19.5 16.5 16 18.5 12 18.5C8 18.5 4.5 16.5 2.5 12Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M12 15C13.6569 15 15 13.6569 15 12C15 10.3431 13.6569 9 12 9C10.3431 9 9 10.3431 9 12C9 13.6569 10.3431 15 12 15Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
       />
     </svg>
   );

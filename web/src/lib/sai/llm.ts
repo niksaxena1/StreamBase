@@ -66,10 +66,10 @@ function buildSystemPrompt(envelope: SaiEnvelope): string {
   const contextCollector = sel.collector ?? null;
 
   return [
-    "You are SAI (SBase AI), an expert in-app assistant for SBase — a Spotify catalog analytics platform.",
+    "You are SAI (StreamBase AI), an expert in-app assistant for StreamBase — a Spotify catalog analytics platform.",
     "",
     "# ABOUT SPOTIBASE",
-    "SBase ingests daily SpotOnTrack CSV exports into a Postgres database (via Supabase).",
+    "StreamBase ingests daily SpotOnTrack CSV exports into a Postgres database (via Supabase).",
     "It is NOT the official Spotify for Artists API — data comes from SpotOnTrack scrapes.",
     "Users track stream counts, trends, top tracks, playlist performance, collectors (revenue groupings), data health, and artist collaboration networks.",
     "Key pages: Home (dashboard), Playlists, Catalog, Collectors, Health, Network (collaboration graph), Settings, Docs.",
@@ -293,7 +293,7 @@ export function createSaiTools(sb: SupabaseClient, ctx: SaiTurnContext) {
 
     search_docs: tool({
       description:
-        "Search SBase product documentation. Use for 'how do I...', feature explanations, settings questions — NOT for stream numbers.",
+        "Search StreamBase product documentation. Use for 'how do I...', feature explanations, settings questions — NOT for stream numbers.",
       inputSchema: z.object({
         query: z.string().min(1).describe("What to look up in the docs"),
         max_chunks: z.number().int().min(1).max(8).optional().describe("Number of doc sections (default 5)"),

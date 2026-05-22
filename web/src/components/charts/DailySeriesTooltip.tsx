@@ -1,11 +1,52 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import Image from "next/image";
 
 import { extractOverrideItemsFromRechartsPayload, extractWeekendDipFromRechartsPayload, formatTooltipDateSmart } from "@/components/charts/chartUtils";
 import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
 import type { TooltipCopyValues } from "@/components/charts/useChartCopyToClipboard";
+import { formatInt } from "@/lib/format";
+
+function formatFollowerDeltaDisplay(value: number, isBaseline?: boolean) {
+  if (isBaseline) return "0";
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${formatInt(value)}`;
+}
+
+/** Plain integer for clipboard (no thousands separators or + prefix). */
+function formatFollowerDeltaCopy(value: number, isBaseline?: boolean) {
+  if (isBaseline) return "0";
+  return String(Math.trunc(value));
+}
+
+function formatFollowerTotalCopy(value: number) {
+  return String(Math.trunc(value));
+}
+
+function followerDailyTooltipColor(
+  daily: number,
+  isBaseline: boolean,
+  isActive: boolean,
+  isDark: boolean,
+  chartColor: string,
+) {
+  if (!isBaseline && daily < 0) return "var(--sb-error, #ef4444)";
+  if (isActive) return isDark ? chartColor : "var(--sb-text)";
+  return "var(--sb-muted)";
+}
+
+function followerMetricsFromPayload(payload: Record<string, unknown> | undefined) {
+  if (!payload) return null;
+  const total = Number(payload._followersTotal);
+  const daily = Number(payload._followersDaily);
+  if (!Number.isFinite(total) || !Number.isFinite(daily)) return null;
+  return {
+    total,
+    daily,
+    isBaseline: Boolean(payload._isBaselineDay),
+  };
+}
 
 type TooltipPayloadEntry = {
   value?: unknown;
@@ -62,15 +103,41 @@ export function DailySeriesTooltip({
   const ma7ValueFormatted = ma7Num == null ? null : fmtValue(Math.round(ma7Num));
   const overrideItems = extractOverrideItemsFromRechartsPayload(safePayload);
   const weekendDipPct = extractWeekendDipFromRechartsPayload(safePayload);
+  const followerMetrics = followerMetricsFromPayload(sorted[0]?.payload as Record<string, unknown> | undefined);
+
+  const copyValues = useMemo((): TooltipCopyValues | null => {
+    if (!mainValueFormatted && !followerMetrics) return null;
+    if (followerMetrics) {
+      if (isCumulative) {
+        return {
+          label: label ?? null,
+          main: formatFollowerTotalCopy(followerMetrics.total),
+          ma7: ma7ValueFormatted,
+          toastMessage: "Copied total followers to clipboard",
+        };
+      }
+      return {
+        label: label ?? null,
+        main: formatFollowerDeltaCopy(followerMetrics.daily, followerMetrics.isBaseline),
+        ma7: ma7ValueFormatted,
+        toastMessage: "Copied daily followers to clipboard",
+      };
+    }
+    return {
+      label: label ?? null,
+      main: mainValueFormatted ?? "",
+      ma7: ma7ValueFormatted,
+    };
+  }, [followerMetrics, isCumulative, label, mainValueFormatted, ma7ValueFormatted]);
 
   useEffect(() => {
     if (!active) return;
-    if (!mainValueFormatted) return;
-    const key = `${label ?? ""}||${mainValueFormatted}||${ma7ValueFormatted ?? ""}`;
+    if (!copyValues?.main) return;
+    const key = `${label ?? ""}||${copyValues.main}||${copyValues.ma7 ?? ""}||${copyValues.toastMessage ?? ""}`;
     if (key === lastSentKeyRef.current) return;
     lastSentKeyRef.current = key;
-    onValuesFormatted?.({ label: label ?? null, main: mainValueFormatted, ma7: ma7ValueFormatted });
-  }, [active, label, mainValueFormatted, ma7ValueFormatted, onValuesFormatted]);
+    onValuesFormatted?.(copyValues);
+  }, [active, label, copyValues, onValuesFormatted]);
 
   if (!active || sorted.length === 0) return null;
 
@@ -99,49 +166,89 @@ export function DailySeriesTooltip({
           </div>
         )}
 
-        {sorted.map((entry, index) => {
-          const isMA = String(entry?.dataKey ?? "") === "ma7";
-          const seriesLabel = isMA ? "MA (7d)" : valueLabel;
-          const raw = toNum(entry.value);
-          const value = isMA
-            ? raw == null
-              ? "—"
-              : fmtValue(Math.round(raw))
-            : raw == null
-              ? "—"
-              : fmtValue(raw);
+        {Boolean(sorted[0]?.payload?._isBaselineDay) && (
+          <div
+            className="mb-1.5 rounded px-1.5 py-0.5 text-[10px] font-medium"
+            style={{ backgroundColor: "var(--sb-surface)", color: "var(--sb-muted)" }}
+          >
+            First snapshot — daily change starts the next day
+          </div>
+        )}
 
-          const valueColor = isDark ? chartColor : "var(--sb-text)";
-
-          const bucketDays = Number(entry?.payload?._bucketDays);
-          const showAvg = !isMA && !isCumulative && raw != null && bucketDays > 1;
-          const growthPct = !isMA && !isCumulative ? Number(entry?.payload?._growthPct) : NaN;
-          const hasGrowth = Number.isFinite(growthPct);
-
-          return (
-            <div key={index} className="text-xs">
-              <span style={{ color: "var(--sb-text)" }}>
-                {seriesLabel}:{" "}
-                <span className="font-bold" style={{ color: valueColor }}>
-                  {value}
-                </span>
-                {hasGrowth && (
-                  <span
-                    className="ml-1.5 text-[10px] font-semibold"
-                    style={{ color: growthPct > 0 ? "var(--sb-success, #10b981)" : growthPct < 0 ? "var(--sb-error, #ef4444)" : "var(--sb-muted)" }}
-                  >
-                    {growthPct > 0 ? "+" : ""}{growthPct.toFixed(1)}%
-                  </span>
-                )}
+        {followerMetrics ? (
+          <div className="space-y-1 text-xs">
+            <div>
+              <span style={{ color: "var(--sb-muted)" }}>Daily change: </span>
+              <span
+                className="font-bold"
+                style={{
+                  color: followerDailyTooltipColor(
+                    followerMetrics.daily,
+                    followerMetrics.isBaseline,
+                    !isCumulative,
+                    isDark,
+                    chartColor,
+                  ),
+                }}
+              >
+                {formatFollowerDeltaDisplay(followerMetrics.daily, followerMetrics.isBaseline)}
               </span>
-              {showAvg && (
-                <div className="text-[10px]" style={{ color: "var(--sb-muted)" }}>
-                  avg: {fmtValue(Math.round(raw / bucketDays))}/day
-                </div>
-              )}
             </div>
-          );
-        })}
+            <div>
+              <span style={{ color: "var(--sb-muted)" }}>Total followers: </span>
+              <span
+                className="font-bold"
+                style={{ color: isCumulative ? (isDark ? chartColor : "var(--sb-text)") : "var(--sb-muted)" }}
+              >
+                {formatInt(followerMetrics.total)}
+              </span>
+            </div>
+          </div>
+        ) : (
+          sorted.map((entry, index) => {
+            const isMA = String(entry?.dataKey ?? "") === "ma7";
+            const seriesLabel = isMA ? "MA (7d)" : valueLabel;
+            const raw = toNum(entry.value);
+            const value = isMA
+              ? raw == null
+                ? "—"
+                : fmtValue(Math.round(raw))
+              : raw == null
+                ? "—"
+                : fmtValue(raw);
+
+            const valueColor = isDark ? chartColor : "var(--sb-text)";
+
+            const bucketDays = Number(entry?.payload?._bucketDays);
+            const showAvg = !isMA && !isCumulative && raw != null && bucketDays > 1;
+            const growthPct = !isMA && !isCumulative ? Number(entry?.payload?._growthPct) : NaN;
+            const hasGrowth = Number.isFinite(growthPct);
+
+            return (
+              <div key={index} className="text-xs">
+                <span style={{ color: "var(--sb-text)" }}>
+                  {seriesLabel}:{" "}
+                  <span className="font-bold" style={{ color: valueColor }}>
+                    {value}
+                  </span>
+                  {hasGrowth && (
+                    <span
+                      className="ml-1.5 text-[10px] font-semibold"
+                      style={{ color: growthPct > 0 ? "var(--sb-success, #10b981)" : growthPct < 0 ? "var(--sb-error, #ef4444)" : "var(--sb-muted)" }}
+                    >
+                      {growthPct > 0 ? "+" : ""}{growthPct.toFixed(1)}%
+                    </span>
+                  )}
+                </span>
+                {showAvg && (
+                  <div className="text-[10px]" style={{ color: "var(--sb-muted)" }}>
+                    avg: {fmtValue(Math.round(raw / bucketDays))}/day
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
 
         {weekendDipPct != null && (
           <div

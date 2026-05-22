@@ -200,12 +200,12 @@ jobs:
           # Notify if export or ingestion failed (but not if gate blocked — sync notification covers that).
           if [ "$EXPORT_OUTCOME" = "failure" ]; then
             SHOULD_NOTIFY="true"
-            SUBJECT="[SBase] Daily Export FAILED (export step)"
+            SUBJECT="[StreamBase] Daily Export FAILED (export step)"
           fi
 
           if [ "$INGEST_OUTCOME" = "failure" ]; then
             SHOULD_NOTIFY="true"
-            SUBJECT="[SBase] Daily Export FAILED (ingestion step)"
+            SUBJECT="[StreamBase] Daily Export FAILED (ingestion step)"
           fi
 
           # Check for stale source data (ingestion succeeded but Spotify didn't update).
@@ -218,20 +218,20 @@ jobs:
             ZEROED_COUNT=$(python3 -c "import json; d=json.load(open('.artifacts/ingestion_summary.json')); print(d.get('excluded_tracks_zeroed_count', 0))" 2>/dev/null || echo "0")
             if [ "$STALE" = "true" ]; then
               SHOULD_NOTIFY="true"
-              SUBJECT="${SUBJECT:-[SBase] Daily Export: stale source data detected}"
+              SUBJECT="${SUBJECT:-[StreamBase] Daily Export: stale source data detected}"
             fi
             if [ "$STALE_TRACKS_SEVERITY" = "critical" ]; then
               SHOULD_NOTIFY="true"
-              SUBJECT="${SUBJECT:-[SBase] Daily Export: ${STALE_TRACKS_COUNT} track(s) with stale streams (CRITICAL)}"
+              SUBJECT="${SUBJECT:-[StreamBase] Daily Export: ${STALE_TRACKS_COUNT} track(s) with stale streams (CRITICAL)}"
             fi
             if [ "$ZEROED_COUNT" != "0" ]; then
               SHOULD_NOTIFY="true"
-              SUBJECT="${SUBJECT:-[SBase] Daily Export: ${ZEROED_COUNT} excluded track(s) streams zeroed}"
+              SUBJECT="${SUBJECT:-[StreamBase] Daily Export: ${ZEROED_COUNT} excluded track(s) streams zeroed}"
             fi
           fi
 
           echo "should_notify=$SHOULD_NOTIFY" >> "$GITHUB_OUTPUT"
-          echo "subject=${SUBJECT:-[SBase] Daily Export: issue}" >> "$GITHUB_OUTPUT"
+          echo "subject=${SUBJECT:-[StreamBase] Daily Export: issue}" >> "$GITHUB_OUTPUT"
           {
             echo 'body<<ENDOFBODY'
             echo "SOT Daily Export results for ${{ steps.run_date.outputs.run_date }}:"

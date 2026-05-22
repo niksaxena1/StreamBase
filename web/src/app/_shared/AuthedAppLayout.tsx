@@ -16,6 +16,7 @@ import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { normalizeDatasetMode } from "@/lib/datasetMode";
 import { resolveCompetitorLabelKey } from "@/lib/competitorContext";
+import { normalizeAppAccess } from "@/lib/appAccess";
 
 export async function AuthedAppLayout({
   children,
@@ -36,6 +37,14 @@ export async function AuthedAppLayout({
   }
 
   const svc = supabaseService();
+  const { data: isAdmin } = await sb.rpc("is_admin");
+  const { data: accessRow } = await svc
+    .from("app_user_access")
+    .select("own_catalog,competitor,playlist_watch,playlist_watch_admin")
+    .eq("user_id", session.user.id)
+    .maybeSingle();
+  const appAccess = normalizeAppAccess(accessRow, Boolean(isAdmin));
+
   const { data: settings } = await svc
     .from("user_settings")
     .select("dataset_mode,competitor_label_key")
@@ -94,6 +103,7 @@ export async function AuthedAppLayout({
                         <AppShell
                           {...appShellProps}
                           datasetMode={datasetMode}
+                          appAccess={appAccess}
                           competitorLabels={competitorLabelsWithImages}
                           competitorLabelKey={competitorLabelKey}
                         >

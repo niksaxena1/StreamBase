@@ -188,7 +188,7 @@ export function SAIWidget() {
 
   function buildTranscript(msgs: UiMessage[]) {
     const lines: string[] = [];
-    lines.push("SBase — SAI chat transcript");
+    lines.push("StreamBase — SAI chat transcript");
     lines.push(`Exported: ${new Date().toISOString()}`);
     lines.push("");
 
@@ -488,7 +488,7 @@ export function SAIWidget() {
             <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-2">
               {messages.length === 0 ? (
                 <div className="text-sm opacity-60">
-                  Ask about how SBase works, or ask for a data-backed answer.
+                  Ask about how StreamBase works, or ask for a data-backed answer.
                 </div>
               ) : (
                 messages.map((m) => (

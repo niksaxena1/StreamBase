@@ -11,6 +11,7 @@ export type TooltipCopyValues = {
   label: string | null;
   main: string;
   ma7: string | null;
+  toastMessage?: string;
 };
 
 export function useChartCopyToClipboard(args: { valueLabel: string }) {
@@ -82,7 +83,7 @@ export function useChartCopyToClipboard(args: { valueLabel: string }) {
           openCopyDialogIfPossible();
           return;
         }
-        void handleCopyValue(v.main, "Copied to clipboard!");
+        void handleCopyValue(v.main, v.toastMessage ?? "Copied to clipboard!");
       }, 550);
     },
     onPointerMove: (e: PointerEvent) => {
@@ -109,7 +110,10 @@ export function useChartCopyToClipboard(args: { valueLabel: string }) {
       if (!v) return;
       const wantMA = (e.ctrlKey || e.metaKey) && !!v.ma7;
       const toCopy = wantMA ? v.ma7 : v.main;
-      await handleCopyValue(toCopy, wantMA ? "Copied MA to clipboard!" : "Copied to clipboard!");
+      await handleCopyValue(
+        toCopy,
+        wantMA ? "Copied MA to clipboard!" : (v.toastMessage ?? "Copied to clipboard!"),
+      );
     },
   } as const;
 

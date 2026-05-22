@@ -1,5 +1,5 @@
 name: Send Email Notification
-description: Sends an email notification via Gmail SMTP for SBase CI alerts
+description: Sends an email notification via Gmail SMTP for StreamBase CI alerts
 
 inputs:
   password:
@@ -30,4 +30,4 @@ runs:
         body: ${{ inputs.body }}
         html_body: ${{ inputs.html_body }}
         to: nikhil.auh@gmail.com
-        from: SBase CI <nikhil.auh@gmail.com>
+        from: StreamBase CI <nikhil.auh@gmail.com>

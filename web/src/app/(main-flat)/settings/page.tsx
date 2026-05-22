@@ -725,7 +725,7 @@ export default async function SettingsPage() {
         title="Settings"
         subtitle={
           <>
-            Admin settings for SBase.{" "}
+            Admin settings for StreamBase.{" "}
             <span className="opacity-50">Data as of {lastRefreshed}</span>
           </>
         }
@@ -740,7 +740,7 @@ export default async function SettingsPage() {
           className="scroll-mt-14 space-y-2 rounded-xl border p-4"
           style={{ borderColor: "var(--sb-border)" }}
         >
-          <SectionHeader title="Dataset" subtitle="Choose which world SpotiBase is looking at." />
+          <SectionHeader title="Dataset" subtitle="Choose which world StreamBase is looking at." />
           <DatasetModeSetting initialMode={datasetMode} />
         </div>
 
