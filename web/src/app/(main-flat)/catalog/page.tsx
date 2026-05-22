@@ -15,7 +15,7 @@ import { Alert } from "@/components/ui/Alert";
 import { CACHE_TTL_1H, API_LOOKUP_DROPDOWN_MAX, API_LOOKUP_THUMBNAILS_MAX, API_LOOKUP_PAGE_SIZE, API_LOOKUP_TRACK_MAX, API_LOOKUP_LIMIT_500 } from "@/lib/constants";
 import { logError, logWarn } from "@/lib/logger";
 import { normalizeDatasetMode } from "@/lib/datasetMode";
-import { resolveCompetitorLabelKey } from "@/lib/competitorContext";
+import { ALL_COMPETITORS_KEY, resolveCompetitorLabelKey } from "@/lib/competitorContext";
 
 const CATALOG_ARTIST_DROPDOWN_MAX_TRACKS = API_LOOKUP_DROPDOWN_MAX;
 const CATALOG_ARTIST_THUMBNAILS_MAX = API_LOOKUP_THUMBNAILS_MAX;
@@ -275,20 +275,16 @@ export default async function CatalogPage({
       }
       const artistId = (sp.artist_id ?? "").trim();
       const requestedIsrc = (sp.isrc ?? "").trim();
+      let competitorPlaylistsQuery = comp
+        .from("playlists")
+        .select("playlist_key,display_name,display_order,spotify_playlist_id,spotify_playlist_image_url")
+        .eq("is_active", true);
+      if (competitorLabelKey && competitorLabelKey !== ALL_COMPETITORS_KEY) {
+        competitorPlaylistsQuery = competitorPlaylistsQuery.eq("label_key", competitorLabelKey);
+      }
       const { data: competitorPlaylists } = competitorLabelKey
-        ? await comp
-            .from("playlists")
-            .select("playlist_key,display_name,display_order,spotify_playlist_id,spotify_playlist_image_url")
-            .eq("label_key", competitorLabelKey)
-        : {
-            data: [] as Array<{
-              playlist_key: string;
-              display_name: string | null;
-              display_order: number | null;
-              spotify_playlist_id: string | null;
-              spotify_playlist_image_url: string | null;
-            }>,
-          };
+        ? await competitorPlaylistsQuery
+        : { data: [] as Array<{ playlist_key: string; display_name: string | null; display_order: number | null; spotify_playlist_id: string | null; spotify_playlist_image_url: string | null }> };
       const competitorPlaylistRows = (competitorPlaylists ?? []) as Array<{
         playlist_key: string;
         display_name: string | null;

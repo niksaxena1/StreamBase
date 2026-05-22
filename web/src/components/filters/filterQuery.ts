@@ -46,6 +46,8 @@ export type TrackDataPoint = {
   _moved_entity_playlists?: { name: string; imageUrl: string | null }[];
   _has_duplicate_title?: boolean;
   _in_house_artist_ids?: string[];
+  _competitor_label_key?: string | null;
+  _competitor_label_name?: string | null;
 };
 
 export type ArtistDataPoint = {
@@ -437,6 +439,9 @@ function getRowValue(row: DataRow, field: string, entityType: string): unknown {
   // --- Collector field (derived from playlist memberships) ---
   if (field === "collector" && (entityType === "tracks" || entityType === "artists")) {
     return (row["_collectors"] as string[] | undefined) ?? [];
+  }
+  if (field === "competitor" && entityType === "tracks") {
+    return row["_competitor_label_key"] ?? null;
   }
 
   // --- Distro/Entity playlist error-detection fields ---

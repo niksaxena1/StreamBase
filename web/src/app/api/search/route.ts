@@ -6,7 +6,7 @@ import { getArtistsCached } from "@/lib/spotify";
 import { logError } from "@/lib/logger";
 import { apiJsonErr, apiJsonOk, requireSessionUser } from "@/lib/api/server";
 import { normalizeDatasetMode } from "@/lib/datasetMode";
-import { resolveCompetitorLabelKey } from "@/lib/competitorContext";
+import { ALL_COMPETITORS_KEY, resolveCompetitorLabelKey } from "@/lib/competitorContext";
 
 export const dynamic = "force-dynamic";
 
@@ -86,7 +86,7 @@ export async function GET(request: NextRequest) {
     const { data: payload, error } = await cachedQuery(
       async () => {
         const { data: rows, error: rpcErr } =
-          datasetMode === "competitor" && competitorLabelKey
+          datasetMode === "competitor" && competitorLabelKey && competitorLabelKey !== ALL_COMPETITORS_KEY
             ? await dataClient.rpc("search_all_for_label", {
                 q: queryRaw,
                 label_key: competitorLabelKey,

@@ -15,9 +15,11 @@ const TRACK_ARTIST_STATUS_OPTIONS = [
 export function HomeFilterBuilderSection({
   trackScatterPoints,
   trackScatterDataDate,
+  datasetMode = "own",
 }: {
   trackScatterPoints: TrackStreamsXYPoint[];
   trackScatterDataDate: string | null;
+  datasetMode?: "own" | "competitor";
 }) {
   const [playlistOptions, setPlaylistOptions] = useState<
     Array<{ value: string; label: string; imageUrl?: string | null; isAllCatalog?: boolean }>
@@ -32,6 +34,10 @@ export function HomeFilterBuilderSection({
   useEffect(() => {
     let cancelled = false;
     async function load() {
+      if (datasetMode === "competitor") {
+        if (!cancelled) setPlaylistOptions([]);
+        return;
+      }
       try {
         const obj = await fetchApiJson<{ playlists?: unknown[] }>("/api/playlists/options");
         const rows = Array.isArray(obj.playlists) ? obj.playlists : [];
@@ -55,11 +61,15 @@ export function HomeFilterBuilderSection({
     }
     void load();
     return () => { cancelled = true; };
-  }, []);
+  }, [datasetMode]);
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
+      if (datasetMode === "competitor") {
+        if (!cancelled) setPlaylistData([]);
+        return;
+      }
       try {
         const obj = await fetchApiJson<{ playlists?: unknown[] }>("/api/playlists/with-stats");
         const rows = Array.isArray(obj.playlists) ? obj.playlists : [];
@@ -87,11 +97,15 @@ export function HomeFilterBuilderSection({
     }
     void load();
     return () => { cancelled = true; };
-  }, []);
+  }, [datasetMode]);
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
+      if (datasetMode === "competitor") {
+        if (!cancelled) setDateData([]);
+        return;
+      }
       try {
         const url = dateScopePlaylistKey && dateScopePlaylistKey !== "all_catalog"
           ? `/api/dates/catalog-stats?playlist_key=${encodeURIComponent(dateScopePlaylistKey)}`
@@ -158,11 +172,15 @@ export function HomeFilterBuilderSection({
     }
     void load();
     return () => { cancelled = true; };
-  }, [dateScopePlaylistKey]);
+  }, [dateScopePlaylistKey, datasetMode]);
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
+      if (datasetMode === "competitor") {
+        if (!cancelled) setTrackDatesMap(new Map());
+        return;
+      }
       try {
         const obj = await fetchApiJson<{ rows?: unknown[] }>("/api/tracks/dates");
         const rows = Array.isArray(obj.rows) ? obj.rows : [];
@@ -183,11 +201,18 @@ export function HomeFilterBuilderSection({
     }
     void load();
     return () => { cancelled = true; };
-  }, []);
+  }, [datasetMode]);
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
+      if (datasetMode === "competitor") {
+        if (!cancelled) {
+          setArtistImagesById(new Map());
+          setInHouseArtistIds(new Set());
+        }
+        return;
+      }
       try {
         const obj = await fetchApiJson<{ artists?: unknown[] }>("/api/artists/options");
         const rows = Array.isArray(obj.artists) ? obj.artists : [];
@@ -210,7 +235,7 @@ export function HomeFilterBuilderSection({
     }
     void load();
     return () => { cancelled = true; };
-  }, []);
+  }, [datasetMode]);
 
   // Transform trackScatterPoints to TrackDataPoint format for FilterBuilder
   const trackData: TrackDataPoint[] = useMemo(() => {
@@ -230,9 +255,21 @@ export function HomeFilterBuilderSection({
         spotify_album_image_url: p.album_image_url,
         playlist_keys: [],
         _in_house_artist_ids: (p.artist_ids ?? []).filter((id) => inHouseArtistIds.has(id)),
+        _competitor_label_key: typeof (p as any).competitor_label_key === "string" ? (p as any).competitor_label_key : null,
+        _competitor_label_name: typeof (p as any).competitor_label_name === "string" ? (p as any).competitor_label_name : null,
       };
     });
   }, [trackScatterPoints, trackDatesMap, inHouseArtistIds]);
+
+  const competitorOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of trackScatterPoints ?? []) {
+      const key = typeof (p as any).competitor_label_key === "string" ? (p as any).competitor_label_key : "";
+      const name = typeof (p as any).competitor_label_name === "string" ? (p as any).competitor_label_name : key;
+      if (key) map.set(key, name);
+    }
+    return [...map.entries()].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label));
+  }, [trackScatterPoints]);
 
   // Extract unique artists from tracks for the artist selector
   const artistOptions = useMemo(() => {
@@ -267,8 +304,8 @@ export function HomeFilterBuilderSection({
   }, [trackScatterPoints, artistImagesById]);
 
   const trackArtistOptions = useMemo(
-    () => [...TRACK_ARTIST_STATUS_OPTIONS, ...artistOptions],
-    [artistOptions],
+    () => datasetMode === "competitor" ? artistOptions : [...TRACK_ARTIST_STATUS_OPTIONS, ...artistOptions],
+    [artistOptions, datasetMode],
   );
 
   // Build artist images map for aggregation
@@ -296,6 +333,7 @@ export function HomeFilterBuilderSection({
       artistOptions={artistOptions}
       trackArtistOptions={trackArtistOptions}
       playlistOptions={playlistOptions}
+      competitorOptions={competitorOptions}
       asOfRunDate={asOfRunDate}
     />
   );

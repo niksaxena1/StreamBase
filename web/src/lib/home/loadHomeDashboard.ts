@@ -19,7 +19,7 @@ import { cachedQuery } from "@/lib/supabase/cache";
 import { supabaseService } from "@/lib/supabase/service";
 import { normalizeDatasetMode } from "@/lib/datasetMode";
 import { aggregateCompetitorPlaylistHistory } from "@/lib/competitorAnalytics";
-import { resolveCompetitorLabelKey } from "@/lib/competitorContext";
+import { ALL_COMPETITORS_KEY, resolveCompetitorLabelKey } from "@/lib/competitorContext";
 
 type Svc = ReturnType<typeof supabaseService>;
 
@@ -414,7 +414,7 @@ export async function loadHomeDashboardData(args: {
           )
         ).data?.spotify_playlist_image_url ?? null;
 
-  if (datasetMode === "competitor" && competitorLabelKey) {
+  if (datasetMode === "competitor" && competitorLabelKey && competitorLabelKey !== ALL_COMPETITORS_KEY) {
     try {
       const { data: label } = await svc
         .schema("competitor")
@@ -427,7 +427,7 @@ export async function loadHomeDashboardData(args: {
       competitorLabelName = competitorLabelKey;
     }
   }
-  if (datasetMode === "competitor" && !competitorLabelKey) {
+  if (datasetMode === "competitor" && (!competitorLabelKey || competitorLabelKey === ALL_COMPETITORS_KEY)) {
     try {
       const { data: labels } = await svc
         .schema("competitor")
@@ -436,8 +436,10 @@ export async function loadHomeDashboardData(args: {
         .eq("is_active", true)
         .order("display_name", { ascending: true });
       const typedLabels = (labels ?? []) as Array<{ label_key: string; display_name: string }>;
-      competitorLabelKey = resolveCompetitorLabelKey(null, typedLabels);
-      competitorLabelName = typedLabels.find((label) => label.label_key === competitorLabelKey)?.display_name ?? competitorLabelKey;
+      competitorLabelKey = competitorLabelKey === ALL_COMPETITORS_KEY ? ALL_COMPETITORS_KEY : resolveCompetitorLabelKey(null, typedLabels);
+      competitorLabelName = competitorLabelKey === ALL_COMPETITORS_KEY
+        ? "All Competitors"
+        : typedLabels.find((label) => label.label_key === competitorLabelKey)?.display_name ?? competitorLabelKey;
     } catch {
       // Leave null and fall back below.
     }
@@ -447,10 +449,12 @@ export async function loadHomeDashboardData(args: {
     async () => {
       if (datasetMode === "competitor" && competitorLabelKey) {
         const comp = svc.schema("competitor");
-        const { data: playlists } = await comp
+        let playlistsQuery = comp
           .from("playlists")
           .select("playlist_key")
-          .eq("label_key", competitorLabelKey);
+          .eq("is_active", true);
+        if (competitorLabelKey !== ALL_COMPETITORS_KEY) playlistsQuery = playlistsQuery.eq("label_key", competitorLabelKey);
+        const { data: playlists } = await playlistsQuery;
         const playlistKeys = ((playlists ?? []) as Array<{ playlist_key: string }>)
           .map((p) => p.playlist_key)
           .filter(Boolean);
@@ -540,11 +544,39 @@ export async function loadHomeDashboardData(args: {
 
       const rows =
         datasetMode === "competitor" && competitorLabelKey
-          ? await fetchCompetitorTrackScatterPoints(svc, {
-              labelKey: competitorLabelKey,
-              runDate: selectedRunDate,
-              prevDate: prevRunDate,
-            })
+          ? competitorLabelKey === ALL_COMPETITORS_KEY
+            ? (
+                await Promise.all(
+                  (
+                    (
+                      await svc
+                        .schema("competitor")
+                        .from("labels")
+                        .select("label_key,display_name")
+                        .eq("is_active", true)
+                    ).data ?? []
+                  ).map(async (label: { label_key: string; display_name: string }) =>
+                    (await fetchCompetitorTrackScatterPoints(svc, {
+                      labelKey: label.label_key,
+                      runDate: selectedRunDate,
+                      prevDate: prevRunDate,
+                    })).map((row) => ({
+                      ...row,
+                      competitor_label_key: label.label_key,
+                      competitor_label_name: label.display_name,
+                    })),
+                  ),
+                )
+              ).flat()
+            : (await fetchCompetitorTrackScatterPoints(svc, {
+                labelKey: competitorLabelKey,
+                runDate: selectedRunDate,
+                prevDate: prevRunDate,
+              })).map((row) => ({
+                ...row,
+                competitor_label_key: competitorLabelKey,
+                competitor_label_name: competitorLabelName ?? competitorLabelKey,
+              }))
           : await fetchTrackScatterPoints(svc, {
               runDate: selectedRunDate,
               prevDate: prevRunDate,

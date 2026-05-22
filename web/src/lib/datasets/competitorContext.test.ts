@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveCompetitorLabelKey } from "@/lib/competitorContext";
+import { ALL_COMPETITORS_KEY, resolveCompetitorLabelKey } from "@/lib/competitorContext";
 
 const labels = [
   { label_key: "paraiso", display_name: "Paraíso" },
@@ -12,7 +12,11 @@ describe("resolveCompetitorLabelKey", () => {
     expect(resolveCompetitorLabelKey("soave", labels)).toBe("soave");
   });
 
-  it("falls back to the first active competitor", () => {
-    expect(resolveCompetitorLabelKey("missing", labels)).toBe("paraiso");
+  it("falls back to all competitors", () => {
+    expect(resolveCompetitorLabelKey("missing", labels)).toBe(ALL_COMPETITORS_KEY);
+  });
+
+  it("keeps the all competitors sentinel", () => {
+    expect(resolveCompetitorLabelKey(ALL_COMPETITORS_KEY, labels)).toBe(ALL_COMPETITORS_KEY);
   });
 });

@@ -100,6 +100,7 @@ type FilterBuilderProps = {
   artistOptions: Array<{ value: string; label: string; imageUrl?: string | null }>;
   trackArtistOptions?: Array<{ value: string; label: string; imageUrl?: string | null }>;
   playlistOptions: Array<{ value: string; label: string; imageUrl?: string | null; isAllCatalog?: boolean }>;
+  competitorOptions?: Array<{ value: string; label: string; imageUrl?: string | null }>;
   asOfRunDate?: string | null;
 };
 
@@ -113,6 +114,7 @@ export function FilterBuilder({
   artistOptions,
   trackArtistOptions,
   playlistOptions,
+  competitorOptions = [],
   asOfRunDate = null,
 }: FilterBuilderProps) {
   const { streamPayoutPerStreamUsd } = usePayoutRate();
@@ -254,7 +256,8 @@ export function FilterBuilder({
     "playlists.contains_artist": trackArtistOptions ?? artistOptions,
     playlists: playlistOptions,
     tracks: trackOptions,
-  }), [artistOptions, playlistOptions, trackArtistOptions, trackOptions]);
+    competitors: competitorOptions,
+  }), [artistOptions, playlistOptions, trackArtistOptions, trackOptions, competitorOptions]);
   
   // Whether the current filter uses movement fields
   const showMovementDateRange = currentFilter?.entityType === "tracks" &&

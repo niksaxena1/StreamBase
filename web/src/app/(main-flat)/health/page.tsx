@@ -3,10 +3,11 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 
-import { formatDateISO } from "@/lib/format";
+import { formatDateISO, formatInt } from "@/lib/format";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { addDaysISO, dataDateFromRunDate, SOT_DATA_LAG_DAYS } from "@/lib/sotDates";
+import { normalizeDatasetMode } from "@/lib/datasetMode";
 import type { PlaylistMeta } from "@/lib/health/types";
 
 import { GlassTable, TableRow, TableCell, EmptyState } from "@/components/ui/GlassTable";
@@ -29,6 +30,256 @@ type HealthPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
+type CompetitorPlaylistRow = {
+  playlist_key: string;
+  label_key: string;
+  display_name: string;
+  spotify_playlist_image_url: string | null;
+  is_active: boolean;
+};
+
+type CompetitorStatRow = {
+  date: string;
+  playlist_key: string;
+  track_count: number | null;
+  total_streams_cumulative: number | null;
+  daily_streams_net: number | null;
+  missing_streams_track_count: number | null;
+};
+
+type CompetitorExportRow = {
+  playlist_key: string;
+  rows_count: number | null;
+  exported_at: string | null;
+};
+
+function WarningSkeleton() {
+  return (
+    <div className="space-y-2">
+      <div className="h-5 w-48 rounded bg-white/10 animate-pulse" />
+      <div className="sb-card p-4 space-y-3">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="h-10 rounded bg-white/5 animate-pulse" />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MissingSkeleton() {
+  return (
+    <div className="space-y-2">
+      <div className="h-5 w-64 rounded bg-white/10 animate-pulse" />
+      <div className="sb-card p-4 space-y-3">
+        {[1, 2].map((i) => (
+          <div key={i} className="h-10 rounded bg-white/5 animate-pulse" />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+async function CompetitorHealthPage({
+  svc,
+}: {
+  svc: ReturnType<typeof supabaseService>;
+}) {
+  const comp = svc.schema("competitor");
+  const [
+    { data: runsRaw, error: runsErr },
+    { data: playlistsRaw },
+    { data: statsRaw },
+    { data: exportsRaw },
+    { data: warningsRaw },
+    { count: unenrichedCount },
+  ] = await Promise.all([
+    comp
+      .from("ingestion_runs")
+      .select("id,run_date,status,started_at,finished_at")
+      .order("run_date", { ascending: false })
+      .limit(14),
+    comp
+      .from("playlists")
+      .select("playlist_key,label_key,display_name,spotify_playlist_image_url,is_active")
+      .order("label_key", { ascending: true })
+      .order("display_order", { ascending: true, nullsFirst: false }),
+    comp
+      .from("playlist_daily_stats")
+      .select("date,playlist_key,track_count,total_streams_cumulative,daily_streams_net,missing_streams_track_count")
+      .order("date", { ascending: false })
+      .limit(300),
+    comp
+      .from("raw_exports")
+      .select("playlist_key,rows_count,exported_at")
+      .order("exported_at", { ascending: false })
+      .limit(300),
+    comp
+      .from("ingestion_warnings")
+      .select("playlist_key,severity,code,message,created_at")
+      .order("created_at", { ascending: false })
+      .limit(100),
+    comp
+      .from("tracks")
+      .select("isrc", { count: "exact", head: true })
+      .or("spotify_artist_ids.is.null,spotify_album_image_url.is.null"),
+  ]);
+
+  const runs = (runsRaw ?? []) as Array<Record<string, unknown>>;
+  const playlists = (playlistsRaw ?? []) as CompetitorPlaylistRow[];
+  const stats = (statsRaw ?? []) as CompetitorStatRow[];
+  const exportsRows = (exportsRaw ?? []) as CompetitorExportRow[];
+  const latestRunDate = (runs[0]?.run_date as string | undefined) ?? null;
+
+  const latestStatByPlaylist = new Map<string, CompetitorStatRow>();
+  for (const stat of stats) {
+    if (!latestStatByPlaylist.has(stat.playlist_key)) latestStatByPlaylist.set(stat.playlist_key, stat);
+  }
+  const previousStatByPlaylist = new Map<string, CompetitorStatRow>();
+  for (const stat of stats) {
+    if (latestStatByPlaylist.get(stat.playlist_key)?.date === stat.date) continue;
+    if (!previousStatByPlaylist.has(stat.playlist_key)) previousStatByPlaylist.set(stat.playlist_key, stat);
+  }
+  const latestExportByPlaylist = new Map<string, CompetitorExportRow>();
+  for (const row of exportsRows) {
+    if (!latestExportByPlaylist.has(row.playlist_key)) latestExportByPlaylist.set(row.playlist_key, row);
+  }
+
+  const failedRuns = runs.filter((run) => run.status !== "success").length;
+  const missingTotals = [...latestStatByPlaylist.values()].reduce(
+    (sum, stat) => sum + Number(stat.missing_streams_track_count ?? 0),
+    0,
+  );
+  const activePlaylists = playlists.filter((playlist) => playlist.is_active !== false);
+  const stalePlaylists = activePlaylists.filter((playlist) => latestStatByPlaylist.get(playlist.playlist_key)?.date !== latestRunDate);
+  const rowMismatches = activePlaylists.filter((playlist) => {
+    const stat = latestStatByPlaylist.get(playlist.playlist_key);
+    const exp = latestExportByPlaylist.get(playlist.playlist_key);
+    return stat?.track_count != null && exp?.rows_count != null && Number(stat.track_count) !== Number(exp.rows_count);
+  });
+  const warningCount = (warningsRaw ?? []).length;
+
+  return (
+    <div className="space-y-4">
+      <PageHeader
+        title="Competitor Health"
+        subtitle={
+          latestRunDate
+            ? `Competitor pipeline checks. Last ingested: ${formatDateISO(dataDateFromRunDate(latestRunDate))}`
+            : "Competitor pipeline checks."
+        }
+        actions={<RefreshButton />}
+      />
+
+      {runsErr ? (
+        <Alert variant="error" title="Query error">
+          {runsErr.message}
+        </Alert>
+      ) : null}
+
+      <div className="grid gap-3 md:grid-cols-5">
+        {[
+          ["Failed runs", failedRuns],
+          ["Stale playlists", stalePlaylists.length],
+          ["Row mismatches", rowMismatches.length],
+          ["Missing totals", missingTotals],
+          ["Unenriched tracks", unenrichedCount ?? 0],
+        ].map(([label, value]) => (
+          <div key={label} className="sb-card p-4">
+            <div className="text-[11px] uppercase tracking-wider opacity-60">{label}</div>
+            <div className="mt-1 font-display text-2xl font-semibold">{formatInt(Number(value ?? 0))}</div>
+          </div>
+        ))}
+      </div>
+
+      <CollapsibleSection title="Playlist Checks" storageKey="sb:health:competitor:playlist_checks">
+        <GlassTable headers={["Playlist", "Latest", "Tracks", "Rows", "Daily", "Missing totals", "Status"]}>
+          {activePlaylists.map((playlist) => {
+            const stat = latestStatByPlaylist.get(playlist.playlist_key);
+            const prev = previousStatByPlaylist.get(playlist.playlist_key);
+            const exportRow = latestExportByPlaylist.get(playlist.playlist_key);
+            const stale = stat?.date !== latestRunDate;
+            const rowMismatch =
+              stat?.track_count != null && exportRow?.rows_count != null && Number(stat.track_count) !== Number(exportRow.rows_count);
+            const swing =
+              stat?.track_count != null && prev?.track_count != null
+                ? Number(stat.track_count) - Number(prev.track_count)
+                : 0;
+            const bad = stale || rowMismatch || Number(stat?.missing_streams_track_count ?? 0) > 0;
+            return (
+              <TableRow key={playlist.playlist_key}>
+                <TableCell>
+                  <div className="flex min-w-0 items-center gap-2">
+                    {playlist.spotify_playlist_image_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={playlist.spotify_playlist_image_url} alt="" className="h-8 w-8 flex-shrink-0 rounded object-cover sb-ring" />
+                    ) : (
+                      <div className="h-8 w-8 flex-shrink-0 rounded bg-white/10 sb-ring" />
+                    )}
+                    <div className="min-w-0">
+                      <Link href={`/playlists?playlist_key=${encodeURIComponent(playlist.playlist_key)}`} className="block truncate font-medium hover:underline">
+                        {playlist.display_name}
+                      </Link>
+                      <div className="truncate text-[10px] opacity-60">{playlist.label_key}</div>
+                    </div>
+                  </div>
+                </TableCell>
+                <TableCell mono>{stat?.date ? formatDateISO(dataDateFromRunDate(stat.date)) : "—"}</TableCell>
+                <TableCell numeric>
+                  {stat?.track_count == null ? "—" : formatInt(stat.track_count)}
+                  {swing ? <span className={swing > 0 ? "ml-1 text-lime-500" : "ml-1 text-red-500"}>({swing > 0 ? "+" : ""}{formatInt(swing)})</span> : null}
+                </TableCell>
+                <TableCell numeric className={rowMismatch ? "text-amber-500" : ""}>
+                  {exportRow?.rows_count == null ? "—" : formatInt(exportRow.rows_count)}
+                </TableCell>
+                <TableCell numeric>{stat?.daily_streams_net == null ? "—" : formatInt(stat.daily_streams_net)}</TableCell>
+                <TableCell numeric>{stat?.missing_streams_track_count == null ? "—" : formatInt(stat.missing_streams_track_count)}</TableCell>
+                <TableCell>
+                  <span className={[
+                    "inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium",
+                    bad ? "bg-amber-500/20 text-amber-700 dark:text-amber-300" : "bg-lime-500/20 text-lime-700 dark:text-lime-300",
+                  ].join(" ")}>
+                    {bad ? "check" : "ok"}
+                  </span>
+                </TableCell>
+              </TableRow>
+            );
+          })}
+          {!activePlaylists.length ? <EmptyState colSpan={7} message="No competitor playlists configured." /> : null}
+        </GlassTable>
+      </CollapsibleSection>
+
+      <CollapsibleSection title="Competitor Ingestion Runs" storageKey="sb:health:competitor:ingestion_runs">
+        <GlassTable headers={["Run Date", "Status", "Started", "Finished"]}>
+          {runs.map((run) => (
+            <TableRow key={run.run_date as string}>
+              <TableCell mono>{formatDateISO(dataDateFromRunDate(run.run_date as string))}</TableCell>
+              <TableCell>{String(run.status ?? "—")}</TableCell>
+              <TableCell mono>{run.started_at ? new Date(run.started_at as string).toLocaleString() : "—"}</TableCell>
+              <TableCell mono>{run.finished_at ? new Date(run.finished_at as string).toLocaleString() : "—"}</TableCell>
+            </TableRow>
+          ))}
+          {!runs.length ? <EmptyState colSpan={4} message="No competitor ingestion runs yet." /> : null}
+        </GlassTable>
+      </CollapsibleSection>
+
+      <CollapsibleSection title={`Recent Competitor Warnings (${warningCount})`} storageKey="sb:health:competitor:warnings">
+        <GlassTable headers={["Created", "Playlist", "Severity", "Code", "Message"]}>
+          {((warningsRaw ?? []) as Array<Record<string, unknown>>).map((warning, idx) => (
+            <TableRow key={`${warning.created_at}-${idx}`}>
+              <TableCell mono>{warning.created_at ? new Date(warning.created_at as string).toLocaleString() : "—"}</TableCell>
+              <TableCell>{String(warning.playlist_key ?? "—")}</TableCell>
+              <TableCell>{String(warning.severity ?? "—")}</TableCell>
+              <TableCell mono>{String(warning.code ?? "—")}</TableCell>
+              <TableCell>{String(warning.message ?? "—")}</TableCell>
+            </TableRow>
+          ))}
+          {!warningCount ? <EmptyState colSpan={5} message="No competitor warnings." /> : null}
+        </GlassTable>
+      </CollapsibleSection>
+    </div>
+  );
+}
+
 export default async function HealthPage({ searchParams }: HealthPageProps) {
   const sp = (await searchParams) ?? {};
   const getFirst = (v: string | string[] | undefined) =>
@@ -50,6 +301,16 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
 
   // ---- Lightweight queries (fast) ----
   const svc = supabaseService();
+
+  const { data: settings } = await svc
+    .from("user_settings")
+    .select("dataset_mode")
+    .eq("user_id", userData.user.id)
+    .maybeSingle();
+
+  if (normalizeDatasetMode(settings?.dataset_mode) === "competitor") {
+    return <CompetitorHealthPage svc={svc} />;
+  }
 
   const [{ data: runs, error: runsErr }, { data: plRows }, { data: healthConfigRows }] = await Promise.all([
     svc
@@ -104,29 +365,6 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
         .eq("run_id", selectedRunId)
         .order("playlist_key", { ascending: true })
     : { data: [], error: null };
-
-  // ---- Skeleton components for Suspense fallbacks ----
-  const WarningSkeleton = () => (
-    <div className="space-y-2">
-      <div className="h-5 w-48 rounded bg-white/10 animate-pulse" />
-      <div className="sb-card p-4 space-y-3">
-        {[1, 2, 3].map((i) => (
-          <div key={i} className="h-10 rounded bg-white/5 animate-pulse" />
-        ))}
-      </div>
-    </div>
-  );
-
-  const MissingSkeleton = () => (
-    <div className="space-y-2">
-      <div className="h-5 w-64 rounded bg-white/10 animate-pulse" />
-      <div className="sb-card p-4 space-y-3">
-        {[1, 2].map((i) => (
-          <div key={i} className="h-10 rounded bg-white/5 animate-pulse" />
-        ))}
-      </div>
-    </div>
-  );
 
   return (
     <div className="space-y-4">

@@ -22,7 +22,7 @@ import { PlaylistHeaderSelects } from "./PlaylistGranularitySelect";
 import { PlaylistMembershipStats } from "@/components/dashboard/PlaylistMembershipStats";
 import { DocumentTitle } from "@/components/shell/DocumentTitle";
 import { normalizeDatasetMode } from "@/lib/datasetMode";
-import { resolveCompetitorLabelKey } from "@/lib/competitorContext";
+import { ALL_COMPETITORS_KEY, resolveCompetitorLabelKey } from "@/lib/competitorContext";
 import { CompetitorCurrentTracksTable, type CompetitorCurrentTrackRow } from "./CompetitorCurrentTracksTable";
 
 // Uses Supabase session cookies; this route must be dynamic in Next 16.
@@ -139,13 +139,16 @@ export default async function PlaylistsPage({
       .eq("is_active", true)
       .order("display_name", { ascending: true });
     const competitorLabelKey = resolveCompetitorLabelKey(datasetSettings?.competitor_label_key, activeLabels ?? []);
-    const { data: competitorPlaylists } = await comp
+    let competitorPlaylistsQuery = comp
       .from("playlists")
       .select("playlist_key,display_name,spotify_playlist_id,spotify_playlist_image_url")
       .eq("is_active", true)
-      .eq("label_key", competitorLabelKey)
       .order("display_order", { ascending: true, nullsFirst: false })
       .order("display_name", { ascending: true });
+    if (competitorLabelKey !== ALL_COMPETITORS_KEY) {
+      competitorPlaylistsQuery = competitorPlaylistsQuery.eq("label_key", competitorLabelKey);
+    }
+    const { data: competitorPlaylists } = await competitorPlaylistsQuery;
     const competitorOptions = (competitorPlaylists ?? []) as PlaylistRow[];
     const effectivePlaylistKey = playlistKey || competitorOptions[0]?.playlist_key || "";
     if (!playlistKey && effectivePlaylistKey) {

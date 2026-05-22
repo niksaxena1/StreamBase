@@ -162,6 +162,16 @@ const TRACK_FIELDS: FilterFieldDefinition[] = [
     helpText: "Matches tracks where any credited artist matches",
   },
   {
+    key: "competitor",
+    label: "Competitor",
+    type: "select",
+    operators: ["eq", "neq", "in", "not_in"],
+    description: "Filter competitor-mode tracks by label",
+    optionsSource: "competitors",
+    placeholder: "Select competitor...",
+    helpText: "Useful when the global competitor scope is set to All",
+  },
+  {
     key: "playlist",
     label: "In Playlist",
     type: "multi-select",

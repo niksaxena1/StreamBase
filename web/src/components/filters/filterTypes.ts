@@ -87,7 +87,7 @@ export type FilterFieldDefinition = {
   // For select/multi-select fields
   options?: Array<{ value: string; label: string }>;
   // For async options (e.g., artists loaded from data)
-  optionsSource?: "artists" | "playlists" | "tracks" | "network_nodes";
+  optionsSource?: "artists" | "playlists" | "tracks" | "competitors" | "network_nodes";
   // For number fields
   min?: number;
   max?: number;

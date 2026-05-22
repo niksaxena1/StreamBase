@@ -513,10 +513,11 @@ function HomeDashboardInner(props: {
 
       <HomeHistorySection history={props.history.slice(0, props.rangeDays)} />
 
-      {props.datasetMode === "own" && homeFiltersConfigured && homeFiltersEnabled ? (
+      {(props.datasetMode === "competitor" || (homeFiltersConfigured && homeFiltersEnabled)) ? (
         <HomeFilterBuilderSection
           trackScatterPoints={props.trackScatterPoints}
           trackScatterDataDate={props.trackScatterDataDate}
+          datasetMode={props.datasetMode}
         />
       ) : null}
     </div>
