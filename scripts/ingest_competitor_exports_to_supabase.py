@@ -168,11 +168,19 @@ class Postgrest:
             raise RuntimeError(f"Select {table} failed: {r.status_code} {r.text[:500]}")
         return r.json()
 
-    def select_all(self, table: str, select: str, filters: str, page_size: int = 1000) -> List[dict]:
+    def select_all(
+        self,
+        table: str,
+        select: str,
+        filters: str,
+        page_size: int = 1000,
+        order: str = "id.asc",
+    ) -> List[dict]:
         out: List[dict] = []
         offset = 0
         while True:
-            url = f"{self.base}/{table}?select={select}&{filters}&limit={page_size}&offset={offset}"
+            order_part = f"&order={order}" if order else ""
+            url = f"{self.base}/{table}?select={select}&{filters}{order_part}&limit={page_size}&offset={offset}"
             r = requests.get(url, headers=self.h, timeout=180)
             if r.status_code != 200:
                 raise RuntimeError(f"Select {table} failed: {r.status_code} {r.text[:500]}")
@@ -182,6 +190,34 @@ class Postgrest:
                 break
             offset += page_size
         return out
+
+    def insert_memberships_idempotent(self, rows: List[dict]):
+        """Insert active playlist membership rows, tolerating already-active rows.
+
+        Competitor exports can be rerun after a previous attempt failed halfway.
+        The table intentionally has a partial unique index that permits only one
+        active (valid_to is null) row per playlist/isrc. A duplicate should mean
+        "already active", not "the whole daily export is broken".
+        """
+        if not rows:
+            return
+        try:
+            self.insert("playlist_memberships", rows)
+            return
+        except RuntimeError as exc:
+            if "23505" not in str(exc) and "duplicate key value" not in str(exc):
+                raise
+
+        # Fallback path for reruns/partial prior failures: retry row-by-row and
+        # swallow only active-membership duplicate conflicts.
+        for row in rows:
+            try:
+                self.insert("playlist_memberships", [row])
+            except RuntimeError as exc:
+                msg = str(exc)
+                if "competitor_playlist_memberships_active_uq" in msg or "duplicate key value" in msg:
+                    continue
+                raise
 
 
 def parse_stream_value(raw: object) -> Optional[int]:
@@ -317,8 +353,7 @@ def main():
         today_isrcs = all_isrcs
         new_isrcs = today_isrcs - active_isrcs
         removed_isrcs = active_isrcs - today_isrcs
-        pg.insert(
-            "playlist_memberships",
+        pg.insert_memberships_idempotent(
             [
                 {
                     "playlist_key": playlist.playlist_key,
