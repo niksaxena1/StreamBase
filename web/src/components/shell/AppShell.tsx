@@ -12,7 +12,6 @@ import { GlobalMetricToggle } from "@/components/shell/GlobalMetricToggle";
 import { RollbackButtonWrapper } from "@/components/shell/RollbackButtonWrapper";
 import { LazyAIWidget } from "@/components/sai/LazyAIWidget";
 import { CompetitorModeButton } from "@/components/shell/CompetitorModeButton";
-import { CompetitorFavicon } from "@/components/shell/CompetitorFavicon";
 import { CompetitorTitleEffect } from "@/components/shell/CompetitorTitleEffect";
 import { AppFooter } from "@/components/shell/AppFooter";
 import { isPlaylistWatchOnlyAccess, type AppAccess } from "@/lib/appAccess";
@@ -52,7 +51,6 @@ export function AppShell(props: {
   return (
     <>
       {accentVars ? <style>{`:root,html,html[data-theme="dark"]{${accentVars}}`}</style> : null}
-      <CompetitorFavicon accentHex={props.competitorAccentHex ?? null} />
       <CompetitorTitleEffect
         datasetMode={datasetMode}
         competitorDisplayName={props.competitorDisplayName ?? null}

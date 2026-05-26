@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
@@ -348,13 +349,12 @@ export function CompetitorModeButton({
             All
           </span>
         ) : activeLabel?.image_url ? (
-          <PreviewableArtwork
+          <Image
             src={activeLabel.image_url}
-            alt={activeLabel.display_name}
+            alt=""
             width={28}
             height={28}
-            interactive="inline"
-            className="h-7 w-7 rounded-full object-cover"
+            className="pointer-events-none h-7 w-7 rounded-full object-cover"
           />
         ) : (
           <span className="block h-6 w-6 rounded-full bg-fuchsia-500/15" />

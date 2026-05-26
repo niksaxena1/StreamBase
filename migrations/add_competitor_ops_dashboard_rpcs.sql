@@ -82,3 +82,31 @@ COMMENT ON FUNCTION competitor.playlist_daily_stats_last_two() IS
 
 COMMENT ON FUNCTION competitor.label_distinct_artist_counts(DATE) IS
   'Distinct Spotify artist IDs on active competitor tracks, grouped by label, at run_date.';
+
+CREATE OR REPLACE FUNCTION competitor.playlist_daily_stats_as_of(p_as_of_date DATE)
+RETURNS TABLE (
+  playlist_key TEXT,
+  date DATE,
+  track_count INTEGER,
+  total_streams_cumulative BIGINT,
+  missing_streams_track_count INTEGER,
+  daily_streams_net BIGINT
+)
+LANGUAGE sql
+STABLE
+SET search_path = ''
+AS $$
+  SELECT DISTINCT ON (s.playlist_key)
+    s.playlist_key,
+    s.date,
+    s.track_count,
+    s.total_streams_cumulative,
+    s.missing_streams_track_count,
+    s.daily_streams_net
+  FROM competitor.playlist_daily_stats s
+  WHERE s.date <= p_as_of_date
+  ORDER BY s.playlist_key, s.date DESC;
+$$;
+
+COMMENT ON FUNCTION competitor.playlist_daily_stats_as_of(DATE) IS
+  'Latest playlist_daily_stats row per playlist on or before as-of run_date (weekly ops deltas).';

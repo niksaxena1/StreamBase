@@ -35,7 +35,7 @@ The three SpotOnTrack workflows use `config/competitor_playlists.csv`.
 - `/` ? selected competitor overview
 - `/playlists` ? competitor playlists, totals, current tracks, and daily deltas when history exists
 - `/catalog` ? competitor artists/tracks
-- `/competitors` ? operations cockpit for playlist counts, export rows, missing totals, warnings, and enrichment gaps
+- `/competitors` ? operations cockpit for playlist counts, distinct artists, export rows, missing totals, warnings, and day-over-day label deltas
 
 ## Adding another competitor
 
@@ -51,7 +51,7 @@ Use it to spot:
 - labels or playlists missing thumbnails
 - raw-export row counts that diverge from ingested track counts
 - playlists with missing stream totals
-- current active tracks that still lack Spotify enrichment
+- day-over-day changes in tracks, artists, and cumulative streams on label summary cards
 - playlists accumulating warnings
 
 ## Intentional omissions
