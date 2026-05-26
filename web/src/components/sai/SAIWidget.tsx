@@ -46,8 +46,14 @@ function buildEnvelope(pathname: string, sp: URLSearchParams): Envelope {
       collector: search.collector ?? null,
     },
     ui: {
-      last_playlist_key: safeGet("sb:last_playlist_key"),
-      last_artist_id: safeGet("sb:last_artist_id"),
+      last_playlist_key:
+        safeGet("sb:last_playlist_key:own") ??
+        safeGet("sb:last_playlist_key:competitor") ??
+        safeGet("sb:last_playlist_key"),
+      last_artist_id:
+        safeGet("sb:last_artist_id:own") ??
+        safeGet("sb:last_artist_id:competitor") ??
+        safeGet("sb:last_artist_id"),
       last_collector: safeGet("sb:last_collector"),
     },
   };

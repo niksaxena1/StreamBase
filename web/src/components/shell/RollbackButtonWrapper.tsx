@@ -1,3 +1,5 @@
+import { normalizeDatasetMode } from "@/lib/datasetMode";
+import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { dataDateFromRunDate } from "@/lib/sotDates";
 import { RollbackButton } from "@/components/shell/RollbackButton";
@@ -7,9 +9,23 @@ import { RollbackButton } from "@/components/shell/RollbackButton";
  */
 export async function RollbackButtonWrapper() {
   const svc = supabaseService();
-  
-  // Fetch the latest run date to compute the latest data date
-  const { data: latestRow } = await svc
+  const sb = await supabaseServer();
+  const {
+    data: { user },
+  } = await sb.auth.getUser();
+
+  let datasetMode: "own" | "competitor" = "own";
+  if (user) {
+    const { data: settings } = await svc
+      .from("user_settings")
+      .select("dataset_mode")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    datasetMode = normalizeDatasetMode(settings?.dataset_mode);
+  }
+
+  const statsClient = datasetMode === "competitor" ? svc.schema("competitor") : svc;
+  const { data: latestRow } = await statsClient
     .from("playlist_daily_stats")
     .select("date")
     .order("date", { ascending: false })
@@ -19,5 +35,5 @@ export async function RollbackButtonWrapper() {
   const latestRunDate = (latestRow as { date: string } | null)?.date ?? null;
   const latestDataDate = latestRunDate ? dataDateFromRunDate(latestRunDate) : null;
 
-  return <RollbackButton latestDataDate={latestDataDate} />;
+  return <RollbackButton latestDataDate={latestDataDate} datasetMode={datasetMode} />;
 }

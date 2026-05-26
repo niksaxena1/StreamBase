@@ -4,6 +4,7 @@ import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
+import { useCurrencyDisplay } from "@/components/currency/CurrencyDisplayContext";
 import { useMetric } from "@/components/metrics/MetricContext";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
@@ -61,6 +62,7 @@ function SortHeader(props: {
 export function CompetitorCurrentTracksTable({ rows }: { rows: CompetitorCurrentTrackRow[] }) {
   const { metric } = useMetric();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
+  useCurrencyDisplay();
   const [sort, setSort] = useState<SortState>({ key: "total", asc: false });
 
   const displayMode = metric === "revenue" ? "revenue" : "streams";

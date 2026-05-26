@@ -8,6 +8,7 @@ import { Check, Swords } from "lucide-react";
 
 import { LogoMark } from "@/components/LogoMark";
 import { ALL_COMPETITORS_KEY, isAllCompetitorsKey } from "@/lib/competitorContext";
+import { pathAfterDatasetModeSwitch } from "@/lib/datasetModeNavigation";
 import { competitorAccentCssVars } from "@/lib/competitorAccent";
 
 type Label = {
@@ -148,7 +149,15 @@ export function CompetitorModeButton({
         });
         if (!labelRes.ok) return;
       }
-      window.location.reload();
+      const cleanUrl = pathAfterDatasetModeSwitch(
+        window.location.pathname,
+        window.location.search,
+      );
+      if (cleanUrl) {
+        window.location.assign(cleanUrl);
+      } else {
+        window.location.reload();
+      }
     } finally {
       setSaving(false);
       setOpen(false);

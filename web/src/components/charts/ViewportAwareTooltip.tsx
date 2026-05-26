@@ -54,26 +54,34 @@ export function ViewportAwareTooltip({
 
     const measure = () => {
       const rect = el.getBoundingClientRect();
+      const width = rect.width;
       const { left: boundLeft, right: boundRight } = getHorizontalClipBounds(el, viewportPaddingPx);
 
-      if (!flipLeft && rect.right > boundRight) {
-        setFlipLeft(true);
+      if (!flipLeft) {
+        // Default: tooltip extends to the right from the anchor (left edge).
+        if (rect.right > boundRight) {
+          setFlipLeft(true);
+          setClampDx(0);
+          return;
+        }
+        if (rect.left < boundLeft) {
+          setClampDx(boundLeft - rect.left);
+          return;
+        }
         setClampDx(0);
         return;
       }
 
-      if (flipLeft && rect.left < boundLeft) {
-        setClampDx(boundLeft - rect.left);
-        return;
-      }
-
-      if (flipLeft && rect.right <= boundRight) {
+      // Flipped: visual box is left of the anchor. rect.right ≈ anchor x.
+      // Decide unflip from where the box *would* sit if not flipped (avoids flip/unflip jitter).
+      const unflippedRight = rect.right + width;
+      if (unflippedRight <= boundRight) {
         setFlipLeft(false);
         setClampDx(0);
         return;
       }
 
-      if (!flipLeft && rect.left < boundLeft) {
+      if (rect.left < boundLeft) {
         setClampDx(boundLeft - rect.left);
         return;
       }
@@ -100,7 +108,7 @@ export function ViewportAwareTooltip({
       window.removeEventListener("resize", schedule);
       window.removeEventListener("scroll", schedule, true);
     };
-  }, [flipLeft, viewportPaddingPx]);
+  }, [flipLeft, viewportPaddingPx, gapPx]);
 
   return (
     <div

@@ -15,6 +15,7 @@ import { Alert } from "@/components/ui/Alert";
 import { CACHE_TTL_1H, API_LOOKUP_DROPDOWN_MAX, API_LOOKUP_THUMBNAILS_MAX, API_LOOKUP_PAGE_SIZE, API_LOOKUP_TRACK_MAX, API_LOOKUP_LIMIT_500 } from "@/lib/constants";
 import { logError, logWarn } from "@/lib/logger";
 import { normalizeDatasetMode } from "@/lib/datasetMode";
+import { lastArtistIdStorageKey } from "@/lib/datasetSelectionStorage";
 import { ALL_COMPETITORS_KEY, resolveCompetitorLabelKey } from "@/lib/competitorContext";
 import { isMissingPostgresFunctionError } from "@/lib/supabase/rpcErrors";
 
@@ -275,6 +276,8 @@ export default async function CatalogPage({
     const datasetMode = normalizeDatasetMode(datasetSettings?.dataset_mode);
 
     if (datasetMode === "competitor") {
+      const rollbackDate = await getRollbackDate();
+      const rollbackRunDate = rollbackDate ? rollbackDataDateToRunDate(rollbackDate) : null;
       const comp = svc.schema("competitor");
       let competitorLabelKey =
         typeof datasetSettings?.competitor_label_key === "string" && datasetSettings.competitor_label_key.trim()
@@ -293,6 +296,24 @@ export default async function CatalogPage({
       }
       const artistId = (sp.artist_id ?? "").trim();
       const requestedIsrc = (sp.isrc ?? "").trim();
+
+      if (!artistId && requestedIsrc) {
+        const { data: trackRow } = await comp
+          .from("tracks")
+          .select("spotify_artist_ids")
+          .eq("isrc", requestedIsrc)
+          .maybeSingle();
+        const ids = (trackRow as { spotify_artist_ids?: string[] | null } | null)?.spotify_artist_ids;
+        const primaryArtistId = Array.isArray(ids) ? String(ids[0] ?? "").trim() : "";
+        if (primaryArtistId) {
+          const params = new URLSearchParams();
+          params.set("artist_id", primaryArtistId);
+          params.set("isrc", requestedIsrc);
+          if (sp.range) params.set("range", String(clampRangeDays(sp.range)));
+          redirect(`/catalog?${params.toString()}`);
+        }
+      }
+
       let competitorPlaylistsQuery = comp
         .from("playlists")
         .select("playlist_key,display_name,display_order,spotify_playlist_id,spotify_playlist_image_url")
@@ -316,19 +337,16 @@ export default async function CatalogPage({
       const competitorPlaylistMetaByKey = new Map(competitorPlaylistRows.map((p) => [p.playlist_key, p]));
       const [{ data: latestRun }, { data: recentPlaylistDates }] = competitorPlaylistKeys.length
         ? await Promise.all([
-            comp
-              .from("playlist_daily_stats")
-              .select("date")
-              .in("playlist_key", competitorPlaylistKeys)
-              .order("date", { ascending: false })
-              .limit(1)
-              .maybeSingle(),
-            comp
-              .from("playlist_daily_stats")
-              .select("date")
-              .in("playlist_key", competitorPlaylistKeys)
-              .order("date", { ascending: false })
-              .limit(Math.max(competitorPlaylistKeys.length * 2, 2)),
+            (() => {
+              let q = comp.from("playlist_daily_stats").select("date").in("playlist_key", competitorPlaylistKeys);
+              if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
+              return q.order("date", { ascending: false }).limit(1).maybeSingle();
+            })(),
+            (() => {
+              let q = comp.from("playlist_daily_stats").select("date").in("playlist_key", competitorPlaylistKeys);
+              if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
+              return q.order("date", { ascending: false }).limit(Math.max(competitorPlaylistKeys.length * 2, 2));
+            })(),
           ])
         : [{ data: null }, { data: [] as PlaylistDailyStatsRow[] }];
       const latestRunDate = (latestRun as PlaylistDailyStatsRow | null)?.date ?? null;
@@ -361,10 +379,39 @@ export default async function CatalogPage({
       const artists = deriveArtists(competitorTracks);
       const effectiveArtistId = artistId || artists[0]?.id || "";
       if (!artistId && effectiveArtistId) {
-        redirect(`/catalog?artist_id=${effectiveArtistId}`);
+        const params = new URLSearchParams();
+        params.set("artist_id", effectiveArtistId);
+        const tracksForArtist = competitorTracks.filter((t) =>
+          (t.spotify_artist_ids ?? []).includes(effectiveArtistId),
+        );
+        if (requestedIsrc && tracksForArtist.some((t) => t.isrc === requestedIsrc)) {
+          params.set("isrc", requestedIsrc);
+        }
+        if (sp.range) params.set("range", String(clampRangeDays(sp.range)));
+        redirect(`/catalog?${params.toString()}`);
+      }
+      if (
+        artistId &&
+        artists.length > 0 &&
+        !artists.some((artist) => artist.id === artistId)
+      ) {
+        const fallbackArtistId = artists[0]!.id;
+        const params = new URLSearchParams();
+        params.set("artist_id", fallbackArtistId);
+        const fallbackTracks = competitorTracks.filter((t) =>
+          (t.spotify_artist_ids ?? []).includes(fallbackArtistId),
+        );
+        if (requestedIsrc && fallbackTracks.some((t) => t.isrc === requestedIsrc)) {
+          params.set("isrc", requestedIsrc);
+        }
+        if (sp.range) params.set("range", String(clampRangeDays(sp.range)));
+        redirect(`/catalog?${params.toString()}`);
       }
       const artistTracks = competitorTracks.filter((t) => (t.spotify_artist_ids ?? []).includes(effectiveArtistId));
-      const selectedIsrc = requestedIsrc || artistTracks[0]?.isrc || null;
+      const selectedIsrc =
+        requestedIsrc && artistTracks.some((t) => t.isrc === requestedIsrc)
+          ? requestedIsrc
+          : artistTracks[0]?.isrc ?? null;
       const startRunDate = latestRunDate ? addDays(latestRunDate, -rangeDays) : null;
       const maPaddedStartRunDate = startRunDate ? addDays(startRunDate, -MA7_LOOKBACK_DAYS) : null;
       const artistIsrcs = artistTracks.map((t) => t.isrc);
@@ -602,7 +649,8 @@ export default async function CatalogPage({
       return (
         <RememberParamRedirect
           param="artist_id"
-          storageKey="sb:last_artist_id"
+          storageKey={lastArtistIdStorageKey("own")}
+          legacyStorageKey="sb:last_artist_id"
           defaultValue={defaultArtistId || null}
           loadingTitle="Opening your last artist…"
           loadingSubtitle="If this is your first time, we'll pick the first artist we find."
@@ -621,6 +669,9 @@ export default async function CatalogPage({
       CACHE_TTL_1H,
     );
     const artists = deriveArtists((trackMetaRows.data ?? []) as TrackRow[]);
+    if (artistId && artists.length > 0 && !artists.some((artist) => artist.id === artistId)) {
+      redirect(`/catalog?artist_id=${encodeURIComponent(artists[0]!.id)}`);
+    }
 
   // Track list for this artist (cached for 1 hour)
   const { data: tracks, error: tracksError } = await cachedQuery(

@@ -1,16 +1,33 @@
-import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { normalizeDatasetMode } from "@/lib/datasetMode";
 import { PageHeader } from "@/components/shell/PageHeader";
-import { GlassTable, TableCell, TableRow } from "@/components/ui/GlassTable";
-import { formatDateISO, formatInt } from "@/lib/format";
+import { formatDateISO } from "@/lib/format";
 import { addDaysISO, dataDateFromRunDate, runDateFromDataDate } from "@/lib/sotDates";
+import { capRunDate, getRollbackDate, rollbackDataDateToRunDate } from "@/lib/rollback";
+
+import { CompetitorsClient } from "./CompetitorsClient";
+import type {
+  ChurnRow,
+  LabelRow,
+  MoverTrackRow,
+  OverlapCell,
+  PlaylistRow,
+} from "./competitorsTypes";
+import {
+  aggregateSeriesByLabel,
+  buildLabelComparisonRows,
+  buildStatsByDataDate,
+  parseCount,
+  sumLabelAtDataDate,
+  type AnchoredStatRow,
+  type StatsAsOfRow,
+} from "./competitorsUtils";
 
 export const dynamic = "force-dynamic";
 
@@ -18,189 +35,42 @@ export const metadata: Metadata = {
   title: "Competitors",
 };
 
-type LabelRow = {
-  label_key: string;
-  display_name: string;
-  is_active: boolean;
-  accent_hex: string | null;
-};
-
-type PlaylistRow = {
-  playlist_key: string;
-  label_key: string;
-  display_name: string;
-  spotify_playlist_image_url: string | null;
-  sot_dashboard_url: string;
-  display_order: number | null;
-  is_active: boolean;
-};
-
-type PlaylistStatSnapshot = {
-  date: string;
-  track_count: number | null;
-  total_streams_cumulative: number | null;
-  missing_streams_track_count: number | null;
-  daily_streams_net: number | null;
-};
-
-type RawExportRow = {
-  playlist_key: string;
-  rows_count: number;
-  exported_at: string;
-};
-
-type AnchoredStatRow = {
-  playlist_key: string;
-  date: string;
-  track_count: number | null;
-  total_streams_cumulative: number | null;
-  missing_streams_track_count: number | null;
-  daily_streams_net: number | null;
-};
-
-type StatsAsOfRow = {
-  playlist_key: string;
-  date: string;
-  track_count: number | null;
-  total_streams_cumulative: number | null;
-  missing_streams_track_count: number | null;
-  daily_streams_net: number | null;
-};
-
 type LabelArtistCountRow = {
   label_key: string;
   artist_count: number | string;
 };
 
-function labelSummaryCardStyle(accentHex: string | null): CSSProperties {
-  const clean = accentHex?.replace(/^#/, "").toLowerCase();
-  if (!clean || !/^[0-9a-f]{6}$/.test(clean)) {
-    return { borderLeft: "3px solid var(--sb-border)" };
-  }
-  return {
-    borderLeft: `3px solid #${clean}`,
-    background: `color-mix(in srgb, #${clean} 10%, transparent)`,
-  };
+function enrichChurnRows(
+  rows: Array<{ label_key: string; added_count: number; removed_count: number; net: number }>,
+  playlistsByLabel: Map<string, PlaylistRow[]>,
+  statsByDataDate: ReturnType<typeof buildStatsByDataDate>,
+  latestDataDate: string | null,
+  weekAgoDataDate: string | null,
+): ChurnRow[] {
+  return rows.map((row) => {
+    const keys = (playlistsByLabel.get(row.label_key) ?? []).map((p) => p.playlist_key);
+    const latest = sumLabelAtDataDate(keys, latestDataDate, statsByDataDate, "track_count");
+    const weekAgo = sumLabelAtDataDate(keys, weekAgoDataDate, statsByDataDate, "track_count");
+    const track_count_delta_7d =
+      latest != null && weekAgo != null ? latest - weekAgo : null;
+    return { ...row, track_count_delta_7d };
+  });
 }
 
-function fmtMaybeDate(value: string | null | undefined) {
-  return value ? formatDateISO(value.slice(0, 10)) : "—";
-}
-
-function parseCount(value: number | string | null | undefined): number {
-  if (value == null) return 0;
-  if (typeof value === "number" && Number.isFinite(value)) return Math.trunc(value);
-  if (typeof value === "string" && value.trim() !== "") {
-    const n = Number(value);
-    return Number.isFinite(n) ? Math.trunc(n) : 0;
-  }
-  return 0;
-}
-
-function buildStatsByDataDate(rows: AnchoredStatRow[]): Map<string, Map<string, PlaylistStatSnapshot>> {
-  const byDataDate = new Map<string, Map<string, PlaylistStatSnapshot>>();
-  for (const row of rows) {
-    const dataDate = dataDateFromRunDate(row.date.slice(0, 10));
-    const byPlaylist = byDataDate.get(dataDate) ?? new Map<string, PlaylistStatSnapshot>();
-    byPlaylist.set(row.playlist_key, {
-      date: dataDate,
-      track_count: row.track_count,
-      total_streams_cumulative: row.total_streams_cumulative,
-      missing_streams_track_count: row.missing_streams_track_count,
-      daily_streams_net: row.daily_streams_net,
-    });
-    byDataDate.set(dataDate, byPlaylist);
-  }
-  return byDataDate;
-}
-
-function sumLabelAtDataDate(
-  playlistKeys: string[],
-  dataDate: string | null,
-  statsByDataDate: Map<string, Map<string, PlaylistStatSnapshot>>,
-  field: "track_count" | "daily_streams_net",
-): number | null {
-  if (!dataDate) return null;
-  const byPlaylist = statsByDataDate.get(dataDate);
-  if (!byPlaylist) return null;
-  let sum = 0;
-  let found = false;
-  for (const key of playlistKeys) {
-    const snap = byPlaylist.get(key);
-    if (!snap) continue;
-    found = true;
-    const raw = snap[field];
-    if (typeof raw === "number" && Number.isFinite(raw)) sum += raw;
-  }
-  return found ? sum : null;
-}
-
-function formatDelta(delta: number | null): string | null {
-  if (delta == null || delta === 0) return null;
-  return `${delta > 0 ? "+" : ""}${formatInt(delta)}`;
-}
-
-function deltaColor(delta: number | null): string {
-  if (delta == null || delta === 0) return "var(--sb-muted)";
-  if (delta > 0) return "var(--sb-positive)";
-  return "var(--sb-negative, #ef4444)";
-}
-
-function DeltaLine({
-  delta,
-  periodLabel,
-  title,
-}: {
-  delta: number;
-  periodLabel: string;
-  title: string;
-}) {
-  const deltaLabel = formatDelta(delta);
-  if (!deltaLabel) return null;
-  return (
-    <div
-      className="flex items-baseline gap-1 font-mono text-[10px] tabular-nums"
-      style={{ color: deltaColor(delta) }}
-      title={title}
-    >
-      <span>{deltaLabel}</span>
-      <span className="font-sans text-[9px] font-medium uppercase opacity-55">{periodLabel}</span>
-    </div>
-  );
-}
-
-function LabelStat({
-  label,
-  value,
-  delta,
-  weeklyDelta,
-}: {
-  label: string;
-  value: number;
-  delta: number | null;
-  weeklyDelta?: number | null;
-}) {
-  const showDeltas = formatDelta(delta) || (weeklyDelta != null && weeklyDelta !== 0);
-  return (
-    <div>
-      <div className="text-[11px] uppercase opacity-60">{label}</div>
-      <div className="font-mono">{formatInt(value)}</div>
-      {showDeltas ? (
-        <div className="mt-0.5 space-y-0.5">
-          {formatDelta(delta) ? (
-            <DeltaLine delta={delta!} periodLabel="1d" title="Change vs the prior successful ingestion run" />
-          ) : null}
-          {weeklyDelta != null && weeklyDelta !== 0 ? (
-            <DeltaLine
-              delta={weeklyDelta}
-              periodLabel="7d"
-              title="Change vs the successful ingestion run about 7 days earlier"
-            />
-          ) : null}
-        </div>
-      ) : null}
-    </div>
-  );
+function parseMovers(raw: unknown): MoverTrackRow[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((row) => {
+    const r = row as Record<string, unknown>;
+    return {
+      isrc: String(r.isrc ?? ""),
+      name: String(r.name ?? r.isrc ?? ""),
+      album_image_url: (r.album_image_url as string | null) ?? null,
+      artist_names: Array.isArray(r.artist_names) ? (r.artist_names as string[]) : null,
+      label_keys: Array.isArray(r.label_keys) ? (r.label_keys as string[]) : [],
+      daily_delta: Number(r.daily_delta ?? 0),
+      total: Number(r.total ?? 0),
+    };
+  });
 }
 
 export default async function CompetitorsPage() {
@@ -213,40 +83,40 @@ export default async function CompetitorsPage() {
   const svc = supabaseService();
   const { data: settings } = await svc
     .from("user_settings")
-    .select("dataset_mode")
+    .select("dataset_mode,competitor_label_key")
     .eq("user_id", userData.user.id)
     .maybeSingle();
   if (normalizeDatasetMode(settings?.dataset_mode) !== "competitor") redirect("/");
 
   const comp = svc.schema("competitor");
+  const rollbackDate = await getRollbackDate();
+  const rollbackRunDate = rollbackDate ? rollbackDataDateToRunDate(rollbackDate) : null;
 
-  const [
-    { data: labelsRaw },
-    { data: playlistsRaw },
-    { data: rawExportsRaw },
-    { data: recentRunsRaw },
-  ] = await Promise.all([
+  let recentRunsQuery = comp
+    .from("ingestion_runs")
+    .select("run_date,status,started_at,finished_at")
+    .eq("status", "success")
+    .order("run_date", { ascending: false })
+    .limit(1);
+  if (rollbackRunDate) recentRunsQuery = recentRunsQuery.lte("run_date", rollbackRunDate);
+
+  const [{ data: labelsRaw }, { data: playlistsRaw }, { data: recentRunsRaw }] = await Promise.all([
     comp.from("labels").select("label_key,display_name,is_active,accent_hex").order("display_name", { ascending: true }),
     comp
       .from("playlists")
       .select("playlist_key,label_key,display_name,spotify_playlist_image_url,sot_dashboard_url,display_order,is_active")
       .order("display_order", { ascending: true, nullsFirst: false })
       .order("display_name", { ascending: true }),
-    comp.rpc("latest_raw_exports_by_playlist"),
-    comp
-      .from("ingestion_runs")
-      .select("run_date,status,started_at,finished_at")
-      .eq("status", "success")
-      .order("run_date", { ascending: false })
-      .limit(1),
+    recentRunsQuery,
   ]);
 
   const labels = (labelsRaw ?? []) as LabelRow[];
   const playlists = (playlistsRaw ?? []) as PlaylistRow[];
   const playlistKeys = playlists.map((p) => p.playlist_key);
+  const playlistToLabel = new Map(playlists.map((p) => [p.playlist_key, p.label_key]));
 
   const recentRuns = (recentRunsRaw ?? []) as Array<{ run_date: string }>;
-  const latestRunDate = recentRuns[0]?.run_date?.slice(0, 10) ?? null;
+  const latestRunDate = capRunDate(recentRuns[0]?.run_date?.slice(0, 10) ?? null, rollbackDate);
   const latestDataDate = latestRunDate ? dataDateFromRunDate(latestRunDate) : null;
   const previousDataDate = latestDataDate ? addDaysISO(latestDataDate, -1) : null;
   const weekAgoDataDate = latestDataDate ? addDaysISO(latestDataDate, -7) : null;
@@ -254,26 +124,35 @@ export default async function CompetitorsPage() {
   const anchorDataDates = [...new Set([latestDataDate, previousDataDate, weekAgoDataDate].filter(Boolean) as string[])];
   const anchorRunDates = anchorDataDates.map((dataDate) => runDateFromDataDate(dataDate));
 
-  const { data: anchoredStatsRaw } =
-    anchorRunDates.length > 0 && playlistKeys.length > 0
-      ? await comp
-          .from("playlist_daily_stats")
-          .select("playlist_key,date,track_count,total_streams_cumulative,missing_streams_track_count,daily_streams_net")
-          .in("date", anchorRunDates)
-          .in("playlist_key", playlistKeys)
-      : { data: [] as AnchoredStatRow[] };
-
-  const statsByDataDate = buildStatsByDataDate((anchoredStatsRaw ?? []) as AnchoredStatRow[]);
+  const seriesStart = latestRunDate ? addDaysISO(latestRunDate, -90) : null;
 
   const [
-    { data: warningRowsRaw },
+    { data: anchoredStatsRaw },
+    { data: labelSeriesRaw },
     { data: artistCountsRaw },
     { data: previousArtistCountsRaw },
     { data: weekAgoStatsRaw },
     { data: weekAgoArtistCountsRaw },
+    gainersResult,
+    losersResult,
+    churn7dResult,
+    churn30dResult,
+    overlapResult,
   ] = await Promise.all([
-    latestRunDate
-      ? comp.from("ingestion_warnings").select("playlist_key,severity").eq("run_date", latestRunDate)
+    anchorRunDates.length > 0 && playlistKeys.length > 0
+      ? comp
+          .from("playlist_daily_stats")
+          .select("playlist_key,date,track_count,total_streams_cumulative,missing_streams_track_count,daily_streams_net")
+          .in("date", anchorRunDates)
+          .in("playlist_key", playlistKeys)
+      : Promise.resolve({ data: [] as AnchoredStatRow[] }),
+    seriesStart && latestRunDate && playlistKeys.length > 0
+      ? comp
+          .from("playlist_daily_stats")
+          .select("date,playlist_key,daily_streams_net,total_streams_cumulative,track_count")
+          .gte("date", seriesStart)
+          .lte("date", latestRunDate)
+          .in("playlist_key", playlistKeys)
       : Promise.resolve({ data: [] }),
     latestDataDate
       ? comp.rpc("label_distinct_artist_counts", { p_run_date: runDateFromDataDate(latestDataDate) })
@@ -287,23 +166,32 @@ export default async function CompetitorsPage() {
     weekAgoDataDate
       ? comp.rpc("label_distinct_artist_counts", { p_run_date: runDateFromDataDate(weekAgoDataDate) })
       : Promise.resolve({ data: [] }),
+    latestRunDate
+      ? comp.rpc("label_top_tracks_daily", {
+          p_run_date: latestRunDate,
+          p_limit: 15,
+          p_direction: "gainers",
+        })
+      : Promise.resolve({ data: [] }),
+    latestRunDate
+      ? comp.rpc("label_top_tracks_daily", {
+          p_run_date: latestRunDate,
+          p_limit: 15,
+          p_direction: "losers",
+        })
+      : Promise.resolve({ data: [] }),
+    latestRunDate
+      ? comp.rpc("label_membership_churn", { p_window_days: 7, p_as_of: latestRunDate })
+      : Promise.resolve({ data: [] }),
+    latestRunDate
+      ? comp.rpc("label_membership_churn", { p_window_days: 30, p_as_of: latestRunDate })
+      : Promise.resolve({ data: [] }),
+    latestRunDate
+      ? comp.rpc("label_overlap_matrix", { p_as_of: latestRunDate })
+      : Promise.resolve({ data: [] }),
   ]);
 
-  const latestStatByPlaylist =
-    latestDataDate != null
-      ? (statsByDataDate.get(latestDataDate) ?? new Map<string, PlaylistStatSnapshot>())
-      : new Map();
-
-  const latestExportByPlaylist = new Map<string, RawExportRow>();
-  for (const row of (rawExportsRaw ?? []) as RawExportRow[]) {
-    latestExportByPlaylist.set(row.playlist_key, row);
-  }
-
-  const warningCountByPlaylist = new Map<string, number>();
-  for (const row of (warningRowsRaw ?? []) as Array<{ playlist_key: string | null; severity: string }>) {
-    if (!row.playlist_key) continue;
-    warningCountByPlaylist.set(row.playlist_key, (warningCountByPlaylist.get(row.playlist_key) ?? 0) + 1);
-  }
+  const statsByDataDate = buildStatsByDataDate((anchoredStatsRaw ?? []) as AnchoredStatRow[]);
 
   const artistCountByLabel = new Map<string, number>();
   for (const row of (artistCountsRaw ?? []) as LabelArtistCountRow[]) {
@@ -321,7 +209,7 @@ export default async function CompetitorsPage() {
   }
 
   if (weekAgoDataDate) {
-    const byPlaylist = statsByDataDate.get(weekAgoDataDate) ?? new Map<string, PlaylistStatSnapshot>();
+    const byPlaylist = statsByDataDate.get(weekAgoDataDate) ?? new Map();
     for (const row of (weekAgoStatsRaw ?? []) as StatsAsOfRow[]) {
       if (byPlaylist.has(row.playlist_key)) continue;
       const rowDataDate = dataDateFromRunDate(row.date.slice(0, 10));
@@ -344,35 +232,54 @@ export default async function CompetitorsPage() {
     playlistsByLabel.set(playlist.label_key, rows);
   }
 
-  const summary = labels.map((label) => {
-    const labelPlaylists = playlistsByLabel.get(label.label_key) ?? [];
-    const keys = labelPlaylists.map((p) => p.playlist_key);
-    const trackCount = sumLabelAtDataDate(keys, latestDataDate, statsByDataDate, "track_count") ?? 0;
-    const previousTrackCount = sumLabelAtDataDate(keys, previousDataDate, statsByDataDate, "track_count");
-    const dailyStreams = sumLabelAtDataDate(keys, latestDataDate, statsByDataDate, "daily_streams_net") ?? 0;
-    const previousDailyStreams = sumLabelAtDataDate(keys, previousDataDate, statsByDataDate, "daily_streams_net");
-    const weekAgoTrackCount = sumLabelAtDataDate(keys, weekAgoDataDate, statsByDataDate, "track_count");
-    const artistCount = artistCountByLabel.get(label.label_key) ?? 0;
-    const previousArtistCount = previousArtistCountByLabel.get(label.label_key) ?? 0;
-    const weekAgoArtistCount = weekAgoArtistCountByLabel.get(label.label_key) ?? 0;
+  const labelSeries = aggregateSeriesByLabel(
+    (labelSeriesRaw ?? []) as Array<{
+      date: string;
+      playlist_key: string;
+      daily_streams_net: number | null;
+      total_streams_cumulative: number | null;
+      track_count: number | null;
+    }>,
+    playlistToLabel,
+  );
 
-    const hasPreviousSnapshots = previousTrackCount != null;
-    const labelHasWeekAgoSnapshots = weekAgoTrackCount != null;
-
-    return {
-      label,
-      playlists: labelPlaylists,
-      trackCount,
-      artistCount,
-      dailyStreams,
-      trackDelta: hasPreviousSnapshots ? trackCount - previousTrackCount! : null,
-      trackWeeklyDelta: labelHasWeekAgoSnapshots ? trackCount - weekAgoTrackCount : null,
-      artistDelta: previousDataDate != null ? artistCount - previousArtistCount : null,
-      artistWeeklyDelta: labelHasWeekAgoSnapshots ? artistCount - weekAgoArtistCount : null,
-      dailyStreamDelta:
-        previousDailyStreams != null ? dailyStreams - previousDailyStreams : null,
-    };
+  const comparisonRows = buildLabelComparisonRows({
+    labels,
+    playlistsByLabel,
+    labelSeries,
+    latestDataDate,
+    previousDataDate,
+    weekAgoDataDate,
+    statsByDataDate,
+    artistCountByLabel,
+    previousArtistCountByLabel,
+    weekAgoArtistCountByLabel,
   });
+
+  const churn7d = enrichChurnRows(
+    (churn7dResult.data ?? []) as Array<{ label_key: string; added_count: number; removed_count: number; net: number }>,
+    playlistsByLabel,
+    statsByDataDate,
+    latestDataDate,
+    weekAgoDataDate,
+  );
+
+  const churn30d = enrichChurnRows(
+    (churn30dResult.data ?? []) as Array<{ label_key: string; added_count: number; removed_count: number; net: number }>,
+    playlistsByLabel,
+    statsByDataDate,
+    latestDataDate,
+    weekAgoDataDate,
+  );
+
+  const gainers = parseMovers(gainersResult.data);
+  const losers = parseMovers(losersResult.data);
+  const overlapCells = (overlapResult.data ?? []) as OverlapCell[];
+
+  const playlistsByLabelRecord: Record<string, PlaylistRow[]> = {};
+  for (const [key, rows] of playlistsByLabel) {
+    playlistsByLabelRecord[key] = rows;
+  }
 
   let subtitle: ReactNode = "No competitor data found yet.";
   if (latestDataDate) {
@@ -385,108 +292,35 @@ export default async function CompetitorsPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Competitors" subtitle={subtitle} />
+      <PageHeader
+        title="Competitors"
+        subtitle={subtitle}
+        actions={
+          <Link href="/health" className="sb-link-hover text-xs whitespace-nowrap">
+            Pipeline health &amp; ingestion status →
+          </Link>
+        }
+      />
 
-      <div className="grid gap-3 md:grid-cols-3">
-        {summary.map(
-          ({
-            label,
-            playlists: labelPlaylists,
-            trackCount,
-            artistCount,
-            dailyStreams,
-            trackDelta,
-            trackWeeklyDelta,
-            artistDelta,
-            artistWeeklyDelta,
-            dailyStreamDelta,
-          }) => {
-          const imageUrl = labelPlaylists.find((playlist) => playlist.spotify_playlist_image_url)?.spotify_playlist_image_url ?? null;
-          return (
-            <div key={label.label_key} className="sb-card p-4" style={labelSummaryCardStyle(label.accent_hex)}>
-              <div className="flex items-center gap-3">
-                {imageUrl ? (
-                  <PreviewableArtwork
-                    src={imageUrl}
-                    alt={label.display_name}
-                    width={44}
-                    height={44}
-                    className="h-11 w-11 rounded-xl object-cover sb-ring"
-                    label={label.display_name}
-                  />
-                ) : (
-                  <div className="h-11 w-11 rounded-xl bg-white/10 sb-ring" />
-                )}
-                <div>
-                  <div className="font-display text-lg font-semibold">{label.display_name}</div>
-                  <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
-                    {labelPlaylists.length} playlist{labelPlaylists.length === 1 ? "" : "s"}
-                  </div>
-                </div>
-              </div>
-              <div className="mt-4 grid grid-cols-3 gap-2 text-sm">
-                <LabelStat label="Tracks" value={trackCount} delta={trackDelta} weeklyDelta={trackWeeklyDelta} />
-                <LabelStat label="Artists" value={artistCount} delta={artistDelta} weeklyDelta={artistWeeklyDelta} />
-                <LabelStat label="Daily streams" value={dailyStreams} delta={dailyStreamDelta} />
-              </div>
-            </div>
-          );
-        },
-        )}
-      </div>
-
-      <div className="sb-card p-4">
-        <div className="mb-3 text-xs font-medium uppercase tracking-wider opacity-60">Playlist health</div>
-        <GlassTable headers={["", "Competitor", "Playlist", "Tracks", "Rows", "Missing totals", "Warnings", "Latest export", ""]}>
-          {playlists.map((playlist) => {
-            const stat = latestStatByPlaylist.get(playlist.playlist_key);
-            const exportRow = latestExportByPlaylist.get(playlist.playlist_key);
-            const label = labels.find((row) => row.label_key === playlist.label_key);
-            const rowsMatch =
-              stat?.track_count != null && exportRow?.rows_count != null
-                ? Number(stat.track_count) === Number(exportRow.rows_count)
-                : null;
-            return (
-              <TableRow key={playlist.playlist_key}>
-                <TableCell>
-                  {playlist.spotify_playlist_image_url ? (
-                    <PreviewableArtwork
-                      src={playlist.spotify_playlist_image_url}
-                      alt={playlist.display_name}
-                      width={32}
-                      height={32}
-                      className="h-8 w-8 rounded-lg object-cover sb-ring"
-                      label={playlist.display_name}
-                    />
-                  ) : (
-                    <div className="h-8 w-8 rounded-lg bg-white/10 sb-ring" />
-                  )}
-                </TableCell>
-                <TableCell>{label?.display_name ?? playlist.label_key}</TableCell>
-                <TableCell>
-                  <Link href={`/playlists?playlist_key=${encodeURIComponent(playlist.playlist_key)}`} className="sb-link-hover font-medium">
-                    {playlist.display_name}
-                  </Link>
-                </TableCell>
-                <TableCell numeric>{stat?.track_count == null ? "—" : formatInt(stat.track_count)}</TableCell>
-                <TableCell numeric>
-                  <span className={rowsMatch === false ? "text-amber-500" : ""}>
-                    {exportRow?.rows_count == null ? "—" : formatInt(exportRow.rows_count)}
-                  </span>
-                </TableCell>
-                <TableCell numeric>{stat?.missing_streams_track_count == null ? "—" : formatInt(stat.missing_streams_track_count)}</TableCell>
-                <TableCell numeric>{formatInt(warningCountByPlaylist.get(playlist.playlist_key) ?? 0)}</TableCell>
-                <TableCell>{fmtMaybeDate(exportRow?.exported_at)}</TableCell>
-                <TableCell>
-                  <a href={playlist.sot_dashboard_url} target="_blank" rel="noreferrer" className="sb-link-hover text-xs">
-                    SpotOnTrack
-                  </a>
-                </TableCell>
-              </TableRow>
-            );
-          })}
-        </GlassTable>
-      </div>
+      {latestDataDate ? (
+        <CompetitorsClient
+          labels={labels}
+          comparisonRows={comparisonRows}
+          labelSeries={labelSeries}
+          latestDataDate={latestDataDate}
+          selectedCompetitorLabelKey={
+            typeof settings?.competitor_label_key === "string" && settings.competitor_label_key.trim()
+              ? settings.competitor_label_key.trim()
+              : null
+          }
+          gainers={gainers}
+          losers={losers}
+          churn7d={churn7d}
+          churn30d={churn30d}
+          overlapCells={overlapCells}
+          playlistsByLabel={playlistsByLabelRecord}
+        />
+      ) : null}
     </div>
   );
 }

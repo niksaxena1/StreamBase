@@ -3,7 +3,11 @@
 import { useEffect } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
+import type { DatasetMode } from "@/lib/datasetMode";
+import { lastCatalogTrackIsrcStorageKey, readDatasetSelectionStorage } from "@/lib/datasetSelectionStorage";
+
 export function RememberTrackSelection(props: {
+  datasetMode?: DatasetMode;
   artistId: string;
   hasTrack: boolean;
 }) {
@@ -16,12 +20,11 @@ export function RememberTrackSelection(props: {
     if (props.hasTrack) return; // Already have a track selected
     if (!props.artistId) return; // No artist to select track for
 
-    let rememberedIsrc: string | null = null;
-    try {
-      rememberedIsrc = localStorage.getItem("sb:last_catalog_track_isrc");
-    } catch {
-      // ignore
-    }
+    const mode = props.datasetMode ?? "own";
+    const rememberedIsrc = readDatasetSelectionStorage(
+      lastCatalogTrackIsrcStorageKey(mode),
+      "sb:last_catalog_track_isrc",
+    );
 
     if (!rememberedIsrc) return;
 

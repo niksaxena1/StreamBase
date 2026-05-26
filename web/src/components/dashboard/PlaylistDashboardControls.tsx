@@ -6,6 +6,8 @@ import { useEffect } from "react";
 import { Combobox } from "@/components/ui/Combobox";
 import { FilterBar } from "@/components/ui/FilterBar";
 import { PlaylistMembershipStats } from "@/components/dashboard/PlaylistMembershipStats";
+import type { DatasetMode } from "@/lib/datasetMode";
+import { lastPlaylistKeyStorageKey, writeDatasetSelectionStorage } from "@/lib/datasetSelectionStorage";
 
 type PlaylistOption = {
   playlist_key: string;
@@ -16,6 +18,7 @@ type PlaylistOption = {
 };
 
 export function PlaylistDashboardControls(props: {
+  datasetMode?: DatasetMode;
   playlists: PlaylistOption[];
   playlistKey: string;
   /** Track count for the selected playlist (as of latest stats row), if known */
@@ -25,22 +28,16 @@ export function PlaylistDashboardControls(props: {
 }) {
   const router = useRouter();
   const sp = useSearchParams();
+  const datasetMode = props.datasetMode ?? "own";
+  const playlistStorageKey = lastPlaylistKeyStorageKey(datasetMode);
 
   useEffect(() => {
-    try {
-      localStorage.setItem("sb:last_playlist_key", props.playlistKey);
-    } catch {
-      // ignore
-    }
-  }, [props.playlistKey]);
+    writeDatasetSelectionStorage(playlistStorageKey, props.playlistKey);
+  }, [playlistStorageKey, props.playlistKey]);
 
   function onSelectPlaylist(nextKey: string) {
     if (!nextKey || nextKey === props.playlistKey) return;
-    try {
-      localStorage.setItem("sb:last_playlist_key", nextKey);
-    } catch {
-      // ignore
-    }
+    writeDatasetSelectionStorage(playlistStorageKey, nextKey);
     const next = new URLSearchParams(sp.toString());
     next.set("playlist_key", nextKey);
     router.push(`?${next.toString()}`);

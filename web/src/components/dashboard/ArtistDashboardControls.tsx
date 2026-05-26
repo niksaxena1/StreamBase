@@ -5,6 +5,13 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect } from "react";
 
 import { Combobox } from "@/components/ui/Combobox";
+import type { DatasetMode } from "@/lib/datasetMode";
+import {
+  lastArtistIdStorageKey,
+  lastIsrcByArtistStorageKey,
+  readDatasetSelectionStorage,
+  writeDatasetSelectionStorage,
+} from "@/lib/datasetSelectionStorage";
 import { hrefWithPatchedSearchParams } from "@/lib/searchParams";
 
 type ArtistOption = { id: string; name: string; imageUrl?: string | null };
@@ -13,6 +20,7 @@ type TrackOption = { isrc: string; name: string; albumImageUrl?: string | null }
 const RANGE_CHOICES = [30, 90, 365] as const;
 
 export function ArtistDashboardControls(props: {
+  datasetMode?: DatasetMode;
   artists: ArtistOption[];
   artistId: string;
   tracks: TrackOption[];
@@ -21,21 +29,15 @@ export function ArtistDashboardControls(props: {
 }) {
   const router = useRouter();
   const sp = useSearchParams();
+  const datasetMode = props.datasetMode ?? "own";
+  const artistStorageKey = lastArtistIdStorageKey(datasetMode);
 
   useEffect(() => {
-    try {
-      localStorage.setItem("sb:last_artist_id", props.artistId);
-    } catch {
-      // ignore
-    }
+    writeDatasetSelectionStorage(artistStorageKey, props.artistId);
     if (props.isrc) {
-      try {
-        localStorage.setItem(`sb:last_isrc_by_artist:${props.artistId}`, props.isrc);
-      } catch {
-        // ignore
-      }
+      writeDatasetSelectionStorage(lastIsrcByArtistStorageKey(datasetMode, props.artistId), props.isrc);
     }
-  }, [props.artistId, props.isrc]);
+  }, [artistStorageKey, datasetMode, props.artistId, props.isrc]);
 
   // Auto-select first track alphabetically when artist is selected but no track is chosen
   useEffect(() => {
@@ -44,12 +46,10 @@ export function ArtistDashboardControls(props: {
     // 2. There are tracks available for this artist
     // 3. There's no remembered track for this artist
     if (!props.isrc && props.tracks.length > 0) {
-      let rememberedIsrc: string | null = null;
-      try {
-        rememberedIsrc = localStorage.getItem(`sb:last_isrc_by_artist:${props.artistId}`);
-      } catch {
-        // ignore
-      }
+      const rememberedIsrc = readDatasetSelectionStorage(
+        lastIsrcByArtistStorageKey(datasetMode, props.artistId),
+        `sb:last_isrc_by_artist:${props.artistId}`,
+      );
 
       // If no remembered track, auto-select the first one alphabetically
       // (tracks are already sorted alphabetically from the server)
@@ -65,18 +65,12 @@ export function ArtistDashboardControls(props: {
   function onSelectArtist(nextId: string) {
     if (!nextId || nextId === props.artistId) return;
 
-    try {
-      localStorage.setItem("sb:last_artist_id", nextId);
-    } catch {
-      // ignore
-    }
+    writeDatasetSelectionStorage(artistStorageKey, nextId);
 
-    let rememberedIsrc: string | null = null;
-    try {
-      rememberedIsrc = localStorage.getItem(`sb:last_isrc_by_artist:${nextId}`);
-    } catch {
-      // ignore
-    }
+    const rememberedIsrc = readDatasetSelectionStorage(
+      lastIsrcByArtistStorageKey(datasetMode, nextId),
+      `sb:last_isrc_by_artist:${nextId}`,
+    );
 
     const next = new URLSearchParams(sp.toString());
     next.set("artist_id", nextId);
@@ -101,11 +95,7 @@ export function ArtistDashboardControls(props: {
       return;
     }
     if (!nextIsrc || nextIsrc === props.isrc) return;
-    try {
-      localStorage.setItem(`sb:last_isrc_by_artist:${props.artistId}`, nextIsrc);
-    } catch {
-      // ignore
-    }
+    writeDatasetSelectionStorage(lastIsrcByArtistStorageKey(datasetMode, props.artistId), nextIsrc);
     const next = new URLSearchParams(sp.toString());
     next.set("isrc", nextIsrc);
     router.push(`?${next.toString()}`);

@@ -46,13 +46,14 @@ The three SpotOnTrack workflows use `config/competitor_playlists.csv`.
 
 ## What the `/competitors` page is for
 
-Use it to spot:
+Competitive intelligence cockpit. Use it to answer:
 
-- labels or playlists missing thumbnails
-- raw-export row counts that diverge from ingested track counts
-- playlists with missing stream totals
-- day-over-day changes in tracks, artists, and cumulative streams on label summary cards
-- playlists accumulating warnings
+- Who is growing daily streams fastest? (label comparison chart and table)
+- Which tracks moved most today across all competitors? (top movers)
+- Which competitor is expanding their catalog fastest? (catalog churn)
+- How similar are competitor catalogs? (overlap matrix)
+
+For ingestion correctness (stale playlists, row mismatches, warnings, missing totals), use **/health** (Competitor Health).
 
 ## Intentional omissions
 

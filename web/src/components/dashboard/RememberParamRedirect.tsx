@@ -3,9 +3,13 @@
 import { useEffect } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 
+import { readDatasetSelectionStorage } from "@/lib/datasetSelectionStorage";
+
 export function RememberParamRedirect(props: {
   param: string;
   storageKey: string;
+  /** Optional legacy key before dataset_mode scoping (one-time migration). */
+  legacyStorageKey?: string;
   defaultValue?: string | null;
   loadingTitle?: string;
   loadingSubtitle?: string;
@@ -29,12 +33,15 @@ export function RememberParamRedirect(props: {
   useEffect(() => {
     if (sp.get(props.param)) return;
 
-    let remembered: string | null = null;
-    try {
-      remembered = localStorage.getItem(props.storageKey);
-    } catch {
-      // ignore
-    }
+    const remembered = props.legacyStorageKey
+      ? readDatasetSelectionStorage(props.storageKey, props.legacyStorageKey)
+      : (() => {
+          try {
+            return localStorage.getItem(props.storageKey);
+          } catch {
+            return null;
+          }
+        })();
 
     const value = (remembered ?? props.defaultValue ?? "").trim();
     if (!value) return;

@@ -28,6 +28,7 @@ import { SectionHeader } from "@/components/ui/SectionHeader";
 import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { RememberTrackSelection } from "@/components/dashboard/RememberTrackSelection";
+import { lastCatalogTrackIsrcStorageKey, writeDatasetSelectionStorage } from "@/lib/datasetSelectionStorage";
 import { GranularitySelect, RangeSelect, handleGranularityWithRangeRestore, granularityLabel } from "@/components/ui/GranularitySelect";
 import type { Granularity } from "@/components/ui/GranularitySelect";
 import { DateRangePicker, type DateRangePickerHandle } from "@/components/ui/DateRangePicker";
@@ -110,11 +111,9 @@ export function CatalogPageClient(props: {
 
   useEffect(() => {
     if (props.isrc) {
-      try {
-        localStorage.setItem("sb:last_catalog_track_isrc", props.isrc);
-      } catch {}
+      writeDatasetSelectionStorage(lastCatalogTrackIsrcStorageKey(mode), props.isrc);
     }
-  }, [props.isrc]);
+  }, [mode, props.isrc]);
 
   // Pre-compute track chart series data. This is O(n) over the time series length
   // (which grows daily), so memoize to avoid re-running on unrelated state changes.
@@ -310,7 +309,7 @@ export function CatalogPageClient(props: {
   return (
     <>
       <DocumentTitle title={pageTitle} />
-      <RememberTrackSelection artistId={props.artistId} hasTrack={!!props.isrc} />
+      <RememberTrackSelection datasetMode={mode} artistId={props.artistId} hasTrack={!!props.isrc} />
       <PageHeader
         title="Catalog"
         subtitle={

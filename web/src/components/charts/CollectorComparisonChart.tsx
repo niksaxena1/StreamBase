@@ -112,6 +112,7 @@ function CustomTooltip({
   granularity = "daily",
   showWeekendDip = false,
   onActiveDate,
+  seriesLabels,
 }: {
   active?: boolean;
   label?: string;
@@ -121,6 +122,7 @@ function CustomTooltip({
   granularity?: Granularity;
   showWeekendDip?: boolean;
   onActiveDate?: (date: string | null) => void;
+  seriesLabels?: Record<string, string>;
 }) {
   const dateStr = active && label ? String(label) : null;
   if (onActiveDate) onActiveDate(dateStr);
@@ -165,7 +167,10 @@ function CustomTooltip({
           </div>
         )}
         {payload.map((entry, index) => {
-          const collectorName = entry.dataKey === "combined" ? "Combined Total" : entry.dataKey;
+          const collectorName =
+            entry.dataKey === "combined"
+              ? "Combined Total"
+              : (seriesLabels?.[entry.dataKey] ?? entry.dataKey);
           const color = entry.color || COLLECTOR_COLORS[entry.dataKey] || "#888";
 
           if (isPercentageMode) {
@@ -251,6 +256,9 @@ export function CollectorComparisonChart({
   heightPx = 300,
   granularity = "daily",
   onDateClick,
+  seriesColors,
+  seriesLabels,
+  emptyStateMessage = "Select at least one collector to view the chart",
 }: {
   data: CollectorDailyData[];
   selectedCollectors: string[];
@@ -259,6 +267,11 @@ export function CollectorComparisonChart({
   heightPx?: number;
   granularity?: Granularity;
   onDateClick?: (date: string) => void;
+  /** Override default collector colors (e.g. competitor label accent_hex). */
+  seriesColors?: Record<string, string>;
+  /** Human-readable names for series keys (e.g. label display_name). */
+  seriesLabels?: Record<string, string>;
+  emptyStateMessage?: string;
 }) {
   const gid = useId();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
@@ -476,7 +489,7 @@ export function CollectorComparisonChart({
 
   const getLineColor = (key: string) => {
     if (key === "combined") return combinedColor;
-    return COLLECTOR_COLORS[key] || "var(--sb-muted)";
+    return seriesColors?.[key] ?? COLLECTOR_COLORS[key] ?? "var(--sb-muted)";
   };
 
   // Match the Home hero chart vibe: a single subtle area fill when there's a single series.
@@ -553,7 +566,7 @@ export function CollectorComparisonChart({
         className="flex items-center justify-center text-sm"
         style={{ height: heightPx, color: "var(--sb-muted)" }}
       >
-        Select at least one collector to view the chart
+        {emptyStateMessage}
       </div>
     );
   }
@@ -655,6 +668,7 @@ export function CollectorComparisonChart({
                 granularity={granularity}
                 showWeekendDip={enableWeekendDip}
                 onActiveDate={handleActiveDate}
+                seriesLabels={seriesLabels}
               />
             )}
             cursor={{

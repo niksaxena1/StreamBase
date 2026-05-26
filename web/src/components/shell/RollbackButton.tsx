@@ -26,8 +26,28 @@ function formatDisplay(date: Date): string {
   return `${d} ${m} ${y}`;
 }
 
-export function RollbackButton({ latestDataDate }: { latestDataDate: string | null }) {
+export function RollbackButton({
+  latestDataDate,
+  datasetMode = "own",
+}: {
+  latestDataDate: string | null;
+  datasetMode?: "own" | "competitor";
+}) {
   const { rollbackDate, setRollbackDate, isActive } = useRollback();
+  const activeTone =
+    isActive && datasetMode === "competitor"
+      ? {
+          color: "var(--sb-accent)",
+          bgClass: "bg-[var(--sb-accent-10)]",
+          selectedDay:
+            "!bg-[color:var(--sb-accent)] !text-[color:var(--sb-accent-text,#fff)] hover:!bg-[color:var(--sb-accent)]",
+        }
+      : {
+          color: "var(--sb-positive)",
+          bgClass: "bg-[var(--sb-positive)]/10",
+          selectedDay:
+            "!bg-[color:var(--sb-positive)] !text-white dark:!text-black hover:!bg-[color:var(--sb-positive)]",
+        };
   const [isOpen, setIsOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const [popoverPos, setPopoverPos] = useState<{ top: number; left: number } | null>(null);
@@ -126,10 +146,10 @@ export function RollbackButton({ latestDataDate }: { latestDataDate: string | nu
         className={[
           "sb-ring inline-flex items-center justify-center rounded-full transition h-8",
           isActive
-            ? "gap-1.5 px-2.5 bg-[var(--sb-positive)]/10"
+            ? `gap-1.5 px-2.5 ${activeTone.bgClass}`
             : "w-8 bg-transparent text-black/70 hover:bg-black/5 dark:text-white/70 dark:hover:bg-white/10",
         ].join(" ")}
-        style={isActive ? { color: "var(--sb-positive)" } : undefined}
+        style={isActive ? { color: activeTone.color } : undefined}
         aria-label={
           isActive
             ? `Rollback active: viewing data as of ${rollbackDate}. Click to change.`
@@ -186,7 +206,7 @@ export function RollbackButton({ latestDataDate }: { latestDataDate: string | nu
                       type="button"
                       onClick={handleClear}
                       className="sb-ring flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium transition hover:bg-black/5 dark:hover:bg-white/10"
-                      style={{ color: "var(--sb-positive)" }}
+                      style={{ color: activeTone.color }}
                     >
                       <X className="h-3 w-3" />
                       Return to live
@@ -263,8 +283,7 @@ export function RollbackButton({ latestDataDate }: { latestDataDate: string | nu
                         "w-full h-full rounded-md text-[11px] font-medium cursor-pointer transition-colors hover:bg-black/5 dark:hover:bg-white/10 focus:outline-none",
                       today:
                         "ring-1 ring-inset ring-[color:var(--sb-accent)]",
-                      selected:
-                        "!bg-[color:var(--sb-positive)] !text-white dark:!text-black hover:!bg-[color:var(--sb-positive)]",
+                      selected: activeTone.selectedDay,
                       outside: "invisible",
                       disabled:
                         "opacity-20 cursor-not-allowed hover:bg-transparent dark:hover:bg-transparent",

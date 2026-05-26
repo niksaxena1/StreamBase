@@ -1,9 +1,9 @@
 import { NextRequest } from "next/server";
 
-import { getActiveWarningSummary } from "@/lib/health/activeWarnings";
 import { logError } from "@/lib/logger";
 import { apiJsonOk, requireSessionUser } from "@/lib/api/server";
 import { supabaseServer } from "@/lib/supabase/server";
+import { loadIngestionSummaryForUser } from "@/lib/ingestionSummary.server";
 
 export const dynamic = "force-dynamic";
 
@@ -24,17 +24,17 @@ export async function GET(request: NextRequest) {
     const headerToken = request.headers.get("x-sb-health-debug-token") ?? "";
     const debugAllowed = debugRequested && !!debugToken && headerToken === debugToken;
 
-    const summary = await getActiveWarningSummary();
+    const summary = await loadIngestionSummaryForUser(auth.user.id);
 
     const payload: HealthSummaryPayload & { debug?: Record<string, unknown> } = {
-      latestRun: summary.runDate ? { runDate: summary.runDate, status: "success" } : null,
-      criticalWarnings: summary.criticalCount,
+      latestRun: summary.latestRun,
+      criticalWarnings: summary.criticalWarnings,
     };
 
     if (debugAllowed) {
       payload.debug = {
-        totalActive: summary.totalCount,
-        hasCritical: summary.hasCritical,
+        runDate: summary.latestRun?.runDate ?? null,
+        status: summary.latestRun?.status ?? null,
       };
     }
 

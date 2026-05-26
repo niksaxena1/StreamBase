@@ -13,6 +13,8 @@ import { triggerRouteLoadingBarStart } from "@/lib/navigation/loadingBar";
 import { logError } from "@/lib/logger";
 import { fetchApiJson } from "@/lib/api";
 import { formatSearchHoverStat } from "@/components/shell/searchBarFormat";
+import type { DatasetMode } from "@/lib/datasetMode";
+import { readSearchRecentsJson, writeSearchRecentsJson } from "@/lib/datasetModeNavigation";
 
 type SearchResult = {
   type: "track" | "artist" | "playlist";
@@ -40,7 +42,6 @@ type RecentItem = {
   firstArtistId?: string | null;
 };
 
-const RECENTS_KEY = "sb_recent_search_items_v1";
 const MAX_RECENTS = 8;
 
 type TypeFilter = "all" | "track" | "artist" | "playlist";
@@ -57,26 +58,15 @@ function getShortcutLabel() {
   return navigator.platform?.toLowerCase().includes("mac") ? "⌘ K" : "Ctrl K";
 }
 
-function safeReadRecents(): RecentItem[] {
-  try {
-    const raw = localStorage.getItem(RECENTS_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter((x) => x && typeof x === "object")
-      .slice(0, MAX_RECENTS) as RecentItem[];
-  } catch {
-    return [];
-  }
+function safeReadRecents(mode: DatasetMode): RecentItem[] {
+  const parsed = readSearchRecentsJson(mode);
+  return parsed
+    .filter((x) => x && typeof x === "object")
+    .slice(0, MAX_RECENTS) as RecentItem[];
 }
 
-function safeWriteRecents(items: RecentItem[]) {
-  try {
-    localStorage.setItem(RECENTS_KEY, JSON.stringify(items.slice(0, MAX_RECENTS)));
-  } catch {
-    // ignore
-  }
+function safeWriteRecents(mode: DatasetMode, items: RecentItem[]) {
+  writeSearchRecentsJson(mode, items.slice(0, MAX_RECENTS));
 }
 
 // Extracted result item component to avoid duplication
@@ -208,7 +198,7 @@ function ResultItem({
   );
 }
 
-export function SearchBar() {
+export function SearchBar({ datasetMode = "own" }: { datasetMode?: DatasetMode }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -224,9 +214,12 @@ export function SearchBar() {
   const keyboardShortcuts = useKeyboardShortcutsSafe();
 
   useEffect(() => {
-    // Load recents on mount (client-only).
-    setRecents(safeReadRecents());
-  }, []);
+    setRecents(safeReadRecents(datasetMode));
+    setResults([]);
+    setHoveredResultStats({});
+    setLoadingStats({});
+    setQuery("");
+  }, [datasetMode]);
 
   // Register search opener with keyboard shortcuts provider
   useEffect(() => {
@@ -357,7 +350,7 @@ export function SearchBar() {
       MAX_RECENTS,
     );
     setRecents(next);
-    safeWriteRecents(next);
+    safeWriteRecents(datasetMode, next);
   }
 
   const navigateTo = (result: SearchResult) => {

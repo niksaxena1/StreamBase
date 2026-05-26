@@ -22,6 +22,7 @@ import { PlaylistHeaderSelects } from "./PlaylistGranularitySelect";
 import { PlaylistMembershipStats } from "@/components/dashboard/PlaylistMembershipStats";
 import { DocumentTitle } from "@/components/shell/DocumentTitle";
 import { normalizeDatasetMode } from "@/lib/datasetMode";
+import { lastPlaylistKeyStorageKey } from "@/lib/datasetSelectionStorage";
 import { ALL_COMPETITORS_KEY, resolveCompetitorLabelKey } from "@/lib/competitorContext";
 import { CompetitorCurrentTracksTable, type CompetitorCurrentTrackRow } from "./CompetitorCurrentTracksTable";
 import { isMissingPostgresFunctionError } from "@/lib/supabase/rpcErrors";
@@ -154,6 +155,8 @@ export default async function PlaylistsPage({
   const datasetMode = normalizeDatasetMode(datasetSettings?.dataset_mode);
 
   if (datasetMode === "competitor") {
+    const rollbackDate = await getRollbackDate();
+    const rollbackRunDate = rollbackDate ? rollbackDataDateToRunDate(rollbackDate) : null;
     const comp = svc.schema("competitor");
     const { data: activeLabels } = await comp
       .from("labels")
@@ -184,26 +187,30 @@ export default async function PlaylistsPage({
       );
     }
     const [{ data: latest }, { data: prev }, { data: history }, { data: latestCounts }] = await Promise.all([
-      comp
-        .from("playlist_daily_stats")
-        .select("date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net,source_run_id")
-        .eq("playlist_key", effectivePlaylistKey)
-        .order("date", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-      comp
-        .from("playlist_daily_stats")
-        .select("date")
-        .eq("playlist_key", effectivePlaylistKey)
-        .order("date", { ascending: false })
-        .range(1, 1)
-        .maybeSingle(),
-      comp
-        .from("playlist_daily_stats")
-        .select("date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net,missing_streams_track_count")
-        .eq("playlist_key", effectivePlaylistKey)
-        .order("date", { ascending: false })
-        .limit(rangeDays),
+      (() => {
+        let q = comp
+          .from("playlist_daily_stats")
+          .select("date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net,source_run_id")
+          .eq("playlist_key", effectivePlaylistKey);
+        if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
+        return q.order("date", { ascending: false }).limit(1).maybeSingle();
+      })(),
+      (() => {
+        let q = comp
+          .from("playlist_daily_stats")
+          .select("date")
+          .eq("playlist_key", effectivePlaylistKey);
+        if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
+        return q.order("date", { ascending: false }).range(1, 1).maybeSingle();
+      })(),
+      (() => {
+        let q = comp
+          .from("playlist_daily_stats")
+          .select("date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net,missing_streams_track_count")
+          .eq("playlist_key", effectivePlaylistKey);
+        if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
+        return q.order("date", { ascending: false }).limit(rangeDays);
+      })(),
       comp.rpc("playlists_latest_track_counts", {
         p_keys: competitorOptions.map((p) => p.playlist_key),
       }),
@@ -311,6 +318,7 @@ export default async function PlaylistsPage({
           </div>
         ) : null}
         <PlaylistDashboardControls
+          datasetMode="competitor"
           playlists={playlistOptions}
           playlistKey={effectivePlaylistKey}
           trackCount={(latest as PlaylistDailyStatsRow | null)?.track_count ?? null}
@@ -370,7 +378,8 @@ export default async function PlaylistsPage({
     return (
       <RememberParamRedirect
         param="playlist_key"
-        storageKey="sb:last_playlist_key"
+        storageKey={lastPlaylistKeyStorageKey("own")}
+        legacyStorageKey="sb:last_playlist_key"
         defaultValue="all_catalog"
         loadingTitle="Opening your last playlist…"
         loadingSubtitle="If this is your first time, we’ll start with All Catalog."
@@ -472,6 +481,10 @@ export default async function PlaylistsPage({
     spotify_playlist_image_url: p.spotify_playlist_image_url,
     track_count: statsMap.get(p.playlist_key) ?? null,
   })) as PlaylistRow[];
+  if (playlistKey && !playlistOptions.some((p) => p.playlist_key === playlistKey)) {
+    const fallbackKey = playlistOptions[0]?.playlist_key ?? "all_catalog";
+    redirect(`/playlists?playlist_key=${encodeURIComponent(fallbackKey)}`);
+  }
   const currentPlaylist = playlistOptions.find((p) => p.playlist_key === playlistKey);
   const title = currentPlaylist?.display_name ?? playlistKey;
   const playlistImageUrl = currentPlaylist?.spotify_playlist_image_url ?? null;
@@ -727,6 +740,7 @@ export default async function PlaylistsPage({
       />
 
         <PlaylistDashboardControls
+          datasetMode="own"
           playlists={playlistOptions}
           playlistKey={playlistKey}
           trackCount={playlistTrackCountNumeric}

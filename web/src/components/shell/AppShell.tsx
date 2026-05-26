@@ -103,7 +103,7 @@ export function AppShell(props: {
                 <div className="flex min-w-0 flex-1 items-center gap-3 sm:flex-initial">
                   {playlistWatchOnly ? null : (
                     <div className="w-full max-w-xs sm:w-64 lg:w-80 xl:w-96">
-                      <SearchBar />
+                      <SearchBar datasetMode={datasetMode} />
                     </div>
                   )}
                 </div>

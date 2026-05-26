@@ -65,9 +65,17 @@ Competitor Mode is a parallel analytics universe, not a merge into your own cata
 - **Home** ? overview for the selected competitor across all of its tracked playlists
 - **Playlists** ? playlist-level totals plus current tracks; daily per-track deltas appear once at least two snapshots exist
 - **Catalog** ? competitor artists and tracks
-- **Competitors** ? operations page for labels, playlists, latest exports, ingested counts, missing totals, warnings, and Spotify enrichment gaps
+- **Competitors** ? competitive-intelligence cockpit: label comparison chart/table, cross-label movers, catalog churn, overlap matrix (pipeline health is on `/health`)
+- **Health** ? competitor ingestion checks (stale playlists, row mismatches, warnings, missing totals)
 
 The selected competitor is global. One competitor may own multiple playlists, and changing the selector changes supported competitor-aware surfaces across the app.
+
+Competitor RPCs used by `/competitors` (schema `competitor`):
+
+- `label_distinct_artist_counts(p_run_date)`
+- `label_top_tracks_daily(p_run_date, p_limit, p_direction)` — gainers/losers
+- `label_membership_churn(p_window_days, p_as_of)` — catalog adds/removes
+- `label_overlap_matrix(p_as_of)` — pairwise Jaccard similarity
 
 Notes:
 
@@ -103,7 +111,7 @@ Implementation pointers:
 - Search UI: `web/src/components/shell/SearchBar.tsx`
 - Search API: `web/src/app/api/search/route.ts` (uses Postgres RPC `search_all`)
 - Competitor Mode uses the separate `competitor` schema plus a user setting named `dataset_mode`; when active, search and supported analytics surfaces read competitor data instead of own-catalog data.
-- `/competitors` is the operational cockpit for the competitor subsystem and is intentionally hidden outside Competitor Mode.
+- `/competitors` is the competitive-intelligence cockpit (label comparison chart/table, cross-label movers, catalog churn, overlap matrix). It is intentionally hidden outside Competitor Mode. Pipeline health lives on `/health`.
 - Hover stats API: `web/src/app/api/search-stats/route.ts`
 
 ### View an artist’s total streams
