@@ -11,64 +11,80 @@ import { UserMenu } from "@/components/shell/UserMenu";
 import { GlobalMetricToggle } from "@/components/shell/GlobalMetricToggle";
 import { RollbackButtonWrapper } from "@/components/shell/RollbackButtonWrapper";
 import { LazyAIWidget } from "@/components/sai/LazyAIWidget";
-import { CompetitorLabelSelector } from "@/components/shell/CompetitorLabelSelector";
+import { CompetitorModeButton } from "@/components/shell/CompetitorModeButton";
+import { CompetitorFavicon } from "@/components/shell/CompetitorFavicon";
+import { CompetitorTitleEffect } from "@/components/shell/CompetitorTitleEffect";
 import { AppFooter } from "@/components/shell/AppFooter";
-import type { AppAccess } from "@/lib/appAccess";
+import { isPlaylistWatchOnlyAccess, type AppAccess } from "@/lib/appAccess";
+import { competitorAccentCssVars } from "@/lib/competitorAccent";
 import { APP_SHORT_NAME } from "@/lib/pageTitle";
 
 type MainSurface = "glass" | "plain";
+
+type CompetitorLabelProp = {
+  label_key: string;
+  display_name: string;
+  image_url: string | null;
+  accent_hex: string | null;
+};
 
 export function AppShell(props: {
   children: ReactNode;
   mainSurface?: MainSurface;
   datasetMode?: "own" | "competitor";
   appAccess?: AppAccess;
-  competitorLabels?: Array<{ label_key: string; display_name: string; image_url: string | null }>;
+  userEmail?: string | null;
+  suppressDatasetModeChrome?: boolean;
+  competitorLabels?: CompetitorLabelProp[];
   competitorLabelKey?: string | null;
+  competitorAccentHex?: string | null;
+  competitorDisplayName?: string | null;
 }) {
   const mainSurface = props.mainSurface ?? "glass";
   const datasetMode = props.datasetMode ?? "own";
   const appAccess = props.appAccess;
-  const playlistWatchOnly = Boolean(appAccess?.playlistWatch && !appAccess.ownCatalog && !appAccess.competitor);
+  const playlistWatchOnly = appAccess ? isPlaylistWatchOnlyAccess(appAccess) : false;
+  const showCompetitorSwitcher = Boolean(appAccess?.competitor) && !playlistWatchOnly;
+  const navDatasetMode = props.suppressDatasetModeChrome ? "own" : datasetMode;
   const homeHref = playlistWatchOnly ? "/playlist-watch" : "/";
+  const accentVars = props.competitorAccentHex ? competitorAccentCssVars(props.competitorAccentHex) : "";
+
   return (
     <>
-      {/* 
-        Mobile Navigation - MUST be outside the main container hierarchy.
-        Placing fixed elements inside containers with transforms, filters, 
-        or will-change can break fixed positioning in mobile browsers.
-      */}
-      <MobileNavWithBadge datasetMode={datasetMode} appAccess={appAccess} />
+      {accentVars ? <style>{`:root,html,html[data-theme="dark"]{${accentVars}}`}</style> : null}
+      <CompetitorFavicon accentHex={props.competitorAccentHex ?? null} />
+      <CompetitorTitleEffect
+        datasetMode={datasetMode}
+        competitorDisplayName={props.competitorDisplayName ?? null}
+      />
 
-      {/* SAI assistant - also outside main hierarchy */}
+      <MobileNavWithBadge datasetMode={navDatasetMode} appAccess={appAccess} />
       {playlistWatchOnly ? null : <LazyAIWidget />}
 
-      <div className="sb-app-shell min-h-dvh">
-        {/* subtle accent glow - isolated with contain to prevent affecting fixed children */}
-        <div 
+      <div className="sb-app-shell min-h-dvh" data-mode={datasetMode}>
+        <div
           className="pointer-events-none fixed inset-0 z-0 overflow-hidden"
           style={{ contain: "strict" }}
         >
           <div className="absolute -left-24 -top-24">
-            <div 
-              className="sb-accent-glow h-[420px] w-[420px] opacity-45" 
+            <div
+              className="sb-accent-glow h-[420px] w-[420px] opacity-45"
               style={{ animationDelay: "0s" }}
             />
           </div>
           <div className="absolute -right-40 top-24">
-            <div 
-              className="sb-accent-glow h-[460px] w-[460px] opacity-35" 
+            <div
+              className="sb-accent-glow h-[460px] w-[460px] opacity-35"
               style={{ animationDelay: "-5s", animationDuration: "25s" }}
             />
           </div>
         </div>
 
         <div className="mx-auto flex w-full max-w-[1600px] gap-3 px-3 py-3 pb-[calc(72px+env(safe-area-inset-bottom,0px)+24px)] sm:pb-3">
-          <SideRailWithBadge datasetMode={datasetMode} appAccess={appAccess} />
+          <SideRailWithBadge datasetMode={navDatasetMode} appAccess={appAccess} />
 
           <div className="flex min-w-0 flex-1 flex-col gap-3">
-            {/* Top bar with breadcrumbs (glass) */}
-            <header className="sb-glass px-3 py-2 relative z-20">
+            <header className="sb-glass relative z-20 px-3 py-2">
               <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
                   <Link href={homeHref} className="transition-opacity hover:opacity-80" suppressHydrationWarning>
@@ -83,21 +99,10 @@ export function AppShell(props: {
                       {APP_SHORT_NAME}
                     </Link>
                     <Breadcrumbs />
-                    {datasetMode === "competitor" ? (
-                      <span className="rounded-full bg-fuchsia-500/15 px-2 py-0.5 text-[10px] font-medium text-fuchsia-700 dark:text-fuchsia-200">
-                        Competitor Mode
-                      </span>
-                    ) : null}
-                    {datasetMode === "competitor" ? (
-                      <CompetitorLabelSelector
-                        labels={props.competitorLabels ?? []}
-                        initialLabelKey={props.competitorLabelKey ?? null}
-                      />
-                    ) : null}
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3 min-w-0 flex-1 sm:flex-initial">
+                <div className="flex min-w-0 flex-1 items-center gap-3 sm:flex-initial">
                   {playlistWatchOnly ? null : (
                     <div className="w-full max-w-xs sm:w-64 lg:w-80 xl:w-96">
                       <SearchBar />
@@ -108,17 +113,26 @@ export function AppShell(props: {
                 <div className="flex items-center gap-2">
                   {playlistWatchOnly ? null : (
                     <>
+                      {showCompetitorSwitcher ? (
+                        <CompetitorModeButton
+                          datasetMode={datasetMode}
+                          labels={props.competitorLabels ?? []}
+                          activeLabelKey={props.competitorLabelKey ?? null}
+                        />
+                      ) : null}
                       <RollbackButtonWrapper />
                       <GlobalMetricToggle />
                     </>
                   )}
-                  <UserMenu />
+                  <UserMenu appAccess={appAccess} userEmail={props.userEmail} />
                 </div>
               </div>
             </header>
 
-            {/* Main surface - use sb-glass-solid so child FilterBars can have working backdrop-filter */}
-            <main id="main-content" className={(mainSurface === "glass" ? "sb-glass-solid " : "") + "flex-1 px-3 py-3"}>
+            <main
+              id="main-content"
+              className={(mainSurface === "glass" ? "sb-glass-solid " : "") + "flex-1 px-3 py-3"}
+            >
               <IngestionStatusBanner />
               {props.children}
             </main>
@@ -130,3 +144,5 @@ export function AppShell(props: {
     </>
   );
 }
+
+

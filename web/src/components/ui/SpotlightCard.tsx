@@ -16,7 +16,7 @@ export function SpotlightCard({
   const background = useMotionTemplate`
     radial-gradient(
       650px circle at ${mouseX}px ${mouseY}px,
-      rgba(199, 243, 60, 0.15),
+      color-mix(in srgb, var(--sb-accent) 15%, transparent),
       transparent 80%
     )
   `;

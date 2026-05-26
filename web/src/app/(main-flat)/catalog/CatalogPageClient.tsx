@@ -924,7 +924,7 @@ export function CatalogPageClient(props: {
                     {trackChartData.cumSeries.length > 0 ? (
                       <AnimatedCounter value={trackChartData.cumSeries[trackChartData.cumSeries.length - 1]?.value ?? 0} format={trackChartData.valueFormat} />
                     ) : (
-                      "â€”"
+                      "—"
                     )}
                   </div>
                 </div>
@@ -958,7 +958,7 @@ export function CatalogPageClient(props: {
                     {trackChartData.dailySeries.length > 0 && trackChartData.dailySeries[0]?.daily != null ? (
                       <AnimatedCounter value={Math.abs(trackChartData.dailySeries[0]?.daily ?? 0)} format={trackChartData.valueFormat} />
                     ) : (
-                      "â€”"
+                      "—"
                     )}
                   </div>
                 </div>

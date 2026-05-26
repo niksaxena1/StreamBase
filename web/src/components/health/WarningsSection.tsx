@@ -91,7 +91,7 @@ export async function WarningsSection({
                 className={[
                   "rounded-md px-2.5 py-1 text-[11px] font-medium transition",
                   view === tab.view
-                    ? "bg-[var(--sb-accent)] text-black"
+                    ? "bg-[var(--sb-accent)] text-[var(--sb-accent-text,#000)]"
                     : "text-[var(--sb-muted)] hover:bg-white/10 hover:text-[var(--sb-text)]",
                 ].join(" ")}
               >

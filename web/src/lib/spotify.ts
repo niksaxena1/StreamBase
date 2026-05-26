@@ -155,6 +155,130 @@ export async function getPlaylist(playlistId: string): Promise<SpotifyPlaylistLo
   };
 }
 
+export type SpotifyUserPlaylistSummary = {
+  playlistId: string;
+  name: string;
+  imageUrl: string | null;
+  externalUrl: string | null;
+  followerCount: number | null;
+  ownerId: string | null;
+};
+
+type SpotifyUserPlaylistsPage = {
+  items?: Array<{
+    id?: string;
+    name?: string;
+    images?: Array<{ url: string }>;
+    external_urls?: { spotify?: string };
+    owner?: { id?: string };
+    followers?: { total?: number };
+  }>;
+  next?: string | null;
+};
+
+function spotifyPathFromNextUrl(next: string | null | undefined): string | null {
+  if (!next) return null;
+  try {
+    const url = new URL(next);
+    const path = url.pathname.replace(/^\/v1/, "");
+    return `${path}${url.search}`;
+  } catch {
+    return null;
+  }
+}
+
+/** Public playlists owned by a Spotify user (client-credentials). Paginated with a safety cap. */
+export async function listUserOwnedPlaylists(
+  userId: string,
+  opts?: { maxItems?: number },
+): Promise<{ playlists: SpotifyUserPlaylistSummary[]; truncated: boolean }> {
+  const ownerId = String(userId ?? "").trim();
+  if (!ownerId) return { playlists: [], truncated: false };
+
+  const maxItems = Math.min(500, Math.max(1, opts?.maxItems ?? 200));
+  let path: string | null = `/users/${encodeURIComponent(ownerId)}/playlists?limit=50`;
+  const out: SpotifyUserPlaylistSummary[] = [];
+  let truncated = false;
+
+  while (path) {
+    const page = await spotifyFetch<SpotifyUserPlaylistsPage>(path);
+    for (const item of page.items ?? []) {
+      if (!item.id || !item.name) continue;
+      if (item.owner?.id && item.owner.id !== ownerId) continue;
+      out.push({
+        playlistId: item.id,
+        name: item.name,
+        imageUrl: item.images?.[0]?.url ?? null,
+        externalUrl: item.external_urls?.spotify ?? null,
+        followerCount:
+          typeof item.followers?.total === "number" ? item.followers.total : null,
+        ownerId: item.owner?.id ?? ownerId,
+      });
+      if (out.length >= maxItems) {
+        truncated = true;
+        return { playlists: out, truncated };
+      }
+    }
+    path = truncated ? null : spotifyPathFromNextUrl(page.next);
+    if (path && out.length >= maxItems) {
+      truncated = true;
+      break;
+    }
+  }
+
+  return { playlists: out, truncated };
+}
+
+export type SpotifyUserProfile = {
+  userId: string;
+  displayName: string | null;
+  imageUrl: string | null;
+};
+
+export async function getSpotifyUser(userId: string): Promise<SpotifyUserProfile> {
+  const id = String(userId ?? "").trim();
+  type UserResp = {
+    id: string;
+    display_name?: string | null;
+    images?: Array<{ url: string }>;
+  };
+  const user = await spotifyFetch<UserResp>(`/users/${encodeURIComponent(id)}`);
+  return {
+    userId: user.id,
+    displayName: user.display_name ?? null,
+    imageUrl: user.images?.[0]?.url ?? null,
+  };
+}
+
+const PLAYLIST_FOLLOWER_ENRICH_CONCURRENCY = 5;
+
+/** User-playlist list items omit follower totals; hydrate via Get Playlist (same as add flow). */
+export async function enrichPlaylistsWithFollowerCounts(
+  playlists: SpotifyUserPlaylistSummary[],
+): Promise<SpotifyUserPlaylistSummary[]> {
+  if (playlists.length === 0) return playlists;
+
+  const enriched = [...playlists];
+  for (let i = 0; i < enriched.length; i += PLAYLIST_FOLLOWER_ENRICH_CONCURRENCY) {
+    const chunk = enriched.slice(i, i + PLAYLIST_FOLLOWER_ENRICH_CONCURRENCY);
+    const settled = await Promise.all(
+      chunk.map(async (playlist) => {
+        if (typeof playlist.followerCount === "number") return playlist;
+        try {
+          const meta = await getPlaylistWithFollowers(playlist.playlistId);
+          return { ...playlist, followerCount: meta.followerCount };
+        } catch {
+          return playlist;
+        }
+      }),
+    );
+    for (let j = 0; j < settled.length; j += 1) {
+      enriched[i + j] = settled[j];
+    }
+  }
+  return enriched;
+}
+
 export async function getPlaylistWithFollowers(playlistId: string): Promise<SpotifyPlaylistFollowerLookup> {
   type PlaylistResp = {
     id: string;

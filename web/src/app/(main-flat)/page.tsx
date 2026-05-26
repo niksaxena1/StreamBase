@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import { loadHomeDashboardData } from "@/lib/home/loadHomeDashboard";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
+import { isPlaylistWatchOnlyAccess, normalizeAppAccess } from "@/lib/appAccess";
 import { HomeDashboardClient } from "./HomeDashboardClient";
 
 // Uses Supabase session cookies; this route must be dynamic in Next 16.
@@ -34,14 +35,19 @@ export default async function Home({
 
   if (!session) redirect("/login");
 
+  const svc = supabaseService();
   const { data: isAdmin } = await sb.rpc("is_admin");
-  if (!isAdmin) {
-    const { data: canAccessPlaylistWatch } = await sb.rpc("can_access_playlist_watch");
-    if (canAccessPlaylistWatch) redirect("/playlist-watch");
+  const { data: accessRow } = await svc
+    .from("app_user_access")
+    .select("own_catalog,competitor,playlist_watch,playlist_watch_admin")
+    .eq("user_id", session.user.id)
+    .maybeSingle();
+  const appAccess = normalizeAppAccess(accessRow, Boolean(isAdmin));
+  if (isPlaylistWatchOnlyAccess(appAccess)) redirect("/playlist-watch");
+
+  if (!isAdmin && !appAccess.ownCatalog && !appAccess.competitor) {
     redirect("/login");
   }
-
-  const svc = supabaseService();
 
   const props = await loadHomeDashboardData({
     sb,

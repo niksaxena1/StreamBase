@@ -7,9 +7,9 @@ import { useEffect, useState } from "react";
  * Reads CSS variables from the document root, reacting to theme changes.
  */
 export interface ThemeColors {
-  /** Primary accent color (lime green) - use for fills and glows */
+  /** Brand/chrome accent (lime in own catalog; competitor tint in competitor mode). Not for chart series. */
   accent: string;
-  /** Accent stroke - slightly darker in light mode for better contrast on thin lines */
+  /** Brand/chrome stroke — UI chrome only, not chart series. */
   accentStroke: string;
   /** Soft accent for backgrounds */
   accentSoft: string;
@@ -169,10 +169,9 @@ export function useThemeColors(): ThemeColors {
  * @param colors - Theme colors from useThemeColors()
  * @returns The color to use for the chart
  */
-export function getChartColor(
-  metric: "streams" | "revenue" | "tracks" | "warning" | "error" | "info",
-  colors: ThemeColors
-): string {
+export type ChartMetric = "streams" | "revenue" | "tracks" | "warning" | "error" | "info";
+
+export function getChartColor(metric: ChartMetric, colors: ThemeColors): string {
   switch (metric) {
     case "revenue":
       return colors.revenue;
@@ -186,8 +185,18 @@ export function getChartColor(
       return colors.info;
     case "streams":
     default:
-      return colors.accentStroke;
+      return colors.positive;
   }
+}
+
+/** Infer chart metric from InteractiveChartSection-style labels. */
+export function inferChartMetricFromLabels(
+  valueFormat: "int" | "usd",
+  valueLabel: string,
+): ChartMetric {
+  if (valueFormat === "usd") return "revenue";
+  if (valueLabel === "Tracks" || valueLabel.startsWith("Track")) return "tracks";
+  return "streams";
 }
 
 /**

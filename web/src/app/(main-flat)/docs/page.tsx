@@ -2,7 +2,10 @@ import path from "node:path";
 import { readdir, readFile } from "node:fs/promises";
 import type { Metadata } from "next";
 
+import { redirect } from "next/navigation";
+
 import { DocsClient } from "./DocsClient";
+import { normalizeAppAccess, streamBaseAccessRedirectPath } from "@/lib/appAccess";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { cachedQuery } from "@/lib/supabase/cache";
@@ -80,6 +83,23 @@ function splitIntoSections(md: string): { introMd: string; sections: DocSection[
 }
 
 export default async function DocsPage() {
+  const sb = await supabaseServer();
+  const {
+    data: { session },
+  } = await sb.auth.getSession();
+  if (!session) redirect("/login");
+
+  const svc = supabaseService();
+  const { data: isAdmin } = await sb.rpc("is_admin");
+  const { data: accessRow } = await svc
+    .from("app_user_access")
+    .select("own_catalog,competitor,playlist_watch,playlist_watch_admin")
+    .eq("user_id", session.user.id)
+    .maybeSingle();
+  const appAccess = normalizeAppAccess(accessRow, Boolean(isAdmin));
+  const streamBaseRedirect = streamBaseAccessRedirectPath(appAccess);
+  if (streamBaseRedirect) redirect(streamBaseRedirect);
+
   let md = "";
   try {
     md = await readFile(filePath(), "utf8");

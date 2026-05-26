@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 
+import { normalizeAppAccess, streamBaseAccessRedirectPath } from "@/lib/appAccess";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { NetworkGraphClient } from "./NetworkGraphClient";
@@ -65,12 +66,18 @@ export default async function NetworkPage({
   } = await sb.auth.getSession();
   if (!session) redirect("/login");
 
+  const svc = supabaseService();
   const { data: isAdmin } = await sb.rpc("is_admin");
-  if (!isAdmin) redirect("/");
+  const { data: accessRow } = await svc
+    .from("app_user_access")
+    .select("own_catalog,competitor,playlist_watch,playlist_watch_admin")
+    .eq("user_id", session.user.id)
+    .maybeSingle();
+  const appAccess = normalizeAppAccess(accessRow, Boolean(isAdmin));
+  const streamBaseRedirect = streamBaseAccessRedirectPath(appAccess);
+  if (streamBaseRedirect) redirect(streamBaseRedirect);
 
   const sp = (await searchParams) ?? {};
-
-  const svc = supabaseService();
 
   const { data: playlistRows, error: plErr } = await svc
     .from("playlists")

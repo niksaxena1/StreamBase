@@ -19,7 +19,7 @@ export function AppFooter() {
           >
             SpotOnTrack
           </a>
-          {" "}exports â€¢ Updated daily via{" "}
+          {" "}exports · Updated daily via{" "}
           <a
             href="https://github.com/niksaxena1/SBase/actions"
             target="_blank"

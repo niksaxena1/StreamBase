@@ -16,10 +16,44 @@ Future fallbacks, such as artist.tools scraping, should be added behind the coll
 
 - `Spotify Playlist Watch Daily`
 - Script: `scripts/collect_playlist_watch_followers.py`
+- Alert script: `scripts/evaluate_playlist_watch_alerts.py`
 - Schema: `playlist_watch`
 - Source label: `spotify_api`
 
 The workflow reads active rows from `playlist_watch.playlists`, fetches follower totals, upserts one snapshot per `(date, spotify_playlist_id)`, and records warnings without touching own-catalog or competitor jobs.
+
+After collection, the workflow evaluates active rows in `playlist_watch.alert_rules`. Matching follower spikes send email to the rule's `recipient_email` and write `playlist_watch.alert_events` so a rule/playlist/date does not notify repeatedly.
+
+These Playlist Watch alert emails are user-configurable product notifications. They are separate from existing CI/fix/failure emails, which continue to use `.github/actions/notify-email` with its existing default recipient.
+
+Rules support:
+
+- `min_absolute_jump`: current follower count minus the comparison-window average must be at least this value.
+- `min_percent_jump`: the same jump must be at least this percentage above the comparison-window average.
+- `comparison_window_days`: baseline window from 1 to 30 days, defaulting to 7.
+- Optional playlist scope through `playlist_watch.alert_rule_playlists`; no scoped rows means all active watchlist playlists.
+
+When both absolute and percentage thresholds are set, both must match. A rule needs a full baseline window plus the current run date before it can alert.
+
+Example rule setup:
+
+```sql
+INSERT INTO playlist_watch.alert_rules (
+  user_id,
+  recipient_email,
+  rule_name,
+  min_absolute_jump,
+  min_percent_jump,
+  comparison_window_days
+) VALUES (
+  '<auth-user-id>',
+  'alerts@example.com',
+  'Large follower spike',
+  500,
+  25,
+  7
+);
+```
 
 ## App Access
 

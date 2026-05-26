@@ -2,6 +2,35 @@
 
 import { useLayoutEffect, useRef, useState } from "react";
 
+function overflowsAxis(value: string): boolean {
+  return value === "hidden" || value === "auto" || value === "scroll" || value === "clip";
+}
+
+/** Tightest horizontal clip region from viewport + overflow ancestors (e.g. modals). */
+function getHorizontalClipBounds(anchor: HTMLElement, paddingPx: number): { left: number; right: number } {
+  const vw = window.innerWidth || document.documentElement.clientWidth || 0;
+  let left = paddingPx;
+  let right = vw > 0 ? vw - paddingPx : paddingPx;
+
+  let node: HTMLElement | null = anchor.parentElement;
+  while (node && node !== document.documentElement) {
+    const style = getComputedStyle(node);
+    if (overflowsAxis(style.overflowX) || overflowsAxis(style.overflowY)) {
+      const rect = node.getBoundingClientRect();
+      left = Math.max(left, rect.left + paddingPx);
+      right = Math.min(right, rect.right - paddingPx);
+    }
+    node = node.parentElement;
+  }
+
+  if (right < left) {
+    const mid = (left + right) / 2;
+    return { left: mid, right: mid };
+  }
+
+  return { left, right };
+}
+
 export function ViewportAwareTooltip({
   children,
   viewportPaddingPx = 8,
@@ -24,23 +53,32 @@ export function ViewportAwareTooltip({
     let raf = 0;
 
     const measure = () => {
-      // Reset clamp first; we'll recompute below.
-      setClampDx(0);
-
       const rect = el.getBoundingClientRect();
-      const vw = window.innerWidth || document.documentElement.clientWidth || 0;
-      if (!vw) return;
+      const { left: boundLeft, right: boundRight } = getHorizontalClipBounds(el, viewportPaddingPx);
 
-      // If the tooltip is flowing off the right edge, flip it to the left of the anchor.
-      if (!flipLeft && rect.right > vw - viewportPaddingPx) {
+      if (!flipLeft && rect.right > boundRight) {
         setFlipLeft(true);
+        setClampDx(0);
         return;
       }
 
-      // If flipped, ensure we don't flow off the left edge.
-      if (flipLeft && rect.left < viewportPaddingPx) {
-        setClampDx(viewportPaddingPx - rect.left);
+      if (flipLeft && rect.left < boundLeft) {
+        setClampDx(boundLeft - rect.left);
+        return;
       }
+
+      if (flipLeft && rect.right <= boundRight) {
+        setFlipLeft(false);
+        setClampDx(0);
+        return;
+      }
+
+      if (!flipLeft && rect.left < boundLeft) {
+        setClampDx(boundLeft - rect.left);
+        return;
+      }
+
+      setClampDx(0);
     };
 
     const schedule = () => {
@@ -51,10 +89,8 @@ export function ViewportAwareTooltip({
     const ro = new ResizeObserver(() => schedule());
     ro.observe(el);
 
-    // Initial measurement.
     schedule();
 
-    // Re-measure on viewport changes / scroll (covers charts inside scroll containers).
     window.addEventListener("resize", schedule);
     window.addEventListener("scroll", schedule, true);
 
@@ -81,4 +117,3 @@ export function ViewportAwareTooltip({
     </div>
   );
 }
-

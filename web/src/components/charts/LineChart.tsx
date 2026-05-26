@@ -109,7 +109,7 @@ export function LineChart(props: {
               cx={pts[pts.length - 1].x}
               cy={pts[pts.length - 1].y}
               r="4"
-              fill="var(--sb-accent)"
+              fill="var(--sb-positive)"
               stroke={isDark ? "rgba(255,255,255,0.65)" : "rgba(0,0,0,0.65)"}
               strokeWidth="1"
             />

@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath, revalidateTag } from "next/cache";
 import type { Metadata } from "next";
 
+import { normalizeAppAccess, streamBaseAccessRedirectPath } from "@/lib/appAccess";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { PageHeader } from "@/components/shell/PageHeader";
@@ -29,8 +30,6 @@ import { CollapsibleSection } from "@/components/ui/CollapsibleSection";
 import { HealthExclusionsSection, type ExclusionTabConfig } from "./HealthExclusionsSection";
 import { SettingsNav } from "./SettingsNav";
 import { dataDateFromRunDate } from "@/lib/sotDates";
-import { normalizeDatasetMode } from "@/lib/datasetMode";
-import { DatasetModeSetting } from "./DatasetModeSetting";
 import { CollectorEntityPlaylistStatsSetting } from "./CollectorEntityPlaylistStatsSetting";
 
 export const revalidate = 86400; // 24h ISR - admin config changes are infrequent
@@ -44,8 +43,19 @@ async function requireAdmin() {
   const { data } = await sb.auth.getUser();
   if (!data.user) redirect("/login");
 
+  const svc = supabaseService();
   const { data: isAdmin, error } = await sb.rpc("is_admin");
   if (error) throw new Error(error.message);
+
+  const { data: accessRow } = await svc
+    .from("app_user_access")
+    .select("own_catalog,competitor,playlist_watch,playlist_watch_admin")
+    .eq("user_id", data.user.id)
+    .maybeSingle();
+  const appAccess = normalizeAppAccess(accessRow, Boolean(isAdmin));
+  const streamBaseRedirect = streamBaseAccessRedirectPath(appAccess);
+  if (streamBaseRedirect) redirect(streamBaseRedirect);
+
   if (!isAdmin) redirect("/");
 
   return { sb, userId: data.user.id };
@@ -54,13 +64,6 @@ async function requireAdmin() {
 export default async function SettingsPage() {
   const { userId } = await requireAdmin();
   const svc = supabaseService();
-  const { data: datasetSettings } = await svc
-    .from("user_settings")
-    .select("dataset_mode")
-    .eq("user_id", userId)
-    .maybeSingle();
-  const datasetMode = normalizeDatasetMode(datasetSettings?.dataset_mode);
-
   const { data: latestRun } = await svc
     .from("ingestion_runs")
     .select("run_date")
@@ -697,7 +700,6 @@ export default async function SettingsPage() {
 
   // Section definitions for jump links
   const sections = [
-    { id: "dataset", label: "Dataset" },
     { id: "collectors", label: "Collectors" },
     { id: "ai", label: "AI" },
     { id: "home", label: "Home" },
@@ -735,15 +737,6 @@ export default async function SettingsPage() {
 
       {/* Quick settings — 2-column card grid on wider screens */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div
-          id="dataset"
-          className="scroll-mt-14 space-y-2 rounded-xl border p-4"
-          style={{ borderColor: "var(--sb-border)" }}
-        >
-          <SectionHeader title="Dataset" subtitle="Choose which world StreamBase is looking at." />
-          <DatasetModeSetting initialMode={datasetMode} />
-        </div>
-
         <div
           id="ai"
           className="scroll-mt-14 space-y-2 rounded-xl border p-4"

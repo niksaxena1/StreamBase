@@ -339,7 +339,7 @@ export function TrackStreamsXYChart({
   }, [mode, payoutPerStreamUsd, points, topNDelta, topNCumulative, sampleN]);
 
   const themeColors = useThemeColors();
-  const dotColor = color ?? (mode === "revenue" ? themeColors.revenue : themeColors.accentStroke);
+  const dotColor = color ?? (mode === "revenue" ? themeColors.revenue : themeColors.positive);
   const mutedDotColor = "rgba(148, 163, 184, 0.7)"; // slate-ish
 
   // Compute log-scale domains + clean ticks based on TOP data only

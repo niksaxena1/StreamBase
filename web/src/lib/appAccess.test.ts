@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { normalizeAppAccess } from "@/lib/appAccess";
+import { hasStreamBaseAccess, isPlaylistWatchOnlyAccess, normalizeAppAccess, streamBaseAccessRedirectPath } from "@/lib/appAccess";
 
 describe("normalizeAppAccess", () => {
   it("lets admins use all app areas", () => {
@@ -29,5 +29,65 @@ describe("normalizeAppAccess", () => {
       playlistWatch: true,
       playlistWatchAdmin: false,
     });
+  });
+
+  it("detects StreamBase access from catalog/competitor flags", () => {
+    expect(
+      hasStreamBaseAccess({
+        ownCatalog: false,
+        competitor: false,
+        playlistWatch: true,
+        playlistWatchAdmin: true,
+      }),
+    ).toBe(false);
+
+    expect(
+      hasStreamBaseAccess({
+        ownCatalog: true,
+        competitor: false,
+        playlistWatch: false,
+        playlistWatchAdmin: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("redirects non-StreamBase users to playlist watch or login", () => {
+    expect(
+      streamBaseAccessRedirectPath({
+        ownCatalog: false,
+        competitor: false,
+        playlistWatch: true,
+        playlistWatchAdmin: true,
+      }),
+    ).toBe("/playlist-watch");
+
+    expect(
+      streamBaseAccessRedirectPath({
+        ownCatalog: false,
+        competitor: false,
+        playlistWatch: false,
+        playlistWatchAdmin: false,
+      }),
+    ).toBe("/login");
+  });
+
+  it("identifies watch-only access", () => {
+    expect(
+      isPlaylistWatchOnlyAccess({
+        ownCatalog: false,
+        competitor: false,
+        playlistWatch: true,
+        playlistWatchAdmin: false,
+      }),
+    ).toBe(true);
+
+    expect(
+      isPlaylistWatchOnlyAccess({
+        ownCatalog: true,
+        competitor: true,
+        playlistWatch: true,
+        playlistWatchAdmin: true,
+      }),
+    ).toBe(false);
   });
 });

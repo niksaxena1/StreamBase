@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useId } from "react";
-import { useThemeColors } from "@/components/charts/useThemeColors";
+import { getChartColor, useThemeColors } from "@/components/charts/useThemeColors";
 
 export const Sparkline = memo(function Sparkline({
   data,
@@ -43,7 +43,7 @@ export const Sparkline = memo(function Sparkline({
     const last = data[data.length - 1];
     const isUp = last > first;
     const lineColor =
-      color || (isUp ? upColor ?? themeColors.accentStroke : trend === "down" ? "#ff4d4d" : "currentColor");
+      color || (isUp ? upColor ?? getChartColor("streams", themeColors) : trend === "down" ? "#ff4d4d" : "currentColor");
 
     return (
       <svg
@@ -88,7 +88,7 @@ export const Sparkline = memo(function Sparkline({
   } as const;
 
   const lineColor =
-    color || (trend === "up" ? upColor ?? themeColors.accentStroke : trend === "down" ? "#ff4d4d" : "currentColor");
+    color || (trend === "up" ? upColor ?? getChartColor("streams", themeColors) : trend === "down" ? "#ff4d4d" : "currentColor");
 
   return (
     <svg

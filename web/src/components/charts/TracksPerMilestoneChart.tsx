@@ -267,7 +267,7 @@ export function TracksPerMilestoneChart({
   }, [tracks]);
   const totalCount = countMode === "artists" ? totalArtists : totalTracks;
   const countLabel: "Tracks" | "Artists" = countMode === "artists" ? "Artists" : "Tracks";
-  const accentColor = mode === "revenue" ? themeColors.revenue : themeColors.accent;
+  const accentColor = mode === "revenue" ? themeColors.revenue : themeColors.positive;
 
   // Track the currently hovered/active milestone from the tooltip
   const activePayloadRef = useRef<MilestoneDataPoint | null>(null);

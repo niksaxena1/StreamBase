@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { BookOpen, LogOut, Network, Settings, User, Moon, Sun } from "lucide-react";
+import { BookOpen, Eye, LogOut, Network, Settings, User, Moon, Sun } from "lucide-react";
 
 import { IconButton } from "@/components/ui/Button";
+import { hasStreamBaseAccess, type AppAccess } from "@/lib/appAccess";
 import { supabaseBrowser } from "@/lib/supabase/client";
 
 type Theme = "light" | "dark";
@@ -33,7 +34,7 @@ function cx(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
 }
 
-export function UserMenu() {
+export function UserMenu({ appAccess, userEmail }: { appAccess?: AppAccess; userEmail?: string | null }) {
   const [open, setOpen] = useState(false);
   const [theme, setTheme] = useState<Theme>(() => readTheme());
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -103,11 +104,14 @@ export function UserMenu() {
 
   const isDark = theme === "dark";
   const nextTheme: Theme = isDark ? "light" : "dark";
+  const showStreamBaseUtilityNav = appAccess ? hasStreamBaseAccess(appAccess) : false;
+  const showPlaylistWatchNav =
+    Boolean(appAccess?.playlistWatch) && showStreamBaseUtilityNav;
 
   const menuContent = (
     <div
       ref={menuRef}
-      className="sb-card fixed z-[120] w-44 p-1"
+      className="sb-card fixed z-[120] w-52 max-w-[min(16rem,calc(100vw-1.5rem))] p-1"
       style={{ top: portalPos?.top ?? 0, right: portalPos?.right ?? 0 }}
       onMouseDown={(e) => e.stopPropagation()}
     >
@@ -125,48 +129,77 @@ export function UserMenu() {
         <span>{isDark ? "Light Mode" : "Dark Mode"}</span>
       </button>
 
-      <Link
-        href="/network"
-        className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs transition hover:bg-black/5 dark:hover:bg-white/10"
-        onClick={() => setOpen(false)}
-        title="Collaboration network"
-      >
-        <Network className="h-4 w-4 opacity-70" />
-        <span>Network</span>
-      </Link>
+      {showPlaylistWatchNav ? (
+        <Link
+          href="/playlist-watch"
+          className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs transition hover:bg-black/5 dark:hover:bg-white/10"
+          onClick={() => setOpen(false)}
+          title="Playlist Watch"
+        >
+          <Eye className="h-4 w-4 opacity-70" />
+          <span>Playlist Watch</span>
+        </Link>
+      ) : null}
+
+      {showStreamBaseUtilityNav ? (
+        <Link
+          href="/network"
+          className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs transition hover:bg-black/5 dark:hover:bg-white/10"
+          onClick={() => setOpen(false)}
+          title="Collaboration network"
+        >
+          <Network className="h-4 w-4 opacity-70" />
+          <span>Network</span>
+        </Link>
+      ) : null}
 
       {/* Mobile-only: settings is otherwise available in the desktop side rail */}
-      <Link
-        href="/settings"
-        className={cx(
-          "sm:hidden",
-          "flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs transition hover:bg-black/5 dark:hover:bg-white/10",
-        )}
-        onClick={() => setOpen(false)}
-      >
-        <Settings className="h-4 w-4 opacity-70" />
-        <span>Settings</span>
-      </Link>
+      {showStreamBaseUtilityNav ? (
+        <Link
+          href="/settings"
+          className={cx(
+            "sm:hidden",
+            "flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs transition hover:bg-black/5 dark:hover:bg-white/10",
+          )}
+          onClick={() => setOpen(false)}
+        >
+          <Settings className="h-4 w-4 opacity-70" />
+          <span>Settings</span>
+        </Link>
+      ) : null}
 
-      <Link
-        href="/docs"
-        className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs transition hover:bg-black/5 dark:hover:bg-white/10"
-        onClick={() => setOpen(false)}
-        title="Docs"
-      >
-        <BookOpen className="h-4 w-4 opacity-70" />
-        <span>Docs</span>
-      </Link>
+      {showStreamBaseUtilityNav ? (
+        <Link
+          href="/docs"
+          className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs transition hover:bg-black/5 dark:hover:bg-white/10"
+          onClick={() => setOpen(false)}
+          title="Docs"
+        >
+          <BookOpen className="h-4 w-4 opacity-70" />
+          <span>Docs</span>
+        </Link>
+      ) : null}
 
-      <button
-        type="button"
-        onClick={logout}
-        className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-black/5 dark:hover:bg-white/10"
-        title="Log out"
-      >
-        <LogOut className="h-4 w-4 opacity-70" />
-        <span>Logout</span>
-      </button>
+      <div className="mt-0.5 border-t pt-1" style={{ borderColor: "var(--sb-border)" }}>
+        <button
+          type="button"
+          onClick={logout}
+          className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-black/5 dark:hover:bg-white/10"
+          title={userEmail ? `Log out (${userEmail})` : "Log out"}
+        >
+          <LogOut className="h-4 w-4 shrink-0 opacity-70" />
+          <span>Logout</span>
+        </button>
+        {userEmail ? (
+          <p
+            className="truncate px-2.5 pb-1.5 pt-0.5 text-[10px] leading-snug"
+            style={{ color: "var(--sb-muted)" }}
+            title={userEmail}
+          >
+            {userEmail}
+          </p>
+        ) : null}
+      </div>
     </div>
   );
 

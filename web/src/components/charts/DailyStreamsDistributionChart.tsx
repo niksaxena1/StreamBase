@@ -316,7 +316,7 @@ export function DailyStreamsDistributionChart({
   }, [tracks]);
   const totalCount = countMode === "artists" ? totalArtists : totalTracks;
   const countLabel: "Tracks" | "Artists" = countMode === "artists" ? "Artists" : "Tracks";
-  const accentColor = mode === "revenue" ? themeColors.revenue : themeColors.accent;
+  const accentColor = mode === "revenue" ? themeColors.revenue : themeColors.positive;
 
   const buckets = customBuckets ?? DEFAULT_DAILY_BUCKETS;
 

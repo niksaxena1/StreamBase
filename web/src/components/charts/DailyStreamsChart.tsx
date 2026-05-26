@@ -24,7 +24,7 @@ import {
   formatXAxisTick,
 } from "@/components/charts/chartUtils";
 import { useChartCopyToClipboard } from "@/components/charts/useChartCopyToClipboard";
-import { useThemeColors } from "@/components/charts/useThemeColors";
+import { getChartColor, useThemeColors } from "@/components/charts/useThemeColors";
 import { useWeekHighlight } from "@/components/charts/WeekHighlightContext";
 import { useChartStartDate } from "@/components/charts/ChartStartDateContext";
 import { useChartAxisZoom } from "@/components/charts/ChartAxisZoomContext";
@@ -98,7 +98,7 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
   const enableWeekendDip = showWeekendDip && !isCumulative && valueLabel !== "Tracks";
 
   // Use theme-aware colors from CSS variables
-  const effectiveColor = color ?? themeColors.accentStroke;
+  const effectiveColor = color ?? getChartColor("streams", themeColors);
   const effectiveMaColor = maColor ?? (themeColors.isDark ? "#ffffff" : "#000000");
   const sundayColor = getSundayAccentColor(effectiveColor, { isDark: themeColors.isDark, bgColor: themeColors.bg });
 

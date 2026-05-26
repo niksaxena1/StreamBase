@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import React from "react";
 import type { DatasetMode } from "@/lib/datasetMode";
 import { navItemsForMode } from "@/lib/datasets";
-import type { AppAccess } from "@/lib/appAccess";
+import { hasStreamBaseAccess, type AppAccess } from "@/lib/appAccess";
 
 export type Item = {
   href: string;
@@ -67,12 +67,16 @@ function SideRailContent({
 }) {
   const pathname = usePathname();
   const visibleNavItems = navItemsForMode(datasetMode, navItems, appAccess);
+  const showStreamBaseUtilityNav = appAccess ? hasStreamBaseAccess(appAccess) : false;
 
   return (
     <div className="sb-glass sticky top-3 z-30 flex flex-col items-center gap-2 px-2 py-2">
       {visibleNavItems.map((it) => {
         const active = pathname ? (pathname === it.href || pathname.startsWith(`${it.href}/`)) : false;
         const isHealth = it.href === "/health";
+
+        const competitorActive = datasetMode === "competitor" && active;
+        const competitorInactive = datasetMode === "competitor" && !active;
 
         return (
           <Link
@@ -81,10 +85,19 @@ function SideRailContent({
             aria-current={active ? "page" : undefined}
             className={[
               "group relative grid h-9 w-9 place-items-center rounded-full transition",
-              active
-                ? "bg-black text-white shadow-sm dark:bg-white dark:text-black"
-                : "bg-white/70 text-black/70 hover:bg-white dark:bg-white/10 dark:text-white/70 dark:hover:bg-white/20",
+              competitorActive
+                ? "shadow-sm ring-1 ring-[var(--sb-accent)]/40"
+                : competitorInactive
+                  ? "bg-white/70 text-black/70 hover:bg-[var(--sb-accent-10)] dark:bg-white/10 dark:text-white/70 dark:hover:bg-[var(--sb-accent-10)]"
+                  : active
+                    ? "bg-black text-white shadow-sm dark:bg-white dark:text-black"
+                    : "bg-white/70 text-black/70 hover:bg-white dark:bg-white/10 dark:text-white/70 dark:hover:bg-white/20",
             ].join(" ")}
+            style={
+              competitorActive
+                ? { background: "var(--sb-accent)", color: "var(--sb-accent-text,#000)" }
+                : undefined
+            }
           >
             {it.icon(active)}
 
@@ -134,41 +147,45 @@ function SideRailContent({
         );
       })}
 
-      <div className="my-2 h-px w-full" style={{ background: "var(--sb-border)" }} />
+      {showStreamBaseUtilityNav ? (
+        <>
+          <div className="my-2 h-px w-full" style={{ background: "var(--sb-border)" }} />
 
-      <Link
-        href="/settings"
-        className="group relative grid h-9 w-9 place-items-center rounded-full transition hover:opacity-90"
-        style={{
-          background: "var(--sb-accent)",
-          color: "#000",
-          boxShadow: "var(--sb-shadow-compact)",
-        }}
-      >
-        <IconGear />
-        {/* CSS-only tooltip */}
-        <span
-          className="pointer-events-none absolute left-full ml-3 flex items-center gap-2 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-medium opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
-          style={{
-            background: "var(--sb-card)",
-            color: "var(--sb-text)",
-            border: "1px solid var(--sb-border-2)",
-            backdropFilter: "blur(12px)",
-          }}
-        >
-          Settings
-          <kbd
-            className="rounded border px-1.5 py-0.5 text-[10px] font-medium"
+          <Link
+            href="/settings"
+            className="group relative grid h-9 w-9 place-items-center rounded-full transition hover:opacity-90"
             style={{
-              borderColor: "var(--sb-border)",
-              background: "var(--sb-surface)",
-              color: "var(--sb-muted)",
+              background: "var(--sb-accent)",
+              color: "var(--sb-accent-text,#000)",
+              boxShadow: "var(--sb-shadow-compact)",
             }}
           >
-            g s
-          </kbd>
-        </span>
-      </Link>
+            <IconGear />
+            {/* CSS-only tooltip */}
+            <span
+              className="pointer-events-none absolute left-full ml-3 flex items-center gap-2 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-medium opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
+              style={{
+                background: "var(--sb-card)",
+                color: "var(--sb-text)",
+                border: "1px solid var(--sb-border-2)",
+                backdropFilter: "blur(12px)",
+              }}
+            >
+              Settings
+              <kbd
+                className="rounded border px-1.5 py-0.5 text-[10px] font-medium"
+                style={{
+                  borderColor: "var(--sb-border)",
+                  background: "var(--sb-surface)",
+                  color: "var(--sb-muted)",
+                }}
+              >
+                g s
+              </kbd>
+            </span>
+          </Link>
+        </>
+      ) : null}
     </div>
   );
 }

@@ -286,7 +286,7 @@ export function ArtistStreamsXYChart({
   }, [mode, payoutPerStreamUsd, points, topNDelta, topNCumulative, sampleN]);
 
   const themeColors = useThemeColors();
-  const dotColor = color ?? (mode === "revenue" ? themeColors.revenue : themeColors.accentStroke);
+  const dotColor = color ?? (mode === "revenue" ? themeColors.revenue : themeColors.positive);
   const mutedDotColor = "rgba(148, 163, 184, 0.7)";
 
   const { logDomainX, logDomainY, logTicksX, logTicksY } = useMemo(() => {

@@ -44,4 +44,22 @@ describe("dataset helpers", () => {
       }),
     ).toEqual([{ href: "/playlist-watch", label: "Playlist Watch" }]);
   });
+
+  it("keeps playlist watch out of the main mode nav for full users", () => {
+    const items = [
+      { href: "/", label: "Home" },
+      { href: "/playlists", label: "Playlists" },
+      { href: "/playlist-watch", label: "Playlist Watch" },
+      { href: "/health", label: "Health" },
+    ];
+
+    expect(
+      navItemsForMode("own", items, {
+        ownCatalog: true,
+        competitor: true,
+        playlistWatch: true,
+        playlistWatchAdmin: true,
+      }).some((item) => item.href === "/playlist-watch"),
+    ).toBe(false);
+  });
 });

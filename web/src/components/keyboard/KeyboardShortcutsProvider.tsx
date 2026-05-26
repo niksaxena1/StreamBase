@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, useCallback, ReactNode } from "react";
 import { useRouter, usePathname } from "next/navigation";
 
+import { hasStreamBaseAccess, type AppAccess } from "@/lib/appAccess";
 import { triggerRouteLoadingBarStart } from "@/lib/navigation/loadingBar";
 
 type ShortcutHandler = () => void;
@@ -48,7 +49,13 @@ const NAV_ITEMS = [
   { key: "5", href: "/health", label: "Health" },
 ];
 
-export function KeyboardShortcutsProvider({ children }: { children: ReactNode }) {
+export function KeyboardShortcutsProvider({
+  children,
+  appAccess,
+}: {
+  children: ReactNode;
+  appAccess?: AppAccess;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const [isHelpOpen, setIsHelpOpen] = useState(false);
@@ -59,6 +66,7 @@ export function KeyboardShortcutsProvider({ children }: { children: ReactNode })
   const [customShortcuts, setCustomShortcuts] = useState<Map<string, { handler: ShortcutHandler; description: string }>>(
     new Map()
   );
+  const showStreamBaseShortcuts = appAccess ? hasStreamBaseAccess(appAccess) : false;
 
   const openHelp = useCallback(() => setIsHelpOpen(true), []);
   const closeHelp = useCallback(() => setIsHelpOpen(false), []);
@@ -94,14 +102,18 @@ export function KeyboardShortcutsProvider({ children }: { children: ReactNode })
   // Build shortcuts list for display (memoized so context value stays stable)
   const shortcuts = useMemo(
     () => [
-      { key: "/", description: "Open search" },
+      ...(showStreamBaseShortcuts ? [{ key: "/", description: "Open search" }] : []),
       { key: "?", description: "Show keyboard shortcuts" },
-      ...NAV_ITEMS.map((item) => ({ key: item.key, description: `Go to ${item.label}` })),
-      { key: "g s", description: "Go to Settings" },
+      ...(showStreamBaseShortcuts
+        ? [
+            ...NAV_ITEMS.map((item) => ({ key: item.key, description: `Go to ${item.label}` })),
+            { key: "g s", description: "Go to Settings" },
+          ]
+        : []),
       { key: "Esc", description: "Close modal / dialog" },
       ...Array.from(customShortcuts.entries()).map(([key, { description }]) => ({ key, description })),
     ],
-    [customShortcuts],
+    [customShortcuts, showStreamBaseShortcuts],
   );
 
   useEffect(() => {
@@ -136,6 +148,7 @@ export function KeyboardShortcutsProvider({ children }: { children: ReactNode })
 
       // "/" to open search
       if (e.key === "/") {
+        if (!showStreamBaseShortcuts) return;
         e.preventDefault();
         openSearch();
         return;
@@ -163,6 +176,7 @@ export function KeyboardShortcutsProvider({ children }: { children: ReactNode })
 
       // "g s" to go to settings
       if (gPressed && e.key === "s") {
+        if (!showStreamBaseShortcuts) return;
         e.preventDefault();
         gPressed = false;
         if (gTimeout) clearTimeout(gTimeout);
@@ -178,15 +192,17 @@ export function KeyboardShortcutsProvider({ children }: { children: ReactNode })
       }
 
       // Number keys 1-5 for navigation
-      const navItem = NAV_ITEMS.find((item) => item.key === e.key);
-      if (navItem) {
-        e.preventDefault();
-        // Only navigate if not already on that page
-        if (pathname !== navItem.href) {
-          triggerRouteLoadingBarStart(navItem.href);
-          router.push(navItem.href);
+      if (showStreamBaseShortcuts) {
+        const navItem = NAV_ITEMS.find((item) => item.key === e.key);
+        if (navItem) {
+          e.preventDefault();
+          // Only navigate if not already on that page
+          if (pathname !== navItem.href) {
+            triggerRouteLoadingBarStart(navItem.href);
+            router.push(navItem.href);
+          }
+          return;
         }
-        return;
       }
 
       // Check custom shortcuts
@@ -203,7 +219,7 @@ export function KeyboardShortcutsProvider({ children }: { children: ReactNode })
       document.removeEventListener("keydown", handleKeyDown);
       if (gTimeout) clearTimeout(gTimeout);
     };
-  }, [router, pathname, isHelpOpen, openHelp, closeHelp, openSearch, customShortcuts]);
+  }, [router, pathname, isHelpOpen, openHelp, closeHelp, openSearch, customShortcuts, showStreamBaseShortcuts]);
 
   const value: KeyboardShortcutsContextValue = useMemo(() => ({
     registerShortcut,

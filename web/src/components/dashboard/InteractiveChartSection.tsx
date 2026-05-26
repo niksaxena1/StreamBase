@@ -8,7 +8,7 @@ import { DailyStreamsChart } from "@/components/charts/DailyStreamsChart";
 import { AnimatedCounter } from "@/components/ui/AnimatedCounter";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
 import { slugifyForFilename, todayIsoDate } from "@/lib/csv";
-import { useThemeColors, getChartColor } from "@/components/charts/useThemeColors";
+import { getChartColor, inferChartMetricFromLabels, useThemeColors } from "@/components/charts/useThemeColors";
 import { useChartStartDate } from "@/components/charts/ChartStartDateContext";
 import { filterDailySeriesFromIsoDate, downsampleSeries } from "@/components/charts/chartUtils";
 
@@ -76,7 +76,8 @@ export function InteractiveChartSection({
   
   // Use theme-aware chart color if none specified
   const themeColors = useThemeColors();
-  const effectiveColor = color ?? themeColors.accentStroke;
+  const chartMetric = inferChartMetricFromLabels(valueFormat, dailyValueLabel);
+  const effectiveColor = color ?? getChartColor(chartMetric, themeColors);
 
   const dailyFiltered = useMemo(
     () => downsampleSeries(filterDailySeriesFromIsoDate(dailyStreamsData ?? [], chartStartDateIso)),

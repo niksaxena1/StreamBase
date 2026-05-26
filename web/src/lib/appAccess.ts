@@ -28,3 +28,19 @@ export function normalizeAppAccess(row: AppAccessRow, isAdmin: boolean): AppAcce
     playlistWatchAdmin: Boolean(row?.playlist_watch_admin),
   };
 }
+
+/** Own-catalog and/or competitor analytics (full StreamBase app). Admins always qualify via `normalizeAppAccess`. */
+export function hasStreamBaseAccess(access: AppAccess) {
+  return access.ownCatalog || access.competitor;
+}
+
+export function isPlaylistWatchOnlyAccess(access: AppAccess) {
+  return access.playlistWatch && !hasStreamBaseAccess(access);
+}
+
+/** Where to send users who lack StreamBase access (playlist-watch landing or login). */
+export function streamBaseAccessRedirectPath(access: AppAccess): string | null {
+  if (hasStreamBaseAccess(access)) return null;
+  if (access.playlistWatch) return "/playlist-watch";
+  return "/login";
+}

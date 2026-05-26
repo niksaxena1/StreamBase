@@ -8,6 +8,10 @@ on:
   schedule:
     - cron: "0 8 * * *"
     - cron: "0 9 * * *"
+    # Late retries cover GitHub schedule delays and dashboard syncs that finish
+    # after the early export windows.
+    - cron: "15 11 * * *"
+    - cron: "15 12 * * *"
   workflow_dispatch:
     inputs:
       run_date:

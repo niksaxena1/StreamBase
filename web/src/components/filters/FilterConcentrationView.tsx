@@ -19,7 +19,7 @@ import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/GlassTable";
 import { Modal } from "@/components/ui/Modal";
 import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
-import { useThemeColors, getChartTooltipStyle } from "@/components/charts/useThemeColors";
+import { getChartColor, getChartTooltipStyle, useThemeColors } from "@/components/charts/useThemeColors";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
@@ -69,6 +69,7 @@ export function FilterConcentrationView({
   const { metric } = useMetric();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
   const colors = useThemeColors();
+  const streamChartColor = getChartColor("streams", colors);
   const [viewMode, setViewMode] = useState<ViewMode>("total");
   const [threshold, setThreshold] = useState(50);
   const [showCurveModal, setShowCurveModal] = useState(false);
@@ -369,8 +370,8 @@ export function FilterConcentrationView({
               >
                 <defs>
                   <linearGradient id="filterLorenzFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={colors.accentStroke} stopOpacity={0.3} />
-                    <stop offset="100%" stopColor={colors.accentStroke} stopOpacity={0.05} />
+                    <stop offset="0%" stopColor={streamChartColor} stopOpacity={0.3} />
+                    <stop offset="100%" stopColor={streamChartColor} stopOpacity={0.05} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid
@@ -408,7 +409,7 @@ export function FilterConcentrationView({
                 />
                 <Area
                   dataKey="cumPct"
-                  stroke={colors.accentStroke}
+                  stroke={streamChartColor}
                   strokeWidth={2}
                   fill="url(#filterLorenzFill)"
                   dot={false}

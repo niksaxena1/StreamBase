@@ -858,7 +858,7 @@ export function FilterBuilder({
                           e.stopPropagation();
                           toggleGroupJoinLogic();
                         }}
-                        className="text-[10px] font-medium px-2 py-0.5 rounded bg-[var(--sb-accent)] text-black mr-2 align-middle transition hover:brightness-95"
+                        className="text-[10px] font-medium px-2 py-0.5 rounded bg-[var(--sb-accent)] text-[var(--sb-accent-text,#000)] mr-2 align-middle transition hover:brightness-95"
                         title={
                           (currentFilter.groupJoinLogic ?? "AND") === "AND"
                             ? "All groups must match — click for OR between groups"

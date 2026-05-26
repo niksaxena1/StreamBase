@@ -449,7 +449,7 @@ export function CollectorsClient(props: {
 
   const valueFormat: "int" | "usd" = metric === "revenue" ? "usd" : "int";
   const yTickFormat: "k" | "int" | "usd_compact" = metric === "revenue" ? "usd_compact" : metric === "streams" ? "k" : "int";
-  const chartColor = metric === "tracks" ? "#3b82f6" : metric === "revenue" ? "#10b981" : "var(--sb-accent)";
+  const chartColor = metric === "tracks" ? "#3b82f6" : metric === "revenue" ? "#10b981" : "var(--sb-positive)";
 
   const payoutPerStreamUsd = streamPayoutPerStreamUsd;
 

@@ -450,7 +450,7 @@ function FilterListItem({
             {filter.name || "Untitled"}
           </span>
           {isActive && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--sb-accent)] text-black">
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--sb-accent)] text-[var(--sb-accent-text,#000)]">
               Active
             </span>
           )}

@@ -26,7 +26,10 @@
 
   /* Accent (from reference) */
   --sb-accent: #c7f33c; /* lime green */
-  --sb-accent-soft: #e1f2ae; /* pale lime */
+  --sb-accent-text: #000;
+  --sb-accent-soft-light: #e1f2ae;
+  --sb-accent-soft-dark: #c8d88a;
+  --sb-accent-soft: var(--sb-accent-soft-light, #e1f2ae);
   --sb-accent-10: rgba(199, 243, 60, 0.1); /* 10% opacity accent for backgrounds */
   --sb-accent-20: rgba(199, 243, 60, 0.2); /* 20% opacity accent for borders */
 
@@ -110,7 +113,10 @@ html[data-theme="dark"] {
   --sb-text: #ededed;
   --sb-muted: rgba(255, 255, 255, 0.5);
   --sb-accent: #d4ff4d;
-  --sb-accent-soft: #e1f2ae;
+  --sb-accent-text: #000;
+  --sb-accent-soft-light: #e1f2ae;
+  --sb-accent-soft-dark: #d0e07a;
+  --sb-accent-soft: var(--sb-accent-soft-dark, #d0e07a);
   --sb-accent-10: rgba(212, 255, 77, 0.1);
   --sb-accent-20: rgba(212, 255, 77, 0.2);
   --sb-accent-stroke: #d4ff4d;
@@ -367,11 +373,11 @@ html[data-theme="dark"] .sb-glass-nav {
 .sb-accent-glow {
   background: radial-gradient(
     60% 60% at 50% 50%,
-    rgba(199, 243, 60, 0.22),
-    rgba(199, 243, 60, 0.12) 25%,
-    rgba(199, 243, 60, 0.05) 50%,
-    rgba(199, 243, 60, 0.02) 75%,
-    rgba(199, 243, 60, 0) 100%
+    color-mix(in srgb, var(--sb-accent) 22%, transparent),
+    color-mix(in srgb, var(--sb-accent) 12%, transparent) 25%,
+    color-mix(in srgb, var(--sb-accent) 5%, transparent) 50%,
+    color-mix(in srgb, var(--sb-accent) 2%, transparent) 75%,
+    transparent 100%
   );
   filter: blur(50px);
   animation: blob-bounce 20s infinite ease-in-out alternate;
@@ -383,12 +389,12 @@ html[data-theme="dark"] .sb-glass-nav {
 html[data-theme="dark"] .sb-accent-glow {
   background: radial-gradient(
     60% 60% at 50% 50%,
-    rgba(212, 255, 77, 0.50),        /* Reduced peak opacity for smoother transition */
-    rgba(212, 255, 77, 0.35) 20%,    /* Intermediate stop */
-    rgba(212, 255, 77, 0.20) 40%,    /* Intermediate stop */
-    rgba(212, 255, 77, 0.10) 60%,    /* Intermediate stop */
-    rgba(212, 255, 77, 0.04) 80%,    /* Intermediate stop */
-    rgba(212, 255, 77, 0) 100%
+    color-mix(in srgb, var(--sb-accent) 45%, transparent),
+    color-mix(in srgb, var(--sb-accent) 35%, transparent) 20%,
+    color-mix(in srgb, var(--sb-accent) 20%, transparent) 40%,
+    color-mix(in srgb, var(--sb-accent) 10%, transparent) 60%,
+    color-mix(in srgb, var(--sb-accent) 4%, transparent) 80%,
+    transparent 100%
   );
   filter: blur(60px); /* Increased blur to further soften edges and reduce banding */
 }
@@ -684,24 +690,24 @@ html[data-theme="dark"] .sb-native-select {
 }
 
 /* ============================================================================
-   Accent-tinted FilterBar (replaces hardcoded lime colors)
+   Accent-tinted FilterBar (playlist/catalog selectors; follows --sb-accent)
    ============================================================================ */
 
 .sb-filter-bar {
   /* More opaque background for readability; blur is enhancement only */
-  background: rgba(199, 243, 60, 0.25);
+  background: color-mix(in srgb, var(--sb-accent) 25%, transparent);
   border: 1px solid var(--sb-accent-20);
   -webkit-backdrop-filter: blur(16px) saturate(140%);
   backdrop-filter: blur(16px) saturate(140%);
 }
 
 html[data-theme="dark"] .sb-filter-bar {
-  background: rgba(212, 255, 77, 0.18);
+  background: color-mix(in srgb, var(--sb-accent) 18%, transparent);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .sb-filter-bar {
-    background: rgba(212, 255, 77, 0.18);
+    background: color-mix(in srgb, var(--sb-accent) 18%, transparent);
   }
 }
 

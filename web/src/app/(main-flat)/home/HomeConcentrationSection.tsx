@@ -26,7 +26,7 @@ import { todayIsoDate } from "@/lib/csv";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
 import { Modal } from "@/components/ui/Modal";
-import { useThemeColors, getChartTooltipStyle } from "@/components/charts/useThemeColors";
+import { getChartColor, getChartTooltipStyle, useThemeColors } from "@/components/charts/useThemeColors";
 import type { TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChart";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { ConcentrationFilterPicker, type PlaylistOption } from "./ConcentrationFilterPicker";
@@ -100,6 +100,7 @@ export function HomeConcentrationSection(props: {
   const { metric } = useMetric();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
   const colors = useThemeColors();
+  const streamChartColor = getChartColor("streams", colors);
   const [open, setOpen] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("total");
   const [threshold, setThreshold] = useState(50);
@@ -686,8 +687,8 @@ export function HomeConcentrationSection(props: {
               >
                 <defs>
                   <linearGradient id="lorenzFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={colors.accentStroke} stopOpacity={0.3} />
-                    <stop offset="100%" stopColor={colors.accentStroke} stopOpacity={0.05} />
+                    <stop offset="0%" stopColor={streamChartColor} stopOpacity={0.3} />
+                    <stop offset="100%" stopColor={streamChartColor} stopOpacity={0.05} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid
@@ -734,7 +735,7 @@ export function HomeConcentrationSection(props: {
                 {/* The Lorenz curve */}
                 <Area
                   dataKey="cumPct"
-                  stroke={colors.accentStroke}
+                  stroke={streamChartColor}
                   strokeWidth={2}
                   fill="url(#lorenzFill)"
                   dot={false}

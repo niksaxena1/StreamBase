@@ -495,7 +495,7 @@ export function CollectorComparisonChart({
   }, [chartData, granularity, weekHighlightDayUtc]);
 
   const sundayBandColor = getSundayAccentColor(
-    areaKey ? getLineColor(areaKey) : themeColors.accentStroke,
+    areaKey ? getLineColor(areaKey) : combinedColor,
     { isDark: themeColors.isDark, bgColor: themeColors.bg },
   );
 
@@ -658,7 +658,7 @@ export function CollectorComparisonChart({
               />
             )}
             cursor={{
-              stroke: areaKey ? getLineColor(areaKey) : "var(--sb-accent)",
+              stroke: areaKey ? getLineColor(areaKey) : combinedColor,
               strokeWidth: 1.5,
               strokeDasharray: "5 5",
               opacity: 0.8,

@@ -28,6 +28,7 @@ jobs:
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
       SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
+      NOTIFY_SMTP_PASSWORD: ${{ secrets.NOTIFY_SMTP_PASSWORD }}
       LIMIT: ${{ inputs.limit || '3000' }}
       DRY_RUN: ${{ inputs.dry_run || 'false' }}
     steps:
@@ -50,6 +51,14 @@ jobs:
             python scripts/collect_playlist_watch_followers.py --limit "${LIMIT}" --dry-run
           else
             python scripts/collect_playlist_watch_followers.py --limit "${LIMIT}"
+          fi
+
+      - name: Evaluate playlist watch alerts
+        run: |
+          if [ "${DRY_RUN}" = "true" ]; then
+            python scripts/evaluate_playlist_watch_alerts.py --dry-run
+          else
+            python scripts/evaluate_playlist_watch_alerts.py
           fi
 
       - name: Send failure notification

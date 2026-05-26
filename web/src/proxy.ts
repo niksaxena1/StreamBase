@@ -32,7 +32,14 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  return NextResponse.next();
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-spotibase-pathname", pathname);
+
+  return NextResponse.next({
+    request: {
+      headers: requestHeaders,
+    },
+  });
 }
 
 export const config = {
@@ -45,6 +52,12 @@ export const config = {
     "/tracks/:path*",
     "/playlists/:path*",
     "/playlist-watch/:path*",
+    "/network",
+    "/network/:path*",
+    "/docs",
+    "/docs/:path*",
+    "/settings",
+    "/settings/:path*",
     "/collectors/:path*",
     "/health/:path*",
     "/exports/:path*",

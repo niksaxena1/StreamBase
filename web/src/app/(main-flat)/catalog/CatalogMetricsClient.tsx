@@ -126,7 +126,7 @@ export function CatalogMetricsClient(props: {
     : props.artist24h;
 
   // Use different colors based on metric: blue for tracks, emerald for revenue, accent stroke for streams
-  // Note: streams color is left undefined to let the chart component use theme-aware accentStroke
+  // Note: streams color is left undefined so DailyStreamsChart uses semantic stream green
   const chartColor = metric === "tracks" ? "#3b82f6" : metric === "revenue" ? "#10b981" : undefined;
   const chartAnnotations = metric === "tracks" ? [] : props.overrideAnnotations;
 

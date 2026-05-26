@@ -13,7 +13,7 @@ import {
 import { useCallback, useId, useRef } from "react";
 import { formatCompactMoney, formatInt, formatUsd } from "@/lib/format";
 import { filterMonthlySeriesFromIsoDate, formatKmbTick } from "@/components/charts/chartUtils";
-import { useThemeColors } from "@/components/charts/useThemeColors";
+import { getChartColor, useThemeColors } from "@/components/charts/useThemeColors";
 import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
 import { useChartStartDate } from "@/components/charts/ChartStartDateContext";
 import { useLongPress } from "@/components/charts/useLongPress";
@@ -207,10 +207,10 @@ export function MonthlyBarChart({
   const themeColors = useThemeColors();
   const { chartStartDateIso } = useChartStartDate();
   // Use theme-aware colors from CSS variables
-  const effectiveColor = color ?? themeColors.accentStroke;
-  // Tooltip text must be readable — accent/accentStroke are too light in light mode
+  const effectiveColor = color ?? getChartColor("streams", themeColors);
+  // Tooltip text must be readable — stream green is safer than chrome accent in light mode
   const tooltipValueColor =
-    !color || color === "var(--sb-accent)"
+    !color || color === "var(--sb-accent)" || color === "var(--sb-positive)"
       ? themeColors.positive
       : color;
 

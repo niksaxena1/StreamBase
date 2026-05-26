@@ -16,7 +16,7 @@ import {
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
 import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
 import { computePaddedDomain, formatKmbTick, formatTooltipDateDaily, formatXAxisTick } from "@/components/charts/chartUtils";
-import { getChartAxisStyle, getChartTooltipStyle, useThemeColors } from "@/components/charts/useThemeColors";
+import { getChartAxisStyle, getChartColor, getChartTooltipStyle, useThemeColors } from "@/components/charts/useThemeColors";
 import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/GlassTable";
 import { formatDateRangeShort } from "@/components/ui/DateRangePicker";
 import { Modal } from "@/components/ui/Modal";
@@ -129,6 +129,7 @@ function SpikeHistoryChart({
 }) {
   const gid = useId();
   const themeColors = useThemeColors();
+  const streamChartColor = getChartColor("streams", themeColors);
   const axisStyle = getChartAxisStyle(themeColors);
   const tooltipStyle = getChartTooltipStyle(themeColors);
 
@@ -188,8 +189,8 @@ function SpikeHistoryChart({
           >
             <defs>
               <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={themeColors.accentStroke} stopOpacity={0.28} />
-                <stop offset="95%" stopColor={themeColors.accentStroke} stopOpacity={0.02} />
+                <stop offset="5%" stopColor={streamChartColor} stopOpacity={0.28} />
+                <stop offset="95%" stopColor={streamChartColor} stopOpacity={0.02} />
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--sb-border)" />
@@ -215,12 +216,12 @@ function SpikeHistoryChart({
                   label={label as string}
                   payload={payload as SpikeTooltipPayloadEntry[]}
                   mode={mode}
-                  accentColor={themeColors.accentStroke}
+                  accentColor={streamChartColor}
                   tooltipStyle={tooltipStyle}
                 />
               )}
               cursor={{
-                stroke: themeColors.accentStroke,
+                stroke: streamChartColor,
                 strokeWidth: 1.5,
                 strokeDasharray: "5 5",
                 opacity: 0.8,
@@ -240,7 +241,7 @@ function SpikeHistoryChart({
             <Area
               type="monotone"
               dataKey="value"
-              stroke={themeColors.accentStroke}
+              stroke={streamChartColor}
               strokeWidth={2.25}
               fillOpacity={1}
               fill={`url(#${gid})`}
@@ -272,7 +273,7 @@ function SpikeHistoryChart({
                     cx={x}
                     cy={y}
                     r={point?.flagged ? 5 : 4}
-                    fill={point?.flagged ? themeColors.warning : themeColors.accentStroke}
+                    fill={point?.flagged ? themeColors.warning : streamChartColor}
                     stroke={themeColors.bg}
                     strokeWidth={1.5}
                   />
