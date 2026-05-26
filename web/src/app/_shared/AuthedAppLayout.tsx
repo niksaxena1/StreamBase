@@ -57,13 +57,13 @@ export async function AuthedAppLayout({
 
   const {
 
-    data: { session },
+    data: { user },
 
-  } = await sb.auth.getSession();
+  } = await sb.auth.getUser();
 
 
 
-  if (!session) {
+  if (!user) {
 
     // Middleware should already redirect, but keep a hard server-side guard.
 
@@ -83,7 +83,7 @@ export async function AuthedAppLayout({
 
     .select("own_catalog,competitor,playlist_watch,playlist_watch_admin")
 
-    .eq("user_id", session.user.id)
+    .eq("user_id", user.id)
 
     .maybeSingle();
 
@@ -137,7 +137,7 @@ export async function AuthedAppLayout({
 
                           appAccess={appAccess}
 
-                          userEmail={session.user.email ?? null}
+                          userEmail={user.email ?? null}
 
                           suppressDatasetModeChrome={isPlaylistWatchPath}
 

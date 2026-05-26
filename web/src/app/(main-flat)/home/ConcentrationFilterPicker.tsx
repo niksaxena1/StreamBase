@@ -25,19 +25,7 @@ const PICKER_ITEM_CLS = "flex items-center gap-2 w-full text-left px-2 py-1.5 te
 const PICKER_ITEM_ACTIVE = "bg-black/5 dark:bg-white/10 font-semibold";
 const PICKER_ITEM_IDLE = "hover:bg-black/5 dark:hover:bg-white/10";
 
-export function ConcentrationFilterPicker({
-  artists,
-  playlists,
-  filterMode,
-  artistId,
-  collectorId,
-  playlistKey,
-  onSelectAll,
-  onSelectArtist,
-  onSelectCollector,
-  onSelectPlaylist,
-  allLabel = "All Catalog",
-}: {
+export function ConcentrationFilterPicker(props: {
   artists: { id: string; name: string; imageUrl: string | null }[];
   playlists: PlaylistOption[];
   filterMode: FilterMode;
@@ -49,7 +37,28 @@ export function ConcentrationFilterPicker({
   onSelectCollector: (collector: string) => void;
   onSelectPlaylist: (key: string) => void;
   allLabel?: string;
+  showCollectorSection?: boolean;
+  showPlaylistSection?: boolean;
+  showArtistSection?: boolean;
 }) {
+  const showCollectorSection = props.showCollectorSection ?? true;
+  const showPlaylistSection = props.showPlaylistSection ?? true;
+  const showArtistSection = props.showArtistSection ?? true;
+
+  const {
+    artists,
+    playlists,
+    filterMode,
+    artistId,
+    collectorId,
+    playlistKey,
+    onSelectAll,
+    onSelectArtist,
+    onSelectCollector,
+    onSelectPlaylist,
+    allLabel = "All Catalog",
+  } = props;
+
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState<ExpandedSection>(null);
   const [search, setSearch] = useState("");
@@ -158,68 +167,75 @@ export function ConcentrationFilterPicker({
             {/* Divider */}
             <div className="my-1 border-t" style={{ borderColor: "var(--sb-border)" }} />
 
-            {/* --- By Collector --- */}
-            <button
-              type="button"
-              onClick={() => toggleSection("collector")}
-              className={sectionHeaderCls}
-              style={{ color: expanded === "collector" ? "var(--sb-text)" : "var(--sb-muted)" }}
-            >
-              <span>By Collector</span>
-              <span className="text-[9px] opacity-50">{expanded === "collector" ? "▴" : "▾"}</span>
-            </button>
-            {expanded === "collector" && (
-              <div className="pl-2">
-                {COLLECTOR_ORDER.map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={() => { onSelectCollector(c); setOpen(false); }}
-                    className={[PICKER_ITEM_CLS, filterMode === "collector" && collectorId === c ? PICKER_ITEM_ACTIVE : PICKER_ITEM_IDLE].join(" ")}
-                    style={{ color: "var(--sb-text)" }}
-                  >
-                    <span className="h-4 w-4 rounded-full flex-shrink-0" style={{ backgroundColor: COLLECTOR_COLORS[c] ?? "var(--sb-muted)" }} />
-                    <span className="font-medium">{c}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* --- By Playlist --- */}
-            <button
-              type="button"
-              onClick={() => toggleSection("playlist")}
-              className={sectionHeaderCls}
-              style={{ color: expanded === "playlist" ? "var(--sb-text)" : "var(--sb-muted)" }}
-            >
-              <span>By Playlist</span>
-              <span className="text-[9px] opacity-50">{expanded === "playlist" ? "▴" : "▾"}</span>
-            </button>
-            {expanded === "playlist" && (
-              <div className="pl-2">
-                {playlists.map((p) => (
-                  <button
-                    key={p.playlist_key}
-                    type="button"
-                    onClick={() => { onSelectPlaylist(p.playlist_key); setOpen(false); }}
-                    className={[PICKER_ITEM_CLS, filterMode === "playlist" && playlistKey === p.playlist_key ? PICKER_ITEM_ACTIVE : PICKER_ITEM_IDLE].join(" ")}
-                    style={{ color: "var(--sb-text)" }}
-                  >
-                    {p.spotify_playlist_image_url ? (
-                      <PreviewableArtwork src={p.spotify_playlist_image_url} alt={p.display_name} width={24} height={24} className="h-6 w-6 rounded-sm object-cover flex-shrink-0" interactive="inline" label={p.display_name} />
-                    ) : (
-                      <div className="h-6 w-6 rounded-sm flex-shrink-0" style={{ backgroundColor: "var(--sb-surface)" }} />
-                    )}
-                    <span className="truncate">{p.display_name}</span>
-                  </button>
-                ))}
-                {playlists.length === 0 && (
-                  <div className="px-2 py-1.5 text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>Loading…</div>
+            {showCollectorSection ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => toggleSection("collector")}
+                  className={sectionHeaderCls}
+                  style={{ color: expanded === "collector" ? "var(--sb-text)" : "var(--sb-muted)" }}
+                >
+                  <span>By Collector</span>
+                  <span className="text-[9px] opacity-50">{expanded === "collector" ? "▴" : "▾"}</span>
+                </button>
+                {expanded === "collector" && (
+                  <div className="pl-2">
+                    {COLLECTOR_ORDER.map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => { onSelectCollector(c); setOpen(false); }}
+                        className={[PICKER_ITEM_CLS, filterMode === "collector" && collectorId === c ? PICKER_ITEM_ACTIVE : PICKER_ITEM_IDLE].join(" ")}
+                        style={{ color: "var(--sb-text)" }}
+                      >
+                        <span className="h-4 w-4 rounded-full flex-shrink-0" style={{ backgroundColor: COLLECTOR_COLORS[c] ?? "var(--sb-muted)" }} />
+                        <span className="font-medium">{c}</span>
+                      </button>
+                    ))}
+                  </div>
                 )}
-              </div>
-            )}
+              </>
+            ) : null}
 
-            {/* --- By Artist --- */}
+            {showPlaylistSection ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => toggleSection("playlist")}
+                  className={sectionHeaderCls}
+                  style={{ color: expanded === "playlist" ? "var(--sb-text)" : "var(--sb-muted)" }}
+                >
+                  <span>By Playlist</span>
+                  <span className="text-[9px] opacity-50">{expanded === "playlist" ? "▴" : "▾"}</span>
+                </button>
+                {expanded === "playlist" && (
+                  <div className="pl-2">
+                    {playlists.map((p) => (
+                      <button
+                        key={p.playlist_key}
+                        type="button"
+                        onClick={() => { onSelectPlaylist(p.playlist_key); setOpen(false); }}
+                        className={[PICKER_ITEM_CLS, filterMode === "playlist" && playlistKey === p.playlist_key ? PICKER_ITEM_ACTIVE : PICKER_ITEM_IDLE].join(" ")}
+                        style={{ color: "var(--sb-text)" }}
+                      >
+                        {p.spotify_playlist_image_url ? (
+                          <PreviewableArtwork src={p.spotify_playlist_image_url} alt={p.display_name} width={24} height={24} className="h-6 w-6 rounded-sm object-cover flex-shrink-0" interactive="inline" label={p.display_name} />
+                        ) : (
+                          <div className="h-6 w-6 rounded-sm flex-shrink-0" style={{ backgroundColor: "var(--sb-surface)" }} />
+                        )}
+                        <span className="truncate">{p.display_name}</span>
+                      </button>
+                    ))}
+                    {playlists.length === 0 && (
+                      <div className="px-2 py-1.5 text-xs opacity-40" style={{ color: "var(--sb-muted)" }}>Loading…</div>
+                    )}
+                  </div>
+                )}
+              </>
+            ) : null}
+
+            {showArtistSection ? (
+              <>
             <button
               type="button"
               onClick={() => toggleSection("artist")}
@@ -267,6 +283,8 @@ export function ConcentrationFilterPicker({
                 )}
               </div>
             )}
+              </>
+            ) : null}
           </div>
         </div>
       )}

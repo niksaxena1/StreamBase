@@ -53,13 +53,12 @@ export function IngestionStatusBannerClient(props: { initialSummary: HealthSumma
       }
     }
 
-    // Poll on an interval; also run once shortly after mount to reduce stale UI.
-    const t0 = window.setTimeout(tick, 1500);
+    // The server-rendered summary is fresh enough for initial paint; avoid an
+    // immediate duplicate request on every dashboard navigation.
     const id = window.setInterval(tick, pollMs);
 
     return () => {
       cancelled = true;
-      window.clearTimeout(t0);
       window.clearInterval(id);
     };
   }, [pollMs]);
@@ -91,4 +90,3 @@ export function IngestionStatusBannerClient(props: { initialSummary: HealthSumma
     </div>
   );
 }
-

@@ -83,33 +83,7 @@ function ToggleLink(props: { href: string; active: boolean; children: React.Reac
 // Main orchestrator component
 // ============================================================================
 
-function HomeDashboardInner(props: {
-  sp: { scope?: string; range?: string; daily?: string; xy_date?: string; start?: string; end?: string };
-  datasetMode: "own" | "competitor";
-  playlistKey: "all_catalog" | "releases" | "ext";
-  title: string;
-  rangeDays: number;
-  latest: PlaylistDailyStatsRow | null;
-  history: PlaylistDailyStatsRow[];
-  playlistImageUrl: string | null;
-  historyErrorMessage?: string | null;
-  trackScatterPoints: TrackStreamsXYPoint[];
-  trackScatterErrorMessage?: string | null;
-  trackScatterDataDate: string | null;
-  trackScatterDeferred?: boolean;
-  latestRunDate: string | null;
-  latestDataDate: string | null;
-  overrideAnnotations?: ManualOverrideAnnotation[];
-  artistWeekendDips: ArtistWeekendDipRow[];
-  trackWeekendDips: TrackWeekendDipRow[];
-  negativeDailyStreams: NegativeDailyStreamsRow[];
-  artificialStreamSpikes: ArtificialStreamSpikeRow[];
-  artificialStreamSpikeRatio: number;
-  artificialMinBaseline: number;
-  artificialIncludeWeekends: boolean;
-  artificialSpikeDateStart: string | null;
-  artificialSpikeDateEnd: string | null;
-}) {
+function HomeDashboardInner(props: HomeDashboardServerProps) {
   const { metric } = useMetric();
   const themeColors = useThemeColors();
   useCurrencyDisplay();
@@ -537,6 +511,8 @@ function HomeDashboardInner(props: {
         trackScatterPoints={effectiveScatterState.points}
         latestRunDate={props.latestRunDate}
         datasetMode={props.datasetMode}
+        competitorLabelKey={props.competitorLabelKey}
+        competitorPlaylists={props.competitorPlaylists}
       />
 
       <HomeScatterSection

@@ -15,7 +15,7 @@ import { CompetitorModeButton } from "@/components/shell/CompetitorModeButton";
 import { CompetitorTitleEffect } from "@/components/shell/CompetitorTitleEffect";
 import { AppFooter } from "@/components/shell/AppFooter";
 import { isPlaylistWatchOnlyAccess, type AppAccess } from "@/lib/appAccess";
-import { competitorAccentCssVars } from "@/lib/competitorAccent";
+import { CompetitorAccentStyle } from "@/components/shell/CompetitorAccentStyle";
 import { APP_SHORT_NAME } from "@/lib/pageTitle";
 
 type MainSurface = "glass" | "plain";
@@ -46,11 +46,9 @@ export function AppShell(props: {
   const showCompetitorSwitcher = Boolean(appAccess?.competitor) && !playlistWatchOnly;
   const navDatasetMode = props.suppressDatasetModeChrome ? "own" : datasetMode;
   const homeHref = playlistWatchOnly ? "/playlist-watch" : "/";
-  const accentVars = props.competitorAccentHex ? competitorAccentCssVars(props.competitorAccentHex) : "";
-
   return (
     <>
-      {accentVars ? <style>{`:root,html,html[data-theme="dark"]{${accentVars}}`}</style> : null}
+      <CompetitorAccentStyle accentHex={props.competitorAccentHex ?? null} />
       <CompetitorTitleEffect
         datasetMode={datasetMode}
         competitorDisplayName={props.competitorDisplayName ?? null}

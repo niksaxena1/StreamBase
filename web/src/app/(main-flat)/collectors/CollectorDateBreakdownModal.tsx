@@ -12,6 +12,17 @@ import { COLLECTOR_COLORS } from "@/components/charts/CollectorComparisonChart";
 
 import type { Metric, DateBreakdownCollector } from "./collectorsTypes";
 
+function seriesColor(
+  key: string,
+  seriesColors?: Record<string, string>,
+): string {
+  return seriesColors?.[key] ?? COLLECTOR_COLORS[key] ?? "var(--sb-muted)";
+}
+
+function seriesName(key: string, seriesLabels?: Record<string, string>): string {
+  return seriesLabels?.[key] ?? key;
+}
+
 export function CollectorDateBreakdownModal({
   open,
   onClose,
@@ -22,6 +33,8 @@ export function CollectorDateBreakdownModal({
   comparisonCollectors,
   metric,
   streamPayoutPerStreamUsd,
+  seriesColors,
+  seriesLabels,
 }: {
   open: boolean;
   onClose: () => void;
@@ -32,6 +45,8 @@ export function CollectorDateBreakdownModal({
   comparisonCollectors: string[];
   metric: Metric;
   streamPayoutPerStreamUsd: number;
+  seriesColors?: Record<string, string>;
+  seriesLabels?: Record<string, string>;
 }) {
   return (
     <Modal
@@ -94,14 +109,14 @@ export function CollectorDateBreakdownModal({
                         className="inline-block h-2.5 w-2.5 rounded-full"
                         style={{
                           backgroundColor:
-                            COLLECTOR_COLORS[collector] ?? "var(--sb-muted)",
+                            seriesColor(collector, seriesColors),
                         }}
                       />
                       <span
                         className="text-sm font-semibold"
                         style={{ color: "var(--sb-text)" }}
                       >
-                        {collector}
+                        {seriesName(collector, seriesLabels)}
                       </span>
                     </div>
                     <div
@@ -163,6 +178,8 @@ export function CollectorDateBreakdownModal({
               comparisonCollectors={comparisonCollectors}
               metric={metric}
               streamPayoutPerStreamUsd={streamPayoutPerStreamUsd}
+              seriesColors={seriesColors}
+              seriesLabels={seriesLabels}
             />
 
             {/* Top tracks per collector */}
@@ -176,12 +193,11 @@ export function CollectorDateBreakdownModal({
                     <span
                       className="inline-block h-2 w-2 rounded-full"
                       style={{
-                        backgroundColor:
-                          COLLECTOR_COLORS[collector] ?? "var(--sb-muted)",
+                        backgroundColor: seriesColor(collector, seriesColors),
                       }}
                     />
                     <span className="text-xs font-medium uppercase tracking-wide opacity-70">
-                      {collector} — Top tracks
+                      {seriesName(collector, seriesLabels)} — Top tracks
                     </span>
                   </div>
                   <GlassTable
@@ -290,11 +306,15 @@ function RosterChangesSection({
   comparisonCollectors,
   metric,
   streamPayoutPerStreamUsd,
+  seriesColors,
+  seriesLabels,
 }: {
   breakdownData: Record<string, DateBreakdownCollector>;
   comparisonCollectors: string[];
   metric: Metric;
   streamPayoutPerStreamUsd: number;
+  seriesColors?: Record<string, string>;
+  seriesLabels?: Record<string, string>;
 }) {
   const hasRosterChanges = comparisonCollectors.some((c) => {
     const d = breakdownData[c];
@@ -339,15 +359,14 @@ function RosterChangesSection({
               <span
                 className="inline-block h-2.5 w-2.5 rounded-full"
                 style={{
-                  backgroundColor:
-                    COLLECTOR_COLORS[collector] ?? "var(--sb-muted)",
+                  backgroundColor: seriesColor(collector, seriesColors),
                 }}
               />
               <span
                 className="text-xs font-semibold uppercase tracking-wide"
                 style={{ color: "var(--sb-text)" }}
               >
-                {collector} — Roster changes
+                {seriesName(collector, seriesLabels)} — Roster changes
               </span>
             </div>
 

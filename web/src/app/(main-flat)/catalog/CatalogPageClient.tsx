@@ -1,10 +1,11 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { Fragment } from "react";
 import { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ExternalLink, Download, List, ChevronRight, User } from "lucide-react";
+import { ExternalLink, Download, List, ChevronRight, User, Loader2 } from "lucide-react";
 import { formatDateISO, formatDateOrdinalDMonYYYY, formatInt, formatUsd } from "@/lib/format";
 import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/GlassTable";
 import { Combobox } from "@/components/ui/Combobox";
@@ -92,6 +93,7 @@ export function CatalogPageClient(props: {
   const isCompetitorMode = mode === "competitor";
   const { metric } = useMetric();
   const [isArtistExpanded, setIsArtistExpanded] = useState(true);
+  const [configPending, setConfigPending] = useState(false);
   const router = useRouter();
   const sp = useSearchParams();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
@@ -108,6 +110,10 @@ export function CatalogPageClient(props: {
       handleGranularityWithRangeRestore(g, props.rangeDays, "catalog", setGranularityRaw, pushRange),
     [props.rangeDays, setGranularityRaw, pushRange],
   );
+
+  useEffect(() => {
+    router.prefetch("/catalog/config");
+  }, [router]);
 
   useEffect(() => {
     if (props.isrc) {
@@ -343,11 +349,20 @@ export function CatalogPageClient(props: {
             <IconButton
               variant="secondary"
               aria-label="Catalog config"
-              title="Catalog config"
+              title={configPending ? "Opening catalog config" : "Catalog config"}
               asChild
             >
-              <Link href="/catalog/config" className="grid place-items-center">
-                <List className="h-4 w-4" style={{ color: "var(--sb-text)" }} />
+              <Link
+                href="/catalog/config"
+                prefetch
+                className="grid place-items-center"
+                onClick={() => setConfigPending(true)}
+              >
+                {configPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" style={{ color: "var(--sb-text)" }} />
+                ) : (
+                  <List className="h-4 w-4" style={{ color: "var(--sb-text)" }} />
+                )}
               </Link>
             </IconButton>
           </>
@@ -563,12 +578,12 @@ export function CatalogPageClient(props: {
                 maxBodyHeightClassName="max-h-56"
                 bodyClassName="overflow-x-hidden"
               >
-                {topByCumulativeSorted.map((t, i) => {
+                {topByCumulativeSorted.map((t) => {
                   const isThreshold = t.isrc === concentrationTotal.thresholdIsrc;
                   const pct = concentrationTotal.pctByIsrc.get(t.isrc);
                   return (
-                    <>
-                      <TableRow key={t.isrc}>
+                    <Fragment key={t.isrc}>
+                      <TableRow>
                         <TableCell>
                           {t.albumImageUrl ? (
                             <PreviewableArtwork
@@ -650,7 +665,7 @@ export function CatalogPageClient(props: {
                           </td>
                         </tr>
                       )}
-                    </>
+                    </Fragment>
                   );
                 })}
                 {!props.topByCumulative.length && (
@@ -753,8 +768,8 @@ export function CatalogPageClient(props: {
                   const isThreshold = t.isrc === concentrationDaily.thresholdIsrc;
                   const pct = concentrationDaily.pctByIsrc.get(t.isrc);
                   return (
-                    <>
-                      <TableRow key={t.isrc}>
+                    <Fragment key={t.isrc}>
+                      <TableRow>
                         <TableCell>
                           {t.albumImageUrl ? (
                             <PreviewableArtwork
@@ -836,7 +851,7 @@ export function CatalogPageClient(props: {
                           </td>
                         </tr>
                       )}
-                    </>
+                    </Fragment>
                   );
                 })}
                 {!props.topByDaily.length && (

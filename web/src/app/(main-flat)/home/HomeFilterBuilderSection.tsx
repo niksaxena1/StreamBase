@@ -30,6 +30,9 @@ export function HomeFilterBuilderSection({
   const [artistImagesById, setArtistImagesById] = useState<Map<string, string | null>>(new Map());
   const [inHouseArtistIds, setInHouseArtistIds] = useState<Set<string>>(new Set());
   const [trackDatesMap, setTrackDatesMap] = useState<Map<string, { first_seen: string | null; last_seen: string | null }>>(new Map());
+  const [competitorOptions, setCompetitorOptions] = useState<
+    Array<{ value: string; label: string; imageUrl?: string | null }>
+  >([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -61,6 +64,36 @@ export function HomeFilterBuilderSection({
     }
     void load();
     return () => { cancelled = true; };
+  }, [datasetMode]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      if (datasetMode !== "competitor") {
+        if (!cancelled) setCompetitorOptions([]);
+        return;
+      }
+      try {
+        const obj = await fetchApiJson<{
+          labels?: Array<{ value: string; label: string; imageUrl?: string | null }>;
+        }>("/api/competitors/labels/options");
+        if (!cancelled) {
+          setCompetitorOptions(
+            (obj.labels ?? []).map((row) => ({
+              value: String(row.value ?? ""),
+              label: String(row.label ?? row.value ?? ""),
+              imageUrl: row.imageUrl ?? null,
+            })).filter((row) => row.value),
+          );
+        }
+      } catch {
+        if (!cancelled) setCompetitorOptions([]);
+      }
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
   }, [datasetMode]);
 
   useEffect(() => {
@@ -261,16 +294,6 @@ export function HomeFilterBuilderSection({
     });
   }, [trackScatterPoints, trackDatesMap, inHouseArtistIds]);
 
-  const competitorOptions = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const p of trackScatterPoints ?? []) {
-      const key = typeof (p as any).competitor_label_key === "string" ? (p as any).competitor_label_key : "";
-      const name = typeof (p as any).competitor_label_name === "string" ? (p as any).competitor_label_name : key;
-      if (key) map.set(key, name);
-    }
-    return [...map.entries()].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label));
-  }, [trackScatterPoints]);
-
   // Extract unique artists from tracks for the artist selector
   const artistOptions = useMemo(() => {
     const artistMap = new Map<string, { name: string; imageUrl: string | null; trackCount: number }>();
@@ -335,6 +358,7 @@ export function HomeFilterBuilderSection({
       playlistOptions={playlistOptions}
       competitorOptions={competitorOptions}
       asOfRunDate={asOfRunDate}
+      datasetMode={datasetMode}
     />
   );
 }

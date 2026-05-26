@@ -678,6 +678,33 @@ export async function loadHomeDashboardData(args: {
     }
   }
 
+  let competitorPlaylists: HomeDashboardServerProps["competitorPlaylists"] = [];
+  if (datasetMode === "competitor" && competitorLabelKey && competitorLabelKey !== ALL_COMPETITORS_KEY) {
+    try {
+      const { data: plRows } = await svc
+        .schema("competitor")
+        .from("playlists")
+        .select("playlist_key,display_name,spotify_playlist_image_url")
+        .eq("label_key", competitorLabelKey)
+        .eq("is_active", true)
+        .order("display_order", { ascending: true, nullsFirst: false })
+        .order("display_name", { ascending: true });
+      competitorPlaylists = (plRows ?? []).map(
+        (p: {
+          playlist_key?: unknown;
+          display_name?: unknown;
+          spotify_playlist_image_url?: unknown;
+        }) => ({
+          playlist_key: String(p.playlist_key ?? ""),
+          display_name: String(p.display_name ?? p.playlist_key ?? "").trim(),
+          spotify_playlist_image_url: (p.spotify_playlist_image_url ?? null) as string | null,
+        }),
+      );
+    } catch {
+      competitorPlaylists = [];
+    }
+  }
+
   const { data: history, error: historyErr } = await cachedQuery<PlaylistDailyStatsRow[]>(
     async () => {
       if (datasetMode === "competitor" && competitorLabelKey) {
@@ -928,6 +955,8 @@ export async function loadHomeDashboardData(args: {
   return {
     sp,
     datasetMode,
+    competitorLabelKey,
+    competitorPlaylists,
     playlistKey,
     title,
     rangeDays,

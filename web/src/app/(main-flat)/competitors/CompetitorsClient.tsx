@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Activity } from "lucide-react";
 
@@ -14,8 +14,22 @@ import { GlassTable, TableCell, TableRow } from "@/components/ui/GlassTable";
 import { SpotlightCard } from "@/components/ui/SpotlightCard";
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { Chip, ChipGroup } from "@/components/ui/Chip";
+import { ArtistLinks } from "@/components/ui/ArtistLinks";
+import { fetchApiJson } from "@/lib/api";
+import { dispatchCompetitorLabelChange } from "@/lib/competitorAccentEvents";
+import { runDateFromDataDate } from "@/lib/sotDates";
+import { CollectorDrilldownModal } from "@/app/(main-flat)/collectors/CollectorDrilldownModal";
+import {
+  DRILL_PAGE_SIZE,
+  type DrillArtistItem,
+  type DrillKind,
+  type DrillPlaylistItem,
+  type DrillTrackItem,
+} from "@/app/(main-flat)/collectors/collectorsTypes";
 import { formatDateISO, formatInt, formatUsd2 } from "@/lib/format";
 import { readStoredString, writeStoredString } from "@/lib/storage";
+import { CollectorDateBreakdownModal } from "@/app/(main-flat)/collectors/CollectorDateBreakdownModal";
+import type { DateBreakdownCollector } from "@/app/(main-flat)/collectors/collectorsTypes";
 import { scaleStreamsForDisplay, useCompetitorStreamMetric } from "./competitorStreamMetric";
 
 import { CompetitorLabelCards } from "./CompetitorLabelCards";
@@ -68,11 +82,14 @@ function filterMovers(rows: MoverTrackRow[], filter: MoverFilter): MoverTrackRow
   return rows;
 }
 
+type ComparisonSortKey = "name" | "playlists" | "artists" | "tracks" | "metric" | "baseline";
+
 export function CompetitorsClient(props: {
   labels: LabelRow[];
   comparisonRows: LabelComparisonRow[];
   labelSeries: LabelDailyPoint[];
   latestDataDate: string | null;
+  latestRunDate: string | null;
   selectedCompetitorLabelKey: string | null;
   gainers: MoverTrackRow[];
   losers: MoverTrackRow[];
@@ -114,6 +131,17 @@ export function CompetitorsClient(props: {
   const [comparisonBaseline, setComparisonBaseline] = useState<"ma7" | "yday">("ma7");
   const [moverFilter, setMoverFilter] = useState<MoverFilter>("all");
   const [churnWindow, setChurnWindow] = useState<7 | 30>(7);
+  const [activeLabelKey, setActiveLabelKey] = useState<string | null>(props.selectedCompetitorLabelKey);
+  const [breakdownOpen, setBreakdownOpen] = useState(false);
+  const [breakdownDate, setBreakdownDate] = useState<string | null>(null);
+  const [breakdownData, setBreakdownData] = useState<Record<string, DateBreakdownCollector> | null>(null);
+  const [breakdownLoading, setBreakdownLoading] = useState(false);
+  const [breakdownError, setBreakdownError] = useState<string | null>(null);
+  const selectLabelInFlight = useRef(false);
+
+  useEffect(() => {
+    setActiveLabelKey(props.selectedCompetitorLabelKey);
+  }, [props.selectedCompetitorLabelKey]);
 
   useEffect(() => {
     const params = new URLSearchParams(searchParams.toString());
@@ -146,11 +174,35 @@ export function CompetitorsClient(props: {
     [chartStartDateIso, props.labelSeries, streamPayoutPerStreamUsd],
   );
 
-  const ranked = useMemo(() => {
-    return [...props.comparisonRows].sort((a, b) =>
-      a.label.display_name.localeCompare(b.label.display_name),
-    );
-  }, [props.comparisonRows]);
+  const [sortKey, setSortKey] = useState<ComparisonSortKey>("name");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  const [drillOpen, setDrillOpen] = useState(false);
+  const [drillKind, setDrillKind] = useState<DrillKind>("tracks");
+  const [drillLabelKey, setDrillLabelKey] = useState<string | null>(null);
+  const [drillQuery, setDrillQuery] = useState("");
+  const [debouncedDrillQuery, setDebouncedDrillQuery] = useState("");
+  const [drillError, setDrillError] = useState<string | null>(null);
+  const [drillLoading, setDrillLoading] = useState(false);
+  const [drillDone, setDrillDone] = useState(false);
+  const [drillOffset, setDrillOffset] = useState(0);
+  const [drillItems, setDrillItems] = useState<unknown[]>([]);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedDrillQuery(drillQuery), 150);
+    return () => clearTimeout(t);
+  }, [drillQuery]);
+
+  const toggleSort = useCallback((key: ComparisonSortKey) => {
+    setSortKey((prev) => {
+      if (prev === key) {
+        setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+        return prev;
+      }
+      setSortDir(key === "name" ? "asc" : "desc");
+      return key;
+    });
+  }, []);
 
   const comparisonTableMetric: "streams" | "revenue" =
     metric === "revenue" ? "revenue" : "streams";
@@ -160,6 +212,153 @@ export function CompetitorsClient(props: {
     comparisonTableMetric === "revenue" ? "REVENUE" : "STREAMS";
   const comparisonTableValueCellColor =
     comparisonTableMetric === "revenue" ? "#10b981" : "var(--sb-positive)";
+
+  const ranked = useMemo(() => {
+    const rows = [...props.comparisonRows];
+    const dir = sortDir === "asc" ? 1 : -1;
+
+    const metricValue = (row: LabelComparisonRow) =>
+      comparisonTableMetric === "revenue"
+        ? scaleStreamsForDisplay(row.dailyStreams, "revenue", streamPayoutPerStreamUsd)
+        : row.dailyStreams;
+
+    const baselineValue = (row: LabelComparisonRow) => {
+      const raw =
+        comparisonBaseline === "yday"
+          ? row.dailyYesterday
+          : row.dailyMa7;
+      if (raw == null) return -Infinity;
+      return comparisonTableMetric === "revenue"
+        ? scaleStreamsForDisplay(raw, "revenue", streamPayoutPerStreamUsd)
+        : raw;
+    };
+
+    rows.sort((a, b) => {
+      let cmp = 0;
+      switch (sortKey) {
+        case "name":
+          cmp = a.label.display_name.localeCompare(b.label.display_name);
+          break;
+        case "playlists":
+          cmp = a.playlistCount - b.playlistCount;
+          break;
+        case "artists":
+          cmp = a.artistCount - b.artistCount;
+          break;
+        case "tracks":
+          cmp = a.trackCount - b.trackCount;
+          break;
+        case "metric":
+          cmp = metricValue(a) - metricValue(b);
+          break;
+        case "baseline":
+          cmp = baselineValue(a) - baselineValue(b);
+          break;
+      }
+      return cmp * dir;
+    });
+    return rows;
+  }, [
+    comparisonBaseline,
+    comparisonTableMetric,
+    props.comparisonRows,
+    sortDir,
+    sortKey,
+    streamPayoutPerStreamUsd,
+  ]);
+
+  const drillLabelName = drillLabelKey ? (seriesLabels[drillLabelKey] ?? drillLabelKey) : null;
+  const latestRunDate =
+    props.latestRunDate ??
+    (props.latestDataDate ? runDateFromDataDate(props.latestDataDate) : null);
+
+  function openDrill(labelKey: string, kind: DrillKind) {
+    setDrillLabelKey(labelKey);
+    setDrillKind(kind);
+    setDrillQuery("");
+    setDrillError(null);
+    setDrillItems([]);
+    setDrillOffset(0);
+    setDrillDone(false);
+    setDrillOpen(true);
+  }
+
+  useEffect(() => {
+    if (!drillOpen || !drillLabelKey || !latestRunDate) return;
+    let cancelled = false;
+
+    async function load() {
+      setDrillLoading(true);
+      setDrillError(null);
+      try {
+        const obj = await fetchApiJson<{
+          ok?: boolean;
+          items?: unknown[];
+          done?: boolean;
+        }>("/api/competitors/comparison-drilldown", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            kind: drillKind,
+            label_key: drillLabelKey,
+            run_date: latestRunDate,
+            offset: drillOffset,
+            limit: DRILL_PAGE_SIZE,
+          }),
+        });
+        if (obj.ok !== true) throw new Error("Request failed");
+        const newItems = obj.items ?? [];
+        if (!cancelled) {
+          setDrillItems((prev) => (drillOffset === 0 ? newItems : [...prev, ...newItems]));
+          setDrillDone(Boolean(obj.done) || newItems.length < DRILL_PAGE_SIZE);
+        }
+      } catch (e) {
+        if (!cancelled) setDrillError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (!cancelled) setDrillLoading(false);
+      }
+    }
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [drillOpen, drillKind, drillLabelKey, drillOffset, latestRunDate]);
+
+  const filteredSortedDrillItems = useMemo(() => {
+    const q = debouncedDrillQuery.trim().toLowerCase();
+    let items = [...drillItems] as (DrillPlaylistItem | DrillArtistItem | DrillTrackItem)[];
+
+    if (q) {
+      if (drillKind === "playlists") {
+        items = (items as DrillPlaylistItem[]).filter((p) =>
+          `${p.display_name} ${p.playlist_key}`.toLowerCase().includes(q),
+        );
+      } else if (drillKind === "artists") {
+        items = (items as DrillArtistItem[]).filter((a) =>
+          `${a.name ?? ""} ${a.artist_id}`.toLowerCase().includes(q),
+        );
+      } else {
+        items = (items as DrillTrackItem[]).filter((t) =>
+          `${t.name ?? ""} ${t.isrc} ${(t.artist_names ?? []).join(" ")}`.toLowerCase().includes(q),
+        );
+      }
+    }
+
+    if (drillKind === "playlists") {
+      return [...(items as DrillPlaylistItem[])].sort((a, b) =>
+        String(a.display_name ?? a.playlist_key).localeCompare(String(b.display_name ?? b.playlist_key)),
+      );
+    }
+    if (drillKind === "artists") {
+      return [...(items as DrillArtistItem[])].sort(
+        (a, b) => Number(b.total_streams_cumulative ?? 0) - Number(a.total_streams_cumulative ?? 0),
+      );
+    }
+    return [...(items as DrillTrackItem[])].sort(
+      (a, b) => Number(b.total_streams_cumulative ?? 0) - Number(a.total_streams_cumulative ?? 0),
+    );
+  }, [debouncedDrillQuery, drillItems, drillKind]);
 
   const computeComparisonRow = useCallback(
     (row: LabelComparisonRow) => {
@@ -202,7 +401,7 @@ export function CompetitorsClient(props: {
       const href = playlistKey
         ? `/playlists?playlist_key=${encodeURIComponent(playlistKey)}`
         : "/playlists";
-      const isSelectedLabel = row.label.label_key === props.selectedCompetitorLabelKey;
+      const isSelectedLabel = row.label.label_key === activeLabelKey;
 
       return {
         value,
@@ -220,7 +419,7 @@ export function CompetitorsClient(props: {
       comparisonTableMetric,
       metric,
       props.playlistsByLabel,
-      props.selectedCompetitorLabelKey,
+      activeLabelKey,
       sparkByLabel,
       streamPayoutPerStreamUsd,
     ],
@@ -228,6 +427,85 @@ export function CompetitorsClient(props: {
 
   const chartMetric = metric === "tracks" ? "tracks" : metric === "revenue" ? "revenue" : "streams";
   const streamMetric = useCompetitorStreamMetric();
+
+  const breakdownLabelKeys = useMemo(
+    () => selectedLabels.filter((k) => activeLabels.some((l) => l.label_key === k)),
+    [activeLabels, selectedLabels],
+  );
+
+  const handleDateClick = useCallback((date: string) => {
+    setBreakdownDate(date);
+    setBreakdownData(null);
+    setBreakdownError(null);
+    setBreakdownOpen(true);
+  }, []);
+
+  useEffect(() => {
+    if (!breakdownOpen || !breakdownDate || breakdownLabelKeys.length === 0) return;
+    let cancelled = false;
+
+    async function load() {
+      setBreakdownLoading(true);
+      setBreakdownError(null);
+      try {
+        const obj = await fetchApiJson<{
+          ok?: boolean;
+          labels?: Record<string, DateBreakdownCollector>;
+        }>("/api/competitors/date-breakdown", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            data_date: breakdownDate,
+            label_keys: breakdownLabelKeys,
+          }),
+        });
+        if (obj.ok !== true) throw new Error("Request failed");
+        if (!cancelled) setBreakdownData(obj.labels ?? null);
+      } catch (e) {
+        if (!cancelled) setBreakdownError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (!cancelled) setBreakdownLoading(false);
+      }
+    }
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [breakdownOpen, breakdownDate, breakdownLabelKeys]);
+
+  const selectCompetitorLabel = useCallback(
+    async (labelKey: string) => {
+      if (!labelKey || labelKey === activeLabelKey || selectLabelInFlight.current) return;
+      const label = props.labels.find((l) => l.label_key === labelKey);
+      setActiveLabelKey(labelKey);
+      dispatchCompetitorLabelChange({
+        labelKey,
+        accentHex: label?.accent_hex ?? null,
+      });
+      selectLabelInFlight.current = true;
+      try {
+        const res = await fetch("/api/user-settings/competitor-label", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ competitor_label_key: labelKey }),
+        });
+        if (!res.ok) {
+          setActiveLabelKey(props.selectedCompetitorLabelKey);
+          dispatchCompetitorLabelChange({
+            labelKey: props.selectedCompetitorLabelKey,
+            accentHex:
+              props.labels.find((l) => l.label_key === props.selectedCompetitorLabelKey)?.accent_hex ?? null,
+          });
+        }
+      } catch {
+        setActiveLabelKey(props.selectedCompetitorLabelKey);
+      } finally {
+        selectLabelInFlight.current = false;
+      }
+    },
+    [activeLabelKey, props.labels, props.selectedCompetitorLabelKey],
+  );
 
   if (!props.latestDataDate) {
     return null;
@@ -308,6 +586,7 @@ export function CompetitorsClient(props: {
                 seriesColors={seriesColors}
                 seriesLabels={seriesLabels}
                 emptyStateMessage="Select at least one competitor to view the chart"
+                onDateClick={handleDateClick}
               />
             </div>
           </div>
@@ -335,11 +614,72 @@ export function CompetitorsClient(props: {
             className="relative"
             bodyClassName="overflow-x-auto"
             headers={[
-              { label: "Competitor", className: "sticky left-0 z-20 min-w-[110px]" },
-              { label: "Pl", className: "w-[70px] text-right" },
-              { label: "Artists", className: "w-[84px] text-right" },
-              { label: "Tracks", className: "w-[84px] text-right" },
-              { label: comparisonTableHeaderLabel, className: "w-[110px] text-right font-medium" },
+              {
+                label: (
+                  <button
+                    type="button"
+                    onClick={() => toggleSort("name")}
+                    className="w-full text-left font-medium"
+                    title="Sort by competitor name"
+                  >
+                    Competitor{sortKey === "name" ? (sortDir === "asc" ? " ↑" : " ↓") : ""}
+                  </button>
+                ),
+                className: "sticky left-0 z-20 min-w-[110px]",
+              },
+              {
+                label: (
+                  <button
+                    type="button"
+                    onClick={() => toggleSort("playlists")}
+                    className="w-full text-right font-medium"
+                    title="Sort by playlist count"
+                  >
+                    Pl{sortKey === "playlists" ? (sortDir === "asc" ? " ↑" : " ↓") : ""}
+                  </button>
+                ),
+                className: "w-[70px] text-right",
+              },
+              {
+                label: (
+                  <button
+                    type="button"
+                    onClick={() => toggleSort("artists")}
+                    className="w-full text-right font-medium"
+                    title="Sort by artist count"
+                  >
+                    Artists{sortKey === "artists" ? (sortDir === "asc" ? " ↑" : " ↓") : ""}
+                  </button>
+                ),
+                className: "w-[84px] text-right",
+              },
+              {
+                label: (
+                  <button
+                    type="button"
+                    onClick={() => toggleSort("tracks")}
+                    className="w-full text-right font-medium"
+                    title="Sort by track count"
+                  >
+                    Tracks{sortKey === "tracks" ? (sortDir === "asc" ? " ↑" : " ↓") : ""}
+                  </button>
+                ),
+                className: "w-[84px] text-right",
+              },
+              {
+                label: (
+                  <button
+                    type="button"
+                    onClick={() => toggleSort("metric")}
+                    className="w-full text-right font-medium"
+                    title={`Sort by ${comparisonTableMetricLabel}`}
+                  >
+                    {comparisonTableHeaderLabel}
+                    {sortKey === "metric" ? (sortDir === "asc" ? " ↑" : " ↓") : ""}
+                  </button>
+                ),
+                className: "w-[110px] text-right",
+              },
               {
                 label: (
                   <button
@@ -369,11 +709,14 @@ export function CompetitorsClient(props: {
               return (
                 <TableRow
                   key={row.label.label_key}
-                  className={
+                  className={[
+                    "cursor-pointer",
                     computed.isSelectedLabel
                       ? "hover:bg-transparent dark:hover:bg-transparent odd:bg-transparent dark:odd:bg-transparent"
-                      : undefined
-                  }
+                      : undefined,
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
                   style={
                     computed.isSelectedLabel
                       ? {
@@ -381,10 +724,12 @@ export function CompetitorsClient(props: {
                         }
                       : undefined
                   }
+                  onClick={() => void selectCompetitorLabel(row.label.label_key)}
                 >
                   <TableCell className="sticky left-0 z-10 px-0 py-0" style={{ background: stickyBg }}>
                     <Link
                       href={computed.href}
+                      onClick={(e) => e.stopPropagation()}
                       className={[
                         "flex h-full w-full items-center gap-2 px-3 py-2 font-medium transition-colors sb-link-hover",
                         computed.isSelectedLabel ? "opacity-100" : "opacity-70",
@@ -401,9 +746,45 @@ export function CompetitorsClient(props: {
                       {row.label.display_name}
                     </Link>
                   </TableCell>
-                  <TableCell numeric>{formatInt(row.playlistCount)}</TableCell>
-                  <TableCell numeric>{formatInt(row.artistCount)}</TableCell>
-                  <TableCell numeric>{formatInt(row.trackCount)}</TableCell>
+                  <TableCell numeric>
+                    <button
+                      type="button"
+                      className="w-full text-right font-medium transition-colors sb-link-hover"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openDrill(row.label.label_key, "playlists");
+                      }}
+                      title={`Show playlists for ${row.label.display_name}`}
+                    >
+                      {formatInt(row.playlistCount)}
+                    </button>
+                  </TableCell>
+                  <TableCell numeric>
+                    <button
+                      type="button"
+                      className="w-full text-right font-medium transition-colors sb-link-hover"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openDrill(row.label.label_key, "artists");
+                      }}
+                      title={`Show artists for ${row.label.display_name}`}
+                    >
+                      {formatInt(row.artistCount)}
+                    </button>
+                  </TableCell>
+                  <TableCell numeric>
+                    <button
+                      type="button"
+                      className="w-full text-right font-medium transition-colors sb-link-hover"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openDrill(row.label.label_key, "tracks");
+                      }}
+                      title={`Show tracks for ${row.label.display_name}`}
+                    >
+                      {formatInt(row.trackCount)}
+                    </button>
+                  </TableCell>
                   <TableCell
                     numeric
                     className="font-medium"
@@ -489,9 +870,19 @@ export function CompetitorsClient(props: {
                           )}
                         </TableCell>
                         <TableCell>
-                          <div className="font-medium">{track.name}</div>
+                          <Link
+                            href={`/tracks/${encodeURIComponent(track.isrc)}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="font-medium transition-colors sb-link-hover"
+                          >
+                            {track.name}
+                          </Link>
                           <div className="truncate text-[10px] opacity-60">
-                            {(track.artist_names ?? []).join(", ") || "—"}
+                            <ArtistLinks
+                              artistNames={track.artist_names}
+                              artistIds={track.artist_ids}
+                            />
+                            {!track.artist_names?.length ? "—" : null}
                           </div>
                         </TableCell>
                         <TableCell>
@@ -625,6 +1016,50 @@ export function CompetitorsClient(props: {
           </div>
         </div>
       )}
+
+      <CollectorDrilldownModal
+        open={drillOpen}
+        onClose={() => {
+          setDrillOpen(false);
+          setDrillQuery("");
+          setDrillError(null);
+          setDrillItems([]);
+          setDrillOffset(0);
+          setDrillDone(false);
+        }}
+        drillCollector={drillLabelName}
+        drillKind={drillKind}
+        latestDate={props.latestDataDate}
+        latestRunDate={latestRunDate ?? ""}
+        drillQuery={drillQuery}
+        setDrillQuery={setDrillQuery}
+        filteredSortedDrillItems={filteredSortedDrillItems}
+        drillItemsCount={drillItems.length}
+        drillError={drillError}
+        drillLoading={drillLoading}
+        drillDone={drillDone}
+        onLoadMore={() => setDrillOffset((n) => n + DRILL_PAGE_SIZE)}
+        metric={metric}
+        payoutPerStreamUsd={streamPayoutPerStreamUsd}
+      />
+
+      <CollectorDateBreakdownModal
+        open={breakdownOpen}
+        onClose={() => {
+          setBreakdownOpen(false);
+          setBreakdownData(null);
+          setBreakdownError(null);
+        }}
+        breakdownDate={breakdownDate}
+        breakdownData={breakdownData}
+        breakdownLoading={breakdownLoading}
+        breakdownError={breakdownError}
+        comparisonCollectors={breakdownLabelKeys}
+        metric={metric}
+        streamPayoutPerStreamUsd={streamPayoutPerStreamUsd}
+        seriesColors={seriesColors}
+        seriesLabels={seriesLabels}
+      />
     </div>
   );
 }

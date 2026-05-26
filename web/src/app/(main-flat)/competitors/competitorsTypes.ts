@@ -46,6 +46,7 @@ export type MoverTrackRow = {
   name: string;
   album_image_url: string | null;
   artist_names: string[] | null;
+  artist_ids: string[] | null;
   label_keys: string[];
   daily_delta: number;
   total: number;

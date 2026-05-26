@@ -29,7 +29,9 @@ import { Modal } from "@/components/ui/Modal";
 import { getChartColor, getChartTooltipStyle, useThemeColors } from "@/components/charts/useThemeColors";
 import type { TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChart";
 import { supabaseBrowser } from "@/lib/supabase/client";
+import { ALL_COMPETITORS_KEY } from "@/lib/competitorContext";
 import { ConcentrationFilterPicker, type PlaylistOption } from "./ConcentrationFilterPicker";
+import type { HomeConcentrationPlaylistOption } from "./homeTypes";
 import { IconButton } from "@/components/ui/Button";
 import type { ConcentrationShareSnapshotV1 } from "@/lib/share/concentrationSnapshot";
 
@@ -96,6 +98,8 @@ export function HomeConcentrationSection(props: {
   trackScatterPoints: TrackStreamsXYPoint[];
   latestRunDate: string | null;
   datasetMode?: "own" | "competitor";
+  competitorLabelKey?: string | null;
+  competitorPlaylists?: HomeConcentrationPlaylistOption[];
 }) {
   const { metric } = useMetric();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
@@ -130,14 +134,33 @@ export function HomeConcentrationSection(props: {
   useEffect(() => { writeStoredString(STORAGE_KEY_MODE, viewMode); }, [viewMode]);
   useEffect(() => { writeStoredNumber(STORAGE_KEY_THRESHOLD, threshold); }, [threshold]);
 
-  // Fetch playlist list once on mount
+  const isSpecificCompetitor =
+    props.datasetMode === "competitor" &&
+    props.competitorLabelKey &&
+    props.competitorLabelKey !== ALL_COMPETITORS_KEY;
+
+  const competitorPlaylistOptions = props.competitorPlaylists ?? [];
+
+  // Fetch playlist list once on mount (own catalog), or use server-provided competitor playlists
   useEffect(() => {
+    if (props.datasetMode === "competitor") {
+      if (isSpecificCompetitor) {
+        setPlaylists(competitorPlaylistOptions);
+        return;
+      }
+      void fetchApiJson<{ playlists?: PlaylistOption[] }>("/api/competitors/playlists/options")
+        .then((body) => {
+          if (body.playlists) setPlaylists(body.playlists);
+        })
+        .catch(() => { /* ignore */ });
+      return;
+    }
     void fetchApiJson<{ playlists?: PlaylistOption[] }>("/api/playlists/options")
       .then((body) => {
         if (body.playlists) setPlaylists(body.playlists);
       })
       .catch(() => { /* ignore */ });
-  }, []);
+  }, [competitorPlaylistOptions, isSpecificCompetitor, props.datasetMode]);
 
   // Fetch ISRCs for selected playlist
   useEffect(() => {
@@ -148,7 +171,12 @@ export function HomeConcentrationSection(props: {
     let cancelled = false;
     setPlaylistLoading(true);
 
-    void fetchApiJson<{ rows?: Array<{ isrc: string }> }>("/api/playlists/memberships", {
+    const membershipsUrl =
+      props.datasetMode === "competitor"
+        ? "/api/competitors/playlists/memberships"
+        : "/api/playlists/memberships";
+
+    void fetchApiJson<{ rows?: Array<{ isrc: string }> }>(membershipsUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ date: props.latestRunDate, playlist_keys: [playlistKey] }),
@@ -164,7 +192,7 @@ export function HomeConcentrationSection(props: {
       });
 
     return () => { cancelled = true; };
-  }, [filterMode, playlistKey, props.latestRunDate]);
+  }, [filterMode, playlistKey, props.datasetMode, props.latestRunDate]);
 
   // Fetch ISRCs for selected collector
   useEffect(() => {
@@ -457,11 +485,36 @@ export function HomeConcentrationSection(props: {
                   artistId={artistId}
                   collectorId={collectorId}
                   playlistKey={playlistKey}
-                  onSelectAll={() => { setFilterMode("all"); setArtistId(null); setCollectorId(null); setPlaylistKey(null); }}
-                  onSelectArtist={(id) => { setFilterMode("artist"); setArtistId(id); setCollectorId(null); setPlaylistKey(null); }}
-                  onSelectCollector={(c) => { setFilterMode("collector"); setCollectorId(c); setArtistId(null); setPlaylistKey(null); }}
-                  onSelectPlaylist={(k) => { setFilterMode("playlist"); setPlaylistKey(k); setArtistId(null); setCollectorId(null); }}
+                  onSelectAll={() => {
+                    setFilterMode("all");
+                    setArtistId(null);
+                    setCollectorId(null);
+                    setPlaylistKey(null);
+                  }}
+                  onSelectArtist={(id) => {
+                    setFilterMode("artist");
+                    setArtistId(id);
+                    setCollectorId(null);
+                    setPlaylistKey(null);
+                  }}
+                  onSelectCollector={(c) => {
+                    setFilterMode("collector");
+                    setCollectorId(c);
+                    setArtistId(null);
+                    setPlaylistKey(null);
+                  }}
+                  onSelectPlaylist={(k) => {
+                    setFilterMode("playlist");
+                    setPlaylistKey(k);
+                    setArtistId(null);
+                    setCollectorId(null);
+                  }}
                   allLabel={props.datasetMode === "competitor" ? "Selected Competitor" : "All Catalog"}
+                  showCollectorSection={props.datasetMode !== "competitor"}
+                  showArtistSection
+                  showPlaylistSection={
+                    props.datasetMode !== "competitor" || playlists.length > 0
+                  }
                 />
 
                 <IconButton

@@ -164,12 +164,12 @@ const TRACK_FIELDS: FilterFieldDefinition[] = [
   {
     key: "competitor",
     label: "Competitor",
-    type: "select",
-    operators: ["eq", "neq", "in", "not_in"],
-    description: "Filter competitor-mode tracks by label",
+    type: "multi-select",
+    operators: ["in", "not_in"],
+    description: "Filter tracks by competitor label",
     optionsSource: "competitors",
-    placeholder: "Select competitor...",
-    helpText: "Useful when the global competitor scope is set to All",
+    placeholder: "Select competitors...",
+    helpText: "Choose one or more competitors (best when global scope is All competitors)",
   },
   {
     key: "playlist",
@@ -844,14 +844,38 @@ export const ENTITY_CONFIGS: Record<string, EntityFieldConfig> = {
   },
 };
 
-export function getFieldsForEntity(entityType: string): FilterFieldDefinition[] {
+const OWN_CATALOG_ONLY_TRACK_FIELDS = new Set([
+  "collector",
+  "artist_in_house_status",
+  "in_multiple_distro",
+  "in_multiple_entity",
+  "moved_distro",
+  "moved_entity",
+]);
+
+export function getFieldsForEntity(
+  entityType: string,
+  datasetMode: "own" | "competitor" = "own",
+): FilterFieldDefinition[] {
   if (entityType === "network_artists") return NETWORK_ARTIST_FIELDS;
-  return ENTITY_CONFIGS[entityType]?.fields ?? [];
+  let fields = ENTITY_CONFIGS[entityType]?.fields ?? [];
+  if (entityType === "tracks") {
+    if (datasetMode === "competitor") {
+      fields = fields.filter((f) => !OWN_CATALOG_ONLY_TRACK_FIELDS.has(f.key));
+    } else {
+      fields = fields.filter((f) => f.key !== "competitor");
+    }
+  }
+  return fields;
 }
 
-export function getFieldDefinition(entityType: string, fieldKey: string): FilterFieldDefinition | undefined {
-  const fields = getFieldsForEntity(entityType);
-  return fields.find(f => f.key === fieldKey);
+export function getFieldDefinition(
+  entityType: string,
+  fieldKey: string,
+  datasetMode: "own" | "competitor" = "own",
+): FilterFieldDefinition | undefined {
+  const fields = getFieldsForEntity(entityType, datasetMode);
+  return fields.find((f) => f.key === fieldKey);
 }
 
 export function getDefaultOperator(fieldDef: FilterFieldDefinition): string {

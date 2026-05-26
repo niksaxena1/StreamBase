@@ -66,6 +66,7 @@ function parseMovers(raw: unknown): MoverTrackRow[] {
       name: String(r.name ?? r.isrc ?? ""),
       album_image_url: (r.album_image_url as string | null) ?? null,
       artist_names: Array.isArray(r.artist_names) ? (r.artist_names as string[]) : null,
+      artist_ids: Array.isArray(r.artist_ids) ? (r.artist_ids as string[]) : null,
       label_keys: Array.isArray(r.label_keys) ? (r.label_keys as string[]) : [],
       daily_delta: Number(r.daily_delta ?? 0),
       total: Number(r.total ?? 0),
@@ -308,6 +309,7 @@ export default async function CompetitorsPage() {
           comparisonRows={comparisonRows}
           labelSeries={labelSeries}
           latestDataDate={latestDataDate}
+          latestRunDate={latestRunDate}
           selectedCompetitorLabelKey={
             typeof settings?.competitor_label_key === "string" && settings.competitor_label_key.trim()
               ? settings.competitor_label_key.trim()

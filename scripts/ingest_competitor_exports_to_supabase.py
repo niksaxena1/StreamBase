@@ -191,6 +191,14 @@ class Postgrest:
             offset += page_size
         return out
 
+    def rpc(self, function_name: str, params: Optional[dict] = None) -> Optional[dict]:
+        """Call a PostgREST RPC function in the competitor schema."""
+        url = f"{self.base}/rpc/{function_name}"
+        r = requests.post(url, headers=self.h, data=json.dumps(params or {}), timeout=180)
+        if r.status_code not in (200, 204):
+            raise RuntimeError(f"RPC {function_name} failed: {r.status_code} {r.text[:500]}")
+        return r.json() if r.content else None
+
     def insert_memberships_idempotent(self, rows: List[dict]):
         """Insert active playlist membership rows, tolerating already-active rows.
 
@@ -383,6 +391,17 @@ def main():
         )
 
     pg.upsert("playlist_daily_stats", stats_rows, on_conflict="date,playlist_key")
+    try:
+        refreshed = pg.rpc(
+            "refresh_artist_daily_stats",
+            {
+                "p_start_date": run_date.isoformat(),
+                "p_end_date": run_date.isoformat(),
+            },
+        )
+        print(f"INFO Refreshed competitor.artist_daily_stats for {run_date}: {refreshed}")
+    except Exception as artist_stats_err:
+        print(f"WARN Could not refresh competitor.artist_daily_stats: {artist_stats_err}")
     pg.patch(
         "ingestion_runs",
         {"status": "success", "finished_at": datetime.now(timezone.utc).isoformat()},

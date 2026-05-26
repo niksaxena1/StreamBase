@@ -30,17 +30,17 @@ export default async function Home({
 
   const sb = await supabaseServer();
   const {
-    data: { session },
-  } = await sb.auth.getSession();
+    data: { user },
+  } = await sb.auth.getUser();
 
-  if (!session) redirect("/login");
+  if (!user) redirect("/login");
 
   const svc = supabaseService();
   const { data: isAdmin } = await sb.rpc("is_admin");
   const { data: accessRow } = await svc
     .from("app_user_access")
     .select("own_catalog,competitor,playlist_watch,playlist_watch_admin")
-    .eq("user_id", session.user.id)
+    .eq("user_id", user.id)
     .maybeSingle();
   const appAccess = normalizeAppAccess(accessRow, Boolean(isAdmin));
   if (isPlaylistWatchOnlyAccess(appAccess)) redirect("/playlist-watch");
@@ -52,7 +52,7 @@ export default async function Home({
   const props = await loadHomeDashboardData({
     sb,
     svc,
-    userId: session.user.id,
+    userId: user.id,
     sp,
     includeScatter: false,
   });

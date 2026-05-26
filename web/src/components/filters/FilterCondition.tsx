@@ -25,6 +25,7 @@ function cx(...parts: Array<string | false | null | undefined>) {
 type FilterConditionProps = {
   condition: FilterConditionType;
   entityType: EntityType;
+  datasetMode?: "own" | "competitor";
   dynamicOptions: Record<string, Array<{ value: string; label: string; imageUrl?: string | null; isAllCatalog?: boolean }>>;
   onChange: (condition: FilterConditionType) => void;
   onRemove: () => void;
@@ -34,13 +35,16 @@ type FilterConditionProps = {
 export function FilterCondition({
   condition,
   entityType,
+  datasetMode = "own",
   dynamicOptions,
   onChange,
   onRemove,
   canRemove,
 }: FilterConditionProps) {
-  const fields = getFieldsForEntity(entityType);
-  const fieldDef = condition.field ? getFieldDefinition(entityType, condition.field) : undefined;
+  const fields = getFieldsForEntity(entityType, datasetMode);
+  const fieldDef = condition.field
+    ? getFieldDefinition(entityType, condition.field, datasetMode)
+    : undefined;
 
   const fieldOptionsForCombobox: ComboboxOption[] = fields.map((f) => ({
     value: f.key,
@@ -61,7 +65,7 @@ export function FilterCondition({
   const showOperatorSelector = operatorOptionsForCombobox.length > 1;
   
   function handleFieldChange(newField: string) {
-    const newFieldDef = getFieldDefinition(entityType, newField);
+    const newFieldDef = getFieldDefinition(entityType, newField, datasetMode);
     const newOperator = newFieldDef ? getDefaultOperator(newFieldDef) : "eq";
     
     // Reset value when field changes (type may be different)
@@ -188,13 +192,17 @@ export function FilterCondition({
 export function ConditionSummary({
   condition,
   entityType,
+  datasetMode = "own",
   dynamicOptions,
 }: {
   condition: FilterConditionType;
   entityType: EntityType;
+  datasetMode?: "own" | "competitor";
   dynamicOptions: Record<string, Array<{ value: string; label: string }>>;
 }) {
-  const fieldDef = condition.field ? getFieldDefinition(entityType, condition.field) : undefined;
+  const fieldDef = condition.field
+    ? getFieldDefinition(entityType, condition.field, datasetMode)
+    : undefined;
   if (!fieldDef) return null;
   
   const operatorLabel = getOperatorLabel(condition.operator, fieldDef.type);

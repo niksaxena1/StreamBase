@@ -62,16 +62,16 @@ export default async function NetworkPage({
 }) {
   const sb = await supabaseServer();
   const {
-    data: { session },
-  } = await sb.auth.getSession();
-  if (!session) redirect("/login");
+    data: { user },
+  } = await sb.auth.getUser();
+  if (!user) redirect("/login");
 
   const svc = supabaseService();
   const { data: isAdmin } = await sb.rpc("is_admin");
   const { data: accessRow } = await svc
     .from("app_user_access")
     .select("own_catalog,competitor,playlist_watch,playlist_watch_admin")
-    .eq("user_id", session.user.id)
+    .eq("user_id", user.id)
     .maybeSingle();
   const appAccess = normalizeAppAccess(accessRow, Boolean(isAdmin));
   const streamBaseRedirect = streamBaseAccessRedirectPath(appAccess);

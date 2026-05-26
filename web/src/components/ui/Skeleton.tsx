@@ -4,7 +4,7 @@ export function Skeleton({ className, ...props }: ComponentProps<"div">) {
   return (
     <div
       className={[
-        "animate-pulse rounded-md bg-black/5 dark:bg-white/5",
+        "sb-skeleton rounded-md",
         className,
       ]
         .filter(Boolean)
@@ -57,15 +57,27 @@ export function LoadingState({
 
 export function StatCardSkeleton() {
   return (
-    <div className="sb-card p-3">
-      <div className="flex h-full flex-col justify-between">
-        <div>
-          <Skeleton className="h-3 w-20 mb-2" />
-          <Skeleton className="h-8 w-24 mb-2" />
+    <div className="sb-card overflow-hidden p-3">
+      <div className="flex min-h-[92px] flex-col justify-between">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <Skeleton className="mb-2 h-3 w-24" />
+            <Skeleton className="mb-2 h-7 w-28" />
+          </div>
+          <Skeleton className="h-7 w-7 rounded-lg" />
         </div>
-        <div className="mt-2 flex items-end justify-between gap-2">
-          <Skeleton className="h-3 w-16" />
-          <Skeleton className="h-6 w-20" />
+        <div className="mt-3 flex items-end justify-between gap-3">
+          <div className="flex items-end gap-1">
+            <Skeleton className="h-4 w-2 rounded-sm" />
+            <Skeleton className="h-7 w-2 rounded-sm" />
+            <Skeleton className="h-5 w-2 rounded-sm" />
+            <Skeleton className="h-8 w-2 rounded-sm" />
+            <Skeleton className="h-6 w-2 rounded-sm" />
+          </div>
+          <div className="space-y-1.5">
+            <Skeleton className="h-3 w-16" />
+            <Skeleton className="h-3 w-12" />
+          </div>
         </div>
       </div>
     </div>
@@ -73,6 +85,8 @@ export function StatCardSkeleton() {
 }
 
 export function TableSkeleton({ rows = 5, cols = 4 }: { rows?: number; cols?: number }) {
+  const headerWidths = ["w-10", "w-24", "w-20", "w-16", "w-24", "w-14"];
+
   return (
     <div className="sb-card">
       <div className="max-h-[440px] overflow-auto">
@@ -88,17 +102,26 @@ export function TableSkeleton({ rows = 5, cols = 4 }: { rows?: number; cols?: nu
             <tr>
               {Array.from({ length: cols }).map((_, i) => (
                 <th key={i} className="px-3 py-2 font-medium">
-                  <Skeleton className="h-3 w-16" />
+                  <Skeleton className={["h-3", headerWidths[i % headerWidths.length]].join(" ")} />
                 </th>
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y" style={{ borderColor: "var(--sb-border)" }}>
+          <tbody className="sb-skeleton-table-body">
             {Array.from({ length: rows }).map((_, i) => (
               <tr key={i}>
                 {Array.from({ length: cols }).map((_, j) => (
                   <td key={j} className="px-3 py-2">
-                    <Skeleton className="h-4 w-full" />
+                    {j === 0 ? (
+                      <Skeleton className="h-8 w-8 rounded-lg" />
+                    ) : j === 1 ? (
+                      <div className="space-y-1.5">
+                        <Skeleton className={["h-3.5", i % 3 === 0 ? "w-44" : i % 3 === 1 ? "w-36" : "w-52"].join(" ")} />
+                        <Skeleton className={["h-2.5", i % 2 === 0 ? "w-24" : "w-32"].join(" ")} />
+                      </div>
+                    ) : (
+                      <Skeleton className={["h-4", j >= cols - 2 ? "ml-auto w-20" : "w-full"].join(" ")} />
+                    )}
                   </td>
                 ))}
               </tr>
@@ -111,13 +134,34 @@ export function TableSkeleton({ rows = 5, cols = 4 }: { rows?: number; cols?: nu
 }
 
 export function ChartSkeleton({ height = 220 }: { height?: number }) {
+  const bars = [42, 54, 36, 65, 58, 74, 49, 68, 82, 62, 77, 70];
+
   return (
     <div className="sb-card p-3">
-      <div className="flex items-center justify-between mb-2">
-        <Skeleton className="h-4 w-32" />
-        <Skeleton className="h-3 w-24" />
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="space-y-1.5">
+          <Skeleton className="h-4 w-36" />
+          <Skeleton className="h-2.5 w-24" />
+        </div>
+        <div className="flex items-center gap-1.5">
+          <Skeleton className="h-6 w-12 rounded-full" />
+          <Skeleton className="h-6 w-14 rounded-full" />
+        </div>
       </div>
-      <Skeleton className="w-full" style={{ height: `${height}px` }} />
+      <div className="sb-skeleton-chart relative overflow-hidden rounded-lg border p-3" style={{ height: `${height}px` }}>
+        <div className="absolute inset-x-3 top-1/4 border-t" />
+        <div className="absolute inset-x-3 top-1/2 border-t" />
+        <div className="absolute inset-x-3 top-3/4 border-t" />
+        <div className="relative flex h-full items-end gap-2">
+          {bars.map((bar, i) => (
+            <Skeleton
+              key={i}
+              className="min-w-2 flex-1 rounded-t-md rounded-b-sm"
+              style={{ height: `${bar}%` }}
+            />
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

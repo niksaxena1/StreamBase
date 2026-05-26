@@ -18,9 +18,9 @@ export const metadata = {
 export default async function TestExperimentsPage() {
   const sb = await supabaseServer();
   const {
-    data: { session },
-  } = await sb.auth.getSession();
-  if (!session) redirect("/login");
+    data: { user },
+  } = await sb.auth.getUser();
+  if (!user) redirect("/login");
 
   const { data: isAdmin } = await sb.rpc("is_admin");
   if (!isAdmin) redirect("/");

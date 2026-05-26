@@ -10,6 +10,7 @@ import { LogoMark } from "@/components/LogoMark";
 import { ALL_COMPETITORS_KEY, isAllCompetitorsKey } from "@/lib/competitorContext";
 import { pathAfterDatasetModeSwitch } from "@/lib/datasetModeNavigation";
 import { competitorAccentCssVars } from "@/lib/competitorAccent";
+import { COMPETITOR_LABEL_EVENT, type CompetitorAccentEventDetail } from "@/lib/competitorAccentEvents";
 
 type Label = {
   label_key: string;
@@ -53,19 +54,35 @@ export function CompetitorModeButton({
   const [saving, setSaving] = useState(false);
   const [ownHover, setOwnHover] = useState(false);
   const [previewHex, setPreviewHex] = useState<string | null>(null);
+  const [labelOverride, setLabelOverride] = useState<string | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const menuItemRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const [portalPos, setPortalPos] = useState<{ top: number; right: number } | null>(null);
 
+  const effectiveLabelKey = labelOverride ?? activeLabelKey;
+
+  useEffect(() => {
+    setLabelOverride(null);
+  }, [activeLabelKey]);
+
+  useEffect(() => {
+    function onLabelChange(e: Event) {
+      const detail = (e as CustomEvent<CompetitorAccentEventDetail>).detail;
+      if (detail?.labelKey != null) setLabelOverride(detail.labelKey);
+    }
+    window.addEventListener(COMPETITOR_LABEL_EVENT, onLabelChange);
+    return () => window.removeEventListener(COMPETITOR_LABEL_EVENT, onLabelChange);
+  }, []);
+
   const activeLabel =
-    datasetMode === "competitor" && activeLabelKey && !isAllCompetitorsKey(activeLabelKey)
-      ? labels.find((l) => l.label_key === activeLabelKey) ?? null
+    datasetMode === "competitor" && effectiveLabelKey && !isAllCompetitorsKey(effectiveLabelKey)
+      ? labels.find((l) => l.label_key === effectiveLabelKey) ?? null
       : null;
 
   const accentHex = activeLabel?.accent_hex ?? null;
-  const showAllPill = datasetMode === "competitor" && isAllActive(datasetMode, activeLabelKey);
+  const showAllPill = datasetMode === "competitor" && isAllActive(datasetMode, effectiveLabelKey);
   const showCountBadge = datasetMode === "own" && labels.length > 0;
 
   const clearPreview = useCallback(() => setPreviewHex(null), []);
@@ -289,7 +306,7 @@ export function CompetitorModeButton({
           </button>
           {labels.map((label) => {
             const itemIndex = menuIndex++;
-            const isActive = datasetMode === "competitor" && activeLabelKey === label.label_key;
+            const isActive = datasetMode === "competitor" && effectiveLabelKey === label.label_key;
             return (
               <button
                 key={label.label_key}

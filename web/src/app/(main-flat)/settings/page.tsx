@@ -621,7 +621,7 @@ export default async function SettingsPage() {
 
     await requireAdmin();
 
-    // `cachedQuery` uses unstable_cache tags: ["supabase", `supabase-${key}`].
+    // `cachedQuery` uses unstable_cache tags: ["supabase", cacheTagForKey(key)].
     // Purge the shared tag to invalidate all cached Supabase reads immediately.
     revalidateTag("supabase", "max");
 

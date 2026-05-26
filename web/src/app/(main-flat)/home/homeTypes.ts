@@ -80,9 +80,17 @@ export type ArtificialStreamSpikeRow = {
 };
 
 /** Props assembled on the server for `HomeDashboardClient`. */
+export type HomeConcentrationPlaylistOption = {
+  playlist_key: string;
+  display_name: string;
+  spotify_playlist_image_url: string | null;
+};
+
 export type HomeDashboardServerProps = {
   sp: HomeDashboardSearchParams;
   datasetMode: "own" | "competitor";
+  competitorLabelKey: string | null;
+  competitorPlaylists: HomeConcentrationPlaylistOption[];
   playlistKey: "all_catalog" | "releases" | "ext";
   title: string;
   rangeDays: number;

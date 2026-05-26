@@ -102,6 +102,7 @@ type FilterBuilderProps = {
   playlistOptions: Array<{ value: string; label: string; imageUrl?: string | null; isAllCatalog?: boolean }>;
   competitorOptions?: Array<{ value: string; label: string; imageUrl?: string | null }>;
   asOfRunDate?: string | null;
+  datasetMode?: "own" | "competitor";
 };
 
 export function FilterBuilder({
@@ -116,6 +117,7 @@ export function FilterBuilder({
   playlistOptions,
   competitorOptions = [],
   asOfRunDate = null,
+  datasetMode = "own",
 }: FilterBuilderProps) {
   const { streamPayoutPerStreamUsd } = usePayoutRate();
 
@@ -815,6 +817,7 @@ export function FilterBuilder({
                   <FilterGroup
                     group={group}
                     entityType={currentFilter.entityType}
+                    datasetMode={datasetMode}
                     dynamicOptions={dynamicOptions}
                     groupIndex={index}
                     totalGroups={currentFilter.groups.length}
@@ -876,6 +879,7 @@ export function FilterBuilder({
                     <GroupSummary
                       group={group}
                       entityType={currentFilter.entityType}
+                      datasetMode={datasetMode}
                       dynamicOptions={dynamicOptions}
                     />
                   </div>

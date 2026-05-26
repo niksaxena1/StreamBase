@@ -1599,6 +1599,19 @@ def main():
         if warn_rows:
             pg.insert("ingestion_warnings", warn_rows)
 
+        # Keep the Catalog/Playlists fast-path summaries current as data grows.
+        try:
+            refreshed = pg.rpc(
+                "refresh_artist_daily_stats",
+                {
+                    "p_start_date": run_date.isoformat(),
+                    "p_end_date": run_date.isoformat(),
+                },
+            )
+            print(f"  INFO Refreshed artist_daily_stats for {run_date}: {refreshed}")
+        except Exception as _artist_stats_err:
+            print(f"  WARN Could not refresh artist_daily_stats: {_artist_stats_err}")
+
         pg.patch("ingestion_runs", {"status": "success", "finished_at": datetime.now(timezone.utc).isoformat()}, f"id=eq.{run_id}")
         print(f"✅ Ingestion complete for {run_date} (run_id={run_id})")
 

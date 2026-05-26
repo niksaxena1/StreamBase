@@ -24,6 +24,7 @@ function cx(...parts: Array<string | false | null | undefined>) {
 type FilterGroupProps = {
   group: FilterGroupType;
   entityType: EntityType;
+  datasetMode?: "own" | "competitor";
   dynamicOptions: Record<string, Array<{ value: string; label: string; imageUrl?: string | null; isAllCatalog?: boolean }>>;
   groupIndex: number;
   totalGroups: number;
@@ -34,6 +35,7 @@ type FilterGroupProps = {
 export function FilterGroup({
   group,
   entityType,
+  datasetMode = "own",
   dynamicOptions,
   groupIndex,
   totalGroups,
@@ -159,6 +161,7 @@ export function FilterGroup({
             <FilterCondition
               condition={condition}
               entityType={entityType}
+              datasetMode={datasetMode}
               dynamicOptions={dynamicOptions}
               onChange={(c) => handleConditionChange(index, c)}
               onRemove={() => handleConditionRemove(index)}
@@ -190,10 +193,12 @@ export function FilterGroup({
 export function GroupSummary({
   group,
   entityType,
+  datasetMode = "own",
   dynamicOptions,
 }: {
   group: FilterGroupType;
   entityType: EntityType;
+  datasetMode?: "own" | "competitor";
   dynamicOptions: Record<string, Array<{ value: string; label: string }>>;
 }) {
   const activeConditions = group.conditions.filter(c => c.enabled && c.field);
@@ -221,6 +226,7 @@ export function GroupSummary({
           <ConditionSummary
             condition={condition}
             entityType={entityType}
+            datasetMode={datasetMode}
             dynamicOptions={dynamicOptions}
           />
         </span>
