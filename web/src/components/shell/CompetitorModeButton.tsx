@@ -83,7 +83,6 @@ export function CompetitorModeButton({
 
   const accentHex = activeLabel?.accent_hex ?? null;
   const showAllPill = datasetMode === "competitor" && isAllActive(datasetMode, effectiveLabelKey);
-  const showCountBadge = datasetMode === "own" && labels.length > 0;
 
   const clearPreview = useCallback(() => setPreviewHex(null), []);
 
@@ -385,20 +384,6 @@ export function CompetitorModeButton({
         ) : (
           <span className="block h-6 w-6 rounded-full bg-fuchsia-500/15" />
         )}
-
-        {showCountBadge ? (
-          <span
-            className="absolute -right-0.5 -top-0.5 z-[1] flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-0.5 text-[9px] font-bold leading-none"
-            style={{
-              background: "var(--sb-card)",
-              color: "var(--sb-muted)",
-              border: "1px solid var(--sb-border)",
-            }}
-            title={`${labels.length} tracked competitor${labels.length !== 1 ? "s" : ""}`}
-          >
-            {labels.length > 9 ? "9+" : labels.length}
-          </span>
-        ) : null}
       </button>
 
       {open && typeof document !== "undefined" ? createPortal(menuContent, document.body) : null}
