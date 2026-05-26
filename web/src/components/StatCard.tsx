@@ -9,11 +9,14 @@ export const StatCard = memo(function StatCard(props: {
   trend?: "up" | "down" | "neutral";
   trendData?: number[]; // Array of numbers for dynamic sparkline
   accentColor?: string; // Custom accent color (ring and glow)
+  /** Sparkline stroke; defaults to accentColor. Use semantic stream green when accent is competitor chrome. */
+  sparklineColor?: string;
   distroName?: string | null;
   distroImageUrl?: string | null;
 }) {
   // Use custom accent color if provided, otherwise lime green (default)
   const accentColor = props.accentColor ?? "#c7f33c";
+  const sparklineColor = props.sparklineColor ?? accentColor;
 
   // Convert hex to rgba for opacity variations
   const getRgba = (hex: string, alpha: number) => {
@@ -120,7 +123,7 @@ export const StatCard = memo(function StatCard(props: {
 
           {/* Sparkline Visual */}
           <div className="h-6 w-20 opacity-50">
-            <Sparkline trend={props.trend || "neutral"} data={props.trendData} color={accentColor} />
+            <Sparkline trend={props.trend || "neutral"} data={props.trendData} color={sparklineColor} />
           </div>
         </div>
       </div>

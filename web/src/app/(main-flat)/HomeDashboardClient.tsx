@@ -13,6 +13,7 @@ import { aggregateCumulativeSeries, aggregateChartPoints } from "@/lib/granulari
 import { useSharedGranularity } from "@/lib/useSharedGranularity";
 
 import { useMetric } from "@/components/metrics/MetricContext";
+import { useThemeColors } from "@/components/charts/useThemeColors";
 import { LazyInteractiveChartSection } from "@/components/dashboard/LazyInteractiveChartSection";
 import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
 import { dataDateFromRunDate } from "@/lib/sotDates";
@@ -107,6 +108,7 @@ function HomeDashboardInner(props: {
   artificialSpikeDateEnd: string | null;
 }) {
   const { metric } = useMetric();
+  const themeColors = useThemeColors();
   useCurrencyDisplay();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
   const [selectedChart, setSelectedChart] = useState<"daily" | "total">("daily");
@@ -270,6 +272,11 @@ function HomeDashboardInner(props: {
       color: undefined,
     };
   }, [metric, granularity, props.history, props.latest, props.rangeDays, streamPayoutPerStreamUsd]);
+
+  const heroStatAccentColor = useMemo(() => {
+    if (props.datasetMode !== "competitor" || metric !== "streams") return undefined;
+    return themeColors.accent;
+  }, [props.datasetMode, metric, themeColors.accent]);
 
   const competitorBackfillNotice = useMemo(() => {
     if (props.datasetMode !== "competitor" || props.history.length < 2) return null;
@@ -438,6 +445,7 @@ function HomeDashboardInner(props: {
         yTickFormat={series.yTickFormat}
         color={series.color}
         accentColor={series.color}
+        statAccentColor={heroStatAccentColor}
         annotations={metric === "tracks" ? [] : (props.overrideAnnotations ?? [])}
         selectedChart={selectedChart}
         onSelectChart={setSelectedChart}

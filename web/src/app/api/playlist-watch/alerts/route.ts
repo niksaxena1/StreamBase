@@ -68,7 +68,7 @@ export async function GET() {
     .eq("user_id", auth.user.id)
     .order("run_date", { ascending: false })
     .order("id", { ascending: false })
-    .limit(20);
+    .limit(500);
   if (eventsErr) return apiJsonErr(eventsErr.message, 500);
 
   return apiJsonOk({

@@ -178,6 +178,13 @@ export function CatalogPageClient(props: {
       ? ({ color: "#10b981" } as const) // emerald-500
       : ({ color: "var(--sb-positive)" } as const);
 
+  const concentrationDividerChrome =
+    isCompetitorMode && topTracksMode === "streams"
+      ? "var(--sb-accent)"
+      : topTracksMode === "revenue"
+        ? "#10b981"
+        : "var(--sb-positive)";
+
   type TopSortKey = "name" | "release" | "total" | "daily";
   type SortState = { key: TopSortKey; asc: boolean } | null;
 
@@ -637,9 +644,9 @@ export function CatalogPageClient(props: {
                         <tr key={`${t.isrc}-divider`} aria-hidden>
                           <td colSpan={6} className="px-2 py-0">
                             <div className="flex items-center gap-2">
-                              <div className="flex-1 border-t" style={{ borderColor: "var(--sb-positive)", opacity: 0.4 }} />
-                              <span className="text-[10px] font-medium" style={{ color: "var(--sb-positive)", opacity: 0.7 }}>50% of streams above</span>
-                              <div className="flex-1 border-t" style={{ borderColor: "var(--sb-positive)", opacity: 0.4 }} />
+                              <div className="flex-1 border-t" style={{ borderColor: concentrationDividerChrome, opacity: 0.4 }} />
+                              <span className="text-[10px] font-medium" style={{ color: concentrationDividerChrome, opacity: 0.7 }}>50% of streams above</span>
+                              <div className="flex-1 border-t" style={{ borderColor: concentrationDividerChrome, opacity: 0.4 }} />
                             </div>
                           </td>
                         </tr>
@@ -823,9 +830,9 @@ export function CatalogPageClient(props: {
                         <tr key={`${t.isrc}-divider`} aria-hidden>
                           <td colSpan={6} className="px-2 py-0">
                             <div className="flex items-center gap-2">
-                              <div className="flex-1 border-t" style={{ borderColor: "var(--sb-positive)", opacity: 0.4 }} />
-                              <span className="text-[10px] font-medium" style={{ color: "var(--sb-positive)", opacity: 0.7 }}>50% of streams above</span>
-                              <div className="flex-1 border-t" style={{ borderColor: "var(--sb-positive)", opacity: 0.4 }} />
+                              <div className="flex-1 border-t" style={{ borderColor: concentrationDividerChrome, opacity: 0.4 }} />
+                              <span className="text-[10px] font-medium" style={{ color: concentrationDividerChrome, opacity: 0.7 }}>50% of streams above</span>
+                              <div className="flex-1 border-t" style={{ borderColor: concentrationDividerChrome, opacity: 0.4 }} />
                             </div>
                           </td>
                         </tr>

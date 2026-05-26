@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/shell/PageHeader";
 import { GlassTable, TableCell, TableRow } from "@/components/ui/GlassTable";
 import { formatDateISO, formatInt } from "@/lib/format";
 import { dataDateFromRunDate } from "@/lib/sotDates";
+import type { CSSProperties } from "react";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +22,19 @@ type LabelRow = {
   label_key: string;
   display_name: string;
   is_active: boolean;
+  accent_hex: string | null;
 };
+
+function labelSummaryCardStyle(accentHex: string | null): CSSProperties {
+  const clean = accentHex?.replace(/^#/, "").toLowerCase();
+  if (!clean || !/^[0-9a-f]{6}$/.test(clean)) {
+    return { borderLeft: "3px solid var(--sb-border)" };
+  }
+  return {
+    borderLeft: `3px solid #${clean}`,
+    background: `color-mix(in srgb, #${clean} 10%, transparent)`,
+  };
+}
 
 type PlaylistRow = {
   playlist_key: string;
@@ -88,7 +101,7 @@ export default async function CompetitorsPage() {
     { data: latestRun },
     { data: warningRowsRaw },
   ] = await Promise.all([
-    comp.from("labels").select("label_key,display_name,is_active").order("display_name", { ascending: true }),
+    comp.from("labels").select("label_key,display_name,is_active,accent_hex").order("display_name", { ascending: true }),
     comp
       .from("playlists")
       .select("playlist_key,label_key,display_name,spotify_playlist_id,spotify_playlist_image_url,sot_playlist_id,sot_dashboard_url,display_order,is_active")
@@ -196,7 +209,7 @@ export default async function CompetitorsPage() {
         {summary.map(({ label, playlists: labelPlaylists, trackCount, totalStreams, unenrichedTracks }) => {
           const imageUrl = labelPlaylists.find((playlist) => playlist.spotify_playlist_image_url)?.spotify_playlist_image_url ?? null;
           return (
-            <div key={label.label_key} className="sb-card p-4">
+            <div key={label.label_key} className="sb-card p-4" style={labelSummaryCardStyle(label.accent_hex)}>
               <div className="flex items-center gap-3">
                 {imageUrl ? (
                   <Image src={imageUrl} alt={label.display_name} width={44} height={44} className="h-11 w-11 rounded-xl object-cover sb-ring" />

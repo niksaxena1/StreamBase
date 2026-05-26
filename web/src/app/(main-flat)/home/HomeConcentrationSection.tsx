@@ -269,6 +269,19 @@ export function HomeConcentrationSection(props: {
   }, [lorenzData, thresholdIdx]);
 
   const isRevenue = metric === "revenue";
+  const useAccentChrome = props.datasetMode === "competitor" && !isRevenue;
+  const chromeColor = useAccentChrome
+    ? "var(--sb-accent)"
+    : isRevenue
+      ? "#10b981"
+      : "var(--sb-positive)";
+  const chromeTint = (pct: number) =>
+    useAccentChrome
+      ? `color-mix(in srgb, var(--sb-accent) ${pct}%, transparent)`
+      : isRevenue
+        ? `color-mix(in srgb, #10b981 ${pct}%, transparent)`
+        : `color-mix(in srgb, var(--sb-positive) ${pct}%, transparent)`;
+  const thresholdChartColor = useAccentChrome ? colors.accent : colors.positive;
   const formatValue = (streams: number) =>
     isRevenue ? formatUsd(streams * streamPayoutPerStreamUsd) : formatInt(streams);
   const valueStyle = isRevenue ? ({ color: "#10b981" } as const) : ({ color: "var(--sb-positive)" } as const);
@@ -477,9 +490,15 @@ export function HomeConcentrationSection(props: {
           </div>
         </summary>
 
-        <div className="mt-3 space-y-3">
+        <div
+          className="mt-3 space-y-3 rounded-xl p-2"
+          style={useAccentChrome ? { background: chromeTint(8) } : undefined}
+        >
           {/* Threshold slider + stats */}
-          <div className="flex items-center gap-4 px-1">
+          <div
+            className="flex items-center gap-4 rounded-xl px-2 py-2"
+            style={useAccentChrome ? { background: chromeTint(12) } : undefined}
+          >
             <div className="flex items-center gap-2 flex-1 min-w-0">
               <label className="text-[11px] font-medium whitespace-nowrap" style={{ color: "var(--sb-muted)" }}>
                 Threshold
@@ -492,7 +511,7 @@ export function HomeConcentrationSection(props: {
                 value={threshold}
                 onChange={(e) => setThreshold(Number(e.target.value))}
                 className="flex-1 h-1 accent-current cursor-pointer"
-                style={{ color: "var(--sb-positive)" }}
+                style={{ color: chromeColor }}
               />
               <span className="text-[11px] font-mono font-medium tabular-nums w-8 text-right" style={{ color: "var(--sb-muted)" }}>
                 {threshold}%
@@ -554,7 +573,7 @@ export function HomeConcentrationSection(props: {
 
                 return (
                   <React.Fragment key={p.isrc}>
-                    <TableRow style={isAboveThreshold ? { backgroundColor: "color-mix(in srgb, var(--sb-positive) 6%, transparent)" } : undefined}>
+                    <TableRow style={isAboveThreshold ? { backgroundColor: chromeTint(6) } : undefined}>
                       <TableCell>
                         {p.album_image_url ? (
                           <Image
@@ -624,11 +643,11 @@ export function HomeConcentrationSection(props: {
                       <tr aria-hidden>
                         <td colSpan={7} className="px-2 py-0">
                           <div className="flex items-center gap-2">
-                            <div className="flex-1 border-t" style={{ borderColor: "var(--sb-positive)", opacity: 0.4 }} />
-                            <span className="text-[10px] font-medium" style={{ color: "var(--sb-positive)", opacity: 0.7 }}>
+                            <div className="flex-1 border-t" style={{ borderColor: chromeColor, opacity: 0.4 }} />
+                            <span className="text-[10px] font-medium" style={{ color: chromeColor, opacity: 0.7 }}>
                               {threshold}% of {viewMode === "daily" ? "daily" : "total"} streams above
                             </span>
-                            <div className="flex-1 border-t" style={{ borderColor: "var(--sb-positive)", opacity: 0.4 }} />
+                            <div className="flex-1 border-t" style={{ borderColor: chromeColor, opacity: 0.4 }} />
                           </div>
                         </td>
                       </tr>
@@ -668,11 +687,11 @@ export function HomeConcentrationSection(props: {
 
           {/* Key stat */}
           <div className="text-center text-sm" style={{ color: "var(--sb-text)" }}>
-            <span className="font-semibold" style={{ color: "var(--sb-positive)" }}>
+            <span className="font-semibold" style={{ color: chromeColor }}>
               {tracksAboveThreshold}
             </span>
             {" "}of {sorted.length} tracks account for{" "}
-            <span className="font-semibold" style={{ color: "var(--sb-positive)" }}>
+            <span className="font-semibold" style={{ color: chromeColor }}>
               {threshold}%
             </span>
             {" "}of {viewMode === "daily" ? "daily" : "total"} streams
@@ -747,13 +766,13 @@ export function HomeConcentrationSection(props: {
                   <>
                     <ReferenceLine
                       x={thresholdPoint.trackCount}
-                      stroke={colors.positive}
+                      stroke={thresholdChartColor}
                       strokeDasharray="4 4"
                       strokeOpacity={0.6}
                     />
                     <ReferenceLine
                       y={thresholdPoint.cumPct}
-                      stroke={colors.positive}
+                      stroke={thresholdChartColor}
                       strokeDasharray="4 4"
                       strokeOpacity={0.6}
                     />
@@ -761,7 +780,7 @@ export function HomeConcentrationSection(props: {
                       x={thresholdPoint.trackCount}
                       y={thresholdPoint.cumPct}
                       r={5}
-                      fill={colors.positive}
+                      fill={thresholdChartColor}
                       stroke={colors.bg}
                       strokeWidth={2}
                     />
@@ -772,7 +791,10 @@ export function HomeConcentrationSection(props: {
           </div>
 
           {/* Inline slider to adjust threshold within modal */}
-          <div className="flex items-center gap-3 px-1">
+          <div
+            className="flex items-center gap-3 rounded-xl px-2 py-2"
+            style={useAccentChrome ? { background: chromeTint(12) } : undefined}
+          >
             <label className="text-xs font-medium whitespace-nowrap" style={{ color: "var(--sb-muted)" }}>
               Threshold
             </label>
@@ -784,7 +806,7 @@ export function HomeConcentrationSection(props: {
               value={threshold}
               onChange={(e) => setThreshold(Number(e.target.value))}
               className="flex-1 h-1 accent-current cursor-pointer"
-              style={{ color: "var(--sb-positive)" }}
+              style={{ color: chromeColor }}
             />
             <span className="text-xs font-mono font-medium tabular-nums w-8 text-right" style={{ color: "var(--sb-muted)" }}>
               {threshold}%

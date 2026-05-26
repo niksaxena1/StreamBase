@@ -35,6 +35,13 @@ Rules support:
 
 When both absolute and percentage thresholds are set, both must match. A rule needs a full baseline window plus the current run date before it can alert.
 
+The `/playlist-watch` UI also includes:
+
+- A test-email action in the alert editor, backed by `POST /api/playlist-watch/alerts/test-email`.
+- A recent trigger preview for playlist-scoped rules, using the playlist's existing follower history before saving.
+- An alert-history table mode that replaces the playlist table and shows all recent alert events for the signed-in user.
+- Recent alert badges on playlist rows so users can jump from a playlist to alert history.
+
 Example rule setup:
 
 ```sql

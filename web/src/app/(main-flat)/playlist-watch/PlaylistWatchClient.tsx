@@ -15,6 +15,7 @@ import { spotifyUserUrl } from "@/lib/playlistWatch/spotifyUserUrl";
 import { showToast } from "@/lib/toast";
 import { DailyStreamsChart } from "@/components/charts/DailyStreamsChart";
 import { formatTooltipDateDaily } from "@/components/charts/chartUtils";
+import { buildAlertPreview } from "@/lib/playlistWatch/alertPreview";
 
 export type PlaylistWatchRow = {
   spotifyPlaylistId: string;
@@ -95,6 +96,8 @@ type PlaylistWatchAlertEvent = {
   recipient_email: string;
   spotify_playlist_id: string | null;
   run_date: string;
+  baseline_count: number;
+  current_count: number;
   absolute_jump: number;
   percent_jump: number | null;
   status: string;
@@ -216,6 +219,7 @@ export function PlaylistWatchClient({
   const [alertsLoading, setAlertsLoading] = useState(false);
   const [alertsLoaded, setAlertsLoaded] = useState(false);
   const [alertEditor, setAlertEditor] = useState<AlertEditorState>(emptyAlertEditor);
+  const [tableMode, setTableMode] = useState<"playlists" | "alerts">("playlists");
 
   useEffect(() => {
     if (!selectedPlaylistId) setCoverPreviewUrl(null);
@@ -564,6 +568,10 @@ export function PlaylistWatchClient({
     return alertRules.filter((rule) => rule.playlistIds.includes(playlistId));
   }
 
+  function recentPlaylistAlert(playlistId: string) {
+    return alertEvents.find((event) => event.spotify_playlist_id === playlistId && event.status === "sent") ?? null;
+  }
+
   function openAlertEditor(playlistId: string | null, rule?: PlaylistWatchAlertRule) {
     const playlist = playlistId ? playlists.find((row) => row.spotifyPlaylistId === playlistId) : null;
     setAlertEditor({
@@ -645,6 +653,51 @@ export function PlaylistWatchClient({
     }
   }
 
+  async function sendTestAlertEmail() {
+    const recipientEmail = alertEditor.recipientEmail.trim();
+    if (!recipientEmail) {
+      setMessage("Add an email address before sending a test.");
+      return;
+    }
+    setBusyKey("alert-test");
+    setMessage(null);
+    try {
+      const res = await fetch("/api/playlist-watch/alerts/test-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ recipientEmail }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error ?? "Failed to send test email");
+      showToast("Test email sent", "success");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  const alertPreview = useMemo(() => {
+    if (!alertEditor.playlistId) return null;
+    const playlist = playlists.find((row) => row.spotifyPlaylistId === alertEditor.playlistId);
+    if (!playlist) return null;
+    const minAbsoluteJump = alertEditor.minAbsoluteJump.trim() ? Number(alertEditor.minAbsoluteJump) : null;
+    const minPercentJump = alertEditor.minPercentJump.trim() ? Number(alertEditor.minPercentJump) : null;
+    if (!minAbsoluteJump && !minPercentJump) return null;
+    return buildAlertPreview({
+      history: playlist.history,
+      minAbsoluteJump,
+      minPercentJump,
+      comparisonWindowDays: Number(alertEditor.comparisonWindowDays) || 7,
+    });
+  }, [
+    alertEditor.comparisonWindowDays,
+    alertEditor.minAbsoluteJump,
+    alertEditor.minPercentJump,
+    alertEditor.playlistId,
+    playlists,
+  ]);
+
   return (
     <div className="space-y-4 [&_a]:cursor-pointer [&_button:not(:disabled)]:cursor-pointer [&_button:disabled]:cursor-not-allowed [&_input[type='checkbox']]:cursor-pointer">
       <div className="sb-card flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between">
@@ -669,18 +722,31 @@ export function PlaylistWatchClient({
         <div className="flex shrink-0 items-center gap-2">
           <button
             type="button"
-            onClick={() => openAlertEditor(null)}
+            onClick={() => {
+              setTableMode((mode) => (mode === "alerts" ? "playlists" : "alerts"));
+              if (!alertsLoaded && !alertsLoading) void loadAlertRules();
+            }}
             className="sb-ring inline-flex h-9 items-center gap-2 rounded-lg bg-white/60 px-3 text-sm font-semibold hover:bg-white/80 dark:bg-white/10 dark:hover:bg-white/15"
             style={{ color: "var(--sb-text)" }}
-            title="Manage notification alerts"
+            title={tableMode === "alerts" ? "Show playlist table" : "Show alert history"}
           >
-            <Bell className="h-4 w-4" aria-hidden />
-            <span>Alerts</span>
+            <BellRing className="h-4 w-4" aria-hidden />
+            <span>{tableMode === "alerts" ? "Playlists" : "Alert history"}</span>
             {alertRules.length > 0 ? (
               <span className="rounded bg-black/10 px-1.5 py-0.5 font-mono text-[10px] dark:bg-white/15">
                 {formatInt(alertRules.filter((rule) => rule.isActive).length)}
               </span>
             ) : null}
+          </button>
+          <button
+            type="button"
+            onClick={() => openAlertEditor(null)}
+            className="sb-ring grid h-9 w-9 place-items-center rounded-lg bg-white/60 hover:bg-white/80 dark:bg-white/10 dark:hover:bg-white/15"
+            style={{ color: "var(--sb-text)" }}
+            title="Create notification alert"
+            aria-label="Create notification alert"
+          >
+            <Bell className="h-4 w-4" aria-hidden />
           </button>
         {isAdmin ? (
           <button
@@ -853,6 +919,67 @@ export function PlaylistWatchClient({
         </form>
       </Modal>
 
+      {tableMode === "alerts" ? (
+        <GlassTable
+          headers={[
+            "Date",
+            "Playlist",
+            { label: "Jump", align: "right" },
+            { label: "Baseline", align: "right" },
+            { label: "Current", align: "right" },
+            "Recipient",
+            "Status",
+          ]}
+          maxBodyHeightClassName="max-h-[680px]"
+        >
+          {alertEvents.length === 0 ? (
+            <EmptyState
+              colSpan={7}
+              message="No alert history yet."
+              description="Triggered Playlist Watch notifications will appear here after the daily job runs."
+            />
+          ) : (
+            alertEvents.map((event) => {
+              const playlist = playlists.find((row) => row.spotifyPlaylistId === event.spotify_playlist_id);
+              return (
+                <TableRow key={event.id}>
+                  <TableCell>
+                    <span className="font-mono text-xs">{event.run_date}</span>
+                  </TableCell>
+                  <TableCell>
+                    <button
+                      type="button"
+                      disabled={!event.spotify_playlist_id}
+                      onClick={() => event.spotify_playlist_id && setSelectedPlaylistId(event.spotify_playlist_id)}
+                      className="max-w-[280px] truncate text-left text-sm font-medium hover:underline disabled:hover:no-underline"
+                    >
+                      {playlist?.displayName ?? event.spotify_playlist_id ?? "Unknown playlist"}
+                    </button>
+                  </TableCell>
+                  <TableCell numeric>
+                    +{formatInt(event.absolute_jump)}
+                    {event.percent_jump !== null ? (
+                      <span className="ml-1 text-[11px]" style={{ color: "var(--sb-muted)" }}>
+                        {Number(event.percent_jump).toFixed(1)}%
+                      </span>
+                    ) : null}
+                  </TableCell>
+                  <TableCell numeric>{formatInt(event.baseline_count)}</TableCell>
+                  <TableCell numeric>{formatInt(event.current_count)}</TableCell>
+                  <TableCell>
+                    <span className="block max-w-[220px] truncate text-xs">{event.recipient_email}</span>
+                  </TableCell>
+                  <TableCell>
+                    <span className={event.status === "sent" ? "text-emerald-600 dark:text-emerald-300" : "text-red-600 dark:text-red-300"}>
+                      {event.status}
+                    </span>
+                  </TableCell>
+                </TableRow>
+              );
+            })
+          )}
+        </GlassTable>
+      ) : (
       <GlassTable
         headers={[
           {
@@ -919,6 +1046,9 @@ export function PlaylistWatchClient({
           />
         ) : (
           sortedPlaylists.map((playlist) => (
+            (() => {
+              const recentAlert = recentPlaylistAlert(playlist.spotifyPlaylistId);
+              return (
             <TableRow
               key={playlist.spotifyPlaylistId}
               className={[
@@ -952,6 +1082,18 @@ export function PlaylistWatchClient({
                     <div className="flex items-center gap-1.5">
                       <StatusIcon playlist={playlist} />
                       {playlist.isFavorite ? <Heart className="h-3.5 w-3.5 fill-current text-red-500" /> : null}
+                      {recentAlert ? (
+                        <button
+                          type="button"
+                          data-row-action
+                          title={`Latest alert ${recentAlert.run_date}: +${formatInt(recentAlert.absolute_jump)} followers`}
+                          onClick={() => setTableMode("alerts")}
+                          className="sb-ring inline-flex h-5 items-center gap-1 rounded bg-amber-500/15 px-1.5 text-[10px] font-semibold text-amber-700 hover:bg-amber-500/25 dark:text-amber-200"
+                        >
+                          <BellRing className="h-3 w-3" />
+                          +{formatInt(recentAlert.absolute_jump)}
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         onClick={() => setSelectedPlaylistId(playlist.spotifyPlaylistId)}
@@ -1064,9 +1206,12 @@ export function PlaylistWatchClient({
                 </div>
               </TableCell>
             </TableRow>
+              );
+            })()
           ))
         )}
       </GlassTable>
+      )}
 
       <Modal
         open={Boolean(selectedPlaylist)}
@@ -1334,7 +1479,47 @@ export function PlaylistWatchClient({
               </ChipGroup>
             ) : null}
 
-            <div className="flex justify-end">
+            {alertEditor.playlistId ? (
+              <div className="rounded-lg border p-3" style={{ borderColor: "var(--sb-border)", background: "var(--sb-surface)" }}>
+                <div className="flex items-center gap-2 text-sm font-semibold">
+                  <BellRing className="h-4 w-4 text-amber-500" />
+                  <span>Recent trigger preview</span>
+                </div>
+                <div className="mt-1 text-xs leading-5" style={{ color: "var(--sb-muted)" }}>
+                  {alertPreview?.needsMoreHistory ? (
+                    "This playlist does not have enough history for the selected average window yet."
+                  ) : alertPreview ? (
+                    alertPreview.triggerCount > 0 ? (
+                      <>
+                        This rule would have triggered {alertPreview.triggerCount} time{alertPreview.triggerCount === 1 ? "" : "s"} across {alertPreview.checkedDays} checked day{alertPreview.checkedDays === 1 ? "" : "s"}.
+                        {alertPreview.latestTrigger ? (
+                          <span className="block">
+                            Latest: {formatTooltipDateDaily(alertPreview.latestTrigger.date)} at +{formatInt(alertPreview.latestTrigger.absoluteJump)} followers
+                            {alertPreview.latestTrigger.percentJump !== null ? ` (${alertPreview.latestTrigger.percentJump.toFixed(1)}%).` : "."}
+                          </span>
+                        ) : null}
+                      </>
+                    ) : (
+                      `This rule would not have triggered across ${alertPreview.checkedDays} checked day${alertPreview.checkedDays === 1 ? "" : "s"}.`
+                    )
+                  ) : (
+                    "Add at least one threshold to preview recent matches."
+                  )}
+                </div>
+              </div>
+            ) : null}
+
+            <div className="flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                disabled={busyKey === "alert-test" || !alertEditor.recipientEmail.trim()}
+                onClick={sendTestAlertEmail}
+                className="sb-ring inline-flex h-9 items-center gap-2 rounded-lg bg-white/60 px-3 text-sm font-semibold hover:bg-white/80 disabled:opacity-40 dark:bg-white/10 dark:hover:bg-white/15"
+                style={{ color: "var(--sb-text)" }}
+              >
+                <Mail className="h-4 w-4" />
+                {busyKey === "alert-test" ? "Sending..." : "Send test"}
+              </button>
               <button
                 type="submit"
                 disabled={busyKey === "alert-save"}

@@ -38,7 +38,9 @@ type InteractiveChartSectionProps = {
   valueFormat?: "int" | "usd";
   yTickFormat?: "k" | "int" | "usd_compact";
   color?: string;
-  accentColor?: string; // Accent color for stat cards
+  accentColor?: string; // Stat card ring when aligned with chart metric (revenue/tracks)
+  /** Competitor chrome for stat selection ring (streams in competitor mode); chart stays semantic. */
+  statAccentColor?: string;
   annotations?: ManualOverrideAnnotation[];
   /**
    * Optional controlled mode for which chart is selected.
@@ -64,6 +66,7 @@ export function InteractiveChartSection({
   yTickFormat = "k",
   color,
   accentColor,
+  statAccentColor,
   annotations,
   selectedChart: selectedChartProp,
   onSelectChart,
@@ -78,6 +81,8 @@ export function InteractiveChartSection({
   const themeColors = useThemeColors();
   const chartMetric = inferChartMetricFromLabels(valueFormat, dailyValueLabel);
   const effectiveColor = color ?? getChartColor(chartMetric, themeColors);
+  const statRingColor = statAccentColor ?? accentColor;
+  const sparklineColor = color ?? getChartColor(chartMetric, themeColors);
 
   const dailyFiltered = useMemo(
     () => downsampleSeries(filterDailySeriesFromIsoDate(dailyStreamsData ?? [], chartStartDateIso)),
@@ -137,7 +142,8 @@ export function InteractiveChartSection({
             value={<AnimatedCounter value={totalStreamsValue} format={valueFormat} />}
             subtitle="Lifetime"
             accent={selectedChart === "total"}
-            accentColor={accentColor}
+            accentColor={statRingColor}
+            sparklineColor={sparklineColor}
             trendData={totalTrend}
           />
         </button>
@@ -151,7 +157,8 @@ export function InteractiveChartSection({
             value={<AnimatedCounter value={dailyStreamsValue} format={valueFormat} />}
             subtitle={`${rangeDays}d view`}
             accent={selectedChart === "daily"}
-            accentColor={accentColor}
+            accentColor={statRingColor}
+            sparklineColor={sparklineColor}
             trend="up"
             trendData={dailyTrend}
           />
