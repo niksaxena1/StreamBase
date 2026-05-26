@@ -1,4 +1,4 @@
-import Image from "next/image";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { Suspense } from "react";
@@ -269,7 +269,7 @@ export default async function PlaylistsPage({
           subtitle={latestDate ? <>Latest data date: <span className="font-mono">{formatDateISO(dataDateFromRunDate(latestDate))}</span></> : "No stats found for this playlist yet."}
           icon={
             playlistImageUrl ? (
-              <Image
+              <PreviewableArtwork
                 src={playlistImageUrl}
                 alt={title}
                 width={56}
@@ -627,12 +627,12 @@ export default async function PlaylistsPage({
               <Music className="h-6 w-6" style={{ color: "black" }} />
             </div>
           ) : playlistImageUrl ? (
-            <Image
+            <PreviewableArtwork
               src={playlistImageUrl}
               alt="Playlist cover"
               width={48}
               height={48}
-              className="rounded-lg object-cover sb-ring opacity-100"
+              className="h-12 w-12 rounded-lg object-cover sb-ring opacity-100"
             />
           ) : (
             <div className="h-12 w-12 rounded-lg sb-ring bg-white/60" />

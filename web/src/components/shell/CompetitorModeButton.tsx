@@ -1,6 +1,6 @@
 "use client";
 
-import Image from "next/image";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { Check, Swords } from "lucide-react";
@@ -295,11 +295,12 @@ export function CompetitorModeButton({
                 className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-black/5 dark:hover:bg-white/10"
               >
                 {label.image_url ? (
-                  <Image
+                  <PreviewableArtwork
                     src={label.image_url}
-                    alt=""
+                    alt={label.display_name}
                     width={18}
                     height={18}
+                    interactive="inline"
                     className="h-[18px] w-[18px] shrink-0 rounded object-cover sb-ring"
                   />
                 ) : (
@@ -347,11 +348,12 @@ export function CompetitorModeButton({
             All
           </span>
         ) : activeLabel?.image_url ? (
-          <Image
+          <PreviewableArtwork
             src={activeLabel.image_url}
-            alt=""
+            alt={activeLabel.display_name}
             width={28}
             height={28}
+            interactive="inline"
             className="h-7 w-7 rounded-full object-cover"
           />
         ) : (

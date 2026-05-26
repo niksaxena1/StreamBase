@@ -16,6 +16,7 @@ import { WarningHistoryChart } from "@/components/health/WarningHistoryChart";
 import { PageHeader } from "@/components/shell/PageHeader";
 import { Alert } from "@/components/ui/Alert";
 import { CollapsibleSection } from "@/components/ui/CollapsibleSection";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 
 import { WarningsSection } from "@/components/health/WarningsSection";
 import { MissingCatalogSection } from "@/components/health/MissingCatalogSection";
@@ -210,8 +211,14 @@ async function CompetitorHealthPage({
                 <TableCell>
                   <div className="flex min-w-0 items-center gap-2">
                     {playlist.spotify_playlist_image_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={playlist.spotify_playlist_image_url} alt="" className="h-8 w-8 flex-shrink-0 rounded object-cover sb-ring" />
+                      <PreviewableArtwork
+                        src={playlist.spotify_playlist_image_url}
+                        alt=""
+                        width={32}
+                        height={32}
+                        className="h-8 w-8 flex-shrink-0 rounded object-cover sb-ring"
+                        label={playlist.display_name}
+                      />
                     ) : (
                       <div className="h-8 w-8 flex-shrink-0 rounded bg-white/10 sb-ring" />
                     )}
@@ -523,11 +530,13 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
                     return (
                       <div className="flex items-center gap-2 min-w-0">
                         {imgUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
+                          <PreviewableArtwork
                             src={imgUrl}
                             alt=""
+                            width={32}
+                            height={32}
                             className="h-8 w-8 rounded object-cover sb-ring flex-shrink-0"
+                            label={name}
                           />
                         ) : (
                           <div className="h-8 w-8 rounded sb-ring bg-white/60 flex-shrink-0" />

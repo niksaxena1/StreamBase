@@ -11,7 +11,7 @@ import {
 } from "react";
 import type { ForwardRefExoticComponent, RefAttributes } from "react";
 import dynamic from "next/dynamic";
-import NextImage from "next/image";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import type { ForceGraphMethods, ForceGraphProps } from "react-force-graph-2d";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -455,11 +455,12 @@ export function NetworkGraphClient({
         value: p.playlist_key,
         label: p.display_name,
         leading: p.spotify_playlist_image_url ? (
-          <NextImage
+          <PreviewableArtwork
             src={p.spotify_playlist_image_url}
-            alt=""
+            alt={p.display_name}
             width={24}
             height={24}
+            interactive="inline"
             className="h-6 w-6 shrink-0 rounded-lg object-cover"
           />
         ) : (
@@ -3130,11 +3131,11 @@ export function NetworkGraphClient({
                   }}
                 >
                   {r.image_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
+                    <PreviewableArtwork
                       src={r.image_url}
-                      alt=""
+                      alt={r.name}
                       className="w-6 h-6 rounded-full object-cover flex-shrink-0"
+                      interactive="inline"
                     />
                   ) : (
                     <div

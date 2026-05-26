@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
-import Image from "next/image";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { ExternalLink, Music } from "lucide-react";
 
 import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
@@ -57,7 +57,7 @@ export function TracksList({ tracks, searchQuery }: TracksListProps) {
         <TableRow key={track.isrc}>
           <TableCell>
             {track.albumImageUrl ? (
-              <Image
+              <PreviewableArtwork
                 src={track.albumImageUrl}
                 alt="Album cover"
                 width={40}

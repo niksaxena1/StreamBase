@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from "react";
-import Image from "next/image";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import Link from "next/link";
 import {
   Area,
@@ -387,7 +387,7 @@ function SpikeTrackModal({
           ) : null}
           <div className="flex items-start gap-3">
             {group.album_image_url ? (
-              <Image
+              <PreviewableArtwork
                 src={group.album_image_url}
                 alt={group.name}
                 width={64}
@@ -745,7 +745,7 @@ export function HomeArtificialStreamsSection(props: {
                   <TableCell>
                     <div className="flex items-center gap-2 min-w-0">
                       {group.album_image_url ? (
-                        <Image
+                        <PreviewableArtwork
                           src={group.album_image_url}
                           alt={group.name}
                           width={28}

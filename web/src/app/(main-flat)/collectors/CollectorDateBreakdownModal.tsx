@@ -6,6 +6,7 @@ import { TrendingUp, TrendingDown, ArrowRightLeft } from "lucide-react";
 import { GlassTable, TableCell, TableRow } from "@/components/ui/GlassTable";
 import { Modal } from "@/components/ui/Modal";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { formatDateOrdinalDMonYYYY, formatInt, formatUsd2 } from "@/lib/format";
 import { COLLECTOR_COLORS } from "@/components/charts/CollectorComparisonChart";
 
@@ -225,11 +226,13 @@ export function CollectorDateBreakdownModal({
                         <TableRow key={t.isrc}>
                           <TableCell>
                             {t.album_image_url ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img
+                              <PreviewableArtwork
                                 src={String(t.album_image_url)}
                                 alt="Album"
+                                width={28}
+                                height={28}
                                 className="h-7 w-7 rounded-lg object-cover sb-ring"
+                                label={t.name ?? t.isrc}
                               />
                             ) : (
                               <div className="h-7 w-7 rounded-lg sb-ring bg-white/60 dark:bg-white/10" />
@@ -383,11 +386,13 @@ function RosterChangesSection({
                 {additions.map((t) => (
                   <div key={t.isrc} className="flex items-center gap-2">
                     {t.album_image_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
+                      <PreviewableArtwork
                         src={String(t.album_image_url)}
                         alt="Album"
+                        width={24}
+                        height={24}
                         className="h-6 w-6 rounded-md object-cover sb-ring flex-none"
+                        label={t.name ?? t.isrc}
                       />
                     ) : (
                       <div className="h-6 w-6 rounded-md sb-ring bg-white/60 dark:bg-white/10 flex-none" />
@@ -441,11 +446,13 @@ function RosterChangesSection({
                     className="flex items-center gap-2 opacity-60"
                   >
                     {t.album_image_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
+                      <PreviewableArtwork
                         src={String(t.album_image_url)}
                         alt="Album"
+                        width={24}
+                        height={24}
                         className="h-6 w-6 rounded-md object-cover sb-ring flex-none"
+                        label={t.name ?? t.isrc}
                       />
                     ) : (
                       <div className="h-6 w-6 rounded-md sb-ring bg-white/60 dark:bg-white/10 flex-none" />

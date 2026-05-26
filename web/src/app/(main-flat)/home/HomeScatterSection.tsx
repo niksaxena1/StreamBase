@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useDeferredValue } from "react";
 import { Calendar, Search, X } from "lucide-react";
 import Link from "next/link";
-import Image from "next/image";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 
 import { useMetric } from "@/components/metrics/MetricContext";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
@@ -402,11 +402,12 @@ export function HomeScatterSection(props: {
                       }}
                     >
                       {m.imageUrl ? (
-                        <Image
+                        <PreviewableArtwork
                           src={m.imageUrl}
-                          alt=""
+                          alt={m.name ?? m.isrc}
                           width={32}
                           height={32}
+                          interactive="inline"
                           className="mt-0.5 h-8 w-8 rounded-md object-cover sb-ring"
                         />
                       ) : (

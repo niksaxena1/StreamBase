@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import NextImage from "next/image";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
@@ -110,11 +110,12 @@ export function NetworkCustomScopeModal({
                   style={{ borderColor: "var(--sb-border)" }}
                 />
                 {p.spotify_playlist_image_url ? (
-                  <NextImage
+                  <PreviewableArtwork
                     src={p.spotify_playlist_image_url}
-                    alt=""
+                    alt={p.display_name}
                     width={24}
                     height={24}
+                    interactive="inline"
                     className="h-6 w-6 shrink-0 rounded-sm object-cover"
                   />
                 ) : (

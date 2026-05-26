@@ -6,6 +6,7 @@ import type { ThemeColors } from "@/components/charts/useThemeColors";
 import type { GraphNode } from "./page";
 import type { CollabCountBasis, NetworkTableSortKey } from "./networkGraphTypes";
 import { useNetworkMetricStreams } from "./useNetworkMetricStreams";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 
 export function NetworkArtistsTable({
   nodes,
@@ -166,11 +167,14 @@ export function NetworkArtistsTable({
               >
                 <td className="py-1.5 pl-2 pr-1">
                   {n.image_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
+                    <PreviewableArtwork
                       src={n.image_url}
                       alt=""
+                      width={24}
+                      height={24}
                       className="h-6 w-6 shrink-0 rounded-full object-cover"
+                      interactive="inline"
+                      label={n.name}
                     />
                   ) : (
                     <div

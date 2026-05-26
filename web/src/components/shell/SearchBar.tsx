@@ -1,6 +1,6 @@
 "use client";
 
-import Image from "next/image";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, X, Music, User, ListMusic } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -141,11 +141,12 @@ function ResultItem({
         onClick={() => navigateTo(result)}
       >
         {result.imageUrl ? (
-          <Image
+          <PreviewableArtwork
             src={result.imageUrl}
             alt={result.name}
             width={32}
             height={32}
+            interactive="inline"
             className={`flex-shrink-0 object-cover ${result.type === "artist" ? "rounded-full" : "rounded"}`}
           />
         ) : (
@@ -567,11 +568,12 @@ export function SearchBar() {
                           onClick={() => navigateTo(r as any)}
                         >
                           {r.imageUrl ? (
-                            <Image
+                            <PreviewableArtwork
                               src={r.imageUrl}
                               alt={r.name}
                               width={32}
                               height={32}
+                              interactive="inline"
                               className={`object-cover ${r.type === "artist" ? "rounded-full" : "rounded"}`}
                             />
                           ) : (

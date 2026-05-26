@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { ExternalLink, User, ChevronDown } from "lucide-react";
 
 import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
@@ -14,6 +13,7 @@ import { foldForSearch } from "@/lib/searchFold";
 import { useMetric } from "@/components/metrics/MetricContext";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { formatInt, formatUsd2 } from "@/lib/format";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 
 type Artist = {
   id: string;
@@ -197,12 +197,13 @@ export function ArtistsList({
             <TableRow key={artist.id}>
             <TableCell>
               {artist.imageUrl ? (
-                <Image
+                <PreviewableArtwork
                   src={artist.imageUrl}
                   alt={artist.name}
                   width={40}
                   height={40}
                   className="h-10 w-10 rounded-full object-cover sb-ring"
+                  label={artist.name}
                 />
               ) : (
                 <div className="h-10 w-10 rounded-full sb-ring bg-white/60 flex items-center justify-center">
@@ -266,7 +267,7 @@ export function ArtistsList({
                         style={{ marginLeft: i === 0 ? 0 : -8, zIndex: 3 - i }}
                       >
                         {d.imageUrl ? (
-                          <Image src={d.imageUrl} alt={d.name} width={24} height={24} className="h-6 w-6 object-cover" />
+                          <PreviewableArtwork src={d.imageUrl} alt={d.name} width={24} height={24} className="h-6 w-6 object-cover" interactive="inline" label={d.name} />
                         ) : (
                           <div className="h-6 w-6 bg-white/30" />
                         )}

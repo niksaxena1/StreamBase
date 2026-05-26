@@ -27,7 +27,6 @@ import { PayoutRateProvider } from "@/components/payout/PayoutRateContext";
 import { RevenueDecimalDisplayProvider } from "@/components/revenue/RevenueDecimalDisplayContext";
 
 import { RollbackProvider } from "@/components/rollback/RollbackContext";
-
 import { supabaseServer } from "@/lib/supabase/server";
 
 import { supabaseService } from "@/lib/supabase/service";

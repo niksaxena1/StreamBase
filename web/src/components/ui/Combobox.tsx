@@ -4,6 +4,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Check, User, Music } from "lucide-react";
 import { formatInt } from "@/lib/format";
 import { foldForSearch } from "@/lib/searchFold";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 
 export type ComboboxOption = {
   value: string;
@@ -148,10 +149,12 @@ export function Combobox(props: {
                         <Music className="h-3 w-3" style={{ color: "black" }} />
                       </div>
                     ) : o.imageUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
+                      <PreviewableArtwork
                         src={o.imageUrl}
                         alt={o.label}
+                        width={20}
+                        height={20}
+                        interactive="inline"
                         className={`h-5 w-5 ${props.imageShape === "square" ? "rounded-lg" : "rounded-full"} object-cover flex-shrink-0`}
                       />
                     ) : (

@@ -2,6 +2,7 @@
 
 import { Disc3 } from "lucide-react";
 import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { Modal } from "@/components/ui/Modal";
 import type { SharedTrack } from "./page";
 import { NetworkCatalogRoutedLink } from "./NetworkCatalogLinks";
@@ -32,11 +33,13 @@ export function SharedTracksListModal({
         {tracks.map((t, i) => (
           <li key={`${t.isrc}-${i}`} className="flex max-w-full items-center gap-2">
             {t.album_image_url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
+              <PreviewableArtwork
                 src={t.album_image_url}
                 alt=""
+                width={32}
+                height={32}
                 className="h-8 w-8 shrink-0 rounded object-cover"
+                label={t.name ?? t.isrc}
               />
             ) : (
               <span

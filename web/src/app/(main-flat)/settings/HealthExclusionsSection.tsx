@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, type ReactNode } from "react";
-import Image from "next/image";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/GlassTable";
 import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
 import { TrackExclusionForm } from "./TrackExclusionForm";
@@ -126,7 +126,7 @@ export function HealthExclusionsSection({
               <TableCell>
                 <div className="flex items-center gap-2">
                   {imageUrl ? (
-                    <Image
+                    <PreviewableArtwork
                       src={imageUrl}
                       alt={name}
                       width={32}

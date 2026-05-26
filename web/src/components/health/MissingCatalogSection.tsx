@@ -1,4 +1,3 @@
-import Image from "next/image";
 import Link from "next/link";
 
 import { fetchMissingCatalogTracks } from "@/lib/health/fetchWarningDetails";
@@ -7,6 +6,7 @@ import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
 import { ExportMissingTracksButton } from "@/components/health/ExportMissingTracksButton";
 import { SectionHeader } from "@/components/ui/SectionHeader";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 
 /**
  * Async server component for the "All Missing Catalog Tracks" section.
@@ -54,12 +54,13 @@ export async function MissingCatalogSection({
             <TableCell>
               <div className="flex items-center gap-3">
                 {track.album_image_url ? (
-                  <Image
+                  <PreviewableArtwork
                     src={track.album_image_url}
                     alt="Album cover"
                     width={40}
                     height={40}
-                    className="rounded object-cover sb-ring flex-shrink-0"
+                    className="h-10 w-10 rounded object-cover sb-ring flex-shrink-0"
+                    label={track.name || track.isrc}
                   />
                 ) : (
                   <div className="h-10 w-10 rounded sb-ring bg-white/60 flex-shrink-0" />

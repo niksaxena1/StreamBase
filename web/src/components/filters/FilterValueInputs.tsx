@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import Image from "next/image";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { Calendar, Check, ChevronDown, Music, X } from "lucide-react";
 import { Input } from "@/components/ui/Input";
 import { Combobox, type ComboboxOption } from "@/components/ui/Combobox";
@@ -431,11 +431,12 @@ export function MultiSelectInput({ value, fieldDef, options, onChange, imageShap
                       <Music className="h-2 w-2" style={{ color: "black" }} />
                     </span>
                   ) : item.imageUrl ? (
-                    <Image
+                    <PreviewableArtwork
                       src={item.imageUrl}
-                      alt=""
+                      alt={item.label}
                       width={14}
                       height={14}
+                      interactive="inline"
                       className={[
                         "h-3.5 w-3.5 object-cover shrink-0",
                         imageShape === "square" ? "rounded-sm" : "rounded-full",
@@ -538,11 +539,12 @@ export function MultiSelectInput({ value, fieldDef, options, onChange, imageShap
                           <Music className="h-3 w-3" style={{ color: "black" }} />
                         </span>
                       ) : opt.imageUrl ? (
-                        <Image
+                        <PreviewableArtwork
                           src={opt.imageUrl}
-                          alt=""
+                          alt={opt.label}
                           width={20}
                           height={20}
+                          interactive="inline"
                           className={[
                             "h-5 w-5 object-cover shrink-0",
                             imageShape === "square" ? "rounded-lg" : "rounded-full",

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { Download } from "lucide-react";
 
 import { fetchApiJson } from "@/lib/api";
@@ -564,7 +564,7 @@ export function PlaylistTracksSectionClient(props: {
               <TableRow key={t.isrc}>
                 <TableCell className="w-10 min-w-[40px]">
                   {t.album_image_url ? (
-                    <Image src={t.album_image_url} alt="Album cover" width={32} height={32} className="h-8 w-8 rounded-lg object-cover sb-ring" />
+                    <PreviewableArtwork src={t.album_image_url} alt="Album cover" width={32} height={32} className="h-8 w-8 rounded-lg object-cover sb-ring" />
                   ) : (
                     <div className="h-8 w-8 rounded-lg sb-ring bg-white/60" />
                   )}
@@ -655,7 +655,7 @@ export function PlaylistTracksSectionClient(props: {
               <TableRow key={`${m.isrc}-${m.valid_from}-${idx}`}>
                 <TableCell>
                   {m.album_image_url ? (
-                    <Image
+                    <PreviewableArtwork
                       src={m.album_image_url}
                       alt="Album cover"
                       width={32}
@@ -761,7 +761,7 @@ export function PlaylistTracksSectionClient(props: {
                 <TableRow key={`${m.isrc}-${m.valid_from}-${idx}`}>
                   <TableCell>
                     {m.album_image_url ? (
-                      <Image src={m.album_image_url} alt="Album cover" width={32} height={32} className="h-8 w-8 rounded-lg object-cover sb-ring" />
+                      <PreviewableArtwork src={m.album_image_url} alt="Album cover" width={32} height={32} className="h-8 w-8 rounded-lg object-cover sb-ring" />
                     ) : (
                       <div className="h-8 w-8 rounded-lg sb-ring bg-white/60" />
                     )}
@@ -885,13 +885,13 @@ export function PlaylistTracksSectionClient(props: {
                 <TableCell>
                   <div className="flex items-center gap-2">
                     {a.artist_id && artistImagesById.get(a.artist_id) ? (
-                      <Image
+                      <PreviewableArtwork
                         src={artistImagesById.get(a.artist_id) ?? ""}
                         alt=""
                         width={28}
                         height={28}
                         className="h-7 w-7 rounded-full object-cover sb-ring"
-                        loading="lazy"
+                        label={a.artist_name}
                       />
                     ) : (
                       <div className="h-7 w-7 rounded-full sb-ring bg-white/60 dark:bg-white/10" />

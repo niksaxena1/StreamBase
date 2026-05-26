@@ -1,4 +1,4 @@
-import Image from "next/image";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
@@ -212,7 +212,7 @@ export default async function CompetitorsPage() {
             <div key={label.label_key} className="sb-card p-4" style={labelSummaryCardStyle(label.accent_hex)}>
               <div className="flex items-center gap-3">
                 {imageUrl ? (
-                  <Image src={imageUrl} alt={label.display_name} width={44} height={44} className="h-11 w-11 rounded-xl object-cover sb-ring" />
+                  <PreviewableArtwork src={imageUrl} alt={label.display_name} width={44} height={44} className="h-11 w-11 rounded-xl object-cover sb-ring" label={label.display_name} />
                 ) : (
                   <div className="h-11 w-11 rounded-xl bg-white/10 sb-ring" />
                 )}
@@ -257,7 +257,7 @@ export default async function CompetitorsPage() {
               <TableRow key={playlist.playlist_key}>
                 <TableCell>
                   {playlist.spotify_playlist_image_url ? (
-                    <Image src={playlist.spotify_playlist_image_url} alt={playlist.display_name} width={32} height={32} className="h-8 w-8 rounded-lg object-cover sb-ring" />
+                    <PreviewableArtwork src={playlist.spotify_playlist_image_url} alt={playlist.display_name} width={32} height={32} className="h-8 w-8 rounded-lg object-cover sb-ring" label={playlist.display_name} />
                   ) : (
                     <div className="h-8 w-8 rounded-lg bg-white/10 sb-ring" />
                   )}

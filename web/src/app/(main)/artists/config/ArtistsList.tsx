@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
-import Image from "next/image";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { ExternalLink, User } from "lucide-react";
 
 import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
@@ -49,7 +49,7 @@ export function ArtistsList({ artists, searchQuery }: ArtistsListProps) {
           <TableRow key={artist.id}>
             <TableCell>
               {artist.imageUrl ? (
-                <Image
+                <PreviewableArtwork
                   src={artist.imageUrl}
                   alt={artist.name}
                   width={40}

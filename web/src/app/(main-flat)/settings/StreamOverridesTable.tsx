@@ -2,7 +2,7 @@
 
 import { Fragment, useState, useMemo } from "react";
 import { ChevronLeft, ChevronRight, Download } from "lucide-react";
-import Image from "next/image";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import Link from "next/link";
 import { Input } from "@/components/ui/Input";
 import { MenuSelect } from "@/components/ui/MenuSelect";
@@ -314,11 +314,12 @@ export function StreamOverridesTable({
                         <div className="flex items-center gap-2">
                           <Link href={`/tracks/${isrc}`} className="flex shrink-0 items-center group">
                             {imageUrl ? (
-                              <Image
+                              <PreviewableArtwork
                                 src={imageUrl}
                                 alt={name}
                                 width={32}
                                 height={32}
+                                interactive="inline"
                                 className="h-8 w-8 rounded-lg object-cover sb-ring flex-shrink-0"
                               />
                             ) : (

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ChevronDown, ChevronRight, Music } from "lucide-react";
 import { TableCell, TableRow } from "@/components/ui/GlassTable";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { TrackListItem } from "@/components/health/TrackListItem";
 import { StaleTrackResolver } from "@/components/health/StaleTrackResolver";
 import { useRouter } from "next/navigation";
@@ -352,11 +353,14 @@ function DriftPlaylistChip({
     >
       {label && <span className="opacity-50">{label}</span>}
       {imageUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
+        <PreviewableArtwork
           src={imageUrl}
           alt=""
+          width={16}
+          height={16}
           className="h-4 w-4 rounded-full object-cover sb-ring flex-shrink-0"
+          interactive="inline"
+          label={name}
         />
       ) : (
         <div
@@ -509,11 +513,14 @@ export function WarningRow({
                   <Music className="h-3.5 w-3.5" />
                 </span>
               ) : playlistMeta?.imageUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
+                <PreviewableArtwork
                   src={playlistMeta.imageUrl}
                   alt={playlistMeta.name}
+                  width={20}
+                  height={20}
                   className="h-5 w-5 rounded-full object-cover sb-ring flex-shrink-0"
+                  interactive="inline"
+                  label={playlistMeta.name}
                 />
               ) : (
                 <div
@@ -593,11 +600,14 @@ export function WarningRow({
                           <Music className="h-3 w-3" />
                         </span>
                       ) : playlistMeta?.imageUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
+                        <PreviewableArtwork
                           src={playlistMeta.imageUrl}
                           alt={playlistMeta.name}
+                          width={16}
+                          height={16}
                           className="h-4 w-4 rounded-full object-cover sb-ring flex-shrink-0"
+                          interactive="inline"
+                          label={playlistMeta.name}
                         />
                       ) : (
                         <div

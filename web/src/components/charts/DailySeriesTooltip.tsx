@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
-import Image from "next/image";
 
 import { extractOverrideItemsFromRechartsPayload, extractWeekendDipFromRechartsPayload, formatTooltipDateSmart } from "@/components/charts/chartUtils";
 import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import type { TooltipCopyValues } from "@/components/charts/useChartCopyToClipboard";
 import { formatInt } from "@/lib/format";
 
@@ -274,7 +274,7 @@ export function DailySeriesTooltip({
               {overrideItems.map((it, idx) => (
                 <div key={idx} className="flex items-start gap-2">
                   {it.imageUrl ? (
-                    <Image src={it.imageUrl} alt="" width={32} height={32} className="h-8 w-8 rounded-md object-cover sb-ring" />
+                    <PreviewableArtwork src={it.imageUrl} alt="" width={32} height={32} className="h-8 w-8 rounded-md object-cover sb-ring" />
                   ) : (
                     <div className="h-8 w-8 rounded-md sb-ring bg-white/60 dark:bg-white/10" />
                   )}

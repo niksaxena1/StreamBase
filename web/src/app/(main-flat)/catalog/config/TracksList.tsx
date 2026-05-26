@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { ExternalLink, ChevronDown } from "lucide-react";
 
 import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
@@ -12,6 +11,7 @@ import { foldForSearch } from "@/lib/searchFold";
 import { useMetric } from "@/components/metrics/MetricContext";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { formatInt, formatUsd2 } from "@/lib/format";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 
 /** Number of rows to render initially before requiring "Show more". */
 const INITIAL_RENDER_CAP = 150;
@@ -134,7 +134,7 @@ export function TracksList({ tracks, searchQuery, sortBy = "name", sortAsc = tru
           <TableRow key={track.isrc}>
             <TableCell>
               {track.albumImageUrl ? (
-                <Image
+                <PreviewableArtwork
                   src={track.albumImageUrl}
                   alt="Album cover"
                   width={32}
@@ -177,12 +177,13 @@ export function TracksList({ tracks, searchQuery, sortBy = "name", sortAsc = tru
               ) : (
                 <div className="flex items-center gap-1.5">
                   {track.distroPlaylists[0].imageUrl ? (
-                    <Image
+                    <PreviewableArtwork
                       src={track.distroPlaylists[0].imageUrl}
                       alt={track.distroPlaylists[0].name}
                       width={20}
                       height={20}
                       className="h-5 w-5 rounded-full object-cover sb-ring flex-shrink-0"
+                      label={track.distroPlaylists[0].name}
                     />
                   ) : (
                     <div className="h-5 w-5 rounded-full sb-ring bg-white/40 flex-shrink-0" />

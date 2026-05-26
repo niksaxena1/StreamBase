@@ -5,6 +5,7 @@ import { GripVertical, Music } from "lucide-react";
 import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/GlassTable";
 import { Input } from "@/components/ui/Input";
 import { MenuSelect } from "@/components/ui/MenuSelect";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 
 type Playlist = {
   playlist_key: string;
@@ -293,11 +294,13 @@ export function PlaylistSettingsTable({
                   <Music className="h-4 w-4" style={{ color: "black" }} />
                 </div>
               ) : p.spotify_playlist_image_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
+                <PreviewableArtwork
                   src={p.spotify_playlist_image_url}
                   alt="Playlist cover"
+                  width={32}
+                  height={32}
                   className="h-8 w-8 rounded-lg object-cover sb-ring"
+                  label={p.display_name}
                 />
               ) : (
                 <div className="h-8 w-8 rounded-lg sb-ring bg-white/60 dark:bg-white/10" />

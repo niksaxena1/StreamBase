@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import Image from "next/image";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { COLLECTOR_ORDER } from "@/app/(main-flat)/collectors/collectorsTypes";
 import { COLLECTOR_COLORS } from "@/components/charts/CollectorComparisonChart";
 
@@ -96,7 +96,7 @@ export function ConcentrationFilterPicker({
   if (filterMode === "artist" && selectedArtist) {
     buttonLabel = selectedArtist.name;
     buttonThumb = selectedArtist.imageUrl
-      ? <Image src={selectedArtist.imageUrl} alt={buttonLabel} width={16} height={16} className="h-4 w-4 rounded-sm object-cover flex-shrink-0" />
+      ? <PreviewableArtwork src={selectedArtist.imageUrl} alt={buttonLabel} width={16} height={16} className="h-4 w-4 rounded-sm object-cover flex-shrink-0" interactive="inline" label={buttonLabel} />
       : <div className="h-4 w-4 rounded-sm flex-shrink-0" style={{ backgroundColor: "var(--sb-surface)" }} />;
   } else if (filterMode === "collector" && collectorId) {
     buttonLabel = collectorId;
@@ -104,7 +104,7 @@ export function ConcentrationFilterPicker({
   } else if (filterMode === "playlist" && selectedPlaylist) {
     buttonLabel = selectedPlaylist.display_name;
     buttonThumb = selectedPlaylist.spotify_playlist_image_url
-      ? <Image src={selectedPlaylist.spotify_playlist_image_url} alt={buttonLabel} width={16} height={16} className="h-4 w-4 rounded-sm object-cover flex-shrink-0" />
+      ? <PreviewableArtwork src={selectedPlaylist.spotify_playlist_image_url} alt={buttonLabel} width={16} height={16} className="h-4 w-4 rounded-sm object-cover flex-shrink-0" interactive="inline" label={buttonLabel} />
       : <div className="h-4 w-4 rounded-sm flex-shrink-0" style={{ backgroundColor: "var(--sb-surface)" }} />;
   } else {
     buttonLabel = allLabel;
@@ -206,7 +206,7 @@ export function ConcentrationFilterPicker({
                     style={{ color: "var(--sb-text)" }}
                   >
                     {p.spotify_playlist_image_url ? (
-                      <Image src={p.spotify_playlist_image_url} alt={p.display_name} width={24} height={24} className="h-6 w-6 rounded-sm object-cover flex-shrink-0" />
+                      <PreviewableArtwork src={p.spotify_playlist_image_url} alt={p.display_name} width={24} height={24} className="h-6 w-6 rounded-sm object-cover flex-shrink-0" interactive="inline" label={p.display_name} />
                     ) : (
                       <div className="h-6 w-6 rounded-sm flex-shrink-0" style={{ backgroundColor: "var(--sb-surface)" }} />
                     )}
@@ -255,7 +255,7 @@ export function ConcentrationFilterPicker({
                     style={{ color: "var(--sb-text)" }}
                   >
                     {a.imageUrl ? (
-                      <Image src={a.imageUrl} alt={a.name} width={24} height={24} className="h-6 w-6 rounded-sm object-cover flex-shrink-0" />
+                      <PreviewableArtwork src={a.imageUrl} alt={a.name} width={24} height={24} className="h-6 w-6 rounded-sm object-cover flex-shrink-0" interactive="inline" label={a.name} />
                     ) : (
                       <div className="h-6 w-6 rounded-sm flex-shrink-0" style={{ backgroundColor: "var(--sb-surface)" }} />
                     )}

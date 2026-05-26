@@ -13,6 +13,7 @@ import { ScatterCohortOverlay } from "@/components/charts/ScatterCohortOverlay";
 import { clientToSvgUserPoint, pointInPolygon } from "@/components/charts/scatterCohortHitTest";
 import { buildTrackReleaseCohortGroups, type CohortHitRegion } from "@/components/charts/trackReleaseCohorts";
 import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 
 export type TrackStreamsXYPoint = {
   isrc: string;
@@ -144,13 +145,13 @@ const CustomTooltip = ({
       <div className="flex items-start gap-3">
         {showRich ? (
           p.album_image_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
+            <PreviewableArtwork
               src={p.album_image_url}
               alt=""
+              width={48}
+              height={48}
               className="h-12 w-12 rounded-md object-cover sb-ring"
-              loading="lazy"
-              decoding="async"
+              label={title}
             />
           ) : (
             <div className="h-12 w-12 rounded-md sb-ring bg-white/60 dark:bg-white/10" />

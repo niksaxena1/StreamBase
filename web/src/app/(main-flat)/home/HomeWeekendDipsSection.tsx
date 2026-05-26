@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { X } from "lucide-react";
 import { useMetric } from "@/components/metrics/MetricContext";
 import { useWeekendDip } from "@/components/charts/WeekendDipContext";
@@ -281,7 +281,7 @@ export function HomeWeekendDipsSection(props: {
                       <TableCell>
                         <div className="flex items-center gap-2 min-w-0">
                           {t.album_image_url ? (
-                            <Image
+                            <PreviewableArtwork
                               src={t.album_image_url}
                               alt={t.name ?? t.isrc}
                               width={28}
@@ -333,7 +333,7 @@ export function HomeWeekendDipsSection(props: {
                       <TableCell>
                         <div className="flex items-center gap-2 min-w-0">
                           {artist.image_url ? (
-                            <Image
+                            <PreviewableArtwork
                               src={artist.image_url}
                               alt={artist.artist_name ?? artist.artist_id}
                               width={28}

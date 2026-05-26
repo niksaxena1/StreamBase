@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import NextImage from "next/image";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Disc3, ExternalLink, Loader2, Music, UserRound } from "lucide-react";
@@ -40,11 +40,12 @@ function ModalDistroPlaylistLink({
       }}
     >
       {imageUrl ? (
-        <NextImage
+        <PreviewableArtwork
           src={imageUrl}
-          alt=""
+          alt={name}
           width={28}
           height={28}
+          interactive="inline"
           className="h-7 w-7 shrink-0 rounded object-cover sb-ring"
         />
       ) : (
@@ -157,9 +158,9 @@ export function FrozenEdgeTrackDetailModal({
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
             <div className="flex min-w-0 gap-3">
               {detail?.spotify_album_image_url ? (
-                <NextImage
+                <PreviewableArtwork
                   src={detail.spotify_album_image_url}
-                  alt=""
+                  alt={fallbackTitle ?? "Album"}
                   width={72}
                   height={72}
                   className="h-[72px] w-[72px] shrink-0 rounded-lg object-cover sb-ring"
@@ -256,9 +257,9 @@ export function FrozenEdgeTrackDetailModal({
                 {artistRows.map((a) => (
                   <div key={a.id} className="flex w-[96px] flex-col items-center gap-1">
                     {a.imageUrl ? (
-                      <NextImage
+                      <PreviewableArtwork
                         src={a.imageUrl}
-                        alt=""
+                        alt={a.name}
                         width={40}
                         height={40}
                         className="h-10 w-10 shrink-0 rounded-full object-cover sb-ring"

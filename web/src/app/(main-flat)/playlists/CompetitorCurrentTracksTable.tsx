@@ -1,6 +1,6 @@
 "use client";
 
-import Image from "next/image";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
@@ -118,7 +118,7 @@ export function CompetitorCurrentTracksTable({ rows }: { rows: CompetitorCurrent
           <div key={row.isrc} className="grid grid-cols-[minmax(220px,1fr)_110px_120px_120px] items-center gap-3 px-4 py-2 text-sm">
             <div className="flex min-w-0 items-center gap-3">
               {row.album_image_url ? (
-                <Image src={row.album_image_url} alt={row.name} width={32} height={32} className="h-8 w-8 rounded-lg object-cover sb-ring" />
+                <PreviewableArtwork src={row.album_image_url} alt={row.name} width={32} height={32} className="h-8 w-8 rounded-lg object-cover sb-ring" label={row.name} />
               ) : (
                 <div className="h-8 w-8 rounded-lg bg-white/10 sb-ring" />
               )}

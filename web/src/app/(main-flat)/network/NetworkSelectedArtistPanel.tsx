@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import type { ThemeColors } from "@/components/charts/useThemeColors";
 import type { GraphEdge, GraphNode } from "./page";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import type { CollabCountBasis } from "./networkGraphTypes";
 
 export function ToggleButton({
@@ -101,11 +102,13 @@ export function SelectedArtistPanel({
     >
       {/* Artist image */}
       {node.image_url ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
+        <PreviewableArtwork
           src={node.image_url}
           alt=""
+          width={40}
+          height={40}
           className="w-10 h-10 rounded-full object-cover flex-shrink-0 mt-0.5"
+          label={node.name}
         />
       ) : (
         <div
@@ -162,11 +165,14 @@ export function SelectedArtistPanel({
                   onClick={() => onFocusArtist(nb.id)}
                 >
                   {nb.image_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
+                    <PreviewableArtwork
                       src={nb.image_url}
                       alt=""
+                      width={16}
+                      height={16}
                       className="w-4 h-4 rounded-full object-cover"
+                      interactive="inline"
+                      label={nb.name}
                     />
                   ) : null}
                   <span className="truncate max-w-[120px]">{nb.name}</span>

@@ -6,6 +6,7 @@ import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
 import type { ThemeColors } from "@/components/charts/useThemeColors";
 import type { GraphEdge, SharedTrack } from "./page";
 import { NetworkCatalogArtistLink, NetworkCatalogRoutedLink } from "./NetworkCatalogLinks";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import type { FGNodeObj, FGLinkObj } from "./networkGraphPure";
 import { hexToRgba, linkEndpointId } from "./networkGraphPure";
 
@@ -55,13 +56,13 @@ export function NetworkLinkCollaborationTooltipContent({
   const artistBlock = (id: string, name: string, imageUrl: string | null | undefined) => (
     <div className="flex min-w-0 max-w-[118px] flex-col items-center gap-1">
       {imageUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element -- Spotify CDN; small tooltip
-        <img
+        <PreviewableArtwork
           src={imageUrl}
           alt=""
+          width={40}
+          height={40}
           className="h-10 w-10 shrink-0 rounded-full object-cover sb-ring"
-          loading="lazy"
-          decoding="async"
+          label={name}
         />
       ) : (
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full sb-ring bg-white/60 dark:bg-white/10">
@@ -109,11 +110,13 @@ export function NetworkLinkCollaborationTooltipContent({
           {tracks.slice(0, 10).map((t, i) => (
             <li key={i} className="flex max-w-[280px] items-center gap-2">
               {t.album_image_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
+                <PreviewableArtwork
                   src={t.album_image_url}
                   alt=""
+                  width={20}
+                  height={20}
                   className="h-5 w-5 shrink-0 rounded object-cover"
+                  label={t.name ?? t.isrc}
                 />
               ) : (
                 <span

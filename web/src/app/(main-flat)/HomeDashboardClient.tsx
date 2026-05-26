@@ -1,6 +1,6 @@
 "use client";
 
-import Image from "next/image";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import Link from "next/link";
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
@@ -337,12 +337,12 @@ function HomeDashboardInner(props: {
                 <Music className="h-5 w-5" style={{ color: "black" }} />
               </div>
             ) : props.playlistImageUrl ? (
-              <Image
+              <PreviewableArtwork
                 src={props.playlistImageUrl}
                 alt="Playlist cover"
                 width={40}
                 height={40}
-                className="rounded-lg object-cover sb-ring"
+                className="h-10 w-10 rounded-lg object-cover sb-ring"
               />
             ) : (
               <div className="h-10 w-10 rounded-lg sb-ring bg-white/60" />

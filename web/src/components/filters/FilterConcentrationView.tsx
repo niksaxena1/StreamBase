@@ -2,7 +2,6 @@
 
 import React, { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import {
   Area,
   AreaChart,
@@ -22,6 +21,7 @@ import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
 import { getChartColor, getChartTooltipStyle, useThemeColors } from "@/components/charts/useThemeColors";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
 import { todayIsoDate } from "@/lib/csv";
 import type { TrackFilterResult } from "./filterTypes";
@@ -250,12 +250,13 @@ export function FilterConcentrationView({
                 <TableRow style={isAboveThreshold ? { backgroundColor: "color-mix(in srgb, var(--sb-positive) 6%, transparent)" } : undefined}>
                   <TableCell>
                     {t.spotify_album_image_url ? (
-                      <Image
+                      <PreviewableArtwork
                         src={t.spotify_album_image_url}
                         alt={t.name ?? t.isrc}
                         width={28}
                         height={28}
                         className="h-7 w-7 rounded-lg object-cover sb-ring flex-shrink-0"
+                        label={t.name ?? t.isrc}
                       />
                     ) : (
                       <div className="h-7 w-7 rounded-lg sb-ring bg-white/60 dark:bg-white/10 flex-shrink-0" />
@@ -293,7 +294,7 @@ export function FilterConcentrationView({
                     ) : distro ? (
                       <div className="flex items-center gap-1.5 min-w-0">
                         {distro.imageUrl ? (
-                          <Image src={distro.imageUrl} alt={distro.name} width={20} height={20} className="h-5 w-5 rounded flex-shrink-0 object-cover" />
+                          <PreviewableArtwork src={distro.imageUrl} alt={distro.name} width={20} height={20} className="h-5 w-5 rounded flex-shrink-0 object-cover" label={distro.name} />
                         ) : (
                           <div className="h-5 w-5 rounded flex-shrink-0 bg-orange-400/20" />
                         )}

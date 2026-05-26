@@ -8,7 +8,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, User, Disc3, ListMusic, CalendarDays } from "lucide-react";
 import { GlassTable, TableRow, TableCell, EmptyState } from "@/components/ui/GlassTable";
 import { Button } from "@/components/ui/Button";
@@ -25,6 +24,7 @@ import type {
   FilterResult,
 } from "./filterTypes";
 import { FilterConcentrationView } from "./FilterConcentrationView";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 
 function ArtistLinksInline(props: { names?: string[]; ids?: string[] }) {
   const names = props.names ?? [];
@@ -342,7 +342,7 @@ function MovementPath({ playlists }: { playlists: { name: string; imageUrl: stri
         <span key={i} className="inline-flex items-center gap-1">
           {i > 0 && <span className="mx-1 opacity-50">{"\u2192"}</span>}
           {pl.imageUrl ? (
-            <Image src={pl.imageUrl} alt="" width={16} height={16} className="h-4 w-4 rounded-sm object-cover shrink-0" />
+            <PreviewableArtwork src={pl.imageUrl} alt="" width={16} height={16} className="h-4 w-4 rounded-sm object-cover shrink-0" />
           ) : (
             <span className="h-4 w-4 rounded-sm bg-white/10 shrink-0" />
           )}
@@ -384,12 +384,13 @@ function TracksTable({
           <TableCell className="min-w-[260px]">
             <div className="flex items-center gap-3">
               {track.spotify_album_image_url ? (
-                <Image
+                <PreviewableArtwork
                   src={track.spotify_album_image_url}
                   alt=""
                   width={40}
                   height={40}
                   className="h-10 w-10 rounded-lg object-cover sb-ring"
+                  label={track.name}
                 />
               ) : (
                 <div className="h-10 w-10 rounded-lg sb-ring bg-white/60 dark:bg-white/10 flex items-center justify-center">
@@ -476,12 +477,13 @@ function ArtistsTable({
           <TableCell className="min-w-[260px]">
             <div className="flex items-center gap-3">
               {artist.image_url ? (
-                <Image
+                <PreviewableArtwork
                   src={artist.image_url}
                   alt=""
                   width={40}
                   height={40}
                   className="h-10 w-10 rounded-full object-cover sb-ring"
+                  label={artist.artist_name}
                 />
               ) : (
                 <div className="h-10 w-10 rounded-full sb-ring bg-white/60 dark:bg-white/10 flex items-center justify-center">
@@ -564,12 +566,13 @@ function PlaylistsTable({
           <TableCell className="min-w-[260px]">
             <div className="flex items-center gap-3">
               {playlist.spotify_playlist_image_url ? (
-                <Image
+                <PreviewableArtwork
                   src={playlist.spotify_playlist_image_url}
                   alt=""
                   width={40}
                   height={40}
                   className="h-10 w-10 rounded-lg object-cover sb-ring"
+                  label={playlist.display_name ?? playlist.playlist_key}
                 />
               ) : (
                 <div className="h-10 w-10 rounded-lg sb-ring bg-white/60 dark:bg-white/10 flex items-center justify-center">

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Image from "next/image";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { Combobox, type ComboboxOption } from "@/components/ui/Combobox";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
@@ -169,11 +169,12 @@ export function ManualStreamOverrideForm({
                   className="sb-ring flex items-center gap-3 rounded-xl bg-white/70 px-3 py-2 text-left text-sm transition hover:bg-white dark:bg-white/5 dark:hover:bg-white/10"
                 >
                   {imageUrl ? (
-                    <Image
+                    <PreviewableArtwork
                       src={imageUrl}
                       alt={name}
                       width={40}
                       height={40}
+                      interactive="inline"
                       className="h-10 w-10 rounded-lg object-cover sb-ring flex-shrink-0"
                     />
                   ) : (

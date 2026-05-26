@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/Input";
 import { IconButton } from "@/components/ui/Button";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { formatDateISO, formatInt, formatUsd2 } from "@/lib/format";
 
 import type {
@@ -268,11 +269,13 @@ function PlaylistDrillTable({
             <TableCell>
               <div className="flex items-center gap-2">
                 {p.spotify_playlist_image_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
+                  <PreviewableArtwork
                     src={String(p.spotify_playlist_image_url)}
                     alt={String(p.display_name ?? p.playlist_key)}
+                    width={28}
+                    height={28}
                     className="h-7 w-7 rounded-full object-cover sb-ring flex-shrink-0"
+                    label={String(p.display_name ?? p.playlist_key)}
                   />
                 ) : (
                   <div
@@ -399,11 +402,13 @@ function ArtistDrillTable({
             <TableCell>
               <div className="flex items-center gap-2 min-w-0">
                 {a.image_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
+                  <PreviewableArtwork
                     src={String(a.image_url)}
                     alt={String(a.name ?? a.artist_id)}
+                    width={28}
+                    height={28}
                     className="h-7 w-7 rounded-full object-cover sb-ring flex-shrink-0"
+                    label={String(a.name ?? a.artist_id)}
                   />
                 ) : (
                   <div className="h-7 w-7 rounded-full sb-ring bg-white/60 dark:bg-white/10 flex-shrink-0" />
@@ -518,11 +523,13 @@ function TrackDrillTable({
           <TableRow key={String(t.isrc)}>
             <TableCell>
               {t.album_image_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
+                <PreviewableArtwork
                   src={String(t.album_image_url)}
                   alt="Album cover"
+                  width={32}
+                  height={32}
                   className="h-8 w-8 rounded-lg object-cover sb-ring"
+                  label={String(t.name ?? t.isrc)}
                 />
               ) : (
                 <div className="h-8 w-8 rounded-lg sb-ring bg-white/60 dark:bg-white/10" />

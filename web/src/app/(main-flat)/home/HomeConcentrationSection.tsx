@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { Share2 } from "lucide-react";
 import {
   Area,
@@ -576,7 +576,7 @@ export function HomeConcentrationSection(props: {
                     <TableRow style={isAboveThreshold ? { backgroundColor: chromeTint(6) } : undefined}>
                       <TableCell>
                         {p.album_image_url ? (
-                          <Image
+                          <PreviewableArtwork
                             src={p.album_image_url}
                             alt={p.name ?? p.isrc}
                             width={28}
@@ -619,7 +619,7 @@ export function HomeConcentrationSection(props: {
                         ) : p.distroPlaylistName ? (
                           <div className="flex items-center gap-1.5 min-w-0">
                             {p.distroPlaylistImageUrl ? (
-                              <Image src={p.distroPlaylistImageUrl} alt={p.distroPlaylistName} width={20} height={20} className="h-5 w-5 rounded flex-shrink-0 object-cover" />
+                              <PreviewableArtwork src={p.distroPlaylistImageUrl} alt={p.distroPlaylistName} width={20} height={20} className="h-5 w-5 rounded flex-shrink-0 object-cover" />
                             ) : (
                               <div className="h-5 w-5 rounded flex-shrink-0 bg-orange-400/20" />
                             )}

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent, MouseEvent } from "react";
 import { CartesianGrid, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis } from "recharts";
@@ -136,14 +136,12 @@ const CustomTooltip = ({
       <div className="flex items-start gap-3">
         {showRich ? (
           p.artist_image_url ? (
-            <Image
+            <PreviewableArtwork
               src={p.artist_image_url}
-              alt=""
+              alt={p.artist_name ?? "Artist"}
               width={48}
               height={48}
               className="h-12 w-12 rounded-full object-cover sb-ring"
-              loading="lazy"
-              decoding="async"
             />
           ) : (
             <div className="h-12 w-12 rounded-full sb-ring bg-white/60 dark:bg-white/10" />

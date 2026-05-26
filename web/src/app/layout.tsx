@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist_Mono, Inter, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import { TopRouteLoadingBar } from "@/components/shell/TopRouteLoadingBar";
+import { AppProviders } from "@/components/ui/AppProviders";
 import { APP_SHORT_NAME } from "@/lib/pageTitle";
 
 const inter = Inter({
@@ -80,7 +81,7 @@ export default function RootLayout({
           Skip to main content
         </a>
         <TopRouteLoadingBar />
-        {children}
+        <AppProviders>{children}</AppProviders>
       </body>
     </html>
   );

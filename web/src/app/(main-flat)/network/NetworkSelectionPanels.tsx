@@ -1,6 +1,6 @@
 "use client";
 
-import NextImage from "next/image";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { useEffect, useMemo, useState } from "react";
 import { Disc3, ListMusic, UserRound } from "lucide-react";
 import { fetchApiJson } from "@/lib/api";
@@ -363,9 +363,9 @@ export function SelectionScopedTracksModal({
                 <TableCell className="align-top">
                   <div className="flex min-w-0 items-center gap-2">
                     {albumUrl ? (
-                      <NextImage
+                      <PreviewableArtwork
                         src={albumUrl}
-                        alt=""
+                        alt={displayName}
                         width={32}
                         height={32}
                         className="h-8 w-8 shrink-0 rounded-lg object-cover sb-ring"
@@ -424,9 +424,9 @@ export function SelectionScopedTracksModal({
 
 function SelectionArtistAvatar({ url }: { url: string | null }) {
   return url ? (
-    <NextImage
+    <PreviewableArtwork
       src={url}
-      alt=""
+      alt="Artist"
       width={28}
       height={28}
       className="h-7 w-7 shrink-0 rounded-full object-cover sb-ring"
@@ -678,9 +678,9 @@ export function SelectionCollabsModal({
                 <TableCell className="align-top">
                   <div className="flex min-w-0 items-center gap-2">
                     {albumUrl ? (
-                      <NextImage
+                      <PreviewableArtwork
                         src={albumUrl}
-                        alt=""
+                        alt={displayName}
                         width={32}
                         height={32}
                         className="h-8 w-8 shrink-0 rounded-lg object-cover sb-ring"

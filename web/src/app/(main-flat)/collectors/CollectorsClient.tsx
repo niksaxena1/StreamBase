@@ -33,6 +33,7 @@ import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { useMetric } from "@/components/metrics/MetricContext";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { useChartStartDate } from "@/components/charts/ChartStartDateContext";
 import { filterDailySeriesFromIsoDate } from "@/components/charts/chartUtils";
 import { computeDailyRollingAvg7, computeRollingAvg7 } from "@/components/charts/chartUtils";
@@ -1348,12 +1349,13 @@ export function CollectorsClient(props: {
                         const imgUrl = meta?.spotify_playlist_image_url ?? null;
                         const label = meta?.display_name ?? p.display_name ?? p.playlist_key;
                         return imgUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
+                          <PreviewableArtwork
                             src={imgUrl}
                             alt={label}
+                            width={24}
+                            height={24}
                             className="h-6 w-6 rounded-full object-cover sb-ring flex-shrink-0"
-                            title={label}
+                            label={label}
                           />
                         ) : (
                           <div
@@ -1451,11 +1453,13 @@ export function CollectorsClient(props: {
                 topTrackCards.bestDelta ? (
                   <div className="flex items-center gap-2">
                     {topTrackCards.bestDelta.album_image_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
+                      <PreviewableArtwork
                         src={topTrackCards.bestDelta.album_image_url}
                         alt="Album cover"
+                        width={24}
+                        height={24}
                         className="h-6 w-6 rounded object-cover"
+                        label={topTrackCards.bestDelta.name ?? topTrackCards.bestDelta.isrc}
                       />
                     ) : (
                       <div className="h-6 w-6 rounded bg-white/60 dark:bg-white/10" />
@@ -1501,11 +1505,13 @@ export function CollectorsClient(props: {
                 topTrackCards.bestTotal ? (
                   <div className="flex items-center gap-2">
                     {topTrackCards.bestTotal.album_image_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
+                      <PreviewableArtwork
                         src={topTrackCards.bestTotal.album_image_url}
                         alt="Album cover"
+                        width={24}
+                        height={24}
                         className="h-6 w-6 rounded object-cover"
+                        label={topTrackCards.bestTotal.name ?? topTrackCards.bestTotal.isrc}
                       />
                     ) : (
                       <div className="h-6 w-6 rounded bg-white/60 dark:bg-white/10" />
@@ -1638,11 +1644,13 @@ export function CollectorsClient(props: {
                   <TableRow key={t.isrc}>
                     <TableCell>
                       {t.album_image_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
+                        <PreviewableArtwork
                           src={t.album_image_url}
                           alt="Album cover"
+                          width={32}
+                          height={32}
                           className="h-8 w-8 rounded-lg object-cover sb-ring"
+                          label={t.name ?? t.isrc}
                         />
                       ) : (
                         <div className="h-8 w-8 rounded-lg sb-ring bg-white/60 dark:bg-white/10" />
@@ -1674,8 +1682,14 @@ export function CollectorsClient(props: {
                       ) : distroNames.length ? (
                         <div className="flex items-center gap-1.5 min-w-0">
                           {distroImages[0] ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={distroImages[0]} alt={distroNames[0]} className="h-5 w-5 rounded flex-shrink-0 object-cover" />
+                            <PreviewableArtwork
+                              src={distroImages[0]}
+                              alt={distroNames[0]}
+                              width={20}
+                              height={20}
+                              className="h-5 w-5 rounded flex-shrink-0 object-cover"
+                              label={distroNames[0]}
+                            />
                           ) : (
                             <div className="h-5 w-5 rounded flex-shrink-0 bg-orange-400/20" />
                           )}
@@ -1737,13 +1751,14 @@ export function CollectorsClient(props: {
                               const imgUrl = meta?.spotify_playlist_image_url ?? null;
                               const label = meta?.display_name ?? String(k);
                               return imgUrl ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img
+                                <PreviewableArtwork
                                   key={k}
                                   src={imgUrl}
                                   alt={label}
+                                  width={20}
+                                  height={20}
                                   className="h-5 w-5 rounded-full object-cover sb-ring"
-                                  title={label}
+                                  label={label}
                                 />
                               ) : (
                                 <div

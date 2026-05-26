@@ -2,7 +2,7 @@
 
 import { Fragment, useMemo, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { ExternalLink, ChevronDown, ChevronUp } from "lucide-react";
 
 import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
@@ -155,7 +155,7 @@ export function ArtistDistroTracksModal({
                 style={{ background: "var(--sb-glass-bg)" }}
               >
                 {d.imageUrl && (
-                  <Image
+                  <PreviewableArtwork
                     src={d.imageUrl}
                     alt={d.name}
                     width={16}
@@ -222,7 +222,7 @@ export function ArtistDistroTracksModal({
                 <TableRow key={track.isrc}>
                   <TableCell>
                     {track.albumImageUrl ? (
-                      <Image
+                      <PreviewableArtwork
                         src={track.albumImageUrl}
                         alt="Album cover"
                         width={32}
@@ -271,7 +271,7 @@ export function ArtistDistroTracksModal({
                     {distro ? (
                       <div className="flex items-center gap-1.5 min-w-0">
                         {distro.imageUrl ? (
-                          <Image
+                          <PreviewableArtwork
                             src={distro.imageUrl}
                             alt={distro.name}
                             width={20}

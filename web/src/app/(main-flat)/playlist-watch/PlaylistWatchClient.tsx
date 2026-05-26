@@ -1,12 +1,11 @@
 "use client";
 
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, Archive, ArchiveRestore, ArrowLeftRight, Bell, BellRing, CheckCircle2, ChevronDown, ChevronUp, Copy, ExternalLink, Heart, Mail, Plus, Search, Trash2, User, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { EmptyState, GlassTable, TableCell, TableRow } from "@/components/ui/GlassTable";
-import { ImagePreviewModal } from "@/components/ui/ImagePreviewModal";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { Modal } from "@/components/ui/Modal";
 import { Chip, ChipGroup } from "@/components/ui/Chip";
 import { formatInt } from "@/lib/format";
@@ -210,7 +209,6 @@ export function PlaylistWatchClient({
   const [ownerSpotifyLoading, setOwnerSpotifyLoading] = useState(false);
   const [ownerSpotifyError, setOwnerSpotifyError] = useState<string | null>(null);
   const [ownerProfile, setOwnerProfile] = useState<OwnerProfile | null>(null);
-  const [coverPreviewUrl, setCoverPreviewUrl] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<PlaylistWatchSortKey>("followers");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [filter, setFilter] = useState<PlaylistWatchFilter>(includeArchived ? "archived" : "active");
@@ -220,10 +218,6 @@ export function PlaylistWatchClient({
   const [alertsLoaded, setAlertsLoaded] = useState(false);
   const [alertEditor, setAlertEditor] = useState<AlertEditorState>(emptyAlertEditor);
   const [tableMode, setTableMode] = useState<"playlists" | "alerts">("playlists");
-
-  useEffect(() => {
-    if (!selectedPlaylistId) setCoverPreviewUrl(null);
-  }, [selectedPlaylistId]);
 
   useEffect(() => {
     void loadAlertRules();
@@ -1074,7 +1068,7 @@ export function PlaylistWatchClient({
               <TableCell>
                 <div className="flex min-w-[260px] items-center gap-3">
                   {playlist.imageUrl ? (
-                    <Image src={playlist.imageUrl} alt={playlist.displayName} width={40} height={40} className="h-10 w-10 rounded-lg object-cover sb-ring" />
+                    <PreviewableArtwork src={playlist.imageUrl} alt={playlist.displayName} width={40} height={40} className="h-10 w-10 rounded-lg object-cover sb-ring" />
                   ) : (
                     <div className="h-10 w-10 rounded-lg bg-white/10 sb-ring" />
                   )}
@@ -1220,20 +1214,13 @@ export function PlaylistWatchClient({
           selectedPlaylist ? (
             <span className="flex min-w-0 items-center gap-3">
               {selectedPlaylist.imageUrl ? (
-                <button
-                  type="button"
-                  onClick={() => setCoverPreviewUrl(selectedPlaylist.imageUrl)}
-                  className="shrink-0 rounded-lg transition-opacity hover:opacity-85 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)]"
-                  aria-label="View cover art"
-                >
-                  <Image
-                    src={selectedPlaylist.imageUrl}
-                    alt=""
-                    width={40}
-                    height={40}
-                    className="h-10 w-10 rounded-lg object-cover sb-ring"
-                  />
-                </button>
+                <PreviewableArtwork
+                  src={selectedPlaylist.imageUrl}
+                  alt={selectedPlaylist.displayName}
+                  width={40}
+                  height={40}
+                  className="h-10 w-10 rounded-lg object-cover sb-ring"
+                />
               ) : (
                 <div className="h-10 w-10 shrink-0 rounded-lg bg-white/10 sb-ring" aria-hidden />
               )}
@@ -1347,12 +1334,6 @@ export function PlaylistWatchClient({
           </div>
         ) : null}
       </Modal>
-
-      <ImagePreviewModal
-        open={Boolean(coverPreviewUrl)}
-        src={coverPreviewUrl}
-        onClose={() => setCoverPreviewUrl(null)}
-      />
 
       <Modal
         open={alertEditor.open}
@@ -1605,9 +1586,9 @@ export function PlaylistWatchClient({
         title={
           <span className="flex min-w-0 items-center gap-3">
             {ownerProfile?.imageUrl ? (
-              <Image
+              <PreviewableArtwork
                 src={ownerProfile.imageUrl}
-                alt=""
+                alt={ownerProfile.displayName ?? "Owner"}
                 width={44}
                 height={44}
                 className="h-11 w-11 shrink-0 rounded-full object-cover sb-ring"
@@ -1685,11 +1666,12 @@ export function PlaylistWatchClient({
                 >
                   <span className="min-w-0 flex items-center gap-2.5">
                     {playlist.imageUrl ? (
-                      <Image
+                      <PreviewableArtwork
                         src={playlist.imageUrl}
-                        alt=""
+                        alt={playlist.displayName}
                         width={40}
                         height={40}
+                        interactive="inline"
                         className="h-10 w-10 shrink-0 rounded object-cover sb-ring"
                       />
                     ) : (
@@ -1738,11 +1720,12 @@ export function PlaylistWatchClient({
                     >
                       <span className="min-w-0 flex items-center gap-2.5">
                         {playlist.imageUrl ? (
-                          <Image
+                          <PreviewableArtwork
                             src={playlist.imageUrl}
-                            alt=""
+                            alt={playlist.displayName}
                             width={40}
                             height={40}
+                            interactive="inline"
                             className="h-10 w-10 shrink-0 rounded object-cover sb-ring"
                           />
                         ) : (

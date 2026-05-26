@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { useEffect, useMemo, useState, useDeferredValue } from "react";
 import { Search, Settings, X } from "lucide-react";
 
@@ -19,6 +18,7 @@ import { foldForSearch } from "@/lib/searchFold";
 import { slugifyForFilename, todayIsoDate } from "@/lib/csv";
 import { readStoredBool, writeStoredBool, readStoredString, writeStoredString, removeStoredItem } from "@/lib/storage";
 import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import {
   HOME_DETAILS_STORAGE,
   HOME_MILESTONE_SETTINGS_STORAGE,
@@ -561,7 +561,7 @@ export function HomeMilestonesSection(props: {
                   <TableRow key={p.isrc}>
                     <TableCell className="min-w-[260px]">
                       <div className="flex items-center gap-2">
-                        {p.album_image_url ? <Image src={p.album_image_url} alt="" width={36} height={36} className="h-9 w-9 rounded-md object-cover sb-ring" /> : <div className="h-9 w-9 rounded-md sb-ring bg-white/60 dark:bg-white/10" />}
+                        {p.album_image_url ? <PreviewableArtwork src={p.album_image_url} alt="" width={36} height={36} className="h-9 w-9 rounded-md object-cover sb-ring" label={title} /> : <div className="h-9 w-9 rounded-md sb-ring bg-white/60 dark:bg-white/10" />}
                         <div className="min-w-0">
                           <Link href={`/catalog?isrc=${encodeURIComponent(p.isrc)}`} className="block truncate text-sm font-medium hover:underline" style={{ color: "var(--sb-text)" }} title={p.isrc}>{title}</Link>
                           <div className="truncate text-[11px] opacity-70" style={{ color: "var(--sb-muted)" }}>
@@ -605,7 +605,7 @@ export function HomeMilestonesSection(props: {
                   <TableRow key={a.key}>
                     <TableCell className="min-w-[260px]">
                       <div className="flex items-center gap-2">
-                        {imageUrl ? <Image src={imageUrl} alt="" width={36} height={36} className="h-9 w-9 rounded-full object-cover sb-ring" /> : <div className="h-9 w-9 rounded-full sb-ring bg-white/60 dark:bg-white/10" />}
+                        {imageUrl ? <PreviewableArtwork src={imageUrl} alt="" width={36} height={36} className="h-9 w-9 rounded-full object-cover sb-ring" label={a.artist_name} /> : <div className="h-9 w-9 rounded-full sb-ring bg-white/60 dark:bg-white/10" />}
                         <div className="min-w-0">
                           {a.artist_id ? <Link href={`/catalog?artist_id=${encodeURIComponent(a.artist_id)}`} className="block truncate text-sm font-medium hover:underline" style={{ color: "var(--sb-text)" }} title={a.artist_id}>{a.artist_name}</Link> : <div className="truncate text-sm font-medium" style={{ color: "var(--sb-text)" }}>{a.artist_name}</div>}
                           {a.artist_id ? <div className="truncate text-[11px] opacity-70" style={{ color: "var(--sb-muted)" }}><span className="font-mono">{a.artist_id}</span></div> : null}

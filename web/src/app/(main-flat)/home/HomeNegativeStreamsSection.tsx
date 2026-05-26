@@ -2,13 +2,13 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/GlassTable";
 import { formatInt, formatUsd } from "@/lib/format";
 import { readStoredBool, writeStoredBool } from "@/lib/storage";
 import { useMetric } from "@/components/metrics/MetricContext";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { todayIsoDate } from "@/lib/csv";
 import type { NegativeDailyStreamsRow } from "./homeTypes";
 
@@ -180,12 +180,13 @@ export function HomeNegativeStreamsSection(props: {
                 <TableCell>
                   <div className="flex items-center gap-2 min-w-0">
                     {row.album_image_url ? (
-                      <Image
+                      <PreviewableArtwork
                         src={row.album_image_url}
                         alt={row.name}
                         width={28}
                         height={28}
                         className="h-7 w-7 rounded-lg object-cover sb-ring flex-shrink-0"
+                        label={row.name}
                       />
                     ) : (
                       <div className="h-7 w-7 rounded-lg sb-ring bg-white/60 dark:bg-white/10 flex-shrink-0" />

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import type { TrackBase } from "@/lib/health/types";
 
 /**
@@ -52,14 +53,14 @@ export function TrackListItem({
       style={style}
     >
       {imageUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
+        <PreviewableArtwork
           src={imageUrl}
-          alt="Album cover"
+          alt={track.name ?? track.isrc ?? "track"}
           className={[
             dense ? "h-8 w-8" : "h-10 w-10",
             "rounded object-cover sb-ring flex-shrink-0",
           ].join(" ")}
+          label="View album artwork"
         />
       ) : (
         <div

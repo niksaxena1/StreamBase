@@ -1,5 +1,6 @@
 import { memo, type CSSProperties, type ReactNode } from "react";
 import { Sparkline } from "@/components/charts/Sparkline";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 
 export const StatCard = memo(function StatCard(props: {
   title: string;
@@ -98,11 +99,13 @@ export const StatCard = memo(function StatCard(props: {
           {(props.distroName || props.distroImageUrl) && (
             <div className="flex items-center gap-1">
               {props.distroImageUrl && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
+                <PreviewableArtwork
                   src={props.distroImageUrl}
                   alt={props.distroName || "distro"}
+                  width={20}
+                  height={20}
                   className="h-5 w-5 rounded object-cover flex-shrink-0"
+                  label={props.distroName || "Distro playlist"}
                 />
               )}
               {props.distroName && (

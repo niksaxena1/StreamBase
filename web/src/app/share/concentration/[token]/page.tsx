@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import Image from "next/image";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { notFound } from "next/navigation";
 import React from "react";
 
@@ -134,7 +134,7 @@ export default async function SharedConcentrationPage(props: PageProps) {
                   >
                     <TableCell>
                       {p.album_image_url ? (
-                        <Image
+                        <PreviewableArtwork
                           src={p.album_image_url}
                           alt={p.name ?? p.isrc}
                           width={28}
@@ -166,7 +166,7 @@ export default async function SharedConcentrationPage(props: PageProps) {
                       ) : p.distroPlaylistName ? (
                         <div className="flex items-center gap-1.5 min-w-0">
                           {p.distroPlaylistImageUrl ? (
-                            <Image
+                            <PreviewableArtwork
                               src={p.distroPlaylistImageUrl}
                               alt={p.distroPlaylistName}
                               width={20}

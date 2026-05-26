@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
+import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { ArrowLeft, Download } from "lucide-react";
 
 import { SearchBox } from "./SearchBox";
@@ -232,11 +232,12 @@ export function ArtistsConfigClient({ artists, totalCount, allTracks }: ArtistsC
                   style={{ color: "var(--sb-muted)" }}
                 >
                   {selectedDistro.imageUrl && (
-                    <Image
+                    <PreviewableArtwork
                       src={selectedDistro.imageUrl}
                       alt={selectedDistro.name}
                       width={16}
                       height={16}
+                      interactive="inline"
                       className="h-4 w-4 rounded-full object-cover flex-shrink-0"
                     />
                   )}
