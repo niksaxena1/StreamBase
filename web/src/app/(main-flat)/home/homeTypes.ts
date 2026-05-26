@@ -93,6 +93,7 @@ export type HomeDashboardServerProps = {
   trackScatterPoints: TrackStreamsXYPoint[];
   trackScatterErrorMessage?: string | null;
   trackScatterDataDate: string | null;
+  trackScatterDeferred?: boolean;
   latestRunDate: string | null;
   latestDataDate: string | null;
   overrideAnnotations?: ManualOverrideAnnotation[];

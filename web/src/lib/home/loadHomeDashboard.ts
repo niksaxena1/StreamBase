@@ -294,13 +294,246 @@ async function fetchTrackMetaByIsrc(svc: Svc, isrcs: string[]) {
   return out;
 }
 
+export async function resolveHomeScatterSelection(args: {
+  svc: Svc;
+  sp: HomeDashboardSearchParams;
+  datasetMode: "own" | "competitor";
+  competitorLabelKey: string | null;
+  latestRunDate: string | null;
+  latestDataDate: string | null;
+}) {
+  const { svc, sp, datasetMode, competitorLabelKey, latestRunDate, latestDataDate } = args;
+  const selectedDataDate = sanitizeIsoDate(sp.xy_date) ?? latestDataDate;
+  let selectedRunDate = selectedDataDate ? addDaysISO(selectedDataDate, SOT_DATA_LAG_DAYS) : latestRunDate;
+
+  if (datasetMode === "competitor" && competitorLabelKey && !sp.xy_date) {
+    try {
+      const { data: latestTrackRow } = await svc
+        .schema("competitor")
+        .from("track_daily_streams")
+        .select("date")
+        .order("date", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const latestTrackRunDate = (latestTrackRow as { date?: string } | null)?.date ?? null;
+      if (latestTrackRunDate) selectedRunDate = latestTrackRunDate;
+    } catch {
+      // Keep the history-derived date as a safe fallback.
+    }
+  }
+
+  return { selectedDataDate, selectedRunDate };
+}
+
+export async function loadHomeScatterPoints(args: {
+  svc: Svc;
+  datasetMode: "own" | "competitor";
+  competitorLabelKey: string | null;
+  competitorLabelName: string | null;
+  selectedRunDate: string | null;
+}): Promise<{ points: TrackStreamsXYPoint[]; errorMessage: string | null }> {
+  const { svc, datasetMode, competitorLabelKey, competitorLabelName, selectedRunDate } = args;
+  const scatterCacheKey = `home-track-scatter-v11-${datasetMode}-${competitorLabelKey ?? "none"}-${selectedRunDate ?? "none"}`;
+  const { data: trackScatterPoints, error: trackScatterErr } = await cachedQuery(
+    async () => {
+      if (!selectedRunDate) return { data: [] as TrackStreamsXYPoint[], error: null };
+
+      const prevRunDate = addDaysIso(selectedRunDate, -1);
+
+      const rows =
+        datasetMode === "competitor" && competitorLabelKey
+          ? competitorLabelKey === ALL_COMPETITORS_KEY
+            ? (
+                await Promise.all(
+                  (
+                    (
+                      await svc
+                        .schema("competitor")
+                        .from("labels")
+                        .select("label_key,display_name")
+                        .eq("is_active", true)
+                    ).data ?? []
+                  ).map(async (label: { label_key: string; display_name: string }) =>
+                    (await fetchCompetitorTrackScatterPoints(svc, {
+                      labelKey: label.label_key,
+                      runDate: selectedRunDate,
+                      prevDate: prevRunDate,
+                    })).map((row) => ({
+                      ...row,
+                      competitor_label_key: label.label_key,
+                      competitor_label_name: label.display_name,
+                    })),
+                  ),
+                )
+              ).flat()
+            : (await fetchCompetitorTrackScatterPoints(svc, {
+                labelKey: competitorLabelKey,
+                runDate: selectedRunDate,
+                prevDate: prevRunDate,
+              })).map((row) => ({
+                ...row,
+                competitor_label_key: competitorLabelKey,
+                competitor_label_name: competitorLabelName ?? competitorLabelKey,
+              }))
+          : await fetchTrackScatterPoints(svc, {
+              runDate: selectedRunDate,
+              prevDate: prevRunDate,
+            });
+
+      const points = rows
+        .map((r: Record<string, unknown>) => {
+          const total = Number(r.total_streams_cumulative ?? 0);
+          if (!isFinite(total)) return null;
+          const isrc = String(r?.isrc ?? "").trim();
+          const name = typeof r?.name === "string" ? r.name : null;
+          const release_date = normalizeReleaseDateFromRpc(r?.release_date) ?? null;
+          const artist_names = Array.isArray(r?.artist_names) ? (r.artist_names as string[]) : null;
+          const artist_ids = Array.isArray(r?.artist_ids) ? (r.artist_ids as string[]) : null;
+          const album_image_url = typeof r?.album_image_url === "string" ? r.album_image_url : null;
+          const spotify_track_id = typeof r?.spotify_track_id === "string" ? r.spotify_track_id : null;
+          return {
+            isrc,
+            name,
+            release_date: release_date ?? undefined,
+            artist_names,
+            artist_ids,
+            album_image_url,
+            total_streams_cumulative: total,
+            daily_streams_delta: Number(r.daily_streams_delta ?? 0),
+            has_prev_day: Boolean(r.has_prev_day),
+            spotify_track_id: spotify_track_id ?? undefined,
+          } as TrackStreamsXYPoint;
+        })
+        .filter((p): p is TrackStreamsXYPoint => p !== null);
+
+      const distroByIsrc =
+        datasetMode === "competitor"
+          ? new Map<string, DistroPlaylistInfo>()
+          : await fetchDistroByIsrcForHome(svc, selectedRunDate, points.map((p) => p.isrc));
+
+      const withDistro: TrackStreamsXYPoint[] = points.map((p) => {
+        const d = distroByIsrc.get(p.isrc);
+        return {
+          ...p,
+          distroPlaylistName: d?.name ?? null,
+          distroPlaylistImageUrl: d?.imageUrl ?? null,
+        };
+      });
+
+      return { data: withDistro, error: null };
+    },
+    scatterCacheKey,
+    CACHE_TTL_1H,
+  );
+
+  return {
+    points: trackScatterPoints ?? [],
+    errorMessage: trackScatterErr?.message ?? null,
+  };
+}
+
+export async function loadHomeScatterDataForUser(args: {
+  svc: Svc;
+  userId: string;
+  sp: HomeDashboardSearchParams;
+}): Promise<{ points: TrackStreamsXYPoint[]; errorMessage: string | null; dataDate: string | null }> {
+  const { svc, userId, sp } = args;
+  const scope = (sp.scope ?? "all_catalog").toLowerCase();
+  const playlistKey: "all_catalog" | "releases" | "ext" =
+    scope === "releases" ? "releases" : scope === "ext" ? "ext" : "all_catalog";
+
+  const { data: settings } = await svc
+    .from("user_settings")
+    .select("dataset_mode,competitor_label_key")
+    .eq("user_id", userId)
+    .maybeSingle();
+  const datasetMode = normalizeDatasetMode(settings?.dataset_mode);
+  let competitorLabelKey =
+    typeof settings?.competitor_label_key === "string" && settings.competitor_label_key.trim()
+      ? settings.competitor_label_key.trim()
+      : null;
+  let competitorLabelName: string | null = null;
+
+  if (datasetMode === "competitor" && competitorLabelKey && competitorLabelKey !== ALL_COMPETITORS_KEY) {
+    const { data: label } = await svc
+      .schema("competitor")
+      .from("labels")
+      .select("display_name")
+      .eq("label_key", competitorLabelKey)
+      .maybeSingle();
+    competitorLabelName = (label as { display_name?: string | null } | null)?.display_name ?? competitorLabelKey;
+  }
+  if (datasetMode === "competitor" && (!competitorLabelKey || competitorLabelKey === ALL_COMPETITORS_KEY)) {
+    const { data: labels } = await svc
+      .schema("competitor")
+      .from("labels")
+      .select("label_key,display_name")
+      .eq("is_active", true)
+      .order("display_name", { ascending: true });
+    const typedLabels = (labels ?? []) as Array<{ label_key: string; display_name: string }>;
+    competitorLabelKey = competitorLabelKey === ALL_COMPETITORS_KEY ? ALL_COMPETITORS_KEY : resolveCompetitorLabelKey(null, typedLabels);
+    competitorLabelName =
+      competitorLabelKey === ALL_COMPETITORS_KEY
+        ? "All Competitors"
+        : typedLabels.find((label) => label.label_key === competitorLabelKey)?.display_name ?? competitorLabelKey;
+  }
+
+  const rollbackDate = await getRollbackDate();
+  const rollbackRunDate = rollbackDate ? rollbackDataDateToRunDate(rollbackDate) : null;
+
+  const { data: latestRow } = await cachedQuery<{ date: string } | null>(
+    async () => {
+      if (datasetMode === "competitor" && competitorLabelKey) {
+        const comp = svc.schema("competitor");
+        let playlistsQuery = comp.from("playlists").select("playlist_key").eq("is_active", true);
+        if (competitorLabelKey !== ALL_COMPETITORS_KEY) playlistsQuery = playlistsQuery.eq("label_key", competitorLabelKey);
+        const { data: playlists, error: plErr } = await playlistsQuery;
+        if (plErr) return { data: null, error: plErr };
+        const playlistKeys = ((playlists ?? []) as Array<{ playlist_key: string }>).map((p) => p.playlist_key).filter(Boolean);
+        if (!playlistKeys.length) return { data: null, error: null };
+        let q = comp.from("playlist_daily_stats").select("date").in("playlist_key", playlistKeys);
+        if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
+        return await q.order("date", { ascending: false }).limit(1).maybeSingle();
+      }
+
+      let q = svc.from("playlist_daily_stats").select("date").eq("playlist_key", playlistKey);
+      if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
+      return await q.order("date", { ascending: false }).limit(1).maybeSingle();
+    },
+    `home-scatter-latest-date-v1-${datasetMode}-${competitorLabelKey ?? "none"}-${playlistKey}-rb${rollbackDate ?? "live"}`,
+    CACHE_TTL_1H,
+  );
+
+  const latestRunDate = latestRow?.date ?? null;
+  const latestDataDate = latestRunDate ? dataDateFromRunDate(latestRunDate) : null;
+  const { selectedDataDate, selectedRunDate } = await resolveHomeScatterSelection({
+    svc,
+    sp,
+    datasetMode,
+    competitorLabelKey,
+    latestRunDate,
+    latestDataDate,
+  });
+  const scatter = await loadHomeScatterPoints({
+    svc,
+    datasetMode,
+    competitorLabelKey,
+    competitorLabelName,
+    selectedRunDate,
+  });
+
+  return { points: scatter.points, errorMessage: scatter.errorMessage, dataDate: selectedDataDate };
+}
+
 export async function loadHomeDashboardData(args: {
   sb: SupabaseClient;
   svc: Svc;
   userId: string;
   sp: HomeDashboardSearchParams;
+  includeScatter?: boolean;
 }): Promise<HomeDashboardServerProps> {
   const { sb, svc, userId, sp } = args;
+  const includeScatter = args.includeScatter ?? true;
 
   let rangeDays = Math.max(7, Math.min(365, Number(sp.range ?? "30") || 30));
   if (sp.start && sp.end) {
@@ -500,7 +733,14 @@ export async function loadHomeDashboardData(args: {
           : "All Catalog";
 
   const latestDataDate = latestRunDate ? dataDateFromRunDate(latestRunDate) : null;
-  const selectedDataDate = sanitizeIsoDate(sp.xy_date) ?? latestDataDate;
+  const { selectedDataDate, selectedRunDate } = await resolveHomeScatterSelection({
+    svc,
+    sp,
+    datasetMode,
+    competitorLabelKey,
+    latestRunDate,
+    latestDataDate,
+  });
 
   /** Data dates for UI (matches Home date picker). RPC uses run dates — see spikeFilterRunStart/End. */
   let artificialSpikeDateStart: string | null = null;
@@ -518,115 +758,15 @@ export async function loadHomeDashboardData(args: {
     spikeFilterRunEnd = latestRunDate;
     spikeFilterRunStart = addDaysIso(latestRunDate, -(rangeDays - 1));
   }
-  let selectedRunDate = selectedDataDate ? addDaysISO(selectedDataDate, SOT_DATA_LAG_DAYS) : latestRunDate;
-  if (datasetMode === "competitor" && competitorLabelKey && !sp.xy_date) {
-    try {
-      const { data: latestTrackRow } = await svc
-        .schema("competitor")
-        .from("track_daily_streams")
-        .select("date")
-        .order("date", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      const latestTrackRunDate = (latestTrackRow as { date?: string } | null)?.date ?? null;
-      if (latestTrackRunDate) selectedRunDate = latestTrackRunDate;
-    } catch {
-      // Keep the history-derived date as a safe fallback.
-    }
-  }
-
-  const scatterCacheKey = `home-track-scatter-v11-${datasetMode}-${competitorLabelKey ?? "none"}-${selectedRunDate ?? "none"}`;
-  const { data: trackScatterPoints, error: trackScatterErr } = await cachedQuery(
-    async () => {
-      if (!selectedRunDate) return { data: [] as TrackStreamsXYPoint[], error: null };
-
-      const prevRunDate = addDaysIso(selectedRunDate, -1);
-
-      const rows =
-        datasetMode === "competitor" && competitorLabelKey
-          ? competitorLabelKey === ALL_COMPETITORS_KEY
-            ? (
-                await Promise.all(
-                  (
-                    (
-                      await svc
-                        .schema("competitor")
-                        .from("labels")
-                        .select("label_key,display_name")
-                        .eq("is_active", true)
-                    ).data ?? []
-                  ).map(async (label: { label_key: string; display_name: string }) =>
-                    (await fetchCompetitorTrackScatterPoints(svc, {
-                      labelKey: label.label_key,
-                      runDate: selectedRunDate,
-                      prevDate: prevRunDate,
-                    })).map((row) => ({
-                      ...row,
-                      competitor_label_key: label.label_key,
-                      competitor_label_name: label.display_name,
-                    })),
-                  ),
-                )
-              ).flat()
-            : (await fetchCompetitorTrackScatterPoints(svc, {
-                labelKey: competitorLabelKey,
-                runDate: selectedRunDate,
-                prevDate: prevRunDate,
-              })).map((row) => ({
-                ...row,
-                competitor_label_key: competitorLabelKey,
-                competitor_label_name: competitorLabelName ?? competitorLabelKey,
-              }))
-          : await fetchTrackScatterPoints(svc, {
-              runDate: selectedRunDate,
-              prevDate: prevRunDate,
-            });
-
-      const points = rows
-        .map((r: Record<string, unknown>) => {
-          const total = Number(r.total_streams_cumulative ?? 0);
-          if (!isFinite(total)) return null;
-          const isrc = String(r?.isrc ?? "").trim();
-          const name = typeof r?.name === "string" ? r.name : null;
-          const release_date = normalizeReleaseDateFromRpc(r?.release_date) ?? null;
-          const artist_names = Array.isArray(r?.artist_names) ? (r.artist_names as string[]) : null;
-          const artist_ids = Array.isArray(r?.artist_ids) ? (r.artist_ids as string[]) : null;
-          const album_image_url = typeof r?.album_image_url === "string" ? r.album_image_url : null;
-          const spotify_track_id = typeof r?.spotify_track_id === "string" ? r.spotify_track_id : null;
-          return {
-            isrc,
-            name,
-            release_date: release_date ?? undefined,
-            artist_names,
-            artist_ids,
-            album_image_url,
-            total_streams_cumulative: total,
-            daily_streams_delta: Number(r.daily_streams_delta ?? 0),
-            has_prev_day: Boolean(r.has_prev_day),
-            spotify_track_id: spotify_track_id ?? undefined,
-          } as TrackStreamsXYPoint;
-        })
-        .filter((p): p is TrackStreamsXYPoint => p !== null);
-
-      const distroByIsrc =
-        datasetMode === "competitor"
-          ? new Map<string, DistroPlaylistInfo>()
-          : await fetchDistroByIsrcForHome(svc, selectedRunDate, points.map((p) => p.isrc));
-
-      const withDistro: TrackStreamsXYPoint[] = points.map((p) => {
-        const d = distroByIsrc.get(p.isrc);
-        return {
-          ...p,
-          distroPlaylistName: d?.name ?? null,
-          distroPlaylistImageUrl: d?.imageUrl ?? null,
-        };
-      });
-
-      return { data: withDistro, error: null };
-    },
-    scatterCacheKey,
-    CACHE_TTL_1H,
-  );
+  const scatter = includeScatter
+    ? await loadHomeScatterPoints({
+        svc,
+        datasetMode,
+        competitorLabelKey,
+        competitorLabelName,
+        selectedRunDate,
+      })
+    : { points: [] as TrackStreamsXYPoint[], errorMessage: null };
 
   const overrideAnnotations: ManualOverrideAnnotation[] = await (async () => {
     if (datasetMode === "competitor") return [];
@@ -795,9 +935,10 @@ export async function loadHomeDashboardData(args: {
     history: (history as PlaylistDailyStatsRow[] | null) ?? [],
     playlistImageUrl,
     historyErrorMessage: historyErr?.message ?? null,
-    trackScatterPoints: trackScatterPoints ?? [],
-    trackScatterErrorMessage: trackScatterErr?.message ?? null,
+    trackScatterPoints: scatter.points,
+    trackScatterErrorMessage: scatter.errorMessage,
     trackScatterDataDate: selectedDataDate,
+    trackScatterDeferred: !includeScatter,
     latestRunDate,
     latestDataDate,
     overrideAnnotations,

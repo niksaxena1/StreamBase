@@ -6,6 +6,8 @@ import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Download, Music } from "lucide-react";
 import { fetchUserSettingsBundle, invalidateUserSettingsBundle } from "@/lib/userSettingsBundleFetch";
+import { fetchApiJson } from "@/lib/api";
+import { buildHomeScatterApiUrl, normalizeHomeScatterApiPayload } from "@/lib/home/homeScatterApi";
 import { GranularitySelect, RangeSelect, handleGranularityWithRangeRestore, granularityLabel } from "@/components/ui/GranularitySelect";
 import type { Granularity } from "@/components/ui/GranularitySelect";
 import { DateRangePicker, type DateRangePickerHandle } from "@/components/ui/DateRangePicker";
@@ -94,6 +96,7 @@ function HomeDashboardInner(props: {
   trackScatterPoints: TrackStreamsXYPoint[];
   trackScatterErrorMessage?: string | null;
   trackScatterDataDate: string | null;
+  trackScatterDeferred?: boolean;
   latestRunDate: string | null;
   latestDataDate: string | null;
   overrideAnnotations?: ManualOverrideAnnotation[];
@@ -131,6 +134,58 @@ function HomeDashboardInner(props: {
   const [homeFiltersConfigured, setHomeFiltersConfigured] = useState(true);
   const [homeSpikesSectionEnabled, setHomeSpikesSectionEnabled] = useState(true);
   const [homeSpikesSectionConfigured, setHomeSpikesSectionConfigured] = useState(true);
+  const scatterFetchUrl = useMemo(() => buildHomeScatterApiUrl(props.sp), [props.sp]);
+  const [scatterState, setScatterState] = useState<{
+    points: TrackStreamsXYPoint[];
+    errorMessage: string | null;
+    dataDate: string | null;
+    loading: boolean;
+  }>(() => ({
+    points: props.trackScatterPoints,
+    errorMessage: props.trackScatterErrorMessage ?? null,
+    dataDate: props.trackScatterDataDate,
+    loading: Boolean(props.trackScatterDeferred),
+  }));
+
+  useEffect(() => {
+    if (!props.trackScatterDeferred) return;
+
+    const controller = new AbortController();
+    fetchApiJson<unknown>(scatterFetchUrl, { signal: controller.signal })
+      .then((raw) => {
+        if (controller.signal.aborted) return;
+        const payload = normalizeHomeScatterApiPayload(raw);
+        setScatterState({
+          points: payload.points,
+          errorMessage: payload.errorMessage,
+          dataDate: payload.dataDate ?? props.trackScatterDataDate,
+          loading: false,
+        });
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) return;
+        setScatterState({
+          points: [],
+          errorMessage: error instanceof Error ? error.message : "Failed to load Home scatter data",
+          dataDate: props.trackScatterDataDate,
+          loading: false,
+        });
+      });
+
+    return () => controller.abort();
+  }, [
+    props.trackScatterDataDate,
+    props.trackScatterDeferred,
+    scatterFetchUrl,
+  ]);
+  const effectiveScatterState = props.trackScatterDeferred
+    ? scatterState
+    : {
+        points: props.trackScatterPoints,
+        errorMessage: props.trackScatterErrorMessage ?? null,
+        dataDate: props.trackScatterDataDate,
+        loading: false,
+      };
 
   // Fetch Home Filters + spikes section visibility (shares request with other context providers).
   useEffect(() => {
@@ -479,21 +534,22 @@ function HomeDashboardInner(props: {
       ) : null}
 
       <HomeConcentrationSection
-        trackScatterPoints={props.trackScatterPoints}
+        trackScatterPoints={effectiveScatterState.points}
         latestRunDate={props.latestRunDate}
         datasetMode={props.datasetMode}
       />
 
       <HomeScatterSection
-        trackScatterPoints={props.trackScatterPoints}
-        trackScatterErrorMessage={props.trackScatterErrorMessage}
+        trackScatterPoints={effectiveScatterState.points}
+        trackScatterErrorMessage={effectiveScatterState.errorMessage}
+        trackScatterLoading={effectiveScatterState.loading}
         insufficientHistory={props.datasetMode === "competitor" && !hasTrendHistory}
       />
 
-      <HomeMilestonesSection trackScatterPoints={props.trackScatterPoints} />
+      <HomeMilestonesSection trackScatterPoints={effectiveScatterState.points} />
 
       {props.datasetMode === "own" || hasTrendHistory ? (
-        <HomeDailyDistributionSection trackScatterPoints={props.trackScatterPoints} />
+        <HomeDailyDistributionSection trackScatterPoints={effectiveScatterState.points} />
       ) : null}
 
       {props.datasetMode === "own" ? (
@@ -523,8 +579,8 @@ function HomeDashboardInner(props: {
 
       {(props.datasetMode === "competitor" || (homeFiltersConfigured && homeFiltersEnabled)) ? (
         <HomeFilterBuilderSection
-          trackScatterPoints={props.trackScatterPoints}
-          trackScatterDataDate={props.trackScatterDataDate}
+          trackScatterPoints={effectiveScatterState.points}
+          trackScatterDataDate={effectiveScatterState.dataDate}
           datasetMode={props.datasetMode}
         />
       ) : null}

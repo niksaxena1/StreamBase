@@ -54,6 +54,7 @@ export default async function Home({
     svc,
     userId: session.user.id,
     sp,
+    includeScatter: false,
   });
 
   return <HomeDashboardClient {...props} />;

@@ -16,6 +16,7 @@ import { CACHE_TTL_1H, API_LOOKUP_DROPDOWN_MAX, API_LOOKUP_THUMBNAILS_MAX, API_L
 import { logError, logWarn } from "@/lib/logger";
 import { normalizeDatasetMode } from "@/lib/datasetMode";
 import { ALL_COMPETITORS_KEY, resolveCompetitorLabelKey } from "@/lib/competitorContext";
+import { isMissingPostgresFunctionError } from "@/lib/supabase/rpcErrors";
 
 const CATALOG_ARTIST_DROPDOWN_MAX_TRACKS = API_LOOKUP_DROPDOWN_MAX;
 const CATALOG_ARTIST_THUMBNAILS_MAX = API_LOOKUP_THUMBNAILS_MAX;
@@ -181,6 +182,23 @@ async function fetchAllTrackSeries(
   }
 
   return out;
+}
+
+async function fetchCatalogArtistSeries(
+  sb: SupabaseClient,
+  args: { artistId: string; startDate: string; endDate: string },
+) {
+  const fast = await sb.rpc("catalog_artist_series_fast", {
+    artist_id: args.artistId,
+    start_date: args.startDate,
+    end_date: args.endDate,
+  });
+  if (!fast.error || !isMissingPostgresFunctionError(fast.error)) return fast;
+  return await sb.rpc("catalog_artist_series", {
+    artist_id: args.artistId,
+    start_date: args.startDate,
+    end_date: args.endDate,
+  });
 }
 
 function addDays(iso: string, delta: number): string {
@@ -352,12 +370,11 @@ export default async function CatalogPage({
       const artistIsrcs = artistTracks.map((t) => t.isrc);
       const [{ data: artistSeriesRaw }, { data: todayRowsRaw }, { data: prevRowsRaw }] = await Promise.all([
         latestRunDate && maPaddedStartRunDate && artistIsrcs.length
-          ? comp
-              .from("track_daily_streams")
-              .select("date,isrc,streams_cumulative")
-              .in("isrc", artistIsrcs)
-              .gte("date", maPaddedStartRunDate)
-              .lte("date", latestRunDate)
+          ? fetchCatalogArtistSeries(comp as unknown as SupabaseClient, {
+              artistId: effectiveArtistId,
+              startDate: maPaddedStartRunDate,
+              endDate: latestRunDate,
+            })
           : Promise.resolve({ data: [] }),
         latestRunDate && artistIsrcs.length
           ? comp
@@ -689,12 +706,12 @@ export default async function CatalogPage({
     latestRunDate && startRunDate && maPaddedStartRunDate
       ? cachedQuery(
           async () =>
-            await svc.rpc("catalog_artist_series", {
-              artist_id: artistId,
-              start_date: maPaddedStartRunDate,
-              end_date: latestRunDate,
+            await fetchCatalogArtistSeries(svc, {
+              artistId,
+              startDate: maPaddedStartRunDate,
+              endDate: latestRunDate,
             }),
-          `catalog-artist-series-${artistId}-${maPaddedStartRunDate}-${latestRunDate}-ov${overrideBuster}`,
+          `catalog-artist-series-fast-v1-${artistId}-${maPaddedStartRunDate}-${latestRunDate}-ov${overrideBuster}`,
           CACHE_TTL_1H,
         )
       : Promise.resolve({ data: [] as CatalogArtistSeriesRow[], error: null }),

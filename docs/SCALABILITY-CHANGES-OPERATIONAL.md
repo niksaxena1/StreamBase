@@ -106,6 +106,22 @@ If you applied the migration that partitions `track_daily_streams` by month:
 
 ---
 
+## 10. **Home/Catalog/Playlists fast paths**
+
+- **What changed**
+  Home now sends the core dashboard first and loads the heavy scatter/filter/milestone source points through `/api/home/scatter`.
+
+- **Catalog summaries**
+  `migrations/add_home_catalog_playlist_fast_paths.sql` adds `public.artist_daily_stats` and `competitor.artist_daily_stats`. The app calls `catalog_artist_series_fast`; if the migration is missing it falls back to the existing `catalog_artist_series` RPC. If the summary table is empty, the SQL function falls back to raw `track_daily_streams`.
+
+- **Refresh after ingestion**
+  After own-catalog ingestion, run `select public.refresh_artist_daily_stats(<start_date>, <end_date>);` for the affected run-date window. After competitor ingestion, run `select competitor.refresh_artist_daily_stats(<start_date>, <end_date>);`. Calling either function with both dates omitted performs a full rebuild and is heavier.
+
+- **Playlists summary**
+  The same migration adds `public.playlist_dashboard_summary`, combining latest snapshot context, distinct artist count, and capped removed-track count. The page falls back to the older individual RPCs if the summary function is not present.
+
+---
+
 ## Quick reference
 
 | Area              | Watch out for                                                                 |
@@ -119,3 +135,4 @@ If you applied the migration that partitions `track_daily_streams` by month:
 | Catalog lists     | 150 rows then “Show more”; “select all” type features must use full data.      |
 | Images            | New image domains need `remotePatterns` in `next.config.ts`.                   |
 | Caching           | Cache keys were bumped; allow for TTL after deploy.                           |
+| Home/Catalog/Playlists fast paths | Apply `migrations/add_home_catalog_playlist_fast_paths.sql`; refresh artist summaries after ingestion. |

@@ -20,6 +20,11 @@ export function dataDateFromRunDate(runDateISO: string): string {
   return addDaysISO(runDateISO, -SOT_DATA_LAG_DAYS);
 }
 
+/** Inverse of {@link dataDateFromRunDate} for DB rows keyed by ingestion/run date. */
+export function runDateFromDataDate(dataDateISO: string): string {
+  return addDaysISO(dataDateISO, SOT_DATA_LAG_DAYS);
+}
+
 export function formatSotDataDateISO(runDateISO: string | null | undefined): string {
   if (!runDateISO) return "—";
   return formatDateISO(dataDateFromRunDate(runDateISO));

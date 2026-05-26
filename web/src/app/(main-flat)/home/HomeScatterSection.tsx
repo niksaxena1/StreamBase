@@ -21,6 +21,7 @@ import { HOME_DETAILS_STORAGE } from "./homeUtils";
 export function HomeScatterSection(props: {
   trackScatterPoints: TrackStreamsXYPoint[];
   trackScatterErrorMessage?: string | null;
+  trackScatterLoading?: boolean;
   insufficientHistory?: boolean;
 }) {
   const { metric } = useMetric();
@@ -492,7 +493,9 @@ export function HomeScatterSection(props: {
             />
           ) : (
             <div className="py-10 text-center text-xs" style={{ color: "var(--sb-muted)" }}>
-              {props.insufficientHistory
+              {props.trackScatterLoading
+                ? "Loading track points..."
+                : props.insufficientHistory
                 ? "Track points will appear once at least one competitor track snapshot is available."
                 : "No track points available yet."}
             </div>
@@ -519,7 +522,7 @@ export function HomeScatterSection(props: {
             />
           ) : (
             <div className="py-10 text-center text-xs" style={{ color: "var(--sb-muted)" }}>
-              No artist points available yet.
+              {props.trackScatterLoading ? "Loading artist points..." : "No artist points available yet."}
             </div>
           )
         ) : null}

@@ -4,6 +4,7 @@ import {
   dataDateFromRunDate,
   formatSotDataDateISO,
   expectedLatestRunDateUtc,
+  runDateFromDataDate,
   SOT_DATA_LAG_DAYS,
 } from "./sotDates";
 
@@ -65,6 +66,17 @@ describe("dataDateFromRunDate", () => {
   it("subtracts 2 days (SOT lag)", () => {
     expect(dataDateFromRunDate("2026-02-15")).toBe("2026-02-13");
     expect(dataDateFromRunDate("2026-01-02")).toBe("2025-12-31");
+  });
+});
+
+describe("runDateFromDataDate", () => {
+  it("adds 2 days (SOT lag)", () => {
+    expect(runDateFromDataDate("2026-02-13")).toBe("2026-02-15");
+    expect(runDateFromDataDate("2025-12-31")).toBe("2026-01-02");
+  });
+
+  it("inverts dataDateFromRunDate", () => {
+    expect(runDateFromDataDate(dataDateFromRunDate("2026-05-26"))).toBe("2026-05-26");
   });
 });
 

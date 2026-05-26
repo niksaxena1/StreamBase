@@ -24,6 +24,7 @@ import { DocumentTitle } from "@/components/shell/DocumentTitle";
 import { normalizeDatasetMode } from "@/lib/datasetMode";
 import { ALL_COMPETITORS_KEY, resolveCompetitorLabelKey } from "@/lib/competitorContext";
 import { CompetitorCurrentTracksTable, type CompetitorCurrentTrackRow } from "./CompetitorCurrentTracksTable";
+import { isMissingPostgresFunctionError } from "@/lib/supabase/rpcErrors";
 
 // Uses Supabase session cookies; this route must be dynamic in Next 16.
 export const dynamic = "force-dynamic";
@@ -80,6 +81,11 @@ type ManualOverrideAnnotation = {
   imageUrl?: string | null;
 };
 
+type PlaylistDashboardSummaryRow = {
+  distinct_artist_count: number | string | null;
+  removed_tracks_count: number | string | null;
+};
+
 function clampRangeDays(x: unknown) {
   const n = Number(x ?? "30") || 30;
   return Math.max(7, Math.min(365, n));
@@ -95,6 +101,22 @@ function isMembershipActiveAtDate(m: PlaylistMembershipRow, runDate: string) {
   if (m.valid_from > runDate) return false;
   if (m.valid_to && m.valid_to < runDate) return false;
   return true;
+}
+
+async function fetchPlaylistDashboardSummary(
+  svc: ReturnType<typeof supabaseService>,
+  args: { playlistKey: string; asOfDate: string | null },
+): Promise<PlaylistDashboardSummaryRow | null> {
+  const { data, error } = await svc.rpc("playlist_dashboard_summary", {
+    playlist_key: args.playlistKey,
+    as_of_date: args.asOfDate,
+  });
+  if (error) {
+    if (isMissingPostgresFunctionError(error)) return null;
+    return null;
+  }
+  const rows = Array.isArray(data) ? data : data ? [data] : [];
+  return (rows[0] as PlaylistDashboardSummaryRow | undefined) ?? null;
 }
 
 
@@ -462,18 +484,6 @@ export default async function PlaylistsPage({
   const latestSourceRunId = (latest as PlaylistDailyStatsRow | null)?.source_run_id ?? null;
   const prevDate = (prev as { date: string } | null)?.date ?? null;
 
-  const { data: playlistArtistCountRaw } = await cachedQuery(
-    async () => {
-      if (!latestDate) return { data: null, error: null };
-      return await svc.rpc("playlist_distinct_artist_count", {
-        playlist_key: playlistKey,
-        run_date: latestDate,
-      });
-    },
-    `playlist-distinct-artist-count-v1-${playlistKey}-${latestDate}-rb${rollbackDate ?? "live"}`,
-    3600,
-  );
-
   function parseRpcBigint(v: unknown): number | null {
     if (v == null) return null;
     if (typeof v === "number" && Number.isFinite(v)) return Math.trunc(v);
@@ -484,7 +494,33 @@ export default async function PlaylistsPage({
     return null;
   }
 
-  const playlistArtistCount = parseRpcBigint(playlistArtistCountRaw);
+  const { data: dashboardSummary } = await cachedQuery(
+    async () => ({
+      data: await fetchPlaylistDashboardSummary(svc, {
+        playlistKey,
+        asOfDate: rollbackRunDate,
+      }),
+      error: null,
+    }),
+    `playlist-dashboard-summary-v1-${playlistKey}-rb${rollbackDate ?? "live"}`,
+    3600,
+  );
+  const summaryArtistCount = parseRpcBigint((dashboardSummary as PlaylistDashboardSummaryRow | null)?.distinct_artist_count);
+  const summaryRemovedTracksCount = parseRpcBigint((dashboardSummary as PlaylistDashboardSummaryRow | null)?.removed_tracks_count);
+
+  const { data: playlistArtistCountRaw } = summaryArtistCount == null ? await cachedQuery(
+    async () => {
+      if (!latestDate) return { data: null, error: null };
+      return await svc.rpc("playlist_distinct_artist_count", {
+        playlist_key: playlistKey,
+        run_date: latestDate,
+      });
+    },
+    `playlist-distinct-artist-count-v1-${playlistKey}-${latestDate}-rb${rollbackDate ?? "live"}`,
+    3600,
+  ) : { data: null };
+
+  const playlistArtistCount = summaryArtistCount ?? parseRpcBigint(playlistArtistCountRaw);
 
   const playlistTrackCountDisplay =
     (latest as PlaylistDailyStatsRow | null)?.track_count ??
@@ -600,7 +636,7 @@ export default async function PlaylistsPage({
   })();
 
   // Removed count is displayed in the metrics panel; we cap at 500 (same as UI table).
-  const { data: removedRows } = await cachedQuery(
+  const { data: removedRows } = summaryRemovedTracksCount == null ? await cachedQuery(
     async () =>
       await svc.rpc("playlist_removed_tracks", {
         playlist_key: playlistKey,
@@ -608,8 +644,8 @@ export default async function PlaylistsPage({
       }),
     `playlist-removed-rows-v2-${playlistKey}-${latestDate ?? "none"}-${latestSourceRunId ?? "none"}`,
     86400,
-  );
-  const removedTracksCount = Array.isArray(removedRows) ? removedRows.length : 0;
+  ) : { data: null };
+  const removedTracksCount = summaryRemovedTracksCount ?? (Array.isArray(removedRows) ? removedRows.length : 0);
 
   const playlistTrackCountNumeric =
     playlistTrackCountDisplay != null ? Number(playlistTrackCountDisplay) : null;

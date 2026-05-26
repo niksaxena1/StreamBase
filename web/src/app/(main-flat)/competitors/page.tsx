@@ -10,7 +10,7 @@ import { normalizeDatasetMode } from "@/lib/datasetMode";
 import { PageHeader } from "@/components/shell/PageHeader";
 import { GlassTable, TableCell, TableRow } from "@/components/ui/GlassTable";
 import { formatDateISO, formatInt } from "@/lib/format";
-import { addDaysISO, dataDateFromRunDate } from "@/lib/sotDates";
+import { addDaysISO, dataDateFromRunDate, runDateFromDataDate } from "@/lib/sotDates";
 
 export const dynamic = "force-dynamic";
 
@@ -49,9 +49,8 @@ type RawExportRow = {
   exported_at: string;
 };
 
-type StatsLastTwoRow = {
+type AnchoredStatRow = {
   playlist_key: string;
-  snapshot_rank: number;
   date: string;
   track_count: number | null;
   total_streams_cumulative: number | null;
@@ -98,35 +97,42 @@ function parseCount(value: number | string | null | undefined): number {
   return 0;
 }
 
-function sumPlaylistStat(
-  playlistKeys: string[],
-  snapshotsByPlaylist: Map<string, { latest: PlaylistStatSnapshot | null; previous: PlaylistStatSnapshot | null }>,
-  field: "track_count" | "daily_streams_net",
-  which: "latest" | "previous",
-): number {
-  let sum = 0;
-  for (const key of playlistKeys) {
-    const snap = snapshotsByPlaylist.get(key)?.[which];
-    if (!snap) continue;
-    const raw = snap[field];
-    if (typeof raw === "number" && Number.isFinite(raw)) sum += raw;
+function buildStatsByDataDate(rows: AnchoredStatRow[]): Map<string, Map<string, PlaylistStatSnapshot>> {
+  const byDataDate = new Map<string, Map<string, PlaylistStatSnapshot>>();
+  for (const row of rows) {
+    const dataDate = dataDateFromRunDate(row.date.slice(0, 10));
+    const byPlaylist = byDataDate.get(dataDate) ?? new Map<string, PlaylistStatSnapshot>();
+    byPlaylist.set(row.playlist_key, {
+      date: dataDate,
+      track_count: row.track_count,
+      total_streams_cumulative: row.total_streams_cumulative,
+      missing_streams_track_count: row.missing_streams_track_count,
+      daily_streams_net: row.daily_streams_net,
+    });
+    byDataDate.set(dataDate, byPlaylist);
   }
-  return sum;
+  return byDataDate;
 }
 
-function sumStatField(
+function sumLabelAtDataDate(
   playlistKeys: string[],
-  statByPlaylist: Map<string, PlaylistStatSnapshot>,
+  dataDate: string | null,
+  statsByDataDate: Map<string, Map<string, PlaylistStatSnapshot>>,
   field: "track_count" | "daily_streams_net",
-): number {
+): number | null {
+  if (!dataDate) return null;
+  const byPlaylist = statsByDataDate.get(dataDate);
+  if (!byPlaylist) return null;
   let sum = 0;
+  let found = false;
   for (const key of playlistKeys) {
-    const snap = statByPlaylist.get(key);
+    const snap = byPlaylist.get(key);
     if (!snap) continue;
+    found = true;
     const raw = snap[field];
     if (typeof raw === "number" && Number.isFinite(raw)) sum += raw;
   }
-  return sum;
+  return found ? sum : null;
 }
 
 function formatDelta(delta: number | null): string | null {
@@ -182,10 +188,14 @@ function LabelStat({
       {showDeltas ? (
         <div className="mt-0.5 space-y-0.5">
           {formatDelta(delta) ? (
-            <DeltaLine delta={delta!} periodLabel="1d" title="Change vs prior snapshot day" />
+            <DeltaLine delta={delta!} periodLabel="1d" title="Change vs the prior successful ingestion run" />
           ) : null}
           {weeklyDelta != null && weeklyDelta !== 0 ? (
-            <DeltaLine delta={weeklyDelta} periodLabel="7d" title="Change vs snapshot about 7 days ago" />
+            <DeltaLine
+              delta={weeklyDelta}
+              periodLabel="7d"
+              title="Change vs the successful ingestion run about 7 days earlier"
+            />
           ) : null}
         </div>
       ) : null}
@@ -213,7 +223,6 @@ export default async function CompetitorsPage() {
   const [
     { data: labelsRaw },
     { data: playlistsRaw },
-    { data: statsLastTwoRaw },
     { data: rawExportsRaw },
     { data: recentRunsRaw },
   ] = await Promise.all([
@@ -223,15 +232,38 @@ export default async function CompetitorsPage() {
       .select("playlist_key,label_key,display_name,spotify_playlist_image_url,sot_dashboard_url,display_order,is_active")
       .order("display_order", { ascending: true, nullsFirst: false })
       .order("display_name", { ascending: true }),
-    comp.rpc("playlist_daily_stats_last_two"),
     comp.rpc("latest_raw_exports_by_playlist"),
-    comp.from("ingestion_runs").select("run_date,status,started_at,finished_at").order("run_date", { ascending: false }).limit(2),
+    comp
+      .from("ingestion_runs")
+      .select("run_date,status,started_at,finished_at")
+      .eq("status", "success")
+      .order("run_date", { ascending: false })
+      .limit(1),
   ]);
 
+  const labels = (labelsRaw ?? []) as LabelRow[];
+  const playlists = (playlistsRaw ?? []) as PlaylistRow[];
+  const playlistKeys = playlists.map((p) => p.playlist_key);
+
   const recentRuns = (recentRunsRaw ?? []) as Array<{ run_date: string }>;
-  const latestRunDate = recentRuns[0]?.run_date ?? null;
-  const previousRunDate = recentRuns[1]?.run_date ?? null;
-  const weekAgoRunDate = latestRunDate ? addDaysISO(latestRunDate, -7) : null;
+  const latestRunDate = recentRuns[0]?.run_date?.slice(0, 10) ?? null;
+  const latestDataDate = latestRunDate ? dataDateFromRunDate(latestRunDate) : null;
+  const previousDataDate = latestDataDate ? addDaysISO(latestDataDate, -1) : null;
+  const weekAgoDataDate = latestDataDate ? addDaysISO(latestDataDate, -7) : null;
+
+  const anchorDataDates = [...new Set([latestDataDate, previousDataDate, weekAgoDataDate].filter(Boolean) as string[])];
+  const anchorRunDates = anchorDataDates.map((dataDate) => runDateFromDataDate(dataDate));
+
+  const { data: anchoredStatsRaw } =
+    anchorRunDates.length > 0 && playlistKeys.length > 0
+      ? await comp
+          .from("playlist_daily_stats")
+          .select("playlist_key,date,track_count,total_streams_cumulative,missing_streams_track_count,daily_streams_net")
+          .in("date", anchorRunDates)
+          .in("playlist_key", playlistKeys)
+      : { data: [] as AnchoredStatRow[] };
+
+  const statsByDataDate = buildStatsByDataDate((anchoredStatsRaw ?? []) as AnchoredStatRow[]);
 
   const [
     { data: warningRowsRaw },
@@ -243,42 +275,24 @@ export default async function CompetitorsPage() {
     latestRunDate
       ? comp.from("ingestion_warnings").select("playlist_key,severity").eq("run_date", latestRunDate)
       : Promise.resolve({ data: [] }),
-    latestRunDate
-      ? comp.rpc("label_distinct_artist_counts", { p_run_date: latestRunDate })
+    latestDataDate
+      ? comp.rpc("label_distinct_artist_counts", { p_run_date: runDateFromDataDate(latestDataDate) })
       : Promise.resolve({ data: [] }),
-    previousRunDate
-      ? comp.rpc("label_distinct_artist_counts", { p_run_date: previousRunDate })
+    previousDataDate
+      ? comp.rpc("label_distinct_artist_counts", { p_run_date: runDateFromDataDate(previousDataDate) })
       : Promise.resolve({ data: [] }),
-    weekAgoRunDate
-      ? comp.rpc("playlist_daily_stats_as_of", { p_as_of_date: weekAgoRunDate })
+    weekAgoDataDate
+      ? comp.rpc("playlist_daily_stats_as_of", { p_as_of_date: runDateFromDataDate(weekAgoDataDate) })
       : Promise.resolve({ data: [] }),
-    weekAgoRunDate
-      ? comp.rpc("label_distinct_artist_counts", { p_run_date: weekAgoRunDate })
+    weekAgoDataDate
+      ? comp.rpc("label_distinct_artist_counts", { p_run_date: runDateFromDataDate(weekAgoDataDate) })
       : Promise.resolve({ data: [] }),
   ]);
 
-  const labels = (labelsRaw ?? []) as LabelRow[];
-  const playlists = (playlistsRaw ?? []) as PlaylistRow[];
-
-  const snapshotsByPlaylist = new Map<string, { latest: PlaylistStatSnapshot | null; previous: PlaylistStatSnapshot | null }>();
-  for (const row of (statsLastTwoRaw ?? []) as StatsLastTwoRow[]) {
-    const entry = snapshotsByPlaylist.get(row.playlist_key) ?? { latest: null, previous: null };
-    const snap: PlaylistStatSnapshot = {
-      date: row.date,
-      track_count: row.track_count,
-      total_streams_cumulative: row.total_streams_cumulative,
-      missing_streams_track_count: row.missing_streams_track_count,
-      daily_streams_net: row.daily_streams_net,
-    };
-    if (row.snapshot_rank === 1) entry.latest = snap;
-    else if (row.snapshot_rank === 2) entry.previous = snap;
-    snapshotsByPlaylist.set(row.playlist_key, entry);
-  }
-
-  const latestStatByPlaylist = new Map<string, PlaylistStatSnapshot>();
-  for (const [playlistKey, snaps] of snapshotsByPlaylist) {
-    if (snaps.latest) latestStatByPlaylist.set(playlistKey, snaps.latest);
-  }
+  const latestStatByPlaylist =
+    latestDataDate != null
+      ? (statsByDataDate.get(latestDataDate) ?? new Map<string, PlaylistStatSnapshot>())
+      : new Map();
 
   const latestExportByPlaylist = new Map<string, RawExportRow>();
   for (const row of (rawExportsRaw ?? []) as RawExportRow[]) {
@@ -301,24 +315,27 @@ export default async function CompetitorsPage() {
     previousArtistCountByLabel.set(row.label_key, parseCount(row.artist_count));
   }
 
-  const weekAgoStatByPlaylist = new Map<string, PlaylistStatSnapshot>();
-  for (const row of (weekAgoStatsRaw ?? []) as StatsAsOfRow[]) {
-    weekAgoStatByPlaylist.set(row.playlist_key, {
-      date: row.date,
-      track_count: row.track_count,
-      total_streams_cumulative: row.total_streams_cumulative,
-      missing_streams_track_count: row.missing_streams_track_count,
-      daily_streams_net: row.daily_streams_net,
-    });
-  }
-
   const weekAgoArtistCountByLabel = new Map<string, number>();
   for (const row of (weekAgoArtistCountsRaw ?? []) as LabelArtistCountRow[]) {
     weekAgoArtistCountByLabel.set(row.label_key, parseCount(row.artist_count));
   }
 
-  const hasWeekAgoSnapshots =
-    weekAgoRunDate != null && ((weekAgoStatsRaw ?? []) as StatsAsOfRow[]).length > 0;
+  if (weekAgoDataDate) {
+    const byPlaylist = statsByDataDate.get(weekAgoDataDate) ?? new Map<string, PlaylistStatSnapshot>();
+    for (const row of (weekAgoStatsRaw ?? []) as StatsAsOfRow[]) {
+      if (byPlaylist.has(row.playlist_key)) continue;
+      const rowDataDate = dataDateFromRunDate(row.date.slice(0, 10));
+      if (rowDataDate !== weekAgoDataDate) continue;
+      byPlaylist.set(row.playlist_key, {
+        date: weekAgoDataDate,
+        track_count: row.track_count,
+        total_streams_cumulative: row.total_streams_cumulative,
+        missing_streams_track_count: row.missing_streams_track_count,
+        daily_streams_net: row.daily_streams_net,
+      });
+    }
+    statsByDataDate.set(weekAgoDataDate, byPlaylist);
+  }
 
   const playlistsByLabel = new Map<string, PlaylistRow[]>();
   for (const playlist of playlists) {
@@ -329,19 +346,18 @@ export default async function CompetitorsPage() {
 
   const summary = labels.map((label) => {
     const labelPlaylists = playlistsByLabel.get(label.label_key) ?? [];
-    const playlistKeys = labelPlaylists.map((p) => p.playlist_key);
-    const trackCount = sumPlaylistStat(playlistKeys, snapshotsByPlaylist, "track_count", "latest");
-    const previousTrackCount = sumPlaylistStat(playlistKeys, snapshotsByPlaylist, "track_count", "previous");
-    const dailyStreams = sumPlaylistStat(playlistKeys, snapshotsByPlaylist, "daily_streams_net", "latest");
-    const previousDailyStreams = sumPlaylistStat(playlistKeys, snapshotsByPlaylist, "daily_streams_net", "previous");
-    const weekAgoTrackCount = sumStatField(playlistKeys, weekAgoStatByPlaylist, "track_count");
+    const keys = labelPlaylists.map((p) => p.playlist_key);
+    const trackCount = sumLabelAtDataDate(keys, latestDataDate, statsByDataDate, "track_count") ?? 0;
+    const previousTrackCount = sumLabelAtDataDate(keys, previousDataDate, statsByDataDate, "track_count");
+    const dailyStreams = sumLabelAtDataDate(keys, latestDataDate, statsByDataDate, "daily_streams_net") ?? 0;
+    const previousDailyStreams = sumLabelAtDataDate(keys, previousDataDate, statsByDataDate, "daily_streams_net");
+    const weekAgoTrackCount = sumLabelAtDataDate(keys, weekAgoDataDate, statsByDataDate, "track_count");
     const artistCount = artistCountByLabel.get(label.label_key) ?? 0;
     const previousArtistCount = previousArtistCountByLabel.get(label.label_key) ?? 0;
     const weekAgoArtistCount = weekAgoArtistCountByLabel.get(label.label_key) ?? 0;
 
-    const hasPreviousSnapshots = playlistKeys.some((key) => snapshotsByPlaylist.get(key)?.previous);
-    const hasWeekAgoSnapshots =
-      weekAgoRunDate != null && playlistKeys.some((key) => weekAgoStatByPlaylist.has(key));
+    const hasPreviousSnapshots = previousTrackCount != null;
+    const labelHasWeekAgoSnapshots = weekAgoTrackCount != null;
 
     return {
       label,
@@ -349,31 +365,20 @@ export default async function CompetitorsPage() {
       trackCount,
       artistCount,
       dailyStreams,
-      trackDelta: hasPreviousSnapshots ? trackCount - previousTrackCount : null,
-      trackWeeklyDelta: hasWeekAgoSnapshots ? trackCount - weekAgoTrackCount : null,
-      artistDelta: previousRunDate != null ? artistCount - previousArtistCount : null,
-      artistWeeklyDelta: hasWeekAgoSnapshots ? artistCount - weekAgoArtistCount : null,
-      dailyStreamDelta: hasPreviousSnapshots ? dailyStreams - previousDailyStreams : null,
+      trackDelta: hasPreviousSnapshots ? trackCount - previousTrackCount! : null,
+      trackWeeklyDelta: labelHasWeekAgoSnapshots ? trackCount - weekAgoTrackCount : null,
+      artistDelta: previousDataDate != null ? artistCount - previousArtistCount : null,
+      artistWeeklyDelta: labelHasWeekAgoSnapshots ? artistCount - weekAgoArtistCount : null,
+      dailyStreamDelta:
+        previousDailyStreams != null ? dailyStreams - previousDailyStreams : null,
     };
   });
 
-  let subtitle: ReactNode = "No competitor ingestion run found yet.";
-  if (latestRunDate) {
+  let subtitle: ReactNode = "No competitor data found yet.";
+  if (latestDataDate) {
     subtitle = (
       <>
-        Latest competitor run: <span className="font-mono">{formatDateISO(dataDateFromRunDate(latestRunDate))}</span>
-        {previousRunDate ? (
-          <span className="opacity-70">
-            {" "}
-            · 1d vs <span className="font-mono">{formatDateISO(dataDateFromRunDate(previousRunDate))}</span>
-          </span>
-        ) : null}
-        {hasWeekAgoSnapshots && weekAgoRunDate ? (
-          <span className="opacity-70">
-            {" "}
-            · 7d vs <span className="font-mono">{formatDateISO(dataDateFromRunDate(weekAgoRunDate))}</span>
-          </span>
-        ) : null}
+        Latest data date: <span className="font-mono">{formatDateISO(latestDataDate)}</span>
       </>
     );
   }
