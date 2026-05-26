@@ -201,7 +201,7 @@ export async function listUserOwnedPlaylists(
   let truncated = false;
 
   while (path) {
-    const page = await spotifyFetch<SpotifyUserPlaylistsPage>(path);
+    const page: SpotifyUserPlaylistsPage = await spotifyFetch<SpotifyUserPlaylistsPage>(path);
     for (const item of page.items ?? []) {
       if (!item.id || !item.name) continue;
       if (item.owner?.id && item.owner.id !== ownerId) continue;
