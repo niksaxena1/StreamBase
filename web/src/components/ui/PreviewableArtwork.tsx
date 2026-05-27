@@ -14,6 +14,7 @@ export function PreviewableArtwork({
   width,
   height,
   className = "",
+  objectPosition = "50% 50%",
   label,
   interactive = "button",
   disabled = false,
@@ -23,6 +24,8 @@ export function PreviewableArtwork({
   width?: number;
   height?: number;
   className?: string;
+  /** Passed to `object-position` for cover crops (competitor label thumbs). */
+  objectPosition?: string;
   /** Accessible name for the preview control. */
   label?: string;
   /** Use `inline` inside other clickable rows (e.g. combobox options). */
@@ -42,12 +45,21 @@ export function PreviewableArtwork({
     openPreview(src);
   };
 
+  const imgStyle = { objectPosition };
+
   const visual =
     width != null && height != null ? (
-      <Image src={src} alt={alt} width={width} height={height} className={className} />
+      <Image
+        src={src}
+        alt={alt}
+        width={width}
+        height={height}
+        className={className}
+        style={imgStyle}
+      />
     ) : (
       // eslint-disable-next-line @next/next/no-img-element -- sized via className (tables, health lists)
-      <img src={src} alt={alt} className={className} />
+      <img src={src} alt={alt} className={className} style={imgStyle} />
     );
 
   if (interactive === "inline") {

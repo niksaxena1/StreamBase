@@ -82,7 +82,7 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
   if (shell.mode === "competitor") {
     return (
       <Suspense fallback={<CompetitorHealthSkeleton />}>
-        <CompetitorHealthSection />
+        <CompetitorHealthSection searchParams={sp} />
       </Suspense>
     );
   }

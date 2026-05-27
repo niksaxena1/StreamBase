@@ -1,6 +1,8 @@
 "use client";
 
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
+import { competitorLabelThumbObjectPosition } from "@/lib/competitorLabelThumbFit";
+import { cx } from "@/lib/cx";
 import Link from "next/link";
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
@@ -387,7 +389,15 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
                 alt={props.datasetMode === "competitor" ? `${props.title} cover` : "Playlist cover"}
                 width={40}
                 height={40}
-                className="h-10 w-10 rounded-lg object-cover sb-ring"
+                className={cx(
+                  "h-10 w-10 object-cover sb-ring",
+                  props.datasetMode === "competitor" ? "rounded-full" : "rounded-lg",
+                )}
+                objectPosition={
+                  props.datasetMode === "competitor"
+                    ? competitorLabelThumbObjectPosition(props.competitorLabelKey)
+                    : undefined
+                }
               />
             ) : props.playlistKey === "all_catalog" ? (
               <div

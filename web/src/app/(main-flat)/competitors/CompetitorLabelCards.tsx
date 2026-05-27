@@ -1,6 +1,7 @@
 "use client";
 
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
+import { competitorLabelThumbObjectPosition } from "@/lib/competitorLabelThumbFit";
 
 import type { LabelComparisonRow, PlaylistRow } from "./competitorsTypes";
 import {
@@ -124,7 +125,8 @@ export function CompetitorLabelCards({
                   alt={row.label.display_name}
                   width={32}
                   height={32}
-                  className="h-8 w-8 shrink-0 rounded-lg object-cover sb-ring"
+                  className="h-8 w-8 shrink-0 rounded-full object-cover sb-ring"
+                  objectPosition={competitorLabelThumbObjectPosition(row.label.label_key)}
                   label={row.label.display_name}
                 />
               ) : (

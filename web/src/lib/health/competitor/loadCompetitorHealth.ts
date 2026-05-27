@@ -1,6 +1,6 @@
 import { CACHE_TTL_1H } from "@/lib/constants";
 import { isAllCompetitorsKey } from "@/lib/competitorContext";
-import { addDaysISO, dataDateFromRunDate, runDateFromDataDate, SOT_DATA_LAG_DAYS } from "@/lib/sotDates";
+import { addDaysISO, dataDateFromRunDate, runDateFromDataDate } from "@/lib/sotDates";
 import { cachedQuery } from "@/lib/supabase/cache";
 import { supabaseService } from "@/lib/supabase/service";
 
@@ -163,6 +163,7 @@ function filterPlaylistRows(
   if (filter === "mismatch") return rows.filter((r) => r.row_mismatch);
   if (filter === "missing") return rows.filter((r) => r.missing_streams_track_count > 0);
   if (filter === "no_export") return rows.filter((r) => r.missing_export);
+  if (filter === "unenriched") return rows;
   return rows;
 }
 

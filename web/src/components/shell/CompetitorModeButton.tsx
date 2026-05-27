@@ -1,9 +1,7 @@
 "use client";
 
-import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, Loader2, Swords } from "lucide-react";
 
@@ -24,6 +22,7 @@ import {
   triggerRouteLoadingBarDone,
   triggerRouteLoadingBarStart,
 } from "@/lib/navigation/loadingBar";
+import { CompetitorLabelAvatar } from "@/components/ui/CompetitorLabelAvatar";
 
 type Label = {
   label_key: string;
@@ -46,27 +45,21 @@ function normalizeAccentHex(hex: string | null | undefined): string | null {
   return /^[0-9a-f]{6}$/.test(clean) ? clean : null;
 }
 
-/** Matches IconButton sm (`h-8 w-8` @ 14px root) with inset ring on the outer hit target. */
-const COMPETITOR_RING_PX = 1.5;
-/** Inner artwork: `h-6` @ 14px root — leaves ~2px between ring and thumbnail inside `h-8`. */
-const COMPETITOR_THUMB_PX = 21;
-
-function triggerRingStyle(
+function resolveTriggerRingHex(
   datasetMode: "own" | "competitor",
   showAllPill: boolean,
   accentHex: string | null,
   previewHex: string | null,
   menuOpen: boolean,
-): CSSProperties | undefined {
-  if (datasetMode !== "competitor") return undefined;
+): string | null {
+  if (datasetMode !== "competitor") return null;
   const hex =
     menuOpen && previewHex
       ? normalizeAccentHex(previewHex)
       : showAllPill
         ? ALL_COMPETITORS_ACCENT_HEX
         : normalizeAccentHex(accentHex);
-  if (!hex) return undefined;
-  return { boxShadow: `inset 0 0 0 ${COMPETITOR_RING_PX}px #${hex}` };
+  return hex ?? null;
 }
 
 export function CompetitorModeButton({
@@ -123,13 +116,14 @@ export function CompetitorModeButton({
     effectiveDatasetMode === "competitor" && isAllActive(effectiveDatasetMode, effectiveLabelKey);
 
   const accentHex = activeLabel?.accent_hex ?? null;
-  const triggerRing = triggerRingStyle(
+  const triggerRingHex = resolveTriggerRingHex(
     effectiveDatasetMode,
     showAllPill,
     accentHex,
     previewHex,
     open,
   );
+  const showCompetitorAvatar = effectiveDatasetMode === "competitor";
 
   const clearPreview = useCallback(() => setPreviewHex(null), []);
 
@@ -395,18 +389,12 @@ export function CompetitorModeButton({
                 }}
                 className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-black/5 dark:hover:bg-white/10"
               >
-                {label.image_url ? (
-                  <PreviewableArtwork
-                    src={label.image_url}
-                    alt={label.display_name}
-                    width={18}
-                    height={18}
-                    interactive="inline"
-                    className="h-[18px] w-[18px] shrink-0 rounded object-cover sb-ring"
-                  />
-                ) : (
-                  <span className="block h-[18px] w-[18px] shrink-0 rounded bg-fuchsia-500/15 sb-ring" />
-                )}
+                <CompetitorLabelAvatar
+                  size="xs"
+                  src={label.image_url}
+                  labelKey={label.label_key}
+                  variant={label.image_url ? "image" : "placeholder"}
+                />
                 <span className="min-w-0 flex-1 truncate">{label.display_name}</span>
                 {isActive ? <Check className="h-3.5 w-3.5 shrink-0 opacity-70" /> : null}
               </button>
@@ -432,10 +420,9 @@ export function CompetitorModeButton({
         onClick={() => setOpen((v) => !v)}
         onMouseEnter={() => datasetMode === "own" && setOwnHover(true)}
         onMouseLeave={() => setOwnHover(false)}
-        style={triggerRing}
         className={cx(
-          "relative inline-grid h-8 w-8 shrink-0 place-items-center rounded-full transition",
-          !(effectiveDatasetMode === "competitor" && triggerRing) && "sb-ring",
+          "relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full p-0 transition",
+          !showCompetitorAvatar && "sb-ring",
           "hover:bg-black/5 dark:hover:bg-white/10",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
         )}
@@ -445,27 +432,16 @@ export function CompetitorModeButton({
             className={cx("h-4 w-4 transition-opacity", ownHover ? "opacity-90" : "opacity-60")}
             style={{ color: "var(--sb-muted)" }}
           />
+        ) : showAllPill ? (
+          <CompetitorLabelAvatar size="sm" variant="all" ringHex={triggerRingHex} />
         ) : (
-          <span
-            className="grid shrink-0 place-items-center overflow-hidden rounded-full"
-            style={{ width: COMPETITOR_THUMB_PX, height: COMPETITOR_THUMB_PX }}
-          >
-            {showAllPill ? (
-              <span className="grid size-full place-items-center rounded-full bg-[var(--sb-accent-10)] text-[9px] font-semibold leading-none text-[var(--sb-accent-text,inherit)]">
-                All
-              </span>
-            ) : activeLabel?.image_url ? (
-              <Image
-                src={activeLabel.image_url}
-                alt=""
-                width={COMPETITOR_THUMB_PX}
-                height={COMPETITOR_THUMB_PX}
-                className="pointer-events-none block size-full rounded-full object-cover object-center"
-              />
-            ) : (
-              <span className="block size-full rounded-full bg-fuchsia-500/15" />
-            )}
-          </span>
+          <CompetitorLabelAvatar
+            size="sm"
+            src={activeLabel?.image_url}
+            labelKey={activeLabel?.label_key}
+            ringHex={triggerRingHex}
+            variant={activeLabel?.image_url ? "image" : "placeholder"}
+          />
         )}
       </button>
 

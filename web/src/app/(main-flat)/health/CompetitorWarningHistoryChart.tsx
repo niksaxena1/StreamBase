@@ -106,20 +106,11 @@ export function CompetitorWarningHistoryChart() {
       </div>
       <div className="h-[220px] w-full">
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart
-            data={chartData}
-            onClick={(state) => {
-              const payload = state?.activePayload?.[0]?.payload as { data_date?: string } | undefined;
-              if (payload?.data_date) handleBarClick(payload);
-            }}
-          >
+          <BarChart data={chartData}>
             <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
             <XAxis dataKey="label" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
             <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
-            <Tooltip
-              labelFormatter={(label) => `Data date ${label}`}
-              formatter={(value: number, name: string) => [value, name]}
-            />
+            <Tooltip labelFormatter={(label) => `Data date ${label}`} />
             <Legend wrapperStyle={{ fontSize: 10 }} />
             {codes.map((code, i) => (
               <Bar
@@ -128,6 +119,11 @@ export function CompetitorWarningHistoryChart() {
                 name={code}
                 stackId="warnings"
                 fill={FALLBACK_COLORS[i % FALLBACK_COLORS.length]}
+                className="cursor-pointer"
+                onClick={(row) => {
+                  const payload = row as { data_date?: string };
+                  if (payload?.data_date) handleBarClick(payload);
+                }}
               />
             ))}
           </BarChart>

@@ -63,7 +63,18 @@ Competitive intelligence cockpit. Use it to answer:
 - Which competitor is expanding their catalog fastest? (catalog churn)
 - How similar are competitor catalogs? (overlap matrix)
 
-For ingestion correctness (stale playlists, row mismatches, warnings, missing totals), use **/health** (Competitor Health).
+For ingestion correctness, use **/health** in Competitor Mode. The page supports:
+
+- **Run scoping:** data-date and label selectors (`?date=`, `?label=`).
+- **KPI filters:** stale playlists, row mismatches, missing totals, missing exports, unenriched tracks (`?filter=`).
+- **Pipeline status:** per-stage rollup for the selected run.
+- **Label summary:** distinct track counts per label (de-duplicated by ISRC).
+- **Playlist checks:** stale/mismatch/export flags with raw export links.
+- **Warnings:** paginated, severity filter, expandable rows, 30-day history chart (`/api/competitor-health-history`).
+- **Unenriched tracks:** paginated drill-down (`?enrich_page=`).
+- **Config drift:** compares `config/competitor_playlists.csv` to `competitor.playlists`.
+
+SQL: `migrations/add_competitor_health_enhancements.sql` (distinct track RPC, unenriched paging, warning history MV).
 
 ## Intentional omissions
 
