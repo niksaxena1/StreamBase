@@ -238,6 +238,16 @@ def parse_stream_value(raw: object) -> Optional[int]:
         return None
 
 
+def parse_release_date(raw: object) -> Optional[str]:
+    s = str(raw or "").strip()
+    if not s:
+        return None
+    try:
+        return date.fromisoformat(s).isoformat()
+    except ValueError:
+        return None
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default="config/competitor_playlists.csv")
@@ -310,7 +320,7 @@ def main():
             all_track_rows[isrc] = {
                 "isrc": isrc,
                 "name": (row.get("name") or "").strip() or None,
-                "release_date": (row.get("release_date") or "").strip() or None,
+                "release_date": parse_release_date(row.get("release_date")),
                 "first_seen": run_date.isoformat(),
                 "last_seen": run_date.isoformat(),
             }

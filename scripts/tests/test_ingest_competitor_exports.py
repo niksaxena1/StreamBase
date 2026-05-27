@@ -6,6 +6,7 @@ from scripts.ingest_competitor_exports_to_supabase import (
     COMPETITOR_TABLES,
     build_playlist_stats_row,
     load_playlists_csv,
+    parse_release_date,
 )
 
 
@@ -50,6 +51,13 @@ class CompetitorIngestTests(unittest.TestCase):
         self.assertEqual(row["daily_streams_net"], 150)
         self.assertEqual(row["missing_streams_track_count"], 1)
         self.assertEqual(row["source_run_id"], 7)
+
+    def test_parse_release_date_keeps_valid_iso_dates(self):
+        self.assertEqual(parse_release_date("2026-05-27"), "2026-05-27")
+
+    def test_parse_release_date_drops_invalid_source_placeholders(self):
+        self.assertIsNone(parse_release_date("0000-01-01"))
+        self.assertIsNone(parse_release_date(""))
 
 
 if __name__ == "__main__":
