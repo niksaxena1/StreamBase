@@ -61,3 +61,30 @@ npx eslint "src/app/(main-flat)/competitors/page.tsx"
 ```
 
 If touching Supabase SQL, update the corresponding docs and leave migration filenames descriptive enough that future agents can reconstruct the rollout order.
+
+## Supabase Data API Grants
+
+Supabase is changing Data API defaults in 2026:
+
+- May 30, 2026: new Supabase projects no longer expose new `public` tables to the Data API by default.
+- October 30, 2026: the same behavior applies to existing projects.
+
+When adding a migration that creates a table in the `public` schema, include explicit grants for the roles that should access it through `supabase-js`, PostgREST, or GraphQL. RLS policies are still required for row/action-level authorization, but RLS alone does not make the table reachable through the Data API.
+
+Use the narrowest grants that match the feature. Prefer `authenticated` for application users, `service_role` for backend-only operations, and only grant `anon` when unauthenticated access is intentionally needed.
+
+Example:
+
+```sql
+create table if not exists public.example_table (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now()
+);
+
+alter table public.example_table enable row level security;
+
+grant select, insert, update, delete on public.example_table to authenticated;
+grant all on public.example_table to service_role;
+```
+
+Before broad Supabase schema changes, also check Supabase Security Advisor and review Data API exposure/grants.

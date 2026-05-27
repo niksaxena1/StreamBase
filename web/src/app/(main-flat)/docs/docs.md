@@ -303,6 +303,20 @@ So the pattern in `(main-flat)` pages is:
 2) Verify admin capability (`sb.rpc("is_admin")`), otherwise redirect away
 3) Read analytics using `supabaseService()` + `cachedQuery()`
 
+### Raw analytics tables vs public integration views
+
+Raw own-catalog analytics tables are not a public API surface. Tables such as
+`track_daily_streams`, its monthly partitions, `artist_daily_stats`,
+`track_daily_stream_overrides`, `isrc_aliases`, and health exclusion tables have
+RLS enabled and no direct `anon` access.
+
+Ledgenta and other cross-project consumers must read only the column-limited
+`*_public` views, for example `track_daily_streams_effective_public`,
+`tracks_public`, `playlist_memberships_public`, `playlists_public`,
+`playlist_daily_stats_public`, `playlists_with_latest_stats_public`, and
+`collector_daily_agg_public`. Keep those views read-only (`SELECT` only) unless a
+new integration contract explicitly requires more.
+
 ### Environment variables (web app)
 
 Defined in `web/env.example`:

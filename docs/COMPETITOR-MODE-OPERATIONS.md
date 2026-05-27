@@ -27,16 +27,17 @@ Competitor data lives in the `competitor` schema. It must never be written into 
 - `SOT Competitor Daily Export`
 - `Spotify competitor enrichment`
 
-The three SpotOnTrack workflows use `config/competitor_playlists.csv`.
+The three SpotOnTrack workflows use `config/competitor_playlists.csv`. The Spotify competitor enrichment workflow also refreshes missing `competitor.playlists.spotify_playlist_image_url` values before track enrichment.
 
 ## First-run checklist
 
 1. Run the competitor playlist refresh workflow.
 2. Run the competitor dashboard sync workflow to populate the SpotOnTrack dashboard.
 3. Run the competitor export workflow.
-4. Run the Spotify competitor enrichment workflow.
-5. Switch Settings ? Dataset ? Competitor Mode.
-6. Verify the competitor appears under `/competitors`, Playlists, Catalog, Home, and Search.
+4. Run the Spotify competitor enrichment workflow to fill track metadata and playlist thumbnails.
+5. Run `cd web && npm run extract-competitor-accents -- --force` if adding a new label or changing playlist artwork.
+6. Switch Settings ? Dataset ? Competitor Mode.
+7. Verify the competitor appears under `/competitors`, Playlists, Catalog, Home, and Search.
 
 ## UI surfaces
 
@@ -50,7 +51,8 @@ The three SpotOnTrack workflows use `config/competitor_playlists.csv`.
 1. Add the label + playlist rows in a migration.
 2. Add the playlist to `config/competitor_playlists.csv`.
 3. Run refresh ? dashboard sync ? export ? Spotify enrichment.
-4. Verify `/competitors` and the global competitor selector.
+4. Run `cd web && npm run extract-competitor-accents -- --force` for new labels.
+5. Verify `/competitors` and the global competitor selector.
 
 ## What the `/competitors` page is for
 
