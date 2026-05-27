@@ -2,11 +2,11 @@ name: SOT Daily Dashboard Sync
 
 on:
   schedule:
-    # Run before the export workflow (export is 07:30 UTC).
-    # Two schedules for redundancy: if the first is missed or blocked, the
-    # fallback 30 min later gets a second chance.
-    - cron: "0 6 * * *"
-    - cron: "30 6 * * *"
+    # Run before the export workflow (first export is 07:43 UTC).
+    # Two off-hour schedules for redundancy: if the first is missed or blocked,
+    # the fallback gets a second chance without clustering on :00/:30.
+    - cron: "11 6 * * *"
+    - cron: "47 6 * * *"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -23,6 +23,10 @@ on:
         description: "Run only first N tasks (for testing)"
         required: false
         type: string
+
+concurrency:
+  group: sot-own-dashboard-sync
+  cancel-in-progress: false
 
 jobs:
   sync:

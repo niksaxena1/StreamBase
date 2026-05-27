@@ -2,7 +2,8 @@ name: SOT Competitor Daily Playlist Refresh
 
 on:
   schedule:
-    - cron: "15 5 * * *"
+    # 09:23 Dubai (GST, UTC+4) == 05:23 UTC
+    - cron: "23 5 * * *"
   workflow_dispatch:
     inputs:
       dry_run:

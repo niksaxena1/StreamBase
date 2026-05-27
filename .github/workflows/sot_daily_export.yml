@@ -6,10 +6,12 @@ permissions:
 
 on:
   schedule:
-    # Primary run + a 1h-later fallback to reduce missed schedules.
+    # Primary run + fallbacks to reduce missed schedules.
     # Idempotency is enforced via a Supabase pre-check (see steps below).
-    - cron: "30 7 * * *" # 07:30 UTC daily
-    - cron: "30 8 * * *" # 08:30 UTC daily (fallback)
+    - cron: "43 7 * * *" # 11:43 Dubai / 07:43 UTC daily
+    - cron: "19 8 * * *" # 12:19 Dubai / 08:19 UTC fallback
+    - cron: "23 11 * * *" # 15:23 Dubai / 11:23 UTC late retry
+    - cron: "7 12 * * *" # 16:07 Dubai / 12:07 UTC final retry
   workflow_dispatch:
     inputs:
       run_date:
@@ -31,6 +33,10 @@ jobs:
   export:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+
+    concurrency:
+      group: sot-own-export
+      cancel-in-progress: false
 
     steps:
       - uses: actions/checkout@v4

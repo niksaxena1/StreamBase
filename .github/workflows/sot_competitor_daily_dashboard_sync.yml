@@ -2,8 +2,9 @@ name: SOT Competitor Daily Dashboard Sync
 
 on:
   schedule:
-    - cron: "15 6 * * *"
-    - cron: "45 6 * * *"
+    # After Own Catalog sync/export windows to avoid shared SpotOnTrack pressure.
+    - cron: "53 8 * * *"
+    - cron: "29 9 * * *"
   workflow_dispatch:
     inputs:
       dry_run:

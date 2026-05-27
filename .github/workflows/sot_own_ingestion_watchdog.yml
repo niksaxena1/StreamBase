@@ -1,0 +1,106 @@
+name: SOT Own Catalog Ingestion Watchdog
+
+permissions:
+  contents: read
+
+on:
+  schedule:
+    # 17:53 Dubai (GST, UTC+4) == 13:53 UTC, after all Own Catalog export retries.
+    - cron: "53 13 * * *"
+  workflow_dispatch:
+    inputs:
+      run_date:
+        description: "Override run date (YYYY-MM-DD). Default: UTC today"
+        required: false
+        type: string
+
+concurrency:
+  group: sot-own-ingestion-watchdog
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute run date
+        id: run_date
+        shell: bash
+        run: |
+          RUN_DATE="${{ github.event.inputs.run_date }}"
+          if [ -z "$RUN_DATE" ]; then RUN_DATE=$(date -u +'%Y-%m-%d'); fi
+          echo "run_date=$RUN_DATE" >> "$GITHUB_OUTPUT"
+
+      - name: Check Own Catalog ingestion
+        id: check
+        shell: bash
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          RUN_DATE="${{ steps.run_date.outputs.run_date }}"
+          SHOULD_NOTIFY="false"
+          SUBJECT="[StreamBase] Own Catalog ingestion missing for ${RUN_DATE}"
+          STATUS="missing"
+          RUN_ID=""
+          SNAPSHOT_COUNT="0"
+          STATS_COUNT="0"
+
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            SHOULD_NOTIFY="true"
+            SUBJECT="[StreamBase] Own Catalog watchdog cannot check Supabase"
+            STATUS="missing_supabase_credentials"
+          else
+            BASE="${SUPABASE_URL%/}/rest/v1"
+            AUTH_HEADERS=(-H "apikey: $SUPABASE_SERVICE_ROLE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY")
+
+            RUN_JSON=$(curl -sS "${AUTH_HEADERS[@]}" \
+              "$BASE/ingestion_runs?select=id,status,logs_url,created_at&run_date=eq.${RUN_DATE}&order=created_at.desc&limit=1" || echo "[]")
+
+            STATUS=$(python3 -c "import json,sys; d=json.loads(sys.argv[1] or '[]'); print((d[0].get('status') if d else 'missing') or 'missing')" "$RUN_JSON")
+            RUN_ID=$(python3 -c "import json,sys; d=json.loads(sys.argv[1] or '[]'); print((d[0].get('id') if d else '') or '')" "$RUN_JSON")
+            LOGS_URL=$(python3 -c "import json,sys; d=json.loads(sys.argv[1] or '[]'); print((d[0].get('logs_url') if d else '') or '')" "$RUN_JSON")
+
+            SNAPSHOT_RANGE=$(curl -sSI "${AUTH_HEADERS[@]}" -H "Prefer: count=exact" \
+              "$BASE/track_daily_streams?select=isrc&date=eq.${RUN_DATE}" | tr -d '\r' | awk -F'/' 'tolower($0) ~ /^content-range:/ {print $2}' | tail -1)
+            STATS_RANGE=$(curl -sSI "${AUTH_HEADERS[@]}" -H "Prefer: count=exact" \
+              "$BASE/playlist_daily_stats?select=playlist_key&date=eq.${RUN_DATE}" | tr -d '\r' | awk -F'/' 'tolower($0) ~ /^content-range:/ {print $2}' | tail -1)
+            SNAPSHOT_COUNT="${SNAPSHOT_RANGE:-0}"
+            STATS_COUNT="${STATS_RANGE:-0}"
+
+            if [ "$STATUS" != "success" ] || [ "$SNAPSHOT_COUNT" = "0" ] || [ "$STATS_COUNT" = "0" ]; then
+              SHOULD_NOTIFY="true"
+              SUBJECT="[StreamBase] Own Catalog ingestion incomplete for ${RUN_DATE}"
+            fi
+          fi
+
+          echo "should_notify=$SHOULD_NOTIFY" >> "$GITHUB_OUTPUT"
+          echo "subject=$SUBJECT" >> "$GITHUB_OUTPUT"
+          {
+            echo 'body<<ENDOFBODY'
+            echo "Own Catalog ingestion watchdog result for ${RUN_DATE}:"
+            echo ""
+            echo "  ingestion_runs.status: ${STATUS}"
+            echo "  ingestion_runs.id: ${RUN_ID:-none}"
+            echo "  track_daily_streams rows: ${SNAPSHOT_COUNT}"
+            echo "  playlist_daily_stats rows: ${STATS_COUNT}"
+            echo ""
+            echo "Expected: status=success, non-zero catalog snapshots, non-zero playlist stats."
+            echo ""
+            if [ -n "${LOGS_URL:-}" ]; then
+              echo "Ingestion run logs: ${LOGS_URL}"
+            fi
+            echo "Watchdog run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo 'ENDOFBODY'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Send notification email
+        if: steps.check.outputs.should_notify == 'true'
+        uses: ./.github/actions/notify-email
+        with:
+          password: ${{ secrets.NOTIFY_SMTP_PASSWORD }}
+          subject: ${{ steps.check.outputs.subject }}
+          body: ${{ steps.check.outputs.body }}

@@ -2,8 +2,8 @@ name: SOT Daily Playlist Refresh
 
 on:
   schedule:
-    # 09:00 Abu Dhabi (GST, UTC+4) == 05:00 UTC
-    - cron: "0 5 * * *"
+    # 09:07 Dubai (GST, UTC+4) == 05:07 UTC
+    - cron: "7 5 * * *"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -15,6 +15,10 @@ on:
         description: "Run only first N playlists (for testing)"
         required: false
         type: string
+
+concurrency:
+  group: sot-own-refresh
+  cancel-in-progress: false
 
 jobs:
   refresh:

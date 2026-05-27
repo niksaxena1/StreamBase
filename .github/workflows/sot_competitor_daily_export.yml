@@ -6,12 +6,12 @@ permissions:
 
 on:
   schedule:
-    - cron: "0 8 * * *"
-    - cron: "0 9 * * *"
+    - cron: "11 10 * * *"
+    - cron: "47 10 * * *"
     # Late retries cover GitHub schedule delays and dashboard syncs that finish
     # after the early export windows.
-    - cron: "15 11 * * *"
-    - cron: "15 12 * * *"
+    - cron: "43 12 * * *"
+    - cron: "17 13 * * *"
   workflow_dispatch:
     inputs:
       run_date:

@@ -12,8 +12,8 @@ on:
         required: false
         default: "false"
   schedule:
-    # 08:30 UTC daily
-    - cron: "30 8 * * *"
+    # 19:11 Dubai / 15:11 UTC daily
+    - cron: "11 15 * * *"
 
 concurrency:
   group: spotify-playlist-watch-daily
