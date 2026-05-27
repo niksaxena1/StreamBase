@@ -3,11 +3,17 @@
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 
-const COMPETITOR_TITLE_SUFFIX_RE = /\s(?:\u00b7|[-\u2014])\s.+?\s\|\sStreamBase$/;
-const APP_TITLE_SUFFIX_RE = /\s\|\sStreamBase$/;
+/** Legacy suffix from older title templates. */
+const LEGACY_STREAMBASE_SUFFIX_RE = /\s\|\sStreamBase$/;
+/** Competitor label suffix (`· Label` or `· Competitors`). */
+const COMPETITOR_TITLE_SUFFIX_RE = /\s(?:\u00b7|[-\u2014])\s.+$/;
 
 function baseTitle(title: string) {
-  return title.replace(COMPETITOR_TITLE_SUFFIX_RE, "").replace(APP_TITLE_SUFFIX_RE, "").trim() || "StreamBase";
+  return title
+    .replace(LEGACY_STREAMBASE_SUFFIX_RE, "")
+    .replace(COMPETITOR_TITLE_SUFFIX_RE, "")
+    .replace(LEGACY_STREAMBASE_SUFFIX_RE, "")
+    .trim() || "StreamBase";
 }
 
 export function CompetitorTitleEffect({
@@ -24,10 +30,8 @@ export function CompetitorTitleEffect({
       const title = baseTitle(document.title);
       const nextTitle =
         datasetMode !== "competitor"
-          ? title === "StreamBase"
-            ? title
-            : `${title} | StreamBase`
-          : `${title} \u00b7 ${competitorDisplayName ?? "Competitors"} | StreamBase`;
+          ? title
+          : `${title} \u00b7 ${competitorDisplayName ?? "Competitors"}`;
 
       if (document.title !== nextTitle) {
         document.title = nextTitle;

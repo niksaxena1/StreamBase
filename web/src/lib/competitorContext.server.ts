@@ -51,9 +51,9 @@ async function loadCompetitorLabelsWithImages(): Promise<CompetitorLabelWithImag
 }
 
 function buildTitleTemplate(datasetMode: DatasetMode, displayName: string | null): string {
-  if (datasetMode !== "competitor") return "%s | StreamBase";
-  if (displayName) return `%s · ${displayName} | StreamBase`;
-  return "%s · Competitors | StreamBase";
+  if (datasetMode !== "competitor") return "%s";
+  if (displayName) return `%s · ${displayName}`;
+  return "%s · Competitors";
 }
 
 export async function getCompetitorShellContext(): Promise<CompetitorShellContext> {
@@ -68,7 +68,7 @@ export async function getCompetitorShellContext(): Promise<CompetitorShellContex
       competitorLabelKey: null,
       competitorAccentHex: null,
       competitorDisplayName: null,
-      titleTemplate: "%s | StreamBase",
+      titleTemplate: "%s",
     };
   }
 

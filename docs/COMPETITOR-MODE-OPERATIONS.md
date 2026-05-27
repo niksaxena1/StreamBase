@@ -6,7 +6,13 @@
 |---|---|---|---:|---:|
 | Para?so | `paraiso_releases` | `2RGHAxvb8iosGgP6pd7GFK` | `8948445` | `8609` |
 | Soave | `soave_releases` | `6DxYxhfXDnLeaNWHJvHPTu` | `3671138` | `8628` |
+| Soave | `soave_dusk_records_releases` | `5AQjRSZARLXzymYlDsDwW0` | `7405352` | `8950` |
+| Soave | `soave_radio_releases` | `0WZOHZmfxXX5kTELccugyc` | `5156334` | `8951` |
+| Soave | `soave_lofi_releases` | `3j0rbud0hqVC9ZnoV8SPWv` | `7726542` | `8952` |
+| Soave | `soave_day_night_records_releases` | `0JkD59thdDkaXd9gaXZSqc` | `10712039` | `8953` |
+| Soave | `soave_blaaktrax_releases` | `0kADH0u3ejdnaUpRg57q2K` | `17632814` | `8954` |
 | ChillYourMind | `chillyourmind_releases` | `3qExK19cdWKJ5RmCTKzwiy` | `8887309` | `8629` |
+| selected. | `selected_releases` | `6QgHdyoJ49khJQ7ZKpEHOi` | `203886` | `8955` |
 
 ## Isolation rule
 

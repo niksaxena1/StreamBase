@@ -1,4 +1,10 @@
 ﻿playlist_key,display_name,label_key,is_catalog,playlist_type,dashboard_url,sot_playlist_id,sot_dashboard_name,min_rows
 paraiso_releases,Paraíso Releases,paraiso,true,Competitor,https://www.spotontrack.com/dashboard/8609,8948445,Paraíso Releases,1
 soave_releases,Soave Releases,soave,true,Competitor,https://www.spotontrack.com/dashboard/8628,3671138,Soave Records Releases,1
+soave_dusk_records_releases,Dusk Records Releases,soave,true,Competitor,https://www.spotontrack.com/dashboard/8950,7405352,Dusk Records Releases,1
+soave_radio_releases,Soave Radio Releases,soave,true,Competitor,https://www.spotontrack.com/dashboard/8951,5156334,Soave Radio Releases,1
+soave_lofi_releases,Soave Lofi Releases,soave,true,Competitor,https://www.spotontrack.com/dashboard/8952,7726542,soave lofi releases,1
+soave_day_night_records_releases,Day & Night Records Releases,soave,true,Competitor,https://www.spotontrack.com/dashboard/8953,10712039,Day & Night Records Releases,1
+soave_blaaktrax_releases,Blaaktrax Releases,soave,true,Competitor,https://www.spotontrack.com/dashboard/8954,17632814,Blaaktrax Releases,1
 chillyourmind_releases,ChillYourMind Releases,chillyourmind,true,Competitor,https://www.spotontrack.com/dashboard/8629,8887309,ChillYourMind New Official Releases,1
+selected_releases,selected. Releases,selected,true,Competitor,https://www.spotontrack.com/dashboard/8955,203886,selected. Releases,1
