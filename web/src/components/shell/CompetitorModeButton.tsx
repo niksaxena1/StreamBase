@@ -46,6 +46,11 @@ function normalizeAccentHex(hex: string | null | undefined): string | null {
   return /^[0-9a-f]{6}$/.test(clean) ? clean : null;
 }
 
+/** Matches IconButton sm (`h-8 w-8` @ 14px root) with inset ring on the outer hit target. */
+const COMPETITOR_RING_PX = 1.5;
+/** Inner artwork: `h-6` @ 14px root — leaves ~2px between ring and thumbnail inside `h-8`. */
+const COMPETITOR_THUMB_PX = 21;
+
 function triggerRingStyle(
   datasetMode: "own" | "competitor",
   showAllPill: boolean,
@@ -61,7 +66,7 @@ function triggerRingStyle(
         ? ALL_COMPETITORS_ACCENT_HEX
         : normalizeAccentHex(accentHex);
   if (!hex) return undefined;
-  return { boxShadow: `inset 0 0 0 1.5px #${hex}` };
+  return { boxShadow: `inset 0 0 0 ${COMPETITOR_RING_PX}px #${hex}` };
 }
 
 export function CompetitorModeButton({
@@ -429,7 +434,7 @@ export function CompetitorModeButton({
         onMouseLeave={() => setOwnHover(false)}
         style={triggerRing}
         className={cx(
-          "relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition",
+          "relative inline-grid h-8 w-8 shrink-0 place-items-center rounded-full transition",
           !(effectiveDatasetMode === "competitor" && triggerRing) && "sb-ring",
           "hover:bg-black/5 dark:hover:bg-white/10",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
@@ -440,20 +445,27 @@ export function CompetitorModeButton({
             className={cx("h-4 w-4 transition-opacity", ownHover ? "opacity-90" : "opacity-60")}
             style={{ color: "var(--sb-muted)" }}
           />
-        ) : showAllPill ? (
-          <span className="grid h-6 w-6 place-items-center rounded-full bg-[var(--sb-accent-10)] text-[9px] font-semibold text-[var(--sb-accent-text,inherit)]">
-            All
-          </span>
-        ) : activeLabel?.image_url ? (
-          <Image
-            src={activeLabel.image_url}
-            alt=""
-            width={24}
-            height={24}
-            className="pointer-events-none h-6 w-6 rounded-full object-cover"
-          />
         ) : (
-          <span className="block h-6 w-6 rounded-full bg-fuchsia-500/15" />
+          <span
+            className="grid shrink-0 place-items-center overflow-hidden rounded-full"
+            style={{ width: COMPETITOR_THUMB_PX, height: COMPETITOR_THUMB_PX }}
+          >
+            {showAllPill ? (
+              <span className="grid size-full place-items-center rounded-full bg-[var(--sb-accent-10)] text-[9px] font-semibold leading-none text-[var(--sb-accent-text,inherit)]">
+                All
+              </span>
+            ) : activeLabel?.image_url ? (
+              <Image
+                src={activeLabel.image_url}
+                alt=""
+                width={COMPETITOR_THUMB_PX}
+                height={COMPETITOR_THUMB_PX}
+                className="pointer-events-none block size-full rounded-full object-cover object-center"
+              />
+            ) : (
+              <span className="block size-full rounded-full bg-fuchsia-500/15" />
+            )}
+          </span>
         )}
       </button>
 
@@ -462,7 +474,7 @@ export function CompetitorModeButton({
           aria-hidden="true"
           className="pointer-events-none absolute inset-0 grid place-items-center rounded-full bg-black/20 dark:bg-black/40"
         >
-          <Loader2 className="h-3.5 w-3.5 animate-spin text-white" />
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-black/70 dark:text-white" />
         </span>
       ) : null}
 

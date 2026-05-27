@@ -527,7 +527,7 @@ export function SearchBar({ datasetMode = "own" }: { datasetMode?: DatasetMode }
                       className="ml-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
                       style={{
                         background: isActive ? "var(--sb-accent)" : "var(--sb-border)",
-                        color: isActive ? "#000" : "var(--sb-muted)",
+                        color: isActive ? "var(--sb-accent-text,#000)" : "var(--sb-muted)",
                       }}
                     >
                       {count}

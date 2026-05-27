@@ -80,9 +80,10 @@ export function InteractiveChartSection({
   // Use theme-aware chart color if none specified
   const themeColors = useThemeColors();
   const chartMetric = inferChartMetricFromLabels(valueFormat, dailyValueLabel);
-  const effectiveColor = color ?? getChartColor(chartMetric, themeColors);
+  const effectiveColor =
+    color ?? (statAccentColor && chartMetric === "streams" ? statAccentColor : getChartColor(chartMetric, themeColors));
   const statRingColor = statAccentColor ?? accentColor;
-  const sparklineColor = color ?? getChartColor(chartMetric, themeColors);
+  const sparklineColor = effectiveColor;
 
   const dailyFiltered = useMemo(
     () => downsampleSeries(filterDailySeriesFromIsoDate(dailyStreamsData ?? [], chartStartDateIso)),

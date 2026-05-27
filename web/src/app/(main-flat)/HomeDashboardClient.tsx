@@ -381,21 +381,21 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <div className="flex items-center gap-3">
-            {props.playlistKey === "all_catalog" ? (
+            {props.playlistImageUrl ? (
+              <PreviewableArtwork
+                src={props.playlistImageUrl}
+                alt={props.datasetMode === "competitor" ? `${props.title} cover` : "Playlist cover"}
+                width={40}
+                height={40}
+                className="h-10 w-10 rounded-lg object-cover sb-ring"
+              />
+            ) : props.playlistKey === "all_catalog" ? (
               <div
                 className="sb-ring flex h-10 w-10 items-center justify-center rounded-lg"
                 style={{ background: "var(--sb-accent)" }}
               >
                 <Music className="h-5 w-5" style={{ color: "black" }} />
               </div>
-            ) : props.playlistImageUrl ? (
-              <PreviewableArtwork
-                src={props.playlistImageUrl}
-                alt="Playlist cover"
-                width={40}
-                height={40}
-                className="h-10 w-10 rounded-lg object-cover sb-ring"
-              />
             ) : (
               <div className="h-10 w-10 rounded-lg sb-ring bg-white/60" />
             )}
@@ -544,6 +544,7 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
         trackScatterErrorMessage={effectiveScatterState.errorMessage}
         trackScatterLoading={effectiveScatterState.loading}
         insufficientHistory={props.datasetMode === "competitor" && !hasTrendHistory}
+        datasetMode={props.datasetMode}
       />
 
       <HomeMilestonesSection trackScatterPoints={effectiveScatterState.points} />
@@ -552,11 +553,13 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
         <HomeDailyDistributionSection trackScatterPoints={effectiveScatterState.points} />
       ) : null}
 
-      {props.datasetMode === "own" ? (
+      {(props.datasetMode === "own" || props.datasetMode === "competitor") && (
         <HomeNegativeStreamsSection negativeDailyStreams={props.negativeDailyStreams} />
-      ) : null}
+      )}
 
-      {props.datasetMode === "own" && homeSpikesSectionConfigured && homeSpikesSectionEnabled ? (
+      {(props.datasetMode === "own" || props.datasetMode === "competitor") &&
+      homeSpikesSectionConfigured &&
+      homeSpikesSectionEnabled ? (
         <HomeArtificialStreamsSection
           artificialStreamSpikes={props.artificialStreamSpikes}
           artificialStreamSpikeRatio={props.artificialStreamSpikeRatio}
@@ -564,10 +567,11 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
           artificialIncludeWeekends={props.artificialIncludeWeekends}
           artificialSpikeDateStart={props.artificialSpikeDateStart}
           artificialSpikeDateEnd={props.artificialSpikeDateEnd}
+          datasetMode={props.datasetMode}
         />
       ) : null}
 
-      {props.datasetMode === "own" ? (
+      {(props.datasetMode === "own" || (props.datasetMode === "competitor" && hasTrendHistory)) ? (
         <HomeWeekendDipsSection
           artistWeekendDips={props.artistWeekendDips}
           trackWeekendDips={props.trackWeekendDips}

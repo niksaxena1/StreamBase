@@ -87,7 +87,7 @@ export function sumLabelAtDataDate(
   playlistKeys: string[],
   dataDate: string | null,
   statsByDataDate: Map<string, Map<string, PlaylistStatSnapshot>>,
-  field: "track_count" | "daily_streams_net",
+  field: "track_count" | "daily_streams_net" | "total_streams_cumulative",
 ): number | null {
   if (!dataDate) return null;
   const byPlaylist = statsByDataDate.get(dataDate);
@@ -189,6 +189,8 @@ export function buildLabelComparisonRows(args: {
     const keys = labelPlaylists.map((p) => p.playlist_key);
     const trackCount = sumLabelAtDataDate(keys, latestDataDate, statsByDataDate, "track_count") ?? 0;
     const previousTrackCount = sumLabelAtDataDate(keys, previousDataDate, statsByDataDate, "track_count");
+    const totalStreams =
+      sumLabelAtDataDate(keys, latestDataDate, statsByDataDate, "total_streams_cumulative") ?? 0;
     const dailyStreams = sumLabelAtDataDate(keys, latestDataDate, statsByDataDate, "daily_streams_net") ?? 0;
     const previousDailyStreams = sumLabelAtDataDate(keys, previousDataDate, statsByDataDate, "daily_streams_net");
     const weekAgoTrackCount = sumLabelAtDataDate(keys, weekAgoDataDate, statsByDataDate, "track_count");
@@ -219,6 +221,7 @@ export function buildLabelComparisonRows(args: {
       playlistCount: labelPlaylists.length,
       trackCount,
       artistCount,
+      totalStreams,
       dailyStreams,
       dailyMa7,
       dailyYesterday,

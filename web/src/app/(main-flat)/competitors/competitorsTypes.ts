@@ -30,6 +30,7 @@ export type LabelComparisonRow = {
   playlistCount: number;
   trackCount: number;
   artistCount: number;
+  totalStreams: number;
   dailyStreams: number;
   dailyMa7: number | null;
   dailyYesterday: number | null;
@@ -69,9 +70,16 @@ export type OverlapCell = {
   jaccard: number;
 };
 
+export type OverlapTrackRow = {
+  isrc: string;
+  name: string;
+  album_image_url: string | null;
+  artist_names: string[] | null;
+};
+
 export const COMPETITORS_COMPARISON_STORAGE = {
   labels: "sb:competitors:comparison:labels",
   mode: "sb:competitors:comparison:mode",
 } as const;
 
-export type MoverFilter = "all" | "shared" | "exclusive";
+export type MoverFilter = "all" | "selected";

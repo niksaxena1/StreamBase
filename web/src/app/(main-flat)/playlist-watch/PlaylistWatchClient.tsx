@@ -754,7 +754,7 @@ export function PlaylistWatchClient({
             className="sb-ring inline-flex h-9 shrink-0 items-center gap-2 rounded-lg px-3.5 text-sm font-semibold transition hover:opacity-90 focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] disabled:opacity-40"
             style={{
               background: "var(--sb-accent)",
-              color: "#000",
+              color: "var(--sb-accent-text,#000)",
               boxShadow: "var(--sb-shadow-compact)",
             }}
           >
@@ -1505,7 +1505,7 @@ export function PlaylistWatchClient({
                 type="submit"
                 disabled={busyKey === "alert-save"}
                 className="sb-ring inline-flex h-9 items-center gap-2 rounded-lg px-3 text-sm font-semibold transition hover:opacity-90 disabled:opacity-40"
-                style={{ background: "var(--sb-accent)", color: "#000" }}
+                style={{ background: "var(--sb-accent)", color: "var(--sb-accent-text,#000)" }}
               >
                 <Bell className="h-4 w-4" />
                 {busyKey === "alert-save" ? "Saving..." : "Save alert"}
@@ -1755,7 +1755,7 @@ export function PlaylistWatchClient({
                             className="sb-ring inline-flex h-8 items-center gap-1 rounded-lg px-2.5 text-xs font-semibold transition hover:opacity-90 disabled:opacity-40"
                             style={{
                               background: "var(--sb-accent)",
-                              color: "#000",
+                              color: "var(--sb-accent-text,#000)",
                             }}
                           >
                             <Plus className="h-3.5 w-3.5" aria-hidden />

@@ -3,7 +3,11 @@
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 
 import type { LabelComparisonRow, PlaylistRow } from "./competitorsTypes";
-import { formatStreamMetricDelta, streamMetricDeltaColor, useCompetitorStreamMetric } from "./competitorStreamMetric";
+import {
+  formatStreamMetricDelta,
+  streamMetricDeltaColor,
+  useCompetitorStreamMetric,
+} from "./competitorStreamMetric";
 import { labelSummaryCardStyle } from "./competitorsUtils";
 import { formatInt } from "@/lib/format";
 
@@ -17,78 +21,74 @@ function DeltaLine({
   delta: number;
   periodLabel: string;
   title: string;
-  useStreamMetricScale: boolean;
-  streamMetric: ReturnType<typeof useCompetitorStreamMetric>;
+  useStreamMetricScale?: boolean;
+  streamMetric?: ReturnType<typeof useCompetitorStreamMetric>;
 }) {
   const countMetric = "streams" as const;
-  const displayMetric = useStreamMetricScale ? streamMetric.displayMetric : countMetric;
-  const scaled = useStreamMetricScale ? streamMetric.scale(delta) : delta;
-  const deltaLabel = formatStreamMetricDelta(useStreamMetricScale ? scaled : delta, displayMetric);
+  const displayMetric =
+    useStreamMetricScale && streamMetric ? streamMetric.displayMetric : countMetric;
+  const scaled =
+    useStreamMetricScale && streamMetric ? streamMetric.scale(delta) : delta;
+  const deltaLabel = formatStreamMetricDelta(
+    useStreamMetricScale && streamMetric ? scaled : delta,
+    displayMetric,
+  );
   if (!deltaLabel) return null;
   return (
     <div
-      className="flex items-baseline gap-1 font-mono text-[10px] tabular-nums"
+      className="flex flex-wrap items-baseline gap-x-1 gap-y-0 font-mono text-[10px] tabular-nums"
       style={{ color: streamMetricDeltaColor(scaled) }}
       title={title}
     >
-      <span>{deltaLabel}</span>
+      <span className="break-all">{deltaLabel}</span>
       <span className="font-sans text-[9px] font-medium uppercase opacity-55">{periodLabel}</span>
     </div>
   );
 }
 
-function LabelStat({
+function CardStat({
   label,
   value,
-  delta,
   weeklyDelta,
-  useStreamMetricScale = false,
   streamMetric,
+  useStreamFormat = false,
+  dailyDelta,
 }: {
   label: string;
   value: number;
-  delta: number | null;
   weeklyDelta?: number | null;
-  useStreamMetricScale?: boolean;
-  streamMetric: ReturnType<typeof useCompetitorStreamMetric>;
+  dailyDelta?: number | null;
+  streamMetric?: ReturnType<typeof useCompetitorStreamMetric>;
+  useStreamFormat?: boolean;
 }) {
-  const displayDelta = useStreamMetricScale && delta != null ? streamMetric.scale(delta) : delta;
-  const displayWeekly =
-    useStreamMetricScale && weeklyDelta != null ? streamMetric.scale(weeklyDelta) : weeklyDelta;
-
-  const activeMetric = useStreamMetricScale ? streamMetric.displayMetric : ("streams" as const);
-
-  const showDeltas =
-    formatStreamMetricDelta(displayDelta, activeMetric) ||
-    (displayWeekly != null && displayWeekly !== 0);
+  const displayMetric = streamMetric?.displayMetric ?? ("streams" as const);
+  const displayDaily =
+    dailyDelta != null && streamMetric ? streamMetric.scale(dailyDelta) : null;
 
   return (
-    <div>
-      <div className="text-[11px] uppercase opacity-60">{label}</div>
-      <div className="font-mono" style={useStreamMetricScale ? streamMetric.valueStyle : undefined}>
-        {useStreamMetricScale ? streamMetric.format(value) : formatInt(value)}
+    <div className="min-w-0">
+      <div className="truncate text-[10px] uppercase tracking-wide opacity-60">{label}</div>
+      <div
+        className="mt-0.5 break-all font-mono text-[11px] leading-snug tabular-nums"
+        style={useStreamFormat ? streamMetric?.valueStyle : undefined}
+      >
+        {useStreamFormat && streamMetric ? streamMetric.format(value) : formatInt(value)}
       </div>
-      {showDeltas ? (
-        <div className="mt-0.5 space-y-0.5">
-          {formatStreamMetricDelta(displayDelta, activeMetric) ? (
-            <DeltaLine
-              delta={delta!}
-              periodLabel="1d"
-              title="Change vs prior data date"
-              useStreamMetricScale={useStreamMetricScale}
-              streamMetric={streamMetric}
-            />
-          ) : null}
-          {displayWeekly != null && displayWeekly !== 0 ? (
-            <DeltaLine
-              delta={weeklyDelta!}
-              periodLabel="7d"
-              title="Change vs data date 7 days earlier"
-              useStreamMetricScale={useStreamMetricScale}
-              streamMetric={streamMetric}
-            />
-          ) : null}
-        </div>
+      {weeklyDelta != null && weeklyDelta !== 0 ? (
+        <DeltaLine
+          delta={weeklyDelta}
+          periodLabel="7d"
+          title="Change vs data date 7 days earlier"
+        />
+      ) : null}
+      {displayDaily != null && formatStreamMetricDelta(displayDaily, displayMetric) ? (
+        <DeltaLine
+          delta={dailyDelta!}
+          periodLabel="1d"
+          title="Net streams on latest data date vs prior data date"
+          useStreamMetricScale
+          streamMetric={streamMetric}
+        />
       ) : null}
     </div>
   );
@@ -102,57 +102,52 @@ export function CompetitorLabelCards({
   playlistsByLabel: Record<string, PlaylistRow[]>;
 }) {
   const streamMetric = useCompetitorStreamMetric();
-  const dailyLabel = streamMetric.displayMetric === "revenue" ? "Daily revenue" : "Daily streams";
+  const totalLabel =
+    streamMetric.displayMetric === "revenue" ? "Total revenue" : "Total streams";
 
   return (
-    <div className="grid gap-3 md:grid-cols-3">
+    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
       {rows.map((row) => {
         const imageUrl =
           (playlistsByLabel[row.label.label_key] ?? []).find((p) => p.spotify_playlist_image_url)
             ?.spotify_playlist_image_url ?? null;
         return (
-          <div key={row.label.label_key} className="sb-card p-4" style={labelSummaryCardStyle(row.label.accent_hex)}>
-            <div className="flex items-center gap-3">
+          <div
+            key={row.label.label_key}
+            className="sb-card p-2.5 sm:p-3"
+            style={labelSummaryCardStyle(row.label.accent_hex)}
+          >
+            <div className="flex items-center gap-2">
               {imageUrl ? (
                 <PreviewableArtwork
                   src={imageUrl}
                   alt={row.label.display_name}
-                  width={44}
-                  height={44}
-                  className="h-11 w-11 rounded-xl object-cover sb-ring"
+                  width={32}
+                  height={32}
+                  className="h-8 w-8 shrink-0 rounded-lg object-cover sb-ring"
                   label={row.label.display_name}
                 />
               ) : (
-                <div className="h-11 w-11 rounded-xl bg-white/10 sb-ring" />
+                <div className="h-8 w-8 shrink-0 rounded-lg bg-white/10 sb-ring" />
               )}
-              <div>
-                <div className="font-display text-lg font-semibold">{row.label.display_name}</div>
-                <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-display text-sm font-semibold leading-tight">
+                  {row.label.display_name}
+                </div>
+                <div className="text-[10px] leading-tight" style={{ color: "var(--sb-muted)" }}>
                   {row.playlistCount} playlist{row.playlistCount === 1 ? "" : "s"}
                 </div>
               </div>
             </div>
-            <div className="mt-4 grid grid-cols-3 gap-2 text-sm">
-              <LabelStat
-                label="Tracks"
-                value={row.trackCount}
-                delta={row.trackDelta}
-                weeklyDelta={row.trackWeeklyDelta}
+            <div className="mt-2 grid grid-cols-3 gap-x-2 gap-y-0">
+              <CardStat label="Tracks" value={row.trackCount} weeklyDelta={row.trackWeeklyDelta} />
+              <CardStat label="Artists" value={row.artistCount} weeklyDelta={row.artistWeeklyDelta} />
+              <CardStat
+                label={totalLabel}
+                value={row.totalStreams}
+                dailyDelta={row.dailyStreamDelta}
                 streamMetric={streamMetric}
-              />
-              <LabelStat
-                label="Artists"
-                value={row.artistCount}
-                delta={row.artistDelta}
-                weeklyDelta={row.artistWeeklyDelta}
-                streamMetric={streamMetric}
-              />
-              <LabelStat
-                label={dailyLabel}
-                value={row.dailyStreams}
-                delta={row.dailyStreamDelta}
-                useStreamMetricScale
-                streamMetric={streamMetric}
+                useStreamFormat
               />
             </div>
           </div>

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   getChartColor,
+  getStreamSeriesColor,
   inferChartMetricFromLabels,
   type ThemeColors,
 } from "@/components/charts/useThemeColors";
@@ -26,6 +27,18 @@ const LIGHT: ThemeColors = {
   border: "rgba(0, 0, 0, 0.08)",
   isDark: false,
 };
+
+describe("getStreamSeriesColor", () => {
+  it("uses competitor accent for stream series in competitor mode", () => {
+    const colors = { ...LIGHT, accent: "#fd0280" } as ThemeColors;
+    expect(getStreamSeriesColor(colors, { datasetMode: "competitor" })).toBe("#fd0280");
+    expect(getStreamSeriesColor(colors, { datasetMode: "competitor" })).not.toBe(LIGHT.positive);
+  });
+
+  it("keeps semantic green in own catalog", () => {
+    expect(getStreamSeriesColor(LIGHT, { datasetMode: "own" })).toBe(LIGHT.positive);
+  });
+});
 
 describe("getChartColor", () => {
   it("uses semantic positive for streams, not chrome accent", () => {

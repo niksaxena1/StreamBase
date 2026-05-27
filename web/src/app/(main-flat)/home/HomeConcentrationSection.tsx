@@ -26,8 +26,8 @@ import { todayIsoDate } from "@/lib/csv";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
 import { Modal } from "@/components/ui/Modal";
-import { getChartColor, getChartTooltipStyle, useThemeColors } from "@/components/charts/useThemeColors";
-import type { TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChart";
+import { getChartTooltipStyle, getStreamSeriesColor, useThemeColors } from "@/components/charts/useThemeColors";
+import type { TrackMemberPlaylist, TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChart";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { ALL_COMPETITORS_KEY } from "@/lib/competitorContext";
 import { ConcentrationFilterPicker, type PlaylistOption } from "./ConcentrationFilterPicker";
@@ -52,6 +52,49 @@ function headerPill(active: boolean): string {
     "rounded-full px-2.5 py-1.5 text-[11px] font-medium transition",
     active ? HEADER_PILL_ACTIVE : HEADER_PILL_IDLE,
   ].join(" ");
+}
+
+function PlaylistMembershipCell({ playlists }: { playlists: TrackMemberPlaylist[] }) {
+  if (!playlists.length) {
+    return <span className="text-xs opacity-30" style={{ color: "var(--sb-muted)" }}>—</span>;
+  }
+  return (
+    <div
+      className="flex items-center gap-1.5 min-w-0"
+      title={playlists.map((pl) => pl.name).join(", ")}
+    >
+      <div className="flex items-center flex-shrink-0">
+        {playlists.slice(0, 3).map((pl, i) => (
+          <div
+            key={pl.key}
+            className="h-5 w-5 rounded-full sb-ring overflow-hidden bg-white/40 flex-shrink-0"
+            style={{ marginLeft: i === 0 ? 0 : -6, zIndex: 3 - i }}
+          >
+            {pl.imageUrl ? (
+              <PreviewableArtwork
+                src={pl.imageUrl}
+                alt={pl.name}
+                width={20}
+                height={20}
+                className="h-5 w-5 object-cover"
+                label={pl.name}
+              />
+            ) : (
+              <div className="h-5 w-5 bg-white/30" />
+            )}
+          </div>
+        ))}
+      </div>
+      <span className="truncate text-xs max-w-[72px]" style={{ color: "var(--sb-muted)" }}>
+        {playlists[0].name}
+      </span>
+      {playlists.length > 1 ? (
+        <span className="text-xs font-medium flex-shrink-0" style={{ color: "var(--sb-muted)" }}>
+          +{playlists.length - 1}
+        </span>
+      ) : null}
+    </div>
+  );
 }
 
 function deriveArtists(points: TrackStreamsXYPoint[]) {
@@ -105,7 +148,11 @@ export function HomeConcentrationSection(props: {
   const { metric } = useMetric();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
   const colors = useThemeColors();
-  const streamChartColor = getChartColor("streams", colors);
+  const isRevenue = metric === "revenue";
+  const streamChartColor = getStreamSeriesColor(colors, {
+    datasetMode: props.datasetMode,
+    isRevenue,
+  });
   const [open, setOpen] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("total");
   const [threshold, setThreshold] = useState(50);
@@ -144,8 +191,9 @@ export function HomeConcentrationSection(props: {
     setCollectorIsrcs(null);
   }, [props.datasetMode, props.competitorLabelKey]);
 
+  const isCompetitorMode = props.datasetMode === "competitor";
   const isSpecificCompetitor =
-    props.datasetMode === "competitor" &&
+    isCompetitorMode &&
     props.competitorLabelKey &&
     props.competitorLabelKey !== ALL_COMPETITORS_KEY;
 
@@ -306,7 +354,6 @@ export function HomeConcentrationSection(props: {
     return lorenzData[thresholdIdx + 1] ?? null;
   }, [lorenzData, thresholdIdx]);
 
-  const isRevenue = metric === "revenue";
   const useAccentChrome = props.datasetMode === "competitor" && !isRevenue;
   const chromeColor = useAccentChrome
     ? "var(--sb-accent)"
@@ -322,7 +369,11 @@ export function HomeConcentrationSection(props: {
   const thresholdChartColor = useAccentChrome ? colors.accent : colors.positive;
   const formatValue = (streams: number) =>
     isRevenue ? formatUsd(streams * streamPayoutPerStreamUsd) : formatInt(streams);
-  const valueStyle = isRevenue ? ({ color: "#10b981" } as const) : ({ color: "var(--sb-positive)" } as const);
+  const valueStyle = isRevenue
+    ? ({ color: "#10b981" } as const)
+    : useAccentChrome
+      ? ({ color: "var(--sb-accent)" } as const)
+      : ({ color: "var(--sb-positive)" } as const);
   const valueClass = "font-medium";
 
   const concentrationValueLabel = useMemo(() => {
@@ -341,18 +392,22 @@ export function HomeConcentrationSection(props: {
         isrc: p.isrc,
         artists: (p.artist_names ?? []).join(", "),
         release_date: p.release_date ?? "",
-        distro_playlist: p.distroPlaylistName ?? "",
+        playlists: isCompetitorMode
+          ? (p.memberPlaylists ?? []).map((pl) => pl.name).join(", ")
+          : p.distroPlaylistName ?? "",
         [concentrationValueLabel]: valueExport,
         share_pct: grandTotal > 0 ? ((raw / grandTotal) * 100).toFixed(2) : "0",
         cum_pct: (cumPcts[i] ?? 0).toFixed(2),
       } as Record<string, unknown>;
     });
-  }, [sorted, grandTotal, cumPcts, getValue, isRevenue, streamPayoutPerStreamUsd, concentrationValueLabel]);
+  }, [sorted, grandTotal, cumPcts, getValue, isCompetitorMode, isRevenue, streamPayoutPerStreamUsd, concentrationValueLabel]);
+
+  const playlistColumnKey = isCompetitorMode ? "playlists" : "distro_playlist";
 
   const concentrationCsvHeaders = useMemo(
     () =>
-      ["track", "isrc", "artists", "release_date", "distro_playlist", concentrationValueLabel, "share_pct", "cum_pct"] as string[],
-    [concentrationValueLabel],
+      ["track", "isrc", "artists", "release_date", playlistColumnKey, concentrationValueLabel, "share_pct", "cum_pct"] as string[],
+    [concentrationValueLabel, playlistColumnKey],
   );
 
   const selectedPlaylistName = playlistKey ? playlists.find((p) => p.playlist_key === playlistKey)?.display_name ?? playlistKey : null;
@@ -375,8 +430,12 @@ export function HomeConcentrationSection(props: {
       artist_names: p.artist_names,
       album_image_url: p.album_image_url,
       release_date: p.release_date ?? null,
-      distroPlaylistName: p.distroPlaylistName ?? null,
-      distroPlaylistImageUrl: p.distroPlaylistImageUrl ?? null,
+      distroPlaylistName: isCompetitorMode
+        ? (p.memberPlaylists ?? []).map((pl) => pl.name).join(", ") || null
+        : p.distroPlaylistName ?? null,
+      distroPlaylistImageUrl: isCompetitorMode
+        ? p.memberPlaylists?.[0]?.imageUrl ?? null
+        : p.distroPlaylistImageUrl ?? null,
       valueStreams: Math.max(0, getValue(p)),
       sharePct: grandTotal > 0 ? (Math.max(0, getValue(p)) / grandTotal) * 100 : 0,
       cumPct: cumPcts[i] ?? 0,
@@ -410,6 +469,7 @@ export function HomeConcentrationSection(props: {
     thresholdIdx,
     props.latestRunDate,
     sectionSubtitle,
+    isCompetitorMode,
   ]);
 
   const shareSnapshot = useCallback(async () => {
@@ -610,9 +670,15 @@ export function HomeConcentrationSection(props: {
                     type="button"
                     onClick={() => setShowIsrcInDistroCol((v) => !v)}
                     className="flex items-center gap-1 uppercase tracking-wider text-[11px] font-medium opacity-60 hover:opacity-100 transition-opacity"
-                    title={showIsrcInDistroCol ? "Show distro playlist" : "Show ISRC"}
+                    title={
+                      showIsrcInDistroCol
+                        ? isCompetitorMode
+                          ? "Show playlists"
+                          : "Show distro playlist"
+                        : "Show ISRC"
+                    }
                   >
-                    {showIsrcInDistroCol ? "ISRC" : "DISTRO"}
+                    {showIsrcInDistroCol ? "ISRC" : isCompetitorMode ? "PLAYLIST" : "DISTRO"}
                     <span className="opacity-50 text-[9px]">⇄</span>
                   </button>
                 ),
@@ -682,6 +748,8 @@ export function HomeConcentrationSection(props: {
                             className="font-mono text-xs opacity-40"
                             style={{ color: "var(--sb-muted)" }}
                           />
+                        ) : isCompetitorMode ? (
+                          <PlaylistMembershipCell playlists={p.memberPlaylists ?? []} />
                         ) : p.distroPlaylistName ? (
                           <div className="flex items-center gap-1.5 min-w-0">
                             {p.distroPlaylistImageUrl ? (

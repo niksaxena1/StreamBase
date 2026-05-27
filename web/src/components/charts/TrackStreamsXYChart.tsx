@@ -15,6 +15,12 @@ import { buildTrackReleaseCohortGroups, type CohortHitRegion } from "@/component
 import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 
+export type TrackMemberPlaylist = {
+  key: string;
+  name: string;
+  imageUrl: string | null;
+};
+
 export type TrackStreamsXYPoint = {
   isrc: string;
   name: string | null;
@@ -24,6 +30,7 @@ export type TrackStreamsXYPoint = {
   album_image_url: string | null;
   distroPlaylistName?: string | null;
   distroPlaylistImageUrl?: string | null;
+  memberPlaylists?: TrackMemberPlaylist[];
   total_streams_cumulative: number;
   daily_streams_delta: number;
   has_prev_day: boolean;

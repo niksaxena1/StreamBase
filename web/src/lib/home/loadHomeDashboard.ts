@@ -264,6 +264,88 @@ async function fetchDistroByIsrcForHome(svc: Svc, runDate: string, isrcs: string
   return distroByIsrc;
 }
 
+type MemberPlaylistInfo = { key: string; name: string; imageUrl: string | null };
+
+async function fetchCompetitorPlaylistsByIsrcForHome(
+  svc: Svc,
+  runDate: string,
+  isrcs: string[],
+  competitorLabelKey: string | null,
+): Promise<Map<string, MemberPlaylistInfo[]>> {
+  const byIsrc = new Map<string, MemberPlaylistInfo[]>();
+  const unique = [...new Set(isrcs.filter(Boolean))];
+  if (!unique.length || !runDate) return byIsrc;
+
+  const chunkSize = 500;
+  for (let i = 0; i < unique.length; i += chunkSize) {
+    const chunk = unique.slice(i, i + chunkSize);
+    const chunkKey = `${i}-${shortHash([...chunk].sort().join(","))}-${competitorLabelKey ?? "all"}`;
+
+    const { data: memRows, error: memErr } = await cachedQuery(
+      async () => {
+        let q = svc
+          .schema("competitor")
+          .from("playlist_memberships")
+          .select("isrc,playlist_key")
+          .in("isrc", chunk)
+          .lte("valid_from", runDate)
+          .or(`valid_to.is.null,valid_to.gte.${runDate}`);
+        return await q;
+      },
+      `home-scatter-comp-pl-mem-${runDate}-${chunkKey}`,
+      CACHE_TTL_1H,
+    );
+    if (memErr) throw memErr;
+
+    const memberships = (memRows ?? []) as Array<{ isrc: string; playlist_key: string }>;
+    const playlistKeys = [...new Set(memberships.map((r) => r.playlist_key).filter(Boolean))];
+    if (!playlistKeys.length) continue;
+
+    const { data: plRows, error: plErr } = await cachedQuery(
+      async () => {
+        let q = svc
+          .schema("competitor")
+          .from("playlists")
+          .select("playlist_key,display_name,spotify_playlist_image_url,display_order")
+          .in("playlist_key", playlistKeys)
+          .eq("is_active", true);
+        if (competitorLabelKey) q = q.eq("label_key", competitorLabelKey);
+        return await q.order("display_order", { ascending: true, nullsFirst: false }).order("display_name", {
+          ascending: true,
+        });
+      },
+      `home-scatter-comp-pl-meta-${runDate}-${chunkKey}`,
+      CACHE_TTL_1H,
+    );
+    if (plErr) throw plErr;
+
+    const playlistMeta = new Map(
+      ((plRows ?? []) as Array<{
+        playlist_key: string;
+        display_name: string | null;
+        spotify_playlist_image_url: string | null;
+      }>).map((p) => [
+        p.playlist_key,
+        {
+          key: p.playlist_key,
+          name: (p.display_name ?? p.playlist_key).trim(),
+          imageUrl: p.spotify_playlist_image_url ?? null,
+        },
+      ]),
+    );
+
+    for (const m of memberships) {
+      const pl = playlistMeta.get(m.playlist_key);
+      if (!pl) continue;
+      const list = byIsrc.get(m.isrc) ?? [];
+      if (!list.some((x) => x.key === pl.key)) list.push(pl);
+      byIsrc.set(m.isrc, list);
+    }
+  }
+
+  return byIsrc;
+}
+
 async function fetchTrackMetaByIsrc(svc: Svc, isrcs: string[]) {
   if (!isrcs.length) return new Map<string, TrackMetaRow>();
 
@@ -406,10 +488,23 @@ export async function loadHomeScatterPoints(args: {
         })
         .filter((p): p is TrackStreamsXYPoint => p !== null);
 
-      const distroByIsrc =
-        datasetMode === "competitor"
-          ? new Map<string, DistroPlaylistInfo>()
-          : await fetchDistroByIsrcForHome(svc, selectedRunDate, points.map((p) => p.isrc));
+      if (datasetMode === "competitor") {
+        const labelKeyForMemberships =
+          competitorLabelKey && competitorLabelKey !== ALL_COMPETITORS_KEY ? competitorLabelKey : null;
+        const playlistsByIsrc = await fetchCompetitorPlaylistsByIsrcForHome(
+          svc,
+          selectedRunDate,
+          points.map((p) => p.isrc),
+          labelKeyForMemberships,
+        );
+        const withPlaylists: TrackStreamsXYPoint[] = points.map((p) => ({
+          ...p,
+          memberPlaylists: playlistsByIsrc.get(p.isrc) ?? [],
+        }));
+        return { data: withPlaylists, error: null };
+      }
+
+      const distroByIsrc = await fetchDistroByIsrcForHome(svc, selectedRunDate, points.map((p) => p.isrc));
 
       const withDistro: TrackStreamsXYPoint[] = points.map((p) => {
         const d = distroByIsrc.get(p.isrc);
@@ -747,6 +842,17 @@ export async function loadHomeDashboardData(args: {
     competitorPlaylists = resolvedPlaylists;
   }
 
+  let headerPlaylistImageUrl = playlistImageUrl;
+  if (
+    datasetMode === "competitor" &&
+    competitorLabelKey &&
+    competitorLabelKey !== ALL_COMPETITORS_KEY
+  ) {
+    const competitorImageUrl =
+      competitorPlaylists.find((p) => p.spotify_playlist_image_url)?.spotify_playlist_image_url ?? null;
+    if (competitorImageUrl) headerPlaylistImageUrl = competitorImageUrl;
+  }
+
   const { data: history, error: historyErr } = await cachedQuery<PlaylistDailyStatsRow[]>(
     async () => {
       if (datasetMode === "competitor" && competitorLabelKey) {
@@ -819,13 +925,25 @@ export async function loadHomeDashboardData(args: {
   if (customRangeStart && customRangeEnd) {
     artificialSpikeDateStart = customRangeStart;
     artificialSpikeDateEnd = customRangeEnd;
-    spikeFilterRunStart = addDaysISO(customRangeStart, SOT_DATA_LAG_DAYS);
-    spikeFilterRunEnd = addDaysISO(customRangeEnd, SOT_DATA_LAG_DAYS);
-  } else if (latestRunDate && latestDataDate) {
-    artificialSpikeDateEnd = latestDataDate;
-    artificialSpikeDateStart = addDaysISO(latestDataDate, -(rangeDays - 1));
-    spikeFilterRunEnd = latestRunDate;
-    spikeFilterRunStart = addDaysIso(latestRunDate, -(rangeDays - 1));
+    if (datasetMode === "competitor") {
+      spikeFilterRunStart = customRangeStart;
+      spikeFilterRunEnd = customRangeEnd;
+    } else {
+      spikeFilterRunStart = addDaysISO(customRangeStart, SOT_DATA_LAG_DAYS);
+      spikeFilterRunEnd = addDaysISO(customRangeEnd, SOT_DATA_LAG_DAYS);
+    }
+  } else if (latestRunDate && (datasetMode === "competitor" || latestDataDate)) {
+    if (datasetMode === "competitor") {
+      artificialSpikeDateEnd = latestRunDate;
+      artificialSpikeDateStart = addDaysIso(latestRunDate, -(rangeDays - 1));
+      spikeFilterRunEnd = latestRunDate;
+      spikeFilterRunStart = addDaysIso(latestRunDate, -(rangeDays - 1));
+    } else if (latestDataDate) {
+      artificialSpikeDateEnd = latestDataDate;
+      artificialSpikeDateStart = addDaysISO(latestDataDate, -(rangeDays - 1));
+      spikeFilterRunEnd = latestRunDate;
+      spikeFilterRunStart = addDaysIso(latestRunDate, -(rangeDays - 1));
+    }
   }
   const scatter = includeScatter
     ? await loadHomeScatterPoints({
@@ -920,7 +1038,13 @@ export async function loadHomeDashboardData(args: {
     return out;
   })();
 
-  const artificialSpikesCacheKey = `home-artificial-stream-spikes-v3-${userId}-${artificialSpikeRatio}-${artificialMinBaseline}-${artificialGraceDays}-${artificialThresholdCrossing}-${artificialIncludeWeekends ? "wknd1" : "wknd0"}-${spikeFilterRunStart ?? "none"}-${spikeFilterRunEnd ?? "none"}`;
+  const competitorRpcLabelKey =
+    datasetMode === "competitor" && competitorLabelKey && competitorLabelKey !== ALL_COMPETITORS_KEY
+      ? competitorLabelKey
+      : null;
+  const weekendAnchorDate = datasetMode === "competitor" ? latestRunDate : latestDataDate;
+
+  const artificialSpikesCacheKey = `home-artificial-stream-spikes-v4-${datasetMode}-${competitorRpcLabelKey ?? "none"}-${userId}-${artificialSpikeRatio}-${artificialMinBaseline}-${artificialGraceDays}-${artificialThresholdCrossing}-${artificialIncludeWeekends ? "wknd1" : "wknd0"}-${spikeFilterRunStart ?? "none"}-${spikeFilterRunEnd ?? "none"}`;
 
   const [
     { data: artistWeekendDips },
@@ -930,37 +1054,64 @@ export async function loadHomeDashboardData(args: {
   ] = await Promise.all([
     cachedQuery(
       async () => {
-        if (datasetMode === "competitor") return { data: [], error: null };
+        if (datasetMode === "competitor") {
+          return await svc.schema("competitor").rpc("home_artist_weekend_dips", {
+            p_min_weekday_avg: 0,
+            p_anchor_snapshot_date: weekendAnchorDate ?? null,
+            p_label_key: competitorRpcLabelKey,
+          });
+        }
         return await svc.rpc("home_artist_weekend_dips", {
           p_min_weekday_avg: 0,
           p_anchor_data_date: latestDataDate ?? null,
         });
       },
-      `home-artist-weekend-dips-${playlistKey}-${latestDataDate ?? "none"}-${userId}`,
+      `home-artist-weekend-dips-v2-${datasetMode}-${competitorRpcLabelKey ?? "none"}-${playlistKey}-${weekendAnchorDate ?? "none"}-${userId}`,
       CACHE_TTL_1H,
     ),
     cachedQuery(
       async () => {
-        if (datasetMode === "competitor") return { data: [], error: null };
+        if (datasetMode === "competitor") {
+          return await svc.schema("competitor").rpc("home_track_weekend_dips", {
+            p_min_weekday_avg: 0,
+            p_anchor_snapshot_date: weekendAnchorDate ?? null,
+            p_label_key: competitorRpcLabelKey,
+          });
+        }
         return await svc.rpc("home_track_weekend_dips", {
           p_min_weekday_avg: 0,
           p_anchor_data_date: latestDataDate ?? null,
         });
       },
-      `home-track-weekend-dips-${playlistKey}-${latestDataDate ?? "none"}-${userId}`,
+      `home-track-weekend-dips-v2-${datasetMode}-${competitorRpcLabelKey ?? "none"}-${playlistKey}-${weekendAnchorDate ?? "none"}-${userId}`,
       CACHE_TTL_1H,
     ),
     cachedQuery(
       async () => {
-        if (datasetMode === "competitor") return { data: [], error: null };
+        if (datasetMode === "competitor") {
+          return await svc.schema("competitor").rpc("home_negative_daily_streams", {
+            p_label_key: competitorRpcLabelKey,
+          });
+        }
         return await svc.rpc("home_negative_daily_streams");
       },
-      `home-negative-daily-v2-${userId}`,
+      `home-negative-daily-v3-${datasetMode}-${competitorRpcLabelKey ?? "none"}-${userId}`,
       CACHE_TTL_1H,
     ),
     cachedQuery(
       async () => {
-        if (datasetMode === "competitor") return { data: [], error: null };
+        if (datasetMode === "competitor") {
+          return await svc.schema("competitor").rpc("home_artificial_stream_spikes", {
+            p_spike_ratio: artificialSpikeRatio,
+            p_min_baseline: artificialMinBaseline,
+            p_grace_days: artificialGraceDays,
+            p_threshold_crossing_max: artificialThresholdCrossing,
+            p_include_weekends: artificialIncludeWeekends,
+            p_start_date: spikeFilterRunStart,
+            p_end_date: spikeFilterRunEnd,
+            p_label_key: competitorRpcLabelKey,
+          });
+        }
         const { data, error } = await svc.rpc("home_artificial_stream_spikes", {
           p_spike_ratio: artificialSpikeRatio,
           p_min_baseline: artificialMinBaseline,
@@ -1004,7 +1155,7 @@ export async function loadHomeDashboardData(args: {
     rangeDays,
     latest: latest as PlaylistDailyStatsRow | null,
     history: (history as PlaylistDailyStatsRow[] | null) ?? [],
-    playlistImageUrl,
+    playlistImageUrl: headerPlaylistImageUrl,
     historyErrorMessage: historyErr?.message ?? null,
     trackScatterPoints: scatter.points,
     trackScatterErrorMessage: scatter.errorMessage,

@@ -16,7 +16,7 @@ import {
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
 import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
 import { computePaddedDomain, formatKmbTick, formatTooltipDateDaily, formatXAxisTick } from "@/components/charts/chartUtils";
-import { getChartAxisStyle, getChartColor, getChartTooltipStyle, useThemeColors } from "@/components/charts/useThemeColors";
+import { getChartAxisStyle, getChartTooltipStyle, getStreamSeriesColor, useThemeColors } from "@/components/charts/useThemeColors";
 import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/GlassTable";
 import { formatDateRangeShort } from "@/components/ui/DateRangePicker";
 import { Modal } from "@/components/ui/Modal";
@@ -122,14 +122,16 @@ function SpikeHistoryChart({
   points,
   flaggedDates,
   mode,
+  datasetMode,
 }: {
   points: SpikeHistoryPoint[];
   flaggedDates: Set<string>;
   mode: ChartMode;
+  datasetMode?: "own" | "competitor";
 }) {
   const gid = useId();
   const themeColors = useThemeColors();
-  const streamChartColor = getChartColor("streams", themeColors);
+  const streamChartColor = getStreamSeriesColor(themeColors, { datasetMode });
   const axisStyle = getChartAxisStyle(themeColors);
   const tooltipStyle = getChartTooltipStyle(themeColors);
 
@@ -302,6 +304,7 @@ function SpikeTrackModal({
   onChartModeChange,
   spikeRangeStart,
   spikeRangeEnd,
+  datasetMode,
 }: {
   open: boolean;
   onClose: () => void;
@@ -313,6 +316,7 @@ function SpikeTrackModal({
   onChartModeChange: (next: ChartMode) => void;
   spikeRangeStart: string | null;
   spikeRangeEnd: string | null;
+  datasetMode?: "own" | "competitor";
 }) {
   const [chartLimitToRange, setChartLimitToRange] = useState(false);
 
@@ -434,6 +438,7 @@ function SpikeTrackModal({
               points={chartPoints}
               flaggedDates={flaggedDates}
               mode={chartMode}
+              datasetMode={datasetMode}
             />
           )}
 
@@ -470,6 +475,7 @@ export function HomeArtificialStreamsSection(props: {
   artificialIncludeWeekends: boolean;
   artificialSpikeDateStart: string | null;
   artificialSpikeDateEnd: string | null;
+  datasetMode?: "own" | "competitor";
 }) {
   const [open, setOpen] = useState(false);
   const [spikeRatio, setSpikeRatio] = useState(props.artificialStreamSpikeRatio);
@@ -809,6 +815,7 @@ export function HomeArtificialStreamsSection(props: {
         onChartModeChange={setChartMode}
         spikeRangeStart={props.artificialSpikeDateStart}
         spikeRangeEnd={props.artificialSpikeDateEnd}
+        datasetMode={props.datasetMode}
       />
     </>
   );

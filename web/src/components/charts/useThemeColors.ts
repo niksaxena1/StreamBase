@@ -193,6 +193,15 @@ export function getChartColor(metric: ChartMetric, colors: ThemeColors): string 
   }
 }
 
+/** Stream-series color: competitor chrome accent in competitor mode, semantic green in own catalog. */
+export function getStreamSeriesColor(
+  colors: ThemeColors,
+  opts?: { datasetMode?: "own" | "competitor"; isRevenue?: boolean },
+): string {
+  if (opts?.datasetMode === "competitor" && !opts?.isRevenue) return colors.accent;
+  return getChartColor("streams", colors);
+}
+
 /** Infer chart metric from InteractiveChartSection-style labels. */
 export function inferChartMetricFromLabels(
   valueFormat: "int" | "usd",

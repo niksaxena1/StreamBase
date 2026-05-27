@@ -1,5 +1,6 @@
 /**
  * Extract vibrant accent colors from competitor playlist thumbnails and store on competitor.labels.accent_hex.
+ * When two labels land on visually similar colors, picks an alternate swatch or nudges hue (e.g. ATLAST toward pink vs selected. red).
  *
  * Usage:
  *   cd web && npm run extract-competitor-accents
@@ -12,60 +13,33 @@ import { createClient } from "@supabase/supabase-js";
 import { Vibrant } from "node-vibrant/node";
 import sharp from "sharp";
 
+import {
+  candidatesFromSwatches,
+  harmonizeAccentBatch,
+  rgbToHex,
+  hslToRgb,
+} from "../src/lib/competitorAccentPalette";
+
 const FORCE = process.argv.includes("--force");
+
+/** Brand-locked accents; never overwritten by extract/harmonize (even with --force). */
+const PINNED_LABEL_ACCENTS: Record<string, string> = {
+  selected: "db0c0c",
+};
+
+const PALETTE_KEYS = [
+  "Vibrant",
+  "LightVibrant",
+  "DarkVibrant",
+  "Muted",
+  "LightMuted",
+  "DarkMuted",
+] as const;
 
 function requireEnv(name: string): string {
   const v = process.env[name];
   if (!v) throw new Error(`Missing env var: ${name}`);
   return v;
-}
-
-function rgbToHex(r: number, g: number, b: number): string {
-  const clamp = (n: number) => Math.max(0, Math.min(255, Math.round(n)));
-  return [r, g, b]
-    .map((c) => clamp(c).toString(16).padStart(2, "0"))
-    .join("");
-}
-
-function relativeLuminance(r: number, g: number, b: number): number {
-  const srgb = [r, g, b].map((v) => {
-    const c = v / 255;
-    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-  });
-  return 0.2126 * srgb[0]! + 0.7152 * srgb[1]! + 0.0722 * srgb[2]!;
-}
-
-function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
-  const rn = r / 255;
-  const gn = g / 255;
-  const bn = b / 255;
-  const max = Math.max(rn, gn, bn);
-  const min = Math.min(rn, gn, bn);
-  const l = (max + min) / 2;
-  if (max === min) return [0, 0, l];
-  const d = max - min;
-  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-  let h = 0;
-  if (max === rn) h = ((gn - bn) / d + (gn < bn ? 6 : 0)) / 6;
-  else if (max === gn) h = ((bn - rn) / d + 2) / 6;
-  else h = ((rn - gn) / d + 4) / 6;
-  return [h * 360, s, l];
-}
-
-function hslToRgb(h: number, s: number, l: number): [number, number, number] {
-  const c = (1 - Math.abs(2 * l - 1)) * s;
-  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
-  const m = l - c / 2;
-  let r = 0;
-  let g = 0;
-  let b = 0;
-  if (h < 60) [r, g, b] = [c, x, 0];
-  else if (h < 120) [r, g, b] = [x, c, 0];
-  else if (h < 180) [r, g, b] = [0, c, x];
-  else if (h < 240) [r, g, b] = [0, x, c];
-  else if (h < 300) [r, g, b] = [x, 0, c];
-  else [r, g, b] = [c, 0, x];
-  return [(r + m) * 255, (g + m) * 255, (b + m) * 255];
 }
 
 function hashHue(labelKey: string): number {
@@ -79,40 +53,13 @@ function fallbackHex(labelKey: string): string {
   return rgbToHex(r, g, b);
 }
 
-function adjustForContrast(hex: string): string {
-  let r = parseInt(hex.slice(0, 2), 16);
-  let g = parseInt(hex.slice(2, 4), 16);
-  let b = parseInt(hex.slice(4, 6), 16);
-  let y = relativeLuminance(r, g, b);
-  let guard = 0;
-  while (guard < 24) {
-    if (y >= 0.15 && y <= 0.85) break;
-    if (y < 0.15) {
-      r = Math.min(255, r * 1.12 + 8);
-      g = Math.min(255, g * 1.12 + 8);
-      b = Math.min(255, b * 1.12 + 8);
-    } else {
-      r = Math.max(0, r * 0.88);
-      g = Math.max(0, g * 0.88);
-      b = Math.max(0, b * 0.88);
-    }
-    y = relativeLuminance(r, g, b);
-    guard++;
+function allSwatchRgbs(palette: Record<string, { rgb: [number, number, number] } | null | undefined>): [number, number, number][] {
+  const out: [number, number, number][] = [];
+  for (const key of PALETTE_KEYS) {
+    const swatch = palette[key];
+    if (swatch?.rgb) out.push(swatch.rgb);
   }
-  return rgbToHex(r, g, b);
-}
-
-function pickSwatchRgb(palette: {
-  Vibrant?: { rgb: [number, number, number] } | null;
-  LightVibrant?: { rgb: [number, number, number] } | null;
-  Muted?: { rgb: [number, number, number] } | null;
-  DarkVibrant?: { rgb: [number, number, number] } | null;
-  LightMuted?: { rgb: [number, number, number] } | null;
-}): [number, number, number] | null {
-  const swatch =
-    palette.Vibrant ?? palette.LightVibrant ?? palette.Muted ?? palette.DarkVibrant ?? palette.LightMuted;
-  if (!swatch) return null;
-  return swatch.rgb;
+  return out;
 }
 
 async function imageBufferForVibrant(imageUrl: string): Promise<Buffer> {
@@ -123,16 +70,12 @@ async function imageBufferForVibrant(imageUrl: string): Promise<Buffer> {
   return sharp(raw).png().toBuffer();
 }
 
-async function extractHex(imageUrl: string, labelKey: string): Promise<string> {
+async function extractCandidates(imageUrl: string, labelKey: string): Promise<string[]> {
   const buf = await imageBufferForVibrant(imageUrl);
   const palette = await Vibrant.from(buf).getPalette();
-  const rgb = pickSwatchRgb(palette);
-  if (!rgb) return fallbackHex(labelKey);
-  let [r, g, b] = rgb;
-  const [, s] = rgbToHsl(r, g, b);
-  if (s < 0.25) return fallbackHex(labelKey);
-  let hex = adjustForContrast(rgbToHex(r, g, b));
-  return hex.toLowerCase();
+  const candidates = candidatesFromSwatches(allSwatchRgbs(palette));
+  if (candidates.length) return candidates;
+  return [fallbackHex(labelKey)];
 }
 
 async function main() {
@@ -165,52 +108,82 @@ async function main() {
     if (lk && img && !imageByLabel.has(lk)) imageByLabel.set(lk, img);
   }
 
-  console.log("label_key\timage\taccent_hex\taction");
-  for (const label of labels ?? []) {
+  type LabelRow = { label_key: string; display_name: string; accent_hex: string | null };
+  const labelRows = (labels ?? []) as LabelRow[];
+
+  const pending: Array<{
+    labelKey: string;
+    imageUrl: string;
+    existing: string | null;
+    candidates: string[];
+  }> = [];
+
+  for (const label of labelRows) {
     const labelKey = String(label.label_key);
     const imageUrl = imageByLabel.get(labelKey) ?? "";
     const existing = label.accent_hex ? String(label.accent_hex).replace(/^#/, "").toLowerCase() : null;
 
     if (!imageUrl) {
-      const hex = existing ?? fallbackHex(labelKey);
-      if (!existing || FORCE) {
-        const { error } = await svc
-          .schema("competitor")
-          .from("labels")
-          .update({ accent_hex: hex })
-          .eq("label_key", labelKey);
-        if (error) throw new Error(error.message);
-        console.log(`${labelKey}\t(no image)\t${hex}\tfallback`);
-      } else {
-        console.log(`${labelKey}\t(no image)\t${existing}\tskip`);
-      }
+      pending.push({ labelKey, imageUrl: "", existing, candidates: [existing ?? fallbackHex(labelKey)] });
       continue;
     }
 
     if (existing && !FORCE) {
-      console.log(`${labelKey}\tyes\t${existing}\tskip`);
+      pending.push({ labelKey, imageUrl, existing, candidates: [existing] });
       continue;
     }
 
     try {
-      const hex = await extractHex(imageUrl, labelKey);
-      const { error } = await svc
-        .schema("competitor")
-        .from("labels")
-        .update({ accent_hex: hex })
-        .eq("label_key", labelKey);
-      if (error) throw new Error(error.message);
-      console.log(`${labelKey}\tyes\t${hex}\tupdated`);
+      const candidates = await extractCandidates(imageUrl, labelKey);
+      pending.push({ labelKey, imageUrl, existing, candidates });
     } catch (err) {
-      const hex = fallbackHex(labelKey);
-      const { error } = await svc
-        .schema("competitor")
-        .from("labels")
-        .update({ accent_hex: hex })
-        .eq("label_key", labelKey);
-      if (error) throw new Error(error.message);
-      console.log(`${labelKey}\terror\t${hex}\tfallback (${err instanceof Error ? err.message : err})`);
+      console.warn(`${labelKey}: extract failed (${err instanceof Error ? err.message : err}), using fallback`);
+      pending.push({ labelKey, imageUrl, existing, candidates: [fallbackHex(labelKey)] });
     }
+  }
+
+  const chosen = new Map<string, string>();
+
+  for (const row of pending) {
+    if (row.existing && !FORCE && row.candidates.length === 1 && row.candidates[0] === row.existing) {
+      chosen.set(row.labelKey, row.existing);
+      continue;
+    }
+    // Primary swatch per artwork first; harmonizeAccentBatch nudges clashes (e.g. ATLAST → pink vs selected. red).
+    chosen.set(row.labelKey, row.candidates[0] ?? fallbackHex(row.labelKey));
+  }
+
+  const harmonized = harmonizeAccentBatch(chosen);
+  for (const [labelKey, hex] of Object.entries(PINNED_LABEL_ACCENTS)) {
+    harmonized.set(labelKey, hex.replace(/^#/, "").toLowerCase());
+  }
+
+  console.log("label_key\timage\taccent_hex\taction");
+  for (const label of labelRows) {
+    const labelKey = String(label.label_key);
+    const imageUrl = imageByLabel.get(labelKey) ?? "";
+    const existing = label.accent_hex ? String(label.accent_hex).replace(/^#/, "").toLowerCase() : null;
+    const hex = harmonized.get(labelKey) ?? fallbackHex(labelKey);
+
+    if (existing === hex && !FORCE) {
+      console.log(`${labelKey}\t${imageUrl ? "yes" : "no"}\t${hex}\tskip`);
+      continue;
+    }
+
+    const { error } = await svc
+      .schema("competitor")
+      .from("labels")
+      .update({ accent_hex: hex })
+      .eq("label_key", labelKey);
+    if (error) throw new Error(error.message);
+
+    const action =
+      existing && existing !== hex
+        ? "updated (distinct)"
+        : FORCE
+          ? "updated (force)"
+          : "updated";
+    console.log(`${labelKey}\t${imageUrl ? "yes" : "no"}\t${hex}\t${action}`);
   }
 }
 

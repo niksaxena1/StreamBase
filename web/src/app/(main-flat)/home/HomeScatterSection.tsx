@@ -10,6 +10,7 @@ import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { Alert } from "@/components/ui/Alert";
 import { TrackStreamsXYChart, type TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChart";
 import { ArtistStreamsXYChart, aggregateTracksToArtists } from "@/components/charts/ArtistStreamsXYChart";
+import { getStreamSeriesColor, useThemeColors } from "@/components/charts/useThemeColors";
 import { fetchApiJson } from "@/lib/api";
 import { foldForSearch } from "@/lib/searchFold";
 import { readStoredBool, writeStoredBool } from "@/lib/storage";
@@ -23,9 +24,15 @@ export function HomeScatterSection(props: {
   trackScatterErrorMessage?: string | null;
   trackScatterLoading?: boolean;
   insufficientHistory?: boolean;
+  datasetMode?: "own" | "competitor";
 }) {
   const { metric } = useMetric();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
+  const themeColors = useThemeColors();
+  const scatterSeriesColor = getStreamSeriesColor(themeColors, {
+    datasetMode: props.datasetMode,
+    isRevenue: metric === "revenue",
+  });
 
   const [openScatter, setOpenScatter] = useState(false);
   const [scatterQuery, setScatterQuery] = useState("");
@@ -479,6 +486,7 @@ export function HomeScatterSection(props: {
               points={props.trackScatterPoints}
               mode={scatterMode}
               payoutPerStreamUsd={streamPayoutPerStreamUsd}
+              color={scatterSeriesColor}
               focusIsrc={scatterFocusIsrc}
               logScale={scatterLogScale}
               showReleaseCohorts={scatterReleaseCohorts && scatterLogScale}
@@ -509,6 +517,7 @@ export function HomeScatterSection(props: {
               points={artistScatterPoints}
               mode={scatterMode}
               payoutPerStreamUsd={streamPayoutPerStreamUsd}
+              color={scatterSeriesColor}
               focusArtistId={scatterFocusArtistId}
               logScale={scatterLogScale}
               topNDelta={scatterLogScale ? 300 : 100}

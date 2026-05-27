@@ -507,7 +507,7 @@ export function WarningRow({
               {warning.playlist_key === "all_catalog" ? (
                 <span
                   className="h-5 w-5 rounded-full sb-ring flex items-center justify-center flex-shrink-0"
-                  style={{ background: "var(--sb-accent)", color: "#000" }}
+                  style={{ background: "var(--sb-accent)", color: "var(--sb-accent-text,#000)" }}
                   aria-hidden="true"
                 >
                   <Music className="h-3.5 w-3.5" />
@@ -593,7 +593,7 @@ export function WarningRow({
                           className="h-4 w-4 rounded-full sb-ring flex items-center justify-center flex-shrink-0"
                           style={{
                             background: "var(--sb-accent)",
-                            color: "#000",
+                            color: "var(--sb-accent-text,#000)",
                           }}
                           aria-hidden="true"
                         >

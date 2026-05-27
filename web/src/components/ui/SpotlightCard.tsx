@@ -33,7 +33,7 @@ export function SpotlightCard({
 
   return (
     <div
-      className={["sb-card group relative border border-transparent bg-neutral-100 dark:bg-neutral-900", overflowClass, className].join(" ")}
+      className={["sb-card group relative border border-transparent bg-[var(--sb-card)] dark:bg-neutral-900", overflowClass, className].join(" ")}
       onMouseMove={handleMouseMove}
     >
       <motion.div

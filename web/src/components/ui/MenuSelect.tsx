@@ -159,7 +159,7 @@ export function MenuSelect({
                   !isSelected && "hover:bg-[var(--sb-surface)]",
                 )}
                 style={{
-                  color: isSelected ? "#000" : "var(--sb-text)",
+                  color: isSelected ? "var(--sb-accent-text,#000)" : "var(--sb-text)",
                   backgroundColor: isSelected ? "var(--sb-accent)" : "transparent",
                 }}
                 role="option"

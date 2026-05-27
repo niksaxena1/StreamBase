@@ -102,7 +102,7 @@ export async function loadCompetitorsPageCore(user: User): Promise<CompetitorsPa
     .limit(1);
   if (rollbackRunDate) recentRunsQuery = recentRunsQuery.lte("run_date", rollbackRunDate);
 
-  const cacheBase = `competitors-core-${rollbackSuffix}`;
+  const cacheBase = `competitors-core-v2-${rollbackSuffix}`;
 
   const results = await cachedQueries(
     {

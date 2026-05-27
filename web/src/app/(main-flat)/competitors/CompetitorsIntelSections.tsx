@@ -11,6 +11,7 @@ import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import { fetchApiJson } from "@/lib/api";
 import { formatInt } from "@/lib/format";
+import { isAllCompetitorsKey } from "@/lib/competitorContext";
 import { addDaysISO } from "@/lib/sotDates";
 import type { CompetitorsIntelPayload } from "@/lib/competitors/parseCompetitorsIntel";
 
@@ -47,9 +48,18 @@ function LabelBadge({ labelKey, labels }: { labelKey: string; labels: LabelRow[]
   );
 }
 
-function filterMovers(rows: MoverTrackRow[], filter: MoverFilter): MoverTrackRow[] {
-  if (filter === "shared") return rows.filter((r) => (r.label_keys?.length ?? 0) >= 2);
-  if (filter === "exclusive") return rows.filter((r) => (r.label_keys?.length ?? 0) === 1);
+function filterMovers(
+  rows: MoverTrackRow[],
+  filter: MoverFilter,
+  selectedLabelKey: string | null,
+): MoverTrackRow[] {
+  if (
+    filter === "selected" &&
+    selectedLabelKey &&
+    !isAllCompetitorsKey(selectedLabelKey)
+  ) {
+    return rows.filter((r) => (r.label_keys ?? []).includes(selectedLabelKey));
+  }
   return rows;
 }
 
@@ -74,6 +84,7 @@ export function CompetitorsIntelSections(props: {
   labels: LabelRow[];
   latestDataDate: string;
   latestRunDate: string;
+  selectedCompetitorLabelKey: string | null;
 }) {
   const streamMetric = useCompetitorStreamMetric();
   const activeLabels = useMemo(() => props.labels.filter((l) => l.is_active !== false), [props.labels]);
@@ -83,7 +94,7 @@ export function CompetitorsIntelSections(props: {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [shouldLoad, setShouldLoad] = useState(false);
   const prefetchStarted = useRef(false);
-  const [moverFilter, setMoverFilter] = useState<MoverFilter>("all");
+  const [moverFilter, setMoverFilter] = useState<MoverFilter>("selected");
   const [churnWindow, setChurnWindow] = useState<7 | 30>(7);
   const [initialLoading, setInitialLoading] = useState(false);
   const [churnLoading, setChurnLoading] = useState(false);
@@ -196,12 +207,12 @@ export function CompetitorsIntelSections(props: {
   }, [churnWindow, props.latestDataDate, props.latestRunDate, shouldLoad, weekAgoDataDate]);
 
   const filteredGainers = useMemo(
-    () => filterMovers(intel?.gainers ?? [], moverFilter),
-    [intel?.gainers, moverFilter],
+    () => filterMovers(intel?.gainers ?? [], moverFilter, props.selectedCompetitorLabelKey),
+    [intel?.gainers, moverFilter, props.selectedCompetitorLabelKey],
   );
   const filteredLosers = useMemo(
-    () => filterMovers(intel?.losers ?? [], moverFilter),
-    [intel?.losers, moverFilter],
+    () => filterMovers(intel?.losers ?? [], moverFilter, props.selectedCompetitorLabelKey),
+    [intel?.losers, moverFilter, props.selectedCompetitorLabelKey],
   );
   const churnRows: ChurnRow[] = intel?.churn ?? [];
   const overlapCells: OverlapCell[] = intel?.overlapCells ?? [];
@@ -245,9 +256,9 @@ export function CompetitorsIntelSections(props: {
               </div>
             </div>
             <ChipGroup segmented>
-              {(["all", "shared", "exclusive"] as const).map((f) => (
+              {(["selected", "all"] as const).map((f) => (
                 <Chip key={f} segmented selected={moverFilter === f} onClick={() => setMoverFilter(f)}>
-                  {f === "all" ? "All" : f === "shared" ? "Shared" : "Exclusive"}
+                  {f === "selected" ? "Selected" : "All"}
                 </Chip>
               ))}
             </ChipGroup>
@@ -399,7 +410,11 @@ export function CompetitorsIntelSections(props: {
       ) : null}
 
       {canCompare && overlapCells.length > 0 ? (
-        <CompetitorsOverlapMatrix activeLabels={activeLabels} overlapLookup={overlapLookup} />
+        <CompetitorsOverlapMatrix
+          activeLabels={activeLabels}
+          overlapLookup={overlapLookup}
+          latestRunDate={props.latestRunDate}
+        />
       ) : null}
     </div>
   );

@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
@@ -40,15 +39,7 @@ export default async function CompetitorsPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="Competitors"
-        subtitle={subtitle}
-        actions={
-          <Link href="/health" className="sb-link-hover text-xs whitespace-nowrap">
-            Pipeline health &amp; ingestion status →
-          </Link>
-        }
-      />
+      <PageHeader title="Competitors" subtitle={subtitle} />
 
       {core ? (
         <>
@@ -66,6 +57,7 @@ export default async function CompetitorsPage() {
             labels={core.labels}
             latestDataDate={core.latestDataDate}
             latestRunDate={core.latestRunDate}
+            selectedCompetitorLabelKey={core.selectedCompetitorLabelKey}
           />
         </>
       ) : null}

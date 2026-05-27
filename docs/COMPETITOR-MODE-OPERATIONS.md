@@ -35,7 +35,7 @@ The three SpotOnTrack workflows use `config/competitor_playlists.csv`. The Spoti
 2. Run the competitor dashboard sync workflow to populate the SpotOnTrack dashboard.
 3. Run the competitor export workflow.
 4. Run the Spotify competitor enrichment workflow to fill track metadata and playlist thumbnails.
-5. Run `cd web && npm run extract-competitor-accents -- --force` if adding a new label or changing playlist artwork.
+5. Run `cd web && npm run extract-competitor-accents -- --force` if adding a new label or changing playlist artwork. The script picks distinct accents per label and nudges hue when two competitors land on similar reds (e.g. ATLAST toward pink vs selected.).
 6. Switch Settings ? Dataset ? Competitor Mode.
 7. Verify the competitor appears under `/competitors`, Playlists, Catalog, Home, and Search.
 
@@ -69,4 +69,4 @@ For ingestion correctness (stale playlists, row mismatches, warnings, missing to
 
 Competitor Mode does not currently include collectors or distributor/entity health logic. Those concepts are specific to the own-catalog universe and should not be half-reused.
 
-Weekend dips, negative-stream diagnostics, and spike detection are also intentionally withheld until competitor history is deep enough for them to be meaningful.
+Home weekend dips and artificial spike panels require at least two daily competitor snapshots (`hasTrendHistory` on Home). Negative daily streams can appear as soon as competitor track history includes a day-over-day drop.

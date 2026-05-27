@@ -3431,7 +3431,7 @@ export function NetworkGraphClient({
                 <button
                   type="button"
                   className="rounded-lg px-3 py-1.5 text-xs font-medium shrink-0"
-                  style={{ backgroundColor: "var(--sb-accent)", color: "#000" }}
+                  style={{ backgroundColor: "var(--sb-accent)", color: "var(--sb-accent-text,#000)" }}
                   onClick={() => void switchCompetitorLabel(selectedNodeId)}
                 >
                   Open competitor

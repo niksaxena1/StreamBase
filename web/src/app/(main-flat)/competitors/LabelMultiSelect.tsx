@@ -24,7 +24,8 @@ export function LabelMultiSelect({
 
   const accentBg =
     metric === "revenue" ? "#10b981" : metric === "tracks" ? "#3b82f6" : "var(--sb-accent)";
-  const accentText = metric === "streams" ? "#000" : "#fff";
+  const accentText =
+    metric === "revenue" || metric === "tracks" ? "#fff" : "var(--sb-accent-text,#000)";
 
   const activeLabels = labels.filter((l) => l.is_active !== false);
 

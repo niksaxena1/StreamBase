@@ -25,7 +25,8 @@ export function CollectorMultiSelect({
       : metric === "tracks"
         ? "#3b82f6"
         : "var(--sb-accent)";
-  const accentText = metric === "streams" ? "#000" : "#fff";
+  const accentText =
+    metric === "revenue" || metric === "tracks" ? "#fff" : "var(--sb-accent-text,#000)";
 
   // Close dropdown when clicking outside
   useEffect(() => {
