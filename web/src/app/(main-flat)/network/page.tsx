@@ -1,52 +1,23 @@
-import { redirect } from "next/navigation";
+import { Suspense } from "react";
 import type { Metadata } from "next";
 
-import { normalizeAppAccess, streamBaseAccessRedirectPath } from "@/lib/appAccess";
-import { supabaseServer } from "@/lib/supabase/server";
-import { supabaseService } from "@/lib/supabase/service";
-import { NetworkGraphClient } from "./NetworkGraphClient";
-import { parseHideNonPrimary, parseNetworkScope } from "./networkScope";
+import { ChartSkeleton } from "@/components/ui/Skeleton";
+import { loadNetworkPageShell, loadNetworkPlaylists } from "@/lib/network/loadNetworkPage";
+
+import { NetworkGraphSection } from "./NetworkGraphSection";
+
+export type {
+  CollaborationGraph,
+  GraphEdge,
+  GraphNode,
+  NetworkPlaylistOption,
+  SharedTrack,
+} from "./networkTypes";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Network",
-};
-
-export type GraphNode = {
-  id: string;
-  name: string;
-  track_count: number;
-  image_url: string | null;
-  /** Distinct other credited artists on the same scoped ISRC as this artist (any credit row). */
-  co_artists_any_track?: number;
-  /** Distinct other credited artists on ISRCs where this artist is primary (first credit). */
-  co_artists_primary_tracks?: number;
-};
-
-export type SharedTrack = {
-  isrc: string;
-  name: string | null;
-  /** From `tracks.spotify_album_image_url` when the RPC migration is applied. */
-  album_image_url?: string | null;
-};
-
-export type GraphEdge = {
-  source: string;
-  target: string;
-  weight: number;
-  shared_tracks: SharedTrack[];
-};
-
-export type CollaborationGraph = {
-  nodes: GraphNode[];
-  edges: GraphEdge[];
-};
-
-export type NetworkPlaylistOption = {
-  playlist_key: string;
-  display_name: string;
-  spotify_playlist_image_url: string | null;
 };
 
 export default async function NetworkPage({
@@ -60,75 +31,13 @@ export default async function NetworkPage({
     net_pl_m?: string;
   }>;
 }) {
-  const sb = await supabaseServer();
-  const {
-    data: { user },
-  } = await sb.auth.getUser();
-  if (!user) redirect("/login");
-
-  const svc = supabaseService();
-  const { data: isAdmin } = await sb.rpc("is_admin");
-  const { data: accessRow } = await svc
-    .from("app_user_access")
-    .select("own_catalog,competitor,playlist_watch,playlist_watch_admin")
-    .eq("user_id", user.id)
-    .maybeSingle();
-  const appAccess = normalizeAppAccess(accessRow, Boolean(isAdmin));
-  const streamBaseRedirect = streamBaseAccessRedirectPath(appAccess);
-  if (streamBaseRedirect) redirect(streamBaseRedirect);
-
   const sp = (await searchParams) ?? {};
-
-  const { data: playlistRows, error: plErr } = await svc
-    .from("playlists")
-    .select("playlist_key,display_name,spotify_playlist_image_url")
-    .order("display_order", { ascending: true, nullsFirst: false })
-    .order("display_name", { ascending: true });
-
-  if (plErr) {
-    console.error("network page playlists load failed:", plErr);
-  }
-
-  const playlists: NetworkPlaylistOption[] = (playlistRows ?? []).map((p) => ({
-    playlist_key: String(p.playlist_key ?? ""),
-    display_name: String(p.display_name ?? p.playlist_key ?? "").trim(),
-    spotify_playlist_image_url: (p.spotify_playlist_image_url ?? null) as string | null,
-  }));
-
-  const validKeys = new Set(playlists.map((p) => p.playlist_key));
-  const networkScope = parseNetworkScope(sp, validKeys);
-
-  const hideNonPrimary = parseHideNonPrimary(sp.hide_non_primary);
-
-  const { data, error } = await svc.rpc("artist_collaboration_graph", {
-    p_playlist_key: networkScope.mode === "playlist" ? networkScope.playlistKey : null,
-    p_hide_non_primary: hideNonPrimary,
-    p_scope_playlists:
-      networkScope.mode === "custom" && networkScope.customPlaylistKeys.length > 0
-        ? networkScope.customPlaylistKeys
-        : null,
-    p_scope_playlist_mode:
-      networkScope.mode === "custom" ? networkScope.customPlaylistMode : "any",
-  });
-
-  if (error) {
-    console.error("artist_collaboration_graph RPC failed:", error);
-    return (
-      <div className="p-8 text-center" style={{ color: "var(--sb-muted)" }}>
-        Failed to load collaboration graph. Apply the latest{" "}
-        <code className="font-mono text-xs">artist_collaboration_graph_*.sql</code> migrations (including{" "}
-        <code className="font-mono text-xs">artist_collaboration_graph_track_coartist_counts.sql</code>
-        ) if you see a function or column error.
-      </div>
-    );
-  }
-
-  const graph: CollaborationGraph = (data as CollaborationGraph) ?? {
-    nodes: [],
-    edges: [],
-  };
+  const shell = await loadNetworkPageShell();
+  const playlists = await loadNetworkPlaylists(shell);
 
   return (
-    <NetworkGraphClient nodes={graph.nodes} edges={graph.edges} playlists={playlists} hideNonPrimary={hideNonPrimary} />
+    <Suspense fallback={<ChartSkeleton height={520} />}>
+      <NetworkGraphSection searchParams={sp} playlists={playlists} shell={shell} />
+    </Suspense>
   );
 }

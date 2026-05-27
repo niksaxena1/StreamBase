@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { COMPETITOR_ACCENT_EVENT } from "@/lib/competitorAccentEvents";
 
 /**
  * Theme-aware color palette for charts and components.
@@ -152,11 +153,14 @@ export function useThemeColors(): ThemeColors {
       mediaQuery.addEventListener("change", updateColors);
     }
 
+    window.addEventListener(COMPETITOR_ACCENT_EVENT, updateColors);
+
     return () => {
       observer.disconnect();
       if (mediaQuery) {
         mediaQuery.removeEventListener("change", updateColors);
       }
+      window.removeEventListener(COMPETITOR_ACCENT_EVENT, updateColors);
     };
   }, []);
 

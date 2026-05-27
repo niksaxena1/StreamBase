@@ -14,7 +14,11 @@ export function useNetworkMetricStreams() {
   const { streamPayoutPerStreamUsd } = usePayoutRate();
   const displayMetric = metric === "tracks" ? "streams" : metric;
   const metricColor =
-    displayMetric === "revenue" ? "#10b981" : "var(--sb-positive)";
+    metric === "revenue"
+      ? "#10b981"
+      : metric === "tracks"
+        ? "#3b82f6"
+        : "var(--sb-accent)";
 
   const formatFromStreamCount = useCallback(
     (streamCount: number | null | undefined) => {

@@ -4,7 +4,7 @@ import { useSharedGranularity } from "@/lib/useSharedGranularity";
 import { CollectorsPageHeader } from "./CollectorsPageHeader";
 import { CollectorsClient } from "./CollectorsClient";
 import type { CollectorDailyData } from "@/components/charts/CollectorComparisonChart";
-import type { CollectorSeriesPoint, CollectorTrackRow, CollectorSummaryRow, TopPlaylistRow } from "./collectorsTypes";
+import type { CollectorSeriesPoint, CollectorSummaryRow, TopPlaylistRow } from "./collectorsTypes";
 
 export function CollectorsPageWrapper(props: {
   selectedCollector: string;
@@ -21,7 +21,6 @@ export function CollectorsPageWrapper(props: {
     display_name: string;
     spotify_playlist_image_url: string | null;
   }>;
-  collectorTracks: CollectorTrackRow[];
   allCollectorsSeries: CollectorDailyData[];
   allCollectorsAllTime: CollectorDailyData[];
 }) {
@@ -47,7 +46,6 @@ export function CollectorsPageWrapper(props: {
         seriesAllTime={props.seriesAllTime}
         topPlaylists={props.topPlaylists}
         selectedPlaylistsMeta={props.selectedPlaylistsMeta}
-        collectorTracks={props.collectorTracks}
         allCollectorsSeries={props.allCollectorsSeries}
         allCollectorsAllTime={props.allCollectorsAllTime}
       />

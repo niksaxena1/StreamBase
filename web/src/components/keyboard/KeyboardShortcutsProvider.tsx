@@ -4,6 +4,8 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, useCal
 import { useRouter, usePathname } from "next/navigation";
 
 import { hasStreamBaseAccess, type AppAccess } from "@/lib/appAccess";
+import type { DatasetMode } from "@/lib/datasetMode";
+import { navShortcutItemsForMode } from "@/lib/datasets";
 import { triggerRouteLoadingBarStart } from "@/lib/navigation/loadingBar";
 
 type ShortcutHandler = () => void;
@@ -40,21 +42,14 @@ export function useKeyboardShortcutsSafe() {
   return useContext(KeyboardShortcutsContext);
 }
 
-// Navigation items matching SideRail
-const NAV_ITEMS = [
-  { key: "1", href: "/", label: "Home" },
-  { key: "2", href: "/playlists", label: "Playlists" },
-  { key: "3", href: "/catalog", label: "Catalog" },
-  { key: "4", href: "/collectors", label: "Collectors" },
-  { key: "5", href: "/health", label: "Health" },
-];
-
 export function KeyboardShortcutsProvider({
   children,
   appAccess,
+  datasetMode = "own",
 }: {
   children: ReactNode;
   appAccess?: AppAccess;
+  datasetMode?: DatasetMode;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -67,6 +62,10 @@ export function KeyboardShortcutsProvider({
     new Map()
   );
   const showStreamBaseShortcuts = appAccess ? hasStreamBaseAccess(appAccess) : false;
+  const navShortcutItems = useMemo(
+    () => navShortcutItemsForMode(datasetMode, appAccess),
+    [datasetMode, appAccess],
+  );
 
   const openHelp = useCallback(() => setIsHelpOpen(true), []);
   const closeHelp = useCallback(() => setIsHelpOpen(false), []);
@@ -106,14 +105,14 @@ export function KeyboardShortcutsProvider({
       { key: "?", description: "Show keyboard shortcuts" },
       ...(showStreamBaseShortcuts
         ? [
-            ...NAV_ITEMS.map((item) => ({ key: item.key, description: `Go to ${item.label}` })),
+            ...navShortcutItems.map((item) => ({ key: item.key, description: `Go to ${item.label}` })),
             { key: "g s", description: "Go to Settings" },
           ]
         : []),
       { key: "Esc", description: "Close modal / dialog" },
       ...Array.from(customShortcuts.entries()).map(([key, { description }]) => ({ key, description })),
     ],
-    [customShortcuts, showStreamBaseShortcuts],
+    [customShortcuts, showStreamBaseShortcuts, navShortcutItems],
   );
 
   useEffect(() => {
@@ -191,13 +190,13 @@ export function KeyboardShortcutsProvider({
         if (gTimeout) clearTimeout(gTimeout);
       }
 
-      // Number keys 1-5 for navigation
+      // Number keys 1-5 for navigation (mode-aware: 4 = Collectors or Competitors)
       if (showStreamBaseShortcuts) {
-        const navItem = NAV_ITEMS.find((item) => item.key === e.key);
+        const navItem = navShortcutItems.find((item) => item.key === e.key);
         if (navItem) {
           e.preventDefault();
           // Only navigate if not already on that page
-          if (pathname !== navItem.href) {
+          if (pathname !== navItem.href && !pathname?.startsWith(`${navItem.href}/`)) {
             triggerRouteLoadingBarStart(navItem.href);
             router.push(navItem.href);
           }
@@ -219,7 +218,7 @@ export function KeyboardShortcutsProvider({
       document.removeEventListener("keydown", handleKeyDown);
       if (gTimeout) clearTimeout(gTimeout);
     };
-  }, [router, pathname, isHelpOpen, openHelp, closeHelp, openSearch, customShortcuts, showStreamBaseShortcuts]);
+  }, [router, pathname, isHelpOpen, openHelp, closeHelp, openSearch, customShortcuts, showStreamBaseShortcuts, navShortcutItems]);
 
   const value: KeyboardShortcutsContextValue = useMemo(() => ({
     registerShortcut,

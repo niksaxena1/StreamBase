@@ -29,14 +29,14 @@ def candidate_filters(limit: int) -> List[str]:
 
 
 class Postgrest:
-    def __init__(self, supabase_url: str, service_role_key: str):
+    def __init__(self, supabase_url: str, service_role_key: str, profile: str = "competitor"):
         self.base = supabase_url.rstrip("/") + "/rest/v1"
         self.h = {
             "Authorization": f"Bearer {service_role_key}",
             "apikey": service_role_key,
             "Content-Type": "application/json",
-            "Accept-Profile": "competitor",
-            "Content-Profile": "competitor",
+            "Accept-Profile": profile,
+            "Content-Profile": profile,
         }
 
     def select(self, table: str, select: str, filters: str) -> List[dict]:
@@ -53,6 +53,16 @@ class Postgrest:
         response = requests.patch(url, headers=headers, json=patch_obj, timeout=180)
         if response.status_code not in (200, 204):
             raise RuntimeError(f"Patch {table} failed: {response.status_code} {response.text[:500]}")
+
+    def upsert(self, table: str, rows: List[dict], conflict: str):
+        if not rows:
+            return
+        url = f"{self.base}/{table}?on_conflict={conflict}"
+        headers = dict(self.h)
+        headers["Prefer"] = "resolution=merge-duplicates,return=minimal"
+        response = requests.post(url, headers=headers, json=rows, timeout=180)
+        if response.status_code not in (200, 201, 204):
+            raise RuntimeError(f"Upsert {table} failed: {response.status_code} {response.text[:500]}")
 
 
 class Spotify:
@@ -127,6 +137,22 @@ class Spotify:
             "spotify_artist_names": [artist.get("name") for artist in artists if artist.get("name")],
         }
 
+    def get_artists(self, artist_ids: List[str]) -> List[Dict[str, Any]]:
+        out: List[Dict[str, Any]] = []
+        seen = set()
+        ids = []
+        for artist_id in artist_ids:
+            clean = (artist_id or "").strip()
+            if clean and clean not in seen:
+                seen.add(clean)
+                ids.append(clean)
+
+        for i in range(0, len(ids), 50):
+            chunk = ids[i : i + 50]
+            payload = self.get(f"/artists?ids={','.join(requests.utils.quote(x) for x in chunk)}")
+            out.extend([artist for artist in (payload.get("artists") or []) if artist and artist.get("id")])
+        return out
+
 
 ENRICHMENT_FIELDS = {
     "spotify_track_id": None,
@@ -136,7 +162,27 @@ ENRICHMENT_FIELDS = {
 }
 
 
-def enrich_single(pg: Postgrest, sp: Spotify, isrc: str):
+def cache_artist_images(pg_public: Postgrest, sp: Spotify, artist_ids: List[str]):
+    artists = sp.get_artists(artist_ids)
+    refreshed_at = datetime.now(timezone.utc).isoformat()
+    rows = []
+    for artist in artists:
+        images = artist.get("images") or []
+        rows.append(
+            {
+                "artist_id": artist.get("id"),
+                "name": artist.get("name"),
+                "image_url": images[0].get("url") if images else None,
+                "external_url": (artist.get("external_urls") or {}).get("spotify"),
+                "refreshed_at": refreshed_at,
+            }
+        )
+    pg_public.upsert("spotify_artist_images", rows, "artist_id")
+    if rows:
+        print(f"Cached {len(rows)} Spotify artist image rows")
+
+
+def enrich_single(pg: Postgrest, pg_public: Postgrest, sp: Spotify, isrc: str):
     isrc = isrc.strip()
     if not isrc:
         raise SystemExit("--isrc value cannot be empty")
@@ -151,10 +197,11 @@ def enrich_single(pg: Postgrest, sp: Spotify, isrc: str):
         print(f"No Spotify match found for competitor ISRC {isrc}.")
         return
     pg.patch("tracks", hit, f"isrc=eq.{isrc}")
+    cache_artist_images(pg_public, sp, hit.get("spotify_artist_ids") or [])
     print(f"Re-enriched competitor track {isrc}")
 
 
-def enrich_batch(pg: Postgrest, sp: Spotify, limit: int):
+def enrich_batch(pg: Postgrest, pg_public: Postgrest, sp: Spotify, limit: int):
     candidates = pg.select(
         "tracks",
         "isrc,name,spotify_artist_ids",
@@ -171,6 +218,7 @@ def enrich_batch(pg: Postgrest, sp: Spotify, limit: int):
     )
 
     ok = miss = fail = 0
+    artist_ids_to_cache = set()
     for row in candidates:
         isrc = (row.get("isrc") or "").strip()
         if not isrc:
@@ -181,6 +229,7 @@ def enrich_batch(pg: Postgrest, sp: Spotify, limit: int):
                 miss += 1
                 continue
             pg.patch("tracks", hit, f"isrc=eq.{isrc}")
+            artist_ids_to_cache.update(hit.get("spotify_artist_ids") or [])
             ok += 1
             if ok % 20 == 0:
                 print(f"Enriched {ok} competitor tracks...")
@@ -188,6 +237,7 @@ def enrich_batch(pg: Postgrest, sp: Spotify, limit: int):
             fail += 1
             print(f"FAIL {isrc}: {exc}")
 
+    cache_artist_images(pg_public, sp, sorted(artist_ids_to_cache))
     print(f"Done. ok={ok} miss={miss} fail={fail}")
 
 
@@ -197,13 +247,16 @@ def main():
     parser.add_argument("--isrc", type=str, default=None, help="Re-enrich one competitor track by ISRC")
     args = parser.parse_args()
 
-    pg = Postgrest(require_env("SUPABASE_URL"), require_env("SUPABASE_SERVICE_ROLE_KEY"))
+    supabase_url = require_env("SUPABASE_URL")
+    service_role_key = require_env("SUPABASE_SERVICE_ROLE_KEY")
+    pg = Postgrest(supabase_url, service_role_key, "competitor")
+    pg_public = Postgrest(supabase_url, service_role_key, "public")
     sp = Spotify(require_env("SPOTIFY_CLIENT_ID"), require_env("SPOTIFY_CLIENT_SECRET"))
 
     if args.isrc:
-        enrich_single(pg, sp, args.isrc)
+        enrich_single(pg, pg_public, sp, args.isrc)
     else:
-        enrich_batch(pg, sp, args.limit)
+        enrich_batch(pg, pg_public, sp, args.limit)
 
 
 if __name__ == "__main__":

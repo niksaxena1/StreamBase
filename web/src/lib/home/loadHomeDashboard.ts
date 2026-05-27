@@ -550,159 +550,201 @@ export async function loadHomeDashboardData(args: {
   const playlistKey: "all_catalog" | "releases" | "ext" =
     scope === "releases" ? "releases" : scope === "ext" ? "ext" : "all_catalog";
 
+  // ---------------------------------------------------------------------------
+  // Independent up-front fetches. These have no data dependencies on each other,
+  // so we run them in parallel to shave several round-trips off the perceived
+  // load time (especially noticeable after a competitor switch).
+  // ---------------------------------------------------------------------------
+  const userSettingsPromise = (async () => {
+    try {
+      const { data } = await sb
+        .from("user_settings")
+        .select(
+          "hide_stale_override_annotations, artificial_streams_spike_ratio, artificial_streams_include_weekends_user, dataset_mode, competitor_label_key",
+        )
+        .eq("user_id", userId)
+        .maybeSingle();
+      return data as Record<string, unknown> | null;
+    } catch {
+      return null;
+    }
+  })();
+
+  const healthConfigPromise = (async () => {
+    try {
+      const { data } = await svc
+        .from("health_config")
+        .select("key,value_numeric")
+        .in("key", [
+          "artificial_streams_spike_ratio",
+          "artificial_streams_min_baseline",
+          "artificial_streams_new_track_grace_days",
+          "artificial_streams_threshold_crossing_max",
+          "artificial_streams_include_weekends",
+        ]);
+      return (data ?? []) as Array<{ key?: string; value_numeric?: unknown }>;
+    } catch {
+      return [];
+    }
+  })();
+
+  const overrideBusterPromise = (async () => {
+    try {
+      const { count, data: latestOverride } = await svc
+        .from("track_daily_stream_overrides")
+        .select("id", { count: "exact" })
+        .order("id", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const maxId = Number((latestOverride as { id: number } | null)?.id ?? 0);
+      const total = Number(count ?? 0);
+      return `${total}-${maxId}`;
+    } catch {
+      return "0";
+    }
+  })();
+
+  const rollbackDatePromise = getRollbackDate();
+
+  const playlistImagePromise =
+    playlistKey === "all_catalog"
+      ? Promise.resolve(null as string | null)
+      : cachedQuery<{ spotify_playlist_image_url: string | null }>(
+          async () =>
+            await svc
+              .from("playlists")
+              .select("spotify_playlist_image_url")
+              .eq("playlist_key", playlistKey)
+              .maybeSingle(),
+          `home-playlist-image-${playlistKey}`,
+          CACHE_TTL_1H,
+        ).then((r) => r.data?.spotify_playlist_image_url ?? null);
+
+  const [uSettings, hcRows, overrideBuster, rollbackDate, playlistImageUrl] = await Promise.all([
+    userSettingsPromise,
+    healthConfigPromise,
+    overrideBusterPromise,
+    rollbackDatePromise,
+    playlistImagePromise,
+  ]);
+
+  // Unpack user settings into the existing variable shape.
   let hideStaleAnnotations = false;
   let userArtificialSpikeRatio: number | null = null;
   let userIncludeWeekendsOverride: boolean | null = null;
   let datasetMode: "own" | "competitor" = "own";
   let competitorLabelKey: string | null = null;
   let competitorLabelName: string | null = null;
-  try {
-    const { data: uSettings } = await sb
-      .from("user_settings")
-      .select(
-        "hide_stale_override_annotations, artificial_streams_spike_ratio, artificial_streams_include_weekends_user, dataset_mode, competitor_label_key",
-      )
-      .eq("user_id", userId)
-      .maybeSingle();
-    const us = uSettings as Record<string, unknown> | null;
-    datasetMode = normalizeDatasetMode(us?.dataset_mode);
+  if (uSettings) {
+    datasetMode = normalizeDatasetMode(uSettings.dataset_mode);
     competitorLabelKey =
-      typeof us?.competitor_label_key === "string" && us.competitor_label_key.trim()
-        ? us.competitor_label_key.trim()
+      typeof uSettings.competitor_label_key === "string" && uSettings.competitor_label_key.trim()
+        ? (uSettings.competitor_label_key as string).trim()
         : null;
-    hideStaleAnnotations = Boolean(us?.hide_stale_override_annotations);
-    const ur = us?.artificial_streams_spike_ratio;
+    hideStaleAnnotations = Boolean(uSettings.hide_stale_override_annotations);
+    const ur = uSettings.artificial_streams_spike_ratio;
     if (ur != null && Number.isFinite(Number(ur))) userArtificialSpikeRatio = Number(ur);
-    if (typeof us?.artificial_streams_include_weekends_user === "boolean") {
-      userIncludeWeekendsOverride = us.artificial_streams_include_weekends_user;
+    if (typeof uSettings.artificial_streams_include_weekends_user === "boolean") {
+      userIncludeWeekendsOverride = uSettings.artificial_streams_include_weekends_user;
     }
-  } catch {
-    // graceful fallback
   }
 
+  // Apply health_config + user overrides.
   let artificialSpikeRatio = 1.25;
   let artificialMinBaseline = 50;
   let artificialGraceDays = 14;
   let artificialThresholdCrossing = 1500;
   let artificialIncludeWeekends = false;
-  try {
-    const { data: hcRows } = await svc
-      .from("health_config")
-      .select("key,value_numeric")
-      .in("key", [
-        "artificial_streams_spike_ratio",
-        "artificial_streams_min_baseline",
-        "artificial_streams_new_track_grace_days",
-        "artificial_streams_threshold_crossing_max",
-        "artificial_streams_include_weekends",
-      ]);
-    for (const row of (hcRows ?? []) as Array<{ key?: string; value_numeric?: unknown }>) {
-      const k = row.key;
-      const v = row.value_numeric;
-      if (v == null || !Number.isFinite(Number(v))) continue;
-      const n = Number(v);
-      if (k === "artificial_streams_spike_ratio") artificialSpikeRatio = n;
-      if (k === "artificial_streams_min_baseline") artificialMinBaseline = n;
-      if (k === "artificial_streams_new_track_grace_days") artificialGraceDays = Math.round(n);
-      if (k === "artificial_streams_threshold_crossing_max") artificialThresholdCrossing = Math.round(n);
-      if (k === "artificial_streams_include_weekends") artificialIncludeWeekends = Boolean(Math.round(n));
-    }
-    if (userArtificialSpikeRatio != null) artificialSpikeRatio = userArtificialSpikeRatio;
-    if (userIncludeWeekendsOverride !== null) artificialIncludeWeekends = userIncludeWeekendsOverride;
-  } catch {
-    // defaults above
+  for (const row of hcRows) {
+    const k = row.key;
+    const v = row.value_numeric;
+    if (v == null || !Number.isFinite(Number(v))) continue;
+    const n = Number(v);
+    if (k === "artificial_streams_spike_ratio") artificialSpikeRatio = n;
+    if (k === "artificial_streams_min_baseline") artificialMinBaseline = n;
+    if (k === "artificial_streams_new_track_grace_days") artificialGraceDays = Math.round(n);
+    if (k === "artificial_streams_threshold_crossing_max") artificialThresholdCrossing = Math.round(n);
+    if (k === "artificial_streams_include_weekends") artificialIncludeWeekends = Boolean(Math.round(n));
   }
+  if (userArtificialSpikeRatio != null) artificialSpikeRatio = userArtificialSpikeRatio;
+  if (userIncludeWeekendsOverride !== null) artificialIncludeWeekends = userIncludeWeekendsOverride;
 
-  let overrideBuster = "0";
-  try {
-    const { count, data: latestOverride } = await svc
-      .from("track_daily_stream_overrides")
-      .select("id", { count: "exact" })
-      .order("id", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    const maxId = Number((latestOverride as { id: number } | null)?.id ?? 0);
-    const total = Number(count ?? 0);
-    overrideBuster = `${total}-${maxId}`;
-  } catch {
-    // ignore
-  }
-
-  const rollbackDate = await getRollbackDate();
   const rollbackRunDate = rollbackDate ? rollbackDataDateToRunDate(rollbackDate) : null;
 
-  const playlistImageUrl =
-    playlistKey === "all_catalog"
-      ? null
-      : (
-          await cachedQuery<{ spotify_playlist_image_url: string | null }>(
-            async () =>
-              await svc
-                .from("playlists")
-                .select("spotify_playlist_image_url")
-                .eq("playlist_key", playlistKey)
-                .maybeSingle(),
-            `home-playlist-image-${playlistKey}`,
-            CACHE_TTL_1H,
-          )
-        ).data?.spotify_playlist_image_url ?? null;
-
-  if (datasetMode === "competitor" && competitorLabelKey && competitorLabelKey !== ALL_COMPETITORS_KEY) {
-    try {
-      const { data: label } = await svc
-        .schema("competitor")
-        .from("labels")
-        .select("display_name")
-        .eq("label_key", competitorLabelKey)
-        .maybeSingle();
-      competitorLabelName = (label as { display_name?: string | null } | null)?.display_name ?? competitorLabelKey;
-    } catch {
-      competitorLabelName = competitorLabelKey;
-    }
-  }
-  if (datasetMode === "competitor" && (!competitorLabelKey || competitorLabelKey === ALL_COMPETITORS_KEY)) {
-    try {
-      const { data: labels } = await svc
-        .schema("competitor")
-        .from("labels")
-        .select("label_key,display_name")
-        .eq("is_active", true)
-        .order("display_name", { ascending: true });
-      const typedLabels = (labels ?? []) as Array<{ label_key: string; display_name: string }>;
-      competitorLabelKey = competitorLabelKey === ALL_COMPETITORS_KEY ? ALL_COMPETITORS_KEY : resolveCompetitorLabelKey(null, typedLabels);
-      competitorLabelName = competitorLabelKey === ALL_COMPETITORS_KEY
-        ? "All Competitors"
-        : typedLabels.find((label) => label.label_key === competitorLabelKey)?.display_name ?? competitorLabelKey;
-    } catch {
-      // Leave null and fall back below.
-    }
-  }
-
+  // Competitor name + playlists lookups are independent of each other, so run them in
+  // parallel when we're in Competitor Mode.
   let competitorPlaylists: HomeDashboardServerProps["competitorPlaylists"] = [];
-  if (datasetMode === "competitor" && competitorLabelKey && competitorLabelKey !== ALL_COMPETITORS_KEY) {
-    try {
-      const { data: plRows } = await svc
-        .schema("competitor")
-        .from("playlists")
-        .select("playlist_key,display_name,spotify_playlist_image_url")
-        .eq("label_key", competitorLabelKey)
-        .eq("is_active", true)
-        .order("display_order", { ascending: true, nullsFirst: false })
-        .order("display_name", { ascending: true });
-      competitorPlaylists = (plRows ?? []).map(
-        (p: {
-          playlist_key?: unknown;
-          display_name?: unknown;
-          spotify_playlist_image_url?: unknown;
-        }) => ({
-          playlist_key: String(p.playlist_key ?? ""),
-          display_name: String(p.display_name ?? p.playlist_key ?? "").trim(),
-          spotify_playlist_image_url: (p.spotify_playlist_image_url ?? null) as string | null,
-        }),
-      );
-    } catch {
-      competitorPlaylists = [];
-    }
+  if (datasetMode === "competitor") {
+    const isSpecificCompetitor =
+      !!competitorLabelKey && competitorLabelKey !== ALL_COMPETITORS_KEY;
+
+    const labelNamePromise: Promise<string | null> = (async () => {
+      if (isSpecificCompetitor) {
+        try {
+          const { data: label } = await svc
+            .schema("competitor")
+            .from("labels")
+            .select("display_name")
+            .eq("label_key", competitorLabelKey!)
+            .maybeSingle();
+          return (label as { display_name?: string | null } | null)?.display_name ?? competitorLabelKey!;
+        } catch {
+          return competitorLabelKey;
+        }
+      }
+      // "All Competitors" or unset — need the labels list to resolve a name + fallback key.
+      try {
+        const { data: labels } = await svc
+          .schema("competitor")
+          .from("labels")
+          .select("label_key,display_name")
+          .eq("is_active", true)
+          .order("display_name", { ascending: true });
+        const typedLabels = (labels ?? []) as Array<{ label_key: string; display_name: string }>;
+        const resolvedKey =
+          competitorLabelKey === ALL_COMPETITORS_KEY
+            ? ALL_COMPETITORS_KEY
+            : resolveCompetitorLabelKey(null, typedLabels);
+        competitorLabelKey = resolvedKey;
+        return resolvedKey === ALL_COMPETITORS_KEY
+          ? "All Competitors"
+          : typedLabels.find((label) => label.label_key === resolvedKey)?.display_name ?? resolvedKey;
+      } catch {
+        return null;
+      }
+    })();
+
+    const playlistsPromise: Promise<HomeDashboardServerProps["competitorPlaylists"]> = isSpecificCompetitor
+      ? (async () => {
+          try {
+            const { data: plRows } = await svc
+              .schema("competitor")
+              .from("playlists")
+              .select("playlist_key,display_name,spotify_playlist_image_url")
+              .eq("label_key", competitorLabelKey!)
+              .eq("is_active", true)
+              .order("display_order", { ascending: true, nullsFirst: false })
+              .order("display_name", { ascending: true });
+            return (plRows ?? []).map(
+              (p: {
+                playlist_key?: unknown;
+                display_name?: unknown;
+                spotify_playlist_image_url?: unknown;
+              }) => ({
+                playlist_key: String(p.playlist_key ?? ""),
+                display_name: String(p.display_name ?? p.playlist_key ?? "").trim(),
+                spotify_playlist_image_url: (p.spotify_playlist_image_url ?? null) as string | null,
+              }),
+            );
+          } catch {
+            return [];
+          }
+        })()
+      : Promise.resolve([]);
+
+    const [resolvedName, resolvedPlaylists] = await Promise.all([labelNamePromise, playlistsPromise]);
+    competitorLabelName = resolvedName;
+    competitorPlaylists = resolvedPlaylists;
   }
 
   const { data: history, error: historyErr } = await cachedQuery<PlaylistDailyStatsRow[]>(

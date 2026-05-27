@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { Download } from "lucide-react";
 
+import { TableSkeleton } from "@/components/ui/Skeleton";
+
 import { SearchBox } from "./SearchBox";
 import { TracksList } from "./TracksList";
 import { MenuSelect } from "@/components/ui/MenuSelect";
@@ -29,11 +31,12 @@ type Track = {
 type TracksConfigClientProps = {
   tracks: Track[];
   totalCount: number;
+  loading?: boolean;
 };
 
 type SortOption = "name" | "total" | "daily" | "release" | "lastseen";
 
-export function TracksConfigClient({ tracks, totalCount }: TracksConfigClientProps) {
+export function TracksConfigClient({ tracks, totalCount, loading = false }: TracksConfigClientProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<SortOption>("name");
   const [sortAsc, setSortAsc] = useState(true);
@@ -171,12 +174,11 @@ export function TracksConfigClient({ tracks, totalCount }: TracksConfigClientPro
         </div>
       </div>
 
-      <TracksList 
-        tracks={tracks} 
-        searchQuery={searchQuery}
-        sortBy={sortBy}
-        sortAsc={sortAsc}
-      />
+      {loading ? (
+        <TableSkeleton rows={10} cols={8} />
+      ) : (
+        <TracksList tracks={tracks} searchQuery={searchQuery} sortBy={sortBy} sortAsc={sortAsc} />
+      )}
     </>
   );
 }

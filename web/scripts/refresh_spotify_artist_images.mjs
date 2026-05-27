@@ -1,5 +1,7 @@
 // Refresh Spotify artist image URLs in Supabase cache table.
 // Intended to run on a schedule (e.g. first Friday of the month).
+// Pulls artist IDs from both own-catalog public.tracks and competitor.tracks so
+// competitor-only artists do not stay thumbnail-less until someone searches them.
 //
 // Required env vars:
 // - NEXT_PUBLIC_SUPABASE_URL
@@ -8,10 +10,15 @@
 // - SPOTIFY_CLIENT_SECRET
 //
 // Optional:
-// - MAX_REFRESH: max rows to refresh (default 2000)
+// - MAX_REFRESH: max artists to fetch from Spotify (default 2000)
 // - MAX_AGE_DAYS: refresh rows older than this (default 31)
+// - MAX_SOURCE_ROWS: max track rows to scan per schema (default 50000)
 
 import { createClient } from "@supabase/supabase-js";
+import nextEnv from "@next/env";
+
+const { loadEnvConfig } = nextEnv;
+loadEnvConfig(process.cwd());
 
 function requireEnv(name) {
   const v = process.env[name];
@@ -29,6 +36,7 @@ const SPOTIFY_CLIENT_SECRET = requireEnv("SPOTIFY_CLIENT_SECRET");
 
 const MAX_REFRESH = Math.max(1, Number(process.env.MAX_REFRESH ?? "2000") || 2000);
 const MAX_AGE_DAYS = Math.max(1, Number(process.env.MAX_AGE_DAYS ?? "31") || 31);
+const MAX_SOURCE_ROWS = Math.max(1000, Number(process.env.MAX_SOURCE_ROWS ?? "50000") || 50000);
 
 const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: { persistSession: false, autoRefreshToken: false },
@@ -73,19 +81,66 @@ function chunk(arr, size) {
   return out;
 }
 
+async function collectArtistIdsFromTracks(client, label) {
+  const artistIds = new Set();
+  const pageSize = 1000;
+  let from = 0;
+
+  while (from < MAX_SOURCE_ROWS) {
+    const to = Math.min(from + pageSize - 1, MAX_SOURCE_ROWS - 1);
+    const { data, error } = await client
+      .from("tracks")
+      .select("spotify_artist_ids")
+      .not("spotify_artist_ids", "is", null)
+      .range(from, to);
+
+    if (error) throw new Error(`[spotify-refresh] ${label} artist scan failed: ${error.message}`);
+    const rows = data ?? [];
+    for (const row of rows) {
+      const ids = Array.isArray(row.spotify_artist_ids) ? row.spotify_artist_ids : [];
+      for (const id of ids) {
+        const clean = String(id ?? "").trim();
+        if (clean) artistIds.add(clean);
+      }
+    }
+
+    if (rows.length < pageSize) break;
+    from += pageSize;
+  }
+
+  console.log(`[spotify-refresh] scanned ${artistIds.size} distinct ${label} artist IDs`);
+  return artistIds;
+}
+
+async function readCacheRowsByArtistId(ids) {
+  const rows = [];
+  for (const idsChunk of chunk(ids, 500)) {
+    const { data, error } = await sb
+      .from("spotify_artist_images")
+      .select("artist_id,refreshed_at")
+      .in("artist_id", idsChunk);
+    if (error) throw error;
+    rows.push(...(data ?? []));
+  }
+  return rows;
+}
+
 async function main() {
   const cutoff = new Date(Date.now() - MAX_AGE_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
-  // Grab a batch of stale rows; refresh those.
-  const { data: staleRows, error } = await sb
-    .from("spotify_artist_images")
-    .select("artist_id,refreshed_at")
-    .lt("refreshed_at", cutoff)
-    .order("refreshed_at", { ascending: true })
-    .limit(MAX_REFRESH);
+  const ownArtistIds = await collectArtistIdsFromTracks(sb, "own-catalog");
+  const competitorArtistIds = await collectArtistIdsFromTracks(sb.schema("competitor"), "competitor");
+  const sourceArtistIds = Array.from(new Set([...ownArtistIds, ...competitorArtistIds]));
 
-  if (error) throw error;
-  const ids = (staleRows ?? []).map((r) => r.artist_id).filter(Boolean);
+  const cachedRows = await readCacheRowsByArtistId(sourceArtistIds);
+  const cachedById = new Map(cachedRows.map((row) => [row.artist_id, row]));
+
+  const ids = sourceArtistIds
+    .filter((id) => {
+      const row = cachedById.get(id);
+      return !row || !row.refreshed_at || row.refreshed_at < cutoff;
+    })
+    .slice(0, MAX_REFRESH);
 
   if (ids.length === 0) {
     console.log(`[spotify-refresh] nothing to refresh (cutoff ${cutoff})`);

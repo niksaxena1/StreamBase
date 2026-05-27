@@ -1,16 +1,29 @@
 "use client";
 
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
-import { Check, Swords } from "lucide-react";
+import { Check, Loader2, Swords } from "lucide-react";
 
 import { LogoMark } from "@/components/LogoMark";
-import { ALL_COMPETITORS_KEY, isAllCompetitorsKey } from "@/lib/competitorContext";
+import {
+  ALL_COMPETITORS_ACCENT_HEX,
+  ALL_COMPETITORS_KEY,
+  isAllCompetitorsKey,
+} from "@/lib/competitorContext";
 import { pathAfterDatasetModeSwitch } from "@/lib/datasetModeNavigation";
 import { competitorAccentCssVars } from "@/lib/competitorAccent";
-import { COMPETITOR_LABEL_EVENT, type CompetitorAccentEventDetail } from "@/lib/competitorAccentEvents";
+import {
+  COMPETITOR_LABEL_EVENT,
+  dispatchCompetitorLabelChange,
+  type CompetitorAccentEventDetail,
+} from "@/lib/competitorAccentEvents";
+import {
+  triggerRouteLoadingBarDone,
+  triggerRouteLoadingBarStart,
+} from "@/lib/navigation/loadingBar";
 
 type Label = {
   label_key: string;
@@ -27,18 +40,28 @@ function isAllActive(datasetMode: "own" | "competitor", activeLabelKey: string |
   return datasetMode === "competitor" && (!activeLabelKey || isAllCompetitorsKey(activeLabelKey));
 }
 
+function normalizeAccentHex(hex: string | null | undefined): string | null {
+  if (!hex) return null;
+  const clean = hex.replace(/^#/, "").toLowerCase();
+  return /^[0-9a-f]{6}$/.test(clean) ? clean : null;
+}
+
 function triggerRingStyle(
   datasetMode: "own" | "competitor",
+  showAllPill: boolean,
   accentHex: string | null,
-  ownHover: boolean,
+  previewHex: string | null,
+  menuOpen: boolean,
 ): CSSProperties | undefined {
-  if (datasetMode === "competitor" && accentHex) {
-    return { boxShadow: `inset 0 0 0 1.5px #${accentHex}` };
-  }
-  if (datasetMode === "own") {
-    return { boxShadow: ownHover ? undefined : "inset 0 0 0 1px var(--sb-border)" };
-  }
-  return undefined;
+  if (datasetMode !== "competitor") return undefined;
+  const hex =
+    menuOpen && previewHex
+      ? normalizeAccentHex(previewHex)
+      : showAllPill
+        ? ALL_COMPETITORS_ACCENT_HEX
+        : normalizeAccentHex(accentHex);
+  if (!hex) return undefined;
+  return { boxShadow: `inset 0 0 0 1.5px #${hex}` };
 }
 
 export function CompetitorModeButton({
@@ -50,11 +73,13 @@ export function CompetitorModeButton({
   labels: Label[];
   activeLabelKey: string | null;
 }) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [ownHover, setOwnHover] = useState(false);
   const [previewHex, setPreviewHex] = useState<string | null>(null);
   const [labelOverride, setLabelOverride] = useState<string | null>(null);
+  const [datasetModeOverride, setDatasetModeOverride] = useState<"own" | "competitor" | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -62,10 +87,16 @@ export function CompetitorModeButton({
   const [portalPos, setPortalPos] = useState<{ top: number; right: number } | null>(null);
 
   const effectiveLabelKey = labelOverride ?? activeLabelKey;
+  const effectiveDatasetMode = datasetModeOverride ?? datasetMode;
 
+  // When real props arrive (after router.refresh() rebuilds the layout), drop our optimistic
+  // overrides and finish the loading bar. This is the success-path cleanup for switchTo().
   useEffect(() => {
     setLabelOverride(null);
-  }, [activeLabelKey]);
+    setDatasetModeOverride(null);
+    setSaving(false);
+    triggerRouteLoadingBarDone();
+  }, [activeLabelKey, datasetMode]);
 
   useEffect(() => {
     function onLabelChange(e: Event) {
@@ -77,12 +108,23 @@ export function CompetitorModeButton({
   }, []);
 
   const activeLabel =
-    datasetMode === "competitor" && effectiveLabelKey && !isAllCompetitorsKey(effectiveLabelKey)
+    effectiveDatasetMode === "competitor" &&
+    effectiveLabelKey &&
+    !isAllCompetitorsKey(effectiveLabelKey)
       ? labels.find((l) => l.label_key === effectiveLabelKey) ?? null
       : null;
 
+  const showAllPill =
+    effectiveDatasetMode === "competitor" && isAllActive(effectiveDatasetMode, effectiveLabelKey);
+
   const accentHex = activeLabel?.accent_hex ?? null;
-  const showAllPill = datasetMode === "competitor" && isAllActive(datasetMode, effectiveLabelKey);
+  const triggerRing = triggerRingStyle(
+    effectiveDatasetMode,
+    showAllPill,
+    accentHex,
+    previewHex,
+    open,
+  );
 
   const clearPreview = useCallback(() => setPreviewHex(null), []);
 
@@ -139,44 +181,72 @@ export function CompetitorModeButton({
   }, [open, datasetMode, activeLabelKey, labels.length]);
 
   async function switchTo(mode: "own" | "competitor", labelKey?: string) {
+    const targetLabelKey =
+      mode === "competitor" ? labelKey ?? ALL_COMPETITORS_KEY : null;
+    const targetIsSpecificCompetitor =
+      mode === "competitor" && targetLabelKey != null && !isAllCompetitorsKey(targetLabelKey);
+    const targetAccentHex = targetIsSpecificCompetitor
+      ? labels.find((l) => l.label_key === targetLabelKey)?.accent_hex ?? null
+      : null;
+
+    // Remember the previous chrome accent so we can roll back on failure.
+    const previousAccentHex = activeLabel?.accent_hex ?? null;
+    const previousLabelKey = activeLabelKey;
+
     setSaving(true);
     clearPreview();
+    setOpen(false);
+
+    // Optimistic UI: flip the trigger + accent immediately. The CompetitorAccentStyle
+    // listener picks up the dispatched event and re-themes the chrome on the spot.
+    setDatasetModeOverride(mode);
+    setLabelOverride(targetLabelKey);
+    dispatchCompetitorLabelChange({ accentHex: targetAccentHex, labelKey: targetLabelKey });
+
+    triggerRouteLoadingBarStart();
+
+    let ok = false;
     try {
-      if (mode === "own") {
-        const res = await fetch("/api/user-settings/dataset-mode", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ dataset_mode: "own" }),
-        });
-        if (!res.ok) return;
-      } else {
-        const modeRes = await fetch("/api/user-settings/dataset-mode", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ dataset_mode: "competitor" }),
-        });
-        if (!modeRes.ok) return;
-        const labelRes = await fetch("/api/user-settings/competitor-label", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            competitor_label_key: labelKey ?? ALL_COMPETITORS_KEY,
-          }),
-        });
-        if (!labelRes.ok) return;
+      const res = await fetch("/api/user-settings/dataset-context", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dataset_mode: mode,
+          ...(mode === "competitor" ? { competitor_label_key: targetLabelKey } : {}),
+        }),
+      });
+      ok = res.ok;
+
+      if (ok) {
+        // Strip universe-scoped search params on routes where mode change invalidates them.
+        const cleanUrl = pathAfterDatasetModeSwitch(
+          window.location.pathname,
+          window.location.search,
+        );
+        if (cleanUrl && cleanUrl !== window.location.pathname + window.location.search) {
+          // router.replace re-runs server components for the new URL.
+          router.replace(cleanUrl);
+        } else {
+          // Same URL — just re-fetch the RSC payload (no full document reload).
+          router.refresh();
+        }
+        // The success-path cleanup (clearing saving + finishing the loading bar) runs
+        // automatically in the useEffect on activeLabelKey/datasetMode prop change.
       }
-      const cleanUrl = pathAfterDatasetModeSwitch(
-        window.location.pathname,
-        window.location.search,
-      );
-      if (cleanUrl) {
-        window.location.assign(cleanUrl);
-      } else {
-        window.location.reload();
-      }
+    } catch {
+      // Network failure: handled in finally below.
     } finally {
-      setSaving(false);
-      setOpen(false);
+      if (!ok) {
+        // Roll back the optimistic chrome update + unlock the UI.
+        setSaving(false);
+        setDatasetModeOverride(null);
+        setLabelOverride(null);
+        dispatchCompetitorLabelChange({
+          accentHex: previousAccentHex,
+          labelKey: previousLabelKey,
+        });
+        triggerRouteLoadingBarDone();
+      }
     }
   }
 
@@ -234,7 +304,7 @@ export function CompetitorModeButton({
   }
 
   const triggerAriaLabel =
-    datasetMode === "own"
+    effectiveDatasetMode === "own"
       ? "Competitors"
       : activeLabel
         ? activeLabel.display_name
@@ -357,34 +427,44 @@ export function CompetitorModeButton({
         onClick={() => setOpen((v) => !v)}
         onMouseEnter={() => datasetMode === "own" && setOwnHover(true)}
         onMouseLeave={() => setOwnHover(false)}
+        style={triggerRing}
         className={cx(
           "relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition",
+          !(effectiveDatasetMode === "competitor" && triggerRing) && "sb-ring",
           "hover:bg-black/5 dark:hover:bg-white/10",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
         )}
-        style={triggerRingStyle(datasetMode, accentHex, ownHover)}
       >
-        {datasetMode === "own" ? (
+        {effectiveDatasetMode === "own" ? (
           <Swords
             className={cx("h-4 w-4 transition-opacity", ownHover ? "opacity-90" : "opacity-60")}
             style={{ color: "var(--sb-muted)" }}
           />
         ) : showAllPill ? (
-          <span className="grid h-6 w-6 place-items-center rounded-full bg-[var(--sb-accent-10)] text-[10px] font-semibold text-[var(--sb-accent-text,inherit)]">
+          <span className="grid h-6 w-6 place-items-center rounded-full bg-[var(--sb-accent-10)] text-[9px] font-semibold text-[var(--sb-accent-text,inherit)]">
             All
           </span>
         ) : activeLabel?.image_url ? (
           <Image
             src={activeLabel.image_url}
             alt=""
-            width={28}
-            height={28}
-            className="pointer-events-none h-7 w-7 rounded-full object-cover"
+            width={24}
+            height={24}
+            className="pointer-events-none h-6 w-6 rounded-full object-cover"
           />
         ) : (
           <span className="block h-6 w-6 rounded-full bg-fuchsia-500/15" />
         )}
       </button>
+
+      {saving ? (
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 grid place-items-center rounded-full bg-black/20 dark:bg-black/40"
+        >
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-white" />
+        </span>
+      ) : null}
 
       {open && typeof document !== "undefined" ? createPortal(menuContent, document.body) : null}
     </div>

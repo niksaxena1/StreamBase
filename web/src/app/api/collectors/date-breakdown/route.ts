@@ -2,18 +2,12 @@ import { NextRequest } from "next/server";
 
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
-import { SOT_DATA_LAG_DAYS } from "@/lib/sotDates";
+import { prior7DayAverageDaily } from "@/lib/dateBreakdownStats";
+import { addDaysISO, dataDateFromRunDate, runDateFromDataDate } from "@/lib/sotDates";
 import { apiJsonErr, apiJsonOk, readJsonBodyOptional, requireAdmin } from "@/lib/api/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function addDaysIso(dateIso: string, deltaDays: number): string {
-  const d = new Date(`${dateIso}T00:00:00Z`);
-  if (Number.isNaN(d.getTime())) return dateIso;
-  d.setUTCDate(d.getUTCDate() + deltaDays);
-  return d.toISOString().slice(0, 10);
-}
 
 export async function POST(req: NextRequest) {
   const sb = await supabaseServer();
@@ -48,15 +42,15 @@ export async function POST(req: NextRequest) {
   const collectorAggTable = useEntityPlaylistsForTotals
     ? "collector_daily_agg_entity_playlists"
     : "collector_daily_agg";
-  const runDate = addDaysIso(dataDate, SOT_DATA_LAG_DAYS);
-  const runDateMinus7 = addDaysIso(runDate, -7);
-  const prevRunDate = addDaysIso(runDate, -1);
+  const runDate = runDateFromDataDate(dataDate);
+  const runDateStart = runDateFromDataDate(addDaysISO(dataDate, -7));
+  const prevRunDate = addDaysISO(runDate, -1);
 
   const { data: aggRows, error: aggError } = await svc
     .from(collectorAggTable)
     .select("collector,date,daily_streams_net")
     .in("collector", collectors)
-    .gte("date", runDateMinus7)
+    .gte("date", runDateStart)
     .lte("date", runDate)
     .order("date", { ascending: true });
 
@@ -128,14 +122,14 @@ export async function POST(req: NextRequest) {
         (r: any) => String(r.collector ?? "").toUpperCase() === collector,
       );
 
-      const targetRow = rows.find((r: any) => r.date === runDate);
-      const dailyStreams = Number(targetRow?.daily_streams_net ?? 0);
+      const byDataDate = new Map<string, number>();
+      for (const row of rows) {
+        const dataDateKey = dataDateFromRunDate(String(row.date ?? "").slice(0, 10));
+        byDataDate.set(dataDateKey, Number(row.daily_streams_net ?? 0));
+      }
 
-      const prevRows = rows.filter((r: any) => r.date < runDate);
-      const avg7 =
-        prevRows.length > 0
-          ? prevRows.reduce((s: number, r: any) => s + Number(r.daily_streams_net ?? 0), 0) / prevRows.length
-          : 0;
+      const dailyStreams = byDataDate.get(dataDate) ?? 0;
+      const avg7 = prior7DayAverageDaily(byDataDate, dataDate);
 
       const deltaPct = avg7 > 0 ? ((dailyStreams - avg7) / avg7) * 100 : null;
 
@@ -177,7 +171,7 @@ export async function POST(req: NextRequest) {
       let rosterCumulativeImpact = 0;
 
       try {
-        const prevPrevDate = addDaysIso(prevRunDate, -1);
+        const prevPrevDate = addDaysISO(prevRunDate, -1);
         const [todayTracks, yesterdayTracks] = await Promise.all([
           getAllCollectorTracks(collector, runDate, prevRunDate),
           getAllCollectorTracks(collector, prevRunDate, prevPrevDate),

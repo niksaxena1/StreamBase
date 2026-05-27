@@ -31,6 +31,9 @@ import {
   Music,
 } from "lucide-react";
 import { fetchApiJson } from "@/lib/api";
+import { dispatchCompetitorLabelChange } from "@/lib/competitorAccentEvents";
+import type { DatasetMode } from "@/lib/datasetMode";
+import type { NetworkGraphMode } from "@/lib/network/loadNetworkPage";
 import { formatInt } from "@/lib/format";
 import { slugifyForFilename, todayIsoDate } from "@/lib/csv";
 import {
@@ -89,6 +92,7 @@ import {
 } from "./networkGraphConstants";
 import { getImage } from "./networkGraphImageCache";
 import {
+  accentRgba,
   buildAdjacency,
   collaborationLinkKey,
   isTypingTarget,
@@ -123,7 +127,7 @@ import {
   parseNetworkScope,
   type NetworkScopeState,
 } from "./networkScope";
-import type { GraphNode, GraphEdge, NetworkPlaylistOption, SharedTrack } from "./page";
+import type { GraphNode, GraphEdge, NetworkPlaylistOption, SharedTrack } from "./networkTypes";
 
 // Force-graph uses Canvas/WebGL — must skip SSR.
 const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), {
@@ -141,6 +145,8 @@ interface Props {
   edges: GraphEdge[];
   playlists: NetworkPlaylistOption[];
   hideNonPrimary: boolean;
+  mode?: NetworkGraphMode;
+  datasetMode?: DatasetMode;
 }
 
 export function NetworkGraphClient({
@@ -148,7 +154,12 @@ export function NetworkGraphClient({
   edges,
   playlists,
   hideNonPrimary,
+  mode = "artists",
+  datasetMode = "own",
 }: Props) {
+  const isCrossLabelMode = mode === "cross-label";
+  const isCompetitorDataset = datasetMode === "competitor";
+  const catalogScopeLabel = isCompetitorDataset ? "All playlists" : "All Catalog";
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -449,7 +460,7 @@ export function NetworkGraphClient({
         ? formatNetworkScopeLabel(networkScope, playlistNameByKey)
         : "Custom playlist scope…";
     return [
-      { value: SCOPE_CATALOG, label: "All Catalog", leading: catalogThumb },
+      { value: SCOPE_CATALOG, label: catalogScopeLabel, leading: catalogThumb },
       { value: SCOPE_CUSTOM, label: customLabel, leading: customThumb },
       ...scopePlaylists.map((p) => ({
         value: p.playlist_key,
@@ -472,7 +483,7 @@ export function NetworkGraphClient({
         ),
       })),
     ];
-  }, [scopePlaylists, networkScope, playlistNameByKey]);
+  }, [scopePlaylists, networkScope, playlistNameByKey, catalogScopeLabel]);
 
   const scopeMenuValue = useMemo(() => {
     if (networkScope.mode === "catalog") return SCOPE_CATALOG;
@@ -890,6 +901,10 @@ export function NetworkGraphClient({
   }, [tableView, visibleTableArtistIdsKey, playlistKey, hideNonPrimary]);
 
   const handleExportViewXlsx = useCallback(async () => {
+    if (isCompetitorDataset) {
+      setXlsxExportAlert("Excel export is not available in Competitor Mode yet.");
+      return;
+    }
     setXlsxExporting(true);
     setXlsxExportAlert(null);
     setXlsxExportPhase("Preparing…");
@@ -1092,6 +1107,7 @@ export function NetworkGraphClient({
     playlistKey,
     networkScopeIdentityStr,
     collabCountBasisLabel,
+    isCompetitorDataset,
   ]);
 
   const selectionHydrateKey = useMemo(
@@ -1516,9 +1532,7 @@ export function NetworkGraphClient({
       if (isHover || isPinned) {
         a = Math.min(a + 0.24, 0.92);
       }
-      return colors.isDark
-        ? `rgba(212,255,77,${a})`
-        : `rgba(168,214,46,${a})`;
+      return accentRgba(colors.accent, a);
     },
     [isLinkHighlighted, colors, hoveredLink, pinnedLink],
   );
@@ -1680,6 +1694,26 @@ export function NetworkGraphClient({
     setDistroNameMap(new Map());
   }, []);
 
+  const switchCompetitorLabel = useCallback(
+    async (labelKey: string) => {
+      try {
+        await fetchApiJson<{ dataset_mode?: string; competitor_label_key?: string }>(
+          "/api/user-settings/dataset-context",
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ dataset_mode: "competitor", competitor_label_key: labelKey }),
+          },
+        );
+        dispatchCompetitorLabelChange({ labelKey, accentHex: null });
+        router.refresh();
+      } catch (e) {
+        console.error("switch competitor label failed:", e);
+      }
+    },
+    [router],
+  );
+
   const openArtistDistroModal = useCallback(async (artistId: string, fallbackName: string) => {
     setDistroModalOpen(true);
     setDistroLoading(true);
@@ -1719,6 +1753,23 @@ export function NetworkGraphClient({
         event.stopPropagation?.();
         return;
       }
+      if (isCrossLabelMode) {
+        if (event.ctrlKey || event.metaKey) {
+          event.preventDefault();
+          event.stopPropagation();
+          void switchCompetitorLabel(id);
+          return;
+        }
+        setRangeSelection([]);
+        if (selectedNodeId === id) {
+          setSelectedNodeId(null);
+        } else {
+          setSelectedNodeId(id);
+          fgRef.current?.centerAt(node.x, node.y, 600);
+          fgRef.current?.zoom(3, 600);
+        }
+        return;
+      }
       if (event.ctrlKey || event.metaKey) {
         event.preventDefault();
         event.stopPropagation();
@@ -1734,7 +1785,7 @@ export function NetworkGraphClient({
         fgRef.current?.zoom(3, 600);
       }
     },
-    [selectedNodeId, openArtistDistroModal],
+    [selectedNodeId, openArtistDistroModal, isCrossLabelMode, switchCompetitorLabel],
   );
 
   const handleBackgroundClick = useCallback(() => {
@@ -2731,34 +2782,45 @@ export function NetworkGraphClient({
         }}
       >
         {/* Graph scope */}
-        <MenuSelect
-          value={scopeMenuValue}
-          options={playlistScopeOptions}
-          onChange={(v) => {
-            if (v === SCOPE_CATALOG) {
-              pushNetworkUrl({ scope: DEFAULT_NETWORK_SCOPE });
-              return;
-            }
-            if (v === SCOPE_CUSTOM) {
-              setCustomScopeModalOpen(true);
-              return;
-            }
-            pushNetworkUrl({
-              scope: {
-                mode: "playlist",
-                playlistKey: v,
-                customPlaylistKeys: [],
-                customPlaylistMode: "any",
-              },
-            });
-          }}
-          ariaLabel="Graph scope: catalog, playlist, or custom playlists"
-          placeholder="All Catalog"
-          matchTriggerWidth={false}
-          className="min-w-[10rem] max-w-[min(100vw-8rem,17rem)]"
-          menuClassName="max-h-80 min-w-[min(100vw-2rem,17rem)] overflow-y-auto"
-        />
+        {isCrossLabelMode ? (
+          <span
+            className="text-sm font-medium shrink-0"
+            style={{ color: colors.text }}
+            title="Shared tracks between competitor labels (current playlist memberships)"
+          >
+            Competitor overlap
+          </span>
+        ) : (
+          <MenuSelect
+            value={scopeMenuValue}
+            options={playlistScopeOptions}
+            onChange={(v) => {
+              if (v === SCOPE_CATALOG) {
+                pushNetworkUrl({ scope: DEFAULT_NETWORK_SCOPE });
+                return;
+              }
+              if (v === SCOPE_CUSTOM) {
+                setCustomScopeModalOpen(true);
+                return;
+              }
+              pushNetworkUrl({
+                scope: {
+                  mode: "playlist",
+                  playlistKey: v,
+                  customPlaylistKeys: [],
+                  customPlaylistMode: "any",
+                },
+              });
+            }}
+            ariaLabel="Graph scope: catalog, playlist, or custom playlists"
+            placeholder={catalogScopeLabel}
+            matchTriggerWidth={false}
+            className="min-w-[10rem] max-w-[min(100vw-8rem,17rem)]"
+            menuClassName="max-h-80 min-w-[min(100vw-2rem,17rem)] overflow-y-auto"
+          />
+        )}
 
+        {!isCrossLabelMode ? (
         <div
           className="flex flex-wrap items-center gap-1.5 rounded-lg px-2 py-1 text-[11px]"
           style={{
@@ -2833,9 +2895,7 @@ export function NetworkGraphClient({
               style={{
                 backgroundColor:
                   collabCountBasis === "playlist"
-                    ? colors.isDark
-                      ? "rgba(212,255,77,0.14)"
-                      : "rgba(168,214,46,0.2)"
+                    ? accentRgba(colors.accent, colors.isDark ? 0.14 : 0.2)
                     : "transparent",
                 color: collabCountBasis === "playlist" ? colors.text : colors.muted,
               }}
@@ -2856,9 +2916,7 @@ export function NetworkGraphClient({
                 borderColor: colors.border,
                 backgroundColor:
                   collabCountBasis === "primary_rows"
-                    ? colors.isDark
-                      ? "rgba(212,255,77,0.14)"
-                      : "rgba(168,214,46,0.2)"
+                    ? accentRgba(colors.accent, colors.isDark ? 0.14 : 0.2)
                     : "transparent",
                 color: collabCountBasis === "primary_rows" ? colors.text : colors.muted,
               }}
@@ -2872,6 +2930,7 @@ export function NetworkGraphClient({
             </button>
           </div>
         </div>
+        ) : null}
 
         <div
           className="flex flex-wrap items-center gap-1.5 rounded-lg px-2 py-1 text-[11px]"
@@ -2885,7 +2944,7 @@ export function NetworkGraphClient({
             style={{ color: colors.muted }}
             title="Filter visible nodes by each artist's in-scope track count (the same track_count used on the graph). Min and max are inclusive; leave blank for no bound."
           >
-            Node tracks
+            {isCrossLabelMode ? "Label tracks" : "Node tracks"}
           </span>
           <input
             type="text"
@@ -2976,13 +3035,15 @@ export function NetworkGraphClient({
             colors={colors}
           />
 
-          <ToggleButton
-            active={hideNonPrimary}
-            onClick={() => pushNetworkUrl({ hideNonPrimary: !hideNonPrimary })}
-          icon={<UserX size={14} />}
-          title="Hide non-primary"
-            colors={colors}
-          />
+          {!isCrossLabelMode ? (
+            <ToggleButton
+              active={hideNonPrimary}
+              onClick={() => pushNetworkUrl({ hideNonPrimary: !hideNonPrimary })}
+              icon={<UserX size={14} />}
+              title="Hide non-primary"
+              colors={colors}
+            />
+          ) : null}
 
           <ToggleButton
             active={tableView}
@@ -3004,9 +3065,7 @@ export function NetworkGraphClient({
               color: networkAdvAppliedCount > 0 ? colors.accent : colors.muted,
               backgroundColor:
                 networkAdvAppliedCount > 0
-                  ? colors.isDark
-                    ? "rgba(212,255,77,0.12)"
-                    : "rgba(168,214,46,0.15)"
+                  ? accentRgba(colors.accent, colors.isDark ? 0.12 : 0.15)
                   : colors.isDark
                     ? "rgba(255,255,255,0.06)"
                     : "rgba(0,0,0,0.04)",
@@ -3030,9 +3089,13 @@ export function NetworkGraphClient({
             type="button"
             variant="ghost"
             size="sm"
-            title="Download Excel"
+            title={
+              isCompetitorDataset
+                ? "Excel export is not available in Competitor Mode yet"
+                : "Download Excel"
+            }
             aria-label="Download Excel export of current network view"
-            disabled={xlsxExporting}
+            disabled={xlsxExporting || isCompetitorDataset}
             onClick={() => void handleExportViewXlsx()}
             className="!h-8 !w-8 shrink-0 !rounded-lg"
             style={{
@@ -3291,6 +3354,7 @@ export function NetworkGraphClient({
         onClose={() => setFrozenTooltipTrackModal(null)}
         isrc={frozenTooltipTrackModal?.isrc ?? null}
         fallbackTitle={frozenTooltipTrackModal?.fallbackTitle ?? ""}
+        datasetMode={datasetMode}
         onFocusArtistOnNetwork={focusOnArtist}
       />
 
@@ -3334,8 +3398,59 @@ export function NetworkGraphClient({
         }}
       />
 
-      {/* Selected artist info panel */}
-      {selectedNodeId && (
+      {/* Selected node info panel */}
+      {selectedNodeId && isCrossLabelMode ? (
+        <div
+          className="border-t px-4 py-3 flex flex-wrap items-center gap-3 shrink-0"
+          style={{ borderColor: colors.border, backgroundColor: colors.card }}
+        >
+          {(() => {
+            const node = graphData.nodes.find((n) => n.id === selectedNodeId);
+            if (!node) return null;
+            return (
+              <>
+                {node.image_url ? (
+                  <PreviewableArtwork
+                    src={node.image_url}
+                    alt={node.name}
+                    width={40}
+                    height={40}
+                    interactive="inline"
+                    className="h-10 w-10 shrink-0 rounded-lg object-cover"
+                  />
+                ) : null}
+                <div className="min-w-0 flex-1">
+                  <div className="font-semibold truncate" style={{ color: colors.text }}>
+                    {node.name}
+                  </div>
+                  <div className="text-xs tabular-nums" style={{ color: colors.muted }}>
+                    {formatInt(node.track_count)} active playlist tracks ·{" "}
+                    {graphDegreeMap.get(selectedNodeId) ?? 0} shared-track links to other labels
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="rounded-lg px-3 py-1.5 text-xs font-medium shrink-0"
+                  style={{ backgroundColor: "var(--sb-accent)", color: "#000" }}
+                  onClick={() => void switchCompetitorLabel(selectedNodeId)}
+                >
+                  Open competitor
+                </button>
+                <button
+                  type="button"
+                  className="rounded-lg px-2 py-1.5 text-xs shrink-0"
+                  style={{ color: colors.muted }}
+                  onClick={() => setSelectedNodeId(null)}
+                  aria-label="Close selection"
+                >
+                  <X className="h-4 w-4" aria-hidden />
+                </button>
+              </>
+            );
+          })()}
+        </div>
+      ) : null}
+      {selectedNodeId && !isCrossLabelMode ? (
         <SelectedArtistPanel
           nodeId={selectedNodeId}
           nodes={graphData.nodes}
@@ -3352,7 +3467,7 @@ export function NetworkGraphClient({
           onClose={() => setSelectedNodeId(null)}
           onFocusArtist={focusOnArtist}
         />
-      )}
+      ) : null}
 
       {rangeSelection.length > 0 && (
         <SelectionStatsPanel
@@ -3392,7 +3507,7 @@ export function NetworkGraphClient({
               width: boxRect.width,
               height: boxRect.height,
               borderColor: colors.accent,
-              backgroundColor: colors.isDark ? "rgba(212,255,77,0.06)" : "rgba(168,214,46,0.08)",
+              backgroundColor: accentRgba(colors.accent, colors.isDark ? 0.06 : 0.08),
             }}
           />
         ) : null}

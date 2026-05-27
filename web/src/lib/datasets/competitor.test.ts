@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { datasetSchemaForMode, navItemsForMode } from "@/lib/datasets";
+import { datasetSchemaForMode, navItemsForMode, navShortcutItemsForMode } from "@/lib/datasets";
 
 describe("dataset helpers", () => {
   it("uses competitor schema in competitor mode", () => {
@@ -25,6 +25,18 @@ describe("dataset helpers", () => {
       { href: "/competitors", label: "Competitors" },
     ];
     expect(navItemsForMode("own", items).some((i) => i.href === "/competitors")).toBe(false);
+  });
+
+  it("maps shortcut 4 to competitors in competitor mode", () => {
+    const shortcuts = navShortcutItemsForMode("competitor");
+    expect(shortcuts.find((s) => s.key === "4")?.href).toBe("/competitors");
+    expect(shortcuts.some((s) => s.href === "/collectors")).toBe(false);
+  });
+
+  it("maps shortcut 4 to collectors in own mode", () => {
+    const shortcuts = navShortcutItemsForMode("own");
+    expect(shortcuts.find((s) => s.key === "4")?.href).toBe("/collectors");
+    expect(shortcuts.some((s) => s.href === "/competitors")).toBe(false);
   });
 
   it("shows only playlist watch when that is the only app access", () => {

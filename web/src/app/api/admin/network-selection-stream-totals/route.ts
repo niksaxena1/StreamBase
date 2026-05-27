@@ -1,6 +1,7 @@
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { apiJsonErr, apiJsonOk, readJsonBody, requireAdmin } from "@/lib/api/server";
+import { getAdminUserDatasetContext } from "@/lib/datasetContext.server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,7 +39,10 @@ export async function POST(req: Request) {
   }
 
   const svc = supabaseService();
-  const { data, error } = await svc.rpc("network_selection_scoped_track_totals", {
+  const { datasetMode } = await getAdminUserDatasetContext(svc, auth.user.id);
+  const rpcClient =
+    datasetMode === "competitor" ? svc.schema("competitor") : svc;
+  const { data, error } = await rpcClient.rpc("network_selection_scoped_track_totals", {
     p_artist_ids: artistIds,
     p_playlist_key: playlistKey,
     p_hide_non_primary: hideNonPrimary,

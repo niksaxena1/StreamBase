@@ -1,13 +1,16 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { revalidatePath, revalidateTag } from "next/cache";
 import type { Metadata } from "next";
 
 import { normalizeAppAccess, streamBaseAccessRedirectPath } from "@/lib/appAccess";
+import { loadSettingsShell } from "@/lib/settings/loadSettingsShell";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { PageHeader } from "@/components/shell/PageHeader";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { PurgeCacheButton } from "./PurgeCacheButton";
- import { SAISettingsToggle } from "./SAISettingsToggle";
+import { SAISettingsToggle } from "./SAISettingsToggle";
 import { HomeFiltersToggle } from "./HomeFiltersToggle";
 import { HomeArtificialSpikesSectionToggle } from "./HomeArtificialSpikesSectionToggle";
 import { PayoutRateSetting } from "./PayoutRateSetting";
@@ -23,16 +26,16 @@ import { ArtificialStreamSpikeWarningToggle } from "./ArtificialStreamSpikeWarni
 import { RapidApiAutoFixSetting } from "./RapidApiAutoFixSetting";
 import { HideStaleAnnotationsSetting } from "./HideStaleAnnotationsSetting";
 import { NetworkBackgroundGridSetting } from "./NetworkBackgroundGridSetting";
-import { ManualStreamOverrideForm } from "./ManualStreamOverrideForm";
-import { StreamOverridesTable, StreamOverridesTableDownloadButton } from "./StreamOverridesTable";
 import { SectionHeader } from "@/components/ui/SectionHeader";
-import { CollapsibleSection } from "@/components/ui/CollapsibleSection";
-import { HealthExclusionsSection, type ExclusionTabConfig } from "./HealthExclusionsSection";
 import { SettingsNav } from "./SettingsNav";
-import { dataDateFromRunDate } from "@/lib/sotDates";
 import { CollectorEntityPlaylistStatsSetting } from "./CollectorEntityPlaylistStatsSetting";
+import { SettingsHeavySections } from "./SettingsHeavySections";
 
-export const revalidate = 86400; // 24h ISR - admin config changes are infrequent
+export const dynamic = "force-dynamic";
+
+const EXCLUSION_CODE_NON_CATALOG = "non_catalog_tracks_present";
+const EXCLUSION_CODE_ENRICHMENT = "tracks_missing_enrichment";
+const EXCLUSION_CODE_STALE = "individual_tracks_stale";
 
 export const metadata: Metadata = {
   title: "Settings",
@@ -63,306 +66,15 @@ async function requireAdmin() {
 
 export default async function SettingsPage() {
   const { userId } = await requireAdmin();
-  const svc = supabaseService();
-  const { data: latestRun } = await svc
-    .from("ingestion_runs")
-    .select("run_date")
-    .order("run_date", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const latestRunDate = (latestRun?.run_date as string | null) ?? null;
-
-  let earliestDataDate: string | null = null;
-  let latestDataDate: string | null = null;
-  try {
-    const [earliestResult, latestResult] = await Promise.all([
-      svc
-        .from("track_daily_streams_effective_public")
-        .select("date")
-        .order("date", { ascending: true })
-        .limit(1)
-        .maybeSingle(),
-      svc
-        .from("track_daily_streams_effective_public")
-        .select("date")
-        .order("date", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-    ]);
-    const earliestRunDate = String(earliestResult.data?.date ?? "").trim();
-    const latestSnapshotRunDate = String(latestResult.data?.date ?? "").trim();
-    if (/^\d{4}-\d{2}-\d{2}$/.test(earliestRunDate)) {
-      earliestDataDate = dataDateFromRunDate(earliestRunDate);
-    }
-    if (/^\d{4}-\d{2}-\d{2}$/.test(latestSnapshotRunDate)) {
-      latestDataDate = dataDateFromRunDate(latestSnapshotRunDate);
-    }
-  } catch {
-    // Keep the picker usable if the aggregate view is unavailable.
-  }
-
-  if (!latestDataDate && latestRunDate) {
-    latestDataDate = dataDateFromRunDate(latestRunDate);
-  }
-
-  // Run date options for date pickers (limit to recent history for perf/UX).
-  let runDateOptions: string[] = [];
-  try {
-    const { data: runRows, error: runErr } = await svc
-      .from("ingestion_runs")
-      .select("run_date")
-      .order("run_date", { ascending: false })
-      .limit(730);
-    if (!runErr) {
-      const rows = (runRows ?? []) as Record<string, unknown>[];
-      runDateOptions = rows
-        .map((r) => String(r?.run_date ?? "").trim())
-        .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d));
-    }
-  } catch {
-    // ignore
-  }
-
-  // Fetch all tracks for combobox (with artist names)
-  const allTracks: Array<{
-    isrc: string;
-    name: string | null;
-    spotify_album_image_url: string | null;
-    spotify_artist_names: string[] | null;
-  }> = [];
-
-  try {
-    const pageSize = 1000;
-    const hardCap = 20_000; // scalability guard: cap to avoid huge payloads as catalog grows
-    let from = 0;
-    while (from < hardCap) {
-      const to = from + pageSize - 1;
-      const { data, error } = await svc
-        .from("tracks")
-        .select("isrc,name,spotify_album_image_url,spotify_artist_names")
-        .order("last_seen", { ascending: false })
-        .range(from, to);
-
-      if (error || !data || data.length === 0) break;
-      allTracks.push(...(data as typeof allTracks));
-      if (data.length < pageSize) break;
-      from += pageSize;
-    }
-  } catch {
-    // ignore
-  }
-
-  // Suggested manual overrides (best-effort; depends on ingestion_warnings).
-  // These come from Health warnings emitted when SpotOnTrack exports have missing/invalid stream totals.
-  type OverrideSuggestion = {
-    isrc: string;
-    code: "catalog_streams_missing_prev_nonzero" | "catalog_missing_stream_snapshots";
-    suggestedStreams: number | null;
-    prevStreams: number | null;
-  };
-
-  let overrideSuggestions: OverrideSuggestion[] = [];
-  try {
-    if (latestRunDate) {
-      const { data: warnRows, error } = await svc
-        .from("ingestion_warnings")
-        .select("code,details_json")
-        .eq("run_date", latestRunDate)
-        .in("code", ["catalog_streams_missing_prev_nonzero", "catalog_missing_stream_snapshots"])
-        .limit(50);
-      if (!error) {
-        const byIsrc = new Map<string, OverrideSuggestion>();
-        const rows = (warnRows ?? []) as Record<string, unknown>[];
-
-        for (const w of rows) {
-          const code = String(w?.code ?? "") as OverrideSuggestion["code"];
-          const d = (w?.details_json ?? {}) as Record<string, unknown>;
-
-          if (code === "catalog_streams_missing_prev_nonzero") {
-            const affectedRows = Array.isArray(d?.affected_isrcs_with_prev_sample)
-              ? (d.affected_isrcs_with_prev_sample as Record<string, unknown>[])
-              : [];
-            for (const r of affectedRows) {
-              const isrc = String(r?.isrc ?? "").trim().toUpperCase();
-              const prev = Number(r?.prev_streams_cumulative ?? NaN);
-              if (!/^[A-Z0-9]{12}$/.test(isrc)) continue;
-              const prevStreams = Number.isFinite(prev) ? prev : null;
-              // Suggest carrying forward yesterday's value as a starting point.
-              const s: OverrideSuggestion = {
-                isrc,
-                code,
-                prevStreams,
-                suggestedStreams: prevStreams,
-              };
-              byIsrc.set(isrc, s);
-            }
-          }
-
-          if (code === "catalog_missing_stream_snapshots") {
-            const isrcs = Array.isArray(d?.missing_isrcs_sample) ? (d.missing_isrcs_sample as unknown[]) : [];
-            for (const raw of isrcs) {
-              const isrc = String(raw ?? "").trim().toUpperCase();
-              if (!/^[A-Z0-9]{12}$/.test(isrc)) continue;
-              if (byIsrc.has(isrc)) continue;
-              byIsrc.set(isrc, { isrc, code, prevStreams: null, suggestedStreams: null });
-            }
-          }
-        }
-
-        overrideSuggestions = Array.from(byIsrc.values());
-      }
-    }
-  } catch {
-    // ignore
-  }
-
-  // Fetch ONLY tracks missing Spotify enrichment (spotify_artist_ids is NULL)
-  // for the enrichment exclusion combobox.
-  const unenrichedTracks: Array<{
-    isrc: string;
-    name: string | null;
-    spotify_album_image_url: string | null;
-    spotify_artist_names: string[] | null;
-  }> = [];
-
-  try {
-    const pageSize = 1000;
-    const hardCap = 10_000; // unenriched tracks are typically a small fraction of catalog
-    let from = 0;
-    while (from < hardCap) {
-      const to = from + pageSize - 1;
-      const { data, error } = await svc
-        .from("tracks")
-        .select("isrc,name,spotify_album_image_url,spotify_artist_names")
-        .is("spotify_artist_ids", null)
-        .order("last_seen", { ascending: false })
-        .range(from, to);
-
-      if (error || !data || data.length === 0) break;
-      unenrichedTracks.push(...(data as typeof unenrichedTracks));
-      if (data.length < pageSize) break;
-      from += pageSize;
-    }
-  } catch {
-    // ignore
-  }
-
-  // Fetch all playlists for scope dropdown
-  let allPlaylists: Array<{
-    playlist_key: string;
-    display_name: string;
-  }> = [];
-
-  try {
-    const { data, error } = await svc
-      .from("playlists")
-      .select("playlist_key,display_name")
-      .order("display_name", { ascending: true })
-      .limit(2000);
-    if (!error && data) {
-      allPlaylists = data as typeof allPlaylists;
-    }
-  } catch {
-    // ignore
-  }
-
-  // Health exclusions (best-effort; table may not exist yet).
-  const exclusionCode = "non_catalog_tracks_present";
-  const enrichmentExclusionCode = "tracks_missing_enrichment";
-  const staleExclusionCode = "individual_tracks_stale";
-  let exclusions: Array<{
-    id: number;
-    playlist_key: string | null;
-    isrc: string;
-    note: string | null;
-    created_at: string | null;
-  }> = [];
-
-  let enrichmentExclusions: Array<{
-    id: number;
-    playlist_key: string | null;
-    isrc: string;
-    note: string | null;
-    created_at: string | null;
-  }> = [];
-
-  try {
-    const { data: exRows, error: exErr } = await svc
-      .from("health_warning_exclusions")
-      .select("id,playlist_key,isrc,note,created_at")
-      .eq("code", exclusionCode)
-      .order("created_at", { ascending: false })
-      .limit(500);
-    if (!exErr) exclusions = (exRows ?? []) as typeof exclusions;
-  } catch {
-    // ignore
-  }
-
-  // Manual stream overrides (best-effort; table may not exist yet).
-  // Paginate to fetch ALL overrides — batch interpolation can easily exceed 500 rows.
-  const streamOverrides: Array<{
-    id: number;
-    date: string;
-    isrc: string;
-    streams_cumulative_override: number;
-    note: string | null;
-    created_by: string | null;
-    created_at: string | null;
-  }> = [];
-
-  try {
-    const pageSize = 1000;
-    const hardCap = 50_000; // safety guard; overrides grow with catalog size
-    let from = 0;
-    while (from < hardCap) {
-      const to = from + pageSize - 1;
-      const { data: rows, error } = await svc
-        .from("track_daily_stream_overrides")
-        .select("id,date,isrc,streams_cumulative_override,note,created_by,created_at")
-        .order("date", { ascending: false })
-        .order("created_at", { ascending: false })
-        .range(from, to);
-
-      if (error || !rows || rows.length === 0) break;
-      streamOverrides.push(...(rows as typeof streamOverrides));
-      if (rows.length < pageSize) break;
-      from += pageSize;
-    }
-  } catch {
-    // ignore
-  }
-
-  let staleExclusions: Array<{
-    id: number;
-    playlist_key: string | null;
-    isrc: string;
-    note: string | null;
-    created_at: string | null;
-  }> = [];
-
-  try {
-    const { data: exRows, error: exErr } = await svc
-      .from("health_warning_exclusions")
-      .select("id,playlist_key,isrc,note,created_at")
-      .eq("code", enrichmentExclusionCode)
-      .order("created_at", { ascending: false })
-      .limit(500);
-    if (!exErr) enrichmentExclusions = (exRows ?? []) as typeof enrichmentExclusions;
-  } catch {
-    // ignore
-  }
-
-  try {
-    const { data: exRows, error: exErr } = await svc
-      .from("health_warning_exclusions")
-      .select("id,playlist_key,isrc,note,created_at")
-      .eq("code", staleExclusionCode)
-      .order("created_at", { ascending: false })
-      .limit(500);
-    if (!exErr) staleExclusions = (exRows ?? []) as typeof staleExclusions;
-  } catch {
-    // ignore
-  }
+  const {
+    latestRunDate,
+    earliestDataDate,
+    latestDataDate,
+    runDateOptions,
+    allPlaylists,
+    exclusionCount,
+    streamOverrideCount,
+  } = await loadSettingsShell();
 
   async function addHealthExclusion(formData: FormData) {
     "use server";
@@ -384,7 +96,7 @@ export default async function SettingsPage() {
     const svc = supabaseService();
     const { error: insErr } = await svc
       .from("health_warning_exclusions")
-      .insert([{ code: exclusionCode, playlist_key, isrc, note }]);
+      .insert([{ code: EXCLUSION_CODE_NON_CATALOG, playlist_key, isrc, note }]);
 
     // Ignore duplicates (unique index).
     if (insErr && !String(insErr.message || "").toLowerCase().includes("duplicate")) {
@@ -441,7 +153,7 @@ export default async function SettingsPage() {
 
       const { error: insErr } = await svc
         .from("health_warning_exclusions")
-        .insert([{ code: enrichmentExclusionCode, playlist_key, isrc, note }]);
+        .insert([{ code: EXCLUSION_CODE_ENRICHMENT, playlist_key, isrc, note }]);
 
       // Ignore duplicates (unique index).
       if (insErr && !String(insErr.message || "").toLowerCase().includes("duplicate")) {
@@ -503,7 +215,7 @@ export default async function SettingsPage() {
 
       const { error: insErr } = await svc
         .from("health_warning_exclusions")
-        .insert([{ code: staleExclusionCode, playlist_key, isrc, note }]);
+        .insert([{ code: EXCLUSION_CODE_STALE, playlist_key, isrc, note }]);
 
       // Ignore duplicates (unique index).
       if (insErr && !String(insErr.message || "").toLowerCase().includes("duplicate")) {
@@ -633,72 +345,6 @@ export default async function SettingsPage() {
     revalidatePath("/catalog");
   }
 
-  const totalExclusions = exclusions.length + enrichmentExclusions.length + staleExclusions.length;
-
-  const exclusionTabs: ExclusionTabConfig[] = [
-    {
-      key: "non_catalog",
-      label: "Non-catalog",
-      description: (
-        <>
-          Exclude intentional non-catalog tracks from the Health warning{" "}
-          <span className="font-mono">non_catalog_tracks_present</span> and from the &ldquo;All Missing Catalog Tracks&rdquo; list.
-        </>
-      ),
-      exclusions,
-      addAction: addHealthExclusion,
-      removeAction: removeHealthExclusion,
-      formTracks: allTracks,
-      notePlaceholder: "Intentional non-catalog track",
-    },
-    {
-      key: "enrichment",
-      label: "Enrichment",
-      description: (
-        <div className="space-y-1">
-          <div>
-            Suppress the Health warning{" "}
-            <span className="font-mono">tracks_missing_enrichment</span> for tracks where enrichment has been intentionally skipped.
-          </div>
-          <div className="opacity-70">
-            The Track combobox only lists tracks currently detected as missing enrichment (no Spotify artist IDs).
-          </div>
-        </div>
-      ),
-      exclusions: enrichmentExclusions,
-      addAction: addEnrichmentExclusion,
-      removeAction: removeEnrichmentExclusion,
-      formTracks: unenrichedTracks,
-      notePlaceholder: "Intentional: skip enrichment for this track",
-      allowMulti: true,
-      submitLabel: "Exclude selected",
-    },
-    {
-      key: "stale",
-      label: "Stale tracks",
-      description: (
-        <div className="space-y-1">
-          <div>
-            Exclude tracks from the{" "}
-            <span className="font-mono">individual_tracks_stale</span> Health warning.
-            Excluded tracks will not be flagged even if their daily streams show zero growth.
-          </div>
-          <div className="opacity-70">
-            Exclusions take effect on the next ingestion run.
-          </div>
-        </div>
-      ),
-      exclusions: staleExclusions,
-      addAction: addStaleExclusion,
-      removeAction: removeStaleExclusion,
-      formTracks: allTracks,
-      notePlaceholder: "Intentional: this track's streams may not update daily",
-      allowMulti: true,
-      submitLabel: "Exclude selected",
-    },
-  ];
-
-  // Section definitions for jump links
   const sections = [
     { id: "collectors", label: "Collectors" },
     { id: "ai", label: "AI" },
@@ -708,8 +354,8 @@ export default async function SettingsPage() {
     { id: "network", label: "Network" },
     { id: "health", label: "Health" },
     { id: "cache", label: "Cache" },
-    { id: "exclusions", label: `Exclusions (${totalExclusions})` },
-    { id: "overrides", label: `Overrides (${streamOverrides.length})` },
+    { id: "exclusions", label: `Exclusions (${exclusionCount})` },
+    { id: "overrides", label: `Overrides (${streamOverrideCount})` },
   ];
 
   const lastRefreshed = new Date().toLocaleString("en-GB", {
@@ -826,46 +472,30 @@ export default async function SettingsPage() {
         </div>
       </div>
 
-      <div id="exclusions" className="scroll-mt-14">
-        <CollapsibleSection
-          title={<>Health exclusions <span className="ml-1.5 tabular-nums opacity-80">{totalExclusions}</span></>}
-          subtitle="Manage non-catalog, enrichment, and stale track exclusions."
-          storageKey="sb-settings-exclusions"
-          defaultOpen={false}
-        >
-          <HealthExclusionsSection
-            tabs={exclusionTabs}
-            playlists={allPlaylists}
-            allTracks={allTracks}
-          />
-        </CollapsibleSection>
-      </div>
-
-      <div id="overrides" className="scroll-mt-14">
-        <CollapsibleSection
-          title={<>Manual stream overrides <span className="ml-1.5 tabular-nums opacity-80">{streamOverrides.length}</span></>}
-          subtitle="Override cumulative stream snapshots for specific run dates."
-          storageKey="sb-settings-overrides"
-          defaultOpen={false}
-          actions={<StreamOverridesTableDownloadButton overrides={streamOverrides} tracks={allTracks} />}
-        >
-          <ManualStreamOverrideForm
-            addStreamOverride={addStreamOverride}
-            tracks={allTracks}
-            defaultRunDate={latestRunDate}
-            runDateOptions={runDateOptions}
-            suggestions={overrideSuggestions}
-          />
-
-          <div className="mt-3">
-            <StreamOverridesTable
-              overrides={streamOverrides}
-              tracks={allTracks}
-              removeStreamOverride={removeStreamOverride}
-            />
-          </div>
-        </CollapsibleSection>
-      </div>
+      <Suspense
+        fallback={
+          <>
+            <Skeleton className="h-32 w-full rounded-xl" />
+            <Skeleton className="mt-4 h-32 w-full rounded-xl" />
+          </>
+        }
+      >
+        <SettingsHeavySections
+          latestRunDate={latestRunDate}
+          runDateOptions={runDateOptions}
+          allPlaylists={allPlaylists}
+          exclusionCountEstimate={exclusionCount}
+          streamOverrideCountEstimate={streamOverrideCount}
+          addHealthExclusion={addHealthExclusion}
+          removeHealthExclusion={removeHealthExclusion}
+          addEnrichmentExclusion={addEnrichmentExclusion}
+          removeEnrichmentExclusion={removeEnrichmentExclusion}
+          addStaleExclusion={addStaleExclusion}
+          removeStaleExclusion={removeStaleExclusion}
+          addStreamOverride={addStreamOverride}
+          removeStreamOverride={removeStreamOverride}
+        />
+      </Suspense>
     </div>
   );
 }

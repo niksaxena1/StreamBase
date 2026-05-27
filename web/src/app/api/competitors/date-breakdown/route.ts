@@ -3,7 +3,9 @@ import { NextRequest } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { apiJsonErr, apiJsonOk, readJsonBodyOptional, requireAdmin } from "@/lib/api/server";
-import { addDaysISO, runDateFromDataDate } from "@/lib/sotDates";
+import { prior7DayAverageDaily } from "@/lib/dateBreakdownStats";
+import { addDaysISO, dataDateFromRunDate, runDateFromDataDate } from "@/lib/sotDates";
+import { isMissingPostgresFunctionError } from "@/lib/supabase/rpcErrors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -60,7 +62,7 @@ export async function POST(req: NextRequest) {
   }
 
   const runDate = runDateFromDataDate(dataDate);
-  const runDateMinus7 = addDaysISO(runDate, -7);
+  const runDateStart = runDateFromDataDate(addDaysISO(dataDate, -7));
   const prevRunDate = addDaysISO(runDate, -1);
 
   const svc = supabaseService();
@@ -102,14 +104,12 @@ export async function POST(req: NextRequest) {
     return apiJsonOk({ ok: true as const, data_date: dataDate, labels: empty });
   }
 
-  const [{ data: statsRaw, error: statsError }, { data: moversRaw, error: moversError }, { data: membershipsRaw, error: membershipsError }] =
+  const [{ data: seriesRaw, error: seriesError }, { data: moversRaw, error: moversError }, { data: membershipsRaw, error: membershipsError }] =
     await Promise.all([
-      comp
-        .from("playlist_daily_stats")
-        .select("playlist_key,date,daily_streams_net")
-        .in("playlist_key", playlistKeys)
-        .gte("date", runDateMinus7)
-        .lte("date", runDate),
+      comp.rpc("label_daily_series", {
+        p_start_date: runDateStart,
+        p_end_date: runDate,
+      }),
       comp.rpc("label_top_tracks_daily", {
         p_run_date: runDate,
         p_limit: 500,
@@ -118,18 +118,40 @@ export async function POST(req: NextRequest) {
       comp.from("playlist_memberships").select("isrc,playlist_key,valid_from,valid_to").in("playlist_key", playlistKeys),
     ]);
 
+  let statsError = seriesError;
+  let statsRows = (seriesRaw ?? []) as Array<{
+    date: string;
+    label_key: string;
+    daily_streams_net: number | string | null;
+  }>;
+
+  if (seriesError && isMissingPostgresFunctionError(seriesError)) {
+    const fallback = await comp
+      .from("playlist_daily_stats")
+      .select("playlist_key,date,daily_streams_net")
+      .in("playlist_key", playlistKeys)
+      .gte("date", runDateStart)
+      .lte("date", runDate);
+    statsError = fallback.error;
+    statsRows = (fallback.data ?? []).map((row) => ({
+      date: String(row.date ?? "").slice(0, 10),
+      label_key: playlistToLabel.get(String(row.playlist_key ?? "")) ?? "",
+      daily_streams_net: row.daily_streams_net,
+    }));
+  }
+
   if (statsError) return apiJsonErr(statsError.message, 500);
   if (moversError) return apiJsonErr(moversError.message, 500);
   if (membershipsError) return apiJsonErr(membershipsError.message, 500);
 
-  const aggByLabelDate = new Map<string, Map<string, number>>();
-  for (const row of statsRaw ?? []) {
-    const labelKey = playlistToLabel.get(String(row.playlist_key ?? ""));
-    if (!labelKey) continue;
-    const date = String(row.date ?? "").slice(0, 10);
-    const byDate = aggByLabelDate.get(labelKey) ?? new Map<string, number>();
-    byDate.set(date, (byDate.get(date) ?? 0) + Number(row.daily_streams_net ?? 0));
-    aggByLabelDate.set(labelKey, byDate);
+  const aggByLabelDataDate = new Map<string, Map<string, number>>();
+  for (const row of statsRows) {
+    const labelKey = String(row.label_key ?? "").trim();
+    if (!labelKey || !labelKeys.includes(labelKey)) continue;
+    const dataDateKey = dataDateFromRunDate(String(row.date ?? "").slice(0, 10));
+    const byDate = aggByLabelDataDate.get(labelKey) ?? new Map<string, number>();
+    byDate.set(dataDateKey, (byDate.get(dataDateKey) ?? 0) + Number(row.daily_streams_net ?? 0));
+    aggByLabelDataDate.set(labelKey, byDate);
   }
 
   type MoverRow = {
@@ -208,13 +230,9 @@ export async function POST(req: NextRequest) {
   let labelEntries: [string, LabelBreakdown][];
   try {
     labelEntries = labelKeys.map((labelKey): [string, LabelBreakdown] => {
-      const byDate = aggByLabelDate.get(labelKey) ?? new Map<string, number>();
-      const dailyStreams = byDate.get(runDate) ?? 0;
-      const prevRows = [...byDate.entries()].filter(([d]) => d < runDate);
-      const avg7 =
-        prevRows.length > 0
-          ? prevRows.reduce((s, [, v]) => s + v, 0) / prevRows.length
-          : 0;
+      const byDataDate = aggByLabelDataDate.get(labelKey) ?? new Map<string, number>();
+      const dailyStreams = byDataDate.get(dataDate) ?? 0;
+      const avg7 = prior7DayAverageDaily(byDataDate, dataDate);
       const deltaPct = avg7 > 0 ? ((dailyStreams - avg7) / avg7) * 100 : null;
 
       const topTracks: TrackInfo[] = (moversByLabel.get(labelKey) ?? [])

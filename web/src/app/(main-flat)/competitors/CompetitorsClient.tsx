@@ -1,23 +1,30 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Activity } from "lucide-react";
 
-import { CollectorComparisonChart } from "@/components/charts/CollectorComparisonChart";
+import { ChartSkeleton } from "@/components/ui/Skeleton";
+
+const CollectorComparisonChart = dynamic(
+  () =>
+    import("@/components/charts/CollectorComparisonChart").then((m) => ({
+      default: m.CollectorComparisonChart,
+    })),
+  { loading: () => <ChartSkeleton height={260} />, ssr: false },
+);
 import { useChartStartDate } from "@/components/charts/ChartStartDateContext";
+import { filterDailySeriesFromIsoDate } from "@/components/charts/chartUtils";
 import { Sparkline } from "@/components/charts/Sparkline";
 import { useMetric } from "@/components/metrics/MetricContext";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { GlassTable, TableCell, TableRow } from "@/components/ui/GlassTable";
 import { SpotlightCard } from "@/components/ui/SpotlightCard";
-import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { Chip, ChipGroup } from "@/components/ui/Chip";
-import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { fetchApiJson } from "@/lib/api";
 import { dispatchCompetitorLabelChange } from "@/lib/competitorAccentEvents";
-import { runDateFromDataDate } from "@/lib/sotDates";
 import { CollectorDrilldownModal } from "@/app/(main-flat)/collectors/CollectorDrilldownModal";
 import {
   DRILL_PAGE_SIZE,
@@ -30,7 +37,7 @@ import { formatDateISO, formatInt, formatUsd2 } from "@/lib/format";
 import { readStoredString, writeStoredString } from "@/lib/storage";
 import { CollectorDateBreakdownModal } from "@/app/(main-flat)/collectors/CollectorDateBreakdownModal";
 import type { DateBreakdownCollector } from "@/app/(main-flat)/collectors/collectorsTypes";
-import { scaleStreamsForDisplay, useCompetitorStreamMetric } from "./competitorStreamMetric";
+import { scaleStreamsForDisplay } from "./competitorStreamMetric";
 
 import { CompetitorLabelCards } from "./CompetitorLabelCards";
 import {
@@ -42,45 +49,15 @@ import {
 import { LabelMultiSelect } from "./LabelMultiSelect";
 import {
   COMPETITORS_COMPARISON_STORAGE,
-  type ChurnRow,
   type ComparisonMode,
   type LabelComparisonRow,
   type LabelDailyPoint,
   type LabelRow,
-  type MoverFilter,
-  type MoverTrackRow,
-  type OverlapCell,
 } from "./competitorsTypes";
-import {
-  buildOverlapLookup,
-  deltaColor,
-  labelColor,
-  lookupOverlap,
-} from "./competitorsUtils";
+import { labelColor } from "./competitorsUtils";
 
 // TODO(competitor-history-depth): once we have >=60 days of competitor history
 // per label, add weekend-dip and spike callouts (parity with /home).
-
-function LabelBadge({ labelKey, labels }: { labelKey: string; labels: LabelRow[] }) {
-  const label = labels.find((l) => l.label_key === labelKey);
-  const idx = labels.findIndex((l) => l.label_key === labelKey);
-  if (!label) return <span className="text-[10px] opacity-60">{labelKey}</span>;
-  const color = labelColor(label, idx >= 0 ? idx : 0);
-  return (
-    <span
-      className="inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium"
-      style={{ background: `color-mix(in srgb, ${color} 22%, transparent)`, color }}
-    >
-      {label.display_name}
-    </span>
-  );
-}
-
-function filterMovers(rows: MoverTrackRow[], filter: MoverFilter): MoverTrackRow[] {
-  if (filter === "shared") return rows.filter((r) => (r.label_keys?.length ?? 0) >= 2);
-  if (filter === "exclusive") return rows.filter((r) => (r.label_keys?.length ?? 0) === 1);
-  return rows;
-}
 
 type ComparisonSortKey = "name" | "playlists" | "artists" | "tracks" | "metric" | "baseline";
 
@@ -88,14 +65,9 @@ export function CompetitorsClient(props: {
   labels: LabelRow[];
   comparisonRows: LabelComparisonRow[];
   labelSeries: LabelDailyPoint[];
-  latestDataDate: string | null;
-  latestRunDate: string | null;
+  latestDataDate: string;
+  latestRunDate: string;
   selectedCompetitorLabelKey: string | null;
-  gainers: MoverTrackRow[];
-  losers: MoverTrackRow[];
-  churn7d: ChurnRow[];
-  churn30d: ChurnRow[];
-  overlapCells: OverlapCell[];
   playlistsByLabel: Record<string, import("./competitorsTypes").PlaylistRow[]>;
 }) {
   const router = useRouter();
@@ -129,8 +101,6 @@ export function CompetitorsClient(props: {
   });
 
   const [comparisonBaseline, setComparisonBaseline] = useState<"ma7" | "yday">("ma7");
-  const [moverFilter, setMoverFilter] = useState<MoverFilter>("all");
-  const [churnWindow, setChurnWindow] = useState<7 | 30>(7);
   const [activeLabelKey, setActiveLabelKey] = useState<string | null>(props.selectedCompetitorLabelKey);
   const [breakdownOpen, setBreakdownOpen] = useState(false);
   const [breakdownDate, setBreakdownDate] = useState<string | null>(null);
@@ -144,30 +114,32 @@ export function CompetitorsClient(props: {
   }, [props.selectedCompetitorLabelKey]);
 
   useEffect(() => {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("labels", selectedLabels.join(","));
-    params.set("mode", mode);
-    router.replace(`?${params.toString()}`, { scroll: false });
     writeStoredString(COMPETITORS_COMPARISON_STORAGE.labels, selectedLabels.join(","));
     writeStoredString(COMPETITORS_COMPARISON_STORAGE.mode, mode);
+  }, [mode, selectedLabels]);
+
+  useEffect(() => {
+    const labelsStr = selectedLabels.join(",");
+    const t = window.setTimeout(() => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (params.get("labels") === labelsStr && params.get("mode") === mode) return;
+      params.set("labels", labelsStr);
+      params.set("mode", mode);
+      router.replace(`?${params.toString()}`, { scroll: false });
+    }, 300);
+    return () => window.clearTimeout(t);
   }, [mode, router, searchParams, selectedLabels]);
 
   const effectiveMode: ComparisonMode =
     !canCompare && mode === "percentage" ? "individual" : mode;
 
-  const overlapLookup = useMemo(() => buildOverlapLookup(props.overlapCells), [props.overlapCells]);
-
-  const churnRows = churnWindow === 7 ? props.churn7d : props.churn30d;
-  const filteredGainers = useMemo(() => filterMovers(props.gainers, moverFilter), [moverFilter, props.gainers]);
-  const filteredLosers = useMemo(() => filterMovers(props.losers, moverFilter), [moverFilter, props.losers]);
-
   const seriesColors = useMemo(() => buildSeriesColorMap(props.labels), [props.labels]);
   const seriesLabels = useMemo(() => buildSeriesLabelMap(props.labels), [props.labels]);
 
-  const comparisonChartData = useMemo(
-    () => labelSeriesToCollectorDailyData(props.labelSeries),
-    [props.labelSeries],
-  );
+  const comparisonChartData = useMemo(() => {
+    const filtered = filterDailySeriesFromIsoDate(props.labelSeries, chartStartDateIso);
+    return labelSeriesToCollectorDailyData(filtered);
+  }, [chartStartDateIso, props.labelSeries]);
 
   const sparkByLabel = useMemo(
     () => buildSparkByLabel(props.labelSeries, chartStartDateIso, streamPayoutPerStreamUsd),
@@ -268,9 +240,7 @@ export function CompetitorsClient(props: {
   ]);
 
   const drillLabelName = drillLabelKey ? (seriesLabels[drillLabelKey] ?? drillLabelKey) : null;
-  const latestRunDate =
-    props.latestRunDate ??
-    (props.latestDataDate ? runDateFromDataDate(props.latestDataDate) : null);
+  const latestRunDate = props.latestRunDate;
 
   function openDrill(labelKey: string, kind: DrillKind) {
     setDrillLabelKey(labelKey);
@@ -426,7 +396,6 @@ export function CompetitorsClient(props: {
   );
 
   const chartMetric = metric === "tracks" ? "tracks" : metric === "revenue" ? "revenue" : "streams";
-  const streamMetric = useCompetitorStreamMetric();
 
   const breakdownLabelKeys = useMemo(
     () => selectedLabels.filter((k) => activeLabels.some((l) => l.label_key === k)),
@@ -506,10 +475,6 @@ export function CompetitorsClient(props: {
     },
     [activeLabelKey, props.labels, props.selectedCompetitorLabelKey],
   );
-
-  if (!props.latestDataDate) {
-    return null;
-  }
 
   return (
     <div className="space-y-6">
@@ -810,212 +775,6 @@ export function CompetitorsClient(props: {
           </GlassTable>
         </div>
       </div>
-
-      {(props.gainers.length > 0 || props.losers.length > 0) && (
-        <div className="sb-card p-4 space-y-3">
-          <div className="flex flex-wrap items-end justify-between gap-2">
-            <div>
-              <div className="text-xs font-medium uppercase tracking-wider opacity-60">Top movers</div>
-              <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
-                Cross-competitor tracks on latest data date
-              </div>
-            </div>
-            <ChipGroup segmented>
-              {(["all", "shared", "exclusive"] as const).map((f) => (
-                <Chip key={f} segmented selected={moverFilter === f} onClick={() => setMoverFilter(f)}>
-                  {f === "all" ? "All" : f === "shared" ? "Shared" : "Exclusive"}
-                </Chip>
-              ))}
-            </ChipGroup>
-          </div>
-          <div className="grid gap-4 lg:grid-cols-2">
-            {(
-              [
-                ["Gainers", filteredGainers],
-                ["Losers", filteredLosers],
-              ] as const
-            ).map(([title, rows]) => (
-              <div key={title}>
-                <div className="mb-2 text-xs font-medium">{title}</div>
-                <GlassTable
-                  headers={[
-                    "",
-                    "Track",
-                    "Labels",
-                    streamMetric.dailyColumnLabel,
-                    streamMetric.displayMetric === "revenue" ? "Total rev" : "Total",
-                  ]}
-                >
-                  {rows.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={5} className="text-center text-xs opacity-60">
-                        No tracks in this filter.
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    rows.map((track) => (
-                      <TableRow key={`${title}-${track.isrc}`}>
-                        <TableCell>
-                          {track.album_image_url ? (
-                            <PreviewableArtwork
-                              src={track.album_image_url}
-                              alt=""
-                              width={32}
-                              height={32}
-                              className="h-8 w-8 rounded object-cover sb-ring"
-                              label={track.name}
-                            />
-                          ) : (
-                            <div className="h-8 w-8 rounded bg-white/10 sb-ring" />
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <Link
-                            href={`/tracks/${encodeURIComponent(track.isrc)}`}
-                            onClick={(e) => e.stopPropagation()}
-                            className="font-medium transition-colors sb-link-hover"
-                          >
-                            {track.name}
-                          </Link>
-                          <div className="truncate text-[10px] opacity-60">
-                            <ArtistLinks
-                              artistNames={track.artist_names}
-                              artistIds={track.artist_ids}
-                            />
-                            {!track.artist_names?.length ? "—" : null}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex flex-wrap gap-1">
-                            {(track.label_keys ?? []).map((lk) => (
-                              <LabelBadge key={lk} labelKey={lk} labels={props.labels} />
-                            ))}
-                          </div>
-                        </TableCell>
-                        <TableCell numeric style={{ color: streamMetric.deltaColor(track.daily_delta) }}>
-                          {streamMetric.formatDelta(track.daily_delta) ?? "—"}
-                        </TableCell>
-                        <TableCell numeric style={streamMetric.valueStyle}>
-                          {streamMetric.format(track.total)}
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </GlassTable>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {props.churn7d.length > 0 && (
-        <div className="sb-card p-4 space-y-3">
-          <div className="flex flex-wrap items-end justify-between gap-2">
-            <div>
-              <div className="text-xs font-medium uppercase tracking-wider opacity-60">Catalog churn</div>
-              <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
-                Playlist membership adds and removals
-              </div>
-            </div>
-            <ChipGroup segmented>
-              <Chip segmented selected={churnWindow === 7} onClick={() => setChurnWindow(7)}>
-                7d
-              </Chip>
-              <Chip segmented selected={churnWindow === 30} onClick={() => setChurnWindow(30)}>
-                30d
-              </Chip>
-            </ChipGroup>
-          </div>
-          <GlassTable headers={["Label", "Added", "Removed", "Net", "Track count Δ (7d)"]}>
-            {churnRows.map((churn) => {
-              const label = props.labels.find((l) => l.label_key === churn.label_key);
-              const trackDelta = churn.track_count_delta_7d;
-              return (
-                <TableRow key={churn.label_key}>
-                  <TableCell>{label?.display_name ?? churn.label_key}</TableCell>
-                  <TableCell numeric className="text-lime-600 dark:text-lime-400">
-                    +{formatInt(churn.added_count)}
-                  </TableCell>
-                  <TableCell numeric className="text-red-500">
-                    {churn.removed_count > 0 ? `-${formatInt(churn.removed_count)}` : formatInt(0)}
-                  </TableCell>
-                  <TableCell numeric style={{ color: deltaColor(churn.net) }}>
-                    {churn.net > 0 ? "+" : ""}
-                    {formatInt(churn.net)}
-                  </TableCell>
-                  <TableCell numeric>
-                    {trackDelta == null ? "—" : (
-                      <span style={{ color: deltaColor(trackDelta) }}>
-                        {trackDelta > 0 ? "+" : ""}
-                        {formatInt(trackDelta)}
-                      </span>
-                    )}
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </GlassTable>
-        </div>
-      )}
-
-      {canCompare && props.overlapCells.length > 0 && (
-        <div className="sb-card p-4 space-y-3">
-          <div>
-            <div className="text-xs font-medium uppercase tracking-wider opacity-60">Catalog overlap</div>
-            <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
-              Jaccard similarity of active catalogs at latest data date
-            </div>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-xs">
-              <thead>
-                <tr>
-                  <th className="p-2 text-left opacity-60" />
-                  {activeLabels.map((l) => (
-                    <th key={l.label_key} className="p-2 text-center font-medium">
-                      {l.display_name}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {activeLabels.map((rowLabel) => (
-                  <tr key={rowLabel.label_key}>
-                    <th className="p-2 text-left font-medium">{rowLabel.display_name}</th>
-                    {activeLabels.map((colLabel) => {
-                      if (rowLabel.label_key === colLabel.label_key) {
-                        return (
-                          <td key={colLabel.label_key} className="p-2 text-center opacity-40">
-                            —
-                          </td>
-                        );
-                      }
-                      const cell = lookupOverlap(overlapLookup, rowLabel.label_key, colLabel.label_key);
-                      const pct = cell ? Number(cell.jaccard) * 100 : 0;
-                      return (
-                        <td
-                          key={colLabel.label_key}
-                          className="p-2 text-center font-mono tabular-nums"
-                          title={
-                            cell
-                              ? `${cell.shared_isrcs} shared ISRCs · Jaccard ${pct.toFixed(1)}%`
-                              : "No overlap data"
-                          }
-                          style={{
-                            background: `color-mix(in srgb, var(--sb-accent) ${Math.min(pct * 4, 80)}%, transparent)`,
-                          }}
-                        >
-                          {cell ? `${pct.toFixed(1)}%` : "—"}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
 
       <CollectorDrilldownModal
         open={drillOpen}

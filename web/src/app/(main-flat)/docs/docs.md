@@ -73,6 +73,7 @@ The selected competitor is global. One competitor may own multiple playlists, an
 Competitor RPCs used by `/competitors` (schema `competitor`):
 
 - `label_distinct_artist_counts(p_run_date)`
+- `label_daily_series(p_start_date, p_end_date)` — per-label chart series (aggregated server-side)
 - `label_top_tracks_daily(p_run_date, p_limit, p_direction)` — gainers/losers
 - `label_membership_churn(p_window_days, p_as_of)` — catalog adds/removes
 - `label_overlap_matrix(p_as_of)` — pairwise Jaccard similarity

@@ -1,6 +1,9 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
+
+/** Extra room required before unflipping (prevents flip/unflip oscillation at clip edges). */
+const FLIP_HYSTERESIS_PX = 24;
 
 function overflowsAxis(value: string): boolean {
   return value === "hidden" || value === "auto" || value === "scroll" || value === "clip";
@@ -43,8 +46,58 @@ export function ViewportAwareTooltip({
   gapPx?: number;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
+  const flipLeftRef = useRef(false);
+  const clampDxRef = useRef(0);
   const [flipLeft, setFlipLeft] = useState(false);
   const [clampDx, setClampDx] = useState(0);
+
+  const measurePlacement = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+
+    const width = el.offsetWidth;
+    if (width <= 0) return;
+
+    const { left: boundLeft, right: boundRight } = getHorizontalClipBounds(el, viewportPaddingPx);
+    const rect = el.getBoundingClientRect();
+    const flipped = flipLeftRef.current;
+    /** Screen X of the anchor point (stable across flip modes). */
+    const anchorX = flipped ? rect.right : rect.left;
+
+    const rightEdgeIfUnflipped = anchorX + width;
+    const leftEdgeIfFlipped = anchorX - width - gapPx;
+
+    let nextFlip = flipped;
+    let nextClamp = 0;
+
+    if (!flipped) {
+      if (rightEdgeIfUnflipped > boundRight) {
+        nextFlip = true;
+        nextClamp = leftEdgeIfFlipped < boundLeft ? boundLeft - leftEdgeIfFlipped : 0;
+      } else {
+        nextClamp = anchorX < boundLeft ? boundLeft - anchorX : 0;
+      }
+    } else if (rightEdgeIfUnflipped <= boundRight - FLIP_HYSTERESIS_PX) {
+      nextFlip = false;
+      nextClamp = anchorX < boundLeft ? boundLeft - anchorX : 0;
+    } else {
+      nextClamp = leftEdgeIfFlipped < boundLeft ? boundLeft - leftEdgeIfFlipped : 0;
+    }
+
+    if (nextFlip !== flipLeftRef.current) {
+      flipLeftRef.current = nextFlip;
+      setFlipLeft(nextFlip);
+    }
+    if (nextClamp !== clampDxRef.current) {
+      clampDxRef.current = nextClamp;
+      setClampDx(nextClamp);
+    }
+  }, [gapPx, viewportPaddingPx]);
+
+  // Re-measure after flip/clamp transform is applied to the DOM.
+  useLayoutEffect(() => {
+    measurePlacement();
+  }, [flipLeft, clampDx, measurePlacement]);
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -52,46 +105,9 @@ export function ViewportAwareTooltip({
 
     let raf = 0;
 
-    const measure = () => {
-      const rect = el.getBoundingClientRect();
-      const width = rect.width;
-      const { left: boundLeft, right: boundRight } = getHorizontalClipBounds(el, viewportPaddingPx);
-
-      if (!flipLeft) {
-        // Default: tooltip extends to the right from the anchor (left edge).
-        if (rect.right > boundRight) {
-          setFlipLeft(true);
-          setClampDx(0);
-          return;
-        }
-        if (rect.left < boundLeft) {
-          setClampDx(boundLeft - rect.left);
-          return;
-        }
-        setClampDx(0);
-        return;
-      }
-
-      // Flipped: visual box is left of the anchor. rect.right ≈ anchor x.
-      // Decide unflip from where the box *would* sit if not flipped (avoids flip/unflip jitter).
-      const unflippedRight = rect.right + width;
-      if (unflippedRight <= boundRight) {
-        setFlipLeft(false);
-        setClampDx(0);
-        return;
-      }
-
-      if (rect.left < boundLeft) {
-        setClampDx(boundLeft - rect.left);
-        return;
-      }
-
-      setClampDx(0);
-    };
-
     const schedule = () => {
       if (raf) cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(measure);
+      raf = requestAnimationFrame(measurePlacement);
     };
 
     const ro = new ResizeObserver(() => schedule());
@@ -108,7 +124,7 @@ export function ViewportAwareTooltip({
       window.removeEventListener("resize", schedule);
       window.removeEventListener("scroll", schedule, true);
     };
-  }, [flipLeft, viewportPaddingPx, gapPx]);
+  }, [measurePlacement]);
 
   return (
     <div

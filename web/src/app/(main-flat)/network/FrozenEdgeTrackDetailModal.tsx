@@ -10,6 +10,7 @@ import { formatDateISO } from "@/lib/format";
 import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
 import { Modal } from "@/components/ui/Modal";
 import { NetworkCatalogArtistLink } from "./NetworkCatalogLinks";
+import type { DatasetMode } from "@/lib/datasetMode";
 import type { IsrcDetailPayload } from "./networkIsrcDetail";
 import { useNetworkMetricStreams } from "./useNetworkMetricStreams";
 
@@ -66,12 +67,14 @@ export function FrozenEdgeTrackDetailModal({
   onClose,
   isrc,
   fallbackTitle,
+  datasetMode = "own",
   onFocusArtistOnNetwork,
 }: {
   open: boolean;
   onClose: () => void;
   isrc: string | null;
   fallbackTitle: string;
+  datasetMode?: DatasetMode;
   /** Plain click on an artist link: close modal and focus this artist on the network graph. */
   onFocusArtistOnNetwork?: (artistId: string) => void;
 }) {
@@ -121,6 +124,8 @@ export function FrozenEdgeTrackDetailModal({
     detail?.spotify_track_id && String(detail.spotify_track_id).trim() !== ""
       ? `https://open.spotify.com/track/${detail.spotify_track_id}`
       : null;
+  const isCompetitor = datasetMode === "competitor";
+  const playlistSectionLabel = isCompetitor ? "Label playlists" : "Distro playlists";
   const distroText = (detail?.distroPlaylists ?? "").trim();
   const distroRows = detail?.distroPlaylistDetails;
   const artistRows = detail?.trackArtists;
@@ -221,7 +226,7 @@ export function FrozenEdgeTrackDetailModal({
                   className="text-[10px] font-medium uppercase tracking-wide opacity-70"
                   style={{ color: "var(--sb-muted)" }}
                 >
-                  Distro playlists
+                  {playlistSectionLabel}
                 </div>
                 {distroRows && distroRows.length > 0 ? (
                   <div className="flex flex-wrap gap-1.5">

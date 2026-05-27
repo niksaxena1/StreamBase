@@ -88,3 +88,8 @@ export function hexToRgba(hex: string, alpha: number): string {
   const b = n & 255;
   return `rgba(${r},${g},${b},${alpha})`;
 }
+
+/** Semi-transparent fill using the current brand/chrome accent (competitor tint or own-catalog lime). */
+export function accentRgba(accentHex: string, alpha: number): string {
+  return hexToRgba(accentHex, alpha);
+}

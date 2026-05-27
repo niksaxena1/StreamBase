@@ -25,6 +25,7 @@ import { normalizeDatasetMode } from "@/lib/datasetMode";
 import { lastPlaylistKeyStorageKey } from "@/lib/datasetSelectionStorage";
 import { ALL_COMPETITORS_KEY, resolveCompetitorLabelKey } from "@/lib/competitorContext";
 import { CompetitorCurrentTracksTable, type CompetitorCurrentTrackRow } from "./CompetitorCurrentTracksTable";
+import { PrefetchPlaylistsConfig } from "./PrefetchPlaylistsConfig";
 import { isMissingPostgresFunctionError } from "@/lib/supabase/rpcErrors";
 
 // Uses Supabase session cookies; this route must be dynamic in Next 16.
@@ -666,6 +667,7 @@ export default async function PlaylistsPage({
   return (
     <div className="space-y-4">
       <DocumentTitle title={title} />
+      <PrefetchPlaylistsConfig />
       <PageHeader
         icon={
           playlistKey === "all_catalog" ? (

@@ -33,13 +33,14 @@ type PlaylistStats = {
 type PlaylistFiltersProps = {
   playlists: PlaylistRow[];
   statsMap: Record<string, PlaylistStats>;
+  statsLoading?: boolean;
   registerExport?: (fn: () => void) => void;
 };
 
 type SortOption = "name" | "total" | "daily" | "type";
 type FilterType = "all" | "Catalog" | "Label" | "Entity" | "Distro" | "Standard";
 
-export function PlaylistFilters({ playlists, statsMap, registerExport }: PlaylistFiltersProps) {
+export function PlaylistFilters({ playlists, statsMap, statsLoading = false, registerExport }: PlaylistFiltersProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<FilterType>("all");
   const [sortBy, setSortBy] = useState<SortOption>("name");
@@ -274,6 +275,10 @@ export function PlaylistFilters({ playlists, statsMap, registerExport }: Playlis
           const formatValue = (n: number | null | undefined) => {
             return metric === "revenue" ? formatUsd2(n) : formatInt(n);
           };
+
+          const statPlaceholder = statsLoading ? (
+            <span className="inline-block h-3.5 w-10 animate-pulse rounded bg-black/10 dark:bg-white/10" />
+          ) : null;
           
           return (
             <TableRow key={p.playlist_key}>
@@ -307,18 +312,21 @@ export function PlaylistFilters({ playlists, statsMap, registerExport }: Playlis
                 </Link>
               </TableCell>
               <TableCell numeric>
-                <span style={{ color: metricColor }} className="font-medium">
-                  {formatValue(totalValue ?? null)}
-                </span>
+                {statPlaceholder ?? (
+                  <span style={{ color: metricColor }} className="font-medium">
+                    {formatValue(totalValue ?? null)}
+                  </span>
+                )}
               </TableCell>
               <TableCell numeric>
-                {dailyValue !== null && dailyValue !== undefined ? (
-                  <span style={{ color: metricColor }} className="font-medium">
-                    {formatValue(dailyValue)}
-                  </span>
-                ) : (
-                  <span style={{ color: "var(--sb-muted)" }}>{formatInt(null)}</span>
-                )}
+                {statPlaceholder ??
+                  (dailyValue !== null && dailyValue !== undefined ? (
+                    <span style={{ color: metricColor }} className="font-medium">
+                      {formatValue(dailyValue)}
+                    </span>
+                  ) : (
+                    <span style={{ color: "var(--sb-muted)" }}>{formatInt(null)}</span>
+                  ))}
               </TableCell>
               <TableCell>
                 {(() => {

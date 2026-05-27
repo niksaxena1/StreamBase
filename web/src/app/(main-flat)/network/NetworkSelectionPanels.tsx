@@ -7,6 +7,7 @@ import { fetchApiJson } from "@/lib/api";
 import { formatDateISO, formatInt } from "@/lib/format";
 import { slugifyForFilename, todayIsoDate } from "@/lib/csv";
 import type { ThemeColors } from "@/components/charts/useThemeColors";
+import { accentRgba } from "./networkGraphPure";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
 import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
 import { Modal } from "@/components/ui/Modal";
@@ -120,7 +121,7 @@ export function SelectionStatsPanel({
             className="flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-medium transition-colors"
             style={{
               color: colors.accent,
-              backgroundColor: colors.isDark ? "rgba(212,255,77,0.12)" : "rgba(168,214,46,0.15)",
+              backgroundColor: accentRgba(colors.accent, colors.isDark ? 0.12 : 0.15),
             }}
             onClick={onOpenScopedTracks}
           >
@@ -134,7 +135,7 @@ export function SelectionStatsPanel({
             className="flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-medium transition-colors"
             style={{
               color: colors.accent,
-              backgroundColor: colors.isDark ? "rgba(212,255,77,0.12)" : "rgba(168,214,46,0.15)",
+              backgroundColor: accentRgba(colors.accent, colors.isDark ? 0.12 : 0.15),
             }}
             onClick={onOpenCollabsList}
           >

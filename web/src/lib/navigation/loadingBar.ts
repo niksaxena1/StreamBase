@@ -1,4 +1,5 @@
 export const SB_ROUTE_LOADING_BAR_START_EVENT = "sb:route-loading-bar:start" as const;
+export const SB_ROUTE_LOADING_BAR_DONE_EVENT = "sb:route-loading-bar:done" as const;
 
 /**
  * Start the global top loading bar for *route* navigations (pathname changes).
@@ -20,5 +21,15 @@ export function triggerRouteLoadingBarStart(href?: string) {
   }
 
   window.dispatchEvent(new CustomEvent(SB_ROUTE_LOADING_BAR_START_EVENT));
+}
+
+/**
+ * Manually finish the global top loading bar. Use this when triggering work that does NOT
+ * change the pathname (e.g. `router.refresh()`), where the auto-completion on pathname
+ * change wouldn't fire.
+ */
+export function triggerRouteLoadingBarDone() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(SB_ROUTE_LOADING_BAR_DONE_EVENT));
 }
 

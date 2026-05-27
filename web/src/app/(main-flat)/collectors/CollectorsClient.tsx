@@ -14,14 +14,24 @@ import { Sparkline } from "@/components/charts/Sparkline";
 import { StatCard } from "@/components/StatCard";
 import { fetchApiJson } from "@/lib/api";
 import { formatDateISO, formatInt, formatUsd2 } from "@/lib/format";
+import dynamic from "next/dynamic";
+
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
+import { ChartSkeleton } from "@/components/ui/Skeleton";
 import { slugifyForFilename, todayIsoDate } from "@/lib/csv";
 import {
-  CollectorComparisonChart,
   COLLECTOR_COLORS,
   type CollectorDailyData,
   type ComparisonMode,
 } from "@/components/charts/CollectorComparisonChart";
+
+const CollectorComparisonChart = dynamic(
+  () =>
+    import("@/components/charts/CollectorComparisonChart").then((m) => ({
+      default: m.CollectorComparisonChart,
+    })),
+  { loading: () => <ChartSkeleton height={260} />, ssr: false },
+);
 import { CollectorMultiSelect } from "@/components/ui/CollectorMultiSelect";
 import { granularityLabel, type Granularity } from "@/components/ui/GranularitySelect";
 import { aggregateCumulativeSeries, aggregateDailySeries } from "@/lib/granularity";
@@ -128,7 +138,6 @@ export function CollectorsClient(props: {
     display_name: string;
     spotify_playlist_image_url: string | null;
   }>;
-  collectorTracks: CollectorTrackRow[];
   allCollectorsSeries: CollectorDailyData[];
   allCollectorsAllTime: CollectorDailyData[];
 }) {
@@ -139,8 +148,52 @@ export function CollectorsClient(props: {
   const { chartStartDateIso } = useChartStartDate();
 
   const [openPlaylists, setOpenPlaylists] = useState(true);
-  const [openTracks, setOpenTracks] = useState(true);
+  const [openTracks, setOpenTracks] = useState(false);
+  const [collectorTracks, setCollectorTracks] = useState<CollectorTrackRow[]>([]);
+  const [tracksLoading, setTracksLoading] = useState(false);
+  const [tracksError, setTracksError] = useState<string | null>(null);
+  const [tracksLoaded, setTracksLoaded] = useState(false);
+  const tracksLoadStarted = useRef(false);
   const [comparisonBaseline, setComparisonBaseline] = useState<"ma7" | "yday">("ma7");
+
+  useEffect(() => {
+    if (!openTracks || tracksLoaded || tracksLoadStarted.current) return;
+    tracksLoadStarted.current = true;
+    let cancelled = false;
+
+    async function loadTracks() {
+      setTracksLoading(true);
+      setTracksError(null);
+      try {
+        const data = await fetchApiJson<{ tracks: CollectorTrackRow[] }>(
+          `/api/collectors/tracks?collector=${encodeURIComponent(props.selectedCollector)}&run_date=${encodeURIComponent(props.latestRunDate)}`,
+        );
+        if (!cancelled) {
+          setCollectorTracks(data.tracks ?? []);
+          setTracksLoaded(true);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setTracksError(e instanceof Error ? e.message : String(e));
+          tracksLoadStarted.current = false;
+        }
+      } finally {
+        if (!cancelled) setTracksLoading(false);
+      }
+    }
+
+    void loadTracks();
+    return () => {
+      cancelled = true;
+    };
+  }, [openTracks, props.latestRunDate, props.selectedCollector, tracksLoaded]);
+
+  useEffect(() => {
+    tracksLoadStarted.current = false;
+    setTracksLoaded(false);
+    setCollectorTracks([]);
+    setTracksError(null);
+  }, [props.selectedCollector, props.latestRunDate]);
 
   const [showActualRevenue, setShowActualRevenue] = useState<boolean>(() =>
     readStoredBool(COLLECTORS_MONTHLY_ACTUAL_REVENUE_STORAGE.visible, true),
@@ -208,7 +261,7 @@ export function CollectorsClient(props: {
 
   useEffect(() => {
     setOpenPlaylists(readStoredBool(COLLECTORS_DETAILS_STORAGE.playlistsOpen, true));
-    setOpenTracks(readStoredBool(COLLECTORS_DETAILS_STORAGE.tracksOpen, true));
+    setOpenTracks(readStoredBool(COLLECTORS_DETAILS_STORAGE.tracksOpen, false));
   }, []);
 
   useEffect(() => {
@@ -773,7 +826,7 @@ export function CollectorsClient(props: {
 
   const filteredSortedTracks = useMemo(() => {
     const q = debouncedTrackQuery.trim().toLowerCase();
-    let rows = props.collectorTracks ?? [];
+    let rows = collectorTracks ?? [];
 
     if (q) {
       rows = rows.filter((t) => {
@@ -846,7 +899,7 @@ export function CollectorsClient(props: {
     });
 
     return rows;
-  }, [props.collectorTracks, debouncedTrackQuery, trackSort, tracksTableMetric, payoutPerStreamUsd]);
+  }, [collectorTracks, debouncedTrackQuery, trackSort, tracksTableMetric, payoutPerStreamUsd]);
 
   const trackHeaderButton = useCallback(
     (args: {
@@ -893,7 +946,7 @@ export function CollectorsClient(props: {
   }, [props.selectedPlaylistsMeta]);
 
   const topTrackCards = useMemo(() => {
-    const rows = props.collectorTracks ?? [];
+    const rows = collectorTracks ?? [];
 
     const bestDelta = rows
       .filter((t) => t.daily_streams_delta != null)
@@ -912,7 +965,7 @@ export function CollectorsClient(props: {
     const distroCount = rows.filter((t) => (t.distro_playlist_keys ?? []).length > 0).length;
 
     return { bestDelta, bestTotal, distroCount, totalCount: rows.length };
-  }, [props.collectorTracks]);
+  }, [collectorTracks]);
 
   return (
     <div className="space-y-6">
@@ -1415,8 +1468,15 @@ export function CollectorsClient(props: {
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-start gap-2">
                 <span className="flex-shrink-0 text-xs opacity-60 mt-0.5">▸</span>
-                <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
-                  Tracks
+                <div>
+                  <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
+                    Tracks
+                  </div>
+                  {!openTracks && !tracksLoaded ? (
+                    <div className="mt-0.5 text-[10px] font-normal normal-case opacity-50">
+                      Expand to load the full track list
+                    </div>
+                  ) : null}
                 </div>
               </div>
               <div
@@ -1426,7 +1486,7 @@ export function CollectorsClient(props: {
                 }}
               >
                 <ChartCsvDownloadButton
-                  rows={props.collectorTracks as unknown as Array<Record<string, unknown>>}
+                  rows={collectorTracks as unknown as Array<Record<string, unknown>>}
                   filename={`collectors-${slugifyForFilename(props.selectedCollector)}-tracks-${todayIsoDate()}.csv`}
                   title="Download CSV"
                 />
@@ -1576,9 +1636,18 @@ export function CollectorsClient(props: {
             <MenuSelect value={trackSort} options={SORTS} onChange={(v) => setTrackSort(v as TrackSort)} align="right" ariaLabel="Sort tracks" />
 
             <div className="text-xs whitespace-nowrap" style={{ color: "var(--sb-muted)" }}>
-              {formatInt(filteredSortedTracks.length)} / {formatInt(props.collectorTracks.length)}
+              {formatInt(filteredSortedTracks.length)} / {formatInt(collectorTracks.length)}
             </div>
             </div>
+
+            {tracksError ? (
+              <div className="mt-3 text-xs text-red-500">{tracksError}</div>
+            ) : null}
+            {tracksLoading ? (
+              <div className="mt-3 text-xs" style={{ color: "var(--sb-muted)" }}>
+                Loading tracks…
+              </div>
+            ) : null}
 
             <div className="mt-4">
               <GlassTable

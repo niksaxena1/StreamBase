@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { fetchMissingCatalogTracks } from "@/lib/health/fetchWarningDetails";
+import { cachedMissingCatalogTracks } from "@/lib/health/cachedHealthQueries";
 import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
@@ -21,8 +21,8 @@ export async function MissingCatalogSection({
 }) {
   if (!runDate) return null;
 
-  const allMissingTracks = await fetchMissingCatalogTracks(runDate);
-  if (allMissingTracks.length === 0) return null;
+  const { data: allMissingTracks } = await cachedMissingCatalogTracks(runDate);
+  if (!allMissingTracks?.length) return null;
 
   return (
     <div className="space-y-2">

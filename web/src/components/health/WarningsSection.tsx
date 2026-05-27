@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { fetchDisplayedWarnings, type WarningAuditView } from "@/lib/health/fetchWarningDetails";
+import { cachedDisplayedWarnings } from "@/lib/health/cachedHealthQueries";
+import type { WarningAuditView } from "@/lib/health/fetchWarningDetails";
 import type { PlaylistMeta } from "@/lib/health/types";
 import { GlassTable, EmptyState } from "@/components/ui/GlassTable";
 import { SectionHeader } from "@/components/ui/SectionHeader";
@@ -42,8 +43,15 @@ export async function WarningsSection({
 }) {
   if (!runDate) return null;
 
-  const { warnings, totalCount, page: safePage, pageSize, totalPages, summary } =
-    await fetchDisplayedWarnings(runDate, playlistMeta, page, undefined, view);
+  const { data: warningPayload } = await cachedDisplayedWarnings(runDate, playlistMeta, page, view);
+  const { warnings, totalCount, page: safePage, pageSize, totalPages, summary } = warningPayload ?? {
+    warnings: [],
+    totalCount: 0,
+    page: 1,
+    pageSize: 50,
+    totalPages: 0,
+    summary: { active: 0, resolved: 0, detected: 0 },
+  };
 
   // Build a query-string helper that preserves existing params while changing page.
   function sectionHref(nextView: WarningAuditView, p = 1) {
@@ -104,12 +112,12 @@ export async function WarningsSection({
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-white/5 px-3 py-2 text-[11px] opacity-80 sb-ring">
         <span>
           <span className="font-medium text-[var(--sb-text)]">Today&apos;s actions:</span>{" "}
-          {summary.overrideCount.toLocaleString()} stream override{summary.overrideCount === 1 ? "" : "s"} applied
+          {(summary.overrideCount ?? 0).toLocaleString()} stream override{(summary.overrideCount ?? 0) === 1 ? "" : "s"} applied
         </span>
         <span className="opacity-35">·</span>
-        {summary.providerCalls.length > 0 ? (
+        {(summary.providerCalls ?? []).length > 0 ? (
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            {summary.providerCalls.map((row, index) => (
+            {(summary.providerCalls ?? []).map((row, index) => (
               <span key={row.provider} className="inline-flex items-center gap-1">
                 {index > 0 ? <span className="opacity-35">·</span> : null}
                 <span>{row.calls.toLocaleString()}</span>

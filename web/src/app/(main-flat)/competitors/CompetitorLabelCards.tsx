@@ -65,10 +65,7 @@ function LabelStat({
   return (
     <div>
       <div className="text-[11px] uppercase opacity-60">{label}</div>
-      <div
-        className="font-mono"
-        style={useStreamMetricScale && streamMetric.displayMetric === "revenue" ? { color: "#10b981" } : undefined}
-      >
+      <div className="font-mono" style={useStreamMetricScale ? streamMetric.valueStyle : undefined}>
         {useStreamMetricScale ? streamMetric.format(value) : formatInt(value)}
       </div>
       {showDeltas ? (

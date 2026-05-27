@@ -16,6 +16,7 @@ import { CompetitorTitleEffect } from "@/components/shell/CompetitorTitleEffect"
 import { AppFooter } from "@/components/shell/AppFooter";
 import { isPlaylistWatchOnlyAccess, type AppAccess } from "@/lib/appAccess";
 import { CompetitorAccentStyle } from "@/components/shell/CompetitorAccentStyle";
+import { BrandLink } from "@/components/shell/BrandLink";
 import { APP_SHORT_NAME } from "@/lib/pageTitle";
 
 type MainSurface = "glass" | "plain";
@@ -87,13 +88,7 @@ export function AppShell(props: {
                     <LogoMark />
                   </Link>
                   <div className="flex items-center gap-2">
-                    <Link
-                      href={homeHref}
-                      className="font-display text-sm font-semibold tracking-tight transition-opacity hover:opacity-80"
-                      suppressHydrationWarning
-                    >
-                      {APP_SHORT_NAME}
-                    </Link>
+                    <BrandLink href={homeHref} label={APP_SHORT_NAME} />
                     <Breadcrumbs />
                   </div>
                 </div>

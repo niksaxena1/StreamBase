@@ -3,7 +3,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 
-import { SB_ROUTE_LOADING_BAR_START_EVENT } from "@/lib/navigation/loadingBar";
+import {
+  SB_ROUTE_LOADING_BAR_DONE_EVENT,
+  SB_ROUTE_LOADING_BAR_START_EVENT,
+} from "@/lib/navigation/loadingBar";
 
 const SHOW_DELAY_MS = 120;
 const MIN_VISIBLE_MS = 180;
@@ -237,6 +240,14 @@ export function TopRouteLoadingBar() {
     window.addEventListener(SB_ROUTE_LOADING_BAR_START_EVENT, onStart as EventListener);
     return () =>
       window.removeEventListener(SB_ROUTE_LOADING_BAR_START_EVENT, onStart as EventListener);
+  }, []);
+
+  // Complete on explicit programmatic completion triggers (e.g. after router.refresh()).
+  useEffect(() => {
+    const onDone = () => done();
+    window.addEventListener(SB_ROUTE_LOADING_BAR_DONE_EVENT, onDone as EventListener);
+    return () =>
+      window.removeEventListener(SB_ROUTE_LOADING_BAR_DONE_EVENT, onDone as EventListener);
   }, []);
 
   // Cleanup on unmount.

@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import type { ThemeColors } from "@/components/charts/useThemeColors";
+import { accentRgba } from "./networkGraphPure";
 import type { GraphEdge, GraphNode } from "./page";
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import type { CollabCountBasis } from "./networkGraphTypes";
@@ -28,9 +29,7 @@ export function ToggleButton({
       style={{
         color: active ? colors.accent : colors.muted,
         backgroundColor: active
-          ? colors.isDark
-            ? "rgba(212,255,77,0.12)"
-            : "rgba(168,214,46,0.15)"
+          ? accentRgba(colors.accent, colors.isDark ? 0.12 : 0.15)
           : colors.isDark
             ? "rgba(255,255,255,0.06)"
             : "rgba(0,0,0,0.04)",
@@ -97,7 +96,7 @@ export function SelectedArtistPanel({
       className="flex items-start gap-3 px-4 py-2.5 border-b overflow-x-auto"
       style={{
         borderColor: colors.border,
-        backgroundColor: colors.isDark ? "rgba(212,255,77,0.04)" : "rgba(168,214,46,0.06)",
+        backgroundColor: accentRgba(colors.accent, colors.isDark ? 0.04 : 0.06),
       }}
     >
       {/* Artist image */}

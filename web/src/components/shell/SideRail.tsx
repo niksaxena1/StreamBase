@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import React from "react";
 import type { DatasetMode } from "@/lib/datasetMode";
-import { navItemsForMode } from "@/lib/datasets";
+import { navItemsForMode, navShortcutKeyForHref } from "@/lib/datasets";
 import { hasStreamBaseAccess, type AppAccess } from "@/lib/appAccess";
 
 export type Item = {
@@ -19,19 +19,16 @@ export const navItems: Item[] = [
     href: "/",
     label: "Home",
     icon: (a) => <IconHome active={a} />,
-    shortcut: "1",
   },
   {
     href: "/playlists",
     label: "Playlists",
     icon: (a) => <IconList active={a} />,
-    shortcut: "2",
   },
   {
     href: "/catalog",
     label: "Catalog",
     icon: (a) => <IconVinyl active={a} />,
-    shortcut: "3",
   },
   {
     href: "/competitors",
@@ -42,14 +39,13 @@ export const navItems: Item[] = [
     href: "/collectors",
     label: "Collectors",
     icon: (a) => <IconUser active={a} />,
-    shortcut: "4",
   },
   {
     href: "/playlist-watch",
     label: "Watch",
     icon: (a) => <IconEye active={a} />,
   },
-  { href: "/health", label: "Health", icon: (a) => <IconPulse active={a} />, shortcut: "5" },
+  { href: "/health", label: "Health", icon: (a) => <IconPulse active={a} />, },
 ];
 
 function SideRailContent({
@@ -74,6 +70,7 @@ function SideRailContent({
       {visibleNavItems.map((it) => {
         const active = pathname ? (pathname === it.href || pathname.startsWith(`${it.href}/`)) : false;
         const isHealth = it.href === "/health";
+        const shortcut = navShortcutKeyForHref(it.href, datasetMode, appAccess);
 
         const competitorActive = datasetMode === "competitor" && active;
         const competitorInactive = datasetMode === "competitor" && !active;
@@ -130,7 +127,7 @@ function SideRailContent({
               }}
             >
               {it.label}
-              {it.shortcut && (
+              {shortcut ? (
                 <kbd
                   className="rounded border px-1.5 py-0.5 text-[10px] font-medium"
                   style={{
@@ -139,9 +136,9 @@ function SideRailContent({
                     color: "var(--sb-muted)",
                   }}
                 >
-                  {it.shortcut}
+                  {shortcut}
                 </kbd>
-              )}
+              ) : null}
             </span>
           </Link>
         );

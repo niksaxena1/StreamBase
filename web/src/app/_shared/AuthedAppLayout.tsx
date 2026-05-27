@@ -109,7 +109,7 @@ export async function AuthedAppLayout({
 
   return (
 
-    <KeyboardShortcutsProvider appAccess={appAccess}>
+    <KeyboardShortcutsProvider appAccess={appAccess} datasetMode={shellContext.datasetMode}>
 
       <PayoutRateProvider>
 

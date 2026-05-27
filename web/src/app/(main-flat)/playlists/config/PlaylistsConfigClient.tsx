@@ -2,10 +2,13 @@
 
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Download, Settings } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { Alert } from "@/components/ui/Alert";
+import { fetchApiJson } from "@/lib/api";
 import { triggerRouteLoadingBarStart } from "@/lib/navigation/loadingBar";
+import type { PlaylistsConfigStats } from "@/lib/playlists/loadPlaylistsConfigPage";
+
 import { PlaylistFilters } from "./PlaylistFilters";
 
 type PlaylistRow = {
@@ -19,23 +22,51 @@ type PlaylistRow = {
   display_order: number | null;
 };
 
-type PlaylistStats = {
-  track_count: number | null;
-  daily_tracks_net: number | null;
-  total_streams_cumulative: number | null;
-  daily_streams_net: number | null;
-};
-
 export function PlaylistsConfigClient(props: {
   playlists: PlaylistRow[];
-  statsMap: Record<string, PlaylistStats>;
   isAdmin: boolean;
   errorMessage?: string | null;
 }) {
   const router = useRouter();
   const [exportCsv, setExportCsv] = useState<null | (() => void)>(null);
+  const [statsMap, setStatsMap] = useState<Record<string, PlaylistsConfigStats>>({});
+  const [statsLoading, setStatsLoading] = useState(true);
+  const [statsError, setStatsError] = useState<string | null>(null);
+
   const registerExport = useCallback((fn: () => void) => {
     setExportCsv(() => fn);
+  }, []);
+
+  useEffect(() => {
+    if (props.isAdmin) {
+      router.prefetch("/playlists/config/settings");
+    }
+  }, [props.isAdmin, router]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const data = await fetchApiJson<{ statsMap: Record<string, PlaylistsConfigStats> }>(
+          "/api/playlists/config/stats",
+        );
+        if (!cancelled) {
+          setStatsMap(data.statsMap ?? {});
+          setStatsError(null);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setStatsError(e instanceof Error ? e.message : String(e));
+        }
+      } finally {
+        if (!cancelled) setStatsLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return (
@@ -102,12 +133,18 @@ export function PlaylistsConfigClient(props: {
         </Alert>
       ) : null}
 
+      {statsError ? (
+        <Alert variant="error" title="Stats unavailable">
+          {statsError}
+        </Alert>
+      ) : null}
+
       <PlaylistFilters
         playlists={props.playlists}
-        statsMap={props.statsMap}
+        statsMap={statsMap}
+        statsLoading={statsLoading}
         registerExport={registerExport}
       />
     </div>
   );
 }
-

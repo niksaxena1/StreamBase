@@ -45,12 +45,13 @@ type ArtistsConfigClientProps = {
   artists: Artist[];
   totalCount: number;
   allTracks: TrackRow[];
+  tracksLoading?: boolean;
 };
 
 type SortOption = "name" | "total" | "daily" | "tracks";
 type InHouseFilter = "all" | "in_house" | "nih";
 
-export function ArtistsConfigClient({ artists, totalCount, allTracks }: ArtistsConfigClientProps) {
+export function ArtistsConfigClient({ artists, totalCount, allTracks, tracksLoading = false }: ArtistsConfigClientProps) {
   const [artistRows, setArtistRows] = useState(artists);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<SortOption>("name");

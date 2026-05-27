@@ -4,6 +4,7 @@ import { formatInt } from "@/lib/format";
 import { dataDateFromRunDate } from "@/lib/sotDates";
 
 import type {
+  ChurnRow,
   LabelComparisonRow,
   LabelDailyPoint,
   LabelRow,
@@ -250,4 +251,21 @@ export function lookupOverlap(
 ): OverlapCell | null {
   if (labelA === labelB) return null;
   return lookup.get(canonicalOverlapKey(labelA, labelB)) ?? null;
+}
+
+export function enrichChurnRows(
+  rows: Array<{ label_key: string; added_count: number; removed_count: number; net: number }>,
+  playlistsByLabel: Map<string, PlaylistRow[]>,
+  statsByDataDate: ReturnType<typeof buildStatsByDataDate>,
+  latestDataDate: string | null,
+  weekAgoDataDate: string | null,
+): ChurnRow[] {
+  return rows.map((row) => {
+    const keys = (playlistsByLabel.get(row.label_key) ?? []).map((p) => p.playlist_key);
+    const latest = sumLabelAtDataDate(keys, latestDataDate, statsByDataDate, "track_count");
+    const weekAgo = sumLabelAtDataDate(keys, weekAgoDataDate, statsByDataDate, "track_count");
+    const track_count_delta_7d =
+      latest != null && weekAgo != null ? latest - weekAgo : null;
+    return { ...row, track_count_delta_7d };
+  });
 }

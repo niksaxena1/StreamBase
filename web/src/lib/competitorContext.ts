@@ -5,6 +5,9 @@ export type CompetitorLabel = {
 
 export const ALL_COMPETITORS_KEY = "__all__";
 
+/** Lime accent for all-competitors mode (matches default `--sb-accent` in globals.css). */
+export const ALL_COMPETITORS_ACCENT_HEX = "c7f33c";
+
 export function isAllCompetitorsKey(value: unknown): boolean {
   return typeof value === "string" && value.trim() === ALL_COMPETITORS_KEY;
 }
