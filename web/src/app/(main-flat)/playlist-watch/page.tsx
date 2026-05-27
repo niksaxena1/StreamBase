@@ -8,7 +8,7 @@ import { loadPlaylistWatchPage } from "@/lib/playlistWatch/loadPlaylistWatchPage
 
 const PlaylistWatchClient = nextDynamic(
   () => import("./PlaylistWatchClient").then((m) => ({ default: m.PlaylistWatchClient })),
-  { loading: () => <TableSkeleton rows={10} cols={8} />, ssr: false },
+  { loading: () => <TableSkeleton rows={10} cols={8} /> },
 );
 
 export const dynamic = "force-dynamic";
