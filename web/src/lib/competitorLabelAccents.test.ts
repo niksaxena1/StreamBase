@@ -21,6 +21,15 @@ describe("competitorLabelAccents", () => {
     expect(atlast).not.toBe("fd0280");
   });
 
+  it("keeps pinned paraiso orange stable across harmonize", () => {
+    const resolved = applyResolvedLabelAccents([
+      { label_key: "atlast", accent_hex: "ff00b3" },
+      { label_key: "paraiso", accent_hex: "fc6244" },
+      { label_key: "soave", accent_hex: "cc8233" },
+    ]);
+    expect(resolved.find((l) => l.label_key === "paraiso")?.accent_hex).toBe("ff9028");
+  });
+
   it("is idempotent when accents are already resolved", () => {
     const input = [
       { label_key: "atlast", accent_hex: "ff00b3" },

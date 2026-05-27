@@ -16,6 +16,7 @@ export const FALLBACK_LABEL_COLORS = [
 
 /** Brand-locked accents; never shifted by harmonize (matches extract-competitor-accents). */
 export const PINNED_LABEL_ACCENTS: Record<string, string> = {
+  paraiso: "ff9028",
   selected: "db0c0c",
 };
 
