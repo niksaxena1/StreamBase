@@ -7,7 +7,11 @@ import { useRouter } from "next/navigation";
 import { Download, Music } from "lucide-react";
 import { fetchUserSettingsBundle, invalidateUserSettingsBundle } from "@/lib/userSettingsBundleFetch";
 import { fetchApiJson } from "@/lib/api";
-import { buildHomeScatterApiUrl, normalizeHomeScatterApiPayload } from "@/lib/home/homeScatterApi";
+import {
+  buildHomeScatterApiUrl,
+  buildHomeScatterScopeKey,
+  normalizeHomeScatterApiPayload,
+} from "@/lib/home/homeScatterApi";
 import { GranularitySelect, RangeSelect, handleGranularityWithRangeRestore, granularityLabel } from "@/components/ui/GranularitySelect";
 import type { Granularity } from "@/components/ui/GranularitySelect";
 import { DateRangePicker, type DateRangePickerHandle } from "@/components/ui/DateRangePicker";
@@ -109,6 +113,10 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
   const [homeSpikesSectionEnabled, setHomeSpikesSectionEnabled] = useState(true);
   const [homeSpikesSectionConfigured, setHomeSpikesSectionConfigured] = useState(true);
   const scatterFetchUrl = useMemo(() => buildHomeScatterApiUrl(props.sp), [props.sp]);
+  const scatterScopeKey = useMemo(
+    () => buildHomeScatterScopeKey(props.datasetMode, props.competitorLabelKey),
+    [props.datasetMode, props.competitorLabelKey],
+  );
   const [scatterState, setScatterState] = useState<{
     points: TrackStreamsXYPoint[];
     errorMessage: string | null;
@@ -120,9 +128,23 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
     dataDate: props.trackScatterDataDate,
     loading: Boolean(props.trackScatterDeferred),
   }));
+  const prevScatterScopeKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!props.trackScatterDeferred) return;
+
+    const scopeChanged =
+      prevScatterScopeKeyRef.current !== null && prevScatterScopeKeyRef.current !== scatterScopeKey;
+    prevScatterScopeKeyRef.current = scatterScopeKey;
+
+    if (scopeChanged) {
+      setScatterState({
+        points: [],
+        errorMessage: null,
+        dataDate: props.trackScatterDataDate,
+        loading: true,
+      });
+    }
 
     const controller = new AbortController();
     fetchApiJson<unknown>(scatterFetchUrl, { signal: controller.signal })
@@ -151,6 +173,7 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
     props.trackScatterDataDate,
     props.trackScatterDeferred,
     scatterFetchUrl,
+    scatterScopeKey,
   ]);
   const effectiveScatterState = props.trackScatterDeferred
     ? scatterState
@@ -509,6 +532,7 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
 
       <HomeConcentrationSection
         trackScatterPoints={effectiveScatterState.points}
+        trackScatterLoading={effectiveScatterState.loading}
         latestRunDate={props.latestRunDate}
         datasetMode={props.datasetMode}
         competitorLabelKey={props.competitorLabelKey}

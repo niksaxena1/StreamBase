@@ -9,6 +9,15 @@ export type HomeScatterApiPayload = {
 
 const SCATTER_PARAM_KEYS = ["scope", "range", "daily", "xy_date", "start", "end"] as const;
 
+/** Stable key for scatter cache invalidation when dataset context changes. */
+export function buildHomeScatterScopeKey(
+  datasetMode: "own" | "competitor",
+  competitorLabelKey: string | null | undefined,
+): string {
+  const label = typeof competitorLabelKey === "string" ? competitorLabelKey.trim() : "";
+  return `${datasetMode}:${label || "none"}`;
+}
+
 export function buildHomeScatterApiUrl(sp: HomeDashboardSearchParams): string {
   const params = new URLSearchParams();
   for (const key of SCATTER_PARAM_KEYS) {

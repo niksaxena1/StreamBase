@@ -96,6 +96,7 @@ function buildLorenzCurve(
 
 export function HomeConcentrationSection(props: {
   trackScatterPoints: TrackStreamsXYPoint[];
+  trackScatterLoading?: boolean;
   latestRunDate: string | null;
   datasetMode?: "own" | "competitor";
   competitorLabelKey?: string | null;
@@ -133,6 +134,15 @@ export function HomeConcentrationSection(props: {
   useEffect(() => { writeStoredBool(STORAGE_KEY_OPEN, open); }, [open]);
   useEffect(() => { writeStoredString(STORAGE_KEY_MODE, viewMode); }, [viewMode]);
   useEffect(() => { writeStoredNumber(STORAGE_KEY_THRESHOLD, threshold); }, [threshold]);
+
+  useEffect(() => {
+    setFilterMode("all");
+    setArtistId(null);
+    setCollectorId(null);
+    setPlaylistKey(null);
+    setPlaylistIsrcs(null);
+    setCollectorIsrcs(null);
+  }, [props.datasetMode, props.competitorLabelKey]);
 
   const isSpecificCompetitor =
     props.datasetMode === "competitor" &&
@@ -615,7 +625,10 @@ export function HomeConcentrationSection(props: {
             maxBodyHeightClassName="max-h-[600px]"
           >
             {sorted.length === 0 ? (
-              <EmptyState colSpan={7} message="No tracks found" />
+              <EmptyState
+                colSpan={7}
+                message={props.trackScatterLoading ? "Loading tracks…" : "No tracks found"}
+              />
             ) : (
               sorted.map((p, i) => {
                 const val = Math.max(0, getValue(p));
