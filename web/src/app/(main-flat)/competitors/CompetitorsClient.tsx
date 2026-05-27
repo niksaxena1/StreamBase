@@ -25,6 +25,7 @@ import { SpotlightCard } from "@/components/ui/SpotlightCard";
 import { Chip, ChipGroup } from "@/components/ui/Chip";
 import { fetchApiJson } from "@/lib/api";
 import { dispatchCompetitorLabelChange } from "@/lib/competitorAccentEvents";
+import { applyResolvedLabelAccents } from "@/lib/competitorLabelAccents";
 import { CollectorDrilldownModal } from "@/app/(main-flat)/collectors/CollectorDrilldownModal";
 import {
   DRILL_PAGE_SIZE,
@@ -75,7 +76,8 @@ export function CompetitorsClient(props: {
   const { metric } = useMetric();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
   const { chartStartDateIso } = useChartStartDate();
-  const activeLabels = useMemo(() => props.labels.filter((l) => l.is_active !== false), [props.labels]);
+  const labels = useMemo(() => applyResolvedLabelAccents(props.labels), [props.labels]);
+  const activeLabels = useMemo(() => labels.filter((l) => l.is_active !== false), [labels]);
   const canCompare = activeLabels.length >= 2;
 
   const [selectedLabels, setSelectedLabels] = useState<string[]>(() => {
@@ -133,8 +135,8 @@ export function CompetitorsClient(props: {
   const effectiveMode: ComparisonMode =
     !canCompare && mode === "percentage" ? "individual" : mode;
 
-  const seriesColors = useMemo(() => buildSeriesColorMap(props.labels), [props.labels]);
-  const seriesLabels = useMemo(() => buildSeriesLabelMap(props.labels), [props.labels]);
+  const seriesColors = useMemo(() => buildSeriesColorMap(labels), [labels]);
+  const seriesLabels = useMemo(() => buildSeriesLabelMap(labels), [labels]);
 
   const comparisonChartData = useMemo(() => {
     const filtered = filterDailySeriesFromIsoDate(props.labelSeries, chartStartDateIso);
@@ -446,7 +448,7 @@ export function CompetitorsClient(props: {
   const selectCompetitorLabel = useCallback(
     async (labelKey: string) => {
       if (!labelKey || labelKey === activeLabelKey || selectLabelInFlight.current) return;
-      const label = props.labels.find((l) => l.label_key === labelKey);
+      const label = labels.find((l) => l.label_key === labelKey);
       setActiveLabelKey(labelKey);
       dispatchCompetitorLabelChange({
         labelKey,
@@ -464,7 +466,7 @@ export function CompetitorsClient(props: {
           dispatchCompetitorLabelChange({
             labelKey: props.selectedCompetitorLabelKey,
             accentHex:
-              props.labels.find((l) => l.label_key === props.selectedCompetitorLabelKey)?.accent_hex ?? null,
+              labels.find((l) => l.label_key === props.selectedCompetitorLabelKey)?.accent_hex ?? null,
           });
         }
       } catch {
@@ -473,7 +475,7 @@ export function CompetitorsClient(props: {
         selectLabelInFlight.current = false;
       }
     },
-    [activeLabelKey, props.labels, props.selectedCompetitorLabelKey],
+    [activeLabelKey, labels, props.selectedCompetitorLabelKey],
   );
 
   return (
@@ -509,7 +511,7 @@ export function CompetitorsClient(props: {
                 </ChipGroup>
 
                 <div className="flex flex-wrap items-center" style={{ gap: "0.2rem" }}>
-                  <LabelMultiSelect labels={props.labels} selected={selectedLabels} onChange={setSelectedLabels} />
+                  <LabelMultiSelect labels={labels} selected={selectedLabels} onChange={setSelectedLabels} />
                 </div>
               </div>
             </div>

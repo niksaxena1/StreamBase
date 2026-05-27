@@ -16,14 +16,14 @@ Do not blur them. Competitor work should be additive and schema-scoped; own-cata
 - Own-catalog and competitor GitHub Actions are intentionally separate.
 - `dataset_mode` + `competitor_label_key` in `public.user_settings` select the current app universe.
 - In Competitor Mode, labels may own multiple playlists.
-- Per-competitor accent color lives in `competitor.labels.accent_hex` and drives `--sb-accent` for chrome (header, nav, buttons) when a specific competitor is selected. Chart series stay on semantic tokens (`--sb-positive`, `--sb-revenue`, `--sb-tracks`) via `getChartColor()` in `web/src/components/charts/useThemeColors.ts`.
+- Per-competitor accent color is stored in `competitor.labels.accent_hex` and resolved through `web/src/lib/competitorLabelAccents.ts` (`applyResolvedLabelAccents`) on every label load and in `extract-competitor-accents`. The resolved hex drives `--sb-accent` (chrome) and per-label UI (comparison chart, cards, badges). Stream charts in competitor mode use `getStreamSeriesColor()` → `colors.accent`; revenue/tracks keep semantic colors via `getChartColor()`.
 - Competitor history is multi-day; daily/trend views are reliable once ingestion has run across multiple snapshot dates.
 
 ## Competitor system map
 
 - Config: `config/competitor_playlists.csv`
 - DB foundation: `migrations/add_competitor_foundation.sql`
-- Accent colors: `migrations/add_competitor_label_accent_hex.sql`, `web/scripts/extract-competitor-accents.ts`
+- Accent colors: `migrations/add_competitor_label_accent_hex.sql`, `web/src/lib/competitorLabelAccents.ts`, `web/scripts/extract-competitor-accents.ts`
 - Analytics RPCs: `migrations/add_competitor_analytics_rpcs.sql`, `migrations/add_competitor_label_scoped_analytics.sql`
 - UI:
   - Home: `web/src/lib/home/loadHomeDashboard.ts`, `web/src/app/(main-flat)/HomeDashboardClient.tsx`

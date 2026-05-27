@@ -1,8 +1,6 @@
 import type { CollectorDailyData } from "@/components/charts/CollectorComparisonChart";
 import { filterDailySeriesFromIsoDate } from "@/components/charts/chartUtils";
 
-import { harmonizeAccentBatch } from "@/lib/competitorAccentPalette";
-
 import type { LabelDailyPoint, LabelRow } from "./competitorsTypes";
 import { labelColor } from "./competitorsUtils";
 
@@ -29,17 +27,9 @@ export function labelSeriesToCollectorDailyData(rows: LabelDailyPoint[]): Collec
   return out;
 }
 
+/** Per-label chart/table colors (labels should already be resolved via applyResolvedLabelAccents). */
 export function buildSeriesColorMap(labels: LabelRow[]): Record<string, string> {
-  const raw = new Map<string, string>();
-  labels.forEach((label, index) => {
-    raw.set(label.label_key, labelColor(label, index).replace(/^#/, ""));
-  });
-  const harmonized = harmonizeAccentBatch(raw);
-  const map: Record<string, string> = {};
-  for (const [key, hex] of harmonized) {
-    map[key] = `#${hex.replace(/^#/, "")}`;
-  }
-  return map;
+  return Object.fromEntries(labels.map((label, index) => [label.label_key, labelColor(label, index)]));
 }
 
 export function buildSeriesLabelMap(labels: LabelRow[]): Record<string, string> {

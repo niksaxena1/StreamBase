@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { accentColorDistance } from "@/lib/competitorAccentPalette";
+import { applyResolvedLabelAccents } from "@/lib/competitorLabelAccents";
 
 import { buildSeriesColorMap } from "./competitorComparisonAdapter";
 import type { LabelRow } from "./competitorsTypes";
@@ -15,8 +16,9 @@ function label(key: string, accent: string): LabelRow {
 }
 
 describe("buildSeriesColorMap", () => {
-  it("separates ATLAST pink from selected. deep red on the comparison chart", () => {
-    const colors = buildSeriesColorMap([label("atlast", "fd0280"), label("selected", "db0c0c")]);
+  it("uses resolved accents for chart and table series colors", () => {
+    const labels = applyResolvedLabelAccents([label("atlast", "fd0280"), label("selected", "db0c0c")]);
+    const colors = buildSeriesColorMap(labels);
     expect(colors.atlast).toMatch(/^#/);
     expect(colors.selected).toBe("#db0c0c");
     expect(accentColorDistance(colors.atlast!.slice(1), "db0c0c")).toBeGreaterThanOrEqual(0.33);

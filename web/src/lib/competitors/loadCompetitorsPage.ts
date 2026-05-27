@@ -14,6 +14,7 @@ import {
 } from "@/app/(main-flat)/competitors/competitorsUtils";
 import { DEFAULT_CHART_START_DATE_ISO, normalizeIsoDateOrNull } from "@/components/charts/chartUtils";
 import { CACHE_TTL_1H } from "@/lib/constants";
+import { applyResolvedLabelAccents } from "@/lib/competitorLabelAccents";
 import { normalizeDatasetMode } from "@/lib/datasetMode";
 import { addDaysISO, dataDateFromRunDate, runDateFromDataDate } from "@/lib/sotDates";
 import { capRunDate, getRollbackDate, rollbackDataDateToRunDate } from "@/lib/rollback";
@@ -125,7 +126,7 @@ export async function loadCompetitorsPageCore(user: User): Promise<CompetitorsPa
     CACHE_TTL_1H,
   );
 
-  const labels = (results.labels.data ?? []) as LabelRow[];
+  const labels = applyResolvedLabelAccents((results.labels.data ?? []) as LabelRow[]);
   const playlists = (results.playlists.data ?? []) as PlaylistRow[];
   const playlistKeys = playlists.map((p) => p.playlist_key);
   const playlistToLabel = new Map(playlists.map((p) => [p.playlist_key, p.label_key]));

@@ -13,19 +13,10 @@ import { createClient } from "@supabase/supabase-js";
 import { Vibrant } from "node-vibrant/node";
 import sharp from "sharp";
 
-import {
-  candidatesFromSwatches,
-  harmonizeAccentBatch,
-  rgbToHex,
-  hslToRgb,
-} from "../src/lib/competitorAccentPalette";
+import { applyResolvedLabelAccents } from "../src/lib/competitorLabelAccents";
+import { candidatesFromSwatches, rgbToHex, hslToRgb } from "../src/lib/competitorAccentPalette";
 
 const FORCE = process.argv.includes("--force");
-
-/** Brand-locked accents; never overwritten by extract/harmonize (even with --force). */
-const PINNED_LABEL_ACCENTS: Record<string, string> = {
-  selected: "db0c0c",
-};
 
 const PALETTE_KEYS = [
   "Vibrant",
@@ -153,10 +144,13 @@ async function main() {
     chosen.set(row.labelKey, row.candidates[0] ?? fallbackHex(row.labelKey));
   }
 
-  const harmonized = harmonizeAccentBatch(chosen);
-  for (const [labelKey, hex] of Object.entries(PINNED_LABEL_ACCENTS)) {
-    harmonized.set(labelKey, hex.replace(/^#/, "").toLowerCase());
-  }
+  const resolvedRows = applyResolvedLabelAccents(
+    labelRows.map((label) => ({
+      ...label,
+      accent_hex: chosen.get(String(label.label_key)) ?? fallbackHex(String(label.label_key)),
+    })),
+  );
+  const harmonized = new Map(resolvedRows.map((row) => [row.label_key, row.accent_hex!]));
 
   console.log("label_key\timage\taccent_hex\taction");
   for (const label of labelRows) {

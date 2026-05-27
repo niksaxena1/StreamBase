@@ -1,4 +1,5 @@
 import { isAllCompetitorsKey, resolveCompetitorLabelKey } from "@/lib/competitorContext";
+import { applyResolvedLabelAccents } from "@/lib/competitorLabelAccents";
 import { normalizeDatasetMode, type DatasetMode } from "@/lib/datasetMode";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
@@ -42,12 +43,14 @@ async function loadCompetitorLabelsWithImages(): Promise<CompetitorLabelWithImag
     imageByLabel.set(lk, playlist.spotify_playlist_image_url ?? null);
   }
 
-  return (labels ?? []).map((label) => ({
+  const mapped = (labels ?? []).map((label) => ({
     label_key: String(label.label_key),
     display_name: String(label.display_name),
     accent_hex: label.accent_hex ? String(label.accent_hex).replace(/^#/, "").toLowerCase() : null,
     image_url: imageByLabel.get(String(label.label_key)) ?? null,
   }));
+
+  return applyResolvedLabelAccents(mapped);
 }
 
 function buildTitleTemplate(datasetMode: DatasetMode, displayName: string | null): string {

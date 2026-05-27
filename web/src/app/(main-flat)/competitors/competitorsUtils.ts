@@ -3,6 +3,11 @@ import type { CSSProperties } from "react";
 import { formatInt } from "@/lib/format";
 import { dataDateFromRunDate } from "@/lib/sotDates";
 
+import {
+  FALLBACK_LABEL_COLORS,
+  sanitizeAccentHex,
+} from "@/lib/competitorLabelAccents";
+
 import type {
   ChurnRow,
   LabelComparisonRow,
@@ -12,7 +17,7 @@ import type {
   PlaylistRow,
 } from "./competitorsTypes";
 
-export const FALLBACK_LABEL_COLORS = ["#2563EB", "#EA580C", "#E11D48", "#7C3AED", "#059669", "#D97706"];
+export { FALLBACK_LABEL_COLORS, sanitizeAccentHex };
 
 export type PlaylistStatSnapshot = {
   date: string;
@@ -32,12 +37,6 @@ export type AnchoredStatRow = {
 };
 
 export type StatsAsOfRow = AnchoredStatRow;
-
-export function sanitizeAccentHex(accentHex: string | null | undefined): string | null {
-  const clean = accentHex?.replace(/^#/, "").toLowerCase();
-  if (!clean || !/^[0-9a-f]{6}$/.test(clean)) return null;
-  return `#${clean}`;
-}
 
 export function labelColor(label: LabelRow, index: number): string {
   return sanitizeAccentHex(label.accent_hex) ?? FALLBACK_LABEL_COLORS[index % FALLBACK_LABEL_COLORS.length];
