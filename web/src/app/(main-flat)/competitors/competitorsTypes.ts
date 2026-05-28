@@ -77,6 +77,23 @@ export type OverlapTrackRow = {
   artist_names: string[] | null;
 };
 
+export type OverlapArtistCell = {
+  label_a: string;
+  label_b: string;
+  shared_artists: number;
+  label_a_total: number;
+  label_b_total: number;
+  jaccard: number;
+};
+
+export type OverlapArtistRow = {
+  artist_id: string;
+  artist_name: string;
+  image_url: string | null;
+};
+
+export type OverlapBasis = "tracks" | "artists";
+
 export const COMPETITORS_COMPARISON_STORAGE = {
   labels: "sb:competitors:comparison:labels",
   mode: "sb:competitors:comparison:mode",

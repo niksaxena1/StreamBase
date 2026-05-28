@@ -76,7 +76,9 @@ Competitor RPCs used by `/competitors` (schema `competitor`):
 - `label_daily_series(p_start_date, p_end_date)` — per-label chart series (aggregated server-side)
 - `label_top_tracks_daily(p_run_date, p_limit, p_direction)` — gainers/losers
 - `label_membership_churn(p_window_days, p_as_of)` — catalog adds/removes
-- `label_overlap_matrix(p_as_of)` — pairwise Jaccard similarity
+- `label_overlap_matrix(p_as_of)` — pairwise shared track counts (Jaccard in RPC; UI shows counts)
+- `label_overlap_artist_matrix(p_as_of)` — pairwise shared Spotify artist counts
+- `label_overlap_tracks` / `label_overlap_artists` — drill-down for overlap matrix cells
 
 Notes:
 

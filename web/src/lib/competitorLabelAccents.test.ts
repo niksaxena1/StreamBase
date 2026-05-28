@@ -30,6 +30,14 @@ describe("competitorLabelAccents", () => {
     expect(resolved.find((l) => l.label_key === "paraiso")?.accent_hex).toBe("ff9028");
   });
 
+  it("keeps pinned soave tan-gold stable across harmonize", () => {
+    const resolved = applyResolvedLabelAccents([
+      { label_key: "paraiso", accent_hex: "ff9028" },
+      { label_key: "soave", accent_hex: "cc8233" },
+    ]);
+    expect(resolved.find((l) => l.label_key === "soave")?.accent_hex).toBe("b98a46");
+  });
+
   it("is idempotent when accents are already resolved", () => {
     const input = [
       { label_key: "atlast", accent_hex: "ff00b3" },

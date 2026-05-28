@@ -47,4 +47,12 @@ export type CompetitorsIntelPayload = {
     label_b_total: number;
     jaccard: number;
   }>;
+  overlapArtistCells: Array<{
+    label_a: string;
+    label_b: string;
+    shared_artists: number;
+    label_a_total: number;
+    label_b_total: number;
+    jaccard: number;
+  }>;
 };

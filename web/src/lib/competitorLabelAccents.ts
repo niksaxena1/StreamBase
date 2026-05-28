@@ -18,6 +18,7 @@ export const FALLBACK_LABEL_COLORS = [
 export const PINNED_LABEL_ACCENTS: Record<string, string> = {
   paraiso: "ff9028",
   selected: "db0c0c",
+  soave: "b98a46",
 };
 
 export type LabelAccentSource = {

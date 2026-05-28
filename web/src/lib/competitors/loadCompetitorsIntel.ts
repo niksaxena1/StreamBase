@@ -1,4 +1,4 @@
-import type { OverlapCell, PlaylistRow } from "@/app/(main-flat)/competitors/competitorsTypes";
+import type { OverlapArtistCell, OverlapCell, PlaylistRow } from "@/app/(main-flat)/competitors/competitorsTypes";
 import {
   buildStatsByDataDate,
   enrichChurnRows,
@@ -35,7 +35,7 @@ export async function loadCompetitorsIntel(args: {
   } = args;
 
   const weekAgoRunDate = weekAgoDataDate ? runDateFromDataDate(weekAgoDataDate) : null;
-  const cacheKey = `competitors-intel-${scope}-${latestRunDate}-churn${churnWindow}-${rollbackSuffix}`;
+  const cacheKey = `competitors-intel-v2-artist-overlap-${scope}-${latestRunDate}-churn${churnWindow}-${rollbackSuffix}`;
 
   const { data: bundle } = await cachedQuery(
     async () => {
@@ -45,9 +45,17 @@ export async function loadCompetitorsIntel(args: {
       });
       if (churnResult.error) return { data: null, error: churnResult.error };
 
-      const [gainersResult, losersResult, overlapResult, weekAgoStatsResult, anchoredForChurnResult] =
+      const [
+        gainersResult,
+        losersResult,
+        overlapResult,
+        overlapArtistResult,
+        weekAgoStatsResult,
+        anchoredForChurnResult,
+      ] =
         scope === "churn"
           ? [
+              { data: [], error: null },
               { data: [], error: null },
               { data: [], error: null },
               { data: [], error: null },
@@ -66,6 +74,7 @@ export async function loadCompetitorsIntel(args: {
                 p_direction: "losers",
               }),
               comp.rpc("label_overlap_matrix", { p_as_of: latestRunDate }),
+              comp.rpc("label_overlap_artist_matrix", { p_as_of: latestRunDate }),
               weekAgoRunDate
                 ? comp.rpc("playlist_daily_stats_as_of", { p_as_of_date: weekAgoRunDate })
                 : Promise.resolve({ data: [], error: null }),
@@ -84,6 +93,7 @@ export async function loadCompetitorsIntel(args: {
         if (gainersResult.error) return { data: null, error: gainersResult.error };
         if (losersResult.error) return { data: null, error: losersResult.error };
         if (overlapResult.error) return { data: null, error: overlapResult.error };
+        if (overlapArtistResult.error) return { data: null, error: overlapArtistResult.error };
       }
 
       const statsByDataDate = buildStatsByDataDate((anchoredForChurnResult.data ?? []) as AnchoredStatRow[]);
@@ -119,6 +129,7 @@ export async function loadCompetitorsIntel(args: {
           losers: parseMovers(losersResult.data),
           churn,
           overlapCells: (overlapResult.data ?? []) as OverlapCell[],
+          overlapArtistCells: (overlapArtistResult.data ?? []) as OverlapArtistCell[],
         },
         error: null,
       };
@@ -133,6 +144,7 @@ export async function loadCompetitorsIntel(args: {
       losers: [],
       churn: [],
       overlapCells: [],
+      overlapArtistCells: [],
     }
   );
 }

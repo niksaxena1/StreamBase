@@ -13,6 +13,7 @@ import type {
   LabelComparisonRow,
   LabelDailyPoint,
   LabelRow,
+  OverlapArtistCell,
   OverlapCell,
   PlaylistRow,
 } from "./competitorsTypes";
@@ -251,6 +252,23 @@ export function lookupOverlap(
   labelA: string,
   labelB: string,
 ): OverlapCell | null {
+  if (labelA === labelB) return null;
+  return lookup.get(canonicalOverlapKey(labelA, labelB)) ?? null;
+}
+
+export function buildOverlapArtistLookup(cells: OverlapArtistCell[]): Map<string, OverlapArtistCell> {
+  const map = new Map<string, OverlapArtistCell>();
+  for (const cell of cells) {
+    map.set(canonicalOverlapKey(cell.label_a, cell.label_b), cell);
+  }
+  return map;
+}
+
+export function lookupOverlapArtist(
+  lookup: Map<string, OverlapArtistCell>,
+  labelA: string,
+  labelB: string,
+): OverlapArtistCell | null {
   if (labelA === labelB) return null;
   return lookup.get(canonicalOverlapKey(labelA, labelB)) ?? null;
 }
