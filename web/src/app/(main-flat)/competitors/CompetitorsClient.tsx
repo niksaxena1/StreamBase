@@ -55,6 +55,8 @@ import {
   type LabelDailyPoint,
   type LabelRow,
 } from "./competitorsTypes";
+import { isOwnCatalogLabelKey } from "@/lib/competitors/ownCatalog";
+
 import { labelColor } from "./competitorsUtils";
 
 // TODO(competitor-history-depth): once we have >=60 days of competitor history
@@ -245,6 +247,10 @@ export function CompetitorsClient(props: {
   const latestRunDate = props.latestRunDate;
 
   function openDrill(labelKey: string, kind: DrillKind) {
+    if (isOwnCatalogLabelKey(labelKey)) {
+      router.push("/catalog");
+      return;
+    }
     setDrillLabelKey(labelKey);
     setDrillKind(kind);
     setDrillQuery("");
@@ -370,9 +376,11 @@ export function CompetitorsClient(props: {
             : formatInt(Math.round(n));
 
       const playlistKey = props.playlistsByLabel[row.label.label_key]?.[0]?.playlist_key;
-      const href = playlistKey
-        ? `/playlists?playlist_key=${encodeURIComponent(playlistKey)}`
-        : "/playlists";
+      const href = isOwnCatalogLabelKey(row.label.label_key)
+        ? "/catalog"
+        : playlistKey
+          ? `/playlists?playlist_key=${encodeURIComponent(playlistKey)}`
+          : "/playlists";
       const isSelectedLabel = row.label.label_key === activeLabelKey;
 
       return {
@@ -447,6 +455,7 @@ export function CompetitorsClient(props: {
 
   const selectCompetitorLabel = useCallback(
     async (labelKey: string) => {
+      if (isOwnCatalogLabelKey(labelKey)) return;
       if (!labelKey || labelKey === activeLabelKey || selectLabelInFlight.current) return;
       const label = labels.find((l) => l.label_key === labelKey);
       setActiveLabelKey(labelKey);
@@ -691,7 +700,11 @@ export function CompetitorsClient(props: {
                         }
                       : undefined
                   }
-                  onClick={() => void selectCompetitorLabel(row.label.label_key)}
+                  onClick={() => {
+                    if (!isOwnCatalogLabelKey(row.label.label_key)) {
+                      void selectCompetitorLabel(row.label.label_key);
+                    }
+                  }}
                 >
                   <TableCell className="sticky left-0 z-10 px-0 py-0" style={{ background: stickyBg }}>
                     <Link

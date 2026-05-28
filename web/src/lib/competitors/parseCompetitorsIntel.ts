@@ -55,4 +55,18 @@ export type CompetitorsIntelPayload = {
     label_b_total: number;
     jaccard: number;
   }>;
+  ownOverlapCells: Array<{
+    competitor_label_key: string;
+    shared_count: number;
+    own_catalog_total: number;
+    competitor_total: number;
+    jaccard: number;
+  }>;
+  ownOverlapArtistCells: Array<{
+    competitor_label_key: string;
+    shared_count: number;
+    own_catalog_total: number;
+    competitor_total: number;
+    jaccard: number;
+  }>;
 };

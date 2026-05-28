@@ -20,6 +20,13 @@ import { addDaysISO, dataDateFromRunDate, runDateFromDataDate } from "@/lib/sotD
 import { capRunDate, getRollbackDate, rollbackDataDateToRunDate } from "@/lib/rollback";
 import { cachedQueries } from "@/lib/supabase/cache";
 import { isMissingPostgresFunctionError } from "@/lib/supabase/rpcErrors";
+import {
+  buildOwnCatalogComparisonRow,
+  mapOwnCatalogSeries,
+  mergeCatalogStatsIntoByDataDate,
+  ownCatalogLabelRow,
+  OWN_CATALOG_PLAYLIST_KEY,
+} from "@/lib/competitors/ownCatalog";
 import { supabaseService } from "@/lib/supabase/service";
 
 type LabelArtistCountRow = {
@@ -194,12 +201,49 @@ export async function loadCompetitorsPageCore(user: User): Promise<CompetitorsPa
         await comp.rpc("playlist_daily_stats_as_of", {
           p_as_of_date: runDateFromDataDate(weekAgoDataDate),
         }),
+      ownCatalogSeries: async () =>
+        await svc.rpc("playlist_series", {
+          playlist_key: OWN_CATALOG_PLAYLIST_KEY,
+          start_date: seriesStartRun,
+          end_date: latestRunDate,
+        }),
+      ownCatalogAnchored: async () =>
+        await svc
+          .from("playlist_daily_stats")
+          .select(
+            "playlist_key,date,track_count,total_streams_cumulative,missing_streams_track_count,daily_streams_net",
+          )
+          .eq("playlist_key", OWN_CATALOG_PLAYLIST_KEY)
+          .in("date", anchorRunDates),
+      ownArtistLatest: async () =>
+        await svc.rpc("playlist_distinct_artist_count", {
+          playlist_key: OWN_CATALOG_PLAYLIST_KEY,
+          run_date: runDateFromDataDate(latestDataDate),
+        }),
+      ownArtistPrevious: async () =>
+        await svc.rpc("playlist_distinct_artist_count", {
+          playlist_key: OWN_CATALOG_PLAYLIST_KEY,
+          run_date: runDateFromDataDate(previousDataDate),
+        }),
+      ownArtistWeekAgo: async () =>
+        await svc.rpc("playlist_distinct_artist_count", {
+          playlist_key: OWN_CATALOG_PLAYLIST_KEY,
+          run_date: runDateFromDataDate(weekAgoDataDate),
+        }),
+      ownWeekAgoStats: async () =>
+        await svc.rpc("playlist_daily_stats_as_of", {
+          p_as_of_date: runDateFromDataDate(weekAgoDataDate),
+        }),
     },
     dataCacheBase,
     CACHE_TTL_1H,
   );
 
   const statsByDataDate = buildStatsByDataDate((dataResults.anchoredStats.data ?? []) as AnchoredStatRow[]);
+  mergeCatalogStatsIntoByDataDate(
+    statsByDataDate,
+    (dataResults.ownCatalogAnchored.data ?? []) as AnchoredStatRow[],
+  );
 
   if (weekAgoDataDate) {
     const byPlaylist = statsByDataDate.get(weekAgoDataDate) ?? new Map();
@@ -216,6 +260,26 @@ export async function loadCompetitorsPageCore(user: User): Promise<CompetitorsPa
       });
     }
     statsByDataDate.set(weekAgoDataDate, byPlaylist);
+  }
+
+  const ownWeekAgoRow = ((dataResults.ownWeekAgoStats.data ?? []) as AnchoredStatRow[]).find(
+    (r) => r.playlist_key === OWN_CATALOG_PLAYLIST_KEY,
+  );
+  if (ownWeekAgoRow && weekAgoDataDate) {
+    const byPlaylist = statsByDataDate.get(weekAgoDataDate) ?? new Map();
+    if (!byPlaylist.has(OWN_CATALOG_PLAYLIST_KEY)) {
+      const rowDataDate = dataDateFromRunDate(ownWeekAgoRow.date.slice(0, 10));
+      if (rowDataDate === weekAgoDataDate) {
+        byPlaylist.set(OWN_CATALOG_PLAYLIST_KEY, {
+          date: weekAgoDataDate,
+          track_count: ownWeekAgoRow.track_count,
+          total_streams_cumulative: ownWeekAgoRow.total_streams_cumulative,
+          missing_streams_track_count: ownWeekAgoRow.missing_streams_track_count,
+          daily_streams_net: ownWeekAgoRow.daily_streams_net,
+        });
+        statsByDataDate.set(weekAgoDataDate, byPlaylist);
+      }
+    }
   }
 
   const artistCountByLabel = new Map<string, number>();
@@ -256,7 +320,7 @@ export async function loadCompetitorsPageCore(user: User): Promise<CompetitorsPa
           playlistToLabel,
         );
 
-  const comparisonRows = buildLabelComparisonRows({
+  const competitorComparisonRows = buildLabelComparisonRows({
     labels,
     playlistsByLabel,
     labelSeries,
@@ -268,6 +332,32 @@ export async function loadCompetitorsPageCore(user: User): Promise<CompetitorsPa
     previousArtistCountByLabel,
     weekAgoArtistCountByLabel,
   });
+
+  const ownCatalogSeries = mapOwnCatalogSeries(
+    (dataResults.ownCatalogSeries.data ?? []) as Array<{
+      date: string;
+      daily_streams_net: number | null;
+      total_streams_cumulative: number | null;
+      track_count: number | null;
+    }>,
+  );
+  const mergedLabelSeries = [...labelSeries, ...ownCatalogSeries].sort(
+    (a, b) => a.date.localeCompare(b.date) || a.label_key.localeCompare(b.label_key),
+  );
+
+  const ownComparisonRow = buildOwnCatalogComparisonRow({
+    labelSeries: mergedLabelSeries,
+    latestDataDate,
+    previousDataDate,
+    weekAgoDataDate,
+    statsByDataDate,
+    artistCountLatest: parseCount(dataResults.ownArtistLatest.data as number | string | null),
+    artistCountPrevious: parseCount(dataResults.ownArtistPrevious.data as number | string | null),
+    artistCountWeekAgo: parseCount(dataResults.ownArtistWeekAgo.data as number | string | null),
+  });
+
+  const labelsWithOwn = [ownCatalogLabelRow(), ...labels];
+  const comparisonRows = [ownComparisonRow, ...competitorComparisonRows];
 
   const playlistsByLabelRecord: Record<string, PlaylistRow[]> = {};
   for (const [key, rows] of playlistsByLabel) {
@@ -282,9 +372,9 @@ export async function loadCompetitorsPageCore(user: User): Promise<CompetitorsPa
   return {
     status: "ok",
     data: {
-      labels,
+      labels: labelsWithOwn,
       comparisonRows,
-      labelSeries,
+      labelSeries: mergedLabelSeries,
       latestDataDate,
       latestRunDate,
       selectedCompetitorLabelKey,

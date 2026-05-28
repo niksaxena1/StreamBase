@@ -23,6 +23,8 @@ import type {
   MoverTrackRow,
   OverlapCell,
 } from "./competitorsTypes";
+import { buildOwnOverlapLookup } from "@/lib/competitors/ownCatalog";
+
 import { buildOverlapArtistLookup, buildOverlapLookup, deltaColor, labelColor } from "./competitorsUtils";
 
 const CompetitorsOverlapMatrix = dynamic(
@@ -194,6 +196,8 @@ export function CompetitorsIntelSections(props: {
                   churn: data.churn,
                   overlapCells: [],
                   overlapArtistCells: [],
+                  ownOverlapCells: [],
+                  ownOverlapArtistCells: [],
                 },
           );
           lastChurnWindow.current = churnWindow;
@@ -228,8 +232,14 @@ export function CompetitorsIntelSections(props: {
     () => buildOverlapArtistLookup(overlapArtistCells),
     [overlapArtistCells],
   );
-  const hasOverlapMatrix = overlapCells.length > 0 || overlapArtistCells.length > 0;
-
+  const ownOverlapLookup = useMemo(
+    () => buildOwnOverlapLookup(intel?.ownOverlapCells ?? []),
+    [intel?.ownOverlapCells],
+  );
+  const ownOverlapArtistLookup = useMemo(
+    () => buildOwnOverlapLookup(intel?.ownOverlapArtistCells ?? []),
+    [intel?.ownOverlapArtistCells],
+  );
   if (!shouldLoad) {
     return (
       <div ref={rootRef} className="min-h-[120px]" aria-hidden="true" />
@@ -421,11 +431,13 @@ export function CompetitorsIntelSections(props: {
         </div>
       ) : null}
 
-      {canCompare && hasOverlapMatrix ? (
+      {canCompare ? (
         <CompetitorsOverlapMatrix
           activeLabels={activeLabels}
           overlapLookup={overlapLookup}
           overlapArtistLookup={overlapArtistLookup}
+          ownOverlapLookup={ownOverlapLookup}
+          ownOverlapArtistLookup={ownOverlapArtistLookup}
           latestRunDate={props.latestRunDate}
         />
       ) : null}

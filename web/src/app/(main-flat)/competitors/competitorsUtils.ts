@@ -7,6 +7,7 @@ import {
   FALLBACK_LABEL_COLORS,
   sanitizeAccentHex,
 } from "@/lib/competitorLabelAccents";
+import { isOwnCatalogLabelKey, OWN_CATALOG_PLAYLIST_KEY } from "@/lib/competitors/ownCatalog";
 
 import type {
   ChurnRow,
@@ -40,6 +41,9 @@ export type AnchoredStatRow = {
 export type StatsAsOfRow = AnchoredStatRow;
 
 export function labelColor(label: LabelRow, index: number): string {
+  if (isOwnCatalogLabelKey(label.label_key)) {
+    return sanitizeAccentHex(label.accent_hex) ?? "var(--sb-accent)";
+  }
   return sanitizeAccentHex(label.accent_hex) ?? FALLBACK_LABEL_COLORS[index % FALLBACK_LABEL_COLORS.length];
 }
 
@@ -281,7 +285,9 @@ export function enrichChurnRows(
   weekAgoDataDate: string | null,
 ): ChurnRow[] {
   return rows.map((row) => {
-    const keys = (playlistsByLabel.get(row.label_key) ?? []).map((p) => p.playlist_key);
+    const keys = isOwnCatalogLabelKey(row.label_key)
+      ? [OWN_CATALOG_PLAYLIST_KEY]
+      : (playlistsByLabel.get(row.label_key) ?? []).map((p) => p.playlist_key);
     const latest = sumLabelAtDataDate(keys, latestDataDate, statsByDataDate, "track_count");
     const weekAgo = sumLabelAtDataDate(keys, weekAgoDataDate, statsByDataDate, "track_count");
     const track_count_delta_7d =

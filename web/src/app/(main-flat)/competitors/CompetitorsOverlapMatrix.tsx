@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import { Chip, ChipGroup } from "@/components/ui/Chip";
 import { fetchApiJson } from "@/lib/api";
@@ -16,6 +16,12 @@ import type {
   OverlapCell,
   OverlapTrackRow,
 } from "./competitorsTypes";
+import {
+  isOwnCatalogLabelKey,
+  lookupOwnOverlap,
+  type OwnOverlapCell,
+} from "@/lib/competitors/ownCatalog";
+
 import { lookupOverlap, lookupOverlapArtist } from "./competitorsUtils";
 
 type OverlapModalState = {
@@ -44,6 +50,22 @@ function overlapArtistsUrl(runDate: string, labelA: string, labelB: string) {
   return `/api/competitors/overlap-artists?${q.toString()}`;
 }
 
+function ownOverlapTracksUrl(runDate: string, competitorLabelKey: string) {
+  const q = new URLSearchParams({
+    run_date: runDate,
+    competitor_label_key: competitorLabelKey,
+  });
+  return `/api/competitors/own-overlap-tracks?${q.toString()}`;
+}
+
+function ownOverlapArtistsUrl(runDate: string, competitorLabelKey: string) {
+  const q = new URLSearchParams({
+    run_date: runDate,
+    competitor_label_key: competitorLabelKey,
+  });
+  return `/api/competitors/own-overlap-artists?${q.toString()}`;
+}
+
 type OverlapValueMode = "count" | "percent";
 
 function formatJaccardPercent(jaccard: number): string {
@@ -58,10 +80,19 @@ export function CompetitorsOverlapMatrix(props: {
   activeLabels: LabelRow[];
   overlapLookup: Map<string, OverlapCell>;
   overlapArtistLookup?: Map<string, OverlapArtistCell>;
+  ownOverlapLookup?: Map<string, OwnOverlapCell>;
+  ownOverlapArtistLookup?: Map<string, OwnOverlapCell>;
   latestRunDate: string;
 }) {
-  const { activeLabels, overlapLookup, latestRunDate } = props;
+  const { overlapLookup, latestRunDate } = props;
   const overlapArtistLookup = props.overlapArtistLookup ?? new Map<string, OverlapArtistCell>();
+  const ownOverlapLookup = props.ownOverlapLookup ?? new Map<string, OwnOverlapCell>();
+  const ownOverlapArtistLookup = props.ownOverlapArtistLookup ?? new Map<string, OwnOverlapCell>();
+  const activeLabels = useMemo(() => {
+    const competitors = props.activeLabels.filter((l) => !isOwnCatalogLabelKey(l.label_key));
+    const own = props.activeLabels.find((l) => isOwnCatalogLabelKey(l.label_key));
+    return own ? [...competitors, own] : competitors;
+  }, [props.activeLabels]);
   const labelNameByKey = useRef(
     new Map(activeLabels.map((l) => [l.label_key, l.display_name] as const)),
   );
@@ -108,20 +139,36 @@ export function CompetitorsOverlapMatrix(props: {
       setLoading(true);
 
       const gen = ++fetchGen.current;
+      const involvesOwn = isOwnCatalogLabelKey(labelA) || isOwnCatalogLabelKey(labelB);
+      const competitorKey = isOwnCatalogLabelKey(labelA) ? labelB : labelA;
       const request =
         basis === "tracks"
-          ? fetchApiJson<{ tracks: OverlapTrackRow[] }>(overlapTracksUrl(latestRunDate, labelA, labelB)).then(
-              (data) => {
+          ? involvesOwn
+            ? fetchApiJson<{ tracks: OverlapTrackRow[] }>(
+                ownOverlapTracksUrl(latestRunDate, competitorKey),
+              ).then((data) => {
                 if (fetchGen.current !== gen) return;
                 setTracks(data.tracks ?? []);
-              },
-            )
-          : fetchApiJson<{ artists: OverlapArtistRow[] }>(
-              overlapArtistsUrl(latestRunDate, labelA, labelB),
-            ).then((data) => {
-              if (fetchGen.current !== gen) return;
-              setArtists(data.artists ?? []);
-            });
+              })
+            : fetchApiJson<{ tracks: OverlapTrackRow[] }>(
+                overlapTracksUrl(latestRunDate, labelA, labelB),
+              ).then((data) => {
+                if (fetchGen.current !== gen) return;
+                setTracks(data.tracks ?? []);
+              })
+          : involvesOwn
+            ? fetchApiJson<{ artists: OverlapArtistRow[] }>(
+                ownOverlapArtistsUrl(latestRunDate, competitorKey),
+              ).then((data) => {
+                if (fetchGen.current !== gen) return;
+                setArtists(data.artists ?? []);
+              })
+            : fetchApiJson<{ artists: OverlapArtistRow[] }>(
+                overlapArtistsUrl(latestRunDate, labelA, labelB),
+              ).then((data) => {
+                if (fetchGen.current !== gen) return;
+                setArtists(data.artists ?? []);
+              });
 
       void request
         .catch((e) => {
@@ -206,24 +253,50 @@ export function CompetitorsOverlapMatrix(props: {
                       return <td key={colLabel.label_key} className="p-2" aria-hidden />;
                     }
 
-                    const trackCell = lookupOverlap(overlapLookup, rowLabel.label_key, colLabel.label_key);
-                    const artistCell = lookupOverlapArtist(
-                      overlapArtistLookup,
-                      rowLabel.label_key,
-                      colLabel.label_key,
-                    );
-                    const cell = basis === "tracks" ? trackCell : artistCell;
-                    if (!cell) {
-                      return <td key={colLabel.label_key} className="p-2" />;
+                    const involvesOwn =
+                      isOwnCatalogLabelKey(rowLabel.label_key) ||
+                      isOwnCatalogLabelKey(colLabel.label_key);
+                    let sharedCount = 0;
+                    let jaccard = 0;
+
+                    if (involvesOwn) {
+                      const competitorKey = isOwnCatalogLabelKey(rowLabel.label_key)
+                        ? colLabel.label_key
+                        : rowLabel.label_key;
+                      const ownCell =
+                        basis === "tracks"
+                          ? lookupOwnOverlap(ownOverlapLookup, competitorKey)
+                          : lookupOwnOverlap(ownOverlapArtistLookup, competitorKey);
+                      if (!ownCell) {
+                        return <td key={colLabel.label_key} className="p-2" />;
+                      }
+                      sharedCount = ownCell.shared_count;
+                      jaccard = Number(ownCell.jaccard);
+                    } else {
+                      const trackCell = lookupOverlap(
+                        overlapLookup,
+                        rowLabel.label_key,
+                        colLabel.label_key,
+                      );
+                      const artistCell = lookupOverlapArtist(
+                        overlapArtistLookup,
+                        rowLabel.label_key,
+                        colLabel.label_key,
+                      );
+                      const cell = basis === "tracks" ? trackCell : artistCell;
+                      if (!cell) {
+                        return <td key={colLabel.label_key} className="p-2" />;
+                      }
+                      sharedCount =
+                        basis === "tracks"
+                          ? (cell as OverlapCell).shared_isrcs
+                          : (cell as OverlapArtistCell).shared_artists;
+                      jaccard = Number(cell.jaccard);
                     }
 
-                    const sharedCount =
-                      basis === "tracks"
-                        ? (cell as OverlapCell).shared_isrcs
-                        : (cell as OverlapArtistCell).shared_artists;
-                    const jaccardPct = Number(cell.jaccard) * 100;
+                    const jaccardPct = jaccard * 100;
                     const displayValue =
-                      valueMode === "count" ? formatInt(sharedCount) : formatJaccardPercent(Number(cell.jaccard));
+                      valueMode === "count" ? formatInt(sharedCount) : formatJaccardPercent(jaccard);
                     const title =
                       sharedCount > 0
                         ? `${formatInt(sharedCount)} shared ${entityLabelPlural} · Jaccard ${jaccardPct.toFixed(1)}% · Click for list`
