@@ -943,7 +943,7 @@ export function CatalogPageClient(props: {
                   </div>
                   <div className="mt-1 font-display text-3xl font-bold tracking-tight">
                     {trackChartData.cumSeries.length > 0 ? (
-                      <AnimatedCounter value={trackChartData.cumSeries[trackChartData.cumSeries.length - 1]?.value ?? 0} format={trackChartData.valueFormat} />
+                      <AnimatedCounter value={trackChartData.cumSeries[0]?.value ?? 0} format={trackChartData.valueFormat} />
                     ) : (
                       "—"
                     )}
