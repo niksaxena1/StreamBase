@@ -45,24 +45,25 @@ export function ViewportAwareTooltip({
   /** Distance between anchor and tooltip when flipped */
   gapPx?: number;
 }) {
-  const ref = useRef<HTMLDivElement | null>(null);
+  /** Recharts positions this outer wrapper; keep it untransformed for stable measurements. */
+  const anchorRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
   const flipLeftRef = useRef(false);
   const clampDxRef = useRef(0);
   const [flipLeft, setFlipLeft] = useState(false);
   const [clampDx, setClampDx] = useState(0);
 
   const measurePlacement = useCallback(() => {
-    const el = ref.current;
-    if (!el) return;
+    const anchor = anchorRef.current;
+    const content = contentRef.current;
+    if (!anchor || !content) return;
 
-    const width = el.offsetWidth;
+    const width = content.offsetWidth;
     if (width <= 0) return;
 
-    const { left: boundLeft, right: boundRight } = getHorizontalClipBounds(el, viewportPaddingPx);
-    const rect = el.getBoundingClientRect();
+    const { left: boundLeft, right: boundRight } = getHorizontalClipBounds(anchor, viewportPaddingPx);
+    const anchorX = anchor.getBoundingClientRect().left;
     const flipped = flipLeftRef.current;
-    /** Screen X of the anchor point (stable across flip modes). */
-    const anchorX = flipped ? rect.right : rect.left;
 
     const rightEdgeIfUnflipped = anchorX + width;
     const leftEdgeIfFlipped = anchorX - width - gapPx;
@@ -94,14 +95,14 @@ export function ViewportAwareTooltip({
     }
   }, [gapPx, viewportPaddingPx]);
 
-  // Re-measure after flip/clamp transform is applied to the DOM.
+  // Re-measure after flip/clamp transform is applied to the inner content.
   useLayoutEffect(() => {
     measurePlacement();
   }, [flipLeft, clampDx, measurePlacement]);
 
   useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
+    const content = contentRef.current;
+    if (!content) return;
 
     let raf = 0;
 
@@ -111,7 +112,7 @@ export function ViewportAwareTooltip({
     };
 
     const ro = new ResizeObserver(() => schedule());
-    ro.observe(el);
+    ro.observe(content);
 
     schedule();
 
@@ -127,17 +128,18 @@ export function ViewportAwareTooltip({
   }, [measurePlacement]);
 
   return (
-    <div
-      ref={ref}
-      style={{
-        display: "inline-block",
-        transform: flipLeft
-          ? `translateX(calc(-100% - ${gapPx}px)) translateX(${clampDx}px)`
-          : `translateX(${clampDx}px)`,
-        willChange: "transform",
-      }}
-    >
-      {children}
+    <div ref={anchorRef} style={{ display: "inline-block" }}>
+      <div
+        ref={contentRef}
+        style={{
+          transform: flipLeft
+            ? `translateX(calc(-100% - ${gapPx}px)) translateX(${clampDx}px)`
+            : `translateX(${clampDx}px)`,
+          willChange: "transform",
+        }}
+      >
+        {children}
+      </div>
     </div>
   );
 }

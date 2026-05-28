@@ -7,7 +7,11 @@ import {
   FALLBACK_LABEL_COLORS,
   sanitizeAccentHex,
 } from "@/lib/competitorLabelAccents";
-import { isOwnCatalogLabelKey, OWN_CATALOG_PLAYLIST_KEY } from "@/lib/competitors/ownCatalog";
+import {
+  isOwnCatalogLabelKey,
+  ownCatalogAccentCssColor,
+  OWN_CATALOG_PLAYLIST_KEY,
+} from "@/lib/competitors/ownCatalog";
 
 import type {
   ChurnRow,
@@ -42,7 +46,7 @@ export type StatsAsOfRow = AnchoredStatRow;
 
 export function labelColor(label: LabelRow, index: number): string {
   if (isOwnCatalogLabelKey(label.label_key)) {
-    return sanitizeAccentHex(label.accent_hex) ?? "var(--sb-accent)";
+    return sanitizeAccentHex(label.accent_hex) ?? ownCatalogAccentCssColor();
   }
   return sanitizeAccentHex(label.accent_hex) ?? FALLBACK_LABEL_COLORS[index % FALLBACK_LABEL_COLORS.length];
 }

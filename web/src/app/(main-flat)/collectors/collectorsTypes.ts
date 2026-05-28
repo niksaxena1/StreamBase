@@ -142,3 +142,36 @@ export type DateBreakdownCollector = {
 export function isCollectorKey(c: string): c is (typeof COLLECTOR_ORDER)[number] {
   return (COLLECTOR_ORDER as readonly string[]).includes(c);
 }
+
+export type CollectorOverlapCell = {
+  collector_a: string;
+  collector_b: string;
+  shared_isrcs: number;
+  collector_a_total: number;
+  collector_b_total: number;
+  jaccard: number;
+};
+
+export type CollectorOverlapArtistCell = {
+  collector_a: string;
+  collector_b: string;
+  shared_artists: number;
+  collector_a_total: number;
+  collector_b_total: number;
+  jaccard: number;
+};
+
+export type CollectorOverlapTrackRow = {
+  isrc: string;
+  name: string;
+  album_image_url: string | null;
+  artist_names: string[] | null;
+};
+
+export type CollectorOverlapArtistRow = {
+  artist_id: string;
+  artist_name: string;
+  image_url: string | null;
+};
+
+export type CollectorOverlapBasis = "tracks" | "artists";

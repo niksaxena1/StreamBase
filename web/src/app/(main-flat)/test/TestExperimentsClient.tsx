@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useMemo } from "react";
+import { useMemo } from "react";
 import {
   Area,
   Bar,
@@ -22,7 +22,8 @@ import { addDaysISO } from "@/lib/sotDates";
 import { useThemeColors, getChartTooltipStyle } from "@/components/charts/useThemeColors";
 import { SpotlightCard } from "@/components/ui/SpotlightCard";
 import { Sparkline } from "@/components/charts/Sparkline";
-import type { TestDailyRow, TestPlaylistLabel, TestRunRow } from "./testTypes";
+import { SankeyFlowExperiment } from "./SankeyFlowExperiment";
+import type { TestDailyRow, TestPlaylistLabel, TestRunRow, TestSankeyRow } from "./testTypes";
 
 function generateMockHistory(days: number): TestDailyRow[] {
   const out: TestDailyRow[] = [];
@@ -110,14 +111,17 @@ export function TestExperimentsClient({
   history: historyProp,
   runs,
   playlists,
+  sankeyRows,
+  sankeyAsOfDate,
 }: {
   history: TestDailyRow[];
   runs: TestRunRow[];
   playlists: TestPlaylistLabel[];
+  sankeyRows: TestSankeyRow[];
+  sankeyAsOfDate: string | null;
 }) {
   const colors = useThemeColors();
   const tooltipStyle = getChartTooltipStyle(colors);
-  const sankeyGradientId = `test-sg-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
 
   const history = useMemo(() => {
     if (historyProp.length >= 14) return historyProp;
@@ -883,64 +887,12 @@ export function TestExperimentsClient({
 
       <Section
         id="exp-sankey"
-        title="11. Sankey-style flow (mock)"
-        subtitle="Playlists → top tracks — custom SVG sketch; full Sankey needs dedicated layout."
-        badge="Mock"
+        title="11. Catalog grouping flow"
+        subtitle="Real latest own-catalog data: collector/type to organizing playlist to track. This is a distribution view, not a claim that playlists feed streams."
+        badge="Live"
       >
-        <SpotlightCard className="p-3">
-          <svg viewBox="0 0 480 200" className="h-auto w-full max-w-lg" role="img" aria-label="Mock sankey flow">
-            <defs>
-              <linearGradient id={sankeyGradientId} x1="0" y1="0" x2="1" y2="0">
-                <stop offset="0%" stopColor={colors.accentStroke} stopOpacity={0.3} />
-                <stop offset="100%" stopColor={colors.tracks} stopOpacity={0.5} />
-              </linearGradient>
-            </defs>
-            {[40, 90, 140].map((y, i) => (
-              <rect key={i} x={20} y={y} width={72} height={28} rx={6} fill={colors.card} stroke={colors.border} />
-            ))}
-            {[35, 85, 135].map((y, i) => (
-              <text key={i} x={28} y={y + 18} fontSize={10} fill={colors.text}>
-                {["Releases", "External", "Radio"][i]}
-              </text>
-            ))}
-            {[
-              { y: 30, label: "Track A" },
-              { y: 70, label: "Track B" },
-              { y: 110, label: "Track C" },
-              { y: 150, label: "Track D" },
-            ].map((t, i) => (
-              <g key={i}>
-                <rect x={360} y={t.y} width={100} height={22} rx={5} fill={colors.accent10} stroke={colors.accent20} />
-                <text x={368} y={t.y + 15} fontSize={9} fill={colors.text}>
-                  {t.label}
-                </text>
-              </g>
-            ))}
-            <path
-              d="M 92 54 C 200 54, 200 40, 350 41"
-              fill="none"
-              stroke={`url(#${sankeyGradientId})`}
-              strokeWidth={14}
-              strokeLinecap="round"
-              opacity={0.85}
-            />
-            <path
-              d="M 92 104 C 220 104, 220 75, 350 81"
-              fill="none"
-              stroke={colors.tracks}
-              strokeWidth={10}
-              strokeLinecap="round"
-              opacity={0.35}
-            />
-            <path
-              d="M 92 154 C 210 154, 230 120, 350 121"
-              fill="none"
-              stroke={colors.revenue}
-              strokeWidth={12}
-              strokeLinecap="round"
-              opacity={0.4}
-            />
-          </svg>
+        <SpotlightCard>
+          <SankeyFlowExperiment colors={colors} rows={sankeyRows} asOfDate={sankeyAsOfDate} />
         </SpotlightCard>
       </Section>
 

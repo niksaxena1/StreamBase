@@ -16,3 +16,16 @@ export type TestPlaylistLabel = {
   playlist_key: string;
   display_name: string;
 };
+
+export type TestSankeyRow = {
+  group_key: string;
+  group_name: string;
+  playlist_key: string;
+  playlist_name: string;
+  isrc: string;
+  track_name: string;
+  artist_names: string[];
+  value: number;
+  total: number | null;
+  daily: number | null;
+};

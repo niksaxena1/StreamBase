@@ -4,7 +4,13 @@ import { useSharedGranularity } from "@/lib/useSharedGranularity";
 import { CollectorsPageHeader } from "./CollectorsPageHeader";
 import { CollectorsClient } from "./CollectorsClient";
 import type { CollectorDailyData } from "@/components/charts/CollectorComparisonChart";
-import type { CollectorSeriesPoint, CollectorSummaryRow, TopPlaylistRow } from "./collectorsTypes";
+import type {
+  CollectorOverlapArtistCell,
+  CollectorOverlapCell,
+  CollectorSeriesPoint,
+  CollectorSummaryRow,
+  TopPlaylistRow,
+} from "./collectorsTypes";
 
 export function CollectorsPageWrapper(props: {
   selectedCollector: string;
@@ -12,6 +18,9 @@ export function CollectorsPageWrapper(props: {
   latestDataDate: string | null;
   latestDate: string | null;
   latestRunDate: string;
+  useEntityPlaylistsForTotals: boolean;
+  overlapCells: CollectorOverlapCell[];
+  overlapArtistCells: CollectorOverlapArtistCell[];
   summary: CollectorSummaryRow[];
   seriesDesc: CollectorSeriesPoint[];
   seriesAllTime: CollectorSeriesPoint[];
@@ -38,6 +47,9 @@ export function CollectorsPageWrapper(props: {
       <CollectorsClient
         latestDate={props.latestDate}
         latestRunDate={props.latestRunDate}
+        useEntityPlaylistsForTotals={props.useEntityPlaylistsForTotals}
+        overlapCells={props.overlapCells}
+        overlapArtistCells={props.overlapArtistCells}
         selectedCollector={props.selectedCollector}
         rangeDays={props.rangeDays}
         granularity={granularity}

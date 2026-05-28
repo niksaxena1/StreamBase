@@ -1,6 +1,8 @@
 import type { Granularity } from "@/components/ui/GranularitySelect";
 import type { CollectorDailyData } from "@/components/charts/CollectorComparisonChart";
 import type {
+  CollectorOverlapArtistCell,
+  CollectorOverlapCell,
   CollectorSeriesPoint,
   DrillPlaylistItem,
   DrillArtistItem,
@@ -281,4 +283,26 @@ export function formatMonthLong(monthKey: string): string {
   const d = new Date(`${monthKey}-01T00:00:00Z`);
   if (!Number.isFinite(d.getTime())) return monthKey;
   return d.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+}
+
+export function parseCollectorOverlapCells(raw: unknown): CollectorOverlapCell[] {
+  return ((raw ?? []) as Record<string, unknown>[]).map((row) => ({
+    collector_a: String(row.collector_a ?? "").trim().toUpperCase(),
+    collector_b: String(row.collector_b ?? "").trim().toUpperCase(),
+    shared_isrcs: Number(row.shared_isrcs ?? 0),
+    collector_a_total: Number(row.collector_a_total ?? 0),
+    collector_b_total: Number(row.collector_b_total ?? 0),
+    jaccard: Number(row.jaccard ?? 0),
+  }));
+}
+
+export function parseCollectorOverlapArtistCells(raw: unknown): CollectorOverlapArtistCell[] {
+  return ((raw ?? []) as Record<string, unknown>[]).map((row) => ({
+    collector_a: String(row.collector_a ?? "").trim().toUpperCase(),
+    collector_b: String(row.collector_b ?? "").trim().toUpperCase(),
+    shared_artists: Number(row.shared_artists ?? 0),
+    collector_a_total: Number(row.collector_a_total ?? 0),
+    collector_b_total: Number(row.collector_b_total ?? 0),
+    jaccard: Number(row.jaccard ?? 0),
+  }));
 }

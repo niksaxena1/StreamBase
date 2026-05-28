@@ -105,6 +105,8 @@ export type {
 } from "./collectorsTypes";
 
 import type {
+  CollectorOverlapArtistCell,
+  CollectorOverlapCell,
   CollectorSummaryRow,
   CollectorSeriesPoint,
   TopPlaylistRow,
@@ -122,10 +124,22 @@ import {
 import { CollectorDrilldownModal } from "./CollectorDrilldownModal";
 import { CollectorForecastModal } from "./CollectorForecastModal";
 import { CollectorDateBreakdownModal } from "./CollectorDateBreakdownModal";
+import { TableSkeleton } from "@/components/ui/Skeleton";
+
+const CollectorsOverlapMatrix = dynamic(
+  () => import("./CollectorsOverlapMatrix").then((m) => ({ default: m.CollectorsOverlapMatrix })),
+  {
+    loading: () => <TableSkeleton rows={4} cols={6} />,
+    ssr: false,
+  },
+);
 
 export function CollectorsClient(props: {
   latestDate: string | null;
   latestRunDate: string;
+  useEntityPlaylistsForTotals: boolean;
+  overlapCells: CollectorOverlapCell[];
+  overlapArtistCells: CollectorOverlapArtistCell[];
   selectedCollector: string;
   rangeDays: number;
   granularity?: Granularity;
@@ -1874,6 +1888,13 @@ export function CollectorsClient(props: {
         </details>
         </div>
       </div>
+
+      <CollectorsOverlapMatrix
+        overlapCells={props.overlapCells}
+        overlapArtistCells={props.overlapArtistCells}
+        latestRunDate={props.latestRunDate}
+        useEntityPlaylistsForTotals={props.useEntityPlaylistsForTotals}
+      />
     </div>
   );
 }

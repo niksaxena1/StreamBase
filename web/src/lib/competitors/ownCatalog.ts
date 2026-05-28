@@ -6,6 +6,12 @@ import { parseCount, sumLabelAtDataDate } from "@/app/(main-flat)/competitors/co
 
 export const OWN_CATALOG_LABEL_KEY = "__own_catalog__";
 export const OWN_CATALOG_PLAYLIST_KEY = "all_catalog";
+/** Canonical own-catalog lime (matches Home “All Catalog”); not competitor --sb-accent. */
+export const OWN_CATALOG_ACCENT_HEX = "c7f33c";
+
+export function ownCatalogAccentCssColor(): string {
+  return `#${OWN_CATALOG_ACCENT_HEX}`;
+}
 
 export type OwnOverlapCell = {
   competitor_label_key: string;
@@ -20,7 +26,7 @@ export function ownCatalogLabelRow(): LabelRow {
     label_key: OWN_CATALOG_LABEL_KEY,
     display_name: "Own Catalog",
     is_active: true,
-    accent_hex: "c7f33c",
+    accent_hex: OWN_CATALOG_ACCENT_HEX,
   };
 }
 

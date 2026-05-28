@@ -17,7 +17,13 @@ import type {
   TopPlaylistRow,
 } from "./collectorsTypes";
 import { CollectorsPageWrapper } from "./CollectorsPageWrapper";
-import { getEffectiveCollectorPlaylists, type CollectorPlaylistScopeRow } from "./collectorsUtils";
+import {
+  getEffectiveCollectorPlaylists,
+  parseCollectorOverlapArtistCells,
+  parseCollectorOverlapCells,
+  type CollectorPlaylistScopeRow,
+} from "./collectorsUtils";
+import type { CollectorOverlapArtistCell, CollectorOverlapCell } from "./collectorsTypes";
 
 export const revalidate = 86400; // 24h ISR - data updates daily
 
@@ -287,6 +293,18 @@ export default async function CollectorsPage({
           .lte("date", rangeEnd!)
           .order("date", { ascending: true }),
 
+      overlapTracks: async () =>
+        await svc.rpc("collector_overlap_matrix", {
+          p_as_of: latestRunDate,
+          p_use_entity_playlists: useEntityPlaylistsForTotals,
+        }),
+
+      overlapArtists: async () =>
+        await svc.rpc("collector_overlap_artist_matrix", {
+          p_as_of: latestRunDate,
+          p_use_entity_playlists: useEntityPlaylistsForTotals,
+        }),
+
       // Pre-bucketed aggregation for non-daily granularities (weekly/monthly/quarterly/yearly).
       // Replaces unbounded allCollectorsAllTime fetch + client-side aggregation.
       allCollectorsAllTime: async () => {
@@ -403,6 +421,13 @@ export default async function CollectorsPage({
     date: dataDateFromRunDate(p.date),
   }));
 
+  const overlapCells: CollectorOverlapCell[] = results.overlapTracks.error
+    ? []
+    : parseCollectorOverlapCells(results.overlapTracks.data);
+  const overlapArtistCells: CollectorOverlapArtistCell[] = results.overlapArtists.error
+    ? []
+    : parseCollectorOverlapArtistCells(results.overlapArtists.data);
+
   const selectedPlaylists = getEffectiveCollectorPlaylists(playlists, selectedCollector, useEntityPlaylistsForTotals);
   const selectedKeys = selectedPlaylists.map((p) => p.playlist_key);
   const nameByKey = new Map(selectedPlaylists.map((p) => [p.playlist_key, p.display_name]));
@@ -457,6 +482,9 @@ export default async function CollectorsPage({
       selectedCollector={selectedCollector}
       rangeDays={rangeDays}
       latestDataDate={latestDataDate}
+      useEntityPlaylistsForTotals={useEntityPlaylistsForTotals}
+      overlapCells={overlapCells}
+      overlapArtistCells={overlapArtistCells}
       summary={summary}
       seriesDesc={seriesDesc as CollectorSeriesPoint[]}
       seriesAllTime={seriesAllTime as CollectorSeriesPoint[]}

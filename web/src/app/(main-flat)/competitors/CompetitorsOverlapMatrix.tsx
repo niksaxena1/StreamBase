@@ -98,7 +98,7 @@ export function CompetitorsOverlapMatrix(props: {
   );
   labelNameByKey.current = new Map(activeLabels.map((l) => [l.label_key, l.display_name] as const));
 
-  const [basis, setBasis] = useState<OverlapBasis>("tracks");
+  const [basis, setBasis] = useState<OverlapBasis>("artists");
   const [valueMode, setValueMode] = useState<OverlapValueMode>("count");
   const [modal, setModal] = useState<OverlapModalState | null>(null);
   const [tracks, setTracks] = useState<OverlapTrackRow[]>([]);

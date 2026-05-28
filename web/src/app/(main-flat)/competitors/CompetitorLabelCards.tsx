@@ -1,7 +1,14 @@
 "use client";
 
+import { Music } from "lucide-react";
+
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { competitorLabelThumbObjectPosition } from "@/lib/competitorLabelThumbFit";
+import {
+  isOwnCatalogLabelKey,
+  OWN_CATALOG_ACCENT_HEX,
+  ownCatalogAccentCssColor,
+} from "@/lib/competitors/ownCatalog";
 
 import type { LabelComparisonRow, PlaylistRow } from "./competitorsTypes";
 import {
@@ -109,17 +116,29 @@ export function CompetitorLabelCards({
   return (
     <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
       {rows.map((row) => {
-        const imageUrl =
-          (playlistsByLabel[row.label.label_key] ?? []).find((p) => p.spotify_playlist_image_url)
-            ?.spotify_playlist_image_url ?? null;
+        const isOwnCatalog = isOwnCatalogLabelKey(row.label.label_key);
+        const imageUrl = isOwnCatalog
+          ? null
+          : ((playlistsByLabel[row.label.label_key] ?? []).find((p) => p.spotify_playlist_image_url)
+              ?.spotify_playlist_image_url ?? null);
         return (
           <div
             key={row.label.label_key}
             className="sb-card p-2.5 sm:p-3"
-            style={labelSummaryCardStyle(row.label.accent_hex)}
+            style={labelSummaryCardStyle(
+              isOwnCatalog ? OWN_CATALOG_ACCENT_HEX : row.label.accent_hex,
+            )}
           >
             <div className="flex items-center gap-2">
-              {imageUrl ? (
+              {isOwnCatalog ? (
+                <div
+                  className="sb-ring flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
+                  style={{ background: ownCatalogAccentCssColor() }}
+                  aria-hidden
+                >
+                  <Music className="h-4 w-4" style={{ color: "black" }} />
+                </div>
+              ) : imageUrl ? (
                 <PreviewableArtwork
                   src={imageUrl}
                   alt={row.label.display_name}
@@ -130,7 +149,7 @@ export function CompetitorLabelCards({
                   label={row.label.display_name}
                 />
               ) : (
-                <div className="h-8 w-8 shrink-0 rounded-lg bg-white/10 sb-ring" />
+                <div className="h-8 w-8 shrink-0 rounded-full bg-white/10 sb-ring" />
               )}
               <div className="min-w-0 flex-1">
                 <div className="truncate font-display text-sm font-semibold leading-tight">
