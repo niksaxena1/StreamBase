@@ -290,6 +290,7 @@ export function HomeFilterBuilderSection({
         _in_house_artist_ids: (p.artist_ids ?? []).filter((id) => inHouseArtistIds.has(id)),
         _competitor_label_key: typeof (p as any).competitor_label_key === "string" ? (p as any).competitor_label_key : null,
         _competitor_label_name: typeof (p as any).competitor_label_name === "string" ? (p as any).competitor_label_name : null,
+        _competitor_current_playlists: p.memberPlaylists ?? [],
       };
     });
   }, [trackScatterPoints, trackDatesMap, inHouseArtistIds]);

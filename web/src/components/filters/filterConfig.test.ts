@@ -36,6 +36,7 @@ describe("getOperatorLabel", () => {
     expect(getOperatorLabel("starts_with", "text")).toBe("starts with");
     expect(getOperatorLabel("ends_with", "text")).toBe("ends with");
     expect(getOperatorLabel("not_contains", "text")).toBe("does not contain");
+    expect(getOperatorLabel("in", "text")).toBe("is any of");
   });
 
   it("returns labels for select operators", () => {
@@ -103,6 +104,11 @@ describe("getFieldDefinition", () => {
     expect(field).toBeDefined();
     expect(field!.label).toBe("Total Streams");
     expect(field!.type).toBe("number");
+  });
+
+  it("supports bulk matching for track ISRCs", () => {
+    const field = getFieldDefinition("tracks", "isrc");
+    expect(field?.operators).toContain("in");
   });
 
   it("returns undefined for missing field", () => {

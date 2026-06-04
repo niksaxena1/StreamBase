@@ -238,6 +238,53 @@ describe("filterTracksClientSide", () => {
     expect(results).toHaveLength(3);
   });
 
+  it("filters tracks by a pasted list of ISRCs", () => {
+    const filter = makeFilter({
+      groups: [
+        makeGroup([
+          makeCond({
+            field: "isrc",
+            operator: "in",
+            value: ["SE5BU2515517", "SE6XY2585663"],
+          }),
+        ]),
+      ],
+    });
+
+    const results = filterTracksClientSide(
+      [
+        { ...sampleTracks[0], isrc: "SE5BU2515517" },
+        { ...sampleTracks[1], isrc: "SE6XY2585663" },
+        { ...sampleTracks[2], isrc: "SE6XY2574698" },
+      ],
+      filter,
+    );
+
+    expect(results.map((row) => row.isrc)).toEqual(["SE5BU2515517", "SE6XY2585663"]);
+  });
+
+  it("keeps revenue and current playlist memberships in track results", () => {
+    const results = filterTracksClientSide(
+      [
+        {
+          ...sampleTracks[0],
+          est_total_revenue: 10_000,
+          est_daily_revenue: 20,
+          _current_distro_playlists: [{ key: "distro-a", name: "Distro A", imageUrl: null }],
+          _current_entity_playlists: [{ key: "entity-a", name: "Entity A", imageUrl: null }],
+        },
+      ],
+      makeFilter({ groups: [] }),
+    );
+
+    expect(results[0]).toMatchObject({
+      est_total_revenue: 10_000,
+      est_daily_revenue: 20,
+      current_distro_playlists: [{ key: "distro-a", name: "Distro A", imageUrl: null }],
+      current_entity_playlists: [{ key: "entity-a", name: "Entity A", imageUrl: null }],
+    });
+  });
+
   it("filters tracks by artist in-house status bucket", () => {
     const filter = makeFilter({
       groups: [makeGroup([makeCond({ field: "artist", operator: "in", value: ["__artist_status:in_house"] })])],

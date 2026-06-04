@@ -41,6 +41,7 @@ import {
   type DateDataPoint,
 } from "./filterQuery";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
+import { buildCurrentTrackMemberships } from "./trackMemberships";
 
 function cx(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
@@ -72,6 +73,22 @@ function extractValuesFromFilter(f: FilterConfig | null, fieldName: string): str
 
 function extractPlaylistKeysFromFilter(f: FilterConfig | null): string[] {
   return extractValuesFromFilter(f, "playlist");
+}
+
+function extractBulkIsrcsFromFilter(f: FilterConfig | null): string[] {
+  if (!f) return [];
+  const out = new Set<string>();
+  for (const group of f.groups ?? []) {
+    for (const condition of group.conditions ?? []) {
+      if (!condition?.enabled || condition.field !== "isrc" || condition.operator !== "in") continue;
+      if (!Array.isArray(condition.value)) continue;
+      for (const value of condition.value) {
+        const isrc = String(value ?? "").trim().toUpperCase();
+        if (isrc) out.add(isrc);
+      }
+    }
+  }
+  return Array.from(out);
 }
 
 function filterUsesAnyField(f: FilterConfig | null, ...fieldNames: string[]): boolean {
@@ -133,6 +150,7 @@ export function FilterBuilder({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasApplied, setHasApplied] = useState(false);
+  const [unmatchedIsrcs, setUnmatchedIsrcs] = useState<string[]>([]);
   const pendingAutoApply = useRef(false);
 
   // Movement date range for moved_distro / moved_entity fields
@@ -216,16 +234,18 @@ export function FilterBuilder({
     return next;
   }
   
-  // Eagerly load distro playlist memberships for concentration view
+  // Eagerly load current Distro and Entity memberships for track results.
   useEffect(() => {
-    if (!isOpen || !asOfRunDate || !playlistData.length) return;
-    const distroKeys = playlistData.filter((p) => p.playlist_type === "Distro").map((p) => p.playlist_key);
-    if (!distroKeys.length) return;
-    const missing = distroKeys.filter((k) => !membershipByPlaylistKey.has(k));
+    if (datasetMode !== "own" || !isOpen || !asOfRunDate || !playlistData.length) return;
+    const membershipKeys = playlistData
+      .filter((p) => p.playlist_type === "Distro" || p.playlist_type === "Entity")
+      .map((p) => p.playlist_key);
+    if (!membershipKeys.length) return;
+    const missing = membershipKeys.filter((k) => !membershipByPlaylistKey.has(k));
     if (!missing.length) return;
     void ensurePlaylistMemberships(missing).catch(() => { /* ignore */ });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, asOfRunDate, playlistData]);
+  }, [datasetMode, isOpen, asOfRunDate, playlistData]);
 
   // Build distro-by-ISRC map from Distro playlists + memberships (for concentration view)
   const distroByIsrc = useMemo(() => {
@@ -274,6 +294,7 @@ export function FilterBuilder({
     setResults([]);
     setHasApplied(false);
     setError(null);
+    setUnmatchedIsrcs([]);
   }
   
   // Handle group changes
@@ -323,6 +344,7 @@ export function FilterBuilder({
     setResults([]);
     setHasApplied(false);
     setError(null);
+    setUnmatchedIsrcs([]);
   }
   
   // Apply filter
@@ -331,6 +353,7 @@ export function FilterBuilder({
     
     setIsLoading(true);
     setError(null);
+    setUnmatchedIsrcs([]);
     
     // Use setTimeout to allow UI to update before potentially heavy filtering
     setTimeout(() => {
@@ -351,10 +374,11 @@ export function FilterBuilder({
           const collectorPlaylistKeys = Array.from(collectorPlaylistMap.values()).flat();
 
           // Determine if filter references distro/entity playlist fields
-          const needsDistroEntity = filterUsesAnyField(
-            currentFilter,
-            "in_multiple_distro", "in_multiple_entity",
-          );
+          const needsCurrentOwnMemberships =
+            datasetMode === "own" && currentFilter.entityType === "tracks";
+          const needsDistroEntity =
+            needsCurrentOwnMemberships ||
+            filterUsesAnyField(currentFilter, "in_multiple_distro", "in_multiple_entity");
 
           let distroKeys: string[] = [];
           let entityKeys: string[] = [];
@@ -405,6 +429,20 @@ export function FilterBuilder({
                     _distro_count: distroMatches.length,
                     _entity_count: entityMatches.length,
                   } : {}),
+                  ...(needsCurrentOwnMemberships
+                    ? (() => {
+                        const current = buildCurrentTrackMemberships({
+                          isrc: t.isrc,
+                          datasetMode,
+                          playlists: playlistData,
+                          memberships,
+                        });
+                        return {
+                          _current_distro_playlists: current.distro,
+                          _current_entity_playlists: current.entity,
+                        };
+                      })()
+                    : {}),
                 };
               })
             : trackData;
@@ -532,7 +570,7 @@ export function FilterBuilder({
           const finalTrackData = trackDataWithTitles.map((t) => ({
             ...t,
             est_total_revenue: (t.total_streams_cumulative ?? 0) * rate,
-            est_daily_revenue: (t.daily_streams ?? 0) * rate,
+            est_daily_revenue: t.daily_streams != null ? t.daily_streams * rate : null,
           }));
           const finalArtistData = artistData.map((a) => ({
             ...a,
@@ -565,6 +603,10 @@ export function FilterBuilder({
             default:
               filteredResults = [];
           }
+
+          const requestedIsrcs = extractBulkIsrcsFromFilter(currentFilter);
+          const availableIsrcs = new Set(trackData.map((track) => track.isrc.toUpperCase()));
+          setUnmatchedIsrcs(requestedIsrcs.filter((isrc) => !availableIsrcs.has(isrc)));
         
           setResults(filteredResults);
           setHasApplied(true);
@@ -578,7 +620,7 @@ export function FilterBuilder({
             setIsLoading(false);
           });
     }, 10);
-  }, [currentFilter, trackData, playlistData, dateData, asOfRunDate, membershipByPlaylistKey, artistImages, baseArtistData, streamPayoutPerStreamUsd, movementStartDate, movementEndDate]);
+  }, [currentFilter, trackData, playlistData, dateData, asOfRunDate, membershipByPlaylistKey, artistImages, baseArtistData, streamPayoutPerStreamUsd, movementStartDate, movementEndDate, datasetMode]);
 
   // Auto-apply after loading a saved filter (runs after re-render so handleApply has fresh state)
   useEffect(() => {
@@ -594,6 +636,7 @@ export function FilterBuilder({
     setResults([]);
     setHasApplied(false);
     setError(null);
+    setUnmatchedIsrcs([]);
     if (hasActiveConditions(filter)) {
       pendingAutoApply.current = true;
     }
@@ -896,6 +939,8 @@ export function FilterBuilder({
               isLoading={isLoading}
               error={error}
               distroByIsrc={distroByIsrc}
+              datasetMode={datasetMode}
+              unmatchedIsrcs={unmatchedIsrcs}
             />
           )}
           

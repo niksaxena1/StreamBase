@@ -16,6 +16,7 @@ import type {
   DateFilterResult,
 } from "./filterTypes";
 import { foldForSearch } from "@/lib/searchFold";
+import type { CurrentTrackPlaylist } from "./trackMemberships";
 
 const ARTIST_STATUS_IN_HOUSE = "__artist_status:in_house";
 const ARTIST_STATUS_NIH = "__artist_status:nih";
@@ -48,6 +49,11 @@ export type TrackDataPoint = {
   _in_house_artist_ids?: string[];
   _competitor_label_key?: string | null;
   _competitor_label_name?: string | null;
+  _competitor_current_playlists?: CurrentTrackPlaylist[];
+  _current_distro_playlists?: CurrentTrackPlaylist[];
+  _current_entity_playlists?: CurrentTrackPlaylist[];
+  est_total_revenue?: number;
+  est_daily_revenue?: number | null;
 };
 
 export type ArtistDataPoint = {
@@ -121,6 +127,8 @@ export function filterTracksClientSide(
       spotify_artist_ids: t.spotify_artist_ids,
       total_streams: t.total_streams_cumulative,
       daily_streams: t.daily_streams ?? null,
+      est_total_revenue: t.est_total_revenue ?? 0,
+      est_daily_revenue: t.est_daily_revenue ?? null,
       spotify_track_id: t.spotify_track_id,
       spotify_album_image_url: t.spotify_album_image_url,
       in_multiple_distro: (t._distro_count ?? 0) > 1,
@@ -128,6 +136,9 @@ export function filterTracksClientSide(
       moved_distro_playlists: t._moved_distro_playlists ?? null,
       moved_entity_playlists: t._moved_entity_playlists ?? null,
       has_duplicate_title: t._has_duplicate_title ?? false,
+      current_distro_playlists: t._current_distro_playlists ?? [],
+      current_entity_playlists: t._current_entity_playlists ?? [],
+      current_playlists: t._competitor_current_playlists ?? [],
     });
   }
   return out;

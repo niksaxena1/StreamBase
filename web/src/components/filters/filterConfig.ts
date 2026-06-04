@@ -65,6 +65,9 @@ export function getOperatorLabel(operator: string, fieldType: string): string {
     case "date":
       return DATE_OPERATOR_LABELS[operator as DateOperator] ?? operator;
     case "text":
+      if (operator === "in" || operator === "not_in") {
+        return SELECT_OPERATOR_LABELS[operator] ?? operator;
+      }
       return TEXT_OPERATOR_LABELS[operator as TextOperator] ?? operator;
     case "select":
     case "multi-select":
@@ -201,10 +204,10 @@ const TRACK_FIELDS: FilterFieldDefinition[] = [
     key: "isrc",
     label: "ISRC",
     type: "text",
-    operators: ["eq", "contains", "starts_with"],
+    operators: ["eq", "in", "contains", "starts_with"],
     description: "International Standard Recording Code",
     placeholder: "e.g., USRC12345678",
-    helpText: "Exact match or partial search on the track ISRC",
+    helpText: "Use “is any of” to paste a list separated by newlines, commas, tabs, or spaces",
   },
   {
     key: "has_spotify_id",

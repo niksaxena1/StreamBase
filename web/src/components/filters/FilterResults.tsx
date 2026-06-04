@@ -25,6 +25,10 @@ import type {
 } from "./filterTypes";
 import { FilterConcentrationView } from "./FilterConcentrationView";
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
+import { useMetric } from "@/components/metrics/MetricContext";
+import { usePayoutRate } from "@/components/payout/PayoutRateContext";
+import type { CurrentTrackPlaylist } from "./trackMemberships";
+import { buildFilterCsvRows } from "./filterCsv";
 
 function ArtistLinksInline(props: { names?: string[]; ids?: string[] }) {
   const names = props.names ?? [];
@@ -72,6 +76,8 @@ type FilterResultsProps = {
   isLoading: boolean;
   error: string | null;
   distroByIsrc?: Map<string, { name: string; imageUrl: string | null }>;
+  datasetMode?: "own" | "competitor";
+  unmatchedIsrcs?: string[];
 };
 
 const PAGE_SIZE = 25;
@@ -88,7 +94,15 @@ function viewPill(active: boolean): string {
   ].join(" ");
 }
 
-export function FilterResults({ entityType, results, isLoading, error, distroByIsrc }: FilterResultsProps) {
+export function FilterResults({
+  entityType,
+  results,
+  isLoading,
+  error,
+  distroByIsrc,
+  datasetMode = "own",
+  unmatchedIsrcs = [],
+}: FilterResultsProps) {
   const [sort, setSort] = useState<SortConfig>({ key: "", direction: null });
   const [page, setPage] = useState(1);
   const [resultsView, setResultsView] = useState<ResultsView>("table");
@@ -176,20 +190,7 @@ export function FilterResults({ entityType, results, isLoading, error, distroByI
   }
   
   const csvRows = useMemo(
-    () =>
-      sortedResults.map((r) => {
-        const row = r as Record<string, unknown>;
-        const out: Record<string, unknown> = { ...row };
-        if (Array.isArray(out.spotify_artist_names)) {
-          out.artists = (out.spotify_artist_names as string[]).join(" | ");
-          delete out.spotify_artist_names;
-        }
-        if (Array.isArray(out.spotify_artist_ids)) {
-          out.artist_ids = (out.spotify_artist_ids as string[]).join(" | ");
-          delete out.spotify_artist_ids;
-        }
-        return out;
-      }),
+    () => buildFilterCsvRows(sortedResults as Array<Record<string, unknown>>),
     [sortedResults]
   );
 
@@ -219,7 +220,19 @@ export function FilterResults({ entityType, results, isLoading, error, distroByI
   if (results.length === 0) {
     const EmptyIcon = entityType === "tracks" ? <Disc3 className="h-6 w-6" style={{ color: "var(--sb-muted)" }} /> : entityType === "artists" ? <User className="h-6 w-6" style={{ color: "var(--sb-muted)" }} /> : entityType === "dates" ? <CalendarDays className="h-6 w-6" style={{ color: "var(--sb-muted)" }} /> : <ListMusic className="h-6 w-6" style={{ color: "var(--sb-muted)" }} />;
     return (
-      <div className="mt-4">
+      <div className="mt-4 space-y-3">
+        {unmatchedIsrcs.length > 0 ? (
+          <details
+            open
+            className="rounded-xl border px-3 py-2 text-xs"
+            style={{ borderColor: "var(--sb-border)", color: "var(--sb-muted)" }}
+          >
+            <summary className="cursor-pointer select-none">
+              {unmatchedIsrcs.length} pasted ISRC{unmatchedIsrcs.length === 1 ? "" : "s"} not found in the active dataset
+            </summary>
+            <div className="mt-2 whitespace-pre-wrap font-mono text-[11px]">{unmatchedIsrcs.join("\n")}</div>
+          </details>
+        ) : null}
         <GlassTable headers={[{ label: "Results" }]} maxBodyHeightClassName="max-h-[240px] overflow-auto">
           <EmptyState colSpan={1} message="No results found. Try adjusting your filter conditions." icon={EmptyIcon} />
         </GlassTable>
@@ -235,6 +248,7 @@ export function FilterResults({ entityType, results, isLoading, error, distroByI
           <TracksTable
             results={paginatedResults as TrackFilterResult[]}
             sortHeader={SortHeader}
+            datasetMode={datasetMode}
           />
         );
       case "artists":
@@ -265,6 +279,20 @@ export function FilterResults({ entityType, results, isLoading, error, distroByI
 
   return (
     <div className="mt-4 space-y-4">
+      {unmatchedIsrcs.length > 0 ? (
+        <details
+          className="rounded-xl border px-3 py-2 text-xs"
+          style={{ borderColor: "var(--sb-border)", color: "var(--sb-muted)" }}
+        >
+          <summary className="cursor-pointer select-none">
+            {unmatchedIsrcs.length} pasted ISRC{unmatchedIsrcs.length === 1 ? "" : "s"} not found in the active dataset
+          </summary>
+          <div className="mt-2 whitespace-pre-wrap font-mono text-[11px]">
+            {unmatchedIsrcs.join("\n")}
+          </div>
+        </details>
+      ) : null}
+
       {/* Results count, view toggle, and download */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-3">
@@ -356,6 +384,7 @@ function MovementPath({ playlists }: { playlists: { name: string; imageUrl: stri
 function TracksTable({
   results,
   sortHeader: SortHeader,
+  datasetMode,
 }: {
   results: TrackFilterResult[];
   sortHeader: React.ComponentType<{
@@ -363,17 +392,39 @@ function TracksTable({
     children: React.ReactNode;
     align?: "left" | "right";
   }>;
+  datasetMode: "own" | "competitor";
 }) {
+  const { metric } = useMetric();
+  const { streamPayoutPerStreamUsd } = usePayoutRate();
+  const displayMetric = metric === "revenue" ? "revenue" : "streams";
+  const totalLabel = displayMetric === "revenue" ? "Total Revenue" : "Total Streams";
+  const dailyLabel = displayMetric === "revenue" ? "Daily Revenue" : "Daily Streams";
+  const metricStyle = {
+    color: displayMetric === "revenue" ? "#10b981" : "var(--sb-positive)",
+  };
   const hasDistroMovements = results.some((t) => t.moved_distro_playlists && t.moved_distro_playlists.length > 1);
   const hasEntityMovements = results.some((t) => t.moved_entity_playlists && t.moved_entity_playlists.length > 1);
+
+  const formatTrackMetric = (streams: number | null) => {
+    if (displayMetric === "revenue") {
+      const value = streams != null ? streams * streamPayoutPerStreamUsd : null;
+      return value == null
+        ? null
+        : formatMoney(value, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+    return streams == null ? null : formatInt(streams);
+  };
 
   return (
     <GlassTable
       headers={[
         { label: "Track" },
-        { label: <SortHeader columnKey="total_streams" align="right">Total Streams</SortHeader>, align: "right" },
-        { label: <SortHeader columnKey="daily_streams" align="right">Daily</SortHeader>, align: "right" },
+        { label: <SortHeader columnKey="total_streams" align="right">{totalLabel}</SortHeader>, align: "right" },
+        { label: <SortHeader columnKey="daily_streams" align="right">{dailyLabel}</SortHeader>, align: "right" },
         { label: <SortHeader columnKey="release_date">Release</SortHeader> },
+        ...(datasetMode === "own"
+          ? [{ label: "Distro Playlists" }, { label: "Entity Playlists" }]
+          : [{ label: "Current Playlists" }]),
         ...(hasDistroMovements ? [{ label: "Distro Movement" }] : []),
         ...(hasEntityMovements ? [{ label: "Entity Movement" }] : []),
       ]}
@@ -415,16 +466,35 @@ function TracksTable({
                     ids={track.spotify_artist_ids}
                   />
                 </div>
+                <div className="mt-0.5 font-mono text-[10px] opacity-50" style={{ color: "var(--sb-muted)" }}>
+                  {track.isrc}
+                </div>
               </div>
             </div>
           </TableCell>
-          <TableCell numeric mono>{formatInt(track.total_streams)}</TableCell>
+          <TableCell numeric mono style={metricStyle}>
+            {formatTrackMetric(track.total_streams)}
+          </TableCell>
           <TableCell numeric mono empty={track.daily_streams == null} emptyFallback="—" style={{ color: "var(--sb-muted)" }}>
-            {track.daily_streams != null ? formatInt(track.daily_streams) : null}
+            <span style={metricStyle}>{formatTrackMetric(track.daily_streams)}</span>
           </TableCell>
           <TableCell empty={track.release_date == null} emptyFallback="—" style={{ color: "var(--sb-muted)" }}>
             {track.release_date ? formatDateISO(track.release_date) : null}
           </TableCell>
+          {datasetMode === "own" ? (
+            <>
+              <TableCell empty={track.current_distro_playlists.length === 0} emptyFallback="—">
+                <CurrentPlaylistList playlists={track.current_distro_playlists} />
+              </TableCell>
+              <TableCell empty={track.current_entity_playlists.length === 0} emptyFallback="—">
+                <CurrentPlaylistList playlists={track.current_entity_playlists} />
+              </TableCell>
+            </>
+          ) : (
+            <TableCell empty={track.current_playlists.length === 0} emptyFallback="—">
+              <CurrentPlaylistList playlists={track.current_playlists} />
+            </TableCell>
+          )}
           {hasDistroMovements && (
             <TableCell empty={!track.moved_distro_playlists} emptyFallback="—">
               {track.moved_distro_playlists && track.moved_distro_playlists.length > 1 ? (
@@ -442,6 +512,35 @@ function TracksTable({
         </TableRow>
       ))}
     </GlassTable>
+  );
+}
+
+function CurrentPlaylistList({ playlists }: { playlists: CurrentTrackPlaylist[] }) {
+  if (!playlists.length) return null;
+  return (
+    <div className="flex min-w-[150px] flex-wrap gap-1">
+      {playlists.map((playlist) => (
+        <Link
+          key={playlist.key}
+          href={`/playlists?playlist_key=${encodeURIComponent(playlist.key)}`}
+          className="inline-flex max-w-[180px] items-center gap-1 rounded-full px-2 py-0.5 text-[11px] transition hover:brightness-95"
+          style={{ background: "var(--sb-accent-10)", color: "var(--sb-text)" }}
+          title={playlist.name}
+        >
+          {playlist.imageUrl ? (
+            <PreviewableArtwork
+              src={playlist.imageUrl}
+              alt=""
+              width={14}
+              height={14}
+              interactive="inline"
+              className="h-3.5 w-3.5 shrink-0 rounded-full object-cover"
+            />
+          ) : null}
+          <span className="truncate">{playlist.name}</span>
+        </Link>
+      ))}
+    </div>
   );
 }
 

@@ -14,6 +14,7 @@ import { Combobox, type ComboboxOption } from "@/components/ui/Combobox";
 import { foldForSearch } from "@/lib/searchFold";
 import type { FilterFieldDefinition, FilterOperator, FilterValue } from "./filterTypes";
 import { MONTH_OPTIONS, parseNumberValue, formatNumberValue } from "./filterConfig";
+import { parseBulkIsrcInput } from "./bulkIsrc";
 
 // ============================================================================
 // Shared Styles
@@ -283,6 +284,43 @@ export function TextInput({ value, fieldDef, onChange }: TextInputProps) {
       onChange={(e) => onChange(e.target.value)}
       className="w-full lg:min-w-[160px] lg:max-w-[240px]"
     />
+  );
+}
+
+function BulkIsrcInput({
+  value,
+  onChange,
+}: {
+  value: FilterValue;
+  onChange: (value: FilterValue) => void;
+}) {
+  const selected = Array.isArray(value) ? value : [];
+  const [rawValue, setRawValue] = useState(() => selected.join("\n"));
+  const parsed = useMemo(() => parseBulkIsrcInput(rawValue), [rawValue]);
+
+  return (
+    <div className="w-full lg:min-w-[320px] lg:max-w-[520px]">
+      <textarea
+        value={rawValue}
+        rows={5}
+        placeholder={"Paste ISRCs here...\nSE5BU2515517\nSE6XY2585663"}
+        onChange={(event) => {
+          const nextRaw = event.target.value;
+          setRawValue(nextRaw);
+          onChange(parseBulkIsrcInput(nextRaw).isrcs);
+        }}
+        className="sb-ring w-full resize-y rounded-xl border px-3 py-2 font-mono text-xs outline-none transition focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)]"
+        style={{
+          backgroundColor: "var(--sb-surface)",
+          borderColor: "var(--sb-border)",
+          color: "var(--sb-text)",
+        }}
+      />
+      <div className="mt-1 text-[11px]" style={{ color: "var(--sb-muted)" }}>
+        {parsed.isrcs.length} unique ISRC{parsed.isrcs.length === 1 ? "" : "s"}
+        {parsed.duplicateCount > 0 ? ` · ${parsed.duplicateCount} duplicate${parsed.duplicateCount === 1 ? "" : "s"} removed` : ""}
+      </div>
+    </div>
   );
 }
 
@@ -620,6 +658,9 @@ export function FilterValueInput({ value, operator, fieldDef, options = [], onCh
       return <DateInput value={value} operator={operator} fieldDef={fieldDef} onChange={onChange} />;
     
     case "text":
+      if (fieldDef.key === "isrc" && operator === "in") {
+        return <BulkIsrcInput value={value} onChange={onChange} />;
+      }
       return <TextInput value={value} operator={operator} fieldDef={fieldDef} onChange={onChange} />;
     
     case "select":

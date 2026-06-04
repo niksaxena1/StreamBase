@@ -118,6 +118,8 @@ export type TrackFilterResult = {
   spotify_artist_ids: string[];
   total_streams: number;
   daily_streams: number | null;
+  est_total_revenue: number;
+  est_daily_revenue: number | null;
   spotify_track_id: string | null;
   spotify_album_image_url: string | null;
   in_multiple_distro: boolean;
@@ -125,6 +127,9 @@ export type TrackFilterResult = {
   moved_distro_playlists: { name: string; imageUrl: string | null }[] | null;
   moved_entity_playlists: { name: string; imageUrl: string | null }[] | null;
   has_duplicate_title: boolean;
+  current_distro_playlists: Array<{ key: string; name: string; imageUrl: string | null }>;
+  current_entity_playlists: Array<{ key: string; name: string; imageUrl: string | null }>;
+  current_playlists: Array<{ key: string; name: string; imageUrl: string | null }>;
 };
 
 export type ArtistFilterResult = {
