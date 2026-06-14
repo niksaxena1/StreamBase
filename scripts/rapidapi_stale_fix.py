@@ -330,17 +330,17 @@ def main():
         f"CheckLeakedCC {CHECKLEAKEDCC_MONTHLY_CAP}/month)"
     )
 
+    run_date = datetime.now(timezone.utc).date().isoformat()
     warnings = pg.select(
         "ingestion_warnings",
         "run_date,details_json",
-        "code=eq.individual_tracks_stale&order=run_date.desc&limit=1",
+        f"code=eq.individual_tracks_stale&run_date=eq.{run_date}&limit=1",
     )
     if not warnings:
-        print("No individual_tracks_stale warning found. Nothing to do.")
+        print(f"No individual_tracks_stale warning found for run_date={run_date}. Nothing to do.")
         sys.exit(0)
 
     warning = warnings[0]
-    run_date = str(warning.get("run_date", "")).strip()
     details = warning.get("details_json") or {}
     affected_tracks: List[dict] = details.get("affected_tracks", [])
 
