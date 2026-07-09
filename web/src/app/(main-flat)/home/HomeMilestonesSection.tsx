@@ -30,7 +30,10 @@ import {
 
 export function HomeMilestonesSection(props: {
   trackScatterPoints: TrackStreamsXYPoint[];
+  trackScatterLoading?: boolean;
+  onRequestScatterData?: () => void;
 }) {
+  const { onRequestScatterData } = props;
   const { metric } = useMetric();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
 
@@ -54,7 +57,10 @@ export function HomeMilestonesSection(props: {
   // Restore persisted state
   useEffect(() => {
     const restored = readStoredBool(HOME_DETAILS_STORAGE.milestoneOpen, false);
-    if (restored) setOpenMilestones(true);
+    if (restored) {
+      setOpenMilestones(true);
+      onRequestScatterData?.();
+    }
 
     function applySavedMilestones(saved: string) {
       const asNums = saved
@@ -93,7 +99,7 @@ export function HomeMilestonesSection(props: {
         const savedLocal = readStoredString(HOME_MILESTONE_SETTINGS_STORAGE.customMilestones);
         if (savedLocal) applySavedMilestones(savedLocal);
       });
-  }, []);
+  }, [onRequestScatterData, streamPayoutPerStreamUsd]);
 
   useEffect(() => {
     writeStoredBool(HOME_DETAILS_STORAGE.milestoneOpen, openMilestones);
@@ -133,7 +139,10 @@ export function HomeMilestonesSection(props: {
     return generateAutoMilestonesFromMax(maxStreams);
   }, [props.trackScatterPoints]);
 
-  const activeMilestonesForEditing = (customMilestones?.length ? customMilestones : autoMilestonesForCurrentData) ?? [];
+  const activeMilestonesForEditing = useMemo(
+    () => (customMilestones?.length ? customMilestones : autoMilestonesForCurrentData) ?? [],
+    [autoMilestonesForCurrentData, customMilestones],
+  );
   const activeMilestonesSortedDesc = useMemo(() => {
     return [...activeMilestonesForEditing].sort((a, b) => b - a);
   }, [activeMilestonesForEditing]);
@@ -327,13 +336,17 @@ export function HomeMilestonesSection(props: {
   const drillTrackPageItems = milestoneDrillTracks.slice(drillPageStart, drillPageStart + pageSize);
   const drillArtistPageItems = milestoneDrillArtists.slice(drillPageStart, drillPageStart + pageSize);
 
-  if (!props.trackScatterPoints?.length) return null;
+  const hasTrackScatterPoints = Boolean(props.trackScatterPoints?.length);
 
   return (
     <>
       <details
         open={openMilestones}
-        onToggle={(ev) => setOpenMilestones(ev.currentTarget.open)}
+        onToggle={(ev) => {
+          const nextOpen = ev.currentTarget.open;
+          setOpenMilestones(nextOpen);
+          if (nextOpen) onRequestScatterData?.();
+        }}
         className="rounded-xl border sb-panel p-3"
         style={{ borderColor: "var(--sb-border)" }}
       >
@@ -351,25 +364,25 @@ export function HomeMilestonesSection(props: {
               onMouseDown={(ev) => { ev.preventDefault(); ev.stopPropagation(); }}
               onClick={(ev) => { ev.preventDefault(); ev.stopPropagation(); }}
             >
-              {openMilestones ? (
+              {openMilestones && hasTrackScatterPoints ? (
                 <div className="text-[11px] opacity-70" style={{ color: "var(--sb-muted)" }}>
                   {formatInt(belowMilestoneCount)} ({belowMilestonePctLabel}) below{" "}
                   {formatMilestoneHeaderLabel(minActiveMilestone, milestoneMode, streamPayoutPerStreamUsd)}
                 </div>
               ) : null}
-              {openMilestones ? (
+              {openMilestones && hasTrackScatterPoints ? (
                 <div className="flex items-center rounded-full bg-black/5 p-0.5 dark:bg-white/10">
                   <button type="button" onClick={() => setMilestoneCountMode("tracks")} className={["rounded-full px-2 py-1 text-[11px] font-medium transition", milestoneCountMode === "tracks" ? "bg-black text-white dark:bg-white dark:text-black" : "text-black/70 hover:bg-white/50 dark:text-white/70 dark:hover:bg-white/20"].join(" ")}>Tracks</button>
                   <button type="button" onClick={() => setMilestoneCountMode("artists")} className={["rounded-full px-2 py-1 text-[11px] font-medium transition", milestoneCountMode === "artists" ? "bg-black text-white dark:bg-white dark:text-black" : "text-black/70 hover:bg-white/50 dark:text-white/70 dark:hover:bg-white/20"].join(" ")}>Artists</button>
                 </div>
               ) : null}
-              {openMilestones ? (
+              {openMilestones && hasTrackScatterPoints ? (
                 <div className="flex items-center rounded-full bg-black/5 p-0.5 dark:bg-white/10">
                   <button type="button" onClick={() => setMilestoneBucketMode("cumulative")} className={["rounded-full px-2 py-1 text-[11px] font-medium transition", milestoneBucketMode === "cumulative" ? "bg-black text-white dark:bg-white dark:text-black" : "text-black/70 hover:bg-white/50 dark:text-white/70 dark:hover:bg-white/20"].join(" ")} title="Cumulative: counts entities that reached this milestone or higher">Cum.</button>
                   <button type="button" onClick={() => setMilestoneBucketMode("exclusive")} className={["rounded-full px-2 py-1 text-[11px] font-medium transition", milestoneBucketMode === "exclusive" ? "bg-black text-white dark:bg-white dark:text-black" : "text-black/70 hover:bg-white/50 dark:text-white/70 dark:hover:bg-white/20"].join(" ")} title="Exclusive: each entity is counted only in its highest milestone bucket">Exc.</button>
                 </div>
               ) : null}
-              {openMilestones ? (
+              {openMilestones && hasTrackScatterPoints ? (
                 <IconButton
                   aria-label="Configure milestones"
                   variant="ghost"
@@ -393,27 +406,33 @@ export function HomeMilestonesSection(props: {
         </summary>
 
         <div className="mt-2">
-          <TracksPerMilestoneChart
-            tracks={props.trackScatterPoints.map((p) => ({
-              isrc: p.isrc,
-              total_streams_cumulative: p.total_streams_cumulative,
-              artist_ids: p.artist_ids ?? null,
-            }))}
-            heightPx={320}
-            customMilestones={activeMilestonesSortedDesc.length ? activeMilestonesSortedDesc : undefined}
-            mode={milestoneMode}
-            countMode={milestoneCountMode}
-            bucketMode={milestoneBucketMode}
-            payoutPerStreamUsd={streamPayoutPerStreamUsd}
-            highlightMilestone={milestoneDrillOpen ? milestoneDrillMilestone : null}
-            onMilestoneClick={(milestone) => {
-              setMilestoneDrillMilestone(milestone);
-              setMilestoneDrillView(milestoneCountMode === "artists" ? "artists" : "tracks");
-              setMilestoneDrillQuery("");
-              setMilestoneDrillPage(1);
-              setMilestoneDrillOpen(true);
-            }}
-          />
+          {hasTrackScatterPoints ? (
+            <TracksPerMilestoneChart
+              tracks={props.trackScatterPoints.map((p) => ({
+                isrc: p.isrc,
+                total_streams_cumulative: p.total_streams_cumulative,
+                artist_ids: p.artist_ids ?? null,
+              }))}
+              heightPx={320}
+              customMilestones={activeMilestonesSortedDesc.length ? activeMilestonesSortedDesc : undefined}
+              mode={milestoneMode}
+              countMode={milestoneCountMode}
+              bucketMode={milestoneBucketMode}
+              payoutPerStreamUsd={streamPayoutPerStreamUsd}
+              highlightMilestone={milestoneDrillOpen ? milestoneDrillMilestone : null}
+              onMilestoneClick={(milestone) => {
+                setMilestoneDrillMilestone(milestone);
+                setMilestoneDrillView(milestoneCountMode === "artists" ? "artists" : "tracks");
+                setMilestoneDrillQuery("");
+                setMilestoneDrillPage(1);
+                setMilestoneDrillOpen(true);
+              }}
+            />
+          ) : (
+            <div className="py-10 text-center text-xs" style={{ color: "var(--sb-muted)" }}>
+              {props.trackScatterLoading ? "Loading milestone data..." : "Open this section to load milestone data."}
+            </div>
+          )}
         </div>
       </details>
 

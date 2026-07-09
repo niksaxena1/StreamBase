@@ -1,16 +1,15 @@
 import { redirect } from "next/navigation";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { CACHE_TTL_1H } from "@/lib/constants";
-import { normalizeAppAccess, streamBaseAccessRedirectPath, type AppAccess } from "@/lib/appAccess";
+import { streamBaseAccessRedirectPath, type AppAccess } from "@/lib/appAccess";
 import type { CollaborationGraph, NetworkPlaylistOption } from "@/app/(main-flat)/network/networkTypes";
 import { parseHideNonPrimary, parseNetworkScope } from "@/app/(main-flat)/network/networkScope";
 import { isAllCompetitorsKey } from "@/lib/competitorContext";
-import { getCompetitorShellContext } from "@/lib/competitorContext.server";
 import type { DatasetMode } from "@/lib/datasetMode";
+import { getRequestAppContext } from "@/lib/requestAppContext.server";
 import { cachedQuery } from "@/lib/supabase/cache";
 import { getArtistsCached } from "@/lib/spotify";
-import { supabaseServer } from "@/lib/supabase/server";
-import { supabaseService } from "@/lib/supabase/service";
 
 export type NetworkGraphMode = "artists" | "cross-label";
 
@@ -30,7 +29,7 @@ function scopeCacheKey(scope: ReturnType<typeof parseNetworkScope>, hideNonPrima
 }
 
 async function hydrateMissingArtistImages(
-  svc: ReturnType<typeof supabaseService>,
+  svc: SupabaseClient,
   graph: CollaborationGraph,
 ): Promise<CollaborationGraph> {
   const missingArtistIds = graph.nodes
@@ -58,37 +57,21 @@ async function hydrateMissingArtistImages(
 }
 
 export async function loadNetworkPageShell(): Promise<NetworkPageShell> {
-  const sb = await supabaseServer();
-  const {
-    data: { user },
-  } = await sb.auth.getUser();
+  const { user, appAccess, shellContext } = await getRequestAppContext();
   if (!user) redirect("/login");
 
-  const svc = supabaseService();
-  const { data: isAdmin } = await sb.rpc("is_admin");
-  const { data: accessRow } = await svc
-    .from("app_user_access")
-    .select("own_catalog,competitor,playlist_watch,playlist_watch_admin")
-    .eq("user_id", user.id)
-    .maybeSingle();
-  const appAccess = normalizeAppAccess(accessRow, Boolean(isAdmin));
   const streamBaseRedirect = streamBaseAccessRedirectPath(appAccess);
   if (streamBaseRedirect) redirect(streamBaseRedirect);
 
-  const shell = await getCompetitorShellContext();
   const graphMode: NetworkGraphMode =
-    shell.datasetMode === "competitor" && isAllCompetitorsKey(shell.competitorLabelKey)
+    shellContext.datasetMode === "competitor" && isAllCompetitorsKey(shellContext.competitorLabelKey)
       ? "cross-label"
       : "artists";
 
-  if (shell.datasetMode === "competitor" && !appAccess.competitor) {
-    redirect(appAccess.ownCatalog ? "/" : "/login");
-  }
-
   return {
-    datasetMode: shell.datasetMode,
+    datasetMode: shellContext.datasetMode,
     graphMode,
-    competitorLabelKey: shell.competitorLabelKey,
+    competitorLabelKey: shellContext.competitorLabelKey,
     appAccess,
   };
 }
@@ -98,7 +81,7 @@ export async function loadNetworkPlaylists(shell: NetworkPageShell): Promise<Net
     return [];
   }
 
-  const svc = supabaseService();
+  const { svc } = await getRequestAppContext();
 
   if (shell.datasetMode === "competitor") {
     const labelKey = shell.competitorLabelKey;
@@ -168,7 +151,7 @@ export async function loadNetworkGraph(args: {
   searchParams: Record<string, string | string[] | undefined>;
   playlists: NetworkPlaylistOption[];
 }): Promise<{ graph: CollaborationGraph; hideNonPrimary: boolean; errorMessage: string | null }> {
-  const svc = supabaseService();
+  const { svc } = await getRequestAppContext();
   const validKeys = new Set(args.playlists.map((p) => p.playlist_key));
   const networkScope = parseNetworkScope(args.searchParams, validKeys);
   const hideNonPrimary = parseHideNonPrimary(args.searchParams.hide_non_primary);

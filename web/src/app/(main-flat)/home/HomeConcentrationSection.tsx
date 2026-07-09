@@ -140,11 +140,13 @@ function buildLorenzCurve(
 export function HomeConcentrationSection(props: {
   trackScatterPoints: TrackStreamsXYPoint[];
   trackScatterLoading?: boolean;
+  onRequestScatterData?: () => void;
   latestRunDate: string | null;
   datasetMode?: "own" | "competitor";
   competitorLabelKey?: string | null;
   competitorPlaylists?: HomeConcentrationPlaylistOption[];
 }) {
+  const { onRequestScatterData } = props;
   const { metric } = useMetric();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
   const colors = useThemeColors();
@@ -172,11 +174,13 @@ export function HomeConcentrationSection(props: {
   const [shareHint, setShareHint] = useState<string | null>(null);
 
   useEffect(() => {
-    setOpen(readStoredBool(STORAGE_KEY_OPEN, false));
+    const restoredOpen = readStoredBool(STORAGE_KEY_OPEN, false);
+    setOpen(restoredOpen);
+    if (restoredOpen) onRequestScatterData?.();
     const m = readStoredString(STORAGE_KEY_MODE);
     if (m === "total" || m === "daily") setViewMode(m);
     setThreshold(readStoredNumber(STORAGE_KEY_THRESHOLD, 50));
-  }, []);
+  }, [onRequestScatterData]);
 
   useEffect(() => { writeStoredBool(STORAGE_KEY_OPEN, open); }, [open]);
   useEffect(() => { writeStoredString(STORAGE_KEY_MODE, viewMode); }, [viewMode]);
@@ -510,7 +514,11 @@ export function HomeConcentrationSection(props: {
     <>
       <details
         open={open}
-        onToggle={(ev) => setOpen(ev.currentTarget.open)}
+        onToggle={(ev) => {
+          const nextOpen = ev.currentTarget.open;
+          setOpen(nextOpen);
+          if (nextOpen) onRequestScatterData?.();
+        }}
         className="rounded-xl border sb-panel p-3"
         style={{ borderColor: "var(--sb-border)" }}
       >

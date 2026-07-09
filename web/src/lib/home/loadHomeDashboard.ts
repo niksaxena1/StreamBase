@@ -12,6 +12,7 @@ import type {
   PlaylistDailyStatsRow,
   TrackWeekendDipRow,
 } from "@/app/(main-flat)/home/homeTypes";
+import type { HomeDiagnosticsApiPayload } from "@/lib/home/homeDiagnosticsApi";
 import { CACHE_TTL_1H, HOME_SCATTER_HARD_CAP } from "@/lib/constants";
 import { getRollbackDate, rollbackDataDateToRunDate } from "@/lib/rollback";
 import { SOT_DATA_LAG_DAYS, addDaysISO, dataDateFromRunDate } from "@/lib/sotDates";
@@ -20,6 +21,7 @@ import { supabaseService } from "@/lib/supabase/service";
 import { normalizeDatasetMode } from "@/lib/datasetMode";
 import { aggregateCompetitorPlaylistHistory } from "@/lib/competitorAnalytics";
 import { ALL_COMPETITORS_KEY, resolveCompetitorLabelKey } from "@/lib/competitorContext";
+import { timedServerStep } from "@/lib/serverTiming";
 
 type Svc = ReturnType<typeof supabaseService>;
 
@@ -283,7 +285,7 @@ async function fetchCompetitorPlaylistsByIsrcForHome(
 
     const { data: memRows, error: memErr } = await cachedQuery(
       async () => {
-        let q = svc
+        const q = svc
           .schema("competitor")
           .from("playlist_memberships")
           .select("isrc,playlist_key")
@@ -620,15 +622,38 @@ export async function loadHomeScatterDataForUser(args: {
   return { points: scatter.points, errorMessage: scatter.errorMessage, dataDate: selectedDataDate };
 }
 
+export async function loadHomeDiagnosticsDataForUser(args: {
+  sb: SupabaseClient;
+  svc: Svc;
+  userId: string;
+  sp: HomeDashboardSearchParams;
+}): Promise<HomeDiagnosticsApiPayload> {
+  const props = await loadHomeDashboardData({
+    ...args,
+    includeScatter: false,
+    includeDiagnostics: true,
+  });
+
+  return {
+    artistWeekendDips: props.artistWeekendDips,
+    trackWeekendDips: props.trackWeekendDips,
+    negativeDailyStreams: props.negativeDailyStreams,
+    artificialStreamSpikes: props.artificialStreamSpikes,
+    errorMessage: props.homeDiagnosticsErrorMessage ?? null,
+  };
+}
+
 export async function loadHomeDashboardData(args: {
   sb: SupabaseClient;
   svc: Svc;
   userId: string;
   sp: HomeDashboardSearchParams;
   includeScatter?: boolean;
+  includeDiagnostics?: boolean;
 }): Promise<HomeDashboardServerProps> {
   const { sb, svc, userId, sp } = args;
   const includeScatter = args.includeScatter ?? true;
+  const includeDiagnostics = args.includeDiagnostics ?? true;
 
   let rangeDays = Math.max(7, Math.min(365, Number(sp.range ?? "30") || 30));
   if (sp.start && sp.end) {
@@ -891,7 +916,7 @@ export async function loadHomeDashboardData(args: {
       if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
       return await q.order("date", { ascending: false }).limit(rangeDays + 7);
     },
-    `home-playlist-stats-v4-${datasetMode}-${competitorLabelKey ?? "none"}-${playlistKey}-${rangeDays + 7}-${userId}-ov${overrideBuster}-rb${rollbackDate ?? "live"}`,
+    `home-playlist-stats-v5-${datasetMode}-${competitorLabelKey ?? "none"}-${playlistKey}-${rangeDays + 7}-ov${overrideBuster}-rb${rollbackDate ?? "live"}`,
     CACHE_TTL_1H,
   );
 
@@ -1044,91 +1069,112 @@ export async function loadHomeDashboardData(args: {
       : null;
   const weekendAnchorDate = datasetMode === "competitor" ? latestRunDate : latestDataDate;
 
-  const artificialSpikesCacheKey = `home-artificial-stream-spikes-v4-${datasetMode}-${competitorRpcLabelKey ?? "none"}-${userId}-${artificialSpikeRatio}-${artificialMinBaseline}-${artificialGraceDays}-${artificialThresholdCrossing}-${artificialIncludeWeekends ? "wknd1" : "wknd0"}-${spikeFilterRunStart ?? "none"}-${spikeFilterRunEnd ?? "none"}`;
+  const artificialSpikesCacheKey = `home-artificial-stream-spikes-v5-${datasetMode}-${competitorRpcLabelKey ?? "none"}-${artificialSpikeRatio}-${artificialMinBaseline}-${artificialGraceDays}-${artificialThresholdCrossing}-${artificialIncludeWeekends ? "wknd1" : "wknd0"}-${spikeFilterRunStart ?? "none"}-${spikeFilterRunEnd ?? "none"}`;
 
-  const [
-    { data: artistWeekendDips },
-    { data: trackWeekendDips },
-    { data: negativeDailyStreams },
-    { data: artificialStreamSpikesRaw },
-  ] = await Promise.all([
-    cachedQuery(
-      async () => {
-        if (datasetMode === "competitor") {
-          return await svc.schema("competitor").rpc("home_artist_weekend_dips", {
-            p_min_weekday_avg: 0,
-            p_anchor_snapshot_date: weekendAnchorDate ?? null,
-            p_label_key: competitorRpcLabelKey,
-          });
-        }
-        return await svc.rpc("home_artist_weekend_dips", {
-          p_min_weekday_avg: 0,
-          p_anchor_data_date: latestDataDate ?? null,
-        });
-      },
-      `home-artist-weekend-dips-v2-${datasetMode}-${competitorRpcLabelKey ?? "none"}-${playlistKey}-${weekendAnchorDate ?? "none"}-${userId}`,
-      CACHE_TTL_1H,
-    ),
-    cachedQuery(
-      async () => {
-        if (datasetMode === "competitor") {
-          return await svc.schema("competitor").rpc("home_track_weekend_dips", {
-            p_min_weekday_avg: 0,
-            p_anchor_snapshot_date: weekendAnchorDate ?? null,
-            p_label_key: competitorRpcLabelKey,
-          });
-        }
-        return await svc.rpc("home_track_weekend_dips", {
-          p_min_weekday_avg: 0,
-          p_anchor_data_date: latestDataDate ?? null,
-        });
-      },
-      `home-track-weekend-dips-v2-${datasetMode}-${competitorRpcLabelKey ?? "none"}-${playlistKey}-${weekendAnchorDate ?? "none"}-${userId}`,
-      CACHE_TTL_1H,
-    ),
-    cachedQuery(
-      async () => {
-        if (datasetMode === "competitor") {
-          return await svc.schema("competitor").rpc("home_negative_daily_streams", {
-            p_label_key: competitorRpcLabelKey,
-          });
-        }
-        return await svc.rpc("home_negative_daily_streams");
-      },
-      `home-negative-daily-v3-${datasetMode}-${competitorRpcLabelKey ?? "none"}-${userId}`,
-      CACHE_TTL_1H,
-    ),
-    cachedQuery(
-      async () => {
-        if (datasetMode === "competitor") {
-          return await svc.schema("competitor").rpc("home_artificial_stream_spikes", {
-            p_spike_ratio: artificialSpikeRatio,
-            p_min_baseline: artificialMinBaseline,
-            p_grace_days: artificialGraceDays,
-            p_threshold_crossing_max: artificialThresholdCrossing,
-            p_include_weekends: artificialIncludeWeekends,
-            p_start_date: spikeFilterRunStart,
-            p_end_date: spikeFilterRunEnd,
-            p_label_key: competitorRpcLabelKey,
-          });
-        }
-        const { data, error } = await svc.rpc("home_artificial_stream_spikes", {
-          p_spike_ratio: artificialSpikeRatio,
-          p_min_baseline: artificialMinBaseline,
-          p_grace_days: artificialGraceDays,
-          p_threshold_crossing_max: artificialThresholdCrossing,
-          p_include_weekends: artificialIncludeWeekends,
-          p_start_date: spikeFilterRunStart,
-          p_end_date: spikeFilterRunEnd,
-        });
-        return { data, error };
-      },
-      artificialSpikesCacheKey,
-      CACHE_TTL_1H,
-    ),
-  ]);
+  let artistWeekendDipsRaw: unknown[] = [];
+  let trackWeekendDipsRaw: unknown[] = [];
+  let negativeDailyStreamsRaw: unknown[] = [];
+  let artificialStreamSpikesRaw: unknown[] = [];
+  let homeDiagnosticsErrorMessage: string | null = null;
 
-  const artificialStreamSpikes: ArtificialStreamSpikeRow[] = ((artificialStreamSpikesRaw ?? []) as Record<string, unknown>[]).map(
+  if (includeDiagnostics) {
+    const [
+      artistWeekendDipsResult,
+      trackWeekendDipsResult,
+      negativeDailyStreamsResult,
+      artificialStreamSpikesResult,
+    ] = await timedServerStep("home.diagnostics", () =>
+      Promise.all([
+        cachedQuery(
+          async () => {
+            if (datasetMode === "competitor") {
+              return await svc.schema("competitor").rpc("home_artist_weekend_dips", {
+                p_min_weekday_avg: 0,
+                p_anchor_snapshot_date: weekendAnchorDate ?? null,
+                p_label_key: competitorRpcLabelKey,
+              });
+            }
+            return await svc.rpc("home_artist_weekend_dips", {
+              p_min_weekday_avg: 0,
+              p_anchor_data_date: latestDataDate ?? null,
+            });
+          },
+          `home-artist-weekend-dips-v3-${datasetMode}-${competitorRpcLabelKey ?? "none"}-${playlistKey}-${weekendAnchorDate ?? "none"}`,
+          CACHE_TTL_1H,
+        ),
+        cachedQuery(
+          async () => {
+            if (datasetMode === "competitor") {
+              return await svc.schema("competitor").rpc("home_track_weekend_dips", {
+                p_min_weekday_avg: 0,
+                p_anchor_snapshot_date: weekendAnchorDate ?? null,
+                p_label_key: competitorRpcLabelKey,
+              });
+            }
+            return await svc.rpc("home_track_weekend_dips", {
+              p_min_weekday_avg: 0,
+              p_anchor_data_date: latestDataDate ?? null,
+            });
+          },
+          `home-track-weekend-dips-v3-${datasetMode}-${competitorRpcLabelKey ?? "none"}-${playlistKey}-${weekendAnchorDate ?? "none"}`,
+          CACHE_TTL_1H,
+        ),
+        cachedQuery(
+          async () => {
+            if (datasetMode === "competitor") {
+              return await svc.schema("competitor").rpc("home_negative_daily_streams", {
+                p_label_key: competitorRpcLabelKey,
+              });
+            }
+            return await svc.rpc("home_negative_daily_streams");
+          },
+          `home-negative-daily-v4-${datasetMode}-${competitorRpcLabelKey ?? "none"}`,
+          CACHE_TTL_1H,
+        ),
+        cachedQuery(
+          async () => {
+            if (datasetMode === "competitor") {
+              return await svc.schema("competitor").rpc("home_artificial_stream_spikes", {
+                p_spike_ratio: artificialSpikeRatio,
+                p_min_baseline: artificialMinBaseline,
+                p_grace_days: artificialGraceDays,
+                p_threshold_crossing_max: artificialThresholdCrossing,
+                p_include_weekends: artificialIncludeWeekends,
+                p_start_date: spikeFilterRunStart,
+                p_end_date: spikeFilterRunEnd,
+                p_label_key: competitorRpcLabelKey,
+              });
+            }
+            const { data, error } = await svc.rpc("home_artificial_stream_spikes", {
+              p_spike_ratio: artificialSpikeRatio,
+              p_min_baseline: artificialMinBaseline,
+              p_grace_days: artificialGraceDays,
+              p_threshold_crossing_max: artificialThresholdCrossing,
+              p_include_weekends: artificialIncludeWeekends,
+              p_start_date: spikeFilterRunStart,
+              p_end_date: spikeFilterRunEnd,
+            });
+            return { data, error };
+          },
+          artificialSpikesCacheKey,
+          CACHE_TTL_1H,
+        ),
+      ]),
+    );
+
+    artistWeekendDipsRaw = (artistWeekendDipsResult.data ?? []) as unknown[];
+    trackWeekendDipsRaw = (trackWeekendDipsResult.data ?? []) as unknown[];
+    negativeDailyStreamsRaw = (negativeDailyStreamsResult.data ?? []) as unknown[];
+    artificialStreamSpikesRaw = (artificialStreamSpikesResult.data ?? []) as unknown[];
+    homeDiagnosticsErrorMessage =
+      artistWeekendDipsResult.error?.message ??
+      trackWeekendDipsResult.error?.message ??
+      negativeDailyStreamsResult.error?.message ??
+      artificialStreamSpikesResult.error?.message ??
+      null;
+  }
+
+  const artificialStreamSpikes: ArtificialStreamSpikeRow[] = (artificialStreamSpikesRaw as Record<string, unknown>[]).map(
     (r) => ({
       isrc: String(r.isrc ?? "").trim(),
       name: typeof r.name === "string" ? r.name : String(r.isrc ?? ""),
@@ -1164,10 +1210,12 @@ export async function loadHomeDashboardData(args: {
     latestRunDate,
     latestDataDate,
     overrideAnnotations,
-    artistWeekendDips: (artistWeekendDips as ArtistWeekendDipRow[] | null) ?? [],
-    trackWeekendDips: (trackWeekendDips as TrackWeekendDipRow[] | null) ?? [],
-    negativeDailyStreams: (negativeDailyStreams as NegativeDailyStreamsRow[] | null) ?? [],
+    artistWeekendDips: (artistWeekendDipsRaw as ArtistWeekendDipRow[] | null) ?? [],
+    trackWeekendDips: (trackWeekendDipsRaw as TrackWeekendDipRow[] | null) ?? [],
+    negativeDailyStreams: (negativeDailyStreamsRaw as NegativeDailyStreamsRow[] | null) ?? [],
     artificialStreamSpikes,
+    homeDiagnosticsDeferred: !includeDiagnostics,
+    homeDiagnosticsErrorMessage,
     artificialStreamSpikeRatio: artificialSpikeRatio,
     artificialMinBaseline: artificialMinBaseline,
     artificialIncludeWeekends,

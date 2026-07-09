@@ -1,15 +1,15 @@
 import type { Metadata } from "next";
 
 import { AuthedAppLayout } from "@/app/_shared/AuthedAppLayout";
-import { getCompetitorShellContext } from "@/lib/competitorContext.server";
 import { APP_SHORT_NAME } from "@/lib/pageTitle";
+import { getRequestAppContext } from "@/lib/requestAppContext.server";
 
 export async function generateMetadata(): Promise<Metadata> {
-  const { titleTemplate } = await getCompetitorShellContext();
+  const { shellContext } = await getRequestAppContext();
   return {
     title: {
       default: APP_SHORT_NAME,
-      template: titleTemplate,
+      template: shellContext.titleTemplate,
     },
   };
 }

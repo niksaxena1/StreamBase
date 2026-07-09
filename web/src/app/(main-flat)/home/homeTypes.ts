@@ -109,6 +109,8 @@ export type HomeDashboardServerProps = {
   trackWeekendDips: TrackWeekendDipRow[];
   negativeDailyStreams: NegativeDailyStreamsRow[];
   artificialStreamSpikes: ArtificialStreamSpikeRow[];
+  homeDiagnosticsDeferred?: boolean;
+  homeDiagnosticsErrorMessage?: string | null;
   artificialStreamSpikeRatio: number;
   artificialMinBaseline: number;
   artificialIncludeWeekends: boolean;

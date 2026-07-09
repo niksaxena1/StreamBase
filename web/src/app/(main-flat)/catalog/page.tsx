@@ -2,8 +2,6 @@ import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { supabaseServer } from "@/lib/supabase/server";
-import { supabaseService } from "@/lib/supabase/service";
 import { cachedQuery } from "@/lib/supabase/cache";
 import { getArtistsCached } from "@/lib/spotify";
 import { RememberParamRedirect } from "@/components/dashboard/RememberParamRedirect";
@@ -18,6 +16,8 @@ import { normalizeDatasetMode } from "@/lib/datasetMode";
 import { lastArtistIdStorageKey } from "@/lib/datasetSelectionStorage";
 import { ALL_COMPETITORS_KEY, resolveCompetitorLabelKey } from "@/lib/competitorContext";
 import { isMissingPostgresFunctionError } from "@/lib/supabase/rpcErrors";
+import { getRequestAppContext } from "@/lib/requestAppContext.server";
+import { timedServerStep } from "@/lib/serverTiming";
 
 const CATALOG_ARTIST_DROPDOWN_MAX_TRACKS = API_LOOKUP_DROPDOWN_MAX;
 const CATALOG_ARTIST_THUMBNAILS_MAX = API_LOOKUP_THUMBNAILS_MAX;
@@ -236,7 +236,13 @@ function artistNameFor(rows: TrackRow[], artistId: string) {
   return null;
 }
 
-export default async function CatalogPage({
+export default async function CatalogPage(props: {
+  searchParams?: Promise<{ artist_id?: string; isrc?: string; range?: string; view?: string; start?: string; end?: string }>;
+}) {
+  return timedServerStep("page.catalog", () => CatalogPageContent(props));
+}
+
+async function CatalogPageContent({
   searchParams,
 }: {
   searchParams?: Promise<{ artist_id?: string; isrc?: string; range?: string; view?: string; start?: string; end?: string }>;
@@ -256,23 +262,15 @@ export default async function CatalogPage({
       const calculatedDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
       rangeDays = Math.max(1, Math.min(365, calculatedDays));
     }
-    const sb = await supabaseServer();
-    const { data: userData } = await sb.auth.getUser();
-    if (!userData.user) redirect("/login");
+    const { sb, svc, user, isAdmin, settings: datasetSettings } = await getRequestAppContext();
+    if (!user) redirect("/login");
 
-    const { data: isAdmin } = await sb.rpc("is_admin");
     if (!isAdmin) redirect("/");
 
     // IMPORTANT: Core analytics tables are admin-only via RLS. If we cache queries using
     // a request-scoped Supabase client, revalidation can run without cookies and fail,
     // leaving stale cached data. Use the service-role client for all data reads here;
     // access is still gated above.
-    const svc = supabaseService();
-    const { data: datasetSettings } = await svc
-      .from("user_settings")
-      .select("dataset_mode,competitor_label_key")
-      .eq("user_id", userData.user.id)
-      .maybeSingle();
     const datasetMode = normalizeDatasetMode(datasetSettings?.dataset_mode);
 
     if (datasetMode === "competitor") {
@@ -568,7 +566,7 @@ export default async function CatalogPage({
       const { data: uSettings } = await sb
         .from("user_settings")
         .select("hide_stale_override_annotations, hide_stale_annotations_exclude_catalog")
-        .eq("user_id", userData.user.id)
+        .eq("user_id", user.id)
         .maybeSingle();
       const row = uSettings as Record<string, unknown> | null;
       const wantsHide = Boolean(row?.hide_stale_override_annotations);

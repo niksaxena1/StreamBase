@@ -23,7 +23,10 @@ import { HOME_DETAILS_STORAGE, HOME_DAILY_BUCKETS_STORAGE, parseDailyBucketsText
 
 export function HomeDailyDistributionSection(props: {
   trackScatterPoints: TrackStreamsXYPoint[];
+  trackScatterLoading?: boolean;
+  onRequestScatterData?: () => void;
 }) {
+  const { onRequestScatterData } = props;
   const { metric } = useMetric();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
   const milestoneMode: "streams" | "revenue" = metric === "revenue" ? "revenue" : "streams";
@@ -46,14 +49,17 @@ export function HomeDailyDistributionSection(props: {
   // Restore persisted state
   useEffect(() => {
     const restored = readStoredBool(HOME_DETAILS_STORAGE.dailyDistOpen, false);
-    if (restored) setOpenDailyDistribution(true);
+    if (restored) {
+      setOpenDailyDistribution(true);
+      onRequestScatterData?.();
+    }
 
     const savedLocal = readStoredString(HOME_DAILY_BUCKETS_STORAGE.customBuckets);
     if (savedLocal) {
       const parsed = parseDailyBucketsText(savedLocal);
       if (!parsed.error && parsed.buckets.length) setCustomDailyBuckets(parsed.buckets);
     }
-  }, []);
+  }, [onRequestScatterData]);
 
   useEffect(() => {
     writeStoredBool(HOME_DETAILS_STORAGE.dailyDistOpen, openDailyDistribution);
@@ -195,13 +201,17 @@ export function HomeDailyDistributionSection(props: {
   const drillTrackPageItems = dailyDistDrillTracks.slice(drillPageStart, drillPageStart + pageSize);
   const drillArtistPageItems = dailyDistDrillArtists.slice(drillPageStart, drillPageStart + pageSize);
 
-  if (!props.trackScatterPoints?.length) return null;
+  const hasTrackScatterPoints = Boolean(props.trackScatterPoints?.length);
 
   return (
     <>
       <details
         open={openDailyDistribution}
-        onToggle={(ev) => setOpenDailyDistribution(ev.currentTarget.open)}
+        onToggle={(ev) => {
+          const nextOpen = ev.currentTarget.open;
+          setOpenDailyDistribution(nextOpen);
+          if (nextOpen) onRequestScatterData?.();
+        }}
         className="rounded-xl border sb-panel p-3"
         style={{ borderColor: "var(--sb-border)" }}
       >
@@ -214,19 +224,19 @@ export function HomeDailyDistributionSection(props: {
               </div>
             </div>
             <div className="flex items-center gap-2" onMouseDown={(ev) => { ev.preventDefault(); ev.stopPropagation(); }} onClick={(ev) => { ev.preventDefault(); ev.stopPropagation(); }}>
-              {openDailyDistribution ? (
+              {openDailyDistribution && hasTrackScatterPoints ? (
                 <div className="flex items-center rounded-full bg-black/5 p-0.5 dark:bg-white/10">
                   <button type="button" onClick={() => setDailyDistributionCountMode("tracks")} className={["rounded-full px-2 py-1 text-[11px] font-medium transition", dailyDistributionCountMode === "tracks" ? "bg-black text-white dark:bg-white dark:text-black" : "text-black/70 hover:bg-white/50 dark:text-white/70 dark:hover:bg-white/20"].join(" ")}>Tracks</button>
                   <button type="button" onClick={() => setDailyDistributionCountMode("artists")} className={["rounded-full px-2 py-1 text-[11px] font-medium transition", dailyDistributionCountMode === "artists" ? "bg-black text-white dark:bg-white dark:text-black" : "text-black/70 hover:bg-white/50 dark:text-white/70 dark:hover:bg-white/20"].join(" ")}>Artists</button>
                 </div>
               ) : null}
-              {openDailyDistribution ? (
+              {openDailyDistribution && hasTrackScatterPoints ? (
                 <div className="flex items-center rounded-full bg-black/5 p-0.5 dark:bg-white/10">
                   <button type="button" onClick={() => setDailyDistributionBucketMode("cumulative")} className={["rounded-full px-2 py-1 text-[11px] font-medium transition", dailyDistributionBucketMode === "cumulative" ? "bg-black text-white dark:bg-white dark:text-black" : "text-black/70 hover:bg-white/50 dark:text-white/70 dark:hover:bg-white/20"].join(" ")} title="Cumulative: counts entities that have this daily stream count or higher">Cum.</button>
                   <button type="button" onClick={() => setDailyDistributionBucketMode("exclusive")} className={["rounded-full px-2 py-1 text-[11px] font-medium transition", dailyDistributionBucketMode === "exclusive" ? "bg-black text-white dark:bg-white dark:text-black" : "text-black/70 hover:bg-white/50 dark:text-white/70 dark:hover:bg-white/20"].join(" ")} title="Exclusive: each entity is counted only in its specific bucket">Exc.</button>
                 </div>
               ) : null}
-              {openDailyDistribution ? (
+              {openDailyDistribution && hasTrackScatterPoints ? (
                 <IconButton aria-label="Configure buckets" variant="ghost" size="sm" title="Configure buckets" onClick={() => {
                   setDailyBucketsSettingsError(null);
                   setDailyBucketsSettingsText((customDailyBuckets ?? DEFAULT_DAILY_BUCKETS).map((b) => b.label).join(", "));
@@ -240,23 +250,29 @@ export function HomeDailyDistributionSection(props: {
         </summary>
 
         <div className="mt-2">
-          <DailyStreamsDistributionChart
-            tracks={props.trackScatterPoints.map((p) => ({ isrc: p.isrc, daily_streams: p.daily_streams_delta, artist_ids: p.artist_ids ?? null }))}
-            heightPx={280}
-            mode={milestoneMode}
-            countMode={dailyDistributionCountMode}
-            bucketMode={dailyDistributionBucketMode}
-            payoutPerStreamUsd={streamPayoutPerStreamUsd}
-            customBuckets={customDailyBuckets ?? undefined}
-            highlightBucketLabel={dailyDistDrillOpen ? dailyDistDrillBucket?.label : null}
-            onBucketClick={(bucketMin, bucketMax, bucketLabel) => {
-              setDailyDistDrillBucket({ min: bucketMin, max: bucketMax, label: bucketLabel });
-              setDailyDistDrillView(dailyDistributionCountMode === "artists" ? "artists" : "tracks");
-              setDailyDistDrillQuery("");
-              setDailyDistDrillPage(1);
-              setDailyDistDrillOpen(true);
-            }}
-          />
+          {hasTrackScatterPoints ? (
+            <DailyStreamsDistributionChart
+              tracks={props.trackScatterPoints.map((p) => ({ isrc: p.isrc, daily_streams: p.daily_streams_delta, artist_ids: p.artist_ids ?? null }))}
+              heightPx={280}
+              mode={milestoneMode}
+              countMode={dailyDistributionCountMode}
+              bucketMode={dailyDistributionBucketMode}
+              payoutPerStreamUsd={streamPayoutPerStreamUsd}
+              customBuckets={customDailyBuckets ?? undefined}
+              highlightBucketLabel={dailyDistDrillOpen ? dailyDistDrillBucket?.label : null}
+              onBucketClick={(bucketMin, bucketMax, bucketLabel) => {
+                setDailyDistDrillBucket({ min: bucketMin, max: bucketMax, label: bucketLabel });
+                setDailyDistDrillView(dailyDistributionCountMode === "artists" ? "artists" : "tracks");
+                setDailyDistDrillQuery("");
+                setDailyDistDrillPage(1);
+                setDailyDistDrillOpen(true);
+              }}
+            />
+          ) : (
+            <div className="py-10 text-center text-xs" style={{ color: "var(--sb-muted)" }}>
+              {props.trackScatterLoading ? "Loading daily distribution data..." : "Open this section to load daily distribution data."}
+            </div>
+          )}
         </div>
       </details>
 

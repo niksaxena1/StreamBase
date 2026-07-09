@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState, useDeferredValue } from "react";
 import { Calendar, Search, X } from "lucide-react";
-import Link from "next/link";
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 
 import { useMetric } from "@/components/metrics/MetricContext";
@@ -23,9 +22,11 @@ export function HomeScatterSection(props: {
   trackScatterPoints: TrackStreamsXYPoint[];
   trackScatterErrorMessage?: string | null;
   trackScatterLoading?: boolean;
+  onRequestScatterData?: () => void;
   insufficientHistory?: boolean;
   datasetMode?: "own" | "competitor";
 }) {
+  const { onRequestScatterData } = props;
   const { metric } = useMetric();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
   const themeColors = useThemeColors();
@@ -61,8 +62,11 @@ export function HomeScatterSection(props: {
   // Restore persisted open state
   useEffect(() => {
     const restored = readStoredBool(HOME_DETAILS_STORAGE.scatterOpen, false);
-    if (restored) setOpenScatter(true);
-  }, []);
+    if (restored) {
+      setOpenScatter(true);
+      onRequestScatterData?.();
+    }
+  }, [onRequestScatterData]);
 
   // Persist open state
   useEffect(() => {
@@ -190,7 +194,11 @@ export function HomeScatterSection(props: {
   return (
     <details
       open={openScatter}
-      onToggle={(ev) => setOpenScatter(ev.currentTarget.open)}
+      onToggle={(ev) => {
+        const nextOpen = ev.currentTarget.open;
+        setOpenScatter(nextOpen);
+        if (nextOpen) onRequestScatterData?.();
+      }}
       className="rounded-xl border sb-panel p-3"
       style={{ borderColor: "var(--sb-border)" }}
     >

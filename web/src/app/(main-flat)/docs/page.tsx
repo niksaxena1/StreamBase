@@ -3,10 +3,11 @@ import { readdir, readFile } from "node:fs/promises";
 import type { Metadata } from "next";
 
 import { redirect } from "next/navigation";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { DocsClient } from "./DocsClient";
-import { normalizeAppAccess, streamBaseAccessRedirectPath } from "@/lib/appAccess";
-import { supabaseServer } from "@/lib/supabase/server";
+import { streamBaseAccessRedirectPath } from "@/lib/appAccess";
+import { getRequestAppContext } from "@/lib/requestAppContext.server";
 import { supabaseService } from "@/lib/supabase/service";
 import { cachedQuery } from "@/lib/supabase/cache";
 
@@ -83,20 +84,9 @@ function splitIntoSections(md: string): { introMd: string; sections: DocSection[
 }
 
 export default async function DocsPage() {
-  const sb = await supabaseServer();
-  const {
-    data: { user },
-  } = await sb.auth.getUser();
+  const { sb, user, appAccess } = await getRequestAppContext();
   if (!user) redirect("/login");
 
-  const svc = supabaseService();
-  const { data: isAdmin } = await sb.rpc("is_admin");
-  const { data: accessRow } = await svc
-    .from("app_user_access")
-    .select("own_catalog,competitor,playlist_watch,playlist_watch_admin")
-    .eq("user_id", user.id)
-    .maybeSingle();
-  const appAccess = normalizeAppAccess(accessRow, Boolean(isAdmin));
   const streamBaseRedirect = streamBaseAccessRedirectPath(appAccess);
   if (streamBaseRedirect) redirect(streamBaseRedirect);
 
@@ -120,7 +110,7 @@ export default async function DocsPage() {
 
   // Fetch sai flag, system stats, and inventory in parallel — all independent DB calls.
   const [saiEnabled, stats, inventory] = await Promise.all([
-    getSaiEnabledBestEffort(),
+    getSaiEnabledBestEffort(sb, user.id),
     getSystemStatsBestEffort(),
     getInventoryBestEffort(),
   ]);
@@ -175,17 +165,12 @@ function parseMetaBestEffort(md: string): { tags: string[] } {
   return { tags: Array.from(new Set(tags.map((t) => t.toLowerCase()))).sort() };
 }
 
-async function getSaiEnabledBestEffort(): Promise<boolean> {
+async function getSaiEnabledBestEffort(sb: SupabaseClient, userId: string): Promise<boolean> {
   try {
-    const sb = await supabaseServer();
-    const { data } = await sb.auth.getUser();
-    const user = data.user;
-    if (!user) return true;
-
     const { data: settings, error } = await sb
       .from("user_settings")
       .select("sai_enabled")
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .maybeSingle();
 
     if (error) {

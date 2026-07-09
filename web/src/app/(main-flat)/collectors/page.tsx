@@ -2,8 +2,6 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 
-import { supabaseServer } from "@/lib/supabase/server";
-import { supabaseService } from "@/lib/supabase/service";
 import { formatDateISO } from "@/lib/format";
 import { CACHE_TTL_1H } from "@/lib/constants";
 import { RememberParamRedirect } from "@/components/dashboard/RememberParamRedirect";
@@ -24,6 +22,7 @@ import {
   type CollectorPlaylistScopeRow,
 } from "./collectorsUtils";
 import type { CollectorOverlapArtistCell, CollectorOverlapCell } from "./collectorsTypes";
+import { getRequestAppContext } from "@/lib/requestAppContext.server";
 
 export const revalidate = 86400; // 24h ISR - data updates daily
 
@@ -57,21 +56,17 @@ export default async function CollectorsPage({
   searchParams?: any;
 }) {
   const sp = (await searchParams ?? {}) as { collector?: string; range?: string; start?: string; end?: string };
-  const sb = await supabaseServer();
-  const { data: userData } = await sb.auth.getUser();
-  if (!userData.user) redirect("/login");
+  const { svc, user, isAdmin } = await getRequestAppContext();
+  if (!user) redirect("/login");
 
-  const { data: isAdmin } = await sb.rpc("is_admin");
   if (!isAdmin) redirect("/");
 
   // IMPORTANT: These tables are protected by admin-only RLS. Use the service-role client
   // for cached reads; access is still gated above.
-  const svc = supabaseService();
-
   const { data: collectorSettings } = await svc
     .from("user_settings")
     .select("collector_entity_playlist_stats_enabled")
-    .eq("user_id", userData.user.id)
+    .eq("user_id", user.id)
     .maybeSingle();
   const useEntityPlaylistsForTotals =
     (collectorSettings as { collector_entity_playlist_stats_enabled?: unknown } | null)

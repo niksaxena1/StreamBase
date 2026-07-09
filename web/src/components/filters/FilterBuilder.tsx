@@ -120,6 +120,8 @@ type FilterBuilderProps = {
   competitorOptions?: Array<{ value: string; label: string; imageUrl?: string | null }>;
   asOfRunDate?: string | null;
   datasetMode?: "own" | "competitor";
+  trackDataLoading?: boolean;
+  onOpenChange?: (open: boolean) => void;
 };
 
 export function FilterBuilder({
@@ -135,6 +137,8 @@ export function FilterBuilder({
   competitorOptions = [],
   asOfRunDate = null,
   datasetMode = "own",
+  trackDataLoading = false,
+  onOpenChange,
 }: FilterBuilderProps) {
   const { streamPayoutPerStreamUsd } = usePayoutRate();
 
@@ -162,11 +166,14 @@ export function FilterBuilder({
     if (typeof window === "undefined") return;
     try {
       const stored = localStorage.getItem(STORAGE_KEY_OPEN);
-      if (stored === "1") setIsOpen(true);
+      if (stored === "1") {
+        setIsOpen(true);
+        onOpenChange?.(true);
+      }
     } catch {
       // ignore
     }
-  }, []);
+  }, [onOpenChange]);
   
   // Save open state
   useEffect(() => {
@@ -177,6 +184,15 @@ export function FilterBuilder({
       // ignore
     }
   }, [isOpen]);
+
+  const handleOpenToggle = useCallback(
+    (ev: { currentTarget: HTMLDetailsElement }) => {
+      const nextOpen = ev.currentTarget.open;
+      setIsOpen(nextOpen);
+      onOpenChange?.(nextOpen);
+    },
+    [onOpenChange],
+  );
   
   // Initialize with empty tracks filter when opening
   useEffect(() => {
@@ -656,6 +672,10 @@ export function FilterBuilder({
     : currentFilter?.entityType === "dates"
     ? dateData.length
     : playlistData.length;
+  const dataCountLabel =
+    currentFilter?.entityType === "tracks" && trackDataLoading && trackData.length === 0
+      ? "loading"
+      : `${dataCount.toLocaleString()} total`;
 
   const entityOptions: ComboboxOption[] = useMemo(
     () =>
@@ -674,7 +694,7 @@ export function FilterBuilder({
   return (
     <details
       open={isOpen}
-      onToggle={(ev) => setIsOpen(ev.currentTarget.open)}
+      onToggle={handleOpenToggle}
       className="rounded-xl border sb-panel p-3"
       style={{ borderColor: "var(--sb-border)" }}
     >
@@ -725,7 +745,7 @@ export function FilterBuilder({
                 />
               </div>
               <span className="text-xs" style={{ color: "var(--sb-muted)" }}>
-                ({dataCount.toLocaleString()} total)
+                ({dataCountLabel})
               </span>
             </div>
 

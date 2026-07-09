@@ -14,6 +14,11 @@ import {
   buildHomeScatterScopeKey,
   normalizeHomeScatterApiPayload,
 } from "@/lib/home/homeScatterApi";
+import {
+  buildHomeDiagnosticsApiUrl,
+  buildHomeDiagnosticsScopeKey,
+  normalizeHomeDiagnosticsApiPayload,
+} from "@/lib/home/homeDiagnosticsApi";
 import { GranularitySelect, RangeSelect, handleGranularityWithRangeRestore, granularityLabel } from "@/components/ui/GranularitySelect";
 import type { Granularity } from "@/components/ui/GranularitySelect";
 import { DateRangePicker, type DateRangePickerHandle } from "@/components/ui/DateRangePicker";
@@ -23,7 +28,7 @@ import { useSharedGranularity } from "@/lib/useSharedGranularity";
 import { useMetric } from "@/components/metrics/MetricContext";
 import { useThemeColors } from "@/components/charts/useThemeColors";
 import { LazyInteractiveChartSection } from "@/components/dashboard/LazyInteractiveChartSection";
-import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
+import { formatDateISO, formatInt } from "@/lib/format";
 import { dataDateFromRunDate } from "@/lib/sotDates";
 import { Alert } from "@/components/ui/Alert";
 import { hrefWithPatchedSearchParams } from "@/lib/searchParams";
@@ -34,15 +39,9 @@ import { useCurrencyDisplay } from "@/components/currency/CurrencyDisplayContext
 
 import type {
   PlaylistDailyStatsRow,
-  ManualOverrideAnnotation,
   ChartPoint,
-  ArtistWeekendDipRow,
-  TrackWeekendDipRow,
-  NegativeDailyStreamsRow,
-  ArtificialStreamSpikeRow,
   HomeDashboardServerProps,
 } from "./home/homeTypes";
-import { rollSum } from "./home/homeUtils";
 import { HomeScatterSection } from "./home/HomeScatterSection";
 import { HomeMilestonesSection } from "./home/HomeMilestonesSection";
 import { HomeDailyDistributionSection } from "./home/HomeDailyDistributionSection";
@@ -85,6 +84,26 @@ function ToggleLink(props: { href: string; active: boolean; children: React.Reac
   );
 }
 
+function HomeDiagnosticsLoadingPanel() {
+  return (
+    <div className="rounded-xl border sb-panel p-3" style={{ borderColor: "var(--sb-border)" }}>
+      <div className="flex items-start gap-2">
+        <span className="mt-0.5 text-xs opacity-40">▸</span>
+        <div className="min-w-0 flex-1">
+          <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
+            TRACK DIAGNOSTICS
+          </div>
+          <div className="mt-2 grid gap-2 md:grid-cols-3">
+            <div className="h-10 rounded-lg bg-black/5 dark:bg-white/10 animate-pulse" />
+            <div className="h-10 rounded-lg bg-black/5 dark:bg-white/10 animate-pulse" />
+            <div className="h-10 rounded-lg bg-black/5 dark:bg-white/10 animate-pulse" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ============================================================================
 // Main orchestrator component
 // ============================================================================
@@ -119,6 +138,14 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
     () => buildHomeScatterScopeKey(props.datasetMode, props.competitorLabelKey),
     [props.datasetMode, props.competitorLabelKey],
   );
+  const diagnosticsFetchUrl = useMemo(() => buildHomeDiagnosticsApiUrl(props.sp), [props.sp]);
+  const diagnosticsRequestKey = useMemo(
+    () => `${buildHomeDiagnosticsScopeKey(props.datasetMode, props.competitorLabelKey)}:${diagnosticsFetchUrl}`,
+    [props.datasetMode, props.competitorLabelKey, diagnosticsFetchUrl],
+  );
+  const [scatterRequested, setScatterRequested] = useState(
+    () => !props.trackScatterDeferred || props.trackScatterPoints.length > 0,
+  );
   const [scatterState, setScatterState] = useState<{
     points: TrackStreamsXYPoint[];
     errorMessage: string | null;
@@ -128,12 +155,36 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
     points: props.trackScatterPoints,
     errorMessage: props.trackScatterErrorMessage ?? null,
     dataDate: props.trackScatterDataDate,
-    loading: Boolean(props.trackScatterDeferred),
+    loading: false,
+  }));
+  const [diagnosticsState, setDiagnosticsState] = useState(() => ({
+    artistWeekendDips: props.artistWeekendDips,
+    trackWeekendDips: props.trackWeekendDips,
+    negativeDailyStreams: props.negativeDailyStreams,
+    artificialStreamSpikes: props.artificialStreamSpikes,
+    errorMessage: props.homeDiagnosticsErrorMessage ?? null,
+    loading: Boolean(props.homeDiagnosticsDeferred),
   }));
   const prevScatterScopeKeyRef = useRef<string | null>(null);
+  const prevDiagnosticsRequestKeyRef = useRef<string | null>(null);
+
+  const requestScatterData = useCallback(() => {
+    if (!props.trackScatterDeferred) return;
+    setScatterRequested(true);
+    setScatterState((current) =>
+      current.points.length || current.loading
+        ? current
+        : {
+            ...current,
+            errorMessage: null,
+            loading: true,
+          },
+    );
+  }, [props.trackScatterDeferred]);
 
   useEffect(() => {
     if (!props.trackScatterDeferred) return;
+    if (!scatterRequested) return;
 
     const scopeChanged =
       prevScatterScopeKeyRef.current !== null && prevScatterScopeKeyRef.current !== scatterScopeKey;
@@ -174,6 +225,7 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
   }, [
     props.trackScatterDataDate,
     props.trackScatterDeferred,
+    scatterRequested,
     scatterFetchUrl,
     scatterScopeKey,
   ]);
@@ -183,6 +235,69 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
         points: props.trackScatterPoints,
         errorMessage: props.trackScatterErrorMessage ?? null,
         dataDate: props.trackScatterDataDate,
+        loading: false,
+      };
+
+  useEffect(() => {
+    if (!props.homeDiagnosticsDeferred) return;
+
+    const requestChanged =
+      prevDiagnosticsRequestKeyRef.current !== null &&
+      prevDiagnosticsRequestKeyRef.current !== diagnosticsRequestKey;
+    prevDiagnosticsRequestKeyRef.current = diagnosticsRequestKey;
+
+    if (requestChanged) {
+      setDiagnosticsState({
+        artistWeekendDips: [],
+        trackWeekendDips: [],
+        negativeDailyStreams: [],
+        artificialStreamSpikes: [],
+        errorMessage: null,
+        loading: true,
+      });
+    }
+
+    const controller = new AbortController();
+    fetchApiJson<unknown>(diagnosticsFetchUrl, { signal: controller.signal })
+      .then((raw) => {
+        if (controller.signal.aborted) return;
+        const payload = normalizeHomeDiagnosticsApiPayload(raw);
+        setDiagnosticsState({
+          artistWeekendDips: payload.artistWeekendDips,
+          trackWeekendDips: payload.trackWeekendDips,
+          negativeDailyStreams: payload.negativeDailyStreams,
+          artificialStreamSpikes: payload.artificialStreamSpikes,
+          errorMessage: payload.errorMessage,
+          loading: false,
+        });
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) return;
+        setDiagnosticsState({
+          artistWeekendDips: [],
+          trackWeekendDips: [],
+          negativeDailyStreams: [],
+          artificialStreamSpikes: [],
+          errorMessage: error instanceof Error ? error.message : "Failed to load Home diagnostics",
+          loading: false,
+        });
+      });
+
+    return () => controller.abort();
+  }, [
+    diagnosticsFetchUrl,
+    diagnosticsRequestKey,
+    props.homeDiagnosticsDeferred,
+  ]);
+
+  const effectiveDiagnosticsState = props.homeDiagnosticsDeferred
+    ? diagnosticsState
+    : {
+        artistWeekendDips: props.artistWeekendDips,
+        trackWeekendDips: props.trackWeekendDips,
+        negativeDailyStreams: props.negativeDailyStreams,
+        artificialStreamSpikes: props.artificialStreamSpikes,
+        errorMessage: props.homeDiagnosticsErrorMessage ?? null,
         loading: false,
       };
 
@@ -543,6 +658,7 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
       <HomeConcentrationSection
         trackScatterPoints={effectiveScatterState.points}
         trackScatterLoading={effectiveScatterState.loading}
+        onRequestScatterData={requestScatterData}
         latestRunDate={props.latestRunDate}
         datasetMode={props.datasetMode}
         competitorLabelKey={props.competitorLabelKey}
@@ -553,41 +669,60 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
         trackScatterPoints={effectiveScatterState.points}
         trackScatterErrorMessage={effectiveScatterState.errorMessage}
         trackScatterLoading={effectiveScatterState.loading}
+        onRequestScatterData={requestScatterData}
         insufficientHistory={props.datasetMode === "competitor" && !hasTrendHistory}
         datasetMode={props.datasetMode}
       />
 
-      <HomeMilestonesSection trackScatterPoints={effectiveScatterState.points} />
+      <HomeMilestonesSection
+        trackScatterPoints={effectiveScatterState.points}
+        trackScatterLoading={effectiveScatterState.loading}
+        onRequestScatterData={requestScatterData}
+      />
 
       {props.datasetMode === "own" || hasTrendHistory ? (
-        <HomeDailyDistributionSection trackScatterPoints={effectiveScatterState.points} />
+        <HomeDailyDistributionSection
+          trackScatterPoints={effectiveScatterState.points}
+          trackScatterLoading={effectiveScatterState.loading}
+          onRequestScatterData={requestScatterData}
+        />
       ) : null}
 
-      {(props.datasetMode === "own" || props.datasetMode === "competitor") && (
-        <HomeNegativeStreamsSection negativeDailyStreams={props.negativeDailyStreams} />
-      )}
+      {effectiveDiagnosticsState.loading ? <HomeDiagnosticsLoadingPanel /> : null}
 
-      {(props.datasetMode === "own" || props.datasetMode === "competitor") &&
+      {effectiveDiagnosticsState.errorMessage ? (
+        <Alert variant="error" title="Diagnostics error">
+          {effectiveDiagnosticsState.errorMessage}
+        </Alert>
+      ) : null}
+
+      {!effectiveDiagnosticsState.loading && (props.datasetMode === "own" || props.datasetMode === "competitor") ? (
+        <HomeNegativeStreamsSection negativeDailyStreams={effectiveDiagnosticsState.negativeDailyStreams} />
+      ) : null}
+
+      {!effectiveDiagnosticsState.loading &&
+      (props.datasetMode === "own" || props.datasetMode === "competitor") &&
       homeSpikesSectionConfigured &&
       homeSpikesSectionEnabled ? (
-        <HomeArtificialStreamsSection
-          artificialStreamSpikes={props.artificialStreamSpikes}
-          artificialStreamSpikeRatio={props.artificialStreamSpikeRatio}
-          artificialMinBaseline={props.artificialMinBaseline}
-          artificialIncludeWeekends={props.artificialIncludeWeekends}
-          artificialSpikeDateStart={props.artificialSpikeDateStart}
-          artificialSpikeDateEnd={props.artificialSpikeDateEnd}
-          datasetMode={props.datasetMode}
-        />
-      ) : null}
+          <HomeArtificialStreamsSection
+            artificialStreamSpikes={effectiveDiagnosticsState.artificialStreamSpikes}
+            artificialStreamSpikeRatio={props.artificialStreamSpikeRatio}
+            artificialMinBaseline={props.artificialMinBaseline}
+            artificialIncludeWeekends={props.artificialIncludeWeekends}
+            artificialSpikeDateStart={props.artificialSpikeDateStart}
+            artificialSpikeDateEnd={props.artificialSpikeDateEnd}
+            datasetMode={props.datasetMode}
+          />
+        ) : null}
 
-      {(props.datasetMode === "own" || (props.datasetMode === "competitor" && hasTrendHistory)) ? (
-        <HomeWeekendDipsSection
-          artistWeekendDips={props.artistWeekendDips}
-          trackWeekendDips={props.trackWeekendDips}
-          hasEnoughHistory={hasTrendHistory}
-        />
-      ) : null}
+      {!effectiveDiagnosticsState.loading &&
+      (props.datasetMode === "own" || (props.datasetMode === "competitor" && hasTrendHistory)) ? (
+          <HomeWeekendDipsSection
+            artistWeekendDips={effectiveDiagnosticsState.artistWeekendDips}
+            trackWeekendDips={effectiveDiagnosticsState.trackWeekendDips}
+            hasEnoughHistory={hasTrendHistory}
+          />
+        ) : null}
 
       <HomeHistorySection history={props.history.slice(0, props.rangeDays)} />
 
@@ -595,6 +730,8 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
         <HomeFilterBuilderSection
           trackScatterPoints={effectiveScatterState.points}
           trackScatterDataDate={effectiveScatterState.dataDate}
+          trackScatterLoading={effectiveScatterState.loading}
+          onRequestScatterData={requestScatterData}
           datasetMode={props.datasetMode}
         />
       ) : null}

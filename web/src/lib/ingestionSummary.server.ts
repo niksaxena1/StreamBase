@@ -1,4 +1,5 @@
 import { normalizeDatasetMode } from "@/lib/datasetMode";
+import type { DatasetMode } from "@/lib/datasetMode";
 import { supabaseService } from "@/lib/supabase/service";
 
 export type IngestionSummary = {
@@ -6,14 +7,19 @@ export type IngestionSummary = {
   criticalWarnings: number;
 };
 
-export async function loadIngestionSummaryForUser(userId: string): Promise<IngestionSummary> {
+export async function loadIngestionSummaryForUser(
+  userId: string,
+  datasetModeOverride?: DatasetMode,
+): Promise<IngestionSummary> {
   const svc = supabaseService();
-  const { data: settings } = await svc
-    .from("user_settings")
-    .select("dataset_mode")
-    .eq("user_id", userId)
-    .maybeSingle();
-  const datasetMode = normalizeDatasetMode(settings?.dataset_mode);
+  const datasetMode = datasetModeOverride ?? (await (async () => {
+    const { data: settings } = await svc
+      .from("user_settings")
+      .select("dataset_mode")
+      .eq("user_id", userId)
+      .maybeSingle();
+    return normalizeDatasetMode(settings?.dataset_mode);
+  })());
 
   if (datasetMode === "competitor") {
     const comp = svc.schema("competitor");

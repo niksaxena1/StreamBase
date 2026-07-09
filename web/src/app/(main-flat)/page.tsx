@@ -2,9 +2,9 @@ import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 
 import { loadHomeDashboardData } from "@/lib/home/loadHomeDashboard";
-import { supabaseServer } from "@/lib/supabase/server";
-import { supabaseService } from "@/lib/supabase/service";
-import { isPlaylistWatchOnlyAccess, normalizeAppAccess } from "@/lib/appAccess";
+import { isPlaylistWatchOnlyAccess } from "@/lib/appAccess";
+import { getRequestAppContext } from "@/lib/requestAppContext.server";
+import { timedServerStep } from "@/lib/serverTiming";
 import { HomeDashboardClient } from "./HomeDashboardClient";
 
 // Uses Supabase session cookies; this route must be dynamic in Next 16.
@@ -26,36 +26,48 @@ export default async function Home({
     end?: string;
   }>;
 }) {
+  return timedServerStep("page.home", () => HomeContent({ searchParams }));
+}
+
+async function HomeContent({
+  searchParams,
+}: {
+  searchParams?: Promise<{
+    scope?: string;
+    range?: string;
+    daily?: string;
+    xy_date?: string;
+    start?: string;
+    end?: string;
+  }>;
+}) {
   const sp = (await searchParams) ?? {};
 
-  const sb = await supabaseServer();
-  const {
-    data: { user },
-  } = await sb.auth.getUser();
+  const { sb, svc, user, isAdmin, appAccess } = await timedServerStep(
+    "page.home.context",
+    () => getRequestAppContext(),
+  );
 
   if (!user) redirect("/login");
 
-  const svc = supabaseService();
-  const { data: isAdmin } = await sb.rpc("is_admin");
-  const { data: accessRow } = await svc
-    .from("app_user_access")
-    .select("own_catalog,competitor,playlist_watch,playlist_watch_admin")
-    .eq("user_id", user.id)
-    .maybeSingle();
-  const appAccess = normalizeAppAccess(accessRow, Boolean(isAdmin));
   if (isPlaylistWatchOnlyAccess(appAccess)) redirect("/playlist-watch");
 
   if (!isAdmin && !appAccess.ownCatalog && !appAccess.competitor) {
     redirect("/login");
   }
 
-  const props = await loadHomeDashboardData({
-    sb,
-    svc,
-    userId: user.id,
-    sp,
-    includeScatter: false,
-  });
+  const props = await timedServerStep(
+    "page.home.dashboard",
+    () =>
+      loadHomeDashboardData({
+        sb,
+        svc,
+        userId: user.id,
+        sp,
+        includeScatter: false,
+        includeDiagnostics: false,
+      }),
+  );
 
   return <HomeDashboardClient {...props} />;
 }

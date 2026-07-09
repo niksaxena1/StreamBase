@@ -831,7 +831,7 @@ Key RPC sets:
   - `migrations/add_health_distro_overlap_rpc.sql` (`health_distro_overlap_tracks`)
   - `migrations/add_health_unplayable_candidates_rpc.sql` (`health_unplayable_candidates`)
 - Search hover stats: `migrations/add_search_stats_aggregate_rpcs.sql`
-- Stream override cascade: `spotibase_recompute_playlist_daily_stats_cascade`, `spotibase_remove_stream_override` (in `migrations/fix_data_integrity_constraints.sql`)
+- Stream override cascade: `spotibase_recompute_playlist_daily_stats_cascade`, `spotibase_remove_stream_override`; manual overrides feed `track_daily_streams_effective_public`, `playlist_daily_stats`, and `artist_daily_stats` (see `migrations/fix_data_integrity_constraints.sql` and `migrations/adopt_effective_artist_daily_stats.sql`)
 - Playlists batch counts: `playlists_latest_track_counts`
 - Artist collaboration graph: `migrations/add_artist_collaboration_graph_rpc.sql` (`artist_collaboration_graph`)
 - System stats (Docs): `migrations/add_spotibase_system_stats_rpc.sql`

@@ -1,12 +1,10 @@
 import { redirect } from "next/navigation";
 
 import { CACHE_TTL_1H } from "@/lib/constants";
-import { normalizeDatasetMode } from "@/lib/datasetMode";
+import { getRequestAppContext } from "@/lib/requestAppContext.server";
 import { addDaysISO, dataDateFromRunDate, SOT_DATA_LAG_DAYS } from "@/lib/sotDates";
 import type { PlaylistMeta } from "@/lib/health/types";
 import { cachedQuery } from "@/lib/supabase/cache";
-import { supabaseServer } from "@/lib/supabase/server";
-import { supabaseService } from "@/lib/supabase/service";
 
 export type HealthShellData = {
   mode: "own" | "competitor";
@@ -26,21 +24,11 @@ export type HealthShellData = {
 export async function loadHealthPageShell(args: {
   dateFilter?: string | null;
 }): Promise<HealthShellData> {
-  const sb = await supabaseServer();
-  const { data: userData } = await sb.auth.getUser();
-  if (!userData.user) redirect("/login");
-  const { data: isAdmin } = await sb.rpc("is_admin");
+  const { svc, user, isAdmin, shellContext } = await getRequestAppContext();
+  if (!user) redirect("/login");
   if (!isAdmin) redirect("/");
 
-  const svc = supabaseService();
-
-  const { data: settings } = await svc
-    .from("user_settings")
-    .select("dataset_mode")
-    .eq("user_id", userData.user.id)
-    .maybeSingle();
-
-  const mode = normalizeDatasetMode(settings?.dataset_mode) === "competitor" ? "competitor" : "own";
+  const mode = shellContext.datasetMode === "competitor" ? "competitor" : "own";
 
   if (mode === "competitor") {
     return {

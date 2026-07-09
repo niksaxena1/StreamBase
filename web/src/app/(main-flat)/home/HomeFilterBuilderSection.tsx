@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { type TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChart";
 import { FilterBuilder, type TrackDataPoint, type PlaylistDataPoint, type DateDataPoint } from "@/components/filters";
@@ -15,12 +15,17 @@ const TRACK_ARTIST_STATUS_OPTIONS = [
 export function HomeFilterBuilderSection({
   trackScatterPoints,
   trackScatterDataDate,
+  trackScatterLoading = false,
+  onRequestScatterData,
   datasetMode = "own",
 }: {
   trackScatterPoints: TrackStreamsXYPoint[];
   trackScatterDataDate: string | null;
+  trackScatterLoading?: boolean;
+  onRequestScatterData?: () => void;
   datasetMode?: "own" | "competitor";
 }) {
+  const [filterDataRequested, setFilterDataRequested] = useState(false);
   const [playlistOptions, setPlaylistOptions] = useState<
     Array<{ value: string; label: string; imageUrl?: string | null; isAllCatalog?: boolean }>
   >([]);
@@ -34,7 +39,17 @@ export function HomeFilterBuilderSection({
     Array<{ value: string; label: string; imageUrl?: string | null }>
   >([]);
 
+  const handleFilterOpenChange = useCallback(
+    (open: boolean) => {
+      if (!open) return;
+      setFilterDataRequested(true);
+      onRequestScatterData?.();
+    },
+    [onRequestScatterData],
+  );
+
   useEffect(() => {
+    if (!filterDataRequested) return;
     let cancelled = false;
     async function load() {
       if (datasetMode === "competitor") {
@@ -64,9 +79,10 @@ export function HomeFilterBuilderSection({
     }
     void load();
     return () => { cancelled = true; };
-  }, [datasetMode]);
+  }, [datasetMode, filterDataRequested]);
 
   useEffect(() => {
+    if (!filterDataRequested) return;
     let cancelled = false;
     async function load() {
       if (datasetMode !== "competitor") {
@@ -94,9 +110,10 @@ export function HomeFilterBuilderSection({
     return () => {
       cancelled = true;
     };
-  }, [datasetMode]);
+  }, [datasetMode, filterDataRequested]);
 
   useEffect(() => {
+    if (!filterDataRequested) return;
     let cancelled = false;
     async function load() {
       if (datasetMode === "competitor") {
@@ -130,9 +147,10 @@ export function HomeFilterBuilderSection({
     }
     void load();
     return () => { cancelled = true; };
-  }, [datasetMode]);
+  }, [datasetMode, filterDataRequested]);
 
   useEffect(() => {
+    if (!filterDataRequested) return;
     let cancelled = false;
     async function load() {
       if (datasetMode === "competitor") {
@@ -205,9 +223,10 @@ export function HomeFilterBuilderSection({
     }
     void load();
     return () => { cancelled = true; };
-  }, [dateScopePlaylistKey, datasetMode]);
+  }, [dateScopePlaylistKey, datasetMode, filterDataRequested]);
 
   useEffect(() => {
+    if (!filterDataRequested) return;
     let cancelled = false;
     async function load() {
       if (datasetMode === "competitor") {
@@ -234,9 +253,10 @@ export function HomeFilterBuilderSection({
     }
     void load();
     return () => { cancelled = true; };
-  }, [datasetMode]);
+  }, [datasetMode, filterDataRequested]);
 
   useEffect(() => {
+    if (!filterDataRequested) return;
     let cancelled = false;
     async function load() {
       if (datasetMode === "competitor") {
@@ -268,7 +288,7 @@ export function HomeFilterBuilderSection({
     }
     void load();
     return () => { cancelled = true; };
-  }, [datasetMode]);
+  }, [datasetMode, filterDataRequested]);
 
   // Transform trackScatterPoints to TrackDataPoint format for FilterBuilder
   const trackData: TrackDataPoint[] = useMemo(() => {
@@ -359,6 +379,8 @@ export function HomeFilterBuilderSection({
       playlistOptions={playlistOptions}
       competitorOptions={competitorOptions}
       asOfRunDate={asOfRunDate}
+      trackDataLoading={trackScatterLoading}
+      onOpenChange={handleFilterOpenChange}
       datasetMode={datasetMode}
     />
   );

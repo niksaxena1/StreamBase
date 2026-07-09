@@ -1,16 +1,15 @@
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import Link from "next/link";
 import type { Metadata } from "next";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { Suspense } from "react";
 import { List, ExternalLink, Music } from "lucide-react";
 import { redirect } from "next/navigation";
 
-import { supabaseServer } from "@/lib/supabase/server";
 import { cachedQuery } from "@/lib/supabase/cache";
 import { formatDateISO } from "@/lib/format";
 import { PlaylistDashboardControls } from "@/components/dashboard/PlaylistDashboardControls";
 import { RememberParamRedirect } from "@/components/dashboard/RememberParamRedirect";
-import { supabaseService } from "@/lib/supabase/service";
 import { PlaylistPageClient } from "./PlaylistPageClient";
 import { dataDateFromRunDate } from "@/lib/sotDates";
 import { getRollbackDate, rollbackDataDateToRunDate } from "@/lib/rollback";
@@ -27,6 +26,8 @@ import { ALL_COMPETITORS_KEY, resolveCompetitorLabelKey } from "@/lib/competitor
 import { CompetitorCurrentTracksTable, type CompetitorCurrentTrackRow } from "./CompetitorCurrentTracksTable";
 import { PrefetchPlaylistsConfig } from "./PrefetchPlaylistsConfig";
 import { isMissingPostgresFunctionError } from "@/lib/supabase/rpcErrors";
+import { getRequestAppContext } from "@/lib/requestAppContext.server";
+import { timedServerStep } from "@/lib/serverTiming";
 
 // Uses Supabase session cookies; this route must be dynamic in Next 16.
 export const dynamic = "force-dynamic";
@@ -106,7 +107,7 @@ function isMembershipActiveAtDate(m: PlaylistMembershipRow, runDate: string) {
 }
 
 async function fetchPlaylistDashboardSummary(
-  svc: ReturnType<typeof supabaseService>,
+  svc: SupabaseClient,
   args: { playlistKey: string; asOfDate: string | null },
 ): Promise<PlaylistDashboardSummaryRow | null> {
   const { data, error } = await svc.rpc("playlist_dashboard_summary", {
@@ -122,7 +123,13 @@ async function fetchPlaylistDashboardSummary(
 }
 
 
-export default async function PlaylistsPage({
+export default async function PlaylistsPage(props: {
+  searchParams?: Promise<{ playlist_key?: string; range?: string; view?: string; start?: string; end?: string }>;
+}) {
+  return timedServerStep("page.playlists", () => PlaylistsPageContent(props));
+}
+
+async function PlaylistsPageContent({
   searchParams,
 }: {
   searchParams?: Promise<{ playlist_key?: string; range?: string; view?: string; start?: string; end?: string }>;
@@ -136,23 +143,15 @@ export default async function PlaylistsPage({
     const calculatedDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
     rangeDays = Math.max(1, Math.min(365, calculatedDays));
   }
-  const sb = await supabaseServer();
-  const { data: userData } = await sb.auth.getUser();
-  if (!userData.user) redirect("/login");
+  const { sb, svc, user, isAdmin, settings: datasetSettings } = await getRequestAppContext();
+  if (!user) redirect("/login");
 
-  const { data: isAdmin } = await sb.rpc("is_admin");
   if (!isAdmin) redirect("/");
 
   // IMPORTANT: Core analytics tables are admin-only via RLS. Using a request-scoped
   // Supabase client inside Next's cache revalidation can drop cookies, causing
   // revalidation to fail and stale cached data to persist. Use the service role
   // client for cached reads; access is still gated above.
-  const svc = supabaseService();
-  const { data: datasetSettings } = await svc
-    .from("user_settings")
-    .select("dataset_mode,competitor_label_key")
-    .eq("user_id", userData.user.id)
-    .maybeSingle();
   const datasetMode = normalizeDatasetMode(datasetSettings?.dataset_mode);
 
   if (datasetMode === "competitor") {
@@ -345,7 +344,7 @@ export default async function PlaylistsPage({
     const { data: uSettings } = await sb
       .from("user_settings")
       .select("hide_stale_override_annotations")
-      .eq("user_id", userData.user.id)
+      .eq("user_id", user.id)
       .maybeSingle();
     hideStaleAnnotations = Boolean((uSettings as Record<string, unknown> | null)?.hide_stale_override_annotations);
   } catch {
