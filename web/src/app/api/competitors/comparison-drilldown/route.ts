@@ -41,7 +41,8 @@ export async function POST(req: NextRequest) {
       .eq("label_key", labelKey)
       .eq("is_active", true)
       .order("display_order", { ascending: true, nullsFirst: false })
-      .order("display_name", { ascending: true });
+      .order("display_name", { ascending: true })
+      .limit(1000);
 
     if (error) return apiJsonErr(error.message, 500);
 

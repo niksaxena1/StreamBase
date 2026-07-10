@@ -720,7 +720,7 @@ export function CollectorComparisonChart({
             let activeDotFn: any;
 
             if (isPercentageDaily) {
-              const makeAnomalyDot = (baseR: number) => (props: any) => {
+              const makeAnomalyDot = (baseR: number) => function AnomalyDot(props: any) {
                 const { cx, cy, payload: pl } = props ?? {};
                 const x = Number(cx);
                 const y = Number(cy);

@@ -162,6 +162,13 @@ body {
   line-height: 1.35;
 }
 
+/* Skip paint/layout work for below-the-fold analytical sections while keeping
+   a stable placeholder size to avoid scroll jumps. Never apply to the first/LCP chart. */
+.sb-deferred-section {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 360px;
+}
+
 .sb-revenue-decimal-part {
   color: color-mix(in srgb, currentColor 45%, var(--sb-muted) 55%);
   fill: currentColor;

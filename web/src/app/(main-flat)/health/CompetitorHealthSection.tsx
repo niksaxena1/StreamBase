@@ -42,8 +42,9 @@ export async function CompetitorHealthSection({
       ? warnSeverityParam
       : "all";
 
-  try {
-    const data = await loadCompetitorHealthPage({
+  const result = await (async () => {
+    try {
+      const data = await loadCompetitorHealthPage({
       dataDateParam: getFirst("date") ?? null,
       labelParam: getFirst("label") ?? null,
       kpiFilter: parseKpiFilter(getFirst("filter")),
@@ -51,14 +52,20 @@ export async function CompetitorHealthSection({
       warningSeverity,
       unenrichedPage: Math.max(1, parseInt(getFirst("enrich_page") ?? "1", 10) || 1),
       userId: user.id,
-    });
+      });
+      return { data, error: null } as const;
+    } catch (error) {
+      return { data: null, error } as const;
+    }
+  })();
 
-    return <CompetitorHealthClient data={data} />;
-  } catch (error) {
+  if (!result.data) {
     return (
       <Alert variant="error" title="Query error">
-        {error instanceof Error ? error.message : "Failed to load competitor health"}
+        {result.error instanceof Error ? result.error.message : "Failed to load competitor health"}
       </Alert>
     );
   }
+
+  return <CompetitorHealthClient data={result.data} />;
 }

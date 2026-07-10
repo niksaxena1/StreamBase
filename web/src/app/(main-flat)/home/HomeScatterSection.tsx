@@ -17,6 +17,7 @@ import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButt
 import { todayIsoDate } from "@/lib/csv";
 import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
 import { HOME_DETAILS_STORAGE } from "./homeUtils";
+import { useStoredBoolState } from "@/lib/useStoredBoolState";
 
 export function HomeScatterSection(props: {
   trackScatterPoints: TrackStreamsXYPoint[];
@@ -35,7 +36,7 @@ export function HomeScatterSection(props: {
     isRevenue: metric === "revenue",
   });
 
-  const [openScatter, setOpenScatter] = useState(false);
+  const [openScatter, setOpenScatter] = useStoredBoolState(HOME_DETAILS_STORAGE.scatterOpen);
   const [scatterQuery, setScatterQuery] = useState("");
   // Debounce the search query: only commit to expensive filtering after 150ms pause.
   const [debouncedScatterQuery, setDebouncedScatterQuery] = useState("");
@@ -59,19 +60,7 @@ export function HomeScatterSection(props: {
   const [scatterView, setScatterView] = useState<"tracks" | "artists">("tracks");
   const [scatterArtistImagesById, setScatterArtistImagesById] = useState<Map<string, string | null> | null>(null);
 
-  // Restore persisted open state
-  useEffect(() => {
-    const restored = readStoredBool(HOME_DETAILS_STORAGE.scatterOpen, false);
-    if (restored) {
-      setOpenScatter(true);
-      onRequestScatterData?.();
-    }
-  }, [onRequestScatterData]);
-
-  // Persist open state
-  useEffect(() => {
-    writeStoredBool(HOME_DETAILS_STORAGE.scatterOpen, openScatter);
-  }, [openScatter]);
+  useEffect(() => { if (openScatter) onRequestScatterData?.(); }, [onRequestScatterData, openScatter]);
 
   useEffect(() => {
     writeStoredBool(HOME_DETAILS_STORAGE.scatterReleaseCohorts, scatterReleaseCohorts);

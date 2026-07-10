@@ -40,7 +40,8 @@ export async function GET(req: NextRequest) {
 
   const { data: playlistsRaw, error: playlistsErr } = await comp
     .from("playlists")
-    .select("playlist_key,label_key,display_name,spotify_playlist_image_url,sot_dashboard_url,display_order,is_active");
+    .select("playlist_key,label_key,display_name,spotify_playlist_image_url,sot_dashboard_url,display_order,is_active")
+    .limit(1000);
 
   if (playlistsErr) return apiJsonErr(playlistsErr.message, 500);
 

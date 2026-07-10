@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/GlassTable";
 import { formatInt, formatUsd } from "@/lib/format";
-import { readStoredBool, writeStoredBool } from "@/lib/storage";
+import { useStoredBoolState } from "@/lib/useStoredBoolState";
 import { useMetric } from "@/components/metrics/MetricContext";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
@@ -21,17 +21,9 @@ export function HomeNegativeStreamsSection(props: {
 }) {
   const { metric } = useMetric();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useStoredBoolState(STORAGE_KEY_OPEN);
   const [sortKey, setSortKey] = useState<SortKey>("date");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
-
-  useEffect(() => {
-    setOpen(readStoredBool(STORAGE_KEY_OPEN, false));
-  }, []);
-
-  useEffect(() => {
-    writeStoredBool(STORAGE_KEY_OPEN, open);
-  }, [open]);
 
   const data = props.negativeDailyStreams ?? [];
 

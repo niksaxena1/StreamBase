@@ -34,12 +34,14 @@ describe("aggregateCompetitorPlaylistHistory", () => {
         track_count: 30,
         total_streams_cumulative: 400,
         daily_streams_net: 12,
+        missing_streams_track_count: 0,
       },
       {
         date: "2026-05-16",
         track_count: 9,
         total_streams_cumulative: 95,
         daily_streams_net: 4,
+        missing_streams_track_count: 0,
       },
     ]);
   });

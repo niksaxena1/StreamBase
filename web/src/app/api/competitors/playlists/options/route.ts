@@ -21,7 +21,8 @@ export async function GET(req: NextRequest) {
     .select("playlist_key,display_name,spotify_playlist_image_url,label_key")
     .eq("is_active", true)
     .order("display_order", { ascending: true, nullsFirst: false })
-    .order("display_name", { ascending: true });
+    .order("display_name", { ascending: true })
+    .limit(1000);
 
   if (labelKey && labelKey !== ALL_COMPETITORS_KEY) {
     query = query.eq("label_key", labelKey);

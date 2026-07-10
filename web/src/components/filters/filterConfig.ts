@@ -479,6 +479,13 @@ const ARTIST_FIELDS: FilterFieldDefinition[] = [
 
 const PLAYLIST_FIELDS: FilterFieldDefinition[] = [
   {
+    key: "is_catalog",
+    label: "Catalog Playlist",
+    type: "boolean",
+    operators: ["eq"],
+    description: "Whether this playlist represents the full catalog",
+  },
+  {
     key: "track_count",
     label: "Track Count",
     type: "number",

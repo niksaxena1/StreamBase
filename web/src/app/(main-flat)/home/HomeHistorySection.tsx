@@ -1,13 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
 
 import { useMetric } from "@/components/metrics/MetricContext";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { GlassTable, TableRow, TableCell, EmptyState } from "@/components/ui/GlassTable";
 import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
 import { dataDateFromRunDate } from "@/lib/sotDates";
-import { readStoredBool, writeStoredBool } from "@/lib/storage";
+import { useStoredBoolState } from "@/lib/useStoredBoolState";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
 import { todayIsoDate } from "@/lib/csv";
 import { HOME_DETAILS_STORAGE } from "./homeUtils";
@@ -19,18 +18,7 @@ export function HomeHistorySection(props: {
   const { metric } = useMetric();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
 
-  const [openHistory, setOpenHistory] = useState(false);
-
-  // Restore persisted open state
-  useEffect(() => {
-    const restored = readStoredBool(HOME_DETAILS_STORAGE.historyOpen, false);
-    if (restored) setOpenHistory(true);
-  }, []);
-
-  // Persist open state
-  useEffect(() => {
-    writeStoredBool(HOME_DETAILS_STORAGE.historyOpen, openHistory);
-  }, [openHistory]);
+  const [openHistory, setOpenHistory] = useStoredBoolState(HOME_DETAILS_STORAGE.historyOpen);
 
   return (
     <details

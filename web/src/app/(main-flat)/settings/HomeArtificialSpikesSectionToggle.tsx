@@ -18,8 +18,6 @@ export function HomeArtificialSpikesSectionToggle() {
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    setLoading(true);
-    setError(null);
     void fetchApiJson<Payload>("/api/user-settings/home-artificial-spikes-section")
       .then((data) => {
         setEnabled(data.home_artificial_spikes_section_enabled ?? true);

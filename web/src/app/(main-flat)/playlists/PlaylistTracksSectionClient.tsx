@@ -14,6 +14,7 @@ import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { downloadCsv, slugifyForFilename, todayIsoDate } from "@/lib/csv";
 import { readStoredBool, writeStoredBool } from "@/lib/storage";
 import { useLongPress } from "@/components/charts/useLongPress";
+import { SilentSortHeader } from "@/components/ui/SilentSortHeader";
 
 const PLAYLIST_TRACKS_STORAGE = {
   artistsOpen: "sb:playlists:details:artists_open",
@@ -177,23 +178,6 @@ export function PlaylistTracksSectionClient(props: {
       return;
     }
     setter({ key, asc: !current.asc });
-  }
-
-  function SilentSortHeader(props: { label: React.ReactNode; onClick: () => void; align?: "left" | "right" }) {
-    return (
-      <button
-        type="button"
-        onClick={props.onClick}
-        className={[
-          "w-full select-none cursor-default uppercase",
-          props.align === "right" ? "text-right" : "text-left",
-        ].join(" ")}
-        // Intentionally no hover/active styles: hidden power-user feature.
-        style={{ color: "inherit" }}
-      >
-        {typeof props.label === "string" ? props.label.toUpperCase() : props.label}
-      </button>
-    );
   }
 
   function cmpString(a: string, b: string) {
@@ -823,7 +807,7 @@ export function PlaylistTracksSectionClient(props: {
             <div className="flex items-center gap-2">
               {artistsOpen ? (
                 <div className="text-xs" style={{ color: "var(--sb-muted)" }}>
-                  From "Tracks currently in playlist" table
+                  From &ldquo;Tracks currently in playlist&rdquo; table
                 </div>
               ) : null}
             </div>
@@ -941,4 +925,3 @@ export function PlaylistTracksSectionClient(props: {
     </div>
   );
 }
-

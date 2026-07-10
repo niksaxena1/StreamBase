@@ -2,9 +2,11 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   experimental: {
-    // Help Next.js treat most data as effectively static for a day.
+    // User-specific dataset/access/settings routes must never remain in the
+    // client router cache after a mutation. Daily analytics are cached at the
+    // query layer with explicit dataset/snapshot keys instead.
     staleTimes: {
-      dynamic: 86400,
+      dynamic: 0,
       static: 86400,
     },
     // Tree-shake large icon and chart libraries so only used exports are bundled.

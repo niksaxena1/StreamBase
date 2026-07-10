@@ -93,10 +93,10 @@ export function CompetitorsOverlapMatrix(props: {
     const own = props.activeLabels.find((l) => isOwnCatalogLabelKey(l.label_key));
     return own ? [...competitors, own] : competitors;
   }, [props.activeLabels]);
-  const labelNameByKey = useRef(
-    new Map(activeLabels.map((l) => [l.label_key, l.display_name] as const)),
+  const labelNameByKey = useMemo(
+    () => new Map(activeLabels.map((l) => [l.label_key, l.display_name] as const)),
+    [activeLabels],
   );
-  labelNameByKey.current = new Map(activeLabels.map((l) => [l.label_key, l.display_name] as const));
 
   const [basis, setBasis] = useState<OverlapBasis>("artists");
   const [valueMode, setValueMode] = useState<OverlapValueMode>("count");
@@ -129,8 +129,8 @@ export function CompetitorsOverlapMatrix(props: {
     (labelA: string, labelB: string, sharedCount: number) => {
       if (sharedCount <= 0) return;
 
-      const labelAName = labelNameByKey.current.get(labelA) ?? labelA;
-      const labelBName = labelNameByKey.current.get(labelB) ?? labelB;
+      const labelAName = labelNameByKey.get(labelA) ?? labelA;
+      const labelBName = labelNameByKey.get(labelB) ?? labelB;
 
       setModal({ labelA, labelB, labelAName, labelBName, sharedCount });
       setTracks([]);
@@ -182,7 +182,7 @@ export function CompetitorsOverlapMatrix(props: {
           setLoading(false);
         });
     },
-    [basis, latestRunDate],
+    [basis, labelNameByKey, latestRunDate],
   );
 
   const entityLabel = basis === "tracks" ? "track" : "artist";

@@ -38,6 +38,7 @@ import { useSharedGranularity } from "@/lib/useSharedGranularity";
 import { useLongPress } from "@/components/charts/useLongPress";
 import type { TrackSeriesPoint, TrackDailyPoint, SelectedTrack, TrackPlaylistMembership, TopTrack, ChartDataPoint, DailyDataPoint, ArtistOption, TrackOption } from "./catalogTypes";
 import { sortTopTracks, toggleSort, type SortState, type TopSortKey } from "./catalogUtils";
+import { FreshnessLabel } from "@/components/ui/DataStates";
 
 // Defined at module level so its identity is stable across renders.
 // Putting it inside the component would create a new type on every render,
@@ -320,12 +321,7 @@ export function CatalogPageClient(props: {
         title="Catalog"
         subtitle={
           props.latestDate ? (
-            <>
-              Latest data date:{" "}
-              <span className="font-mono">
-                {formatDateISO(dataDateFromRunDate(props.latestDate))}
-              </span>
-            </>
+            <FreshnessLabel date={formatDateISO(dataDateFromRunDate(props.latestDate))} />
           ) : (
             "No ingestion date found yet."
           )

@@ -18,7 +18,6 @@ export function SAISettingsToggle() {
 
   // Fetch current setting
   useEffect(() => {
-    setLoading(true);
     void fetchApiJson<SaiSettingPayload>("/api/user-settings/sai")
       .then((data) => {
         setSaiEnabled(data.sai_enabled ?? true);

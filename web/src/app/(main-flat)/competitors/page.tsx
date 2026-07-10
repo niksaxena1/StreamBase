@@ -6,6 +6,7 @@ import { supabaseServer } from "@/lib/supabase/server";
 import { loadCompetitorsPageCore } from "@/lib/competitors/loadCompetitorsPage";
 import { PageHeader } from "@/components/shell/PageHeader";
 import { formatDateISO } from "@/lib/format";
+import { FreshnessLabel, SectionEmptyState } from "@/components/ui/DataStates";
 
 import { CompetitorsClient } from "./CompetitorsClient";
 import { CompetitorsIntelSections } from "./CompetitorsIntelSections";
@@ -28,11 +29,7 @@ export default async function CompetitorsPage() {
 
   let subtitle: ReactNode = "No competitor data found yet.";
   if (loaded.status === "ok") {
-    subtitle = (
-      <>
-        Latest data date: <span className="font-mono">{formatDateISO(loaded.data.latestDataDate)}</span>
-      </>
-    );
+    subtitle = <FreshnessLabel date={formatDateISO(loaded.data.latestDataDate)} />;
   }
 
   const core = loaded.status === "ok" ? loaded.data : null;
@@ -60,7 +57,7 @@ export default async function CompetitorsPage() {
             selectedCompetitorLabelKey={core.selectedCompetitorLabelKey}
           />
         </>
-      ) : null}
+      ) : <SectionEmptyState title="No competitor snapshots yet" description="Run competitor ingestion to populate label and playlist analytics." />}
     </div>
   );
 }

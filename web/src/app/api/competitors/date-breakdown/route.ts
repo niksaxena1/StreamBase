@@ -115,7 +115,24 @@ export async function POST(req: NextRequest) {
         p_limit: 500,
         p_direction: "gainers",
       }),
-      comp.from("playlist_memberships").select("isrc,playlist_key,valid_from,valid_to").in("playlist_key", playlistKeys),
+      (async () => {
+        const rows: Array<Record<string, unknown>> = [];
+        const pageSize = 1000;
+        for (let from = 0; ; from += pageSize) {
+          const page = await comp
+            .from("playlist_memberships")
+            .select("isrc,playlist_key,valid_from,valid_to")
+            .in("playlist_key", playlistKeys)
+            .order("playlist_key", { ascending: true })
+            .order("isrc", { ascending: true })
+            .order("valid_from", { ascending: true })
+            .range(from, from + pageSize - 1);
+          if (page.error) return { data: null, error: page.error };
+          const batch = (page.data ?? []) as Array<Record<string, unknown>>;
+          rows.push(...batch);
+          if (batch.length < pageSize) return { data: rows, error: null };
+        }
+      })(),
     ]);
 
   let statsError = seriesError;

@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+# Playwright authentication state contains short-lived credentials.
+e2e/.auth/
+test-results/
+playwright-report/

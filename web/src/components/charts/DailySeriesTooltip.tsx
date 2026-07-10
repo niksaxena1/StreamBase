@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useRef } from "react";
 
 import { extractOverrideItemsFromRechartsPayload, extractWeekendDipFromRechartsPayload, formatTooltipDateSmart } from "@/components/charts/chartUtils";
 import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
@@ -105,7 +105,7 @@ export function DailySeriesTooltip({
   const weekendDipPct = extractWeekendDipFromRechartsPayload(safePayload);
   const followerMetrics = followerMetricsFromPayload(sorted[0]?.payload as Record<string, unknown> | undefined);
 
-  const copyValues = useMemo((): TooltipCopyValues | null => {
+  const copyValues: TooltipCopyValues | null = (() => {
     if (!mainValueFormatted && !followerMetrics) return null;
     if (followerMetrics) {
       if (isCumulative) {
@@ -128,7 +128,7 @@ export function DailySeriesTooltip({
       main: mainValueFormatted ?? "",
       ma7: ma7ValueFormatted,
     };
-  }, [followerMetrics, isCumulative, label, mainValueFormatted, ma7ValueFormatted]);
+  })();
 
   useEffect(() => {
     if (!active) return;

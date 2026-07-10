@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, Loader2, Swords } from "lucide-react";
@@ -71,7 +70,6 @@ export function CompetitorModeButton({
   labels: Label[];
   activeLabelKey: string | null;
 }) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [ownHover, setOwnHover] = useState(false);
@@ -224,10 +222,10 @@ export function CompetitorModeButton({
         );
         if (cleanUrl && cleanUrl !== window.location.pathname + window.location.search) {
           // router.replace re-runs server components for the new URL.
-          router.replace(cleanUrl);
+          window.location.assign(cleanUrl);
         } else {
           // Same URL — just re-fetch the RSC payload (no full document reload).
-          router.refresh();
+          window.location.assign(window.location.pathname + window.location.search);
         }
         // The success-path cleanup (clearing saving + finishing the loading bar) runs
         // automatically in the useEffect on activeLabelKey/datasetMode prop change.

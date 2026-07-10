@@ -7,6 +7,7 @@ import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
 import { dataDateFromRunDate } from "@/lib/sotDates";
 import { readStoredBool, writeStoredBool } from "@/lib/storage";
+import { SilentSortHeader } from "@/components/ui/SilentSortHeader";
 
 const PLAYLIST_HISTORY_DETAILS_STORAGE = {
   history30Open: "sb:playlists:details:history30_open",
@@ -34,22 +35,6 @@ export function PlaylistHistory30dDetails(props: { rows: PlaylistHistoryRow[] })
       return;
     }
     setSort({ key, asc: !sort.asc });
-  }
-
-  function SilentSortHeader(props: { label: React.ReactNode; onClick: () => void; align?: "left" | "right" }) {
-    return (
-      <button
-        type="button"
-        onClick={props.onClick}
-        className={[
-          "w-full select-none cursor-default uppercase",
-          props.align === "right" ? "text-right" : "text-left",
-        ].join(" ")}
-        style={{ color: "inherit" }}
-      >
-        {typeof props.label === "string" ? props.label.toUpperCase() : props.label}
-      </button>
-    );
   }
 
   // Keep deltas meaningful: compute deltas based on date-desc order only.

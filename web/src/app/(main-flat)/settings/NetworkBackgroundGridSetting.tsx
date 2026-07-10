@@ -1,23 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { SAVED_FEEDBACK_MS } from "@/lib/constants";
 import { LS_NETWORK_SHOW_GRID } from "../network/networkGraphConstants";
+import { useStoredBoolState } from "@/lib/useStoredBoolState";
 
 export function NetworkBackgroundGridSetting() {
-  const [showGrid, setShowGrid] = useState(true);
-  const [hydrated, setHydrated] = useState(false);
+  const [showGrid, setShowGrid] = useStoredBoolState(LS_NETWORK_SHOW_GRID, true);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
-
-  useEffect(() => {
-    try {
-      setShowGrid(window.localStorage.getItem(LS_NETWORK_SHOW_GRID) !== "0");
-    } catch {
-      setShowGrid(true);
-    }
-    setHydrated(true);
-  }, []);
 
   function persist(next: boolean) {
     setError(null);
@@ -44,9 +35,7 @@ export function NetworkBackgroundGridSetting() {
         </div>
 
         <div className="flex items-center gap-3">
-          {!hydrated ? (
-            <div className="text-xs opacity-60">Loading…</div>
-          ) : error ? (
+          {error ? (
             <div className="text-xs text-red-600 dark:text-red-400">{error}</div>
           ) : saved ? (
             <div className="text-xs text-green-600 dark:text-green-400">Saved</div>
@@ -55,7 +44,6 @@ export function NetworkBackgroundGridSetting() {
           <button
             type="button"
             onClick={() => persist(!showGrid)}
-            disabled={!hydrated}
             className={[
               "sb-ring relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
               showGrid ? "bg-black dark:bg-white" : "bg-black/20 dark:bg-white/20",

@@ -15,7 +15,8 @@ export async function GET() {
     .from("playlists")
     .select("playlist_key,display_name,spotify_playlist_image_url")
     .order("display_order", { ascending: true, nullsFirst: false })
-    .order("display_name", { ascending: true });
+    .order("display_name", { ascending: true })
+    .limit(1000);
 
   if (error) {
     return apiJsonErr(error.message, 500);

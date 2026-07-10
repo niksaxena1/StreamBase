@@ -178,4 +178,3 @@ main().catch((e) => {
   console.error("[spotify-refresh] failed:", e);
   process.exit(1);
 });
-

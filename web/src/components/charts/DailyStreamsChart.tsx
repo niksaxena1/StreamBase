@@ -31,6 +31,7 @@ import { useChartAxisZoom } from "@/components/charts/ChartAxisZoomContext";
 import { useWeekendDip } from "@/components/charts/WeekendDipContext";
 import { DailySeriesTooltip } from "@/components/charts/DailySeriesTooltip";
 import { makeHighlightDayDotRenderers } from "@/components/charts/rechartsRenderers";
+import { SectionPerformance } from "@/components/performance/PerformanceMonitor";
 
 type DataPoint = {
   date: string;
@@ -212,6 +213,7 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
   };
 
   return (
+    <SectionPerformance name={`daily-series:${valueLabel}`}>
     <div
       className="w-full overflow-visible outline-none"
       {...(ghost ? {} : containerProps)}
@@ -377,5 +379,6 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
       </ResponsiveContainer>
       {ghost ? null : copyModal}
     </div>
+    </SectionPerformance>
   );
 });

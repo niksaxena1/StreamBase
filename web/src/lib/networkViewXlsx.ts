@@ -221,7 +221,7 @@ export async function downloadNetworkViewXlsx(args: {
   /** Per-artist stream totals from /api/admin/network-export-artist-stream-stats (optional). */
   artistStreamStatsById?: Map<string, NetworkArtistStreamExportRow>;
 }): Promise<void> {
-  const XLSX = await import("xlsx");
+  const { xlsxWriter: XLSX } = await import("@/lib/xlsxWriter");
 
   const nodeById = new Map(args.viewNodes.map((n) => [n.id, n]));
   const normEdges = args.viewEdges.map(normalizeExportEdge);

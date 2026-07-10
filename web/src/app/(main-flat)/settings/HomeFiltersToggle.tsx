@@ -17,8 +17,6 @@ export function HomeFiltersToggle() {
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    setLoading(true);
-    setError(null);
     void fetchApiJson<HomeFiltersPayload>("/api/user-settings/home-filters")
       .then((data) => {
         setEnabled(data.home_filters_enabled ?? true);
@@ -98,4 +96,3 @@ export function HomeFiltersToggle() {
     </div>
   );
 }
-

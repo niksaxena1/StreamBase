@@ -33,6 +33,25 @@ export function cacheTagForKey(key: string): string {
   return `${prefix}${slug.slice(0, Math.max(0, maxSlugLength))}${suffix}`;
 }
 
+export function scopedAnalyticsCacheKey(args: {
+  feature: string;
+  datasetMode: "own" | "competitor";
+  competitorLabelKey?: string | null;
+  snapshotDate?: string | null;
+  scope?: string | null;
+}): string {
+  if (args.datasetMode === "competitor" && !args.competitorLabelKey) {
+    throw new Error("Competitor cache keys require competitorLabelKey");
+  }
+  return [
+    args.feature,
+    `dataset:${args.datasetMode}`,
+    args.datasetMode === "competitor" ? `label:${args.competitorLabelKey}` : null,
+    args.snapshotDate ? `date:${args.snapshotDate}` : null,
+    args.scope ? `scope:${args.scope}` : null,
+  ].filter(Boolean).join("|");
+}
+
 /** Supabase query error type */
 export type SupabaseQueryError = { message: string; code?: string } | null;
 

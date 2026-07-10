@@ -1,6 +1,7 @@
 "use client";
 
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode } from "react";
+import { useStoredBoolState } from "@/lib/useStoredBoolState";
 
 /**
  * A collapsible section using native `<details>` with optional localStorage
@@ -22,29 +23,7 @@ export function CollapsibleSection({
   defaultOpen?: boolean;
   children: ReactNode;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
-
-  // Restore persisted state on mount
-  useEffect(() => {
-    if (!storageKey) return;
-    try {
-      const v = localStorage.getItem(storageKey);
-      if (v === "1" || v === "true") setOpen(true);
-      else if (v === "0" || v === "false") setOpen(false);
-    } catch {
-      // ignore
-    }
-  }, [storageKey]);
-
-  // Persist state changes
-  useEffect(() => {
-    if (!storageKey) return;
-    try {
-      localStorage.setItem(storageKey, open ? "1" : "0");
-    } catch {
-      // ignore
-    }
-  }, [storageKey, open]);
+  const [open, setOpen] = useStoredBoolState(storageKey ?? "sb:collapsible:ephemeral", defaultOpen);
 
   return (
     <details

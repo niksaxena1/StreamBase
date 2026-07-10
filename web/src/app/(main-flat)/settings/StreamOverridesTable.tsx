@@ -69,7 +69,7 @@ export function StreamOverridesTable({
   }, [tracks]);
 
   const filteredAndSorted = useMemo(() => {
-    let filtered = overrides.filter((o) => {
+    const filtered = overrides.filter((o) => {
       const track = isrcToTrack.get(o.isrc);
       const name = track?.name ?? "";
       const isrc = String(o.isrc ?? "").trim().toUpperCase();

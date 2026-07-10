@@ -18,6 +18,7 @@ import { isPlaylistWatchOnlyAccess, type AppAccess } from "@/lib/appAccess";
 import { CompetitorAccentStyle } from "@/components/shell/CompetitorAccentStyle";
 import { BrandLink } from "@/components/shell/BrandLink";
 import { APP_SHORT_NAME } from "@/lib/pageTitle";
+import { PerformanceMonitor } from "@/components/performance/PerformanceMonitor";
 
 type MainSurface = "glass" | "plain";
 
@@ -49,6 +50,7 @@ export function AppShell(props: {
   const homeHref = playlistWatchOnly ? "/playlist-watch" : "/";
   return (
     <>
+      <PerformanceMonitor />
       <CompetitorAccentStyle accentHex={props.competitorAccentHex ?? null} />
       <CompetitorTitleEffect
         datasetMode={datasetMode}

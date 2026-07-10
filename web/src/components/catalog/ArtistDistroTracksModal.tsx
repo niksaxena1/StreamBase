@@ -104,7 +104,7 @@ export function ArtistDistroTracksModal({
   };
 
   const sortedTracks = useMemo(() => {
-    let rows = [...tracks];
+    const rows = [...tracks];
     if (modalSort) {
       rows.sort((a, b) => {
         let c = 0;
