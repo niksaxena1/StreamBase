@@ -109,7 +109,7 @@ export function Modal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 animate-[modal-fade-in_150ms_ease-out]"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 animate-[modal-fade-in_180ms_ease-out]"
       role="dialog"
       aria-modal="true"
       aria-label={typeof title === "string" ? title : "Modal"}
@@ -120,7 +120,7 @@ export function Modal({
 
       <div
         className={[
-          "relative w-full max-h-full flex flex-col overflow-hidden sb-glass shadow-2xl animate-[modal-scale-in_150ms_ease-out]",
+          "relative w-full max-h-full flex flex-col overflow-hidden sb-glass shadow-2xl animate-[modal-scale-in_180ms_var(--sb-ease-out)]",
           maxWidthClassName ?? "max-w-5xl",
         ].join(" ")}
         onMouseDown={(e) => e.stopPropagation()}
@@ -148,7 +148,7 @@ export function Modal({
                 {showCloseButton ? (
                   <button
                     type="button"
-                    className="sb-ring rounded-full bg-white/60 px-2.5 py-1.5 text-xs font-medium hover:bg-white/80 dark:bg-white/10 dark:hover:bg-white/15"
+                    className="sb-ring sb-control rounded-full bg-white/60 px-2.5 py-1.5 text-xs font-medium hover:bg-white/80 dark:bg-white/10 dark:hover:bg-white/15"
                     style={{ color: "var(--sb-text)" }}
                     onClick={onClose}
                   >
@@ -166,4 +166,3 @@ export function Modal({
     document.body,
   );
 }
-

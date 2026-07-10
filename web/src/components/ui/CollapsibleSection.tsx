@@ -36,8 +36,7 @@ export function CollapsibleSection({
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-2">
             <span
-              className="mt-0.5 flex-shrink-0 text-xs opacity-60 transition-transform duration-150"
-              style={{ display: "inline-block", transform: open ? "rotate(90deg)" : "rotate(0deg)" }}
+              className="sb-details-chevron mt-0.5 flex-shrink-0 text-xs opacity-60"
             >
               ▸
             </span>

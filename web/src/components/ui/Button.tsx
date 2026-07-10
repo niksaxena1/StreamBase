@@ -44,7 +44,7 @@ export const Button = forwardRef<
   ref,
 ) {
   const composedClassName = cx(
-    "sb-ring inline-flex items-center justify-center gap-2 rounded-full font-medium transition",
+    "sb-ring sb-control inline-flex items-center justify-center gap-2 rounded-full font-medium transition",
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
     "disabled:cursor-not-allowed disabled:opacity-50",
     SIZE[size],
@@ -127,7 +127,7 @@ export const IconButton = forwardRef<
       : VARIANT.ghost;
 
   const composedClassName = cx(
-    "sb-ring inline-flex items-center justify-center rounded-full transition",
+    "sb-ring sb-control inline-flex items-center justify-center rounded-full transition",
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
     "disabled:cursor-not-allowed disabled:opacity-50",
     dim,
@@ -161,4 +161,3 @@ export const IconButton = forwardRef<
     </button>
   );
 });
-

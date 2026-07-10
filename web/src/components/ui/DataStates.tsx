@@ -15,7 +15,7 @@ export function FreshnessLabel({
   if (!date) return null;
   return (
     <span
-      className={["inline-flex items-center gap-1.5 text-xs", className]
+      className={["sb-freshness-label inline-flex items-center gap-1.5 text-xs", className]
         .filter(Boolean)
         .join(" ")}
       style={{ color: "var(--sb-muted)" }}

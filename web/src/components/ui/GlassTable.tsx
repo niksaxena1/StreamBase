@@ -181,7 +181,7 @@ export function TableRow({ children, className, style, ...props }: { children: R
   return (
     <tr
       className={[
-        "group transition-colors",
+        "sb-table-row group transition-colors",
         // Zebra striping and hover now use CSS variables for theme-aware contrast
         "odd:sb-row-odd hover:sb-row-hover",
         className,

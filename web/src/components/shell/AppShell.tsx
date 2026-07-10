@@ -19,6 +19,7 @@ import { CompetitorAccentStyle } from "@/components/shell/CompetitorAccentStyle"
 import { BrandLink } from "@/components/shell/BrandLink";
 import { APP_SHORT_NAME } from "@/lib/pageTitle";
 import { PerformanceMonitor } from "@/components/performance/PerformanceMonitor";
+import { ShellScrollState } from "@/components/shell/ShellScrollState";
 
 type MainSurface = "glass" | "plain";
 
@@ -51,6 +52,7 @@ export function AppShell(props: {
   return (
     <>
       <PerformanceMonitor />
+      <ShellScrollState />
       <CompetitorAccentStyle accentHex={props.competitorAccentHex ?? null} />
       <CompetitorTitleEffect
         datasetMode={datasetMode}
@@ -83,7 +85,7 @@ export function AppShell(props: {
           <SideRailWithBadge datasetMode={navDatasetMode} appAccess={appAccess} />
 
           <div className="flex min-w-0 flex-1 flex-col gap-3">
-            <header className="sb-glass relative z-20 px-3 py-2">
+            <header className="sb-app-header sb-glass relative z-20 px-3 py-2">
               <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
                   <Link href={homeHref} className="transition-opacity hover:opacity-80" suppressHydrationWarning>
@@ -124,7 +126,7 @@ export function AppShell(props: {
 
             <main
               id="main-content"
-              className={(mainSurface === "glass" ? "sb-glass-solid " : "") + "flex-1 px-3 py-3"}
+              className={(mainSurface === "glass" ? "sb-glass-solid " : "") + "sb-route-surface flex-1 px-3 py-3"}
             >
               <IngestionStatusBanner />
               {props.children}

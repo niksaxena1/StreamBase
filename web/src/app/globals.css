@@ -84,6 +84,10 @@
   --sb-transition-slower: 350ms;
   --sb-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --sb-ease-in-out: cubic-bezier(0.45, 0, 0.55, 1);
+  --sb-motion-control: 140ms;
+  --sb-motion-overlay: 180ms;
+  --sb-motion-section: 240ms;
+  --sb-motion-route: 320ms;
 
   /* Typography scale */
   --sb-text-xs: 0.75rem; /* 12px */
@@ -142,6 +146,27 @@ html[data-theme="dark"] {
 /* Enable View Transitions (Opt-in) */
 @view-transition {
   navigation: auto;
+}
+
+.sb-route-surface {
+  view-transition-name: sb-main-content;
+}
+
+::view-transition-old(sb-main-content) {
+  animation: sb-route-out 120ms ease-in both;
+}
+
+::view-transition-new(sb-main-content) {
+  animation: sb-route-in var(--sb-motion-route) var(--sb-ease-out) both;
+}
+
+@keyframes sb-route-out {
+  to { opacity: 0; transform: translateY(-2px); }
+}
+
+@keyframes sb-route-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 html {
@@ -411,8 +436,29 @@ html[data-theme="dark"] .sb-skeleton-chart > .border-t {
   to { opacity: 1; }
 }
 @keyframes modal-scale-in {
-  from { opacity: 0; transform: scale(0.97); }
-  to { opacity: 1; transform: scale(1); }
+  from { opacity: 0; transform: translateY(6px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes sb-popover-in {
+  from { opacity: 0; transform: translateY(-3px) scale(0.99); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes sb-section-reveal {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes sb-freshness-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, #34d399 0%, transparent); }
+  35% { box-shadow: 0 0 0 4px color-mix(in srgb, #34d399 18%, transparent); }
+}
+
+@keyframes sb-dataset-scan {
+  from { transform: translateX(-105%); opacity: 0; }
+  18% { opacity: 1; }
+  to { transform: translateX(105%); opacity: 0; }
 }
 
 /* Enhanced Living Backgrounds */
@@ -946,11 +992,114 @@ html[data-theme="dark"] .sb-filter-bar {
   filter: none !important;
 }
 
+/* Quiet, shared interaction language. Individual transforms remain untouched by
+   using the independent translate/scale properties. */
+.sb-control {
+  transition:
+    translate var(--sb-motion-control) var(--sb-ease-out),
+    scale var(--sb-motion-control) var(--sb-ease-out),
+    filter var(--sb-motion-control) ease,
+    background-color var(--sb-motion-control) ease,
+    border-color var(--sb-motion-control) ease,
+    box-shadow var(--sb-motion-control) ease;
+}
+
+.sb-control:active:not(:disabled) {
+  translate: 0 1px;
+  scale: 0.985;
+}
+
+.sb-app-header {
+  transition:
+    background-color var(--sb-motion-section) ease,
+    border-color var(--sb-motion-section) ease,
+    box-shadow var(--sb-motion-section) ease;
+}
+
+.sb-app-shell[data-scrolled="true"] .sb-app-header {
+  border-color: color-mix(in srgb, var(--sb-border-2) 78%, var(--sb-accent) 22%);
+  box-shadow: var(--sb-shadow-compact);
+}
+
+[role="menu"],
+[role="listbox"] {
+  transform-origin: top center;
+  animation: sb-popover-in var(--sb-motion-overlay) var(--sb-ease-out) both;
+}
+
+details[open] > :not(summary) {
+  animation: sb-section-reveal var(--sb-motion-section) var(--sb-ease-out) both;
+}
+
+.sb-details-chevron {
+  display: inline-block;
+  transition: transform var(--sb-motion-overlay) var(--sb-ease-out);
+}
+
+details[open] .sb-details-chevron {
+  transform: rotate(90deg);
+}
+
+.sb-table-row {
+  transition:
+    background-color var(--sb-motion-control) ease,
+    box-shadow var(--sb-motion-control) ease;
+}
+
+.sb-table-row:hover {
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--sb-accent) 62%, transparent);
+}
+
+.sb-table-row img {
+  transition:
+    filter var(--sb-motion-overlay) ease,
+    opacity var(--sb-motion-overlay) ease;
+}
+
+.sb-table-row:hover img {
+  filter: saturate(1.08);
+}
+
+.sb-freshness-label > [aria-hidden="true"] {
+  animation: sb-freshness-pulse 900ms var(--sb-ease-out) 350ms 1 both;
+}
+
+/* One restrained signature transition when switching analytics universes. */
+html[data-sb-dataset-transition="true"]::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 10040;
+  pointer-events: none;
+  background: linear-gradient(
+    100deg,
+    transparent 32%,
+    color-mix(in srgb, var(--sb-accent) 6%, transparent) 46%,
+    color-mix(in srgb, var(--sb-accent) 18%, transparent) 50%,
+    color-mix(in srgb, var(--sb-accent) 6%, transparent) 54%,
+    transparent 68%
+  );
+  animation: sb-dataset-scan 260ms var(--sb-ease-out) both;
+}
+
 /* ============================================================================
    Accessibility: Respect prefers-reduced-motion
    ============================================================================ */
 
 @media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
   .sb-skeleton {
     animation: none;
   }

@@ -220,13 +220,15 @@ export function CompetitorModeButton({
           window.location.pathname,
           window.location.search,
         );
-        if (cleanUrl && cleanUrl !== window.location.pathname + window.location.search) {
-          // router.replace re-runs server components for the new URL.
-          window.location.assign(cleanUrl);
-        } else {
-          // Same URL — just re-fetch the RSC payload (no full document reload).
-          window.location.assign(window.location.pathname + window.location.search);
-        }
+        const destination =
+          cleanUrl && cleanUrl !== window.location.pathname + window.location.search
+            ? cleanUrl
+            : window.location.pathname + window.location.search;
+
+        // Capture the optimistic accent in the outgoing view-transition snapshot.
+        // Navigation stays immediate; the flourish never delays data loading.
+        document.documentElement.dataset.sbDatasetTransition = "true";
+        window.location.assign(destination);
         // The success-path cleanup (clearing saving + finishing the loading bar) runs
         // automatically in the useEffect on activeLabelKey/datasetMode prop change.
       }
