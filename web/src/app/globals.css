@@ -329,14 +329,14 @@ html[data-theme="dark"] .sb-glass-nav {
 }
 
 .sb-skeleton {
-  background: color-mix(in srgb, var(--sb-muted) 11%, transparent);
-  opacity: 0.72;
-  animation: sb-skeleton-breathe 1.8s ease-in-out infinite;
+  background: color-mix(in srgb, var(--sb-muted) 10%, transparent);
+  opacity: 0.68;
+  animation: sb-skeleton-breathe 2.1s ease-in-out infinite;
 }
 
 @keyframes sb-skeleton-breathe {
-  0%, 100% { opacity: 0.52; }
-  50% { opacity: 0.78; }
+  0%, 100% { opacity: 0.56; }
+  50% { opacity: 0.72; }
 }
 
 /* Semantic surface utilities - use these instead of hard-coded black/white alphas */
