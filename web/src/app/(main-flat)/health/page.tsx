@@ -17,6 +17,7 @@ import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { WarningsSection } from "@/components/health/WarningsSection";
 import { MissingCatalogSection } from "@/components/health/MissingCatalogSection";
 import { CompetitorHealthSection } from "./CompetitorHealthSection";
+import { ChartSkeleton, StatCardSkeleton, TableSkeleton } from "@/components/ui/Skeleton";
 
 export const dynamic = "force-dynamic";
 
@@ -29,41 +30,22 @@ type HealthPageProps = {
 };
 
 function WarningSkeleton() {
-  return (
-    <div className="space-y-2">
-      <div className="h-5 w-48 rounded bg-white/10 animate-pulse" />
-      <div className="sb-card p-4 space-y-3">
-        {[1, 2, 3].map((i) => (
-          <div key={i} className="h-10 rounded bg-white/5 animate-pulse" />
-        ))}
-      </div>
-    </div>
-  );
+  return <TableSkeleton rows={3} cols={5} />;
 }
 
 function MissingSkeleton() {
-  return (
-    <div className="space-y-2">
-      <div className="h-5 w-64 rounded bg-white/10 animate-pulse" />
-      <div className="sb-card p-4 space-y-3">
-        {[1, 2].map((i) => (
-          <div key={i} className="h-10 rounded bg-white/5 animate-pulse" />
-        ))}
-      </div>
-    </div>
-  );
+  return <TableSkeleton rows={2} cols={4} />;
 }
 
 function CompetitorHealthSkeleton() {
   return (
     <div className="space-y-4">
-      <div className="h-16 animate-pulse rounded-xl bg-white/5" />
       <div className="grid gap-3 md:grid-cols-5">
         {Array.from({ length: 5 }).map((_, i) => (
-          <div key={i} className="sb-card h-20 animate-pulse" />
+          <StatCardSkeleton key={i} />
         ))}
       </div>
-      <div className="sb-card h-64 animate-pulse" />
+      <ChartSkeleton height={220} />
     </div>
   );
 }

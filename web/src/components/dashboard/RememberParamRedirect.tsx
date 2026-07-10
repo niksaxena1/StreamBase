@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
-import { ChartSkeleton, Skeleton, StatCardSkeleton, TableSkeleton } from "@/components/ui/Skeleton";
+import { LoadingState } from "@/components/ui/Skeleton";
 import { readDatasetSelectionStorage } from "@/lib/datasetSelectionStorage";
 
 export function RememberParamRedirect(props: {
@@ -54,34 +54,11 @@ export function RememberParamRedirect(props: {
   }, [pathname, props.defaultValue, props.legacyStorageKey, props.param, props.storageKey, router, sp]);
 
   return (
-    <div className="space-y-4" aria-busy="true">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div className="flex min-w-0 items-center gap-4">
-          <Skeleton className="h-12 w-12 rounded-lg" />
-          <div className="min-w-0">
-            <div className="text-sm font-medium" style={{ color: "var(--sb-text)" }}>
-              {props.loadingTitle ?? "Loading..."}
-            </div>
-            {props.loadingSubtitle ? (
-              <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
-                {props.loadingSubtitle}
-              </div>
-            ) : null}
-          </div>
-        </div>
-        <Skeleton className="h-9 w-44 rounded-lg" />
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCardSkeleton />
-        <StatCardSkeleton />
-        <StatCardSkeleton />
-        <StatCardSkeleton />
-      </div>
-      <div className="grid gap-4 lg:grid-cols-2">
-        <ChartSkeleton height={210} />
-        <ChartSkeleton height={210} />
-      </div>
-      <TableSkeleton rows={7} cols={6} />
+    <div className="sb-card flex min-h-52 flex-col items-center justify-center gap-1 p-6" aria-busy="true">
+      <LoadingState
+        message={props.loadingSubtitle ?? props.loadingTitle ?? "Loading…"}
+        className="py-4"
+      />
       {fallbackHref ? (
         <a
           href={fallbackHref}

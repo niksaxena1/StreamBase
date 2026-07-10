@@ -28,7 +28,7 @@ export default function PlaylistsConfigLoading() {
           <Skeleton className="h-4 w-40" />
         </div>
         <div className="space-y-2 p-3">
-          {Array.from({ length: 12 }).map((_, i) => (
+          {Array.from({ length: 5 }).map((_, i) => (
             <Skeleton key={i} className="h-10 w-full rounded-lg" />
           ))}
         </div>

@@ -24,13 +24,9 @@ export default function CompetitorsLoading() {
         <StatCardSkeleton />
         <StatCardSkeleton />
       </div>
-      <div className="sb-card space-y-4 p-4">
+      <div className="grid gap-4 lg:grid-cols-2">
         <ChartSkeleton height={260} />
-        <TableSkeleton rows={6} cols={7} />
-      </div>
-      <div className="space-y-6">
-        <TableSkeleton rows={8} cols={5} />
-        <TableSkeleton rows={6} cols={5} />
+        <TableSkeleton rows={5} cols={7} />
       </div>
     </div>
   );

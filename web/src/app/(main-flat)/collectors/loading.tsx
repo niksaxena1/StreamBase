@@ -24,21 +24,16 @@ export default function CollectorsLoading() {
           </>
         }
       />
-      <div className="flex flex-wrap items-center gap-2">
-        <Skeleton className="h-8 w-24 rounded-full" />
-        <Skeleton className="h-8 w-28 rounded-full" />
-        <Skeleton className="h-8 w-32 rounded-full" />
-      </div>
+      <Skeleton className="h-9 w-full max-w-md rounded-lg" />
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <StatCardSkeleton />
         <StatCardSkeleton />
         <StatCardSkeleton />
       </div>
-      <div className="sb-card space-y-4 p-4">
+      <div className="grid gap-4 lg:grid-cols-2">
         <ChartSkeleton height={260} />
-        <TableSkeleton rows={6} cols={7} />
+        <TableSkeleton rows={5} cols={7} />
       </div>
-      <TableSkeleton rows={10} cols={6} />
     </div>
   );
 }

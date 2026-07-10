@@ -6,6 +6,7 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { DayPicker, type Matcher } from "react-day-picker";
 import { createPortal } from "react-dom";
 import { parseYmd, formatYmd, formatDisplay } from "@/lib/date";
+import { Skeleton } from "@/components/ui/Skeleton";
 
 function DatePickerInner({
   value,
@@ -225,7 +226,7 @@ export function DatePicker({
   param?: string;
 }) {
   return (
-    <Suspense fallback={<div className="h-10 w-32 animate-pulse rounded-2xl bg-white/30 dark:bg-white/10" />}>
+    <Suspense fallback={<Skeleton className="h-10 w-32 rounded-2xl" />}>
       <DatePickerInner value={value} min={min} max={max} label={label} path={path} param={param} />
     </Suspense>
   );

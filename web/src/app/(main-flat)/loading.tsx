@@ -23,10 +23,6 @@ export default function Loading() {
         <StatCardSkeleton />
       </div>
       <ChartSkeleton height={260} />
-      <div className="grid gap-4 lg:grid-cols-2">
-        <ChartSkeleton height={220} />
-        <ChartSkeleton height={220} />
-      </div>
     </div>
   );
 }

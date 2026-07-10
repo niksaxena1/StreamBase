@@ -36,6 +36,7 @@ import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { type TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChart";
 import { computeRollingAvg7 } from "@/components/charts/chartUtils";
 import { useCurrencyDisplay } from "@/components/currency/CurrencyDisplayContext";
+import { Skeleton } from "@/components/ui/Skeleton";
 
 import type {
   PlaylistDailyStatsRow,
@@ -93,11 +94,7 @@ function HomeDiagnosticsLoadingPanel() {
           <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
             TRACK DIAGNOSTICS
           </div>
-          <div className="mt-2 grid gap-2 md:grid-cols-3">
-            <div className="h-10 rounded-lg bg-black/5 dark:bg-white/10 animate-pulse" />
-            <div className="h-10 rounded-lg bg-black/5 dark:bg-white/10 animate-pulse" />
-            <div className="h-10 rounded-lg bg-black/5 dark:bg-white/10 animate-pulse" />
-          </div>
+          <Skeleton className="mt-3 h-10 w-full rounded-lg" />
         </div>
       </div>
     </div>

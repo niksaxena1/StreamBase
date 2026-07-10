@@ -9,11 +9,7 @@ export default function NetworkLoading() {
       <div className="grid gap-3 sm:grid-cols-3">
         <StatCardSkeleton /><StatCardSkeleton /><StatCardSkeleton />
       </div>
-      <div className="flex flex-wrap items-center gap-2" aria-label="Loading graph controls">
-        <Skeleton className="h-9 w-48 rounded-lg" />
-        <Skeleton className="h-9 w-36 rounded-lg" />
-        <Skeleton className="h-9 w-28 rounded-lg" />
-      </div>
+      <Skeleton className="h-9 w-full max-w-lg rounded-lg" aria-label="Loading graph controls" />
       <ChartSkeleton height={560} />
     </div>
   );

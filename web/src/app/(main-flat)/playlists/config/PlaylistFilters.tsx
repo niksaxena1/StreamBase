@@ -277,7 +277,7 @@ export function PlaylistFilters({ playlists, statsMap, statsLoading = false, reg
           };
 
           const statPlaceholder = statsLoading ? (
-            <span className="inline-block h-3.5 w-10 animate-pulse rounded bg-black/10 dark:bg-white/10" />
+            <span className="sb-skeleton inline-block h-3.5 w-10 rounded" />
           ) : null;
           
           return (

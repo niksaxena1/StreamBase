@@ -20,8 +20,7 @@ export default function HealthLoading() {
         actions={<Skeleton className="h-8 w-8 rounded-full" />}
       />
       <Skeleton className="h-24 w-full rounded-xl" />
-      <TableSkeleton rows={6} cols={5} />
-      <TableSkeleton rows={4} cols={3} />
+      <TableSkeleton rows={5} cols={5} />
     </div>
   );
 }

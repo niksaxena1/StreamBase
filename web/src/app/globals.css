@@ -329,55 +329,14 @@ html[data-theme="dark"] .sb-glass-nav {
 }
 
 .sb-skeleton {
-  position: relative;
-  overflow: hidden;
-  background:
-    linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--sb-muted) 8%, transparent),
-      color-mix(in srgb, var(--sb-accent) 12%, transparent),
-      color-mix(in srgb, var(--sb-muted) 8%, transparent)
-    );
-  background-size: 220% 100%;
-  opacity: 0.78;
-  animation: sb-skeleton-shimmer 1.45s var(--sb-ease-in-out) infinite;
+  background: color-mix(in srgb, var(--sb-muted) 11%, transparent);
+  opacity: 0.72;
+  animation: sb-skeleton-breathe 1.8s ease-in-out infinite;
 }
 
-.sb-skeleton-table-body > tr + tr {
-  border-top: 1px solid color-mix(in srgb, var(--sb-border) 42%, transparent);
-}
-
-.sb-skeleton-table-body > tr:nth-child(even) {
-  background: color-mix(in srgb, var(--sb-muted) 2%, transparent);
-}
-
-.sb-skeleton-chart {
-  border-color: color-mix(in srgb, var(--sb-border) 55%, transparent);
-}
-
-.sb-skeleton-chart > .border-t {
-  border-color: color-mix(in srgb, var(--sb-border) 36%, transparent);
-}
-
-html[data-theme="dark"] .sb-skeleton-table-body > tr + tr {
-  border-top-color: color-mix(in srgb, var(--sb-border) 34%, transparent);
-}
-
-html[data-theme="dark"] .sb-skeleton-chart {
-  border-color: color-mix(in srgb, var(--sb-border) 42%, transparent);
-}
-
-html[data-theme="dark"] .sb-skeleton-chart > .border-t {
-  border-color: color-mix(in srgb, var(--sb-border) 28%, transparent);
-}
-
-@keyframes sb-skeleton-shimmer {
-  from {
-    background-position: 120% 0;
-  }
-  to {
-    background-position: -120% 0;
-  }
+@keyframes sb-skeleton-breathe {
+  0%, 100% { opacity: 0.52; }
+  50% { opacity: 0.78; }
 }
 
 /* Semantic surface utilities - use these instead of hard-coded black/white alphas */

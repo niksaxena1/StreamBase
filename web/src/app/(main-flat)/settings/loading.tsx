@@ -19,11 +19,10 @@ export default function SettingsLoading() {
         }
       />
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {Array.from({ length: 6 }).map((_, i) => (
+        {Array.from({ length: 4 }).map((_, i) => (
           <Skeleton key={i} className="h-28 w-full rounded-xl" />
         ))}
       </div>
-      <Skeleton className="h-48 w-full rounded-xl" />
     </div>
   );
 }

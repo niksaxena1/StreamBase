@@ -12,14 +12,9 @@ function ConfigSectionSkeleton({ titleWidth }: { titleWidth: string }) {
           <Skeleton className="h-5 w-20 rounded-full" />
           <Skeleton className="h-5 w-5 rounded-full" />
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Skeleton className="h-8 w-36 rounded-lg" />
-          <Skeleton className="h-8 w-28 rounded-lg" />
-          <Skeleton className="h-8 w-64 rounded-lg" />
-          <Skeleton className="h-8 w-32 rounded-lg" />
-        </div>
+        <Skeleton className="h-8 w-full max-w-sm rounded-lg" />
       </div>
-      <TableSkeleton rows={8} cols={9} />
+      <TableSkeleton rows={5} cols={9} />
     </section>
   );
 }
