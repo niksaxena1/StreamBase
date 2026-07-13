@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 
 import { isPlaylistWatchOnlyAccess, normalizeAppAccess } from "@/lib/appAccess";
-import { apiJsonErr, apiJsonOk, requireSessionUser } from "@/lib/api/server";
+import { apiJsonErr, apiJsonOk, requireUser } from "@/lib/api/server";
 import { loadHomeScatterDataForUser } from "@/lib/home/loadHomeDashboard";
 import { normalizeHomeScatterApiPayload } from "@/lib/home/homeScatterApi";
 import { logError } from "@/lib/logger";
@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest) {
   try {
     const sb = await supabaseServer();
-    const auth = await requireSessionUser(sb);
+    const auth = await requireUser(sb);
     if (!auth.ok) return auth.response;
 
     const svc = supabaseService();

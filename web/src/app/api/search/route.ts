@@ -4,7 +4,7 @@ import { supabaseService } from "@/lib/supabase/service";
 import { cachedQuery } from "@/lib/supabase/cache";
 import { getArtistsCached } from "@/lib/spotify";
 import { logError } from "@/lib/logger";
-import { apiJsonErr, apiJsonOk, requireSessionUser } from "@/lib/api/server";
+import { apiJsonErr, apiJsonOk, requireUser } from "@/lib/api/server";
 import { normalizeDatasetMode } from "@/lib/datasetMode";
 import { ALL_COMPETITORS_KEY, resolveCompetitorLabelKey } from "@/lib/competitorContext";
 
@@ -31,7 +31,7 @@ function hashKey(input: string): string {
 export async function GET(request: NextRequest) {
   try {
     const sb = await supabaseServer();
-    const auth = await requireSessionUser(sb);
+    const auth = await requireUser(sb);
     if (!auth.ok) return auth.response;
 
     const searchParams = request.nextUrl.searchParams;

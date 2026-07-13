@@ -74,3 +74,9 @@ __pycache__/
 # Local agent worktrees and scratch dependencies
 .claude/worktrees/
 tmp/
+
+# Session/agent scratch and one-off local artifacts
+.tmp/
+tmp_*.py
+output/
+/playlist-watch-smoke.png

@@ -2,7 +2,7 @@
 
 import { revalidateTag } from "next/cache";
 
-import { requireSessionUser } from "@/lib/api/server";
+import { requireUser } from "@/lib/api/server";
 import { supabaseServer } from "@/lib/supabase/server";
 
 /**
@@ -11,7 +11,7 @@ import { supabaseServer } from "@/lib/supabase/server";
  */
 export async function refreshHealthData() {
   const sb = await supabaseServer();
-  const auth = await requireSessionUser(sb);
+  const auth = await requireUser(sb);
   if (!auth.ok) return;
   revalidateTag("health", "max");
 }

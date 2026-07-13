@@ -11,6 +11,8 @@ from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 import requests
 
+from streambase_revalidate import notify_web_revalidate
+
 STREAM_PAYOUT_USD = 0.002
 
 # Warning thresholds — these are the hard-coded fallback defaults.
@@ -1636,6 +1638,9 @@ def main():
         summary_path = Path(".artifacts") / "ingestion_summary.json"
         summary_path.parent.mkdir(parents=True, exist_ok=True)
         summary_path.write_text(json.dumps(ingestion_summary, indent=2))
+
+        # Refresh the web app's cached analytics now that new data is live.
+        notify_web_revalidate()
 
     except Exception as e:
         if run_id:

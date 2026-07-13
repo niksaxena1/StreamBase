@@ -5,6 +5,13 @@ import { CACHE_TTL_24H, SB_TIMING_SLOW_MS_DEFAULT } from "@/lib/constants";
 const DEFAULT_REVALIDATE_SECONDS = CACHE_TTL_24H; // 24 hours - data updates daily
 const MAX_CACHE_TAG_LENGTH = 256;
 
+/**
+ * Generic tag attached to every cachedQuery entry. `/api/revalidate` (called by
+ * the ingestion pipeline after each run) revalidates this tag so analytics
+ * refresh immediately instead of waiting for TTL expiry.
+ */
+export const SUPABASE_CACHE_TAG = "supabase";
+
 function isTimingEnabled(): boolean {
   const v = (process.env.SB_TIMING ?? process.env.SOT_TIMING ?? "").toLowerCase();
   return v === "1" || v === "true" || v === "yes";
@@ -99,7 +106,7 @@ export async function cachedQuery<T>(
       revalidate: revalidateSeconds,
       // Generic tag plus key-specific tag so we can either
       // revalidate everything or target specific keys.
-      tags: ["supabase", cacheTagForKey(key)],
+      tags: [SUPABASE_CACHE_TAG, cacheTagForKey(key)],
     },
   )();
 }

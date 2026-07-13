@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 
 import { isPlaylistWatchOnlyAccess, normalizeAppAccess } from "@/lib/appAccess";
-import { apiJsonErr, apiJsonOk, requireSessionUser } from "@/lib/api/server";
+import { apiJsonErr, apiJsonOk, requireUser } from "@/lib/api/server";
 import { loadHomeDiagnosticsDataForUser } from "@/lib/home/loadHomeDashboard";
 import { normalizeHomeDiagnosticsApiPayload } from "@/lib/home/homeDiagnosticsApi";
 import { logError } from "@/lib/logger";
@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
   try {
     return await timedServerStep("api.home.diagnostics", async () => {
       const sb = await supabaseServer();
-      const auth = await requireSessionUser(sb);
+      const auth = await requireUser(sb);
       if (!auth.ok) return auth.response;
 
       const svc = supabaseService();

@@ -1,5 +1,6 @@
 import { supabaseService } from "@/lib/supabase/service";
 import { apiJsonErr, apiJsonOk } from "@/lib/api/server";
+import { timingSafeEqualStrings } from "@/lib/api/internalAuth";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -10,10 +11,15 @@ function getCronSecret(): string | null {
 
 function isAuthorized(req: Request): boolean {
   const secret = getCronSecret();
-  if (!secret) return false;
+  if (!secret) {
+    // A missing secret silently disables partition creation; make it loud so
+    // it is caught before inserts start failing months later.
+    console.error("CRON_SECRET is not set; refusing cron request. Partition maintenance is disabled until it is configured.");
+    return false;
+  }
   const auth = req.headers.get("authorization");
   if (!auth || !auth.startsWith("Bearer ")) return false;
-  return auth.slice(7).trim() === secret.trim();
+  return timingSafeEqualStrings(auth.slice(7).trim(), secret.trim());
 }
 
 export async function GET(req: Request) {

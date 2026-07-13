@@ -539,11 +539,16 @@ export async function loadHomeScatterDataForUser(args: {
   const playlistKey: "all_catalog" | "releases" | "ext" =
     scope === "releases" ? "releases" : scope === "ext" ? "ext" : "all_catalog";
 
-  const { data: settings } = await svc
-    .from("user_settings")
-    .select("dataset_mode,competitor_label_key")
-    .eq("user_id", userId)
-    .maybeSingle();
+  // Settings and rollback date are independent; fetch them together.
+  const [settingsRes, rollbackDate] = await Promise.all([
+    svc
+      .from("user_settings")
+      .select("dataset_mode,competitor_label_key")
+      .eq("user_id", userId)
+      .maybeSingle(),
+    getRollbackDate(),
+  ]);
+  const settings = settingsRes.data;
   const datasetMode = normalizeDatasetMode(settings?.dataset_mode);
   let competitorLabelKey =
     typeof settings?.competitor_label_key === "string" && settings.competitor_label_key.trim()
@@ -575,7 +580,6 @@ export async function loadHomeScatterDataForUser(args: {
         : typedLabels.find((label) => label.label_key === competitorLabelKey)?.display_name ?? competitorLabelKey;
   }
 
-  const rollbackDate = await getRollbackDate();
   const rollbackRunDate = rollbackDate ? rollbackDataDateToRunDate(rollbackDate) : null;
 
   const { data: latestRow } = await cachedQuery<{ date: string } | null>(
@@ -933,14 +937,6 @@ export async function loadHomeDashboardData(args: {
           : "All Catalog";
 
   const latestDataDate = latestRunDate ? dataDateFromRunDate(latestRunDate) : null;
-  const { selectedDataDate, selectedRunDate } = await resolveHomeScatterSelection({
-    svc,
-    sp,
-    datasetMode,
-    competitorLabelKey,
-    latestRunDate,
-    latestDataDate,
-  });
 
   /** Data dates for UI (matches Home date picker). RPC uses run dates — see spikeFilterRunStart/End. */
   let artificialSpikeDateStart: string | null = null;
@@ -970,17 +966,32 @@ export async function loadHomeDashboardData(args: {
       spikeFilterRunStart = addDaysIso(latestRunDate, -(rangeDays - 1));
     }
   }
-  const scatter = includeScatter
-    ? await loadHomeScatterPoints({
-        svc,
-        datasetMode,
-        competitorLabelKey,
-        competitorLabelName,
-        selectedRunDate,
-      })
-    : { points: [] as TrackStreamsXYPoint[], errorMessage: null };
+  // ---------------------------------------------------------------------------
+  // Scatter points, override annotations, and diagnostics only depend on the
+  // history result and the sync-computed ranges above, so run them concurrently.
+  // ---------------------------------------------------------------------------
+  const scatterPromise = (async () => {
+    const { selectedDataDate, selectedRunDate } = await resolveHomeScatterSelection({
+      svc,
+      sp,
+      datasetMode,
+      competitorLabelKey,
+      latestRunDate,
+      latestDataDate,
+    });
+    const scatter = includeScatter
+      ? await loadHomeScatterPoints({
+          svc,
+          datasetMode,
+          competitorLabelKey,
+          competitorLabelName,
+          selectedRunDate,
+        })
+      : { points: [] as TrackStreamsXYPoint[], errorMessage: null };
+    return { selectedDataDate, scatter };
+  })();
 
-  const overrideAnnotations: ManualOverrideAnnotation[] = await (async () => {
+  const overrideAnnotationsPromise: Promise<ManualOverrideAnnotation[]> = (async () => {
     if (datasetMode === "competitor") return [];
     const hist = ((history as PlaylistDailyStatsRow[] | null) ?? []) as PlaylistDailyStatsRow[];
     if (!hist.length) return [];
@@ -1071,19 +1082,8 @@ export async function loadHomeDashboardData(args: {
 
   const artificialSpikesCacheKey = `home-artificial-stream-spikes-v5-${datasetMode}-${competitorRpcLabelKey ?? "none"}-${artificialSpikeRatio}-${artificialMinBaseline}-${artificialGraceDays}-${artificialThresholdCrossing}-${artificialIncludeWeekends ? "wknd1" : "wknd0"}-${spikeFilterRunStart ?? "none"}-${spikeFilterRunEnd ?? "none"}`;
 
-  let artistWeekendDipsRaw: unknown[] = [];
-  let trackWeekendDipsRaw: unknown[] = [];
-  let negativeDailyStreamsRaw: unknown[] = [];
-  let artificialStreamSpikesRaw: unknown[] = [];
-  let homeDiagnosticsErrorMessage: string | null = null;
-
-  if (includeDiagnostics) {
-    const [
-      artistWeekendDipsResult,
-      trackWeekendDipsResult,
-      negativeDailyStreamsResult,
-      artificialStreamSpikesResult,
-    ] = await timedServerStep("home.diagnostics", () =>
+  const diagnosticsPromise = includeDiagnostics
+    ? timedServerStep("home.diagnostics", () =>
       Promise.all([
         cachedQuery(
           async () => {
@@ -1160,8 +1160,28 @@ export async function loadHomeDashboardData(args: {
           CACHE_TTL_1H,
         ),
       ]),
-    );
+    )
+    : null;
 
+  const [{ selectedDataDate, scatter }, overrideAnnotations, diagnosticsResults] = await Promise.all([
+    scatterPromise,
+    overrideAnnotationsPromise,
+    diagnosticsPromise,
+  ]);
+
+  let artistWeekendDipsRaw: unknown[] = [];
+  let trackWeekendDipsRaw: unknown[] = [];
+  let negativeDailyStreamsRaw: unknown[] = [];
+  let artificialStreamSpikesRaw: unknown[] = [];
+  let homeDiagnosticsErrorMessage: string | null = null;
+
+  if (diagnosticsResults) {
+    const [
+      artistWeekendDipsResult,
+      trackWeekendDipsResult,
+      negativeDailyStreamsResult,
+      artificialStreamSpikesResult,
+    ] = diagnosticsResults;
     artistWeekendDipsRaw = (artistWeekendDipsResult.data ?? []) as unknown[];
     trackWeekendDipsRaw = (trackWeekendDipsResult.data ?? []) as unknown[];
     negativeDailyStreamsRaw = (negativeDailyStreamsResult.data ?? []) as unknown[];

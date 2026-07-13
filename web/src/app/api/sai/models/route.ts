@@ -1,5 +1,5 @@
 import { SAI_MODEL_OPTIONS, defaultModelId } from "@/lib/sai/llm";
-import { requireSessionUser } from "@/lib/api/server";
+import { requireUser } from "@/lib/api/server";
 import { supabaseServer } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   const sb = await supabaseServer();
-  const auth = await requireSessionUser(sb);
+  const auth = await requireUser(sb);
   if (!auth.ok) return auth.response;
 
   const hasOpenAI = !!process.env.OPENAI_API_KEY;

@@ -15,9 +15,9 @@ const nextConfig: NextConfig = {
   images: {
     // Spotify CDN assets are already sized reasonably; skipping the Image
     // Optimization API avoids Vercel "Image Transformations" quota on Hobby.
+    // Note: with the optimizer disabled, options like minimumCacheTTL have no
+    // effect, so none are set here.
     unoptimized: true,
-    // Cache optimized images for a full day.
-    minimumCacheTTL: 86400,
     remotePatterns: [
       // Spotify uses multiple CDN hostnames for images; allow wildcard subdomains.
       { protocol: "https", hostname: "**.scdn.co" },

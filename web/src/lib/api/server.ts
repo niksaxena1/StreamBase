@@ -25,10 +25,6 @@ export async function requireUser(sb: SupabaseClient): Promise<RequireUserResult
   return { ok: true, user: userData.user };
 }
 
-export async function requireSessionUser(sb: SupabaseClient): Promise<RequireUserResult> {
-  return requireUser(sb);
-}
-
 export type RequireAdminResult =
   | { ok: true; user: User }
   | { ok: false; response: NextResponse };

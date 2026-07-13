@@ -3,6 +3,7 @@ import { NextRequest } from "next/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { embedTexts, embeddingsEnabled, embeddingDims, embeddingModel } from "@/lib/sai/embeddings";
 import { apiJsonErr, apiJsonOk } from "@/lib/api/server";
+import { timingSafeEqualStrings } from "@/lib/api/internalAuth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,7 +13,7 @@ function requireToken(req: NextRequest): string | null {
   const token = process.env.SAI_ADMIN_TOKEN ?? "";
   if (!token) return "SAI_ADMIN_TOKEN not configured";
   const got = req.headers.get("x-sai-admin-token") ?? "";
-  if (got !== token) return "invalid token";
+  if (!timingSafeEqualStrings(got, token)) return "invalid token";
   return null;
 }
 

@@ -5,7 +5,7 @@ import { supabaseService } from "@/lib/supabase/service";
 import { cachedQuery } from "@/lib/supabase/cache";
 import { CACHE_TTL_5MIN, CACHE_TTL_24H } from "@/lib/constants";
 import { logError } from "@/lib/logger";
-import { apiJsonErr, apiJsonOk, requireSessionUser } from "@/lib/api/server";
+import { apiJsonErr, apiJsonOk, requireUser } from "@/lib/api/server";
 import { resolveCompetitorLabelKey } from "@/lib/competitorContext";
 import type { CompetitorLabelScope } from "@/lib/competitorLabelScope.server";
 import {
@@ -156,7 +156,7 @@ async function fetchSearchStats(args: {
 export async function GET(request: NextRequest) {
   try {
     const sb = await supabaseServer();
-    const auth = await requireSessionUser(sb);
+    const auth = await requireUser(sb);
     if (!auth.ok) return auth.response;
 
     const searchParams = request.nextUrl.searchParams;

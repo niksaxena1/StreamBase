@@ -1,7 +1,8 @@
 import { NextRequest } from "next/server";
 
 import { logError } from "@/lib/logger";
-import { apiJsonOk, requireSessionUser } from "@/lib/api/server";
+import { apiJsonOk, requireUser } from "@/lib/api/server";
+import { timingSafeEqualStrings } from "@/lib/api/internalAuth";
 import { supabaseServer } from "@/lib/supabase/server";
 import { loadIngestionSummaryForUser } from "@/lib/ingestionSummary.server";
 
@@ -15,14 +16,14 @@ type HealthSummaryPayload = {
 export async function GET(request: NextRequest) {
   try {
     const sb = await supabaseServer();
-    const auth = await requireSessionUser(sb);
+    const auth = await requireUser(sb);
     if (!auth.ok) return auth.response;
 
     const sp = request.nextUrl.searchParams;
     const debugRequested = sp.get("debug") === "1";
     const debugToken = process.env.SB_HEALTH_DEBUG_TOKEN ?? "";
     const headerToken = request.headers.get("x-sb-health-debug-token") ?? "";
-    const debugAllowed = debugRequested && !!debugToken && headerToken === debugToken;
+    const debugAllowed = debugRequested && !!debugToken && timingSafeEqualStrings(headerToken, debugToken);
 
     const summary = await loadIngestionSummaryForUser(auth.user.id);
 

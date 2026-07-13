@@ -11,6 +11,8 @@ from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 import requests
 
+from streambase_revalidate import notify_web_revalidate
+
 STREAM_PAYOUT_USD = 0.002
 
 COMPETITOR_TABLES = {
@@ -417,6 +419,9 @@ def main():
         {"status": "success", "finished_at": datetime.now(timezone.utc).isoformat()},
         f"id=eq.{run_id}",
     )
+
+    # Refresh the web app's cached analytics now that new data is live.
+    notify_web_revalidate()
 
 
 if __name__ == "__main__":

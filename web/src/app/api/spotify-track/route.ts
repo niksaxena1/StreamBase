@@ -1,12 +1,12 @@
 import { findTrackByIsrc } from "@/lib/spotify";
-import { apiJsonErr, apiJsonOk, requireSessionUser } from "@/lib/api/server";
+import { apiJsonErr, apiJsonOk, requireUser } from "@/lib/api/server";
 import { supabaseServer } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
 export async function GET(req: Request) {
   const sb = await supabaseServer();
-  const auth = await requireSessionUser(sb);
+  const auth = await requireUser(sb);
   if (!auth.ok) return auth.response;
 
   const url = new URL(req.url);

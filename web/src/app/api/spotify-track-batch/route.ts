@@ -1,5 +1,5 @@
 import { findTrackByIsrc } from "@/lib/spotify";
-import { apiJsonErr, apiJsonOk, readJsonBody, requireSessionUser } from "@/lib/api/server";
+import { apiJsonErr, apiJsonOk, readJsonBody, requireUser } from "@/lib/api/server";
 import { supabaseServer } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -28,7 +28,7 @@ async function mapWithConcurrency<T, R>(
 
 export async function POST(req: Request) {
   const sb = await supabaseServer();
-  const auth = await requireSessionUser(sb);
+  const auth = await requireUser(sb);
   if (!auth.ok) return auth.response;
 
   const parsed = await readJsonBody(req);

@@ -117,6 +117,9 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           SUPABASE_STORAGE_BUCKET: ${{ secrets.SUPABASE_STORAGE_BUCKET }}
           SUPABASE_STORAGE_PREFIX: competitor-exports
+          # Optional: refresh the web app's cached analytics after ingestion.
+          STREAMBASE_REVALIDATE_URL: ${{ secrets.STREAMBASE_REVALIDATE_URL }}
+          REVALIDATE_SECRET: ${{ secrets.REVALIDATE_SECRET }}
         run: |
           RUN_DATE="${{ steps.run_date.outputs.run_date }}"
           python scripts/ingest_competitor_exports_to_supabase.py --config config/competitor_playlists.csv --exports-dir exports --run-date "$RUN_DATE"
