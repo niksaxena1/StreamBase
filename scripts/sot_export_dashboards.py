@@ -191,13 +191,6 @@ def click_export_csv(page) -> bool:
     return False
 
 
-def dashboard_has_track_links(page) -> bool:
-    try:
-        return page.locator("a[href*='/tracks/']").count() > 0
-    except Exception:
-        return False
-
-
 def write_empty_export(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(".tmp.csv")
@@ -268,9 +261,9 @@ def download_one(page, pl: Playlist, out_path: Path) -> Tuple[bool, str]:
         return False, "logged_out"
 
     if not wait_for_export_button(page):
-        if pl.allow_empty and not dashboard_has_track_links(page):
+        if pl.allow_empty:
             write_empty_export(out_path)
-            return True, "empty_dashboard_no_export_button"
+            return True, "empty_dashboard_export_button_not_visible"
         return False, "export_button_not_visible"
 
     try:
