@@ -12,6 +12,7 @@ from typing import Dict, Iterable, List, Optional, Set, Tuple
 import requests
 
 from streambase_revalidate import notify_web_revalidate
+from streambase_postgrest import Postgrest
 
 STREAM_PAYOUT_USD = 0.002
 
@@ -123,111 +124,33 @@ def build_playlist_stats_row(
     }
 
 
-class Postgrest:
-    def __init__(self, supabase_url: str, service_role_key: str):
-        self.base = supabase_url.rstrip("/") + "/rest/v1"
-        self.h = {
-            "Authorization": f"Bearer {service_role_key}",
-            "apikey": service_role_key,
-            "Content-Type": "application/json",
-            "Accept-Profile": "competitor",
-            "Content-Profile": "competitor",
-        }
+def insert_memberships_idempotent(pg: Postgrest, rows: List[dict]):
+    """Insert active playlist membership rows, tolerating already-active rows.
 
-    def upsert(self, table: str, rows: List[dict], on_conflict: str):
-        if not rows:
-            return
-        url = f"{self.base}/{table}?on_conflict={on_conflict}"
-        headers = dict(self.h)
-        headers["Prefer"] = "resolution=merge-duplicates,return=minimal"
-        r = requests.post(url, headers=headers, data=json.dumps(rows), timeout=180)
-        if r.status_code not in (200, 201, 204):
-            raise RuntimeError(f"Upsert {table} failed: {r.status_code} {r.text[:500]}")
+    Competitor exports can be rerun after a previous attempt failed halfway.
+    The table intentionally has a partial unique index that permits only one
+    active (valid_to is null) row per playlist/isrc. A duplicate should mean
+    "already active", not "the whole daily export is broken".
+    """
+    if not rows:
+        return
+    try:
+        pg.insert("playlist_memberships", rows)
+        return
+    except RuntimeError as exc:
+        if "23505" not in str(exc) and "duplicate key value" not in str(exc):
+            raise
 
-    def insert(self, table: str, rows: List[dict]):
-        if not rows:
-            return []
-        url = f"{self.base}/{table}"
-        headers = dict(self.h)
-        headers["Prefer"] = "return=representation"
-        r = requests.post(url, headers=headers, data=json.dumps(rows), timeout=180)
-        if r.status_code not in (200, 201):
-            raise RuntimeError(f"Insert {table} failed: {r.status_code} {r.text[:500]}")
-        return r.json()
-
-    def patch(self, table: str, patch_obj: dict, filters: str):
-        url = f"{self.base}/{table}?{filters}"
-        headers = dict(self.h)
-        headers["Prefer"] = "return=minimal"
-        r = requests.patch(url, headers=headers, data=json.dumps(patch_obj), timeout=180)
-        if r.status_code not in (200, 204):
-            raise RuntimeError(f"Patch {table} failed: {r.status_code} {r.text[:500]}")
-
-    def select(self, table: str, select: str, filters: str) -> List[dict]:
-        url = f"{self.base}/{table}?select={select}&{filters}"
-        r = requests.get(url, headers=self.h, timeout=180)
-        if r.status_code != 200:
-            raise RuntimeError(f"Select {table} failed: {r.status_code} {r.text[:500]}")
-        return r.json()
-
-    def select_all(
-        self,
-        table: str,
-        select: str,
-        filters: str,
-        page_size: int = 1000,
-        order: str = "id.asc",
-    ) -> List[dict]:
-        out: List[dict] = []
-        offset = 0
-        while True:
-            order_part = f"&order={order}" if order else ""
-            url = f"{self.base}/{table}?select={select}&{filters}{order_part}&limit={page_size}&offset={offset}"
-            r = requests.get(url, headers=self.h, timeout=180)
-            if r.status_code != 200:
-                raise RuntimeError(f"Select {table} failed: {r.status_code} {r.text[:500]}")
-            rows = r.json()
-            out.extend(rows)
-            if len(rows) < page_size:
-                break
-            offset += page_size
-        return out
-
-    def rpc(self, function_name: str, params: Optional[dict] = None) -> Optional[dict]:
-        """Call a PostgREST RPC function in the competitor schema."""
-        url = f"{self.base}/rpc/{function_name}"
-        r = requests.post(url, headers=self.h, data=json.dumps(params or {}), timeout=180)
-        if r.status_code not in (200, 204):
-            raise RuntimeError(f"RPC {function_name} failed: {r.status_code} {r.text[:500]}")
-        return r.json() if r.content else None
-
-    def insert_memberships_idempotent(self, rows: List[dict]):
-        """Insert active playlist membership rows, tolerating already-active rows.
-
-        Competitor exports can be rerun after a previous attempt failed halfway.
-        The table intentionally has a partial unique index that permits only one
-        active (valid_to is null) row per playlist/isrc. A duplicate should mean
-        "already active", not "the whole daily export is broken".
-        """
-        if not rows:
-            return
+    # Fallback path for reruns/partial prior failures: retry row-by-row and
+    # swallow only active-membership duplicate conflicts.
+    for row in rows:
         try:
-            self.insert("playlist_memberships", rows)
-            return
+            pg.insert("playlist_memberships", [row])
         except RuntimeError as exc:
-            if "23505" not in str(exc) and "duplicate key value" not in str(exc):
-                raise
-
-        # Fallback path for reruns/partial prior failures: retry row-by-row and
-        # swallow only active-membership duplicate conflicts.
-        for row in rows:
-            try:
-                self.insert("playlist_memberships", [row])
-            except RuntimeError as exc:
-                msg = str(exc)
-                if "competitor_playlist_memberships_active_uq" in msg or "duplicate key value" in msg:
-                    continue
-                raise
+            msg = str(exc)
+            if "competitor_playlist_memberships_active_uq" in msg or "duplicate key value" in msg:
+                continue
+            raise
 
 
 def parse_stream_value(raw: object) -> Optional[int]:
@@ -270,7 +193,7 @@ def main():
         raise SystemExit(f"Expected exports for {run_date} at {day_dir} (not found)")
 
     playlists = load_playlists_csv(args.config)
-    pg = Postgrest(supabase_url, service_key)
+    pg = Postgrest(supabase_url, service_key, schema="competitor")
 
     existing = pg.select("ingestion_runs", "id,status", f"run_date=eq.{run_date.isoformat()}")
     if existing:
@@ -368,12 +291,14 @@ def main():
             "playlist_memberships",
             "id,isrc",
             f"playlist_key=eq.{playlist.playlist_key}&valid_to=is.null",
+            order="id.asc",
         )
         active_isrcs = {str(r["isrc"]) for r in active_rows}
         today_isrcs = all_isrcs
         new_isrcs = today_isrcs - active_isrcs
         removed_isrcs = active_isrcs - today_isrcs
-        pg.insert_memberships_idempotent(
+        insert_memberships_idempotent(
+            pg,
             [
                 {
                     "playlist_key": playlist.playlist_key,

@@ -19,6 +19,11 @@ Do not blur them. Competitor work should be additive and schema-scoped; own-cata
 - Per-competitor accent color is stored in `competitor.labels.accent_hex` and resolved through `web/src/lib/competitorLabelAccents.ts` (`applyResolvedLabelAccents`) on every label load and in `extract-competitor-accents`. The resolved hex drives `--sb-accent` (chrome) and per-label UI (comparison chart, cards, badges). Stream charts in competitor mode use `getStreamSeriesColor()` → `colors.accent`; revenue/tracks keep semantic colors via `getChartColor()`.
 - Competitor history is multi-day; daily/trend views are reliable once ingestion has run across multiple snapshot dates.
 
+## Pipeline shared modules
+
+- `scripts/streambase_postgrest.py` — shared PostgREST client (retries with backoff; `schema="competitor"` for competitor tables). Both ingest scripts use it; migrate other scripts' hand-rolled REST calls here when touching them.
+- `scripts/streambase_revalidate.py` — best-effort post-ingestion cache refresh via `POST /api/revalidate`.
+
 ## Competitor system map
 
 - Config: `config/competitor_playlists.csv`

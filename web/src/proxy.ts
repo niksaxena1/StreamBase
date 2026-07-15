@@ -61,7 +61,6 @@ export const config = {
     "/collectors/:path*",
     "/health/:path*",
     "/exports/:path*",
-    "/api/exports",
     "/api/search",
     "/api/search-stats",
     "/api/breadcrumb/:path*",

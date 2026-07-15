@@ -12,6 +12,7 @@ from typing import Dict, Iterable, List, Optional, Set, Tuple
 import requests
 
 from streambase_revalidate import notify_web_revalidate
+from streambase_postgrest import Postgrest
 
 STREAM_PAYOUT_USD = 0.002
 
@@ -60,6 +61,11 @@ class Playlist:
     playlist_type: Optional[str]
     dashboard_url: str
     min_rows: int = 0
+    allow_empty: bool = False
+
+
+def parse_bool(raw: object) -> bool:
+    return str(raw or "").strip().lower() in {"1", "true", "yes", "y"}
 
 
 def utc_today() -> date:
@@ -99,8 +105,9 @@ def load_playlists_csv(path: str) -> List[Playlist]:
             key = (row.get("playlist_key") or "").strip()
             name = (row.get("display_name") or "").strip()
             url = (row.get("dashboard_url") or "").strip()
-            is_catalog = (row.get("is_catalog") or "").strip().lower() in ("1", "true", "yes", "y")
+            is_catalog = parse_bool(row.get("is_catalog"))
             playlist_type = (row.get("playlist_type") or "").strip() or None
+            allow_empty = parse_bool(row.get("allow_empty"))
             min_rows_raw = (row.get("min_rows") or "").strip()
             try:
                 min_rows = int(min_rows_raw) if min_rows_raw else 0
@@ -115,6 +122,7 @@ def load_playlists_csv(path: str) -> List[Playlist]:
                         playlist_type=playlist_type,
                         dashboard_url=url,
                         min_rows=max(0, min_rows),
+                        allow_empty=allow_empty,
                     )
                 )
     return out
@@ -132,88 +140,6 @@ def norm_isrc(s: str) -> str:
     if not raw:
         return ""
     return re.sub(r"[^A-Z0-9]", "", raw)
-
-
-class Postgrest:
-    def __init__(self, supabase_url: str, service_role_key: str):
-        self.base = supabase_url.rstrip("/") + "/rest/v1"
-        self.h = {
-            "Authorization": f"Bearer {service_role_key}",
-            "apikey": service_role_key,
-            "Content-Type": "application/json",
-        }
-
-    def upsert(self, table: str, rows: List[dict], on_conflict: str):
-        if not rows:
-            return
-        url = f"{self.base}/{table}?on_conflict={on_conflict}"
-        headers = dict(self.h)
-        headers["Prefer"] = "resolution=merge-duplicates,return=minimal"
-        r = requests.post(url, headers=headers, data=json.dumps(rows), timeout=180)
-        if r.status_code not in (200, 201, 204):
-            raise RuntimeError(f"Upsert {table} failed: {r.status_code} {r.text[:500]}")
-
-    def insert(self, table: str, rows: List[dict]):
-        if not rows:
-            return []
-        url = f"{self.base}/{table}"
-        headers = dict(self.h)
-        headers["Prefer"] = "return=representation"
-        r = requests.post(url, headers=headers, data=json.dumps(rows), timeout=180)
-        if r.status_code not in (200, 201):
-            raise RuntimeError(f"Insert {table} failed: {r.status_code} {r.text[:500]}")
-        return r.json()
-
-    def patch(self, table: str, patch_obj: dict, filters: str):
-        url = f"{self.base}/{table}?{filters}"
-        headers = dict(self.h)
-        headers["Prefer"] = "return=minimal"
-        r = requests.patch(url, headers=headers, data=json.dumps(patch_obj), timeout=180)
-        if r.status_code not in (200, 204):
-            raise RuntimeError(f"Patch {table} failed: {r.status_code} {r.text[:500]}")
-
-    def delete(self, table: str, filters: str):
-        url = f"{self.base}/{table}?{filters}"
-        headers = dict(self.h)
-        headers["Prefer"] = "return=minimal"
-        r = requests.delete(url, headers=headers, timeout=180)
-        if r.status_code not in (200, 204):
-            raise RuntimeError(f"Delete {table} failed: {r.status_code} {r.text[:500]}")
-
-    def select(self, table: str, select: str, filters: str) -> List[dict]:
-        url = f"{self.base}/{table}?select={select}&{filters}"
-        r = requests.get(url, headers=self.h, timeout=180)
-        if r.status_code != 200:
-            raise RuntimeError(f"Select {table} failed: {r.status_code} {r.text[:500]}")
-        return r.json()
-
-    def select_all(self, table: str, select: str, filters: str, page_size: int = 1000) -> List[dict]:
-        """
-        Supabase PostgREST commonly enforces a max row limit (often 1000). Paginate with limit/offset.
-        """
-        out: List[dict] = []
-        offset = 0
-        while True:
-            url = f"{self.base}/{table}?select={select}&{filters}&limit={page_size}&offset={offset}"
-            r = requests.get(url, headers=self.h, timeout=180)
-            if r.status_code != 200:
-                raise RuntimeError(f"Select {table} failed: {r.status_code} {r.text[:500]}")
-            batch = r.json()
-            if not batch:
-                break
-            out.extend(batch)
-            if len(batch) < page_size:
-                break
-            offset += page_size
-        return out
-
-    def rpc(self, function_name: str, params: Optional[dict] = None) -> Optional[dict]:
-        """Call a PostgREST RPC function."""
-        url = f"{self.base}/rpc/{function_name}"
-        r = requests.post(url, headers=self.h, data=json.dumps(params or {}), timeout=180)
-        if r.status_code not in (200, 204):
-            raise RuntimeError(f"RPC {function_name} failed: {r.status_code} {r.text[:500]}")
-        return r.json() if r.content else None
 
 
 def calc_rev(streams: Optional[int]) -> Optional[float]:
@@ -649,6 +575,10 @@ def main():
                 )
 
             if rows_count == 0:
+                if pl_cfg and pl_cfg.allow_empty:
+                    playlist_to_isrcs[pl_key] = set()
+                    print(f"  ℹ {pl_key}: 0-row export accepted by allow_empty=true")
+                    continue
                 pg.insert(
                     "ingestion_warnings",
                     [
@@ -1158,7 +1088,8 @@ def main():
         # memberships (skip derived)
         prev_active_by_playlist: Dict[str, Set[str]] = {}
         for pl_key, todays_isrcs in playlist_to_isrcs.items():
-            if not todays_isrcs:
+            pl_cfg = playlist_lookup.get(pl_key)
+            if not todays_isrcs and not (pl_cfg and pl_cfg.allow_empty):
                 continue
             active_rows = pg.select_all("playlist_memberships", "id,isrc", f"playlist_key=eq.{pl_key}&valid_to=is.null&order=id")
             active_set = {r["isrc"] for r in active_rows}
@@ -1222,7 +1153,8 @@ def main():
         for pl in playlists:
             pl_key = pl.playlist_key
             todays_isrcs = playlist_to_isrcs.get(pl_key)
-            if not todays_isrcs:
+            is_allowed_empty_snapshot = pl.allow_empty and todays_isrcs is not None and len(todays_isrcs) == 0
+            if not todays_isrcs and not is_allowed_empty_snapshot:
                 continue
 
             total = 0
@@ -1261,7 +1193,7 @@ def main():
 
             # Critical health check: cumulative total streams should not decrease day-over-day.
             # If it does, something is wrong with today's export (missing/blank values, parsing, or source bug).
-            if prev_total is not None and total < prev_total:
+            if prev_total is not None and total < prev_total and not is_allowed_empty_snapshot:
                 decreased_tracks = []
                 for isrc in todays_isrcs:
                     today_val = int(catalog_streams_today.get(isrc, 0))
@@ -1353,7 +1285,7 @@ def main():
                             },
                         }
                     )
-                elif ratio >= track_count_swing_warn_ratio:
+                elif ratio >= track_count_swing_warn_ratio and not is_allowed_empty_snapshot:
                     warn_rows.append(
                         {
                             "run_id": run_id,

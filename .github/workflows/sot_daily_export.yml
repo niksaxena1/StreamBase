@@ -220,6 +220,7 @@ jobs:
           # Check for stale source data (ingestion succeeded but Spotify didn't update).
           STALE_TRACKS_COUNT="0"
           STALE_TRACKS_SEVERITY=""
+          ZEROED_COUNT="0"
           if [ -f ".artifacts/ingestion_summary.json" ]; then
             STALE=$(python3 -c "import json; d=json.load(open('.artifacts/ingestion_summary.json')); print('true' if d.get('stale_data_detected') else 'false')" 2>/dev/null || echo "false")
             STALE_TRACKS_COUNT=$(python3 -c "import json; d=json.load(open('.artifacts/ingestion_summary.json')); print(d.get('individual_tracks_stale_count', 0))" 2>/dev/null || echo "0")

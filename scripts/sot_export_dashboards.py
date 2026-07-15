@@ -38,6 +38,14 @@ class Playlist:
     url: str
     is_catalog: bool
     min_rows: int = 0
+    allow_empty: bool = False
+
+
+EMPTY_EXPORT_COLUMNS = ["isrc", "name", "release_date", "spotify_streams_total"]
+
+
+def parse_bool(raw: object) -> bool:
+    return str(raw or "").strip().lower() in {"1", "true", "yes", "y"}
 
 
 def utc_date_parts() -> Tuple[str, str, str]:
@@ -183,6 +191,22 @@ def click_export_csv(page) -> bool:
     return False
 
 
+def dashboard_has_track_links(page) -> bool:
+    try:
+        return page.locator("a[href*='/tracks/']").count() > 0
+    except Exception:
+        return False
+
+
+def write_empty_export(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(".tmp.csv")
+    with open(tmp_path, "w", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(EMPTY_EXPORT_COLUMNS)
+    tmp_path.replace(path)
+
+
 def sha256_file(path: Path) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -214,14 +238,24 @@ def load_playlists_csv(path: str) -> List[Playlist]:
             key = (row.get("playlist_key") or "").strip()
             name = (row.get("display_name") or "").strip()
             url = (row.get("dashboard_url") or "").strip()
-            is_catalog = (row.get("is_catalog") or "").strip().lower() in ("1", "true", "yes", "y")
+            is_catalog = parse_bool(row.get("is_catalog"))
+            allow_empty = parse_bool(row.get("allow_empty"))
             min_rows_raw = (row.get("min_rows") or "").strip()
             try:
                 min_rows = int(min_rows_raw) if min_rows_raw else 0
             except Exception:
                 min_rows = 0
             if key and name and url:
-                out.append(Playlist(key=key, name=name, url=url, is_catalog=is_catalog, min_rows=max(0, min_rows)))
+                out.append(
+                    Playlist(
+                        key=key,
+                        name=name,
+                        url=url,
+                        is_catalog=is_catalog,
+                        min_rows=max(0, min_rows),
+                        allow_empty=allow_empty,
+                    )
+                )
 
     return out
 
@@ -234,6 +268,9 @@ def download_one(page, pl: Playlist, out_path: Path) -> Tuple[bool, str]:
         return False, "logged_out"
 
     if not wait_for_export_button(page):
+        if pl.allow_empty and not dashboard_has_track_links(page):
+            write_empty_export(out_path)
+            return True, "empty_dashboard_no_export_button"
         return False, "export_button_not_visible"
 
     try:
@@ -358,7 +395,9 @@ def main():
             h = sha256_file(out_path)
             print(f"✅ Saved: {out_path} | rows={rows} | sha256={h[:12]}...")
 
-            if args.fail_on_empty and rows == 0:
+            if rows == 0 and pl.allow_empty:
+                print("ℹ️ Empty export accepted by allow_empty=true.")
+            elif args.fail_on_empty and rows == 0:
                 failures += 1
                 print("❌ Zero-row export (treating as failure).")
             if pl.min_rows and rows < pl.min_rows:

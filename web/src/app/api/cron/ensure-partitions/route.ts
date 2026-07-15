@@ -43,8 +43,22 @@ export async function GET(req: Request) {
       return apiJsonErr(error.message, 500);
     }
 
+    // Monthly housekeeping piggybacked on the same cron: web performance
+    // metrics are 20%-sampled per page view and would otherwise grow forever.
+    // Percentile reviews only look at recent windows, so keep 180 days.
+    const metricsCutoff = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString();
+    const { error: metricsErr } = await svc
+      .from("web_performance_metrics")
+      .delete()
+      .lt("recorded_at", metricsCutoff);
+    if (metricsErr) {
+      // Non-fatal: partitions are the critical part of this cron.
+      console.error("web_performance_metrics retention cleanup failed:", metricsErr);
+    }
+
     return apiJsonOk({
       message: `Ensured partitions for the next ${monthsAhead} months.`,
+      metricsRetention: metricsErr ? `cleanup failed: ${metricsErr.message}` : `pruned metrics older than ${metricsCutoff.slice(0, 10)}`,
     });
   } catch (e) {
     console.error("ensure-partitions cron error:", e);

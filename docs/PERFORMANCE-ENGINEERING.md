@@ -23,6 +23,8 @@ Tracked signals: route ready, TTFB, LCP, CLS, long tasks, and explicitly marked 
 
 All competitor cache keys must contain the competitor label key. Use `scopedAnalyticsCacheKey` for new shared analytics caches. Own-catalog invalidation must not evict competitor data and vice versa.
 
+Post-ingestion invalidation is implemented by `POST /api/revalidate` (Bearer `REVALIDATE_SECRET`), which revalidates the generic `supabase` tag carried by every `cachedQuery` entry. Both ingestion scripts call it via `scripts/streambase_revalidate.py` when `STREAMBASE_REVALIDATE_URL` and `REVALIDATE_SECRET` are configured as Actions secrets; without them, freshness falls back to TTL expiry.
+
 ## Core route query expectations
 
 | Route | Expected server shape | Pagination rule |
