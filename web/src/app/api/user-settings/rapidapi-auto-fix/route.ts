@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
+import type { TableInsert } from "@/lib/supabase/appDatabase";
 import { isSchemaMissing } from "@/lib/supabase/schemaMissing";
 import { apiJsonErr, apiJsonOk, readJsonBodyOptional, requireUser } from "@/lib/api/server";
 
@@ -47,7 +48,7 @@ export async function POST(request: NextRequest) {
 
   const body = await readJsonBodyOptional(request);
 
-  const patch: Record<string, unknown> = { user_id: auth.user.id };
+  const patch: TableInsert<"user_settings"> = { user_id: auth.user.id };
 
   if (body.rapidapi_auto_fix_enabled !== undefined) {
     const raw = body.rapidapi_auto_fix_enabled;

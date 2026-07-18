@@ -40,13 +40,15 @@ export async function POST(req: Request) {
 
   const svc = supabaseService();
   const { datasetMode } = await getAdminUserDatasetContext(svc, auth.user.id);
-  const rpcClient =
-    datasetMode === "competitor" ? svc.schema("competitor") : svc;
-  const { data, error } = await rpcClient.rpc("network_selection_scoped_track_totals", {
+  const rpcArgs = {
     p_artist_ids: artistIds,
-    p_playlist_key: playlistKey,
+    p_playlist_key: playlistKey ?? undefined,
     p_hide_non_primary: hideNonPrimary,
-  });
+  };
+  const { data, error } =
+    datasetMode === "competitor"
+      ? await svc.schema("competitor").rpc("network_selection_scoped_track_totals", rpcArgs)
+      : await svc.rpc("network_selection_scoped_track_totals", rpcArgs);
 
   if (error) {
     console.error("network_selection_scoped_track_totals:", error);

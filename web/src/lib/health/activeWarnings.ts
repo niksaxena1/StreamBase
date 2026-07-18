@@ -1,4 +1,5 @@
 import { unstable_cache } from "next/cache";
+import { CACHE_TTL_1H } from "@/lib/constants";
 import { supabaseService } from "@/lib/supabase/service";
 import { normalizeKey, normalizeIsrc } from "./types";
 import type {
@@ -432,8 +433,13 @@ async function computeActiveWarnings(
 /**
  * Retrieve the active (non-suppressed) health warnings for a given run date.
  *
- * Results are cached for 60 seconds. Call `revalidateTag("health")` (via the
- * `refreshHealthData` server action) to bust the cache on-demand.
+ * Cached for an hour: warning data only changes at ingestion time (the
+ * pipeline busts the "health" tag via POST /api/revalidate) or through health
+ * actions (`refreshHealthData` calls `revalidateTag("health")`). The previous
+ * 60s TTL recomputed the full warning pipeline (including the expensive
+ * health_negative_daily_streams / health_playlist_missing_catalog_tracks
+ * RPCs) on nav-badge renders all day — the two largest DB time consumers in
+ * pg_stat_statements.
  *
  * @param runDate  ISO date string.  When omitted the latest run date is used.
  */
@@ -444,6 +450,6 @@ export function getActiveWarningSummary(
   return unstable_cache(
     () => computeActiveWarnings(runDate),
     [cacheKey],
-    { revalidate: 60, tags: ["health", cacheKey] },
+    { revalidate: CACHE_TTL_1H, tags: ["health", cacheKey] },
   )();
 }

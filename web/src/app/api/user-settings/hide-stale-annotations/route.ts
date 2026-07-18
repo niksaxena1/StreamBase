@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
+import type { TableInsert } from "@/lib/supabase/appDatabase";
 import { isSchemaMissing } from "@/lib/supabase/schemaMissing";
 import { apiJsonErr, apiJsonOk, readJsonBodyOptional, requireUser } from "@/lib/api/server";
 
@@ -72,7 +73,7 @@ export async function POST(request: NextRequest) {
     return apiJsonErr("No recognised boolean field provided.", 400);
   }
 
-  const patch: Record<string, unknown> = { user_id: auth.user.id };
+  const patch: TableInsert<"user_settings"> = { user_id: auth.user.id };
   if (hideVal !== null) patch.hide_stale_override_annotations = hideVal;
   if (excludeCatalogVal !== null) patch.hide_stale_annotations_exclude_catalog = excludeCatalogVal;
 

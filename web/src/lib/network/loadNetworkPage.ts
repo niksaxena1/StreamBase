@@ -224,12 +224,12 @@ export async function loadNetworkGraph(args: {
   const cached = await cachedQuery(
     async () => {
       const { data, error } = await svc.rpc("artist_collaboration_graph", {
-        p_playlist_key: networkScope.mode === "playlist" ? networkScope.playlistKey : null,
+        p_playlist_key: networkScope.mode === "playlist" ? networkScope.playlistKey ?? undefined : undefined,
         p_hide_non_primary: hideNonPrimary,
         p_scope_playlists:
           networkScope.mode === "custom" && networkScope.customPlaylistKeys.length > 0
             ? networkScope.customPlaylistKeys
-            : null,
+            : undefined,
         p_scope_playlist_mode: networkScope.mode === "custom" ? networkScope.customPlaylistMode : "any",
       });
       if (error) return { data: null, error };

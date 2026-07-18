@@ -60,8 +60,8 @@ export async function GET(request: NextRequest) {
     p_spike_ratio: spikeRatio,
     p_min_baseline: minBaseline,
     p_include_weekends: includeWeekends,
-    p_start_date: pStartRun,
-    p_end_date: pEndRun,
+    p_start_date: pStartRun ?? undefined,
+    p_end_date: pEndRun ?? undefined,
   });
 
   if (error) {

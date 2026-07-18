@@ -62,15 +62,16 @@ export async function POST(req: NextRequest) {
   }
 
   const { id, name, entityType, groups, groupJoinLogic } = body as Record<string, unknown>;
-  if (!name || typeof name !== "string" || !entityType || !Array.isArray(groups)) {
+  if (!name || typeof name !== "string" || !entityType || typeof entityType !== "string" || !Array.isArray(groups)) {
     return apiJsonErr("name, entityType, and groups are required", 400);
   }
+  const idStr = typeof id === "string" && id ? id : null;
 
   const join = groupJoinLogic === "OR" ? "OR" : "AND";
 
   const now = new Date().toISOString();
 
-  if (id) {
+  if (idStr) {
     const { data: updated, error: updateErr } = await sb
       .from("saved_filters")
       .update({
@@ -79,7 +80,7 @@ export async function POST(req: NextRequest) {
         config: { groups, groupJoinLogic: join },
         updated_at: now,
       })
-      .eq("id", id)
+      .eq("id", idStr)
       .select("id,name,entity_type,config,created_at,updated_at");
 
     if (updateErr) {

@@ -21,7 +21,9 @@ export async function POST() {
     .is("deleted_at", null)
     .limit(50);
 
-  const oldIds = (oldConvos ?? []).map((r: { id?: string }) => r.id).filter(Boolean);
+  const oldIds = (oldConvos ?? [])
+    .map((r: { id?: string }) => r.id)
+    .filter((x): x is string => Boolean(x));
   if (oldIds.length > 0) {
     await svc.from("sai_conversations").update({ deleted_at: nowIso }).in("id", oldIds);
     await svc.from("sai_messages").delete().in("conversation_id", oldIds);

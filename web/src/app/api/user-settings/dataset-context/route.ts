@@ -5,6 +5,7 @@ import { ALL_COMPETITORS_KEY } from "@/lib/competitorContext";
 import { normalizeDatasetMode } from "@/lib/datasetMode";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
+import type { TableInsert } from "@/lib/supabase/appDatabase";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,7 +29,7 @@ export async function PATCH(req: NextRequest) {
   }
   const datasetMode = normalizeDatasetMode(rawMode);
 
-  const update: Record<string, unknown> = {
+  const update: TableInsert<"user_settings"> = {
     user_id: auth.user.id,
     dataset_mode: datasetMode,
   };

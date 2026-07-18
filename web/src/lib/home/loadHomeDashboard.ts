@@ -1151,8 +1151,8 @@ export async function loadHomeDashboardData(args: {
               p_grace_days: artificialGraceDays,
               p_threshold_crossing_max: artificialThresholdCrossing,
               p_include_weekends: artificialIncludeWeekends,
-              p_start_date: spikeFilterRunStart,
-              p_end_date: spikeFilterRunEnd,
+              p_start_date: spikeFilterRunStart ?? undefined,
+              p_end_date: spikeFilterRunEnd ?? undefined,
             });
             return { data, error };
           },

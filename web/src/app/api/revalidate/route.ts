@@ -32,7 +32,9 @@ export async function POST(request: NextRequest) {
   const requested = Array.isArray(body.tags)
     ? body.tags.filter((t): t is string => typeof t === "string" && !!t.trim()).map((t) => t.trim())
     : [];
-  const tags = requested.length ? requested : [SUPABASE_CACHE_TAG];
+  // "health" covers getActiveWarningSummary (raw unstable_cache, not
+  // cachedQuery, so the generic supabase tag does not reach it).
+  const tags = requested.length ? requested : [SUPABASE_CACHE_TAG, "health"];
 
   for (const tag of tags) revalidateTag(tag, "max");
 

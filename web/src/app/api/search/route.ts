@@ -64,17 +64,22 @@ export async function GET(request: NextRequest) {
         (labels ?? []) as Array<{ label_key: string; display_name: string }>,
       );
     }
-    const dataClient = datasetMode === "competitor" ? svc.schema("competitor") : sb;
-    const latestClient = datasetMode === "competitor" ? svc.schema("competitor") : svc;
-
     const { data: latestRun } = await cachedQuery(
       async () =>
-        await latestClient
-          .from("ingestion_runs")
-          .select("run_date")
-          .order("run_date", { ascending: false })
-          .limit(1)
-          .maybeSingle(),
+        datasetMode === "competitor"
+          ? await svc
+              .schema("competitor")
+              .from("ingestion_runs")
+              .select("run_date")
+              .order("run_date", { ascending: false })
+              .limit(1)
+              .maybeSingle()
+          : await svc
+              .from("ingestion_runs")
+              .select("run_date")
+              .order("run_date", { ascending: false })
+              .limit(1)
+              .maybeSingle(),
       `search-latest-ingestion-run-${datasetMode}`,
       600,
     );
@@ -87,15 +92,20 @@ export async function GET(request: NextRequest) {
       async () => {
         const { data: rows, error: rpcErr } =
           datasetMode === "competitor" && competitorLabelKey && competitorLabelKey !== ALL_COMPETITORS_KEY
-            ? await dataClient.rpc("search_all_for_label", {
+            ? await svc.schema("competitor").rpc("search_all_for_label", {
                 q: queryRaw,
                 label_key: competitorLabelKey,
                 max_results: 40,
               })
-            : await dataClient.rpc("search_all", {
-                q: queryRaw,
-                max_results: 40,
-              });
+            : datasetMode === "competitor"
+              ? await svc.schema("competitor").rpc("search_all", {
+                  q: queryRaw,
+                  max_results: 40,
+                })
+              : await sb.rpc("search_all", {
+                  q: queryRaw,
+                  max_results: 40,
+                });
         if (rpcErr) return { data: { results: [] as SearchResult[] }, error: rpcErr };
 
         const results: SearchResult[] = (rows ?? []).map(

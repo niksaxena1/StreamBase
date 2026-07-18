@@ -91,7 +91,7 @@ export default async function TestExperimentsPage() {
             svc.rpc("playlist_top_tracks", {
               playlist_key: p.playlist_key,
               run_date: latestDate,
-              prev_date: prevDate,
+              prev_date: prevDate ?? undefined,
               limit_rows: 24,
             }),
           ),

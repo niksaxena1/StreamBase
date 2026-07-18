@@ -55,7 +55,7 @@ export async function POST(req: Request) {
   for (const part of chunk(artistIds, CHUNK)) {
     const { data, error } = await svc.rpc("network_export_artist_stream_stats", {
       p_artist_ids: part,
-      p_playlist_key: playlistKey,
+      p_playlist_key: playlistKey ?? undefined,
       p_hide_non_primary: hideNonPrimary,
     });
 

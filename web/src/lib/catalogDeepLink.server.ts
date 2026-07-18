@@ -32,13 +32,19 @@ export async function buildCatalogDeepLinkPath(args: CatalogDeepLinkArgs): Promi
     .eq("user_id", args.userId)
     .maybeSingle();
   const datasetMode = normalizeDatasetMode(settings?.dataset_mode);
-  const tracksClient = datasetMode === "competitor" ? svc.schema("competitor") : svc;
-
-  const { data: trackRow } = await tracksClient
-    .from("tracks")
-    .select("spotify_artist_ids")
-    .eq("isrc", isrc)
-    .maybeSingle();
+  const { data: trackRow } =
+    datasetMode === "competitor"
+      ? await svc
+          .schema("competitor")
+          .from("tracks")
+          .select("spotify_artist_ids")
+          .eq("isrc", isrc)
+          .maybeSingle()
+      : await svc
+          .from("tracks")
+          .select("spotify_artist_ids")
+          .eq("isrc", isrc)
+          .maybeSingle();
   const ids = (trackRow as { spotify_artist_ids?: string[] | null } | null)?.spotify_artist_ids;
   const primaryArtistId = Array.isArray(ids) ? String(ids[0] ?? "").trim() : "";
 

@@ -4,6 +4,7 @@ import { supabaseServer } from "@/lib/supabase/server";
 import { apiJsonErr, requireUser } from "@/lib/api/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { createSaiTurnContext, streamSaiChat } from "@/lib/sai/llm";
+import type { Json } from "@/lib/supabase/appDatabase";
 import type { SaiAssistantMeta, SaiEnvelope, SaiStreamEvent } from "@/lib/sai/types";
 
 export const runtime = "nodejs";
@@ -86,7 +87,7 @@ export async function POST(req: Request) {
       user_id: user.id,
       role: "user",
       content: message,
-      meta: { envelope },
+      meta: { envelope } as unknown as Json,
     },
   ]);
 
@@ -141,7 +142,7 @@ export async function POST(req: Request) {
             user_id: user.id,
             role: "assistant",
             content: text,
-            meta,
+            meta: meta as unknown as Json,
           },
         ]);
 

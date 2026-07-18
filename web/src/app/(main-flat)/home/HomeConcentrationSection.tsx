@@ -278,7 +278,7 @@ export function HomeConcentrationSection(props: {
       const pageSize = 1000;
       for (let offset = 0; offset < 10000; offset += pageSize) {
         const { data, error } = await sb.rpc("collector_tracks_paged", {
-          collector: collectorId,
+          collector: String(collectorId),
           run_date: runDate,
           prev_date: prevDate,
           offset_rows: offset,

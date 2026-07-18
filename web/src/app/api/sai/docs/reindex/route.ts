@@ -163,7 +163,8 @@ export async function POST(req: NextRequest) {
       tags: c.tags,
       sources: c.sources,
       content_sha256: c.content_sha256,
-      embedding: vectors[idx],
+      // Typegen maps pgvector columns to string; PostgREST accepts number[].
+      embedding: vectors[idx] as unknown as string,
     }));
 
     const { error } = await svc.from("sai_doc_chunks").upsert(rows, { onConflict: "doc_path,chunk_id" });

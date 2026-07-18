@@ -1,0 +1,19 @@
+-- Applied to prod 2026-07-18 via Supabase MCP (migration name:
+-- pin_search_path_app_functions_and_lock_refresh_fns).
+--
+-- Pins search_path on all 62 app-owned functions that lacked it (Supabase
+-- advisor: function_search_path_mutable). Extension-owned functions (pgvector,
+-- pg_trgm, btree_gist) intentionally untouched. Pins mirror runtime PostgREST
+-- profiles: public fns -> public; competitor fns -> competitor-first
+-- (same-named tables exist in both schemas). Also locks the pipeline-only
+-- refresh functions to service_role. Verified post-apply: search_all,
+-- home_negative_daily_streams, home_track_scatter_points, and
+-- playlists_latest_track_counts all return normal results.
+--
+-- Regenerate the ALTER list at any time with:
+--   select 'ALTER FUNCTION ' || n.nspname || '.' || p.proname || '(' ||
+--          pg_get_function_identity_arguments(p.oid) || ') SET search_path = ...'
+--   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+--   where n.nspname in ('public','competitor','playlist_watch')
+--     and p.proconfig is null and p.prokind = 'f'
+--     and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e');

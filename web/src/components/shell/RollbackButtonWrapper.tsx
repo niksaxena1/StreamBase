@@ -24,13 +24,21 @@ export async function RollbackButtonWrapper() {
     datasetMode = normalizeDatasetMode(settings?.dataset_mode);
   }
 
-  const statsClient = datasetMode === "competitor" ? svc.schema("competitor") : svc;
-  const { data: latestRow } = await statsClient
-    .from("playlist_daily_stats")
-    .select("date")
-    .order("date", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const { data: latestRow } =
+    datasetMode === "competitor"
+      ? await svc
+          .schema("competitor")
+          .from("playlist_daily_stats")
+          .select("date")
+          .order("date", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+      : await svc
+          .from("playlist_daily_stats")
+          .select("date")
+          .order("date", { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
   const latestRunDate = (latestRow as { date: string } | null)?.date ?? null;
   const latestDataDate = latestRunDate ? dataDateFromRunDate(latestRunDate) : null;
