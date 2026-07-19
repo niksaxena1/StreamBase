@@ -56,7 +56,9 @@ export async function POST(req: Request) {
         .from("playlists")
         .update({
           spotify_playlist_name: meta.name,
-          spotify_playlist_image_url: meta.imageUrl,
+          // Spotify playlists may intentionally have no cover. Keep the
+          // existing cached/custom thumbnail instead of replacing it with null.
+          spotify_playlist_image_url: meta.imageUrl ?? p.spotify_playlist_image_url,
           spotify_last_fetched_at: new Date().toISOString(),
         })
         .eq("playlist_key", p.playlist_key);

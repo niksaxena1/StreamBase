@@ -787,6 +787,7 @@ Notes:
   - reads/writes monthly “actual revenue” overlays when configured in DB
 - `/api/admin/spotify/refresh-playlist-thumbnails`
   - admin-only maintenance endpoint for playlist thumbnail cache refresh
+  - if Spotify returns no cover, the existing cached or custom thumbnail is retained
 - `/api/artists/options`, `/api/playlists/options`
   - admin-only “options lists” used by config UIs (artist cache and playlist table)
 - `/api/playlists/memberships`
@@ -1327,12 +1328,18 @@ When adding a feature that touches data:
    - `playlist_key` (stable)
    - `display_name`
    - `is_catalog`
+   - `playlist_type`
    - `dashboard_url`
+   - `sot_playlist_id` and `sot_dashboard_name`
    - optional `min_rows` (recommended)
-2) Export and confirm CSV exists:
+2) Add or update the `public.playlists` metadata when the playlist needs a Spotify ID,
+   custom thumbnail, display order, collector, or Entity mapping. Store project-owned
+   thumbnails under `web/public/playlist-logos/` and use an absolute web path such as
+   `/playlist-logos/example.png`.
+3) Export and confirm CSV exists:
    - `exports/YYYY/MM/DD/<playlist_key>.csv`
-3) Run ingestion for that day.
-4) Verify:
+4) Run ingestion for that day.
+5) Verify:
    - `/health` shows the raw export row
    - `/playlists` includes the playlist
    - `playlist_daily_stats` has rows for it
