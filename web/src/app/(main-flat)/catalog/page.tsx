@@ -423,14 +423,14 @@ async function CatalogPageContent({
           : Promise.resolve({ data: [] }),
         latestRunDate && artistIsrcs.length
           ? comp
-              .from("track_daily_streams")
+              .from("track_daily_streams_effective_public")
               .select("isrc,streams_cumulative")
               .in("isrc", artistIsrcs)
               .eq("date", latestRunDate)
           : Promise.resolve({ data: [] }),
         latestRunDate && artistIsrcs.length
           ? comp
-              .from("track_daily_streams")
+              .from("track_daily_streams_effective_public")
               .select("isrc,streams_cumulative")
               .in("isrc", artistIsrcs)
               .eq("date", addDays(latestRunDate, -1))
@@ -477,7 +477,7 @@ async function CatalogPageContent({
       const trackSeries =
         selectedIsrc && latestRunDate && maPaddedStartRunDate
           ? ((await comp
-              .from("track_daily_streams")
+              .from("track_daily_streams_effective_public")
               .select("date,streams_cumulative")
               .eq("isrc", selectedIsrc)
               .gte("date", maPaddedStartRunDate)

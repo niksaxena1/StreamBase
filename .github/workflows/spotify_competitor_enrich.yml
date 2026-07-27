@@ -10,7 +10,9 @@ on:
   schedule:
     # Offset from own-catalog Spotify enrichment to reduce shared-pressure overlap.
     # 15:09 Dubai / 11:09 UTC daily
-    - cron: "9 11 * * *"
+    # Every other day (even days of month), alternating with own-catalog enrichment,
+    # to conserve Actions minutes; metadata-only so cadence does not affect streams.
+    - cron: "9 11 2-30/2 * *"
 
 concurrency:
   group: spotify-competitor-enrich
@@ -34,6 +36,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: "pip"
 
       - name: Install dependencies
         run: |
@@ -50,3 +53,14 @@ jobs:
         run: |
           sleep 2
           python scripts/enrich_competitor_tracks_with_spotify.py --limit "${LIMIT}"
+
+      - name: Send failure notification email
+        if: failure()
+        uses: ./.github/actions/notify-email
+        with:
+          password: ${{ secrets.NOTIFY_SMTP_PASSWORD }}
+          subject: "[StreamBase] Spotify competitor enrichment FAILED"
+          body: |
+            The Spotify competitor enrichment workflow failed.
+
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

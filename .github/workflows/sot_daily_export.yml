@@ -124,13 +124,25 @@ jobs:
         if: steps.precheck.outputs.should_run == 'true'
         with:
           python-version: "3.12"
+          cache: "pip"
 
+      - name: Cache Playwright browsers
+        if: steps.precheck.outputs.should_run == 'true'
+        id: playwright_cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
       - name: Install dependencies
         if: steps.precheck.outputs.should_run == 'true'
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          python -m playwright install --with-deps chromium
+          if [ "${{ steps.playwright_cache.outputs.cache-hit }}" = "true" ]; then
+            python -m playwright install-deps chromium
+          else
+            python -m playwright install --with-deps chromium
+          fi
 
       - name: Write storage state from secret
         if: steps.precheck.outputs.should_run == 'true'

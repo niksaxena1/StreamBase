@@ -328,6 +328,35 @@ def main():
         )
 
     pg.upsert("playlist_daily_stats", stats_rows, on_conflict="date,playlist_key")
+
+    # Surface staleness (tracks whose cumulative snapshot didn't move vs yesterday) so
+    # Spot On Track outages are visible in ingestion_warnings. Repair is deliberately
+    # manual: run competitor.spotibase_interpolate_stale_streams(), then
+    # competitor.refresh_artist_daily_stats(), when a warning flags it.
+    try:
+        stale = pg.rpc("spotibase_stale_summary", {"p_date": run_date.isoformat()})
+        if stale:
+            snapshot_tracks = int(stale[0].get("snapshot_tracks") or 0)
+            stale_raw = int(stale[0].get("stale_raw") or 0)
+            if snapshot_tracks and stale_raw > max(200, snapshot_tracks // 20):
+                pg.insert(
+                    "ingestion_warnings",
+                    [{
+                        "run_id": run_id,
+                        "run_date": run_date.isoformat(),
+                        "playlist_key": None,
+                        "severity": "warning",
+                        "code": "competitor_tracks_stale",
+                        "message": (
+                            f"{stale_raw} of {snapshot_tracks} competitor tracks have an unchanged "
+                            f"cumulative snapshot vs {prev_date.isoformat()} (possible Spot On Track staleness)"
+                        ),
+                    }],
+                )
+            print(f"INFO Stale summary for {run_date}: {stale[0]}")
+    except Exception as stale_err:
+        print(f"WARN Could not compute competitor stale summary: {stale_err}")
+
     try:
         refreshed = pg.rpc(
             "refresh_artist_daily_stats",

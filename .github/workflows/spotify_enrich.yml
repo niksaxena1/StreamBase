@@ -9,7 +9,9 @@ on:
         default: "500"
   schedule:
     # 14:29 Dubai / 10:29 UTC daily
-    - cron: "29 10 * * *"
+    # Every other day (odd days of month) to conserve Actions minutes;
+    # enrichment is metadata-only so cadence does not affect stream accuracy.
+    - cron: "29 10 1-31/2 * *"
 
 concurrency:
   group: spotify-enrich
@@ -33,6 +35,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: "pip"
 
       - name: Install dependencies
         run: |

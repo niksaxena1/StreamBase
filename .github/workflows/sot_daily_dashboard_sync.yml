@@ -1,5 +1,9 @@
 name: SOT Daily Dashboard Sync
 
+permissions:
+  actions: read
+  contents: read
+
 on:
   schedule:
     # Run before the export workflow (first export is 07:43 UTC).
@@ -36,17 +40,49 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: "Pre-check: skip if already synced successfully today"
+        id: precheck
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The fallback cron exists for redundancy; skip the second full sync
+          # when the first already succeeded today.
+          SHOULD_RUN="true"
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            TODAY=$(date -u +'%Y-%m-%d')
+            RUNS_ENDPOINT="repos/${GITHUB_REPOSITORY}/actions/workflows/sot_daily_dashboard_sync.yml/runs?branch=main&per_page=50"
+            OK="$(gh api "$RUNS_ENDPOINT" --jq '.workflow_runs | any(.[]; (.created_at | startswith("'"$TODAY"'")) and .status=="completed" and .conclusion=="success")' || true)"
+            if [ "$OK" = "true" ]; then SHOULD_RUN="false"; echo "Already synced successfully today; skipping."; fi
+          fi
+          echo "should_run=$SHOULD_RUN" >> "$GITHUB_OUTPUT"
+
       - uses: actions/setup-python@v5
+        if: steps.precheck.outputs.should_run == 'true'
         with:
           python-version: "3.12"
+          cache: "pip"
 
+      - name: Cache Playwright browsers
+        if: steps.precheck.outputs.should_run == 'true'
+        id: playwright_cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
       - name: Install dependencies
+        if: steps.precheck.outputs.should_run == 'true'
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          python -m playwright install --with-deps chromium
+          if [ "${{ steps.playwright_cache.outputs.cache-hit }}" = "true" ]; then
+            python -m playwright install-deps chromium
+          else
+            python -m playwright install --with-deps chromium
+          fi
 
       - name: Write storage state from secret
+        if: steps.precheck.outputs.should_run == 'true'
         env:
           SOT_STORAGE_STATE_B64: ${{ secrets.SOT_STORAGE_STATE_B64 }}
         run: |
@@ -57,6 +93,7 @@ jobs:
           echo "$SOT_STORAGE_STATE_B64" | base64 --decode > sot_state.json
 
       - name: Sync dashboards to playlists
+        if: steps.precheck.outputs.should_run == 'true'
         env:
           SOT_EMAIL: ${{ secrets.SOT_EMAIL }}
           SOT_PASSWORD: ${{ secrets.SOT_PASSWORD }}
@@ -68,7 +105,7 @@ jobs:
           python scripts/sot_sync_dashboards.py --config config/playlists.csv --storage-state sot_state.json $ARGS
 
       - name: Upload sync log artifact
-        if: always()
+        if: always() && steps.precheck.outputs.should_run == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: sot-dashboard-sync-${{ github.run_id }}
@@ -77,7 +114,7 @@ jobs:
 
       - name: Check sync results for notification
         id: notify_check
-        if: always()
+        if: always() && steps.precheck.outputs.should_run == 'true'
         shell: bash
         run: |
           SHOULD_NOTIFY="false"

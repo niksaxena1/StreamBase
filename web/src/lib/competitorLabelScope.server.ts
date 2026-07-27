@@ -63,7 +63,7 @@ export async function sumCompetitorStreamsForIsrcs(
   let total = 0;
   for (const part of chunk(unique, MEMBERSHIP_ISRC_CHUNK)) {
     const { data: streamRows } = await client
-      .from("track_daily_streams")
+      .from("track_daily_streams_effective_public")
       .select("streams_cumulative")
       .eq("date", args.latestRunDate)
       .in("isrc", part);

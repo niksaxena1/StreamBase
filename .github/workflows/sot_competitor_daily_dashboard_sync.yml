@@ -1,5 +1,9 @@
 name: SOT Competitor Daily Dashboard Sync
 
+permissions:
+  actions: read
+  contents: read
+
 on:
   schedule:
     # After Own Catalog sync/export windows to avoid shared SpotOnTrack pressure.
@@ -36,21 +40,53 @@ jobs:
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
+      - name: "Pre-check: skip if already synced successfully today"
+        id: precheck
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The fallback cron exists for redundancy; when the first run already
+          # succeeded today, a second full (up to 3h) sync is wasted minutes.
+          SHOULD_RUN="true"
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            TODAY=$(date -u +'%Y-%m-%d')
+            RUNS_ENDPOINT="repos/${GITHUB_REPOSITORY}/actions/workflows/sot_competitor_daily_dashboard_sync.yml/runs?branch=main&per_page=50"
+            OK="$(gh api "$RUNS_ENDPOINT" --jq '.workflow_runs | any(.[]; (.created_at | startswith("'"$TODAY"'")) and .status=="completed" and .conclusion=="success")' || true)"
+            if [ "$OK" = "true" ]; then SHOULD_RUN="false"; echo "Already synced successfully today; skipping."; fi
+          fi
+          echo "should_run=$SHOULD_RUN" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-python@v5
+        if: steps.precheck.outputs.should_run == 'true'
         with:
           python-version: "3.12"
+          cache: "pip"
+      - name: Cache Playwright browsers
+        if: steps.precheck.outputs.should_run == 'true'
+        id: playwright_cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
       - name: Install dependencies
+        if: steps.precheck.outputs.should_run == 'true'
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          python -m playwright install --with-deps chromium
+          if [ "${{ steps.playwright_cache.outputs.cache-hit }}" = "true" ]; then
+            python -m playwright install-deps chromium
+          else
+            python -m playwright install --with-deps chromium
+          fi
       - name: Write storage state from secret
+        if: steps.precheck.outputs.should_run == 'true'
         env:
           SOT_STORAGE_STATE_B64: ${{ secrets.SOT_STORAGE_STATE_B64 }}
         run: |
           if [ -z "$SOT_STORAGE_STATE_B64" ]; then exit 0; fi
           echo "$SOT_STORAGE_STATE_B64" | base64 --decode > sot_state.json
       - name: Sync competitor dashboards to playlists
+        if: steps.precheck.outputs.should_run == 'true'
         env:
           SOT_EMAIL: ${{ secrets.SOT_EMAIL }}
           SOT_PASSWORD: ${{ secrets.SOT_PASSWORD }}
@@ -62,10 +98,72 @@ jobs:
           if [ -n "${{ inputs.playlist_keys }}" ]; then ARGS="$ARGS --only-playlist-keys ${{ inputs.playlist_keys }}"; fi
           python scripts/sot_sync_dashboards.py --config config/competitor_playlists.csv --storage-state sot_state.json $ARGS
       - name: Upload sync log artifact
-        if: always()
+        if: always() && steps.precheck.outputs.should_run == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: sot-competitor-dashboard-sync-${{ github.run_id }}
           path: .artifacts/
           if-no-files-found: warn
           include-hidden-files: true
+
+      - name: Check sync results for notification
+        id: notify_check
+        if: always() && steps.precheck.outputs.should_run == 'true'
+        shell: bash
+        run: |
+          SHOULD_NOTIFY="false"
+          SUBJECT="[StreamBase] Competitor Dashboard Sync: unknown issue"
+          SKIPPED="?"
+          ERRORS="?"
+          TOTAL="?"
+          ADDED="?"
+          REMOVED="?"
+
+          if [ -f ".artifacts/sync_summary.json" ]; then
+            SUMMARY=$(cat .artifacts/sync_summary.json)
+            SKIPPED=$(echo "$SUMMARY" | python3 -c "import sys,json; print(json.load(sys.stdin).get('total_skipped',0))")
+            ERRORS=$(echo "$SUMMARY" | python3 -c "import sys,json; print(json.load(sys.stdin).get('total_errors',0))")
+            TOTAL=$(echo "$SUMMARY" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tasks_total',0))")
+            ADDED=$(echo "$SUMMARY" | python3 -c "import sys,json; print(json.load(sys.stdin).get('total_added',0))")
+            REMOVED=$(echo "$SUMMARY" | python3 -c "import sys,json; print(json.load(sys.stdin).get('total_removed',0))")
+
+            if [ "$SKIPPED" -gt 0 ] || [ "$ERRORS" -gt 0 ]; then
+              SHOULD_NOTIFY="true"
+              SUBJECT="[StreamBase] Competitor Dashboard Sync: ${SKIPPED} skipped, ${ERRORS} errors"
+            fi
+          fi
+
+          # Always notify on hard failure (even without summary).
+          if [ "${{ job.status }}" = "failure" ]; then
+            SHOULD_NOTIFY="true"
+            SUBJECT="[StreamBase] Competitor Dashboard Sync FAILED"
+          fi
+
+          echo "should_notify=$SHOULD_NOTIFY" >> "$GITHUB_OUTPUT"
+          echo "subject=$SUBJECT" >> "$GITHUB_OUTPUT"
+          {
+            echo 'body<<ENDOFBODY'
+            if [ -f ".artifacts/sync_summary.json" ]; then
+              echo "Competitor Dashboard Sync results:"
+              echo "  Tasks: ${TOTAL}"
+              echo "  Skipped: ${SKIPPED} (0-track scans or safety blocks)"
+              echo "  Errors: ${ERRORS}"
+              echo "  Added: ${ADDED}"
+              echo "  Removed: ${REMOVED}"
+            else
+              echo "No sync summary available (script may not have completed)."
+            fi
+            echo ""
+            echo "Skipped tasks may have debug screenshots in the workflow artifacts."
+            echo ""
+            echo "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo 'ENDOFBODY'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Send notification email
+        if: always() && steps.notify_check.outputs.should_notify == 'true'
+        uses: ./.github/actions/notify-email
+        with:
+          password: ${{ secrets.NOTIFY_SMTP_PASSWORD }}
+          subject: ${{ steps.notify_check.outputs.subject }}
+          body: ${{ steps.notify_check.outputs.body }}
