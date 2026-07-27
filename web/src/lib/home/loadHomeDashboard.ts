@@ -223,41 +223,54 @@ async function fetchDistroByIsrcForHome(svc: Svc, runDate: string, isrcs: string
   if (!unique.length || !runDate) return distroByIsrc;
 
   const chunkSize = 500;
+  const chunks: Array<{ chunk: string[]; chunkKey: string }> = [];
   for (let i = 0; i < unique.length; i += chunkSize) {
     const chunk = unique.slice(i, i + chunkSize);
-    const chunkKey = `${i}-${shortHash([...chunk].sort().join(","))}`;
+    chunks.push({ chunk, chunkKey: `${i}-${shortHash([...chunk].sort().join(","))}` });
+  }
 
-    const { data: memRows, error: memErr } = await cachedQuery(
-      async () => fetchAllPlaylistMembershipRowsForIsrcChunk(svc, runDate, chunk),
-      `home-scatter-distro-mem-${runDate}-${chunkKey}`,
-      CACHE_TTL_1H,
-    );
-    if (memErr) throw memErr;
+  // Each chunk's membership → playlist lookup is independent; run chunks in
+  // parallel (previously ~2 serialized round trips per chunk).
+  const chunkResults = await Promise.all(
+    chunks.map(async ({ chunk, chunkKey }) => {
+      const { data: memRows, error: memErr } = await cachedQuery(
+        async () => fetchAllPlaylistMembershipRowsForIsrcChunk(svc, runDate, chunk),
+        `home-scatter-distro-mem-${runDate}-${chunkKey}`,
+        CACHE_TTL_1H,
+      );
+      if (memErr) throw memErr;
 
-    const activeMemRows = ((memRows ?? []) as MembershipRow[]).filter(
-      (r) => r.valid_to == null || r.valid_to >= runDate,
-    );
-    const uniquePlaylistKeys = [...new Set(activeMemRows.map((r) => r.playlist_key))];
-    if (!uniquePlaylistKeys.length) continue;
+      const activeMemRows = ((memRows ?? []) as MembershipRow[]).filter(
+        (r) => r.valid_to == null || r.valid_to >= runDate,
+      );
+      const uniquePlaylistKeys = [...new Set(activeMemRows.map((r) => r.playlist_key))];
+      if (!uniquePlaylistKeys.length) return null;
 
-    const plKey = `${chunkKey}-${shortHash(uniquePlaylistKeys.slice().sort().join("|"))}`;
+      const plKey = `${chunkKey}-${shortHash(uniquePlaylistKeys.slice().sort().join("|"))}`;
 
-    const { data: plRows, error: plErr } = await cachedQuery(
-      async () => fetchDistroPlaylistsByKeys(svc, uniquePlaylistKeys),
-      `home-scatter-distro-pl-${runDate}-${plKey}`,
-      CACHE_TTL_1H,
-    );
-    if (plErr) throw plErr;
+      const { data: plRows, error: plErr } = await cachedQuery(
+        async () => fetchDistroPlaylistsByKeys(svc, uniquePlaylistKeys),
+        `home-scatter-distro-pl-${runDate}-${plKey}`,
+        CACHE_TTL_1H,
+      );
+      if (plErr) throw plErr;
 
+      return { activeMemRows, plRows };
+    }),
+  );
+
+  // Merge in chunk order to preserve first-wins semantics.
+  for (const result of chunkResults) {
+    if (!result) continue;
     const distroPlaylistMap = new Map(
-      ((plRows ?? []) as Array<{ playlist_key: string; display_name: string | null; spotify_playlist_image_url: string | null }>).map(
+      ((result.plRows ?? []) as Array<{ playlist_key: string; display_name: string | null; spotify_playlist_image_url: string | null }>).map(
         (p) => [
           p.playlist_key,
           { name: p.display_name ?? p.playlist_key, imageUrl: p.spotify_playlist_image_url ?? null },
         ],
       ),
     );
-    for (const r of activeMemRows) {
+    for (const r of result.activeMemRows) {
       const info = distroPlaylistMap.get(r.playlist_key);
       if (info && !distroByIsrc.has(r.isrc)) distroByIsrc.set(r.isrc, info);
     }
@@ -279,48 +292,60 @@ async function fetchCompetitorPlaylistsByIsrcForHome(
   if (!unique.length || !runDate) return byIsrc;
 
   const chunkSize = 500;
+  const chunks: Array<{ chunk: string[]; chunkKey: string }> = [];
   for (let i = 0; i < unique.length; i += chunkSize) {
     const chunk = unique.slice(i, i + chunkSize);
-    const chunkKey = `${i}-${shortHash([...chunk].sort().join(","))}-${competitorLabelKey ?? "all"}`;
+    chunks.push({ chunk, chunkKey: `${i}-${shortHash([...chunk].sort().join(","))}-${competitorLabelKey ?? "all"}` });
+  }
 
-    const { data: memRows, error: memErr } = await cachedQuery(
-      async () => {
-        const q = svc
-          .schema("competitor")
-          .from("playlist_memberships")
-          .select("isrc,playlist_key")
-          .in("isrc", chunk)
-          .lte("valid_from", runDate)
-          .or(`valid_to.is.null,valid_to.gte.${runDate}`);
-        return await q;
-      },
-      `home-scatter-comp-pl-mem-${runDate}-${chunkKey}`,
-      CACHE_TTL_1H,
-    );
-    if (memErr) throw memErr;
+  // Chunks are independent; run them in parallel (previously serialized).
+  const chunkResults = await Promise.all(
+    chunks.map(async ({ chunk, chunkKey }) => {
+      const { data: memRows, error: memErr } = await cachedQuery(
+        async () => {
+          const q = svc
+            .schema("competitor")
+            .from("playlist_memberships")
+            .select("isrc,playlist_key")
+            .in("isrc", chunk)
+            .lte("valid_from", runDate)
+            .or(`valid_to.is.null,valid_to.gte.${runDate}`);
+          return await q;
+        },
+        `home-scatter-comp-pl-mem-${runDate}-${chunkKey}`,
+        CACHE_TTL_1H,
+      );
+      if (memErr) throw memErr;
 
-    const memberships = (memRows ?? []) as Array<{ isrc: string; playlist_key: string }>;
-    const playlistKeys = [...new Set(memberships.map((r) => r.playlist_key).filter(Boolean))];
-    if (!playlistKeys.length) continue;
+      const memberships = (memRows ?? []) as Array<{ isrc: string; playlist_key: string }>;
+      const playlistKeys = [...new Set(memberships.map((r) => r.playlist_key).filter(Boolean))];
+      if (!playlistKeys.length) return null;
 
-    const { data: plRows, error: plErr } = await cachedQuery(
-      async () => {
-        let q = svc
-          .schema("competitor")
-          .from("playlists")
-          .select("playlist_key,display_name,spotify_playlist_image_url,display_order")
-          .in("playlist_key", playlistKeys)
-          .eq("is_active", true);
-        if (competitorLabelKey) q = q.eq("label_key", competitorLabelKey);
-        return await q.order("display_order", { ascending: true, nullsFirst: false }).order("display_name", {
-          ascending: true,
-        });
-      },
-      `home-scatter-comp-pl-meta-${runDate}-${chunkKey}`,
-      CACHE_TTL_1H,
-    );
-    if (plErr) throw plErr;
+      const { data: plRows, error: plErr } = await cachedQuery(
+        async () => {
+          let q = svc
+            .schema("competitor")
+            .from("playlists")
+            .select("playlist_key,display_name,spotify_playlist_image_url,display_order")
+            .in("playlist_key", playlistKeys)
+            .eq("is_active", true);
+          if (competitorLabelKey) q = q.eq("label_key", competitorLabelKey);
+          return await q.order("display_order", { ascending: true, nullsFirst: false }).order("display_name", {
+            ascending: true,
+          });
+        },
+        `home-scatter-comp-pl-meta-${runDate}-${chunkKey}`,
+        CACHE_TTL_1H,
+      );
+      if (plErr) throw plErr;
 
+      return { memberships, plRows };
+    }),
+  );
+
+  for (const result of chunkResults) {
+    if (!result) continue;
+    const { memberships, plRows } = result;
     const playlistMeta = new Map(
       ((plRows ?? []) as Array<{
         playlist_key: string;
@@ -636,6 +661,10 @@ export async function loadHomeDiagnosticsDataForUser(args: {
     ...args,
     includeScatter: false,
     includeDiagnostics: true,
+    // Fetch only what the 4 diagnostics RPCs need (settings, health config,
+    // latest run date) — skip history rows, override annotations, playlist
+    // images, and competitor playlist lists the home page already loaded.
+    diagnosticsOnly: true,
   });
 
   return {
@@ -654,10 +683,15 @@ export async function loadHomeDashboardData(args: {
   sp: HomeDashboardSearchParams;
   includeScatter?: boolean;
   includeDiagnostics?: boolean;
+  /** Trim the load to what the diagnostics RPCs need (see loadHomeDiagnosticsDataForUser). */
+  diagnosticsOnly?: boolean;
+  /** Pre-fetched user_settings row (from getRequestAppContext) to skip the duplicate read. */
+  settings?: Record<string, unknown> | null;
 }): Promise<HomeDashboardServerProps> {
   const { sb, svc, userId, sp } = args;
   const includeScatter = args.includeScatter ?? true;
   const includeDiagnostics = args.includeDiagnostics ?? true;
+  const diagnosticsOnly = args.diagnosticsOnly ?? false;
 
   let rangeDays = Math.max(7, Math.min(365, Number(sp.range ?? "30") || 30));
   if (sp.start && sp.end) {
@@ -680,6 +714,8 @@ export async function loadHomeDashboardData(args: {
   // load time (especially noticeable after a competitor switch).
   // ---------------------------------------------------------------------------
   const userSettingsPromise = (async () => {
+    // The page's request context already fetched this row — reuse it.
+    if (args.settings !== undefined) return args.settings;
     try {
       const { data } = await sb
         .from("user_settings")
@@ -714,15 +750,10 @@ export async function loadHomeDashboardData(args: {
 
   const overrideBusterPromise = (async () => {
     try {
-      const { count, data: latestOverride } = await svc
-        .from("track_daily_stream_overrides")
-        .select("id", { count: "exact" })
-        .order("id", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      const maxId = Number((latestOverride as { id: number } | null)?.id ?? 0);
-      const total = Number(count ?? 0);
-      return `${total}-${maxId}`;
+      // Single fast index-only aggregate (max id + count) computed in Postgres;
+      // changes when overrides are added or removed.
+      const { data } = await svc.rpc("spotibase_override_version");
+      return typeof data === "string" && data ? data : "0";
     } catch {
       return "0";
     }
@@ -731,7 +762,7 @@ export async function loadHomeDashboardData(args: {
   const rollbackDatePromise = getRollbackDate();
 
   const playlistImagePromise =
-    playlistKey === "all_catalog"
+    playlistKey === "all_catalog" || diagnosticsOnly
       ? Promise.resolve(null as string | null)
       : cachedQuery<{ spotify_playlist_image_url: string | null }>(
           async () =>
@@ -838,7 +869,7 @@ export async function loadHomeDashboardData(args: {
       }
     })();
 
-    const playlistsPromise: Promise<HomeDashboardServerProps["competitorPlaylists"]> = isSpecificCompetitor
+    const playlistsPromise: Promise<HomeDashboardServerProps["competitorPlaylists"]> = isSpecificCompetitor && !diagnosticsOnly
       ? (async () => {
           try {
             const { data: plRows } = await svc
@@ -902,7 +933,9 @@ export async function loadHomeDashboardData(args: {
           .select("date,playlist_key,track_count,total_streams_cumulative,daily_streams_net,missing_streams_track_count")
           .in("playlist_key", playlistKeys);
         if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
-        const res = await q.order("date", { ascending: false }).limit((rangeDays + 7) * playlistKeys.length);
+        // Diagnostics only needs the latest run date, not the full history window.
+        const rowLimit = diagnosticsOnly ? playlistKeys.length : (rangeDays + 7) * playlistKeys.length;
+        const res = await q.order("date", { ascending: false }).limit(rowLimit);
         return {
           data: aggregateCompetitorPlaylistHistory((res.data ?? []) as any).map((row) => ({
             ...row,
@@ -918,9 +951,9 @@ export async function loadHomeDashboardData(args: {
         .select("date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net")
         .eq("playlist_key", playlistKey);
       if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
-      return await q.order("date", { ascending: false }).limit(rangeDays + 7);
+      return await q.order("date", { ascending: false }).limit(diagnosticsOnly ? 1 : rangeDays + 7);
     },
-    `home-playlist-stats-v5-${datasetMode}-${competitorLabelKey ?? "none"}-${playlistKey}-${rangeDays + 7}-ov${overrideBuster}-rb${rollbackDate ?? "live"}`,
+    `home-playlist-stats-v5-${datasetMode}-${competitorLabelKey ?? "none"}-${playlistKey}-${diagnosticsOnly ? "diag" : rangeDays + 7}-ov${overrideBuster}-rb${rollbackDate ?? "live"}`,
     CACHE_TTL_1H,
   );
 
@@ -971,6 +1004,12 @@ export async function loadHomeDashboardData(args: {
   // history result and the sync-computed ranges above, so run them concurrently.
   // ---------------------------------------------------------------------------
   const scatterPromise = (async () => {
+    if (diagnosticsOnly) {
+      return {
+        selectedDataDate: null as string | null,
+        scatter: { points: [] as TrackStreamsXYPoint[], errorMessage: null as string | null },
+      };
+    }
     const { selectedDataDate, selectedRunDate } = await resolveHomeScatterSelection({
       svc,
       sp,
@@ -992,7 +1031,7 @@ export async function loadHomeDashboardData(args: {
   })();
 
   const overrideAnnotationsPromise: Promise<ManualOverrideAnnotation[]> = (async () => {
-    if (datasetMode === "competitor") return [];
+    if (datasetMode === "competitor" || diagnosticsOnly) return [];
     const hist = ((history as PlaylistDailyStatsRow[] | null) ?? []) as PlaylistDailyStatsRow[];
     if (!hist.length) return [];
     const endRunDate = (hist[0]?.date ?? "").trim();

@@ -14,6 +14,10 @@ import { supabaseService } from "@/lib/supabase/service";
 export type RequestUserSettingsRow = {
   dataset_mode?: unknown;
   competitor_label_key?: unknown;
+  hide_stale_override_annotations?: unknown;
+  hide_stale_annotations_exclude_catalog?: unknown;
+  artificial_streams_spike_ratio?: unknown;
+  artificial_streams_include_weekends_user?: unknown;
 } | null;
 
 export type RequestAppContext = {
@@ -72,7 +76,9 @@ export const getRequestAppContext = cache(async (): Promise<RequestAppContext> =
       .maybeSingle(),
     svc
       .from("user_settings")
-      .select("dataset_mode,competitor_label_key")
+      .select(
+        "dataset_mode,competitor_label_key,hide_stale_override_annotations,hide_stale_annotations_exclude_catalog,artificial_streams_spike_ratio,artificial_streams_include_weekends_user",
+      )
       .eq("user_id", user.id)
       .maybeSingle(),
   ]);

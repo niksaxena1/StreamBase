@@ -238,6 +238,24 @@ export type Database = {
         }
         Relationships: []
       }
+      health_active_warning_snapshots: {
+        Row: {
+          computed_at: string
+          run_date: string
+          summary: Json
+        }
+        Insert: {
+          computed_at?: string
+          run_date: string
+          summary: Json
+        }
+        Update: {
+          computed_at?: string
+          run_date?: string
+          summary?: Json
+        }
+        Relationships: []
+      }
       health_config: {
         Row: {
           description: string
@@ -2374,6 +2392,13 @@ export type Database = {
           isrc: string
         }[]
       }
+      catalog_artist_options: {
+        Args: { max_tracks?: number }
+        Returns: {
+          id: string
+          name: string
+        }[]
+      }
       catalog_artist_series: {
         Args: { artist_id: string; end_date: string; start_date: string }
         Returns: {
@@ -3147,6 +3172,7 @@ export type Database = {
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
       spotibase_docs_inventory: { Args: never; Returns: Json }
+      spotibase_override_version: { Args: never; Returns: string }
       spotibase_recompute_playlist_daily_stats: {
         Args: { p_date: string }
         Returns: undefined

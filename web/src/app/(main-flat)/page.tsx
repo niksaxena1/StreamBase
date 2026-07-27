@@ -43,7 +43,7 @@ async function HomeContent({
 }) {
   const sp = (await searchParams) ?? {};
 
-  const { sb, svc, user, isAdmin, appAccess } = await timedServerStep(
+  const { sb, svc, user, isAdmin, appAccess, settings } = await timedServerStep(
     "page.home.context",
     () => getRequestAppContext(),
   );
@@ -66,6 +66,7 @@ async function HomeContent({
         sp,
         includeScatter: false,
         includeDiagnostics: false,
+        settings: settings ?? null,
       }),
   );
 

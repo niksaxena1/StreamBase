@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import { Check, Loader2, Swords } from "lucide-react";
 
@@ -70,6 +71,7 @@ export function CompetitorModeButton({
   labels: Label[];
   activeLabelKey: string | null;
 }) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [ownHover, setOwnHover] = useState(false);
@@ -228,7 +230,14 @@ export function CompetitorModeButton({
         // Capture the optimistic accent in the outgoing view-transition snapshot.
         // Navigation stays immediate; the flourish never delays data loading.
         document.documentElement.dataset.sbDatasetTransition = "true";
-        window.location.assign(destination);
+        // Soft navigation: keep the client bundle/JS state alive and re-render
+        // server components only (a full window.location.assign() reload re-parsed
+        // and re-executed the entire app on every mode switch).
+        const current = window.location.pathname + window.location.search;
+        if (destination !== current) {
+          router.push(destination);
+        }
+        router.refresh();
         // The success-path cleanup (clearing saving + finishing the loading bar) runs
         // automatically in the useEffect on activeLabelKey/datasetMode prop change.
       }

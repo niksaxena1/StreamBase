@@ -1,5 +1,7 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
+import CatalogLoading from "./loading";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { cachedQuery } from "@/lib/supabase/cache";
@@ -8,7 +10,7 @@ import { RememberParamRedirect } from "@/components/dashboard/RememberParamRedir
 import { CatalogPageClient } from "./CatalogPageClient";
 import { computeDailyRollingAvg7 } from "@/components/charts/chartUtils";
 import { dataDateFromRunDate } from "@/lib/sotDates";
-import { getRollbackDate, rollbackDataDateToRunDate, capRunDate } from "@/lib/rollback";
+import { getRollbackDate, rollbackDataDateToRunDate } from "@/lib/rollback";
 import { Alert } from "@/components/ui/Alert";
 import { CACHE_TTL_1H, API_LOOKUP_DROPDOWN_MAX, API_LOOKUP_THUMBNAILS_MAX, API_LOOKUP_PAGE_SIZE, API_LOOKUP_TRACK_MAX, API_LOOKUP_LIMIT_500 } from "@/lib/constants";
 import { logError, logWarn } from "@/lib/logger";
@@ -123,38 +125,6 @@ async function fetchRecentTracksMetaForArtists(sb: SupabaseClient, maxRows = 200
   return (data ?? []) as TrackRow[];
 }
 
-async function fetchAllTracksMeta(
-  sb: SupabaseClient,
-  maxRows = 5000,
-): Promise<TrackRow[]> {
-  const pageSize = API_LOOKUP_PAGE_SIZE;
-  const out: TrackRow[] = [];
-  let from = 0;
-
-  while (from < maxRows) {
-    const to = from + pageSize - 1;
-    const { data, error } = await sb
-      .from("tracks")
-      .select("isrc,name,spotify_artist_ids,spotify_artist_names,spotify_album_image_url")
-      .not("spotify_artist_ids", "is", null)
-      .order("last_seen", { ascending: false })
-      .range(from, to);
-
-    if (error) {
-      logError("Error fetching tracks metadata", error);
-      break;
-    }
-
-    const rows = (data ?? []) as TrackRow[];
-    if (!rows.length) break;
-    out.push(...rows);
-    if (rows.length < pageSize) break;
-    from += pageSize;
-  }
-
-  return out;
-}
-
 async function fetchAllTrackSeries(
   sb: SupabaseClient,
   args: { isrc: string; startDate: string; endDate: string; maxRows?: number },
@@ -236,7 +206,20 @@ function artistNameFor(rows: TrackRow[], artistId: string) {
   return null;
 }
 
-export default async function CatalogPage(props: {
+export default function CatalogPage(props: {
+  searchParams?: Promise<{ artist_id?: string; isrc?: string; range?: string; view?: string; start?: string; end?: string }>;
+}) {
+  // Stream: the shell (and the route skeleton) render immediately while the
+  // data-heavy content resolves — including on same-route param navigations
+  // (artist/track selection) where loading.tsx alone doesn't apply.
+  return (
+    <Suspense fallback={<CatalogLoading />}>
+      <CatalogPageTimed {...props} />
+    </Suspense>
+  );
+}
+
+async function CatalogPageTimed(props: {
   searchParams?: Promise<{ artist_id?: string; isrc?: string; range?: string; view?: string; start?: string; end?: string }>;
 }) {
   return timedServerStep("page.catalog", () => CatalogPageContent(props));
@@ -312,68 +295,99 @@ async function CatalogPageContent({
         }
       }
 
-      let competitorPlaylistsQuery = comp
-        .from("playlists")
-        .select("playlist_key,display_name,display_order,spotify_playlist_id,spotify_playlist_image_url")
-        .eq("is_active", true);
-      if (competitorLabelKey && competitorLabelKey !== ALL_COMPETITORS_KEY) {
-        competitorPlaylistsQuery = competitorPlaylistsQuery.eq("label_key", competitorLabelKey);
-      }
-      const { data: competitorPlaylists } = competitorLabelKey
-        ? await competitorPlaylistsQuery
-        : { data: [] as Array<{ playlist_key: string; display_name: string | null; display_order: number | null; spotify_playlist_id: string | null; spotify_playlist_image_url: string | null }> };
-      const competitorPlaylistRows = (competitorPlaylists ?? []) as Array<{
-        playlist_key: string;
-        display_name: string | null;
-        display_order: number | null;
-        spotify_playlist_id: string | null;
-        spotify_playlist_image_url: string | null;
-      }>;
-      const competitorPlaylistKeys = competitorPlaylistRows
-        .map((p) => p.playlist_key)
-        .filter(Boolean);
+      // The whole label context (playlists → latest date → memberships → tracks)
+      // is identical for every request within a label, so fetch it once per hour
+      // per label (this path previously had no caching at all — every catalog
+      // render in competitor mode was a full cold ~6-query read).
+      type CompCatalogContext = {
+        competitorPlaylistRows: Array<{
+          playlist_key: string;
+          display_name: string | null;
+          display_order: number | null;
+          spotify_playlist_id: string | null;
+          spotify_playlist_image_url: string | null;
+        }>;
+        latestRunDate: string | null;
+        hasOnlyOneSnapshot: boolean;
+        activeMemberships: Array<{ isrc: string; playlist_key: string; valid_from: string }>;
+        competitorTracks: TrackRow[];
+      };
+      const { data: compContext } = await cachedQuery<CompCatalogContext>(
+        async () => {
+          let competitorPlaylistsQuery = comp
+            .from("playlists")
+            .select("playlist_key,display_name,display_order,spotify_playlist_id,spotify_playlist_image_url")
+            .eq("is_active", true);
+          if (competitorLabelKey && competitorLabelKey !== ALL_COMPETITORS_KEY) {
+            competitorPlaylistsQuery = competitorPlaylistsQuery.eq("label_key", competitorLabelKey);
+          }
+          const { data: competitorPlaylists } = competitorLabelKey
+            ? await competitorPlaylistsQuery
+            : { data: [] as CompCatalogContext["competitorPlaylistRows"] };
+          const competitorPlaylistRows = (competitorPlaylists ?? []) as CompCatalogContext["competitorPlaylistRows"];
+          const competitorPlaylistKeys = competitorPlaylistRows
+            .map((p) => p.playlist_key)
+            .filter(Boolean);
+          const [{ data: latestRun }, { data: recentPlaylistDates }] = competitorPlaylistKeys.length
+            ? await Promise.all([
+                (() => {
+                  let q = comp.from("playlist_daily_stats").select("date").in("playlist_key", competitorPlaylistKeys);
+                  if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
+                  return q.order("date", { ascending: false }).limit(1).maybeSingle();
+                })(),
+                (() => {
+                  let q = comp.from("playlist_daily_stats").select("date").in("playlist_key", competitorPlaylistKeys);
+                  if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
+                  return q.order("date", { ascending: false }).limit(Math.max(competitorPlaylistKeys.length * 2, 2));
+                })(),
+              ])
+            : [{ data: null }, { data: [] as PlaylistDailyStatsRow[] }];
+          const latestRunDate = (latestRun as PlaylistDailyStatsRow | null)?.date ?? null;
+          const hasOnlyOneSnapshot =
+            new Set(((recentPlaylistDates ?? []) as PlaylistDailyStatsRow[]).map((row) => row.date)).size <= 1;
+          const { data: activeMemberships } =
+            latestRunDate && competitorPlaylistKeys.length
+              ? await comp
+                  .from("playlist_memberships")
+                  .select("isrc,playlist_key,valid_from")
+                  .in("playlist_key", competitorPlaylistKeys)
+                  .lte("valid_from", latestRunDate)
+                  .or(`valid_to.is.null,valid_to.gte.${latestRunDate}`)
+              : { data: [] as CompCatalogContext["activeMemberships"] };
+          const competitorIsrcs = [
+            ...new Set(
+              ((activeMemberships ?? []) as Array<{ isrc: string }>).map((r) => r.isrc).filter(Boolean),
+            ),
+          ];
+          const { data: recentTracks } = competitorIsrcs.length
+            ? await comp
+                .from("tracks")
+                .select("isrc,name,spotify_artist_ids,spotify_artist_names,spotify_album_image_url,release_date")
+                .in("isrc", competitorIsrcs)
+                .not("spotify_artist_ids", "is", null)
+                .order("last_seen", { ascending: false })
+                .limit(5000)
+            : { data: [] as TrackRow[] };
+          return {
+            data: {
+              competitorPlaylistRows,
+              latestRunDate,
+              hasOnlyOneSnapshot,
+              activeMemberships: (activeMemberships ?? []) as CompCatalogContext["activeMemberships"],
+              competitorTracks: (recentTracks ?? []) as TrackRow[],
+            },
+            error: null,
+          };
+        },
+        `catalog-comp-context-v1-${competitorLabelKey ?? "none"}-rb${rollbackDate ?? "live"}`,
+        CACHE_TTL_1H,
+      );
+      const competitorPlaylistRows = compContext?.competitorPlaylistRows ?? [];
+      const latestRunDate = compContext?.latestRunDate ?? null;
+      const hasOnlyOneSnapshot = compContext?.hasOnlyOneSnapshot ?? true;
+      const activeMemberships = compContext?.activeMemberships ?? [];
+      const competitorTracks = compContext?.competitorTracks ?? [];
       const competitorPlaylistMetaByKey = new Map(competitorPlaylistRows.map((p) => [p.playlist_key, p]));
-      const [{ data: latestRun }, { data: recentPlaylistDates }] = competitorPlaylistKeys.length
-        ? await Promise.all([
-            (() => {
-              let q = comp.from("playlist_daily_stats").select("date").in("playlist_key", competitorPlaylistKeys);
-              if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
-              return q.order("date", { ascending: false }).limit(1).maybeSingle();
-            })(),
-            (() => {
-              let q = comp.from("playlist_daily_stats").select("date").in("playlist_key", competitorPlaylistKeys);
-              if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
-              return q.order("date", { ascending: false }).limit(Math.max(competitorPlaylistKeys.length * 2, 2));
-            })(),
-          ])
-        : [{ data: null }, { data: [] as PlaylistDailyStatsRow[] }];
-      const latestRunDate = (latestRun as PlaylistDailyStatsRow | null)?.date ?? null;
-      const hasOnlyOneSnapshot =
-        new Set(((recentPlaylistDates ?? []) as PlaylistDailyStatsRow[]).map((row) => row.date)).size <= 1;
-      const { data: activeMemberships } =
-        latestRunDate && competitorPlaylistKeys.length
-          ? await comp
-              .from("playlist_memberships")
-              .select("isrc,playlist_key,valid_from")
-              .in("playlist_key", competitorPlaylistKeys)
-              .lte("valid_from", latestRunDate)
-              .or(`valid_to.is.null,valid_to.gte.${latestRunDate}`)
-          : { data: [] as Array<{ isrc: string; playlist_key: string; valid_from: string }> };
-      const competitorIsrcs = [
-        ...new Set(
-          ((activeMemberships ?? []) as Array<{ isrc: string }>).map((r) => r.isrc).filter(Boolean),
-        ),
-      ];
-      const { data: recentTracks } = competitorIsrcs.length
-        ? await comp
-            .from("tracks")
-            .select("isrc,name,spotify_artist_ids,spotify_artist_names,spotify_album_image_url,release_date")
-            .in("isrc", competitorIsrcs)
-            .not("spotify_artist_ids", "is", null)
-            .order("last_seen", { ascending: false })
-            .limit(5000)
-        : { data: [] as TrackRow[] };
-      const competitorTracks = (recentTracks ?? []) as TrackRow[];
       const artists = deriveArtists(competitorTracks);
       const effectiveArtistId = artistId || artists[0]?.id || "";
       if (!artistId && effectiveArtistId) {
@@ -413,27 +427,43 @@ async function CatalogPageContent({
       const startRunDate = latestRunDate ? addDays(latestRunDate, -rangeDays) : null;
       const maPaddedStartRunDate = startRunDate ? addDays(startRunDate, -MA7_LOOKBACK_DAYS) : null;
       const artistIsrcs = artistTracks.map((t) => t.isrc);
+      const compArtistCacheKey = `catalog-comp-artist-v1-${competitorLabelKey ?? "none"}-${effectiveArtistId}-${latestRunDate ?? "none"}-${rangeDays}`;
       const [{ data: artistSeriesRaw }, { data: todayRowsRaw }, { data: prevRowsRaw }] = await Promise.all([
         latestRunDate && maPaddedStartRunDate && artistIsrcs.length
-          ? fetchCatalogArtistSeries(comp as unknown as SupabaseClient, {
-              artistId: effectiveArtistId,
-              startDate: maPaddedStartRunDate,
-              endDate: latestRunDate,
-            })
+          ? cachedQuery(
+              async () =>
+                await fetchCatalogArtistSeries(comp as unknown as SupabaseClient, {
+                  artistId: effectiveArtistId,
+                  startDate: maPaddedStartRunDate,
+                  endDate: latestRunDate,
+                }),
+              `${compArtistCacheKey}-series`,
+              CACHE_TTL_1H,
+            )
           : Promise.resolve({ data: [] }),
         latestRunDate && artistIsrcs.length
-          ? comp
-              .from("track_daily_streams_effective_public")
-              .select("isrc,streams_cumulative")
-              .in("isrc", artistIsrcs)
-              .eq("date", latestRunDate)
+          ? cachedQuery(
+              async () =>
+                await comp
+                  .from("track_daily_streams_effective_public")
+                  .select("isrc,streams_cumulative")
+                  .in("isrc", artistIsrcs)
+                  .eq("date", latestRunDate),
+              `${compArtistCacheKey}-today`,
+              CACHE_TTL_1H,
+            )
           : Promise.resolve({ data: [] }),
         latestRunDate && artistIsrcs.length
-          ? comp
-              .from("track_daily_streams_effective_public")
-              .select("isrc,streams_cumulative")
-              .in("isrc", artistIsrcs)
-              .eq("date", addDays(latestRunDate, -1))
+          ? cachedQuery(
+              async () =>
+                await comp
+                  .from("track_daily_streams_effective_public")
+                  .select("isrc,streams_cumulative")
+                  .in("isrc", artistIsrcs)
+                  .eq("date", addDays(latestRunDate, -1)),
+              `${compArtistCacheKey}-prev`,
+              CACHE_TTL_1H,
+            )
           : Promise.resolve({ data: [] }),
       ]);
       const seriesByDate = new Map<string, number>();
@@ -476,13 +506,20 @@ async function CatalogPageContent({
       const dailyArtistDesc = computeDailyRollingAvg7([...dailyArtistAscRunFull].reverse());
       const trackSeries =
         selectedIsrc && latestRunDate && maPaddedStartRunDate
-          ? ((await comp
-              .from("track_daily_streams_effective_public")
-              .select("date,streams_cumulative")
-              .eq("isrc", selectedIsrc)
-              .gte("date", maPaddedStartRunDate)
-              .lte("date", latestRunDate)
-              .order("date", { ascending: false })).data ?? [])
+          ? ((
+              await cachedQuery(
+                async () =>
+                  await comp
+                    .from("track_daily_streams_effective_public")
+                    .select("date,streams_cumulative")
+                    .eq("isrc", selectedIsrc)
+                    .gte("date", maPaddedStartRunDate)
+                    .lte("date", latestRunDate)
+                    .order("date", { ascending: false }),
+                `catalog-comp-track-series-v1-${selectedIsrc}-${maPaddedStartRunDate}-${latestRunDate}`,
+                CACHE_TTL_1H,
+              )
+            ).data ?? [])
           : [];
       const trackCumDesc = (trackSeries ?? []).map((r) => ({ date: r.date, value: Number(r.streams_cumulative ?? 0) }));
       const trackDailyAsc = [...trackCumDesc].reverse().map((p, idx, arr) => ({
@@ -561,36 +598,20 @@ async function CatalogPageContent({
       );
     }
 
-    let hideStaleAnnotations = false;
-    try {
-      const { data: uSettings } = await sb
-        .from("user_settings")
-        .select("hide_stale_override_annotations, hide_stale_annotations_exclude_catalog")
-        .eq("user_id", user.id)
-        .maybeSingle();
-      const row = uSettings as Record<string, unknown> | null;
-      const wantsHide = Boolean(row?.hide_stale_override_annotations);
-      const excludeCatalog = Boolean(row?.hide_stale_annotations_exclude_catalog);
-      hideStaleAnnotations = wantsHide && !excludeCatalog;
-    } catch {
-      // graceful fallback
-    }
+    // Settings come from the request context (already fetched once per request).
+    const wantsHide = Boolean(datasetSettings?.hide_stale_override_annotations);
+    const excludeCatalog = Boolean(datasetSettings?.hide_stale_annotations_exclude_catalog);
+    const hideStaleAnnotations = wantsHide && !excludeCatalog;
 
     // Cache-buster: include count + max(id) in cache keys so both additions AND
     // removals of overrides invalidate stale catalog aggregate caches.
     let overrideBuster = "0";
     try {
-      const { count, data: latestOverride } = await svc
-        .from("track_daily_stream_overrides")
-        .select("id", { count: "exact" })
-        .order("id", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      const maxId = Number((latestOverride as { id: number } | null)?.id ?? 0);
-      const total = Number(count ?? 0);
-      overrideBuster = `${total}-${maxId}`;
+      // Single fast index-only aggregate (max id + count) computed in Postgres.
+      const { data: version } = await svc.rpc("spotibase_override_version");
+      if (typeof version === "string" && version) overrideBuster = version;
     } catch {
-      // ignore (table may not exist yet)
+      // ignore (function may not exist yet)
     }
 
     const artistId = (sp.artist_id ?? "").trim();
@@ -656,17 +677,21 @@ async function CatalogPageContent({
       );
     }
 
-    // We don't have an artists table; derive a bounded list of artists from tracks.
+    // We don't have an artists table; the distinct-artist dropdown is computed in
+    // Postgres (catalog_artist_options) instead of paging thousands of track rows
+    // to the web server and deriving it in JS.
     // Note: This is intentionally capped for performance. For long-tail discovery, use the global search bar.
-    const trackMetaRows = await cachedQuery(
-      async () => ({
-        data: await fetchAllTracksMeta(svc, CATALOG_ARTIST_DROPDOWN_MAX_TRACKS),
-        error: null,
-      }),
-      `catalog-artists-from-tracks-v2-${CATALOG_ARTIST_DROPDOWN_MAX_TRACKS}`,
+    const { data: artistOptionRows } = await cachedQuery(
+      async () =>
+        await svc.rpc("catalog_artist_options", {
+          max_tracks: CATALOG_ARTIST_DROPDOWN_MAX_TRACKS,
+        }),
+      `catalog-artist-options-v1-${CATALOG_ARTIST_DROPDOWN_MAX_TRACKS}`,
       CACHE_TTL_1H,
     );
-    const artists = deriveArtists((trackMetaRows.data ?? []) as TrackRow[]);
+    const artists = ((artistOptionRows ?? []) as Array<{ id: string; name: string }>).filter(
+      (a) => a.id && a.name,
+    );
     if (artistId && artists.length > 0 && !artists.some((artist) => artist.id === artistId)) {
       redirect(`/catalog?artist_id=${encodeURIComponent(artists[0]!.id)}`);
     }
@@ -1202,7 +1227,7 @@ async function CatalogPageContent({
 
           return res;
         },
-        `catalog-track-playlist-meta-${playlistKeys.sort().join(",")}`,
+        `catalog-track-playlist-meta-${[...playlistKeys].sort().join(",")}`,
         CACHE_TTL_1H,
       );
       playlistMetaRows = (cachedMeta ?? []) as unknown[];

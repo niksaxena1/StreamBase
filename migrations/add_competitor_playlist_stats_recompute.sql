@@ -15,6 +15,14 @@ AS $$
 DECLARE
   v_prev_date DATE := (p_date - INTERVAL '1 day')::date;
 BEGIN
+  -- Guard: never build stats for a date with no stream snapshots (e.g. today before
+  -- ingestion) — doing so would write zero totals and a huge negative daily net.
+  IF NOT EXISTS (
+    SELECT 1 FROM competitor.track_daily_streams_effective_public WHERE date = p_date LIMIT 1
+  ) THEN
+    RETURN;
+  END IF;
+
   WITH
     run AS (
       SELECT id AS run_id FROM competitor.ingestion_runs WHERE run_date = p_date LIMIT 1

@@ -427,19 +427,85 @@ async function computeActiveWarnings(
 }
 
 // ---------------------------------------------------------------------------
+// Snapshot storage
+// ---------------------------------------------------------------------------
+
+/**
+ * Compute the active-warning summary and persist it into
+ * public.health_active_warning_snapshots so subsequent renders are a single
+ * row read. Called on cache miss, from the health refresh action, and from
+ * POST /api/revalidate after each ingestion.
+ */
+export async function recomputeActiveWarningSnapshot(
+  runDate?: string,
+): Promise<ActiveWarningSummary> {
+  const summary = await computeActiveWarnings(runDate);
+  if (summary.runDate) {
+    try {
+      const svc = supabaseService();
+      await svc
+        .from("health_active_warning_snapshots")
+        .upsert(
+          {
+            run_date: summary.runDate,
+            summary: JSON.parse(JSON.stringify(summary)),
+            computed_at: new Date().toISOString(),
+          },
+          { onConflict: "run_date" },
+        );
+    } catch {
+      // Snapshot table missing or write failed – summary is still valid.
+    }
+  }
+  return summary;
+}
+
+async function readOrComputeActiveWarnings(
+  runDate?: string,
+): Promise<ActiveWarningSummary> {
+  try {
+    const svc = supabaseService();
+    let targetRunDate = runDate ?? null;
+    if (!targetRunDate) {
+      const { data: latestRun } = await svc
+        .from("ingestion_runs")
+        .select("run_date")
+        .order("run_date", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      targetRunDate = (latestRun?.run_date as string) ?? null;
+    }
+    if (targetRunDate) {
+      const { data: snap } = await svc
+        .from("health_active_warning_snapshots")
+        .select("summary")
+        .eq("run_date", targetRunDate)
+        .maybeSingle();
+      const summary = (snap as { summary?: unknown } | null)?.summary;
+      if (summary && typeof summary === "object") {
+        return summary as ActiveWarningSummary;
+      }
+      // Miss → compute once and store (self-heals after deploys/new run dates).
+      return await recomputeActiveWarningSnapshot(targetRunDate);
+    }
+  } catch {
+    // Fall through to direct computation.
+  }
+  return computeActiveWarnings(runDate);
+}
+
+// ---------------------------------------------------------------------------
 // Cached entry point
 // ---------------------------------------------------------------------------
 
 /**
  * Retrieve the active (non-suppressed) health warnings for a given run date.
  *
- * Cached for an hour: warning data only changes at ingestion time (the
- * pipeline busts the "health" tag via POST /api/revalidate) or through health
- * actions (`refreshHealthData` calls `revalidateTag("health")`). The previous
- * 60s TTL recomputed the full warning pipeline (including the expensive
- * health_negative_daily_streams / health_playlist_missing_catalog_tracks
- * RPCs) on nav-badge renders all day — the two largest DB time consumers in
- * pg_stat_statements.
+ * Reads the precomputed snapshot row (health_active_warning_snapshots) rather
+ * than recomputing the expensive warning pipeline; recompute happens once per
+ * ingestion (POST /api/revalidate), from the health refresh action, or lazily
+ * on snapshot miss. The unstable_cache layer keeps the badge render free of
+ * DB reads entirely between "health" tag revalidations.
  *
  * @param runDate  ISO date string.  When omitted the latest run date is used.
  */
@@ -448,7 +514,7 @@ export function getActiveWarningSummary(
 ): Promise<ActiveWarningSummary> {
   const cacheKey = `health-active-${runDate ?? "latest"}`;
   return unstable_cache(
-    () => computeActiveWarnings(runDate),
+    () => readOrComputeActiveWarnings(runDate),
     [cacheKey],
     { revalidate: CACHE_TTL_1H, tags: ["health", cacheKey] },
   )();

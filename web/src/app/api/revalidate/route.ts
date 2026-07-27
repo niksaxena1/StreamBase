@@ -4,6 +4,7 @@ import { NextRequest } from "next/server";
 import { apiJsonErr, apiJsonOk, readJsonBodyOptional } from "@/lib/api/server";
 import { timingSafeEqualStrings } from "@/lib/api/internalAuth";
 import { SUPABASE_CACHE_TAG } from "@/lib/supabase/cache";
+import { recomputeActiveWarningSnapshot } from "@/lib/health/activeWarnings";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,7 +37,20 @@ export async function POST(request: NextRequest) {
   // cachedQuery, so the generic supabase tag does not reach it).
   const tags = requested.length ? requested : [SUPABASE_CACHE_TAG, "health"];
 
+  // Refresh the stored health snapshot BEFORE busting caches so the first
+  // post-ingestion render reads the fresh precomputed row (instead of paying
+  // the expensive warning pipeline inline).
+  let healthSnapshotRefreshed = false;
+  if (tags.includes("health")) {
+    try {
+      await recomputeActiveWarningSnapshot();
+      healthSnapshotRefreshed = true;
+    } catch (e) {
+      console.error("Health snapshot recompute failed during revalidation:", e);
+    }
+  }
+
   for (const tag of tags) revalidateTag(tag, "max");
 
-  return apiJsonOk({ revalidated: tags, at: new Date().toISOString() });
+  return apiJsonOk({ revalidated: tags, healthSnapshotRefreshed, at: new Date().toISOString() });
 }
