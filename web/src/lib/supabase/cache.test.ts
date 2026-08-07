@@ -1,6 +1,26 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { cacheTagForKey, scopedAnalyticsCacheKey } from "./cache";
+const nextCacheMock = vi.hoisted(() => ({
+  values: new Map<string, unknown>(),
+}));
+
+vi.mock("next/cache", () => ({
+  unstable_cache:
+    <T>(queryFn: () => Promise<T>, keyParts: string[]) =>
+    async () => {
+      const key = JSON.stringify(keyParts);
+      if (nextCacheMock.values.has(key)) return nextCacheMock.values.get(key) as T;
+      const value = await queryFn();
+      nextCacheMock.values.set(key, value);
+      return value;
+    },
+}));
+
+import { cachedQuery, cacheTagForKey, scopedAnalyticsCacheKey } from "./cache";
+
+beforeEach(() => {
+  nextCacheMock.values.clear();
+});
 
 describe("cacheTagForKey", () => {
   it("keeps cache tags within Next's length limit", () => {
@@ -29,5 +49,59 @@ describe("scopedAnalyticsCacheKey", () => {
 
   it("rejects unscoped competitor cache keys", () => {
     expect(() => scopedAnalyticsCacheKey({ feature: "home", datasetMode: "competitor" })).toThrow();
+  });
+});
+
+describe("cachedQuery", () => {
+  it("retries a statement timeout once and caches the successful result", async () => {
+    const queryFn = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: null,
+        error: { code: "57014", message: "canceling statement due to statement timeout" },
+      })
+      .mockResolvedValueOnce({ data: ["ok"], error: null });
+
+    await expect(cachedQuery(queryFn, "timeout-then-success")).resolves.toEqual({
+      data: ["ok"],
+      error: null,
+    });
+    await expect(cachedQuery(queryFn, "timeout-then-success")).resolves.toEqual({
+      data: ["ok"],
+      error: null,
+    });
+    expect(queryFn).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not cache failed query results", async () => {
+    const failedQuery = vi.fn().mockResolvedValue({
+      data: null,
+      error: { code: "XX000", message: "temporary database failure" },
+    });
+    const successfulQuery = vi.fn().mockResolvedValue({ data: ["recovered"], error: null });
+
+    await expect(cachedQuery(failedQuery, "failure-is-not-cached")).resolves.toEqual({
+      data: null,
+      error: { code: "XX000", message: "temporary database failure" },
+    });
+    await expect(cachedQuery(successfulQuery, "failure-is-not-cached")).resolves.toEqual({
+      data: ["recovered"],
+      error: null,
+    });
+    expect(failedQuery).toHaveBeenCalledTimes(1);
+    expect(successfulQuery).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns a timeout error after one failed retry without caching it", async () => {
+    const queryFn = vi.fn().mockResolvedValue({
+      data: null,
+      error: { code: "57014", message: "canceling statement due to statement timeout" },
+    });
+
+    await expect(cachedQuery(queryFn, "repeated-timeout")).resolves.toEqual({
+      data: null,
+      error: { code: "57014", message: "canceling statement due to statement timeout" },
+    });
+    expect(queryFn).toHaveBeenCalledTimes(2);
   });
 });

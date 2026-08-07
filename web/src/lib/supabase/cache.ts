@@ -65,6 +65,30 @@ export type SupabaseQueryError = { message: string; code?: string } | null;
 /** Supabase query result */
 export type SupabaseQueryResult<T> = { data: T | null; error: SupabaseQueryError };
 
+class CachedSupabaseQueryError extends Error {
+  code?: string;
+
+  constructor(error: Exclude<SupabaseQueryError, null>) {
+    super(error.message);
+    this.name = "CachedSupabaseQueryError";
+    this.code = error.code;
+  }
+}
+
+export function isStatementTimeoutError(error: SupabaseQueryError): boolean {
+  return Boolean(
+    error &&
+      (error.code === "57014" || error.message.toLowerCase().includes("statement timeout")),
+  );
+}
+
+function toSupabaseQueryError(error: unknown): Exclude<SupabaseQueryError, null> {
+  if (error instanceof CachedSupabaseQueryError) {
+    return { message: error.message, code: error.code };
+  }
+  return error instanceof Error ? { message: error.message } : { message: String(error) };
+}
+
 /**
  * Cache Supabase query results for faster page loads.
  * Since data updates daily, we cache for 24 hours by default.
@@ -78,12 +102,15 @@ export async function cachedQuery<T>(
   key: string,
   revalidateSeconds: number | false = DEFAULT_REVALIDATE_SECONDS,
 ): Promise<SupabaseQueryResult<T>> {
-  return unstable_cache(
-    async () => {
-      const timingOn = isTimingEnabled();
-      const t0 = timingOn ? performance.now() : 0;
-      try {
-        const res = await queryFn();
+  try {
+    return await unstable_cache(
+      async () => {
+        const timingOn = isTimingEnabled();
+        const t0 = timingOn ? performance.now() : 0;
+        let res = await queryFn();
+        if (isStatementTimeoutError(res.error)) {
+          res = await queryFn();
+        }
         if (timingOn) {
           const ms = performance.now() - t0;
           if (ms >= slowMsThreshold()) {
@@ -91,24 +118,26 @@ export async function cachedQuery<T>(
             logDebug(`cachedQuery key=${key} ms=${ms.toFixed(1)} error=${res.error ? "yes" : "no"}`);
           }
         }
-        return res;
-      } catch (error) {
-        if (timingOn) {
-          const ms = performance.now() - t0;
-          logDebug(`cachedQuery key=${key} ms=${ms.toFixed(1)} error=throw`);
+        if (res.error) {
+          // Rejected cache callbacks are not persisted by unstable_cache.
+          throw new CachedSupabaseQueryError(res.error);
         }
-        const errorObj = error instanceof Error ? { message: error.message } : { message: String(error) };
-        return { data: null, error: errorObj };
-      }
-    },
-    [key],
-    {
-      revalidate: revalidateSeconds,
-      // Generic tag plus key-specific tag so we can either
-      // revalidate everything or target specific keys.
-      tags: [SUPABASE_CACHE_TAG, cacheTagForKey(key)],
-    },
-  )();
+        return res;
+      },
+      [key],
+      {
+        revalidate: revalidateSeconds,
+        // Generic tag plus key-specific tag so we can either
+        // revalidate everything or target specific keys.
+        tags: [SUPABASE_CACHE_TAG, cacheTagForKey(key)],
+      },
+    )();
+  } catch (error) {
+    if (isTimingEnabled()) {
+      logDebug(`cachedQuery key=${key} error=throw`);
+    }
+    return { data: null, error: toSupabaseQueryError(error) };
+  }
 }
 
 /**

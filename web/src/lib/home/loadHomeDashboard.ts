@@ -1119,7 +1119,7 @@ export async function loadHomeDashboardData(args: {
       : null;
   const weekendAnchorDate = datasetMode === "competitor" ? latestRunDate : latestDataDate;
 
-  const artificialSpikesCacheKey = `home-artificial-stream-spikes-v5-${datasetMode}-${competitorRpcLabelKey ?? "none"}-${artificialSpikeRatio}-${artificialMinBaseline}-${artificialGraceDays}-${artificialThresholdCrossing}-${artificialIncludeWeekends ? "wknd1" : "wknd0"}-${spikeFilterRunStart ?? "none"}-${spikeFilterRunEnd ?? "none"}`;
+  const artificialSpikesCacheKey = `home-artificial-stream-spikes-v6-${datasetMode}-${competitorRpcLabelKey ?? "none"}-${artificialSpikeRatio}-${artificialMinBaseline}-${artificialGraceDays}-${artificialThresholdCrossing}-${artificialIncludeWeekends ? "wknd1" : "wknd0"}-${spikeFilterRunStart ?? "none"}-${spikeFilterRunEnd ?? "none"}-ov${overrideBuster}`;
 
   const diagnosticsPromise = includeDiagnostics
     ? timedServerStep("home.diagnostics", () =>
@@ -1138,7 +1138,7 @@ export async function loadHomeDashboardData(args: {
               p_anchor_data_date: latestDataDate ?? null,
             });
           },
-          `home-artist-weekend-dips-v3-${datasetMode}-${competitorRpcLabelKey ?? "none"}-${playlistKey}-${weekendAnchorDate ?? "none"}`,
+          `home-artist-weekend-dips-v4-${datasetMode}-${competitorRpcLabelKey ?? "none"}-${playlistKey}-${weekendAnchorDate ?? "none"}-ov${overrideBuster}`,
           CACHE_TTL_1H,
         ),
         cachedQuery(
@@ -1155,7 +1155,7 @@ export async function loadHomeDashboardData(args: {
               p_anchor_data_date: latestDataDate ?? null,
             });
           },
-          `home-track-weekend-dips-v3-${datasetMode}-${competitorRpcLabelKey ?? "none"}-${playlistKey}-${weekendAnchorDate ?? "none"}`,
+          `home-track-weekend-dips-v4-${datasetMode}-${competitorRpcLabelKey ?? "none"}-${playlistKey}-${weekendAnchorDate ?? "none"}-ov${overrideBuster}`,
           CACHE_TTL_1H,
         ),
         cachedQuery(
@@ -1167,7 +1167,7 @@ export async function loadHomeDashboardData(args: {
             }
             return await svc.rpc("home_negative_daily_streams");
           },
-          `home-negative-daily-v4-${datasetMode}-${competitorRpcLabelKey ?? "none"}`,
+          `home-negative-daily-v5-${datasetMode}-${competitorRpcLabelKey ?? "none"}-ov${overrideBuster}`,
           CACHE_TTL_1H,
         ),
         cachedQuery(
