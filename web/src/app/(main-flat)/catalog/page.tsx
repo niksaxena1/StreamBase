@@ -689,11 +689,38 @@ async function CatalogPageContent({
       `catalog-artist-options-v1-${CATALOG_ARTIST_DROPDOWN_MAX_TRACKS}`,
       CACHE_TTL_1H,
     );
-    const artists = ((artistOptionRows ?? []) as Array<{ id: string; name: string }>).filter(
+    let artists = ((artistOptionRows ?? []) as Array<{ id: string; name: string }>).filter(
       (a) => a.id && a.name,
     );
-    if (artistId && artists.length > 0 && !artists.some((artist) => artist.id === artistId)) {
-      redirect(`/catalog?artist_id=${encodeURIComponent(artists[0]!.id)}`);
+    if (artistId && !artists.some((artist) => artist.id === artistId)) {
+      // The dropdown is intentionally built from a capped set of recent tracks, so a
+      // valid long-tail artist found by global search may not be present in it. Verify
+      // the requested artist against the source table before treating it as invalid.
+      const { data: selectedArtistTrack } = await cachedQuery(
+        async () =>
+          await svc
+            .from("tracks")
+            .select("isrc,name,spotify_artist_ids,spotify_artist_names,spotify_album_image_url,release_date")
+            .contains("spotify_artist_ids", [artistId])
+            .order("last_seen", { ascending: false })
+            .limit(1)
+            .maybeSingle(),
+        `catalog-selected-artist-option-v1-${artistId}`,
+        CACHE_TTL_1H,
+      );
+
+      const selectedArtistTrackRow = (selectedArtistTrack ?? null) as TrackRow | null;
+      if (selectedArtistTrackRow) {
+        artists = [
+          ...artists,
+          {
+            id: artistId,
+            name: artistNameFor([selectedArtistTrackRow], artistId) ?? artistId,
+          },
+        ].sort((a, b) => a.name.localeCompare(b.name));
+      } else if (artists.length > 0) {
+        redirect(`/catalog?artist_id=${encodeURIComponent(artists[0]!.id)}`);
+      }
     }
 
   // Track list for this artist (cached for 1 hour)

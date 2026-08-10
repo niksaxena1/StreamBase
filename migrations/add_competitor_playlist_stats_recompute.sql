@@ -34,27 +34,28 @@ BEGIN
         AND (pm.valid_to IS NULL OR pm.valid_to >= p_date)
       GROUP BY pm.playlist_key, pm.isrc
     ),
-    prev_totals AS (
-      SELECT playlist_key, total_streams_cumulative AS prev_total
-      FROM competitor.playlist_daily_stats
-      WHERE date = v_prev_date
-    ),
     computed AS (
+      -- daily_streams_net is the sum of PER-TRACK day-over-day deltas, not
+      -- (today's membership total - yesterday's membership total): membership
+      -- churn otherwise injects a track's entire lifetime cumulative into one
+      -- day's net (e.g. 32 mature tracks added to Soave dashboards on
+      -- 2026-07-03 produced a fake +77% daily spike). Tracks with no previous
+      -- snapshot (newly tracked) contribute 0 on their first day.
       SELECT
         p_date AS date,
         d.playlist_key,
         COUNT(*)::int AS track_count,
         COALESCE(SUM(t.streams_cumulative), 0)::bigint AS total_streams_cumulative,
         COUNT(*) FILTER (WHERE t.streams_cumulative IS NULL)::int AS missing_streams_track_count,
-        (COALESCE(SUM(t.streams_cumulative), 0)::bigint - COALESCE(pt.prev_total, 0)::bigint) AS daily_streams_net,
+        COALESCE(SUM(t.streams_cumulative - COALESCE(pv.streams_cumulative, t.streams_cumulative)), 0)::bigint AS daily_streams_net,
         (COALESCE(SUM(t.streams_cumulative), 0)::numeric * 0.002) AS est_revenue_total,
-        ((COALESCE(SUM(t.streams_cumulative), 0)::bigint - COALESCE(pt.prev_total, 0)::bigint)::numeric * 0.002) AS est_revenue_daily_net
+        (COALESCE(SUM(t.streams_cumulative - COALESCE(pv.streams_cumulative, t.streams_cumulative)), 0)::numeric * 0.002) AS est_revenue_daily_net
       FROM active d
       LEFT JOIN competitor.track_daily_streams_effective_public t
         ON t.date = p_date AND t.isrc = d.isrc
-      LEFT JOIN prev_totals pt
-        ON pt.playlist_key = d.playlist_key
-      GROUP BY d.playlist_key, pt.prev_total
+      LEFT JOIN competitor.track_daily_streams_effective_public pv
+        ON pv.date = v_prev_date AND pv.isrc = d.isrc
+      GROUP BY d.playlist_key
     )
   INSERT INTO competitor.playlist_daily_stats (
     date, playlist_key, track_count, total_streams_cumulative, daily_streams_net,
