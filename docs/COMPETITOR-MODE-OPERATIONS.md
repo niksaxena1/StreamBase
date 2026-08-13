@@ -11,6 +11,7 @@
 | Soave | `soave_lofi_releases` | `3j0rbud0hqVC9ZnoV8SPWv` | `7726542` | `8952` |
 | Soave | `soave_day_night_records_releases` | `0JkD59thdDkaXd9gaXZSqc` | `10712039` | `8953` |
 | Soave | `soave_blaaktrax_releases` | `0kADH0u3ejdnaUpRg57q2K` | `17632814` | `8954` |
+| Soave | `soave_evaos_releases` | `6sgBTQYyvMjxRydyuRX7FC` | `17859449` | `11239` |
 | ChillYourMind | `chillyourmind_releases` | `3qExK19cdWKJ5RmCTKzwiy` | `8887309` | `8629` |
 | selected. | `selected_releases` | `6QgHdyoJ49khJQ7ZKpEHOi` | `203886` | `8955` |
 | ATLAST | `atlast_all_releases` | `4Oeev4VKRe0vknDwwmzc7a` | `51750` | `8957` |

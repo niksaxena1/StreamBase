@@ -1,12 +1,24 @@
 import argparse
 import base64
 import os
+import sys
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from urllib.parse import quote
 
 import requests
+
+
+# Playlist names can contain characters outside Windows' legacy console code page.
+# Keep logging from turning an otherwise successful refresh into a false failure.
+try:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 
 
 def require_env(name: str) -> str:
