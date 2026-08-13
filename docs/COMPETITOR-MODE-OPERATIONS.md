@@ -15,8 +15,19 @@
 | selected. | `selected_releases` | `6QgHdyoJ49khJQ7ZKpEHOi` | `203886` | `8955` |
 | ATLAST | `atlast_all_releases` | `4Oeev4VKRe0vknDwwmzc7a` | `51750` | `8957` |
 | ATLAST | `atlast_miami_beats_all_releases` | `6Up2rsR545N0TZqCm8jrg9` | `456886` | `8958` |
+| MusicUp | `musicup_releases` | `19rThvNZ2ajkvHC2Zp6s05` | `10438539` | `11226` |
 
 ## Isolation rule
+
+Competitor stream corrections never update `competitor.track_daily_streams` or raw
+exports. Bounded stale runs and reviewed source corrections are stored in
+`competitor.track_daily_stream_overrides`; derived playlist and artist statistics are
+then rebuilt from `competitor.track_daily_streams_effective_public`.
+
+After each competitor ingest, StreamBase checks the latest 14-day window for stale
+runs that now have a later catch-up anchor. It writes only bounded interpolation
+overrides, recomputes playlist statistics (including first-day playlist onboarding),
+refreshes artist statistics in small batches, and invalidates the web cache.
 
 Competitor data lives in the `competitor` schema. It must never be written into the own-catalog `public` tables.
 

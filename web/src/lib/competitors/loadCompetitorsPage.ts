@@ -102,6 +102,14 @@ export async function loadCompetitorsPageCore(user: User): Promise<CompetitorsPa
   const rollbackRunDate = rollbackDate ? rollbackDataDateToRunDate(rollbackDate) : null;
   const rollbackSuffix = rollbackDate ?? "live";
 
+  let competitorOverrideVersion = "0";
+  try {
+    const { data } = await comp.rpc("spotibase_override_version");
+    if (typeof data === "string" && data) competitorOverrideVersion = data;
+  } catch {
+    // The generic revalidation tag remains a fallback during migration rollout.
+  }
+
   let recentRunsQuery = comp
     .from("ingestion_runs")
     .select("run_date,status,started_at,finished_at")
@@ -110,7 +118,7 @@ export async function loadCompetitorsPageCore(user: User): Promise<CompetitorsPa
     .limit(1);
   if (rollbackRunDate) recentRunsQuery = recentRunsQuery.lte("run_date", rollbackRunDate);
 
-  const cacheBase = `competitors-core-v2-${rollbackSuffix}`;
+  const cacheBase = `competitors-core-v2-${rollbackSuffix}-ov${competitorOverrideVersion}`;
 
   const results = await cachedQueries(
     {

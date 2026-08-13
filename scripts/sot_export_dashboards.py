@@ -253,6 +253,15 @@ def load_playlists_csv(path: str) -> List[Playlist]:
     return out
 
 
+def filter_playlists_by_keys(playlists: List[Playlist], keys: set[str]) -> List[Playlist]:
+    """Return only requested playlists and fail closed on a typo."""
+    available = {playlist.key for playlist in playlists}
+    unknown = keys - available
+    if unknown:
+        raise ValueError(f"Unknown playlist key(s): {', '.join(sorted(unknown))}")
+    return [playlist for playlist in playlists if playlist.key in keys]
+
+
 def download_one(page, pl: Playlist, out_path: Path) -> Tuple[bool, str]:
     page.goto(pl.url, wait_until="networkidle", timeout=NAV_TIMEOUT_MS)
     time.sleep(1.2)
@@ -316,6 +325,11 @@ def main():
     ap.add_argument("--headless", action="store_true")
     ap.add_argument("--fail-on-empty", action="store_true", help="Treat 0-row exports as failures")
     ap.add_argument(
+        "--only-playlist-keys",
+        default="",
+        help="Comma-separated playlist keys to export (useful for targeted bootstraps)",
+    )
+    ap.add_argument(
         "--auth-debug",
         action="store_true",
         help="Print non-sensitive auth diagnostics (storage_state vs login fallback usage)",
@@ -323,6 +337,9 @@ def main():
     args = ap.parse_args()
 
     playlists = load_playlists_csv(args.config)
+    only_playlist_keys = {key.strip() for key in args.only_playlist_keys.split(",") if key.strip()}
+    if only_playlist_keys:
+        playlists = filter_playlists_by_keys(playlists, only_playlist_keys)
     if not playlists:
         raise SystemExit("No playlists loaded.")
 

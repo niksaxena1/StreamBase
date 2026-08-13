@@ -15,6 +15,8 @@ from streambase_revalidate import notify_web_revalidate
 from streambase_postgrest import Postgrest
 
 STREAM_PAYOUT_USD = 0.002
+COMPETITOR_INTERPOLATION_LOOKBACK_DAYS = 14
+ARTIST_REFRESH_BATCH_DAYS = 3
 
 COMPETITOR_TABLES = {
     "tracks": "competitor.tracks",
@@ -100,17 +102,112 @@ def load_playlists_csv(path: str) -> List[Playlist]:
     return out
 
 
+def filter_playlists_by_keys(playlists: List[Playlist], keys: set[str]) -> List[Playlist]:
+    """Return only requested playlists and fail closed on a typo."""
+    available = {playlist.playlist_key for playlist in playlists}
+    unknown = keys - available
+    if unknown:
+        raise ValueError(f"Unknown playlist key(s): {', '.join(sorted(unknown))}")
+    return [playlist for playlist in playlists if playlist.playlist_key in keys]
+
+
+def date_batches(start: date, end: date, batch_days: int) -> List[Tuple[date, date]]:
+    if batch_days < 1:
+        raise ValueError("batch_days must be at least 1")
+    batches: List[Tuple[date, date]] = []
+    cursor = start
+    while cursor <= end:
+        batch_end = min(cursor + timedelta(days=batch_days - 1), end)
+        batches.append((cursor, batch_end))
+        cursor = batch_end + timedelta(days=1)
+    return batches
+
+
+def normalize_competitor_analytics(pg: Postgrest, run_date: date) -> dict:
+    """Repair bounded stale runs and rebuild derived stats from effective snapshots.
+
+    Raw stream snapshots are never updated here. The interpolation RPC writes only
+    to competitor.track_daily_stream_overrides, and both aggregate refreshes read
+    competitor.track_daily_streams_effective_public.
+    """
+    interpolation_start = run_date - timedelta(days=COMPETITOR_INTERPOLATION_LOOKBACK_DAYS)
+    overrides_written = 0
+    tracks_affected = 0
+
+    try:
+        interpolation = pg.rpc(
+            "spotibase_interpolate_stale_streams",
+            {
+                "p_start_date": interpolation_start.isoformat(),
+                "p_end_date": run_date.isoformat(),
+                "p_max_run_days": COMPETITOR_INTERPOLATION_LOOKBACK_DAYS,
+            },
+        )
+        if isinstance(interpolation, list) and interpolation:
+            overrides_written = int(interpolation[0].get("overrides_written") or 0)
+            tracks_affected = int(interpolation[0].get("tracks_affected") or 0)
+        print(
+            f"INFO Competitor interpolation through {run_date}: "
+            f"{overrides_written} override(s), {tracks_affected} track(s)"
+        )
+    except Exception as interpolation_err:
+        # Current-day stats still need normalization, especially when a playlist is
+        # first added and has no previous aggregate total.
+        print(f"WARN Could not interpolate competitor stale runs: {interpolation_err}")
+
+    recompute_start = interpolation_start if overrides_written else run_date
+    recomputed = pg.rpc(
+        "spotibase_recompute_playlist_daily_stats_cascade",
+        {
+            "p_start_date": recompute_start.isoformat(),
+            "p_end_date": run_date.isoformat(),
+        },
+    )
+    print(f"INFO Recomputed competitor.playlist_daily_stats for {recompute_start}..{run_date}: {recomputed}")
+
+    artist_rows_refreshed = 0
+    for batch_start, batch_end in date_batches(
+        recompute_start,
+        run_date,
+        ARTIST_REFRESH_BATCH_DAYS,
+    ):
+        try:
+            refreshed = pg.rpc(
+                "refresh_artist_daily_stats",
+                {
+                    "p_start_date": batch_start.isoformat(),
+                    "p_end_date": batch_end.isoformat(),
+                },
+            )
+            artist_rows_refreshed += int(refreshed or 0)
+        except Exception as artist_stats_err:
+            print(
+                f"WARN Could not refresh competitor.artist_daily_stats for "
+                f"{batch_start}..{batch_end}: {artist_stats_err}"
+            )
+
+    return {
+        "overrides_written": overrides_written,
+        "tracks_affected": tracks_affected,
+        "recompute_start": recompute_start.isoformat(),
+        "recomputed_days": int(recomputed or 0),
+        "artist_rows_refreshed": artist_rows_refreshed,
+    }
+
+
 def build_playlist_stats_row(
     *,
     run_date: str,
     playlist_key: str,
     streams_by_isrc: Dict[str, int],
     all_isrcs: Set[str],
-    previous_total: int,
+    previous_total: Optional[int],
     source_run_id: int,
 ) -> dict:
     total = sum(int(v) for v in streams_by_isrc.values())
-    daily = total - int(previous_total or 0)
+    # A newly onboarded playlist has no previous tracked snapshot. Its existing
+    # lifetime total is a baseline, not streams earned on the onboarding day.
+    daily = 0 if previous_total is None else total - int(previous_total)
     return {
         "date": run_date,
         "playlist_key": playlist_key,
@@ -178,6 +275,11 @@ def main():
     ap.add_argument("--config", default="config/competitor_playlists.csv")
     ap.add_argument("--exports-dir", default="exports")
     ap.add_argument("--run-date", default="")
+    ap.add_argument(
+        "--only-playlist-keys",
+        default="",
+        help="Comma-separated playlist keys to ingest (useful for targeted bootstraps)",
+    )
     args = ap.parse_args()
 
     supabase_url = os.environ.get("SUPABASE_URL", "").strip()
@@ -192,7 +294,11 @@ def main():
     if not day_dir.exists():
         raise SystemExit(f"Expected exports for {run_date} at {day_dir} (not found)")
 
-    playlists = load_playlists_csv(args.config)
+    configured_playlists = load_playlists_csv(args.config)
+    playlists = configured_playlists
+    only_playlist_keys = {key.strip() for key in args.only_playlist_keys.split(",") if key.strip()}
+    if only_playlist_keys:
+        playlists = filter_playlists_by_keys(playlists, only_playlist_keys)
     pg = Postgrest(supabase_url, service_key, schema="competitor")
 
     existing = pg.select("ingestion_runs", "id,status", f"run_date=eq.{run_date.isoformat()}")
@@ -275,7 +381,7 @@ def main():
             "total_streams_cumulative",
             f"playlist_key=eq.{playlist.playlist_key}&date=eq.{prev_date.isoformat()}",
         )
-        previous_total = int(previous[0]["total_streams_cumulative"]) if previous else 0
+        previous_total = int(previous[0]["total_streams_cumulative"]) if previous else None
         stats_rows.append(
             build_playlist_stats_row(
                 run_date=run_date.isoformat(),
@@ -329,10 +435,8 @@ def main():
 
     pg.upsert("playlist_daily_stats", stats_rows, on_conflict="date,playlist_key")
 
-    # Surface staleness (tracks whose cumulative snapshot didn't move vs yesterday) so
-    # Spot On Track outages are visible in ingestion_warnings. Repair is deliberately
-    # manual: run competitor.spotibase_interpolate_stale_streams(), then
-    # competitor.refresh_artist_daily_stats(), when a warning flags it.
+    # Surface raw staleness (tracks whose cumulative snapshot did not move vs yesterday)
+    # before the bounded interpolation pass repairs the effective series.
     try:
         stale = pg.rpc("spotibase_stale_summary", {"p_date": run_date.isoformat()})
         if stale:
@@ -357,17 +461,22 @@ def main():
     except Exception as stale_err:
         print(f"WARN Could not compute competitor stale summary: {stale_err}")
 
-    try:
-        refreshed = pg.rpc(
-            "refresh_artist_daily_stats",
-            {
-                "p_start_date": run_date.isoformat(),
-                "p_end_date": run_date.isoformat(),
-            },
+    current_stats = pg.select_all(
+        "playlist_daily_stats",
+        "playlist_key",
+        f"date=eq.{run_date.isoformat()}",
+        order="playlist_key.asc",
+    )
+    expected_playlist_keys = {playlist.playlist_key for playlist in configured_playlists}
+    current_playlist_keys = {str(row["playlist_key"]) for row in current_stats}
+    if expected_playlist_keys.issubset(current_playlist_keys):
+        normalize_competitor_analytics(pg, run_date)
+    else:
+        missing_keys = sorted(expected_playlist_keys - current_playlist_keys)
+        print(
+            "WARN Skipping global competitor normalization for an incomplete run; "
+            f"missing stats for: {', '.join(missing_keys)}"
         )
-        print(f"INFO Refreshed competitor.artist_daily_stats for {run_date}: {refreshed}")
-    except Exception as artist_stats_err:
-        print(f"WARN Could not refresh competitor.artist_daily_stats: {artist_stats_err}")
     pg.patch(
         "ingestion_runs",
         {"status": "success", "finished_at": datetime.now(timezone.utc).isoformat()},

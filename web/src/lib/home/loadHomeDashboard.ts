@@ -749,14 +749,29 @@ export async function loadHomeDashboardData(args: {
   })();
 
   const overrideBusterPromise = (async () => {
-    try {
-      // Single fast index-only aggregate (max id + count) computed in Postgres;
-      // changes when overrides are added or removed.
-      const { data } = await svc.rpc("spotibase_override_version");
-      return typeof data === "string" && data ? data : "0";
-    } catch {
-      return "0";
-    }
+    // Keep both analytics universes in the key because dataset mode is resolved in
+    // parallel below. Each RPC is a cheap max(id) + count aggregate.
+    const readOwnVersion = async () => {
+      try {
+        const { data } = await svc.rpc("spotibase_override_version");
+        return typeof data === "string" && data ? data : "0";
+      } catch {
+        return "0";
+      }
+    };
+    const readCompetitorVersion = async () => {
+      try {
+        const { data } = await svc.schema("competitor").rpc("spotibase_override_version");
+        return typeof data === "string" && data ? data : "0";
+      } catch {
+        return "0";
+      }
+    };
+    const [ownVersion, competitorVersion] = await Promise.all([
+      readOwnVersion(),
+      readCompetitorVersion(),
+    ]);
+    return `own${ownVersion}-comp${competitorVersion}`;
   })();
 
   const rollbackDatePromise = getRollbackDate();
