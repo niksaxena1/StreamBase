@@ -23,6 +23,107 @@ function seriesName(key: string, seriesLabels?: Record<string, string>): string 
   return seriesLabels?.[key] ?? key;
 }
 
+function ContributionWaterfall({
+  breakdownData,
+  comparisonCollectors,
+  metric,
+  streamPayoutPerStreamUsd,
+  seriesLabels,
+}: {
+  breakdownData: Record<string, DateBreakdownCollector>;
+  comparisonCollectors: string[];
+  metric: Metric;
+  streamPayoutPerStreamUsd: number;
+  seriesLabels?: Record<string, string>;
+}) {
+  const factor = metric === "revenue" ? streamPayoutPerStreamUsd : 1;
+  const contributions = comparisonCollectors
+    .map((key) => {
+      const row = breakdownData[key];
+      return {
+        key,
+        label: seriesName(key, seriesLabels),
+        value: row ? (row.daily_streams - row.avg7_streams) * factor : 0,
+      };
+    })
+    .sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
+  const steps = contributions.reduce<
+    Array<(typeof contributions)[number] & { start: number; end: number }>
+  >((rows, row) => {
+    const start = rows.at(-1)?.end ?? 0;
+    rows.push({ ...row, start, end: start + row.value });
+    return rows;
+  }, []);
+  const total = steps.at(-1)?.end ?? 0;
+  const extent = [0, total, ...steps.flatMap((step) => [step.start, step.end])];
+  let min = Math.min(...extent);
+  let max = Math.max(...extent);
+  if (min === max) {
+    min -= 1;
+    max += 1;
+  }
+  const padding = Math.max(1, (max - min) * 0.16);
+  min -= padding;
+  max += padding;
+  const width = Math.max(640, (steps.length + 1) * 104 + 68);
+  const height = 250;
+  const chartTop = 22;
+  const chartBottom = 194;
+  const y = (value: number) => chartTop + ((max - value) / (max - min)) * (chartBottom - chartTop);
+  const barWidth = 44;
+  const formatValue = (value: number) =>
+    metric === "revenue" ? formatUsd2(value) : formatInt(Math.round(value));
+
+  return (
+    <section className="border-b pb-4" style={{ borderColor: "var(--sb-border)" }}>
+      <div className="mb-2">
+        <div className="text-xs font-medium uppercase tracking-wide opacity-70">Variance contribution</div>
+        <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
+          Each label&apos;s difference from its prior 7-day average; the final bar is the combined variance.
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <svg viewBox={`0 0 ${width} ${height}`} className="h-[250px] min-w-[640px] w-full" role="img" aria-label="Waterfall of label contributions to the selected date's variance from the prior seven-day average">
+          <line x1="42" x2={width - 18} y1={y(0)} y2={y(0)} stroke="var(--sb-border)" strokeDasharray="4 4" />
+          {steps.map((step, index) => {
+            const x = 62 + index * 104;
+            const top = Math.min(y(step.start), y(step.end));
+            const barHeight = Math.max(2, Math.abs(y(step.start) - y(step.end)));
+            const positive = step.value >= 0;
+            const nextX = 62 + (index + 1) * 104;
+            return (
+              <g key={step.key}>
+                <rect x={x} y={top} width={barWidth} height={barHeight} rx="4" fill={positive ? "var(--sb-positive)" : "var(--sb-negative, #ef4444)"} opacity="0.78" />
+                {index < steps.length - 1 ? <line x1={x + barWidth} x2={nextX} y1={y(step.end)} y2={y(step.end)} stroke="var(--sb-muted)" strokeOpacity="0.35" /> : null}
+                <text x={x + barWidth / 2} y={positive ? top - 6 : top + barHeight + 13} textAnchor="middle" fill={positive ? "var(--sb-positive)" : "var(--sb-negative, #ef4444)"} fontSize="10" fontWeight="600">
+                  {step.value >= 0 ? "+" : ""}{formatValue(step.value)}
+                </text>
+                <text x={x + barWidth / 2} y="218" textAnchor="middle" fill="var(--sb-muted)" fontSize="10">
+                  {step.label.length > 13 ? `${step.label.slice(0, 12)}...` : step.label}
+                </text>
+              </g>
+            );
+          })}
+          {(() => {
+            const x = 62 + steps.length * 104;
+            const top = Math.min(y(0), y(total));
+            const barHeight = Math.max(2, Math.abs(y(0) - y(total)));
+            return (
+              <g>
+                <rect x={x} y={top} width={barWidth} height={barHeight} rx="4" fill="var(--sb-info, #6366f1)" opacity="0.82" />
+                <text x={x + barWidth / 2} y={total >= 0 ? top - 6 : top + barHeight + 13} textAnchor="middle" fill="var(--sb-info, #6366f1)" fontSize="10" fontWeight="700">
+                  {total >= 0 ? "+" : ""}{formatValue(total)}
+                </text>
+                <text x={x + barWidth / 2} y="218" textAnchor="middle" fill="var(--sb-text)" fontSize="10" fontWeight="600">Combined</text>
+              </g>
+            );
+          })()}
+        </svg>
+      </div>
+    </section>
+  );
+}
+
 export function CollectorDateBreakdownModal({
   open,
   onClose,
@@ -74,6 +175,14 @@ export function CollectorDateBreakdownModal({
           </div>
         ) : breakdownData ? (
           <>
+            <ContributionWaterfall
+              breakdownData={breakdownData}
+              comparisonCollectors={comparisonCollectors}
+              metric={metric}
+              streamPayoutPerStreamUsd={streamPayoutPerStreamUsd}
+              seriesLabels={seriesLabels}
+            />
+
             {/* Per-collector summary cards */}
             <div
               className="grid gap-3"
@@ -275,9 +384,11 @@ export function CollectorDateBreakdownModal({
                             className="font-medium"
                             style={{
                               color:
-                                metric === "revenue"
-                                  ? "#10b981"
-                                  : "var(--sb-positive)",
+                                dailyStreams < 0
+                                  ? "var(--sb-negative, #ef4444)"
+                                  : metric === "revenue"
+                                    ? "#10b981"
+                                    : "var(--sb-positive)",
                             }}
                           >
                             {dailyFormatted}

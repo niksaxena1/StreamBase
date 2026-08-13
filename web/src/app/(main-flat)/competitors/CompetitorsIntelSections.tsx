@@ -87,10 +87,13 @@ export function CompetitorsIntelSections(props: {
   latestDataDate: string;
   latestRunDate: string;
   selectedCompetitorLabelKey: string | null;
+  section?: "all" | "movement" | "catalog";
 }) {
   const streamMetric = useCompetitorStreamMetric();
   const activeLabels = useMemo(() => props.labels.filter((l) => l.is_active !== false), [props.labels]);
   const canCompare = activeLabels.length >= 2;
+  const showMovement = props.section == null || props.section === "all" || props.section === "movement";
+  const showCatalog = props.section == null || props.section === "all" || props.section === "catalog";
   const weekAgoDataDate = addDaysISO(props.latestDataDate, -7);
 
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -225,8 +228,8 @@ export function CompetitorsIntelSections(props: {
     [intel?.losers, moverFilter, props.selectedCompetitorLabelKey],
   );
   const churnRows: ChurnRow[] = intel?.churn ?? [];
-  const overlapCells: OverlapCell[] = intel?.overlapCells ?? [];
-  const overlapArtistCells = intel?.overlapArtistCells ?? [];
+  const overlapCells = useMemo<OverlapCell[]>(() => intel?.overlapCells ?? [], [intel?.overlapCells]);
+  const overlapArtistCells = useMemo(() => intel?.overlapArtistCells ?? [], [intel?.overlapArtistCells]);
   const overlapLookup = useMemo(() => buildOverlapLookup(overlapCells), [overlapCells]);
   const overlapArtistLookup = useMemo(
     () => buildOverlapArtistLookup(overlapArtistCells),
@@ -268,7 +271,7 @@ export function CompetitorsIntelSections(props: {
 
   return (
     <div ref={rootRef} className="space-y-6">
-      {(intel?.gainers.length || intel?.losers.length) ? (
+      {showMovement && (intel?.gainers.length || intel?.losers.length) ? (
         <div className="sb-card p-4 space-y-3">
           <div className="flex flex-wrap items-end justify-between gap-2">
             <div>
@@ -364,7 +367,7 @@ export function CompetitorsIntelSections(props: {
         </div>
       ) : null}
 
-      {churnRows.length > 0 || churnLoading ? (
+      {showMovement && (churnRows.length > 0 || churnLoading) ? (
         <div className="sb-card p-4 space-y-3">
           <div className="flex flex-wrap items-end justify-between gap-2">
             <div>
@@ -431,7 +434,7 @@ export function CompetitorsIntelSections(props: {
         </div>
       ) : null}
 
-      {canCompare ? (
+      {showCatalog && canCompare ? (
         <CompetitorsOverlapMatrix
           activeLabels={activeLabels}
           overlapLookup={overlapLookup}

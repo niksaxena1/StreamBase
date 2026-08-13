@@ -55,7 +55,7 @@ The three SpotOnTrack workflows use `config/competitor_playlists.csv`. The Spoti
 - `/` ? selected competitor overview
 - `/playlists` ? competitor playlists, totals, current tracks, and daily deltas when history exists
 - `/catalog` ? competitor artists/tracks
-- `/competitors` ? operations cockpit for playlist counts, distinct artists, export rows, missing totals, warnings, and day-over-day label deltas
+- `/competitors` ? competitive intelligence workspace with Overview, Compare, Movement, Catalog intelligence, and Data health views
 
 ## Adding another competitor
 
@@ -69,10 +69,16 @@ The three SpotOnTrack workflows use `config/competitor_playlists.csv`. The Spoti
 
 Competitive intelligence cockpit. Use it to answer:
 
-- Who is growing daily streams fastest? (label comparison chart and table)
-- Which tracks moved most today across all competitors? (top movers)
-- Which competitor is expanding their catalog fastest? (catalog churn)
-- How similar are competitor catalogs? (overlap matrix)
+- **Overview:** Who leads today, who is accelerating, and how rank changes over the latest 30 data dates.
+- **Compare:** Absolute, indexed, per-track, and median-growth benchmarks against the own catalog, plus selected-label stream share. Clicking a daily comparison point opens an additive variance waterfall and signed track drivers.
+- **Movement:** Latest movers, membership churn, and a 30-day roster-flow diagram. Cross-label flows are inferred only when a label exit and another label entry for the same ISRC occur within three days; unmatched events remain attached to `Outside tracked set`.
+- **Catalog intelligence:** Current artist position, artist momentum, release cohorts, and track/artist overlap. Artist and cohort aggregations de-duplicate ISRCs that are present under multiple competitor labels.
+- **Data health:** Ingestion success, label-day coverage, anomalous daily values, override dates, and recent warnings. Override counts are read-only diagnostics from `competitor.track_daily_stream_overrides`; raw snapshots are never changed by the workspace.
+
+The heavier Movement and Catalog intelligence payloads are loaded on demand through
+the admin-only `/api/competitors/workspace-insights` route. Queries stay in the
+`competitor` schema, are bounded to the active labels and latest snapshot/window,
+and use the shared Supabase revalidation cache.
 
 For ingestion correctness, use **/health** in Competitor Mode. The page supports:
 

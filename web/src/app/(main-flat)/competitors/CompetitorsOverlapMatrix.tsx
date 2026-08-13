@@ -185,12 +185,11 @@ export function CompetitorsOverlapMatrix(props: {
     [basis, labelNameByKey, latestRunDate],
   );
 
-  const entityLabel = basis === "tracks" ? "track" : "artist";
   const entityLabelPlural = basis === "tracks" ? "tracks" : "artists";
 
   return (
     <>
-      <div className="sb-card p-4 space-y-3">
+      <div className="sb-card min-w-0 space-y-3 p-4">
         <div className="flex flex-wrap items-end justify-between gap-2">
           <div>
             <div className="text-xs font-medium uppercase tracking-wider opacity-60">Catalog overlap</div>
@@ -228,8 +227,8 @@ export function CompetitorsOverlapMatrix(props: {
             </ChipGroup>
           </div>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-xs">
+        <div className="max-w-full overflow-x-auto">
+          <table className="w-full min-w-max border-collapse text-xs">
             <thead>
               <tr>
                 <th className="p-2 text-left opacity-60" />

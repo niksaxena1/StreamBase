@@ -8,8 +8,7 @@ import { PageHeader } from "@/components/shell/PageHeader";
 import { formatDateISO } from "@/lib/format";
 import { FreshnessLabel, SectionEmptyState } from "@/components/ui/DataStates";
 
-import { CompetitorsClient } from "./CompetitorsClient";
-import { CompetitorsIntelSections } from "./CompetitorsIntelSections";
+import { CompetitorsWorkspace } from "./CompetitorsWorkspace";
 
 export const dynamic = "force-dynamic";
 
@@ -39,24 +38,7 @@ export default async function CompetitorsPage() {
       <PageHeader title="Competitors" subtitle={subtitle} />
 
       {core ? (
-        <>
-          <CompetitorsClient
-            labels={core.labels}
-            comparisonRows={core.comparisonRows}
-            labelSeries={core.labelSeries}
-            latestDataDate={core.latestDataDate}
-            latestRunDate={core.latestRunDate}
-            selectedCompetitorLabelKey={core.selectedCompetitorLabelKey}
-            playlistsByLabel={core.playlistsByLabel}
-          />
-
-          <CompetitorsIntelSections
-            labels={core.labels}
-            latestDataDate={core.latestDataDate}
-            latestRunDate={core.latestRunDate}
-            selectedCompetitorLabelKey={core.selectedCompetitorLabelKey}
-          />
-        </>
+        <CompetitorsWorkspace core={core} />
       ) : <SectionEmptyState title="No competitor snapshots yet" description="Run competitor ingestion to populate label and playlist analytics." />}
     </div>
   );

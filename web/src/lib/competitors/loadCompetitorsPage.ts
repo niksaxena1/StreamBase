@@ -1,6 +1,9 @@
 import type { User } from "@supabase/supabase-js";
 
 import type {
+  CompetitorOverrideDay,
+  CompetitorRunRow,
+  CompetitorWarningRow,
   LabelComparisonRow,
   LabelDailyPoint,
   LabelRow,
@@ -72,6 +75,10 @@ export type CompetitorsPageCoreProps = {
   latestRunDate: string;
   selectedCompetitorLabelKey: string | null;
   playlistsByLabel: Record<string, PlaylistRow[]>;
+  runHistory: CompetitorRunRow[];
+  warnings: CompetitorWarningRow[];
+  overrideDays: CompetitorOverrideDay[];
+  overrideRowCount: number;
 };
 
 export type CompetitorsPageLoadResult =
@@ -136,6 +143,24 @@ export async function loadCompetitorsPageCore(user: User): Promise<CompetitorsPa
           .order("display_order", { ascending: true, nullsFirst: false })
           .order("display_name", { ascending: true }),
       recentRuns: async () => await recentRunsQuery,
+      runHistory: async () =>
+        await comp
+          .from("ingestion_runs")
+          .select("run_date,status,started_at,finished_at")
+          .order("run_date", { ascending: false })
+          .limit(45),
+      warnings: async () =>
+        await comp
+          .from("ingestion_warnings")
+          .select("run_date,severity,code,message,playlist_key")
+          .order("run_date", { ascending: false })
+          .limit(100),
+      overrides: async () =>
+        await comp
+          .from("track_daily_stream_overrides")
+          .select("date,isrc")
+          .order("date", { ascending: false })
+          .limit(1000),
     },
     cacheBase,
     CACHE_TTL_1H,
@@ -377,6 +402,28 @@ export async function loadCompetitorsPageCore(user: User): Promise<CompetitorsPa
       ? settings.competitor_label_key.trim()
       : null;
 
+  const runHistory = ((results.runHistory.data ?? []) as CompetitorRunRow[]).map((row) => ({
+    ...row,
+    run_date: String(row.run_date ?? "").slice(0, 10),
+  }));
+  const warnings = ((results.warnings.data ?? []) as CompetitorWarningRow[]).map((row) => ({
+    ...row,
+    run_date: String(row.run_date ?? "").slice(0, 10),
+  }));
+  const overridesByDate = new Map<string, number>();
+  for (const row of (results.overrides.data ?? []) as Array<{ date: string; isrc: string }>) {
+    const date = String(row.date ?? "").slice(0, 10);
+    if (!date) continue;
+    overridesByDate.set(date, (overridesByDate.get(date) ?? 0) + 1);
+  }
+  const overrideDays = [...overridesByDate.entries()]
+    .map(([date, count]) => ({ date, count }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const overrideRowCount = Math.max(
+    parseCount(competitorOverrideVersion.split("-")[1]),
+    (results.overrides.data ?? []).length,
+  );
+
   return {
     status: "ok",
     data: {
@@ -387,6 +434,10 @@ export async function loadCompetitorsPageCore(user: User): Promise<CompetitorsPa
       latestRunDate,
       selectedCompetitorLabelKey,
       playlistsByLabel: playlistsByLabelRecord,
+      runHistory,
+      warnings,
+      overrideDays,
+      overrideRowCount,
     },
   };
 }

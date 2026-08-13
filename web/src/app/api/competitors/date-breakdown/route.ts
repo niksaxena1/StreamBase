@@ -104,7 +104,12 @@ export async function POST(req: NextRequest) {
     return apiJsonOk({ ok: true as const, data_date: dataDate, labels: empty });
   }
 
-  const [{ data: seriesRaw, error: seriesError }, { data: moversRaw, error: moversError }, { data: membershipsRaw, error: membershipsError }] =
+  const [
+    { data: seriesRaw, error: seriesError },
+    { data: gainersRaw, error: gainersError },
+    { data: losersRaw, error: losersError },
+    { data: membershipsRaw, error: membershipsError },
+  ] =
     await Promise.all([
       comp.rpc("label_daily_series", {
         p_start_date: runDateStart,
@@ -114,6 +119,11 @@ export async function POST(req: NextRequest) {
         p_run_date: runDate,
         p_limit: 500,
         p_direction: "gainers",
+      }),
+      comp.rpc("label_top_tracks_daily", {
+        p_run_date: runDate,
+        p_limit: 500,
+        p_direction: "losers",
       }),
       (async () => {
         const rows: Array<Record<string, unknown>> = [];
@@ -158,7 +168,8 @@ export async function POST(req: NextRequest) {
   }
 
   if (statsError) return apiJsonErr(statsError.message, 500);
-  if (moversError) return apiJsonErr(moversError.message, 500);
+  if (gainersError) return apiJsonErr(gainersError.message, 500);
+  if (losersError) return apiJsonErr(losersError.message, 500);
   if (membershipsError) return apiJsonErr(membershipsError.message, 500);
 
   const aggByLabelDataDate = new Map<string, Map<string, number>>();
@@ -183,7 +194,8 @@ export async function POST(req: NextRequest) {
   };
 
   const moversByLabel = new Map<string, MoverRow[]>();
-  for (const raw of (moversRaw ?? []) as MoverRow[]) {
+  const moverRows = [...((gainersRaw ?? []) as MoverRow[]), ...((losersRaw ?? []) as MoverRow[])];
+  for (const raw of moverRows) {
     const keys = raw.label_keys ?? [];
     for (const labelKey of keys) {
       if (!labelKeys.includes(labelKey)) continue;
@@ -252,9 +264,16 @@ export async function POST(req: NextRequest) {
       const avg7 = prior7DayAverageDaily(byDataDate, dataDate);
       const deltaPct = avg7 > 0 ? ((dailyStreams - avg7) / avg7) * 100 : null;
 
-      const topTracks: TrackInfo[] = (moversByLabel.get(labelKey) ?? [])
-        .sort((a, b) => Number(b.daily_delta ?? 0) - Number(a.daily_delta ?? 0))
-        .slice(0, 10)
+      const uniqueMovers = new Map<string, MoverRow>();
+      for (const mover of moversByLabel.get(labelKey) ?? []) {
+        const existing = uniqueMovers.get(mover.isrc);
+        if (!existing || Math.abs(Number(mover.daily_delta ?? 0)) > Math.abs(Number(existing.daily_delta ?? 0))) {
+          uniqueMovers.set(mover.isrc, mover);
+        }
+      }
+      const topTracks: TrackInfo[] = [...uniqueMovers.values()]
+        .sort((a, b) => Math.abs(Number(b.daily_delta ?? 0)) - Math.abs(Number(a.daily_delta ?? 0)))
+        .slice(0, 12)
         .map((t) => ({
           isrc: String(t.isrc ?? ""),
           name: t.name ?? null,

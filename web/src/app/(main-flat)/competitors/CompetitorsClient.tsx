@@ -21,7 +21,6 @@ import { Sparkline } from "@/components/charts/Sparkline";
 import { useMetric } from "@/components/metrics/MetricContext";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { GlassTable, TableCell, TableRow } from "@/components/ui/GlassTable";
-import { SpotlightCard } from "@/components/ui/SpotlightCard";
 import { Chip, ChipGroup } from "@/components/ui/Chip";
 import { fetchApiJson } from "@/lib/api";
 import { dispatchCompetitorLabelChange } from "@/lib/competitorAccentEvents";
@@ -72,6 +71,7 @@ export function CompetitorsClient(props: {
   latestRunDate: string;
   selectedCompetitorLabelKey: string | null;
   playlistsByLabel: Record<string, import("./competitorsTypes").PlaylistRow[]>;
+  showCards?: boolean;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -408,7 +408,10 @@ export function CompetitorsClient(props: {
   const chartMetric = metric === "tracks" ? "tracks" : metric === "revenue" ? "revenue" : "streams";
 
   const breakdownLabelKeys = useMemo(
-    () => selectedLabels.filter((k) => activeLabels.some((l) => l.label_key === k)),
+    () =>
+      selectedLabels.filter(
+        (key) => activeLabels.some((label) => label.label_key === key) && !isOwnCatalogLabelKey(key),
+      ),
     [activeLabels, selectedLabels],
   );
 
@@ -489,10 +492,12 @@ export function CompetitorsClient(props: {
 
   return (
     <div className="space-y-6">
-      <CompetitorLabelCards rows={props.comparisonRows} playlistsByLabel={props.playlistsByLabel} />
+      {props.showCards !== false ? (
+        <CompetitorLabelCards rows={props.comparisonRows} playlistsByLabel={props.playlistsByLabel} />
+      ) : null}
 
       <div className="sb-card p-4 space-y-4">
-        <SpotlightCard className="relative p-3 overflow-visible">
+        <section className="relative space-y-3 overflow-visible">
           <div className="flex flex-col gap-3">
             <div className="flex items-start justify-between gap-2">
               <div>
@@ -566,11 +571,7 @@ export function CompetitorsClient(props: {
               />
             </div>
           </div>
-          <div
-            className="pointer-events-none absolute -right-14 -top-14 h-40 w-40 rounded-full opacity-15 blur-3xl"
-            style={{ background: "var(--sb-accent)" }}
-          />
-        </SpotlightCard>
+        </section>
 
         <div className="space-y-2">
           <div className="flex items-end justify-between px-1">
