@@ -20,6 +20,10 @@ import { ALL_COMPETITORS_KEY, resolveCompetitorLabelKey } from "@/lib/competitor
 import { isMissingPostgresFunctionError } from "@/lib/supabase/rpcErrors";
 import { getRequestAppContext } from "@/lib/requestAppContext.server";
 import { timedServerStep } from "@/lib/serverTiming";
+import {
+  resolveCatalogTrackSelection,
+  type CatalogTrackSelection,
+} from "@/lib/catalogSelection";
 
 const CATALOG_ARTIST_DROPDOWN_MAX_TRACKS = API_LOOKUP_DROPDOWN_MAX;
 const CATALOG_ARTIST_THUMBNAILS_MAX = API_LOOKUP_THUMBNAILS_MAX;
@@ -94,6 +98,15 @@ type PlaylistMetaRow = {
   display_order: number | null;
   spotify_playlist_id: string | null;
   spotify_playlist_image_url: string | null;
+};
+
+type CatalogSearchParams = {
+  artist_id?: string;
+  isrc?: string;
+  range?: string;
+  view?: string;
+  start?: string;
+  end?: string;
 };
 
 function clampRangeDays(x: unknown) {
@@ -206,8 +219,62 @@ function artistNameFor(rows: TrackRow[], artistId: string) {
   return null;
 }
 
+function catalogSelectionHref(
+  sp: CatalogSearchParams,
+  artistId: string,
+  isrc: string,
+): string {
+  const params = new URLSearchParams();
+  params.set("artist_id", artistId);
+  params.set("isrc", isrc);
+  if (sp.range) params.set("range", String(clampRangeDays(sp.range)));
+  if (sp.start) params.set("start", sp.start);
+  if (sp.end) params.set("end", sp.end);
+  return `/catalog?${params.toString()}`;
+}
+
+function CatalogTrackUnavailable(props: {
+  datasetMode: "own" | "competitor";
+  isrc: string;
+  reason: Extract<CatalogTrackSelection<TrackRow>, { kind: "unavailable" }>["reason"];
+}) {
+  const copy =
+    props.reason === "not_active"
+      ? {
+          title: "Historical track is not currently tracked",
+          body: `ISRC ${props.isrc} exists in competitor history but is not active in the selected competitor's latest snapshot.`,
+        }
+      : props.reason === "missing_artist_metadata"
+        ? {
+            title: "Track is missing artist metadata",
+            body: `ISRC ${props.isrc} exists, but it cannot be opened in Catalog until an artist mapping is available.`,
+          }
+        : {
+            title: "Track unavailable",
+            body: `ISRC ${props.isrc} was not found in ${props.datasetMode === "competitor" ? "the selected competitor" : "Own Catalog"}. The search result or bookmark may be stale.`,
+          };
+
+  return (
+    <div className="space-y-4">
+      <Alert variant="warning" title={copy.title}>
+        {copy.body}
+      </Alert>
+    </div>
+  );
+}
+
+function CatalogArtistUnavailable(props: { datasetMode: "own" | "competitor"; artistId: string }) {
+  return (
+    <div className="space-y-4">
+      <Alert variant="warning" title="Artist unavailable">
+        Artist {props.artistId} was not found in {props.datasetMode === "competitor" ? "the selected competitor" : "Own Catalog"}.
+      </Alert>
+    </div>
+  );
+}
+
 export default function CatalogPage(props: {
-  searchParams?: Promise<{ artist_id?: string; isrc?: string; range?: string; view?: string; start?: string; end?: string }>;
+  searchParams?: Promise<CatalogSearchParams>;
 }) {
   // Stream: the shell (and the route skeleton) render immediately while the
   // data-heavy content resolves — including on same-route param navigations
@@ -220,7 +287,7 @@ export default function CatalogPage(props: {
 }
 
 async function CatalogPageTimed(props: {
-  searchParams?: Promise<{ artist_id?: string; isrc?: string; range?: string; view?: string; start?: string; end?: string }>;
+  searchParams?: Promise<CatalogSearchParams>;
 }) {
   return timedServerStep("page.catalog", () => CatalogPageContent(props));
 }
@@ -228,7 +295,7 @@ async function CatalogPageTimed(props: {
 async function CatalogPageContent({
   searchParams,
 }: {
-  searchParams?: Promise<{ artist_id?: string; isrc?: string; range?: string; view?: string; start?: string; end?: string }>;
+  searchParams?: Promise<CatalogSearchParams>;
 }) {
   try {
     const sp = (await searchParams) ?? {};
@@ -260,6 +327,13 @@ async function CatalogPageContent({
       const rollbackDate = await getRollbackDate();
       const rollbackRunDate = rollbackDate ? rollbackDataDateToRunDate(rollbackDate) : null;
       const comp = svc.schema("competitor");
+      let competitorOverrideVersion = "0";
+      try {
+        const { data } = await comp.rpc("spotibase_override_version");
+        if (typeof data === "string" && data) competitorOverrideVersion = data;
+      } catch {
+        // The generic revalidation tag remains a fallback during migration rollout.
+      }
       let competitorLabelKey =
         typeof datasetSettings?.competitor_label_key === "string" && datasetSettings.competitor_label_key.trim()
           ? datasetSettings.competitor_label_key.trim()
@@ -277,23 +351,6 @@ async function CatalogPageContent({
       }
       const artistId = (sp.artist_id ?? "").trim();
       const requestedIsrc = (sp.isrc ?? "").trim();
-
-      if (!artistId && requestedIsrc) {
-        const { data: trackRow } = await comp
-          .from("tracks")
-          .select("spotify_artist_ids")
-          .eq("isrc", requestedIsrc)
-          .maybeSingle();
-        const ids = (trackRow as { spotify_artist_ids?: string[] | null } | null)?.spotify_artist_ids;
-        const primaryArtistId = Array.isArray(ids) ? String(ids[0] ?? "").trim() : "";
-        if (primaryArtistId) {
-          const params = new URLSearchParams();
-          params.set("artist_id", primaryArtistId);
-          params.set("isrc", requestedIsrc);
-          if (sp.range) params.set("range", String(clampRangeDays(sp.range)));
-          redirect(`/catalog?${params.toString()}`);
-        }
-      }
 
       // The whole label context (playlists → latest date → memberships → tracks)
       // is identical for every request within a label, so fetch it once per hour
@@ -386,8 +443,99 @@ async function CatalogPageContent({
       const latestRunDate = compContext?.latestRunDate ?? null;
       const hasOnlyOneSnapshot = compContext?.hasOnlyOneSnapshot ?? true;
       const activeMemberships = compContext?.activeMemberships ?? [];
-      const competitorTracks = compContext?.competitorTracks ?? [];
+      let competitorTracks = compContext?.competitorTracks ?? [];
       const competitorPlaylistMetaByKey = new Map(competitorPlaylistRows.map((p) => [p.playlist_key, p]));
+
+      if (requestedIsrc) {
+        const requestedTrackInScope = competitorTracks.find((track) => track.isrc === requestedIsrc) ?? null;
+        let resolvedTrack = requestedTrackInScope;
+        let resolvedTrackIsActiveInScope = Boolean(
+          requestedTrackInScope || activeMemberships.some((membership) => membership.isrc === requestedIsrc),
+        );
+
+        if (!resolvedTrack) {
+          const { data: trackRow, error: trackError } = await cachedQuery(
+            async () =>
+              await comp
+                .from("tracks")
+                .select("isrc,name,spotify_artist_ids,spotify_artist_names,spotify_album_image_url,release_date")
+                .eq("isrc", requestedIsrc)
+                .maybeSingle(),
+            `catalog-comp-requested-track-v1-${requestedIsrc}`,
+            CACHE_TTL_1H,
+          );
+          if (trackError) {
+            logError("Error resolving requested competitor track", trackError);
+            return (
+              <Alert variant="error" title="Error resolving track">
+                {trackError.message}
+              </Alert>
+            );
+          }
+          resolvedTrack = (trackRow ?? null) as TrackRow | null;
+        }
+
+        if (
+          resolvedTrack &&
+          !resolvedTrackIsActiveInScope &&
+          latestRunDate &&
+          competitorPlaylistRows.length > 0
+        ) {
+          const playlistKeys = competitorPlaylistRows.map((playlist) => playlist.playlist_key);
+          const { data: activeMembership, error: membershipError } = await cachedQuery(
+            async () =>
+              await comp
+                .from("playlist_memberships")
+                .select("isrc")
+                .eq("isrc", requestedIsrc)
+                .in("playlist_key", playlistKeys)
+                .lte("valid_from", latestRunDate)
+                .or(`valid_to.is.null,valid_to.gte.${latestRunDate}`)
+                .limit(1)
+                .maybeSingle(),
+            `catalog-comp-requested-track-active-v1-${competitorLabelKey ?? "none"}-${requestedIsrc}-${latestRunDate}`,
+            CACHE_TTL_1H,
+          );
+          if (membershipError) {
+            logError("Error resolving requested competitor track membership", membershipError);
+            return (
+              <Alert variant="error" title="Error resolving track availability">
+                {membershipError.message}
+              </Alert>
+            );
+          }
+          resolvedTrackIsActiveInScope = Boolean(activeMembership);
+        }
+
+        const selection = resolveCatalogTrackSelection({
+          requestedArtistId: artistId,
+          requestedIsrc,
+          artistTracks: artistId
+            ? competitorTracks.filter((track) =>
+                (track.spotify_artist_ids ?? []).includes(artistId),
+              )
+            : [],
+          resolvedTrack,
+          resolvedTrackIsActiveInScope,
+        });
+
+        if (selection.kind === "redirect") {
+          redirect(catalogSelectionHref(sp, selection.artistId, selection.isrc));
+        }
+        if (selection.kind === "unavailable") {
+          return (
+            <CatalogTrackUnavailable
+              datasetMode="competitor"
+              isrc={requestedIsrc}
+              reason={selection.reason}
+            />
+          );
+        }
+        if (selection.shouldInject) {
+          competitorTracks = [selection.track, ...competitorTracks];
+        }
+      }
+
       const artists = deriveArtists(competitorTracks);
       const effectiveArtistId = artistId || artists[0]?.id || "";
       if (!artistId && effectiveArtistId) {
@@ -404,30 +552,21 @@ async function CatalogPageContent({
       }
       if (
         artistId &&
-        artists.length > 0 &&
         !artists.some((artist) => artist.id === artistId)
       ) {
-        const fallbackArtistId = artists[0]!.id;
-        const params = new URLSearchParams();
-        params.set("artist_id", fallbackArtistId);
-        const fallbackTracks = competitorTracks.filter((t) =>
-          (t.spotify_artist_ids ?? []).includes(fallbackArtistId),
+        return (
+          <CatalogArtistUnavailable
+            datasetMode="competitor"
+            artistId={artistId}
+          />
         );
-        if (requestedIsrc && fallbackTracks.some((t) => t.isrc === requestedIsrc)) {
-          params.set("isrc", requestedIsrc);
-        }
-        if (sp.range) params.set("range", String(clampRangeDays(sp.range)));
-        redirect(`/catalog?${params.toString()}`);
       }
       const artistTracks = competitorTracks.filter((t) => (t.spotify_artist_ids ?? []).includes(effectiveArtistId));
-      const selectedIsrc =
-        requestedIsrc && artistTracks.some((t) => t.isrc === requestedIsrc)
-          ? requestedIsrc
-          : artistTracks[0]?.isrc ?? null;
+      const selectedIsrc = requestedIsrc || artistTracks[0]?.isrc || null;
       const startRunDate = latestRunDate ? addDays(latestRunDate, -rangeDays) : null;
       const maPaddedStartRunDate = startRunDate ? addDays(startRunDate, -MA7_LOOKBACK_DAYS) : null;
       const artistIsrcs = artistTracks.map((t) => t.isrc);
-      const compArtistCacheKey = `catalog-comp-artist-v1-${competitorLabelKey ?? "none"}-${effectiveArtistId}-${latestRunDate ?? "none"}-${rangeDays}`;
+      const compArtistCacheKey = `catalog-comp-artist-v1-${competitorLabelKey ?? "none"}-${effectiveArtistId}-${latestRunDate ?? "none"}-${rangeDays}-ov${competitorOverrideVersion}`;
       const [{ data: artistSeriesRaw }, { data: todayRowsRaw }, { data: prevRowsRaw }] = await Promise.all([
         latestRunDate && maPaddedStartRunDate && artistIsrcs.length
           ? cachedQuery(
@@ -516,7 +655,7 @@ async function CatalogPageContent({
                     .gte("date", maPaddedStartRunDate)
                     .lte("date", latestRunDate)
                     .order("date", { ascending: false }),
-                `catalog-comp-track-series-v1-${selectedIsrc}-${maPaddedStartRunDate}-${latestRunDate}`,
+                `catalog-comp-track-series-v1-${selectedIsrc}-${maPaddedStartRunDate}-${latestRunDate}-ov${competitorOverrideVersion}`,
                 CACHE_TTL_1H,
               )
             ).data ?? [])
@@ -620,7 +759,7 @@ async function CatalogPageContent({
     // If a track is specified without an artist, prefer the track's primary (first) artist.
     // This makes "click a track → open Catalog" land on the correct artist automatically.
     if (!artistId && requestedIsrc) {
-      const { data: trackRow } = await cachedQuery(
+      const { data: trackRow, error: trackError } = await cachedQuery(
         async () =>
           await svc
             .from("tracks")
@@ -631,18 +770,31 @@ async function CatalogPageContent({
         CACHE_TTL_1H,
       );
 
+      if (trackError) {
+        logError("Error resolving requested catalog track", trackError);
+        return (
+          <Alert variant="error" title="Error resolving track">
+            {trackError.message}
+          </Alert>
+        );
+      }
+
       const typed = (trackRow ?? null) as { spotify_artist_ids: string[] | null } | null;
       const primaryArtistId = Array.isArray(typed?.spotify_artist_ids)
         ? String(typed?.spotify_artist_ids?.[0] ?? "").trim()
         : "";
 
       if (primaryArtistId) {
-        const params = new URLSearchParams();
-        params.set("artist_id", primaryArtistId);
-        params.set("isrc", requestedIsrc);
-        if (sp.range) params.set("range", String(clampRangeDays(sp.range)));
-        redirect(`/catalog?${params.toString()}`);
+        redirect(catalogSelectionHref(sp, primaryArtistId, requestedIsrc));
       }
+
+      return (
+        <CatalogTrackUnavailable
+          datasetMode="own"
+          isrc={requestedIsrc}
+          reason={typed ? "missing_artist_metadata" : "not_found"}
+        />
+      );
     }
 
     if (!artistId) {
@@ -696,7 +848,7 @@ async function CatalogPageContent({
       // The dropdown is intentionally built from a capped set of recent tracks, so a
       // valid long-tail artist found by global search may not be present in it. Verify
       // the requested artist against the source table before treating it as invalid.
-      const { data: selectedArtistTrack } = await cachedQuery(
+      const { data: selectedArtistTrack, error: selectedArtistError } = await cachedQuery(
         async () =>
           await svc
             .from("tracks")
@@ -709,6 +861,15 @@ async function CatalogPageContent({
         CACHE_TTL_1H,
       );
 
+      if (selectedArtistError) {
+        logError("Error resolving requested catalog artist", selectedArtistError);
+        return (
+          <Alert variant="error" title="Error resolving artist">
+            {selectedArtistError.message}
+          </Alert>
+        );
+      }
+
       const selectedArtistTrackRow = (selectedArtistTrack ?? null) as TrackRow | null;
       if (selectedArtistTrackRow) {
         artists = [
@@ -718,8 +879,8 @@ async function CatalogPageContent({
             name: artistNameFor([selectedArtistTrackRow], artistId) ?? artistId,
           },
         ].sort((a, b) => a.name.localeCompare(b.name));
-      } else if (artists.length > 0) {
-        redirect(`/catalog?artist_id=${encodeURIComponent(artists[0]!.id)}`);
+      } else if (!requestedIsrc) {
+        return <CatalogArtistUnavailable datasetMode="own" artistId={artistId} />;
       }
     }
 
@@ -749,7 +910,54 @@ async function CatalogPageContent({
     );
   }
 
-  const artistTracks = (tracks ?? []) as TrackRow[];
+  let artistTracks = (tracks ?? []) as TrackRow[];
+
+  if (requestedIsrc && !artistTracks.some((track) => track.isrc === requestedIsrc)) {
+    const { data: requestedTrack, error: requestedTrackError } = await cachedQuery(
+      async () =>
+        await svc
+          .from("tracks")
+          .select("isrc,name,spotify_artist_ids,spotify_artist_names,spotify_album_image_url,release_date")
+          .eq("isrc", requestedIsrc)
+          .maybeSingle(),
+      `catalog-requested-track-v1-${requestedIsrc}`,
+      CACHE_TTL_1H,
+    );
+
+    if (requestedTrackError) {
+      logError("Error resolving requested catalog track", requestedTrackError);
+      return (
+        <Alert variant="error" title="Error resolving track">
+          {requestedTrackError.message}
+        </Alert>
+      );
+    }
+
+    const selection = resolveCatalogTrackSelection({
+      requestedArtistId: artistId,
+      requestedIsrc,
+      artistTracks,
+      resolvedTrack: (requestedTrack ?? null) as TrackRow | null,
+      resolvedTrackIsActiveInScope: true,
+    });
+
+    if (selection.kind === "redirect") {
+      redirect(catalogSelectionHref(sp, selection.artistId, selection.isrc));
+    }
+    if (selection.kind === "unavailable") {
+      return (
+        <CatalogTrackUnavailable
+          datasetMode="own"
+          isrc={requestedIsrc}
+          reason={selection.reason}
+        />
+      );
+    }
+    if (selection.shouldInject) {
+      artistTracks = [selection.track, ...artistTracks];
+    }
+  }
+
   const isrcs = artistTracks.map((t) => t.isrc);
 
   const artistName =
