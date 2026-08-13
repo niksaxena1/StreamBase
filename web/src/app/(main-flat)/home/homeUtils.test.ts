@@ -1,10 +1,12 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { setCurrencyDisplay } from "@/lib/format";
+import type { PlaylistDailyStatsRow } from "./homeTypes";
 import {
   parseMilestonesText,
   parseDailyBucketsText,
   formatMilestoneForInput,
   formatMilestoneHeaderLabel,
+  dailyStreamValuesForDataset,
   rollSum,
 } from "./homeUtils";
 
@@ -188,5 +190,28 @@ describe("rollSum", () => {
       { run_date: "2026-02-12", daily_streams_net: 2000 },
     ] as any[];
     expect(rollSum(rowsWithNull, 2, "streams", 0.003)).toBe(2000);
+  });
+});
+
+describe("dailyStreamValuesForDataset", () => {
+  const rows = [
+    {
+      date: "2026-08-12",
+      total_streams_cumulative: 1_500_000,
+      daily_streams_net: 20_000,
+    },
+    {
+      date: "2026-08-11",
+      total_streams_cumulative: 1_000_000,
+      daily_streams_net: 18_000,
+    },
+  ] as PlaylistDailyStatsRow[];
+
+  it("uses membership-aware stored daily values for competitors", () => {
+    expect(dailyStreamValuesForDataset(rows, "competitor")).toEqual([20_000, 18_000]);
+  });
+
+  it("keeps own-catalog daily values derived from cumulative totals", () => {
+    expect(dailyStreamValuesForDataset(rows, "own")).toEqual([500_000, null]);
   });
 });

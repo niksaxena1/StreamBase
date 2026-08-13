@@ -39,7 +39,6 @@ import { useCurrencyDisplay } from "@/components/currency/CurrencyDisplayContext
 import { Skeleton } from "@/components/ui/Skeleton";
 
 import type {
-  PlaylistDailyStatsRow,
   ChartPoint,
   HomeDashboardServerProps,
 } from "./home/homeTypes";
@@ -52,6 +51,7 @@ import { HomeWeekendDipsSection } from "./home/HomeWeekendDipsSection";
 import { HomeHistorySection } from "./home/HomeHistorySection";
 import { HomeFilterBuilderSection } from "./home/HomeFilterBuilderSection";
 import { HomeConcentrationSection } from "./home/HomeConcentrationSection";
+import { dailyStreamValuesForDataset } from "./home/homeUtils";
 
 // ============================================================================
 // Helpers (header-only)
@@ -343,29 +343,21 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
       return Number.isFinite(v) ? v : 0;
     };
 
-    const dailyDeltaFromTotalsDesc = (rowsDesc: PlaylistDailyStatsRow[]) =>
-      rowsDesc.map((r, idx) => {
-        if (idx >= rowsDesc.length - 1) return null;
-        const cur = safeNum(r?.total_streams_cumulative);
-        const prev = safeNum(rowsDesc[idx + 1]?.total_streams_cumulative);
-        return cur - prev;
-      });
+    const dailyStreamValues = dailyStreamValuesForDataset(desc, props.datasetMode);
 
     if (metric === "revenue") {
-      const dailyDeltas = dailyDeltaFromTotalsDesc(desc);
       const dailyDesc = desc.map((r, idx) => ({
         date: dataDateFromRunDate(r.date),
-        value: dailyDeltas[idx] == null ? null : dailyDeltas[idx]! * streamPayoutPerStreamUsd,
+        value:
+          dailyStreamValues[idx] == null
+            ? null
+            : dailyStreamValues[idx]! * streamPayoutPerStreamUsd,
       }));
       const totalDesc = desc.map((r) => ({
         date: dataDateFromRunDate(r.date),
         value: safeNum(r.total_streams_cumulative) * streamPayoutPerStreamUsd,
       }));
-      const dailyValue =
-        desc.length >= 2
-          ? (safeNum(desc[0]?.total_streams_cumulative) - safeNum(desc[1]?.total_streams_cumulative)) *
-            streamPayoutPerStreamUsd
-          : 0;
+      const dailyValue = (dailyStreamValues[0] ?? 0) * streamPayoutPerStreamUsd;
       return {
         daily: computeRollingAvg7(dailyDesc).slice(0, props.rangeDays),
         total: totalDesc.slice(0, props.rangeDays),
@@ -411,19 +403,15 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
     }
 
     // streams (default)
-    const dailyDeltas = dailyDeltaFromTotalsDesc(desc);
     const dailyDesc = desc.map((r, idx) => ({
       date: dataDateFromRunDate(r.date),
-      value: dailyDeltas[idx],
+      value: dailyStreamValues[idx],
     }));
     const totalDesc = desc.map((r) => ({
       date: dataDateFromRunDate(r.date),
       value: safeNum(r.total_streams_cumulative),
     }));
-    const dailyValue =
-      desc.length >= 2
-        ? safeNum(desc[0]?.total_streams_cumulative) - safeNum(desc[1]?.total_streams_cumulative)
-        : 0;
+    const dailyValue = dailyStreamValues[0] ?? 0;
     return {
       daily: computeRollingAvg7(dailyDesc).slice(0, props.rangeDays),
       total: totalDesc.slice(0, props.rangeDays),
@@ -437,7 +425,15 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
       yTickFormat: "k" as const,
       color: undefined,
     };
-  }, [metric, granularity, props.history, props.latest, props.rangeDays, streamPayoutPerStreamUsd]);
+  }, [
+    metric,
+    granularity,
+    props.datasetMode,
+    props.history,
+    props.latest,
+    props.rangeDays,
+    streamPayoutPerStreamUsd,
+  ]);
 
   const heroStatAccentColor = useMemo(() => {
     if (props.datasetMode !== "competitor" || metric !== "streams") return undefined;
