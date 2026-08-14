@@ -37,7 +37,7 @@ export async function DistroMovementHomeNotice() {
       className="rounded-xl border p-3 text-sm"
       style={{ borderColor: "var(--sb-border)", background: "var(--sb-surface)" }}
     >
-      <Link href="/collectors" className="group inline-flex flex-wrap items-center gap-1.5">
+      <Link href="/collectors#distro-movement" className="group inline-flex flex-wrap items-center gap-1.5">
         <span className="font-mono">{formatInt(moved)}</span>
         <span>
           {moved === 1 ? "track" : "tracks"} changed distribution in the last 30 days — re-distributions,

@@ -95,7 +95,7 @@ export function DistroMovementSection() {
     .reduce((sum, flow) => sum + flow.track_count, 0);
 
   return (
-    <section className="sb-card p-4">
+    <section id="distro-movement" className="sb-card scroll-mt-20 p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-sm font-semibold">Distro movement</h2>

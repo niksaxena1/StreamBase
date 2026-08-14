@@ -101,3 +101,23 @@ SQL: `migrations/add_competitor_health_enhancements.sql` (distinct track RPC, un
 Competitor Mode does not currently include collectors or distributor/entity health logic. Those concepts are specific to the own-catalog universe and should not be half-reused.
 
 Home weekend dips and artificial spike panels require at least two daily competitor snapshots (`hasTrendHistory` on Home). Negative daily streams can appear as soon as competitor track history includes a day-over-day drop.
+
+## Downward counter revisions and re-links (added 2026-08-14)
+
+Two failure modes beyond stale runs, both discovered in the 2026-08-07 Soave
+event and now handled automatically each ingestion:
+
+- **Small permanent re-bases** (fraud purges; counter drops a few % and stays
+  down): `competitor.spotibase_rebase_downward_revisions` accepts the new
+  basis once it has persisted 3+ snapshots and ramps the effective series into
+  it over 7 days (`auto-rebase:v1` overrides; manual overrides always win;
+  drops >10% are left for review).
+- **Re-links** (counter resets to ~zero, possibly restored later): the
+  playlist-stats recompute treats any day-over-day swing larger than half the
+  counter (>10k) as a data event contributing 0 to `daily_streams_net`, in
+  both directions. Per-track effective series remain untouched.
+
+`competitor.spotibase_reconcile_auto_overrides` additionally deletes
+auto-interp overrides that upstream corrections have made obsolete (raw now
+above the frozen estimate). Order in the nightly normalize step:
+reconcile → interpolate → re-base → recompute cascade.

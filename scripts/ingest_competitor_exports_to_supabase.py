@@ -134,6 +134,23 @@ def normalize_competitor_analytics(pg: Postgrest, run_date: date) -> dict:
     interpolation_start = run_date - timedelta(days=COMPETITOR_INTERPOLATION_LOOKBACK_DAYS)
     overrides_written = 0
     tracks_affected = 0
+    rebased = 0
+    reconciled = 0
+
+    # Drop auto-interp overrides that upstream corrections made obsolete, so the
+    # interpolation pass below re-evaluates those days against the fresh raw data.
+    try:
+        reconciled = int(
+            pg.rpc(
+                "spotibase_reconcile_auto_overrides",
+                {"p_start_date": interpolation_start.isoformat(), "p_end_date": run_date.isoformat()},
+            )
+            or 0
+        )
+        if reconciled:
+            print(f"INFO Reconciled {reconciled} obsolete auto-interp override(s)")
+    except Exception as reconcile_err:
+        print(f"WARN Could not reconcile auto overrides: {reconcile_err}")
 
     try:
         interpolation = pg.rpc(
@@ -156,7 +173,23 @@ def normalize_competitor_analytics(pg: Postgrest, run_date: date) -> dict:
         # first added and has no previous aggregate total.
         print(f"WARN Could not interpolate competitor stale runs: {interpolation_err}")
 
-    recompute_start = interpolation_start if overrides_written else run_date
+    # Permanent downward counter revisions (fraud purges): once the lower level
+    # has persisted, ramp the effective series into the new basis instead of
+    # leaving a one-day cliff. Runs after interpolation so transient dips are
+    # already handled; only auto-% overrides are ever replaced.
+    try:
+        rebase = pg.rpc(
+            "spotibase_rebase_downward_revisions",
+            {"p_start_date": interpolation_start.isoformat(), "p_end_date": run_date.isoformat()},
+        )
+        if isinstance(rebase, list) and rebase:
+            rebased = int(rebase[0].get("overrides_written") or 0)
+        if rebased:
+            print(f"INFO Re-based {rebase[0].get('tracks_affected')} track(s), {rebased} override(s)")
+    except Exception as rebase_err:
+        print(f"WARN Could not re-base downward revisions: {rebase_err}")
+
+    recompute_start = interpolation_start if (overrides_written or rebased or reconciled) else run_date
     recomputed = pg.rpc(
         "spotibase_recompute_playlist_daily_stats_cascade",
         {

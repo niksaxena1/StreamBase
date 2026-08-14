@@ -1,0 +1,38 @@
+-- Applied to prod 2026-08-14 via Supabase MCP (migration names:
+-- add_competitor_rebase_and_override_reconciliation and
+-- competitor_daily_net_ignores_relink_cliffs).
+--
+-- Three follow-ups to the stale-run interpolation machinery, closing the
+-- 2026-08-07 Soave "-12.4M day" investigation:
+--
+-- 1) competitor.spotibase_rebase_downward_revisions(p_start, p_end,
+--    p_persist_days=3, p_spread_days=7, p_max_drop_ratio=0.10)
+--    SOT/Spotify occasionally revise a track's cumulative counter DOWNWARD
+--    permanently (fraud purges). The interpolation guardrail correctly
+--    refuses to fill these (no catch-up ever exceeds the old anchor), leaving
+--    a lasting negative cliff. When the lower level persists for
+--    >= p_persist_days snapshots with no recovery, the NEW basis is accepted
+--    as truth and a descending ramp of overrides (note auto-rebase:v1) is
+--    written over the preceding p_spread_days. Manual overrides always win;
+--    only auto-% notes are replaced; drops > p_max_drop_ratio are left for
+--    review. Idempotent. First run: 420 overrides across 60 tracks.
+--
+-- 2) competitor.spotibase_reconcile_auto_overrides(p_start, p_end)
+--    Deletes auto-interp overrides made obsolete by upstream corrections
+--    (raw now ABOVE the frozen estimate — interpolated values are always >=
+--    the stale raw they replace, so raw > override can only mean a real
+--    backfill). auto-rebase rows are excluded by note prefix.
+--
+-- 3) spotibase_recompute_playlist_daily_stats: counter RE-LINKS (a track
+--    reset to ~zero, or later restored) produce day-over-day swings larger
+--    than half the counter — a data event, not listening. Such deltas (both
+--    directions, counter > 10k) now contribute 0 to daily_streams_net. The
+--    per-track effective series remains untouched and honest; only the
+--    playlist-level aggregate ignores the cliff. The 2026-08-07 Soave event
+--    was 26 such tracks (-24M of counter); after this change the label's
+--    Aug 7 daily net reads +7.98M, in line with neighboring days.
+--
+-- Both new functions are service_role-only with pinned search_path. Full
+-- statements live in the supabase_migrations schema history. The nightly
+-- normalization (scripts/ingest_competitor_exports_to_supabase.py) runs
+-- reconcile -> interpolate -> rebase -> recompute each ingestion.

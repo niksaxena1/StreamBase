@@ -108,7 +108,11 @@ class CompetitorIngestTests(unittest.TestCase):
 
             def rpc(self, name, params):
                 self.calls.append((name, params))
+                if name == "spotibase_reconcile_auto_overrides":
+                    return 0
                 if name == "spotibase_interpolate_stale_streams":
+                    return [{"overrides_written": 0, "tracks_affected": 0}]
+                if name == "spotibase_rebase_downward_revisions":
                     return [{"overrides_written": 0, "tracks_affected": 0}]
                 if name == "spotibase_recompute_playlist_daily_stats_cascade":
                     return 1

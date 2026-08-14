@@ -42,6 +42,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      # Own-catalog thumbnails rot when Spotify rotates mosaic image ids; the
+      # competitor workflow already refreshes its side. ~25 playlists per run.
+      - name: Refresh own playlist thumbnails
+        run: python scripts/refresh_competitor_playlist_thumbnails.py --schema public --force --limit 100
+
       - name: Enrich tracks (batch 1)
         run: python scripts/enrich_tracks_with_spotify.py --limit "${LIMIT}"
 

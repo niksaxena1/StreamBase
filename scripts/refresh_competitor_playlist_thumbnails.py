@@ -41,20 +41,23 @@ def playlist_key_filter(playlist_keys: List[str]) -> Optional[str]:
 
 
 class Postgrest:
-    def __init__(self, supabase_url: str, service_role_key: str):
+    def __init__(self, supabase_url: str, service_role_key: str, schema: str = "competitor"):
         self.base = supabase_url.rstrip("/") + "/rest/v1"
+        self.schema = schema
         self.h = {
             "Authorization": f"Bearer {service_role_key}",
             "apikey": service_role_key,
             "Content-Type": "application/json",
-            "Accept-Profile": "competitor",
-            "Content-Profile": "competitor",
         }
+        if schema != "public":
+            self.h["Accept-Profile"] = schema
+            self.h["Content-Profile"] = schema
 
     def select_playlists(self, limit: int, cursor: Optional[str], force: bool, playlist_keys: List[str]) -> List[dict]:
         filters = [
             "select=playlist_key,display_name,spotify_playlist_id,spotify_playlist_image_url",
-            "is_active=eq.true",
+            # public.playlists has no is_active column.
+            *(["is_active=eq.true"] if self.schema != "public" else []),
             "spotify_playlist_id=not.is.null",
             "order=playlist_key.asc",
             f"limit={int(limit)}",
@@ -70,16 +73,26 @@ class Postgrest:
 
         response = requests.get(f"{self.base}/playlists?{'&'.join(filters)}", headers=self.h, timeout=180)
         if response.status_code != 200:
-            raise RuntimeError(f"Select competitor.playlists failed: {response.status_code} {response.text[:500]}")
+            raise RuntimeError(f"Select {self.schema}.playlists failed: {response.status_code} {response.text[:500]}")
         return response.json()
 
     def update_playlist(self, playlist_key: str, meta: Dict[str, Any]) -> None:
         headers = dict(self.h)
         headers["Prefer"] = "return=minimal"
-        patch = {
-            "spotify_playlist_image_url": meta.get("image_url"),
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        }
+        if self.schema == "public":
+            # Mirrors the in-app admin refresh: keep an existing thumbnail when
+            # Spotify reports no cover, and stamp the fetch bookkeeping columns.
+            patch: Dict[str, Any] = {
+                "spotify_playlist_name": meta.get("name"),
+                "spotify_last_fetched_at": datetime.now(timezone.utc).isoformat(),
+            }
+            if meta.get("image_url"):
+                patch["spotify_playlist_image_url"] = meta.get("image_url")
+        else:
+            patch = {
+                "spotify_playlist_image_url": meta.get("image_url"),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
         response = requests.patch(
             f"{self.base}/playlists?playlist_key=eq.{quote(playlist_key, safe='')}",
             headers=headers,
@@ -87,7 +100,7 @@ class Postgrest:
             timeout=180,
         )
         if response.status_code not in (200, 204):
-            raise RuntimeError(f"Update competitor.playlists failed: {response.status_code} {response.text[:500]}")
+            raise RuntimeError(f"Update {self.schema}.playlists failed: {response.status_code} {response.text[:500]}")
 
 
 class Spotify:
@@ -184,9 +197,15 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=50, help="Batch size for competitor playlists")
     parser.add_argument("--force", action="store_true", help="Refresh existing thumbnail URLs too")
     parser.add_argument("--playlist-key", action="append", default=[], help="Restrict to one playlist key; repeatable")
+    parser.add_argument(
+        "--schema",
+        choices=["competitor", "public"],
+        default="competitor",
+        help="Which playlists table to refresh (public = own catalog)",
+    )
     args = parser.parse_args()
 
-    pg = Postgrest(require_env("SUPABASE_URL"), require_env("SUPABASE_SERVICE_ROLE_KEY"))
+    pg = Postgrest(require_env("SUPABASE_URL"), require_env("SUPABASE_SERVICE_ROLE_KEY"), schema=args.schema)
     sp = Spotify(require_env("SPOTIFY_CLIENT_ID"), require_env("SPOTIFY_CLIENT_SECRET"))
     refresh_batch(pg, sp, args.limit, args.force, args.playlist_key)
 
