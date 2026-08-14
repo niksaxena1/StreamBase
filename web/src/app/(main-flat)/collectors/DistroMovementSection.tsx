@@ -6,11 +6,12 @@ import { ArrowRight, RefreshCw } from "lucide-react";
 import { fetchApiJson } from "@/lib/api";
 import { formatDateISO, formatInt } from "@/lib/format";
 import type { DistroMovementInsights, DistroMovementWindow } from "@/lib/collectors/distroMovement";
-import { OUTSIDE_TRACKED_SET } from "@/lib/rosterFlow";
+import { OUTSIDE_TRACKED_SET, type RosterFlow } from "@/lib/rosterFlow";
+import { Modal } from "@/components/ui/Modal";
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { SectionErrorState } from "@/components/ui/DataStates";
 import { TableSkeleton } from "@/components/ui/Skeleton";
-import { RosterFlowDiagram } from "@/components/charts/RosterFlowDiagram";
+import { RosterFlowDiagram, trackCountLabel } from "@/components/charts/RosterFlowDiagram";
 import { useThemeColors } from "@/components/charts/useThemeColors";
 import { COLLECTOR_COLORS } from "@/components/charts/CollectorComparisonChart";
 
@@ -56,6 +57,16 @@ export function DistroMovementSection() {
   const data = current?.data ?? null;
   const error = current?.error ?? null;
   const loading = !current;
+
+  const [selectedFlow, setSelectedFlow] = useState<RosterFlow | null>(null);
+  const flowLabel = (name: string, side: "source" | "target") =>
+    name === OUTSIDE_TRACKED_SET ? (side === "source" ? "Newly distributed" : "Taken down") : name;
+  const selectedMovements = useMemo(() => {
+    if (!selectedFlow || !data) return [];
+    return data.movements
+      .filter((movement) => movement.source === selectedFlow.source && movement.target === selectedFlow.target)
+      .sort((a, b) => (b.total_streams ?? -1) - (a.total_streams ?? -1));
+  }, [selectedFlow, data]);
 
   const nodeColors = useMemo(() => {
     const map = new Map<string, string>();
@@ -162,7 +173,78 @@ export function DistroMovementSection() {
             outsideTargetLabel="Taken down"
             ariaLabel="Track movement between distributor playlists"
             emptyMessage="No distro movement in this window."
+            onFlowClick={setSelectedFlow}
           />
+          <p className="text-[10px]" style={{ color: colors.muted }}>
+            Click a band to see the tracks behind it.
+          </p>
+
+          <Modal
+            open={selectedFlow != null}
+            onClose={() => setSelectedFlow(null)}
+            title={
+              selectedFlow
+                ? `${flowLabel(selectedFlow.source, "source")} → ${flowLabel(selectedFlow.target, "target")}`
+                : ""
+            }
+            subtitle={selectedFlow ? trackCountLabel(selectedFlow.track_count) : undefined}
+            maxWidthClassName="max-w-3xl"
+          >
+            {selectedMovements.length ? (
+              <div className="max-h-[60vh] overflow-y-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="text-[10px] uppercase tracking-wide" style={{ color: colors.muted }}>
+                      <th className="px-2 py-2 font-medium">Track</th>
+                      <th className="px-2 py-2 font-medium">Released</th>
+                      <th className="px-2 py-2 font-medium">Moved</th>
+                      <th className="px-2 py-2 text-right font-medium">Daily</th>
+                      <th className="px-2 py-2 text-right font-medium">Total streams</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y" style={{ borderColor: colors.border }}>
+                    {selectedMovements.map((movement, index) => (
+                      <tr key={`${movement.isrc}-${index}`}>
+                        <td className="px-2 py-2">
+                          <div className="flex items-center gap-2.5">
+                            <PreviewableArtwork
+                              src={movement.album_image_url}
+                              alt=""
+                              className="h-9 w-9 shrink-0 rounded"
+                            />
+                            <div className="min-w-0">
+                              <div className="truncate font-medium">{movement.name}</div>
+                              <div className="truncate text-[10px]" style={{ color: colors.muted }}>
+                                {(movement.artist_names ?? []).join(", ")}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="whitespace-nowrap px-2 py-2 font-mono text-[11px]" style={{ color: colors.muted }}>
+                          {movement.release_date ? formatDateISO(movement.release_date) : "—"}
+                        </td>
+                        <td className="whitespace-nowrap px-2 py-2 font-mono text-[11px]" style={{ color: colors.muted }}>
+                          {formatDateISO(movement.event_date)}
+                        </td>
+                        <td className="whitespace-nowrap px-2 py-2 text-right font-mono tabular-nums">
+                          {movement.daily_streams != null
+                            ? `${movement.daily_streams >= 0 ? "+" : ""}${formatInt(movement.daily_streams)}`
+                            : "—"}
+                        </td>
+                        <td className="whitespace-nowrap px-2 py-2 text-right font-mono tabular-nums">
+                          {movement.total_streams != null ? formatInt(movement.total_streams) : "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="py-6 text-center text-xs" style={{ color: colors.muted }}>
+                Track-level details are kept for the most recent 250 moves; this band has none listed.
+              </p>
+            )}
+          </Modal>
 
           {movements.length ? (
             <div>

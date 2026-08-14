@@ -34,6 +34,7 @@ export function RosterFlowDiagram({
   outsideTargetLabel = "Left tracked set",
   ariaLabel = "Roster movements between tracked groups",
   emptyMessage = "No roster movement in this window.",
+  onFlowClick,
 }: {
   flows: RosterFlow[];
   /** Display name → color. Unknown names fall back to the info color. */
@@ -44,6 +45,8 @@ export function RosterFlowDiagram({
   outsideTargetLabel?: string;
   ariaLabel?: string;
   emptyMessage?: string;
+  /** When provided, bands become clickable (e.g. to open a track drill-down). */
+  onFlowClick?: (flow: RosterFlow) => void;
 }) {
   const colors = useThemeColors();
   const [activeFlow, setActiveFlow] = useState<string | null>(null);
@@ -117,6 +120,7 @@ export function RosterFlowDiagram({
             const key = `${flow.source}-${flow.target}`;
             const active = activeFlow == null || activeFlow === key;
             const importFlow = isImportFlow(flow);
+            const flowTitle = `${nodeDisplayName(flow.source, "source")} to ${nodeDisplayName(flow.target, "target")}: ${trackCountLabel(flow.track_count)}${importFlow ? " (initial roster import)" : ""}`;
             return (
               <path
                 key={key}
@@ -128,15 +132,25 @@ export function RosterFlowDiagram({
                 strokeLinecap="round"
                 strokeDasharray={importFlow ? "6 8" : undefined}
                 opacity={importFlow ? (active ? 0.22 : 0.05) : active ? 0.42 : 0.07}
-                className="transition-opacity"
+                className={onFlowClick ? "cursor-pointer transition-opacity" : "transition-opacity"}
                 onMouseEnter={() => setActiveFlow(key)}
                 onMouseLeave={() => setActiveFlow(null)}
+                onClick={onFlowClick ? () => onFlowClick(flow) : undefined}
+                role={onFlowClick ? "button" : undefined}
+                tabIndex={onFlowClick ? 0 : undefined}
+                aria-label={onFlowClick ? `${flowTitle}. Open track list.` : undefined}
+                onKeyDown={
+                  onFlowClick
+                    ? (event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          onFlowClick(flow);
+                        }
+                      }
+                    : undefined
+                }
               >
-                <title>
-                  {nodeDisplayName(flow.source, "source")} to {nodeDisplayName(flow.target, "target")}:{" "}
-                  {trackCountLabel(flow.track_count)}
-                  {importFlow ? " (initial roster import)" : ""}
-                </title>
+                <title>{flowTitle}</title>
               </path>
             );
           })}

@@ -17,4 +17,8 @@ export type RosterMovement = {
   source: string;
   target: string;
   event_date: string;
+  /** Enrichment (own-catalog distro movement provides these; optional elsewhere). */
+  release_date?: string | null;
+  total_streams?: number | null;
+  daily_streams?: number | null;
 };

@@ -173,10 +173,11 @@ async function computeDistroMovement(args: {
   }
 
   const trackMeta = new Map<string, MovementTrackMeta>();
+  const releaseDates = new Map<string, string | null>();
   for (let index = 0; index < eventIsrcs.length; index += 200) {
     const { data, error } = await svc
       .from("tracks")
-      .select("isrc,name,spotify_artist_names,spotify_album_image_url")
+      .select("isrc,name,spotify_artist_names,spotify_album_image_url,release_date")
       .in("isrc", eventIsrcs.slice(index, index + 200));
     if (error) return { data: null, error };
     for (const row of data ?? []) {
@@ -186,6 +187,36 @@ async function computeDistroMovement(args: {
         artist_names: row.spotify_artist_names,
         album_image_url: row.spotify_album_image_url,
       });
+      releaseDates.set(row.isrc, row.release_date ?? null);
+    }
+  }
+
+  // Latest cumulative + day-over-day delta so the flow drill-down can show
+  // where each moved track stands today.
+  const totalsByIsrc = new Map<string, number>();
+  const prevTotalsByIsrc = new Map<string, number>();
+  const prevRunDate = addDaysISO(args.runDate, -1);
+  for (let index = 0; index < eventIsrcs.length; index += 200) {
+    const chunk = eventIsrcs.slice(index, index + 200);
+    const [latest, previous] = await Promise.all([
+      svc
+        .from("track_daily_streams_effective")
+        .select("isrc,streams_cumulative")
+        .eq("date", args.runDate)
+        .in("isrc", chunk),
+      svc
+        .from("track_daily_streams_effective")
+        .select("isrc,streams_cumulative")
+        .eq("date", prevRunDate)
+        .in("isrc", chunk),
+    ]);
+    if (latest.error) return { data: null, error: latest.error };
+    if (previous.error) return { data: null, error: previous.error };
+    for (const row of latest.data ?? []) {
+      if (row.isrc != null && row.streams_cumulative != null) totalsByIsrc.set(row.isrc, Number(row.streams_cumulative));
+    }
+    for (const row of previous.data ?? []) {
+      if (row.isrc != null && row.streams_cumulative != null) prevTotalsByIsrc.set(row.isrc, Number(row.streams_cumulative));
     }
   }
 
@@ -205,12 +236,22 @@ async function computeDistroMovement(args: {
     .map((playlist) => playlist.display_name);
 
   const built = buildRosterMovement(additions, removals, trackMeta, DISTRO_PAIR_WINDOW_DAYS);
+  const movements = built.movements.slice(0, 250).map((movement) => {
+    const total = totalsByIsrc.get(movement.isrc) ?? null;
+    const prev = prevTotalsByIsrc.get(movement.isrc) ?? null;
+    return {
+      ...movement,
+      release_date: releaseDates.get(movement.isrc) ?? null,
+      total_streams: total,
+      daily_streams: total != null && prev != null ? total - prev : null,
+    };
+  });
   return {
     data: {
       window_start: windowStart,
       window_end: args.runDate,
       flows: built.flows,
-      movements: built.movements.slice(0, 250),
+      movements,
       import_targets: importTargets,
       collector_by_playlist: collectorByPlaylist,
     },
@@ -238,7 +279,7 @@ export async function loadDistroMovementCached(args: {
 }) {
   return cachedQuery<DistroMovementInsights>(
     () => computeDistroMovement(args),
-    `distro-movement-v1-${args.windowDays}-${args.runDate}`,
+    `distro-movement-v2-${args.windowDays}-${args.runDate}`,
     CACHE_TTL_1H,
   );
 }
