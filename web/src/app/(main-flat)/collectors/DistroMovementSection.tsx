@@ -71,11 +71,15 @@ export function DistroMovementSection() {
 
   const nodeColors = useMemo(() => {
     const map = new Map<string, string>();
-    for (const [displayName, collector] of Object.entries(data?.collector_by_playlist ?? {})) {
-      map.set(displayName, COLLECTOR_COLORS[collector] ?? "var(--sb-muted)");
+    for (const playlist of data?.playlists ?? []) {
+      map.set(playlist.display_name, COLLECTOR_COLORS[playlist.collector] ?? "var(--sb-muted)");
     }
     return map;
-  }, [data?.collector_by_playlist]);
+  }, [data?.playlists]);
+  const fixedNodes = useMemo(
+    () => (data?.playlists ?? []).map((playlist) => ({ name: playlist.display_name, imageUrl: playlist.image_url })),
+    [data?.playlists],
+  );
 
   const flows = data?.flows ?? [];
   const movements = data?.movements ?? [];
@@ -163,22 +167,21 @@ export function DistroMovementSection() {
           {importSet.size > 0 ? (
             <p className="text-xs" style={{ color: colors.muted }}>
               Excludes initial imports from newly tracked {importSet.size === 1 ? "playlist" : "playlists"} (
-              {[...importSet].join(", ")}) — shown faint in the flow below.
+              {[...importSet].join(", ")}).
             </p>
           ) : null}
 
           <RosterFlowDiagram
             flows={flows}
             nodeColors={nodeColors}
-            importTargets={data?.import_targets}
-            outsideSourceLabel="Newly distributed"
-            outsideTargetLabel="Taken down"
-            ariaLabel="Track movement between distributor playlists"
-            emptyMessage="No distro movement in this window."
+            fixedNodes={fixedNodes}
+            ariaLabel="Re-distributions between distributor playlists"
+            emptyMessage="No re-distributions in this window."
             onFlowClick={setSelectedFlow}
           />
           <p className="text-[10px]" style={{ color: colors.muted }}>
-            Click a band to see the tracks behind it.
+            Bands are re-distributions between distro playlists — click one to see the tracks behind it. New
+            distributions and takedowns are counted above and listed below.
           </p>
 
           <Modal

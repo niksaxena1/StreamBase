@@ -28,6 +28,12 @@ export type DistroMovementWindow = (typeof DISTRO_MOVEMENT_WINDOWS)[number];
 /** Re-distributions can straddle takedown/processing gaps; pair generously. */
 const DISTRO_PAIR_WINDOW_DAYS = 14;
 
+export type DistroPlaylistNode = {
+  display_name: string;
+  collector: string;
+  image_url: string | null;
+};
+
 export type DistroMovementInsights = {
   window_start: string;
   window_end: string;
@@ -35,8 +41,8 @@ export type DistroMovementInsights = {
   movements: RosterMovement[];
   /** Distro playlists first tracked inside the window (initial imports). */
   import_targets: string[];
-  /** Display name → collector (TG/GB/P/...) for node coloring. */
-  collector_by_playlist: Record<string, string>;
+  /** All distro playlists in the app's canonical order (display_order, name). */
+  playlists: DistroPlaylistNode[];
 };
 
 type MembershipRow = {
@@ -85,15 +91,24 @@ async function computeDistroMovement(args: {
   const svc = supabaseService();
   const windowStart = addDaysISO(args.runDate, -(args.windowDays - 1));
 
+  // Canonical app ordering (matches the playlists pages).
   const { data: playlistsRaw, error: playlistsError } = await svc
     .from("playlists")
-    .select("playlist_key,display_name,collector,playlist_type")
-    .eq("playlist_type", "Distro");
+    .select("playlist_key,display_name,collector,playlist_type,spotify_playlist_image_url")
+    .eq("playlist_type", "Distro")
+    .order("display_order", { ascending: true, nullsFirst: false })
+    .order("display_name", { ascending: true });
   if (playlistsError) return { data: null, error: playlistsError };
   const playlists = (playlistsRaw ?? []).map((row) => ({
     playlist_key: row.playlist_key,
     display_name: (row.display_name ?? row.playlist_key).trim(),
     collector: (row.collector ?? "").trim(),
+    image_url: row.spotify_playlist_image_url ?? null,
+  }));
+  const playlistNodes: DistroPlaylistNode[] = playlists.map((playlist) => ({
+    display_name: playlist.display_name,
+    collector: playlist.collector,
+    image_url: playlist.image_url,
   }));
   if (!playlists.length) {
     return {
@@ -103,16 +118,13 @@ async function computeDistroMovement(args: {
         flows: [],
         movements: [],
         import_targets: [],
-        collector_by_playlist: {},
+        playlists: [],
       },
       error: null,
     };
   }
   const playlistKeys = playlists.map((playlist) => playlist.playlist_key);
   const displayNames = new Map(playlists.map((playlist) => [playlist.playlist_key, playlist.display_name]));
-  const collectorByPlaylist = Object.fromEntries(
-    playlists.map((playlist) => [playlist.display_name, playlist.collector]),
-  );
 
   const [additionCandidates, removalCandidates] = await Promise.all([
     loadDistroMembershipPages({ svc, playlistKeys, field: "valid_from", start: windowStart, end: args.runDate }),
@@ -132,7 +144,7 @@ async function computeDistroMovement(args: {
         flows: [],
         movements: [],
         import_targets: [],
-        collector_by_playlist: collectorByPlaylist,
+        playlists: playlistNodes,
       },
       error: null,
     };
@@ -253,7 +265,7 @@ async function computeDistroMovement(args: {
       flows: built.flows,
       movements,
       import_targets: importTargets,
-      collector_by_playlist: collectorByPlaylist,
+      playlists: playlistNodes,
     },
     error: null,
   };
@@ -279,7 +291,7 @@ export async function loadDistroMovementCached(args: {
 }) {
   return cachedQuery<DistroMovementInsights>(
     () => computeDistroMovement(args),
-    `distro-movement-v2-${args.windowDays}-${args.runDate}`,
+    `distro-movement-v3-${args.windowDays}-${args.runDate}`,
     CACHE_TTL_1H,
   );
 }

@@ -26,6 +26,8 @@ export function trackCountLabel(count: number): string {
  * or own-catalog distro playlists). Band width represents track count, scaled
  * by organic movement only so initial imports render de-emphasized.
  */
+export type RosterFlowFixedNode = { name: string; imageUrl?: string | null };
+
 export function RosterFlowDiagram({
   flows,
   nodeColors,
@@ -35,6 +37,7 @@ export function RosterFlowDiagram({
   ariaLabel = "Roster movements between tracked groups",
   emptyMessage = "No roster movement in this window.",
   onFlowClick,
+  fixedNodes,
 }: {
   flows: RosterFlow[];
   /** Display name → color. Unknown names fall back to the info color. */
@@ -47,13 +50,27 @@ export function RosterFlowDiagram({
   emptyMessage?: string;
   /** When provided, bands become clickable (e.g. to open a track drill-down). */
   onFlowClick?: (flow: RosterFlow) => void;
+  /**
+   * When provided, BOTH columns render exactly these groups in this order —
+   * including groups with no movement — as compact cards with thumbnails.
+   * Flows touching groups outside the list (e.g. the outside-tracked-set
+   * sentinel) are not drawn. Without it, columns derive from the flows.
+   */
+  fixedNodes?: RosterFlowFixedNode[];
 }) {
   const colors = useThemeColors();
   const [activeFlow, setActiveFlow] = useState<string | null>(null);
   const importSet = useMemo(() => new Set(importTargets ?? []), [importTargets]);
   const isImportFlow = (flow: RosterFlow) =>
     flow.source === OUTSIDE_TRACKED_SET && importSet.has(flow.target);
-  const topFlows = flows.slice(0, 18);
+  const fixedNames = useMemo(() => new Set((fixedNodes ?? []).map((node) => node.name)), [fixedNodes]);
+  const topFlows = useMemo(() => {
+    const usable = fixedNodes
+      ? flows.filter((flow) => fixedNames.has(flow.source) && fixedNames.has(flow.target))
+      : flows;
+    return usable.slice(0, 18);
+  }, [flows, fixedNodes, fixedNames]);
+  const compact = Boolean(fixedNodes);
 
   /** "Outside tracked set" means different things per side; label each honestly. */
   const nodeDisplayName = (name: string, side: "source" | "target"): string => {
@@ -63,24 +80,28 @@ export function RosterFlowDiagram({
 
   const layout = useMemo(() => {
     const width = 960;
-    const height = 360;
     const nodeWidth = 170;
-    const sources = [...new Set(topFlows.map((flow) => flow.source))];
-    const targets = [...new Set(topFlows.map((flow) => flow.target))];
+    const sources = fixedNodes ? fixedNodes.map((node) => node.name) : [...new Set(topFlows.map((flow) => flow.source))];
+    const targets = fixedNodes ? fixedNodes.map((node) => node.name) : [...new Set(topFlows.map((flow) => flow.target))];
     const sourceTotals = new Map<string, number>();
     const targetTotals = new Map<string, number>();
     topFlows.forEach((flow) => {
       sourceTotals.set(flow.source, (sourceTotals.get(flow.source) ?? 0) + flow.track_count);
       targetTotals.set(flow.target, (targetTotals.get(flow.target) ?? 0) + flow.track_count);
     });
+    // Compact fixed columns pack more rows: size the canvas to the row count.
+    const rows = Math.max(sources.length, targets.length, 1);
+    const slotSize = compact ? 34 : Math.max(42, (360 - 48) / rows);
+    const nodeHeight = compact ? 28 : Math.min(38, slotSize - 6);
+    const height = compact ? 48 + rows * slotSize : 360;
     const makeNodes = (names: string[], x: number, totals: Map<string, number>) => {
-      const slot = Math.max(42, (height - 48) / Math.max(1, names.length));
+      const slot = compact ? slotSize : Math.max(42, (height - 48) / Math.max(1, names.length));
       return names.map((name, index): FlowNode => ({
         name,
         x,
         y: 24 + index * slot,
         width: nodeWidth,
-        height: Math.min(38, slot - 6),
+        height: nodeHeight,
         total: totals.get(name) ?? 0,
       }));
     };
@@ -93,9 +114,14 @@ export function RosterFlowDiagram({
     const organic = topFlows.filter((flow) => !(flow.source === OUTSIDE_TRACKED_SET && importSet.has(flow.target)));
     const maxFlow = Math.max(1, ...(organic.length ? organic : topFlows).map((flow) => flow.track_count));
     return { width, height, sourceNodes, targetNodes, bySource, byTarget, maxFlow };
-  }, [topFlows, importSet]);
+  }, [topFlows, importSet, fixedNodes, compact]);
 
-  if (!topFlows.length) {
+  const imageByName = useMemo(
+    () => new Map((fixedNodes ?? []).map((node) => [node.name, node.imageUrl ?? null])),
+    [fixedNodes],
+  );
+
+  if (!topFlows.length && !fixedNodes) {
     return <div className="flex min-h-64 items-center justify-center text-xs" style={{ color: colors.muted }}>{emptyMessage}</div>;
   }
 
@@ -155,9 +181,74 @@ export function RosterFlowDiagram({
             );
           })}
         </g>
+        {compact && !topFlows.length ? (
+          <text
+            x={layout.width / 2}
+            y={layout.height / 2}
+            fill={colors.muted}
+            fontSize="11"
+            textAnchor="middle"
+          >
+            {emptyMessage}
+          </text>
+        ) : null}
         {[...layout.sourceNodes, ...layout.targetNodes].map((node, index) => {
           const side = index < layout.sourceNodes.length ? ("source" as const) : ("target" as const);
           const display = nodeDisplayName(node.name, side);
+          const imageUrl = imageByName.get(node.name) ?? null;
+          const clipId = `rf-thumb-${side}-${index}`;
+          if (compact) {
+            const thumbSize = node.height - 8;
+            const textX = node.x + (imageUrl ? thumbSize + 10 : 10) + 2;
+            const maxChars = imageUrl ? 17 : 20;
+            return (
+              <g key={`${node.x}-${node.name}`}>
+                <rect
+                  x={node.x}
+                  y={node.y}
+                  width={node.width}
+                  height={node.height}
+                  rx="6"
+                  fill={colors.card}
+                  stroke={nodeColor(node.name)}
+                  strokeOpacity="0.7"
+                />
+                {imageUrl ? (
+                  <>
+                    <clipPath id={clipId}>
+                      <rect x={node.x + 4} y={node.y + 4} width={thumbSize} height={thumbSize} rx="4" />
+                    </clipPath>
+                    <image
+                      href={imageUrl}
+                      x={node.x + 4}
+                      y={node.y + 4}
+                      width={thumbSize}
+                      height={thumbSize}
+                      clipPath={`url(#${clipId})`}
+                      preserveAspectRatio="xMidYMid slice"
+                    />
+                  </>
+                ) : (
+                  <rect x={node.x + 4} y={node.y + 4} width="4" height={thumbSize} rx="2" fill={nodeColor(node.name)} />
+                )}
+                <text x={textX} y={node.y + node.height / 2 + 3.5} fill={colors.text} fontSize="10.5" fontWeight="600">
+                  {display.length > maxChars ? `${display.slice(0, maxChars - 1)}…` : display}
+                </text>
+                {node.total > 0 ? (
+                  <text
+                    x={node.x + node.width - 8}
+                    y={node.y + node.height / 2 + 3.5}
+                    fill={colors.muted}
+                    fontSize="9.5"
+                    textAnchor="end"
+                  >
+                    {formatInt(node.total)}
+                  </text>
+                ) : null}
+                <title>{`${display}: ${trackCountLabel(node.total)}`}</title>
+              </g>
+            );
+          }
           return (
             <g key={`${node.x}-${node.name}`}>
               <rect
