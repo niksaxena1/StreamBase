@@ -38,6 +38,18 @@ describe("competitorLabelAccents", () => {
     expect(resolved.find((l) => l.label_key === "soave")?.accent_hex).toBe("b98a46");
   });
 
+  it("keeps Million Hills' pale peach distinct from Soave's tan-gold", () => {
+    const resolved = applyResolvedLabelAccents([
+      { label_key: "million_hills", accent_hex: "fc9c64" },
+      { label_key: "soave", accent_hex: "b98a46" },
+    ]);
+    const millionHills = resolved.find((label) => label.label_key === "million_hills")!.accent_hex!;
+    const soave = resolved.find((label) => label.label_key === "soave")!.accent_hex!;
+
+    expect(millionHills).toBe(PINNED_LABEL_ACCENTS.million_hills);
+    expect(accentColorDistance(millionHills, soave)).toBeGreaterThanOrEqual(0.24);
+  });
+
   it("keeps Perfect Havoc's wine red distinct from selected. and ATLAST", () => {
     const resolved = applyResolvedLabelAccents([
       { label_key: "atlast", accent_hex: "fd02c3" },

@@ -17,6 +17,8 @@ export const FALLBACK_LABEL_COLORS = [
 /** Brand-locked accents; never shifted by harmonize (matches extract-competitor-accents). */
 export const PINNED_LABEL_ACCENTS: Record<string, string> = {
   __own_catalog__: "c7f33c",
+  // Pale peach separates Million Hills from Soave's deeper tan-gold.
+  million_hills: "f9d5a7",
   paraiso: "ff9028",
   // Deep wine red sits between selected.'s scarlet and ATLAST's pink without blending into either.
   perfect_havoc: "7c2947",
