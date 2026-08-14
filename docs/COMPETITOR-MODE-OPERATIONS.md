@@ -18,6 +18,7 @@
 | ATLAST | `atlast_miami_beats_all_releases` | `6Up2rsR545N0TZqCm8jrg9` | `456886` | `8958` |
 | MusicUp | `musicup_releases` | `19rThvNZ2ajkvHC2Zp6s05` | `10438539` | `11226` |
 | Perfect Havoc | `perfect_havoc_records` | `5CTdZN6MZc0FOcUL0Olo6g` | `587437` | `11280` |
+| Million Hills | `million_hills_releases` | `1s2T5rJkG0LYiUswJKRY3o` | `17861230` | `11287` |
 
 ## Isolation rule
 
