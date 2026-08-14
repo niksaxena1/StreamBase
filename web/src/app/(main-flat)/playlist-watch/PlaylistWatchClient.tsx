@@ -1232,7 +1232,7 @@ export function PlaylistWatchClient({
               <input
                 value={alertEditor.ruleName}
                 onChange={(event) => setAlertEditor((state) => ({ ...state, ruleName: event.target.value }))}
-                className="sb-ring h-10 w-full rounded-lg bg-white/60 px-3 text-sm outline-none dark:bg-white/10"
+                className="sb-native-select sb-ring h-10 w-full rounded-lg bg-white/60 px-3 text-sm outline-none dark:bg-white/10"
                 style={{ color: "var(--sb-text)" }}
               />
             </label>
@@ -1272,7 +1272,7 @@ export function PlaylistWatchClient({
                 <select
                   value={alertEditor.comparisonWindowDays}
                   onChange={(event) => setAlertEditor((state) => ({ ...state, comparisonWindowDays: event.target.value }))}
-                  className="sb-ring h-10 w-full rounded-lg bg-white/60 px-3 text-sm outline-none dark:bg-white/10"
+                  className="sb-native-select sb-ring h-10 w-full rounded-lg bg-white/60 px-3 text-sm outline-none dark:bg-white/10"
                   style={{ color: "var(--sb-text)" }}
                 >
                   <option value="1">Yesterday</option>

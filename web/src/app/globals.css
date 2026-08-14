@@ -173,6 +173,14 @@ html {
   /* Global density dial (smaller dashboard UI without browser zoom hacks) */
   font-size: 14px;
   scroll-behavior: smooth;
+  /* Native widgets (select popups, scrollbars, date inputs) follow the app
+     theme instead of the OS scheme — a light-OS machine otherwise opens white
+     dropdown menus inside the dark UI. */
+  color-scheme: light;
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
 }
 
 body {

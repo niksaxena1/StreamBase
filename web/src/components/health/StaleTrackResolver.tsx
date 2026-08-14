@@ -517,7 +517,7 @@ export function StaleTrackResolver({
                   <select
                     value={testProvider}
                     onChange={(e) => setTestProvider(e.target.value as TestableProvider)}
-                    className="h-7 appearance-none rounded-lg border border-white/10 bg-white/[0.06] py-1 pl-2.5 pr-7 text-[10px] font-medium text-[var(--sb-text)] shadow-sm outline-none transition hover:bg-white/[0.09] focus:border-[var(--sb-accent)]/40 focus:bg-white/[0.1] sb-ring"
+                    className="sb-native-select h-7 appearance-none rounded-lg border border-white/10 bg-white/[0.06] py-1 pl-2.5 pr-7 text-[10px] font-medium text-[var(--sb-text)] shadow-sm outline-none transition hover:bg-white/[0.09] focus:border-[var(--sb-accent)]/40 focus:bg-white/[0.1] sb-ring"
                     aria-label="Provider to test"
                   >
                     <option value="beat_analytics">Beat Analytics</option>

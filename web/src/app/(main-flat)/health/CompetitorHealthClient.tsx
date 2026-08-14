@@ -79,7 +79,7 @@ export function CompetitorHealthClient({ data }: { data: CompetitorHealthPageDat
             <label className="flex items-center gap-1.5 text-xs" style={{ color: "var(--sb-muted)" }}>
               <span className="whitespace-nowrap">Data date</span>
               <select
-                className="sb-ring rounded-lg bg-white/60 px-2 py-1.5 text-xs dark:bg-white/10"
+                className="sb-native-select sb-ring rounded-lg bg-white/60 px-2 py-1.5 text-xs dark:bg-white/10"
                 style={{ color: "var(--sb-text)" }}
                 value={data.selectedDataDate ?? ""}
                 onChange={(e) => router.push(buildHref({ date: e.target.value, page: null, enrich_page: null }))}
@@ -94,7 +94,7 @@ export function CompetitorHealthClient({ data }: { data: CompetitorHealthPageDat
             <label className="flex items-center gap-1.5 text-xs" style={{ color: "var(--sb-muted)" }}>
               <span className="whitespace-nowrap">Label</span>
               <select
-                className="sb-ring rounded-lg bg-white/60 px-2 py-1.5 text-xs dark:bg-white/10"
+                className="sb-native-select sb-ring rounded-lg bg-white/60 px-2 py-1.5 text-xs dark:bg-white/10"
                 style={{ color: "var(--sb-text)" }}
                 value={data.selectedLabelKey ?? ""}
                 onChange={(e) =>

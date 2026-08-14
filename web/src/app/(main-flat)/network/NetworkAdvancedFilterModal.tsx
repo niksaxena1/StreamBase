@@ -191,7 +191,7 @@ export function NetworkAdvancedFilterModal({
         <div className="flex-1" />
         <select
           aria-label="Load saved preset"
-          className="rounded-lg border px-2 py-1.5 text-[11px] outline-none max-w-[11rem]"
+          className="sb-native-select rounded-lg border px-2 py-1.5 text-[11px] outline-none max-w-[11rem]"
           style={{
             borderColor: "var(--sb-border)",
             backgroundColor: "var(--sb-card)",

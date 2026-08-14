@@ -29,13 +29,35 @@ function flowPath(source: FlowNode, target: FlowNode) {
   return `M ${x0} ${y0} C ${x0 + bend} ${y0}, ${x1 - bend} ${y1}, ${x1} ${y1}`;
 }
 
-function RosterFlowDiagram({ flows, labels }: { flows: RosterFlowRow[]; labels: LabelRow[] }) {
+/** "Outside tracked set" means different things per side; label each honestly. */
+function nodeDisplayName(name: string, side: "source" | "target"): string {
+  if (name !== OUTSIDE_TRACKED_SET) return name;
+  return side === "source" ? "New to tracked set" : "Left tracked set";
+}
+
+function trackCountLabel(count: number): string {
+  return `${formatInt(count)} ${count === 1 ? "track" : "tracks"}`;
+}
+
+function RosterFlowDiagram({
+  flows,
+  labels,
+  importTargets,
+}: {
+  flows: RosterFlowRow[];
+  labels: LabelRow[];
+  /** Display names of labels whose inflow this window is an initial roster import. */
+  importTargets?: string[];
+}) {
   const colors = useThemeColors();
   const [activeFlow, setActiveFlow] = useState<string | null>(null);
   const labelColors = useMemo(
     () => new Map(labels.map((label, index) => [label.display_name, labelColor(label, index)])),
     [labels],
   );
+  const importSet = useMemo(() => new Set(importTargets ?? []), [importTargets]);
+  const isImportFlow = (flow: RosterFlowRow) =>
+    flow.source === OUTSIDE_TRACKED_SET && importSet.has(flow.target);
   const topFlows = flows.slice(0, 18);
   const layout = useMemo(() => {
     const width = 960;
@@ -64,9 +86,12 @@ function RosterFlowDiagram({ flows, labels }: { flows: RosterFlowRow[]; labels: 
     const targetNodes = makeNodes(targets, width - nodeWidth - 20, targetTotals);
     const bySource = new Map(sourceNodes.map((node) => [node.name, node]));
     const byTarget = new Map(targetNodes.map((node) => [node.name, node]));
-    const maxFlow = Math.max(1, ...topFlows.map((flow) => flow.track_count));
+    // Scale band widths by ORGANIC movement only: a 400-track initial import
+    // would otherwise flatten every real flow to a hairline.
+    const organic = topFlows.filter((flow) => !(flow.source === OUTSIDE_TRACKED_SET && importSet.has(flow.target)));
+    const maxFlow = Math.max(1, ...(organic.length ? organic : topFlows).map((flow) => flow.track_count));
     return { width, height, sourceNodes, targetNodes, bySource, byTarget, maxFlow };
-  }, [topFlows]);
+  }, [topFlows, importSet]);
 
   if (!topFlows.length) {
     return <div className="flex min-h-64 items-center justify-center text-xs" style={{ color: colors.muted }}>No roster movement in this window.</div>;
@@ -92,45 +117,56 @@ function RosterFlowDiagram({ flows, labels }: { flows: RosterFlowRow[]; labels: 
             if (!source || !target) return null;
             const key = `${flow.source}-${flow.target}`;
             const active = activeFlow == null || activeFlow === key;
+            const importFlow = isImportFlow(flow);
             return (
               <path
                 key={key}
                 d={flowPath(source, target)}
                 stroke={nodeColor(flow.source)}
-                strokeWidth={Math.max(2, (flow.track_count / layout.maxFlow) * 22)}
+                strokeWidth={
+                  importFlow ? 10 : Math.max(2, Math.min(22, (flow.track_count / layout.maxFlow) * 22))
+                }
                 strokeLinecap="round"
-                opacity={active ? 0.42 : 0.07}
+                strokeDasharray={importFlow ? "6 8" : undefined}
+                opacity={importFlow ? (active ? 0.22 : 0.05) : active ? 0.42 : 0.07}
                 className="transition-opacity"
                 onMouseEnter={() => setActiveFlow(key)}
                 onMouseLeave={() => setActiveFlow(null)}
               >
-                <title>{flow.source} to {flow.target}: {formatInt(flow.track_count)} tracks</title>
+                <title>
+                  {nodeDisplayName(flow.source, "source")} to {nodeDisplayName(flow.target, "target")}:{" "}
+                  {trackCountLabel(flow.track_count)}
+                  {importFlow ? " (initial roster import)" : ""}
+                </title>
               </path>
             );
           })}
         </g>
-        {[...layout.sourceNodes, ...layout.targetNodes].map((node, index) => (
-          <g key={`${node.x}-${node.name}`}>
-            <rect
-              x={node.x}
-              y={node.y}
-              width={node.width}
-              height={node.height}
-              rx="6"
-              fill={colors.card}
-              stroke={nodeColor(node.name)}
-              strokeOpacity="0.7"
-            />
-            <rect x={node.x} y={node.y} width="4" height={node.height} rx="2" fill={nodeColor(node.name)} />
-            <text x={node.x + 12} y={node.y + 15} fill={colors.text} fontSize="11" fontWeight="600">
-              {node.name.length > 23 ? `${node.name.slice(0, 22)}...` : node.name}
-            </text>
-            <text x={node.x + 12} y={node.y + 29} fill={colors.muted} fontSize="10">
-              {formatInt(node.total)} tracks
-            </text>
-            {index < layout.sourceNodes.length ? null : null}
-          </g>
-        ))}
+        {[...layout.sourceNodes, ...layout.targetNodes].map((node, index) => {
+          const side = index < layout.sourceNodes.length ? ("source" as const) : ("target" as const);
+          const display = nodeDisplayName(node.name, side);
+          return (
+            <g key={`${node.x}-${node.name}`}>
+              <rect
+                x={node.x}
+                y={node.y}
+                width={node.width}
+                height={node.height}
+                rx="6"
+                fill={colors.card}
+                stroke={nodeColor(node.name)}
+                strokeOpacity="0.7"
+              />
+              <rect x={node.x} y={node.y} width="4" height={node.height} rx="2" fill={nodeColor(node.name)} />
+              <text x={node.x + 12} y={node.y + 15} fill={colors.text} fontSize="11" fontWeight="600">
+                {display.length > 23 ? `${display.slice(0, 22)}...` : display}
+              </text>
+              <text x={node.x + 12} y={node.y + 29} fill={colors.muted} fontSize="10">
+                {trackCountLabel(node.total)}
+              </text>
+            </g>
+          );
+        })}
       </svg>
     </div>
   );
@@ -265,7 +301,7 @@ export function CompetitorMovementDashboard({
           </button>
         </div>
         <div className="mt-2">
-          <RosterFlowDiagram flows={flows} labels={labels} />
+          <RosterFlowDiagram flows={flows} labels={labels} importTargets={rosterImports.labelNames} />
         </div>
       </section>
 
