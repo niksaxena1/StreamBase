@@ -1,0 +1,11 @@
+{
+  "name": "StreamBase",
+  "install": "npm --prefix web ci",
+  "terminals": [
+    {
+      "name": "web",
+      "command": "npm --prefix web run dev"
+    }
+  ],
+  "ports": [3000]
+}
