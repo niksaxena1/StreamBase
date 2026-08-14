@@ -60,6 +60,9 @@ export function RosterFlowDiagram({
 }) {
   const colors = useThemeColors();
   const [activeFlow, setActiveFlow] = useState<string | null>(null);
+  // Stored thumbnail URLs can go stale (Spotify mosaic ids rotate); fall back
+  // to the color bar instead of the browser's broken-image glyph.
+  const [failedImages, setFailedImages] = useState<ReadonlySet<string>>(new Set());
   const importSet = useMemo(() => new Set(importTargets ?? []), [importTargets]);
   const isImportFlow = (flow: RosterFlow) =>
     flow.source === OUTSIDE_TRACKED_SET && importSet.has(flow.target);
@@ -195,7 +198,8 @@ export function RosterFlowDiagram({
         {[...layout.sourceNodes, ...layout.targetNodes].map((node, index) => {
           const side = index < layout.sourceNodes.length ? ("source" as const) : ("target" as const);
           const display = nodeDisplayName(node.name, side);
-          const imageUrl = imageByName.get(node.name) ?? null;
+          const rawImageUrl = imageByName.get(node.name) ?? null;
+          const imageUrl = rawImageUrl && !failedImages.has(rawImageUrl) ? rawImageUrl : null;
           const clipId = `rf-thumb-${side}-${index}`;
           if (compact) {
             const thumbSize = node.height - 8;
@@ -226,6 +230,14 @@ export function RosterFlowDiagram({
                       height={thumbSize}
                       clipPath={`url(#${clipId})`}
                       preserveAspectRatio="xMidYMid slice"
+                      onError={() =>
+                        setFailedImages((previous) => {
+                          if (previous.has(imageUrl)) return previous;
+                          const next = new Set(previous);
+                          next.add(imageUrl);
+                          return next;
+                        })
+                      }
                     />
                   </>
                 ) : (

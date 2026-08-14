@@ -291,7 +291,7 @@ export async function loadDistroMovementCached(args: {
 }) {
   return cachedQuery<DistroMovementInsights>(
     () => computeDistroMovement(args),
-    `distro-movement-v3-${args.windowDays}-${args.runDate}`,
+    `distro-movement-v4-${args.windowDays}-${args.runDate}`,
     CACHE_TTL_1H,
   );
 }
