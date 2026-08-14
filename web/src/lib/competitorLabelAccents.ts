@@ -18,6 +18,8 @@ export const FALLBACK_LABEL_COLORS = [
 export const PINNED_LABEL_ACCENTS: Record<string, string> = {
   __own_catalog__: "c7f33c",
   paraiso: "ff9028",
+  // Cooler raspberry-red keeps Perfect Havoc visually distinct from selected.'s scarlet.
+  perfect_havoc: "a9156f",
   selected: "db0c0c",
   soave: "b98a46",
 };
