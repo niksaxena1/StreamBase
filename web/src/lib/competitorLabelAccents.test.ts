@@ -38,16 +38,19 @@ describe("competitorLabelAccents", () => {
     expect(resolved.find((l) => l.label_key === "soave")?.accent_hex).toBe("b98a46");
   });
 
-  it("keeps Perfect Havoc's cooler raspberry-red distinct from selected.", () => {
+  it("keeps Perfect Havoc's wine red distinct from selected. and ATLAST", () => {
     const resolved = applyResolvedLabelAccents([
+      { label_key: "atlast", accent_hex: "fd02c3" },
       { label_key: "perfect_havoc", accent_hex: "f50a1e" },
       { label_key: "selected", accent_hex: "db0c0c" },
     ]);
+    const atlast = resolved.find((label) => label.label_key === "atlast")!.accent_hex!;
     const perfectHavoc = resolved.find((label) => label.label_key === "perfect_havoc")!.accent_hex!;
     const selected = resolved.find((label) => label.label_key === "selected")!.accent_hex!;
 
     expect(perfectHavoc).toBe(PINNED_LABEL_ACCENTS.perfect_havoc);
     expect(accentColorDistance(perfectHavoc, selected)).toBeGreaterThanOrEqual(0.33);
+    expect(accentColorDistance(perfectHavoc, atlast)).toBeGreaterThanOrEqual(0.33);
   });
 
   it("is idempotent when accents are already resolved", () => {
