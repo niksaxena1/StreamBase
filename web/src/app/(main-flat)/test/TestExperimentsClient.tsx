@@ -620,7 +620,7 @@ export function TestExperimentsClient({
         badge="Mock"
       >
         <SpotlightCard className="p-3">
-          <div className="divide-y" style={{ borderColor: "var(--sb-border)" }}>
+          <div className="divide-y divide-[color:var(--sb-border)]">
             {mockMovers.map((m) => (
               <div key={m.name} className="flex items-center gap-3 py-2.5">
                 <div className="h-8 w-24 flex-shrink-0">

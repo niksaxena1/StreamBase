@@ -229,7 +229,7 @@ export function CompetitorDataHealth({
             they read one day earlier than the ingestion run that recorded them.
           </p>
         </div>
-        <div className="divide-y" style={{ borderColor: colors.border }}>
+        <div className="divide-y divide-[color:var(--sb-border)]">
           {anomalies.slice(0, 16).map((anomaly, index) => {
             const labelIndex = Math.max(0, competitorLabels.findIndex((label) => label.label_key === anomaly.label.label_key));
             return (
@@ -282,7 +282,7 @@ export function CompetitorDataHealth({
 
         <section className="sb-card overflow-hidden">
           <div className="border-b px-4 py-3" style={{ borderColor: colors.border }}><h2 className="text-sm font-semibold">Recent warnings</h2></div>
-          <div className="divide-y" style={{ borderColor: colors.border }}>
+          <div className="divide-y divide-[color:var(--sb-border)]">
             {warnings.slice(0, 8).map((warning, index) => (
               <div key={`${warning.run_date}-${warning.code}-${index}`} className="grid grid-cols-[72px_70px_minmax(0,1fr)] gap-2 px-4 py-2 text-[10px]">
                 <time className="font-mono" style={{ color: colors.muted }}>{warning.run_date}</time>

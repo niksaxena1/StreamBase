@@ -7,6 +7,7 @@ import { fetchApiJson } from "@/lib/api";
 import { formatDateISO, formatInt } from "@/lib/format";
 import type { DistroMovementInsights, DistroMovementWindow } from "@/lib/collectors/distroMovement";
 import { OUTSIDE_TRACKED_SET, type RosterFlow } from "@/lib/rosterFlow";
+import { EmptyState, GlassTable, TableCell, TableRow } from "@/components/ui/GlassTable";
 import { Modal } from "@/components/ui/Modal";
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { SectionErrorState } from "@/components/ui/DataStates";
@@ -100,16 +101,17 @@ export function DistroMovementSection() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex overflow-hidden rounded-full border" style={{ borderColor: colors.border }}>
+          <div className="sb-ring inline-flex items-center gap-0 rounded-full bg-white/60 p-0.5 dark:bg-white/10">
             {WINDOW_OPTIONS.map((option) => (
               <button
                 key={option.days}
                 type="button"
-                className="px-3 py-1.5 text-[11px] font-medium transition"
-                style={{
-                  background: option.days === windowDays ? "var(--sb-accent)" : "transparent",
-                  color: option.days === windowDays ? "var(--sb-accent-text,#000)" : colors.muted,
-                }}
+                className={[
+                  "rounded-full px-2.5 py-1.5 text-[11px] font-medium transition",
+                  option.days === windowDays
+                    ? "bg-black text-white shadow-sm dark:bg-white dark:text-black"
+                    : "text-black/70 hover:bg-black/5 dark:text-white/70 dark:hover:bg-white/10",
+                ].join(" ")}
                 onClick={() => setWindowDays(option.days)}
               >
                 {option.label}
@@ -190,96 +192,94 @@ export function DistroMovementSection() {
             subtitle={selectedFlow ? trackCountLabel(selectedFlow.track_count) : undefined}
             maxWidthClassName="max-w-3xl"
           >
-            {selectedMovements.length ? (
-              <div className="max-h-[60vh] overflow-y-auto">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="text-[10px] uppercase tracking-wide" style={{ color: colors.muted }}>
-                      <th className="px-2 py-2 font-medium">Track</th>
-                      <th className="px-2 py-2 font-medium">Released</th>
-                      <th className="px-2 py-2 font-medium">Moved</th>
-                      <th className="px-2 py-2 text-right font-medium">Daily</th>
-                      <th className="px-2 py-2 text-right font-medium">Total streams</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y" style={{ borderColor: colors.border }}>
-                    {selectedMovements.map((movement, index) => (
-                      <tr key={`${movement.isrc}-${index}`}>
-                        <td className="px-2 py-2">
-                          <div className="flex items-center gap-2.5">
-                            <PreviewableArtwork
-                              src={movement.album_image_url}
-                              alt=""
-                              className="h-9 w-9 shrink-0 rounded"
-                            />
-                            <div className="min-w-0">
-                              <div className="truncate font-medium">{movement.name}</div>
-                              <div className="truncate text-[10px]" style={{ color: colors.muted }}>
-                                {(movement.artist_names ?? []).join(", ")}
-                              </div>
-                            </div>
+            <GlassTable
+              headers={[
+                "Track",
+                "Released",
+                "Moved",
+                { label: "Daily", align: "right" },
+                { label: "Total streams", align: "right" },
+              ]}
+              maxBodyHeightClassName="max-h-[60vh]"
+            >
+              {selectedMovements.length ? (
+                selectedMovements.map((movement, index) => (
+                  <TableRow key={`${movement.isrc}-${index}`}>
+                    <TableCell>
+                      <div className="flex items-center gap-2.5">
+                        <PreviewableArtwork
+                          src={movement.album_image_url}
+                          alt=""
+                          className="h-9 w-9 shrink-0 rounded"
+                        />
+                        <div className="min-w-0">
+                          <div className="truncate text-xs font-medium">{movement.name}</div>
+                          <div className="truncate text-[10px]" style={{ color: colors.muted }}>
+                            {(movement.artist_names ?? []).join(", ")}
                           </div>
-                        </td>
-                        <td className="whitespace-nowrap px-2 py-2 font-mono text-[11px]" style={{ color: colors.muted }}>
-                          {movement.release_date ? formatDateISO(movement.release_date) : "—"}
-                        </td>
-                        <td className="whitespace-nowrap px-2 py-2 font-mono text-[11px]" style={{ color: colors.muted }}>
-                          {formatDateISO(movement.event_date)}
-                        </td>
-                        <td className="whitespace-nowrap px-2 py-2 text-right font-mono tabular-nums">
-                          {movement.daily_streams != null
-                            ? `${movement.daily_streams >= 0 ? "+" : ""}${formatInt(movement.daily_streams)}`
-                            : "—"}
-                        </td>
-                        <td className="whitespace-nowrap px-2 py-2 text-right font-mono tabular-nums">
-                          {movement.total_streams != null ? formatInt(movement.total_streams) : "—"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <p className="py-6 text-center text-xs" style={{ color: colors.muted }}>
-                Track-level details are kept for the most recent 250 moves; this band has none listed.
-              </p>
-            )}
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell mono className="whitespace-nowrap text-[11px]">
+                      {movement.release_date ? formatDateISO(movement.release_date) : null}
+                    </TableCell>
+                    <TableCell mono className="whitespace-nowrap text-[11px]">
+                      {formatDateISO(movement.event_date)}
+                    </TableCell>
+                    <TableCell numeric mono empty={movement.daily_streams == null}>
+                      {movement.daily_streams != null ? (
+                        <span style={{ color: movement.daily_streams > 0 ? colors.positive : movement.daily_streams < 0 ? colors.error : undefined }}>
+                          {movement.daily_streams > 0 ? "+" : ""}
+                          {formatInt(movement.daily_streams)}
+                        </span>
+                      ) : null}
+                    </TableCell>
+                    <TableCell numeric mono empty={movement.total_streams == null}>
+                      {movement.total_streams != null ? formatInt(movement.total_streams) : null}
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <EmptyState
+                  colSpan={5}
+                  message="No track-level detail for this band"
+                  description="Details are kept for the most recent 250 moves per window."
+                />
+              )}
+            </GlassTable>
           </Modal>
 
           {movements.length ? (
-            <div>
-              <h3 className="text-xs font-semibold" style={{ color: colors.muted }}>
-                Recent moves
-              </h3>
-              <div className="mt-2 divide-y rounded-lg border" style={{ borderColor: colors.border }}>
-                {movements.slice(0, 12).map((movement, index) => (
-                  <div
-                    key={`${movement.isrc}-${movement.source}-${movement.target}-${index}`}
-                    className="flex items-center gap-3 px-3 py-2"
-                  >
-                    <PreviewableArtwork
-                      src={movement.album_image_url}
-                      alt=""
-                      className="h-8 w-8 shrink-0 rounded"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-xs font-medium">{movement.name}</div>
-                      <div className="truncate text-[10px]" style={{ color: colors.muted }}>
-                        {(movement.artist_names ?? []).join(", ")}
+            <GlassTable
+              headers={["Track", "Movement", { label: "Date", align: "right" }]}
+              maxBodyHeightClassName="max-h-[420px]"
+            >
+              {movements.slice(0, 12).map((movement, index) => (
+                <TableRow key={`${movement.isrc}-${movement.source}-${movement.target}-${index}`}>
+                  <TableCell>
+                    <div className="flex items-center gap-2.5">
+                      <PreviewableArtwork src={movement.album_image_url} alt="" className="h-8 w-8 shrink-0 rounded" />
+                      <div className="min-w-0">
+                        <div className="truncate text-xs font-medium">{movement.name}</div>
+                        <div className="truncate text-[10px]" style={{ color: colors.muted }}>
+                          {(movement.artist_names ?? []).join(", ")}
+                        </div>
                       </div>
                     </div>
-                    <div className="flex shrink-0 items-center gap-1.5 text-[11px]" style={{ color: colors.muted }}>
-                      <span>{movement.source === OUTSIDE_TRACKED_SET ? "Newly distributed" : movement.source}</span>
-                      <ArrowRight className="h-3 w-3" />
-                      <span>{movement.target === OUTSIDE_TRACKED_SET ? "Taken down" : movement.target}</span>
-                    </div>
-                    <time className="shrink-0 font-mono text-[10px]" style={{ color: colors.muted }}>
-                      {formatDateISO(movement.event_date)}
-                    </time>
-                  </div>
-                ))}
-              </div>
-            </div>
+                  </TableCell>
+                  <TableCell>
+                    <span className="inline-flex items-center gap-1.5 text-[11px]" style={{ color: colors.muted }}>
+                      {flowLabel(movement.source, "source")}
+                      <ArrowRight className="h-3 w-3 shrink-0" />
+                      {flowLabel(movement.target, "target")}
+                    </span>
+                  </TableCell>
+                  <TableCell numeric mono className="whitespace-nowrap text-[11px]">
+                    {formatDateISO(movement.event_date)}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </GlassTable>
           ) : null}
         </div>
       )}

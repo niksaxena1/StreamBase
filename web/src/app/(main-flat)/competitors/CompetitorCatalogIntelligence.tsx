@@ -179,7 +179,7 @@ export function CompetitorCatalogIntelligence({
             <h2 className="text-sm font-semibold">Artist momentum</h2>
             <p className="mt-1 text-xs" style={{ color: colors.muted }}>Latest net daily streams across unique tracked ISRCs.</p>
           </div>
-          <div className="divide-y" style={{ borderColor: colors.border }}>
+          <div className="divide-y divide-[color:var(--sb-border)]">
             {leaderboard.map((artist, index) => (
               <div key={artist.artist_id} className="grid grid-cols-[24px_30px_minmax(0,1fr)_auto] items-center gap-2 px-4 py-2">
                 <span className="font-mono text-[10px]" style={{ color: colors.muted }}>{index + 1}</span>

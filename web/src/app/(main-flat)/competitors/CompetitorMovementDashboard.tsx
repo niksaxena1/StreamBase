@@ -162,7 +162,7 @@ export function CompetitorMovementDashboard({
           <div className="border-b px-4 py-3" style={{ borderColor: colors.border }}>
             <h2 className="text-sm font-semibold">Recent track movement</h2>
           </div>
-          <div className="divide-y" style={{ borderColor: colors.border }}>
+          <div className="divide-y divide-[color:var(--sb-border)]">
             {movements.slice(0, 12).map((movement) => (
               <div key={`${movement.isrc}-${movement.source}-${movement.target}-${movement.event_date}`} className="grid grid-cols-[32px_minmax(0,1fr)] items-center gap-3 px-4 py-2.5 sm:grid-cols-[32px_minmax(0,1fr)_minmax(220px,0.8fr)_84px]">
                 {movement.album_image_url ? (
