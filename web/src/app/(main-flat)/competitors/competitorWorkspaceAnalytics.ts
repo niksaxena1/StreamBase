@@ -6,7 +6,8 @@ import type {
   RosterMovementRow,
 } from "./competitorsTypes";
 
-export const OUTSIDE_TRACKED_SET = "Outside tracked set";
+export { OUTSIDE_TRACKED_SET } from "@/lib/rosterFlow";
+import { OUTSIDE_TRACKED_SET } from "@/lib/rosterFlow";
 
 export function median(values: number[]): number {
   const sorted = values.filter(Number.isFinite).sort((a, b) => a - b);
@@ -138,14 +139,14 @@ export function buildShareRows(
     });
 }
 
-type MembershipEvent = {
+export type MembershipEvent = {
   isrc: string;
   label_key: string;
   display_name: string;
   event_date: string;
 };
 
-type MovementTrackMeta = {
+export type MovementTrackMeta = {
   isrc: string;
   name: string;
   artist_names: string[] | null;
@@ -163,6 +164,10 @@ export function buildRosterMovement(
   additions: MembershipEvent[],
   removals: MembershipEvent[],
   trackMeta: Map<string, MovementTrackMeta>,
+  /** Max days between a removal and an addition to count as one move. Competitor
+   * snapshots move within days; own-catalog re-distributions can take longer
+   * (takedown, then re-upload through another distributor). */
+  pairWindowDays = 3,
 ): { flows: RosterFlowRow[]; movements: RosterMovementRow[] } {
   const additionsByIsrc = new Map<string, MembershipEvent[]>();
   const removalsByIsrc = new Map<string, MembershipEvent[]>();
@@ -190,7 +195,7 @@ export function buildRosterMovement(
         (candidate, index) =>
           !usedAdds.has(index) &&
           candidate.label_key !== removal.label_key &&
-          dayDistance(candidate.event_date, removal.event_date) <= 3,
+          dayDistance(candidate.event_date, removal.event_date) <= pairWindowDays,
       );
       if (addIndex >= 0) {
         const addition = added[addIndex];

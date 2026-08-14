@@ -134,6 +134,14 @@ const CollectorsOverlapMatrix = dynamic(
   },
 );
 
+const DistroMovementSection = dynamic(
+  () => import("./DistroMovementSection").then((m) => ({ default: m.DistroMovementSection })),
+  {
+    loading: () => <TableSkeleton rows={4} cols={6} />,
+    ssr: false,
+  },
+);
+
 export function CollectorsClient(props: {
   latestDate: string | null;
   latestRunDate: string;
@@ -1896,6 +1904,8 @@ export function CollectorsClient(props: {
         latestRunDate={props.latestRunDate}
         useEntityPlaylistsForTotals={props.useEntityPlaylistsForTotals}
       />
+
+      <DistroMovementSection />
     </div>
   );
 }

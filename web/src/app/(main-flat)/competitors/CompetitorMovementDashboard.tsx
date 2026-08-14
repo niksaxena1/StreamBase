@@ -10,167 +10,10 @@ import { SectionErrorState } from "@/components/ui/DataStates";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import { useThemeColors } from "@/components/charts/useThemeColors";
 
-import { OUTSIDE_TRACKED_SET } from "./competitorWorkspaceAnalytics";
-import type {
-  CompetitorMovementInsights,
-  LabelRow,
-  RosterFlowRow,
-} from "./competitorsTypes";
+import { RosterFlowDiagram } from "@/components/charts/RosterFlowDiagram";
+import { OUTSIDE_TRACKED_SET } from "@/lib/rosterFlow";
+import type { CompetitorMovementInsights, LabelRow } from "./competitorsTypes";
 import { labelColor } from "./competitorsUtils";
-
-type FlowNode = { name: string; x: number; y: number; width: number; height: number; total: number };
-
-function flowPath(source: FlowNode, target: FlowNode) {
-  const x0 = source.x + source.width;
-  const x1 = target.x;
-  const y0 = source.y + source.height / 2;
-  const y1 = target.y + target.height / 2;
-  const bend = (x1 - x0) * 0.5;
-  return `M ${x0} ${y0} C ${x0 + bend} ${y0}, ${x1 - bend} ${y1}, ${x1} ${y1}`;
-}
-
-/** "Outside tracked set" means different things per side; label each honestly. */
-function nodeDisplayName(name: string, side: "source" | "target"): string {
-  if (name !== OUTSIDE_TRACKED_SET) return name;
-  return side === "source" ? "New to tracked set" : "Left tracked set";
-}
-
-function trackCountLabel(count: number): string {
-  return `${formatInt(count)} ${count === 1 ? "track" : "tracks"}`;
-}
-
-function RosterFlowDiagram({
-  flows,
-  labels,
-  importTargets,
-}: {
-  flows: RosterFlowRow[];
-  labels: LabelRow[];
-  /** Display names of labels whose inflow this window is an initial roster import. */
-  importTargets?: string[];
-}) {
-  const colors = useThemeColors();
-  const [activeFlow, setActiveFlow] = useState<string | null>(null);
-  const labelColors = useMemo(
-    () => new Map(labels.map((label, index) => [label.display_name, labelColor(label, index)])),
-    [labels],
-  );
-  const importSet = useMemo(() => new Set(importTargets ?? []), [importTargets]);
-  const isImportFlow = (flow: RosterFlowRow) =>
-    flow.source === OUTSIDE_TRACKED_SET && importSet.has(flow.target);
-  const topFlows = flows.slice(0, 18);
-  const layout = useMemo(() => {
-    const width = 960;
-    const height = 360;
-    const nodeWidth = 170;
-    const sources = [...new Set(topFlows.map((flow) => flow.source))];
-    const targets = [...new Set(topFlows.map((flow) => flow.target))];
-    const sourceTotals = new Map<string, number>();
-    const targetTotals = new Map<string, number>();
-    topFlows.forEach((flow) => {
-      sourceTotals.set(flow.source, (sourceTotals.get(flow.source) ?? 0) + flow.track_count);
-      targetTotals.set(flow.target, (targetTotals.get(flow.target) ?? 0) + flow.track_count);
-    });
-    const makeNodes = (names: string[], x: number, totals: Map<string, number>) => {
-      const slot = Math.max(42, (height - 48) / Math.max(1, names.length));
-      return names.map((name, index): FlowNode => ({
-        name,
-        x,
-        y: 24 + index * slot,
-        width: nodeWidth,
-        height: Math.min(38, slot - 6),
-        total: totals.get(name) ?? 0,
-      }));
-    };
-    const sourceNodes = makeNodes(sources, 20, sourceTotals);
-    const targetNodes = makeNodes(targets, width - nodeWidth - 20, targetTotals);
-    const bySource = new Map(sourceNodes.map((node) => [node.name, node]));
-    const byTarget = new Map(targetNodes.map((node) => [node.name, node]));
-    // Scale band widths by ORGANIC movement only: a 400-track initial import
-    // would otherwise flatten every real flow to a hairline.
-    const organic = topFlows.filter((flow) => !(flow.source === OUTSIDE_TRACKED_SET && importSet.has(flow.target)));
-    const maxFlow = Math.max(1, ...(organic.length ? organic : topFlows).map((flow) => flow.track_count));
-    return { width, height, sourceNodes, targetNodes, bySource, byTarget, maxFlow };
-  }, [topFlows, importSet]);
-
-  if (!topFlows.length) {
-    return <div className="flex min-h-64 items-center justify-center text-xs" style={{ color: colors.muted }}>No roster movement in this window.</div>;
-  }
-
-  const nodeColor = (name: string) =>
-    name === OUTSIDE_TRACKED_SET ? colors.muted : labelColors.get(name) ?? colors.info;
-
-  return (
-    <div className="overflow-x-auto">
-      <svg
-        viewBox={`0 0 ${layout.width} ${layout.height}`}
-        className="min-h-[300px] min-w-[760px] w-full"
-        role="img"
-        aria-label="Roster movements between tracked competitor labels over the last 30 ingestion days"
-      >
-        <text x="20" y="14" fill={colors.muted} fontSize="11">From</text>
-        <text x={layout.width - 190} y="14" fill={colors.muted} fontSize="11">To</text>
-        <g fill="none">
-          {topFlows.map((flow) => {
-            const source = layout.bySource.get(flow.source);
-            const target = layout.byTarget.get(flow.target);
-            if (!source || !target) return null;
-            const key = `${flow.source}-${flow.target}`;
-            const active = activeFlow == null || activeFlow === key;
-            const importFlow = isImportFlow(flow);
-            return (
-              <path
-                key={key}
-                d={flowPath(source, target)}
-                stroke={nodeColor(flow.source)}
-                strokeWidth={
-                  importFlow ? 10 : Math.max(2, Math.min(22, (flow.track_count / layout.maxFlow) * 22))
-                }
-                strokeLinecap="round"
-                strokeDasharray={importFlow ? "6 8" : undefined}
-                opacity={importFlow ? (active ? 0.22 : 0.05) : active ? 0.42 : 0.07}
-                className="transition-opacity"
-                onMouseEnter={() => setActiveFlow(key)}
-                onMouseLeave={() => setActiveFlow(null)}
-              >
-                <title>
-                  {nodeDisplayName(flow.source, "source")} to {nodeDisplayName(flow.target, "target")}:{" "}
-                  {trackCountLabel(flow.track_count)}
-                  {importFlow ? " (initial roster import)" : ""}
-                </title>
-              </path>
-            );
-          })}
-        </g>
-        {[...layout.sourceNodes, ...layout.targetNodes].map((node, index) => {
-          const side = index < layout.sourceNodes.length ? ("source" as const) : ("target" as const);
-          const display = nodeDisplayName(node.name, side);
-          return (
-            <g key={`${node.x}-${node.name}`}>
-              <rect
-                x={node.x}
-                y={node.y}
-                width={node.width}
-                height={node.height}
-                rx="6"
-                fill={colors.card}
-                stroke={nodeColor(node.name)}
-                strokeOpacity="0.7"
-              />
-              <rect x={node.x} y={node.y} width="4" height={node.height} rx="2" fill={nodeColor(node.name)} />
-              <text x={node.x + 12} y={node.y + 15} fill={colors.text} fontSize="11" fontWeight="600">
-                {display.length > 23 ? `${display.slice(0, 22)}...` : display}
-              </text>
-              <text x={node.x + 12} y={node.y + 29} fill={colors.muted} fontSize="10">
-                {trackCountLabel(node.total)}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
-    </div>
-  );
-}
 
 export function CompetitorMovementDashboard({
   latestRunDate,
@@ -183,6 +26,10 @@ export function CompetitorMovementDashboard({
   trackCountByLabelKey?: Record<string, number>;
 }) {
   const colors = useThemeColors();
+  const labelColorsByName = useMemo(
+    () => new Map(labels.map((label, index) => [label.display_name, labelColor(label, index)])),
+    [labels],
+  );
   const [data, setData] = useState<CompetitorMovementInsights | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -301,7 +148,12 @@ export function CompetitorMovementDashboard({
           </button>
         </div>
         <div className="mt-2">
-          <RosterFlowDiagram flows={flows} labels={labels} importTargets={rosterImports.labelNames} />
+          <RosterFlowDiagram
+            flows={flows}
+            nodeColors={labelColorsByName}
+            importTargets={rosterImports.labelNames}
+            ariaLabel="Roster movements between tracked competitor labels over the last 30 ingestion days"
+          />
         </div>
       </section>
 

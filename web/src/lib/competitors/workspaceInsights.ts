@@ -87,7 +87,7 @@ async function loadMembershipPages(args: {
   }
 }
 
-function mergeMembershipIntervals(
+export function mergeMembershipIntervals(
   rows: MembershipRow[],
   playlistToLabel: Map<string, string>,
 ): Map<string, Array<{ labelKey: string; start: string; end: string | null }>> {

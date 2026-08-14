@@ -78,6 +78,19 @@ describe("competitor roster movement", () => {
     );
     expect(output.flows[0]).toEqual({ source: OUTSIDE_TRACKED_SET, target: "Alpha", track_count: 1 });
   });
+
+  it("honours a wider pairing window for slow re-distributions", () => {
+    const additions = [{ isrc: "Z", label_key: "emubands", display_name: "TG EmuBands", event_date: "2026-08-12" }];
+    const removals = [{ isrc: "Z", label_key: "amuse", display_name: "TG Amuse", event_date: "2026-08-02" }];
+
+    // 10-day gap: outside the default 3-day window …
+    const defaultPairing = buildRosterMovement(additions, removals, new Map());
+    expect(defaultPairing.flows).toContainEqual({ source: "TG Amuse", target: OUTSIDE_TRACKED_SET, track_count: 1 });
+
+    // … but a single move when the caller allows takedown/processing gaps.
+    const widePairing = buildRosterMovement(additions, removals, new Map(), 14);
+    expect(widePairing.flows).toEqual([{ source: "TG Amuse", target: "TG EmuBands", track_count: 1 }]);
+  });
 });
 
 describe("competitor catalog insights", () => {

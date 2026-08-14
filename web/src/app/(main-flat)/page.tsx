@@ -1,10 +1,13 @@
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 
+import { Suspense } from "react";
+
 import { loadHomeDashboardData } from "@/lib/home/loadHomeDashboard";
 import { isPlaylistWatchOnlyAccess } from "@/lib/appAccess";
 import { getRequestAppContext } from "@/lib/requestAppContext.server";
 import { timedServerStep } from "@/lib/serverTiming";
+import { DistroMovementHomeNotice } from "./DistroMovementHomeNotice";
 import { HomeDashboardClient } from "./HomeDashboardClient";
 
 // Uses Supabase session cookies; this route must be dynamic in Next 16.
@@ -70,5 +73,17 @@ async function HomeContent({
       }),
   );
 
-  return <HomeDashboardClient {...props} />;
+  return (
+    <>
+      <HomeDashboardClient {...props} />
+      {props.datasetMode === "own" ? (
+        // Streams in after the dashboard; renders nothing on quiet days.
+        <Suspense fallback={null}>
+          <div className="mt-4">
+            <DistroMovementHomeNotice />
+          </div>
+        </Suspense>
+      ) : null}
+    </>
+  );
 }
