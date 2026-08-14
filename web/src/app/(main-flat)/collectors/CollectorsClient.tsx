@@ -388,10 +388,11 @@ export function CollectorsClient(props: {
       if (!rows.length) return { streams: null as number[] | null, revenue: null as number[] | null, tracks: null as number[] | null };
 
       const streams = rows.map((r) => Number(r.daily_streams_net ?? 0)).filter((n) => Number.isFinite(n));
+      // Derived from the configured payout rate rather than the stored
+      // est_revenue_* columns so a changed Settings rate applies here too.
       const revenue = rows
         .map((r) => {
-          const v = r.est_revenue_daily_net;
-          const n = v == null ? Number(r.daily_streams_net ?? 0) * streamPayoutPerStreamUsd : Number(v);
+          const n = Number(r.daily_streams_net ?? 0) * streamPayoutPerStreamUsd;
           return Number.isFinite(n) ? n : null;
         })
         .filter((n): n is number => n !== null);

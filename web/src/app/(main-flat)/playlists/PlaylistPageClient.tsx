@@ -21,6 +21,7 @@ export function PlaylistPageClient(props: {
   removedTracksCount: number;
   playlistKey: string;
   overrideAnnotations: Array<{ date: string; note: string }>;
+  datasetMode: "own" | "competitor";
 }) {
   const { metric } = useMetric();
   const [granularity] = useSharedGranularity("sb:playlists:granularity");
@@ -36,6 +37,7 @@ export function PlaylistPageClient(props: {
       overrideAnnotations={props.overrideAnnotations}
       metric={metric}
       granularity={granularity}
+      datasetMode={props.datasetMode}
     />
   );
 }

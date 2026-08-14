@@ -51,7 +51,7 @@ import { HomeWeekendDipsSection } from "./home/HomeWeekendDipsSection";
 import { HomeHistorySection } from "./home/HomeHistorySection";
 import { HomeFilterBuilderSection } from "./home/HomeFilterBuilderSection";
 import { HomeConcentrationSection } from "./home/HomeConcentrationSection";
-import { dailyStreamValuesForDataset } from "./home/homeUtils";
+import { dailyStreamValuesForDataset, trailingDailyAverage } from "./home/homeUtils";
 
 // ============================================================================
 // Helpers (header-only)
@@ -465,21 +465,30 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
     if (props.playlistKey !== "all_catalog") return null;
     const hist = props.history ?? [];
     if (hist.length < 2) return null;
-    const deltas: number[] = [];
-    for (let i = 0; i < Math.min(7, hist.length - 1); i++) {
-      const cur = Number(hist[i]?.total_streams_cumulative ?? 0);
-      const prev = Number(hist[i + 1]?.total_streams_cumulative ?? 0);
-      if (!Number.isFinite(cur) || !Number.isFinite(prev)) continue;
-      deltas.push(cur - prev);
-    }
-    if (!deltas.length) return null;
-    return deltas.reduce((a, b) => a + b, 0) / deltas.length;
-  }, [props.history, props.playlistKey]);
+    // Dataset-aware: diffing competitor cumulative totals would count backfilled
+    // track lifetimes as one day of growth.
+    return trailingDailyAverage(dailyStreamValuesForDataset(hist, props.datasetMode));
+  }, [props.history, props.playlistKey, props.datasetMode]);
 
   const allCatalogAsOf = props.latest?.date
     ? formatDateISO(dataDateFromRunDate(props.latest.date))
     : null;
   const hasTrendHistory = (props.history ?? []).length >= 2;
+
+  // A freshly onboarded competitor has only a few snapshots, so charts look
+  // sparse and trend comparisons are not meaningful yet. Say so explicitly
+  // rather than leaving the user to wonder whether data is missing.
+  const shortHistoryNotice = useMemo(() => {
+    if (props.datasetMode !== "competitor") return null;
+    const hist = props.history ?? [];
+    if (!hist.length || hist.length >= 7) return null;
+    const earliestRunDate = hist[hist.length - 1]?.date;
+    if (!earliestRunDate) return null;
+    return {
+      days: hist.length,
+      since: formatDateISO(dataDateFromRunDate(earliestRunDate)),
+    };
+  }, [props.datasetMode, props.history]);
 
   // ============================================================================
   // Render
@@ -583,13 +592,14 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
         </div>
       </div>
 
-      {props.playlistKey === "all_catalog" && allCatalogMa7 !== null ? (
+      {/* Suppressed while history is too short to be a 7-day average — the
+          short-history notice below explains the state instead. */}
+      {props.playlistKey === "all_catalog" && allCatalogMa7 !== null && !shortHistoryNotice ? (
         <blockquote
           className="rounded-lg border-l-4 sb-blockquote-bg p-3 text-sm"
           style={{ borderColor: "var(--sb-accent)" }}
         >
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            <span className="font-semibold" style={{ color: "var(--sb-text)" }}></span>
             <span className="font-mono" style={{ color: "var(--sb-text)" }}>
               {formatInt(Math.round(allCatalogMa7))}
             </span>
@@ -599,6 +609,17 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
             </span>
           </div>
         </blockquote>
+      ) : null}
+
+      {shortHistoryNotice ? (
+        <div
+          className="rounded-xl border p-3 text-sm"
+          style={{ borderColor: "var(--sb-border)", background: "var(--sb-surface)" }}
+        >
+          Tracking since {shortHistoryNotice.since} — {shortHistoryNotice.days}{" "}
+          {shortHistoryNotice.days === 1 ? "daily snapshot" : "daily snapshots"} so far. Totals are accurate now;
+          trends and comparisons fill in as more daily exports land.
+        </div>
       ) : null}
 
       <LazyInteractiveChartSection

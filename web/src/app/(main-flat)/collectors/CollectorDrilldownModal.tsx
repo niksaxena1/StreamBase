@@ -257,12 +257,12 @@ function PlaylistDrillTable({
       {items.map((p) => {
         const totalStreams = Number(p.total_streams_cumulative ?? 0);
         const dailyStreams = Number(p.daily_streams_net ?? 0);
-        const totalValue = isRevenueMetric
-          ? Number(p.est_revenue_total ?? totalStreams * payoutPerStreamUsd)
-          : totalStreams;
-        const dailyValue = isRevenueMetric
-          ? Number(p.est_revenue_daily_net ?? dailyStreams * payoutPerStreamUsd)
-          : dailyStreams;
+        // Always derive revenue from the user's configured payout rate. The stored
+        // est_revenue_* columns are precomputed at ingest with the global rate, so
+        // preferring them would ignore a changed Settings rate here while every
+        // other view honoured it.
+        const totalValue = isRevenueMetric ? totalStreams * payoutPerStreamUsd : totalStreams;
+        const dailyValue = isRevenueMetric ? dailyStreams * payoutPerStreamUsd : dailyStreams;
 
         return (
           <TableRow key={String(p.playlist_key)}>

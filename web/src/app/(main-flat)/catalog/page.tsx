@@ -263,11 +263,26 @@ function CatalogTrackUnavailable(props: {
   );
 }
 
-function CatalogArtistUnavailable(props: { datasetMode: "own" | "competitor"; artistId: string }) {
+function CatalogArtistUnavailable(props: {
+  datasetMode: "own" | "competitor";
+  artistId: string;
+  /** First available artist in the current universe, offered as a way out (the
+   * remembered-artist redirect can land here after switching competitors). */
+  fallbackHref?: string | null;
+}) {
   return (
     <div className="space-y-4">
       <Alert variant="warning" title="Artist unavailable">
         Artist {props.artistId} was not found in {props.datasetMode === "competitor" ? "the selected competitor" : "Own Catalog"}.
+        {props.fallbackHref ? (
+          <>
+            {" "}
+            <a href={props.fallbackHref} className="underline underline-offset-2">
+              Open the first available artist instead
+            </a>
+            .
+          </>
+        ) : null}
       </Alert>
     </div>
   );
@@ -539,16 +554,20 @@ async function CatalogPageContent({
       const artists = deriveArtists(competitorTracks);
       const effectiveArtistId = artistId || artists[0]?.id || "";
       if (!artistId && effectiveArtistId) {
-        const params = new URLSearchParams();
-        params.set("artist_id", effectiveArtistId);
-        const tracksForArtist = competitorTracks.filter((t) =>
-          (t.spotify_artist_ids ?? []).includes(effectiveArtistId),
+        // Client-side param fill (same as own catalog) rather than a server
+        // redirect: renders a loading card immediately instead of a blank screen
+        // while a second full server render runs, and honours the last artist
+        // opened in Competitor Mode. Existing params (range/isrc) are preserved
+        // by the component; a stale isrc self-corrects on the next render.
+        return (
+          <RememberParamRedirect
+            param="artist_id"
+            storageKey={lastArtistIdStorageKey("competitor")}
+            defaultValue={effectiveArtistId}
+            loadingTitle="Opening your last artist…"
+            loadingSubtitle="If this is your first time, we’ll pick the first artist we find."
+          />
         );
-        if (requestedIsrc && tracksForArtist.some((t) => t.isrc === requestedIsrc)) {
-          params.set("isrc", requestedIsrc);
-        }
-        if (sp.range) params.set("range", String(clampRangeDays(sp.range)));
-        redirect(`/catalog?${params.toString()}`);
       }
       if (
         artistId &&
@@ -558,6 +577,7 @@ async function CatalogPageContent({
           <CatalogArtistUnavailable
             datasetMode="competitor"
             artistId={artistId}
+            fallbackHref={artists[0]?.id ? `/catalog?artist_id=${encodeURIComponent(artists[0].id)}` : null}
           />
         );
       }
@@ -880,7 +900,13 @@ async function CatalogPageContent({
           },
         ].sort((a, b) => a.name.localeCompare(b.name));
       } else if (!requestedIsrc) {
-        return <CatalogArtistUnavailable datasetMode="own" artistId={artistId} />;
+        return (
+          <CatalogArtistUnavailable
+            datasetMode="own"
+            artistId={artistId}
+            fallbackHref={artists[0]?.id ? `/catalog?artist_id=${encodeURIComponent(artists[0].id)}` : null}
+          />
+        );
       }
     }
 

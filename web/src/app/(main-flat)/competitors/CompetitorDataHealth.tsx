@@ -224,14 +224,24 @@ export function CompetitorDataHealth({
       <section className="sb-card overflow-hidden">
         <div className="border-b px-4 py-3" style={{ borderColor: colors.border }}>
           <h2 className="text-sm font-semibold">Recent outliers</h2>
-          <p className="mt-1 text-xs" style={{ color: colors.muted }}>At least 30% from the prior seven-positive-day median, within the latest 30 days.</p>
+          <p className="mt-1 text-xs" style={{ color: colors.muted }}>
+            At least 30% from the prior seven-positive-day median, within the latest 30 days. Dates are data dates, so
+            they read one day earlier than the ingestion run that recorded them.
+          </p>
         </div>
         <div className="divide-y" style={{ borderColor: colors.border }}>
           {anomalies.slice(0, 16).map((anomaly, index) => {
             const labelIndex = Math.max(0, competitorLabels.findIndex((label) => label.label_key === anomaly.label.label_key));
             return (
               <div key={`${anomaly.date}-${anomaly.label.label_key}-${index}`} className="grid grid-cols-[72px_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2.5">
-                <time className="font-mono text-[10px]" style={{ color: colors.muted }}>{anomaly.date.slice(5)}</time>
+                <time
+                  className="font-mono text-[10px]"
+                  style={{ color: colors.muted }}
+                  dateTime={anomaly.date}
+                  title={`Data date ${anomaly.date}`}
+                >
+                  {anomaly.date.slice(5)}
+                </time>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 truncate text-xs font-medium">
                     <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: labelColor(anomaly.label, labelIndex) }} />

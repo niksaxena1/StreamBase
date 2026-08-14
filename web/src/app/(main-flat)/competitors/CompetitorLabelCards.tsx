@@ -18,6 +18,7 @@ import {
 } from "./competitorStreamMetric";
 import { labelSummaryCardStyle } from "./competitorsUtils";
 import { formatInt } from "@/lib/format";
+import { formatMilestoneCompact } from "@/lib/milestones";
 
 function DeltaLine({
   delta,
@@ -73,14 +74,28 @@ function CardStat({
   const displayDaily =
     dailyDelta != null && streamMetric ? streamMetric.scale(dailyDelta) : null;
 
+  const exactText = useStreamFormat && streamMetric ? streamMetric.format(value) : formatInt(value);
+  // Never break a number across lines ("2,481,152,20⏎0"). Long values fall back
+  // to compact notation; the exact figure stays available on hover. In revenue
+  // display mode `value` is raw streams, so compact the SCALED value and keep
+  // the currency prefix.
+  const compactText = (() => {
+    if (!useStreamFormat || !streamMetric) return formatMilestoneCompact(value);
+    const scaled = streamMetric.scale(value);
+    const compact = formatMilestoneCompact(scaled);
+    return streamMetric.displayMetric === "revenue" ? `$${compact}` : compact;
+  })();
+  const displayText = exactText.length > 11 ? compactText : exactText;
+
   return (
     <div className="min-w-0">
       <div className="truncate text-[10px] uppercase tracking-wide opacity-60">{label}</div>
       <div
-        className="mt-0.5 break-all font-mono text-[11px] leading-snug tabular-nums"
+        className="mt-0.5 whitespace-nowrap font-mono text-[11px] leading-snug tabular-nums"
         style={useStreamFormat ? streamMetric?.valueStyle : undefined}
+        title={displayText === exactText ? undefined : exactText}
       >
-        {useStreamFormat && streamMetric ? streamMetric.format(value) : formatInt(value)}
+        {displayText}
       </div>
       {weeklyDelta != null && weeklyDelta !== 0 ? (
         <DeltaLine

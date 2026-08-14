@@ -69,6 +69,11 @@ export function CompetitorsWorkspace({ core }: { core: CompetitorsPageCoreProps 
     () => activeLabels.filter((label) => !isOwnCatalogLabelKey(label.label_key)),
     [activeLabels],
   );
+  const trackCountByLabelKey = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const row of core.comparisonRows) out[row.label.label_key] = row.trackCount;
+    return out;
+  }, [core.comparisonRows]);
 
   function selectView(next: CompetitorWorkspaceView) {
     const params = new URLSearchParams(searchParams.toString());
@@ -131,7 +136,11 @@ export function CompetitorsWorkspace({ core }: { core: CompetitorsPageCoreProps 
 
         {view === "movement" ? (
           <div className="space-y-4">
-            <CompetitorMovementDashboard latestRunDate={core.latestRunDate} labels={competitorLabels} />
+            <CompetitorMovementDashboard
+              latestRunDate={core.latestRunDate}
+              labels={competitorLabels}
+              trackCountByLabelKey={trackCountByLabelKey}
+            />
             <CompetitorsIntelSections
               labels={core.labels}
               latestDataDate={core.latestDataDate}

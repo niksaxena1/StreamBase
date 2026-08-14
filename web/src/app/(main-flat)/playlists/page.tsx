@@ -177,7 +177,20 @@ async function PlaylistsPageContent({
     const competitorOptions = (competitorPlaylists ?? []) as PlaylistRow[];
     const effectivePlaylistKey = playlistKey || competitorOptions[0]?.playlist_key || "";
     if (!playlistKey && effectivePlaylistKey) {
-      redirect(`/playlists?playlist_key=${effectivePlaylistKey}`);
+      // Client-side param fill (same as own catalog) rather than a server
+      // redirect: it renders a loading card immediately instead of a blank
+      // screen while a second full server render runs, and it honours the
+      // last playlist the user opened in Competitor Mode (already written by
+      // PlaylistDashboardControls).
+      return (
+        <RememberParamRedirect
+          param="playlist_key"
+          storageKey={lastPlaylistKeyStorageKey("competitor")}
+          defaultValue={effectivePlaylistKey}
+          loadingTitle="Opening your last playlist…"
+          loadingSubtitle="If this is your first time, we’ll start with the first tracked playlist."
+        />
+      );
     }
     if (playlistKey && !competitorOptions.some((playlist) => playlist.playlist_key === playlistKey)) {
       redirect(
@@ -332,6 +345,7 @@ async function PlaylistsPageContent({
           removedTracksCount={removedTracksCount}
           playlistKey={effectivePlaylistKey}
           overrideAnnotations={[]}
+          datasetMode="competitor"
         />
         <CompetitorCurrentTracksTable rows={currentTrackRows} />
         <PlaylistHistory30dDetails rows={hist as unknown as PlaylistHistoryRow[]} />
@@ -756,6 +770,7 @@ async function PlaylistsPageContent({
           removedTracksCount={removedTracksCount}
           playlistKey={playlistKey}
           overrideAnnotations={overrideAnnotations}
+          datasetMode="own"
         />
 
         <Suspense

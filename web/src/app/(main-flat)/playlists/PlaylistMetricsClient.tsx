@@ -15,6 +15,7 @@ import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { granularityLabel } from "@/components/ui/GranularitySelect";
 import type { Granularity } from "@/components/ui/GranularitySelect";
 import { aggregateCumulativeSeries, aggregateDailySeries } from "@/lib/granularity";
+import { dailyStreamValuesForDataset } from "@/lib/dailyStreams";
 
 type PlaylistDailyStatsRow = {
   date: string;
@@ -35,13 +36,9 @@ export function PlaylistMetricsClient(props: {
   overrideAnnotations: Array<{ date: string; note: string }>;
   metric: Metric;
   granularity: Granularity;
+  datasetMode: "own" | "competitor";
 }) {
   const { streamPayoutPerStreamUsd } = usePayoutRate();
-
-  const safeNum = (n: unknown) => {
-    const v = Number(n ?? 0);
-    return Number.isFinite(v) ? v : 0;
-  };
 
   const cumulativeSeriesRaw = useMemo(() => props.history.map((r) => {
     if (props.metric === "revenue") {
@@ -53,30 +50,29 @@ export function PlaylistMetricsClient(props: {
     }
   }), [props.history, props.metric, streamPayoutPerStreamUsd]);
 
-  const dailyDescRaw = useMemo(() => props.history.map((r) => {
-    if (props.metric === "revenue") {
-      const idx = props.history.findIndex((h) => h.date === r.date);
-      const prev = idx < props.history.length - 1 ? props.history[idx + 1] : null;
-      const curTotal = safeNum(r.total_streams_cumulative);
-      if (!prev) return { date: dataDateFromRunDate(r.date), daily: null };
-      const prevTotal = safeNum(prev.total_streams_cumulative);
-      const dailyStreams = curTotal - prevTotal;
-      return { date: dataDateFromRunDate(r.date), daily: dailyStreams * streamPayoutPerStreamUsd };
-    } else if (props.metric === "tracks") {
-      const idx = props.history.findIndex((h) => h.date === r.date);
+  // Competitor daily values come from the stored membership-aware column; own
+  // catalog diffs cumulative totals. See @/lib/dailyStreams.
+  const dailyStreamValues = useMemo(
+    () => dailyStreamValuesForDataset(props.history, props.datasetMode),
+    [props.history, props.datasetMode],
+  );
+
+  const dailyDescRaw = useMemo(() => props.history.map((r, idx) => {
+    const date = dataDateFromRunDate(r.date);
+
+    if (props.metric === "tracks") {
       const prev = idx < props.history.length - 1 ? props.history[idx + 1] : null;
       const daily = prev ? Number(r.track_count ?? 0) - Number(prev.track_count ?? 0) : 0;
-      return { date: dataDateFromRunDate(r.date), daily };
-    } else {
-      const idx = props.history.findIndex((h) => h.date === r.date);
-      const prev = idx < props.history.length - 1 ? props.history[idx + 1] : null;
-      const curTotal = safeNum(r.total_streams_cumulative);
-      if (!prev) return { date: dataDateFromRunDate(r.date), daily: null };
-      const prevTotal = safeNum(prev.total_streams_cumulative);
-      const daily = curTotal - prevTotal;
-      return { date: dataDateFromRunDate(r.date), daily };
+      return { date, daily };
     }
-  }), [props.history, props.metric, streamPayoutPerStreamUsd]);
+
+    const dailyStreams = dailyStreamValues[idx];
+    if (dailyStreams == null) return { date, daily: null };
+    return {
+      date,
+      daily: props.metric === "revenue" ? dailyStreams * streamPayoutPerStreamUsd : dailyStreams,
+    };
+  }), [props.history, props.metric, streamPayoutPerStreamUsd, dailyStreamValues]);
 
   const cumulativeSeries = useMemo(
     () => aggregateCumulativeSeries(cumulativeSeriesRaw, props.granularity),
@@ -107,9 +103,7 @@ export function PlaylistMetricsClient(props: {
 
   const latestDaily = (() => {
     if (props.metric === "tracks") return 0; // shown via chart; daily is computed per-point above
-    const cur = safeNum(props.history?.[0]?.total_streams_cumulative);
-    const prev = safeNum(props.history?.[1]?.total_streams_cumulative);
-    const dailyStreams = props.history?.length >= 2 ? cur - prev : 0;
+    const dailyStreams = dailyStreamValues[0] ?? 0;
     return props.metric === "revenue" ? dailyStreams * streamPayoutPerStreamUsd : dailyStreams;
   })();
 

@@ -194,26 +194,5 @@ export function rollSum(
   return sum;
 }
 
-export function dailyStreamValuesForDataset(
-  rowsDesc: PlaylistDailyStatsRow[],
-  datasetMode: "own" | "competitor",
-): Array<number | null> {
-  const safeNum = (value: unknown) => {
-    const parsed = Number(value ?? 0);
-    return Number.isFinite(parsed) ? parsed : 0;
-  };
-
-  if (datasetMode === "competitor") {
-    // Competitor totals can jump when a playlist is first tracked. The stored
-    // daily value is membership-aware and does not count that lifetime total.
-    return rowsDesc.map((row) => safeNum(row.daily_streams_net));
-  }
-
-  return rowsDesc.map((row, index) => {
-    if (index >= rowsDesc.length - 1) return null;
-    return (
-      safeNum(row.total_streams_cumulative) -
-      safeNum(rowsDesc[index + 1]?.total_streams_cumulative)
-    );
-  });
-}
+// Shared with the Playlists page; see @/lib/dailyStreams for the rationale.
+export { dailyStreamValuesForDataset, trailingDailyAverage } from "@/lib/dailyStreams";

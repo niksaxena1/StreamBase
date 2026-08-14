@@ -1,13 +1,52 @@
 import { revalidateTag } from "next/cache";
-import { NextRequest } from "next/server";
+import { NextRequest, after } from "next/server";
 
 import { apiJsonErr, apiJsonOk, readJsonBodyOptional } from "@/lib/api/server";
 import { timingSafeEqualStrings } from "@/lib/api/internalAuth";
 import { SUPABASE_CACHE_TAG } from "@/lib/supabase/cache";
 import { recomputeActiveWarningSnapshot } from "@/lib/health/activeWarnings";
+import { loadWorkspaceInsightsCached } from "@/lib/competitors/workspaceInsights";
+import { supabaseService } from "@/lib/supabase/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// Cache warming runs after the response; give it room beyond the pipeline's timeout.
+export const maxDuration = 300;
+
+/**
+ * Rebuild the competitor workspace caches (Movement + Catalog intelligence).
+ * These fan out across every label and take several seconds cold, so warming
+ * them here means the first visit after ingestion is served from cache.
+ */
+async function warmCompetitorWorkspaceInsights(): Promise<void> {
+  const svc = supabaseService();
+  // Must match how the Competitors page picks latestRunDate (successful runs
+  // only), or the warmed cache key will not be the one the client requests.
+  const { data: latestRun } = await svc
+    .schema("competitor")
+    .from("ingestion_runs")
+    .select("run_date")
+    .eq("status", "success")
+    .order("run_date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const runDate = String((latestRun as { run_date?: string } | null)?.run_date ?? "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(runDate)) return;
+
+  const results = await Promise.allSettled([
+    loadWorkspaceInsightsCached({ scope: "movement", runDate }),
+    loadWorkspaceInsightsCached({ scope: "catalog", runDate }),
+  ]);
+  for (const [index, result] of results.entries()) {
+    const scope = index === 0 ? "movement" : "catalog";
+    if (result.status === "rejected") {
+      console.error(`Workspace insights warm failed (${scope}):`, result.reason);
+    } else if (result.value.error) {
+      console.error(`Workspace insights warm failed (${scope}):`, result.value.error.message);
+    }
+  }
+}
 
 function isAuthorized(req: Request): boolean {
   const secret = process.env.REVALIDATE_SECRET ?? "";
@@ -52,5 +91,23 @@ export async function POST(request: NextRequest) {
 
   for (const tag of tags) revalidateTag(tag, "max");
 
-  return apiJsonOk({ revalidated: tags, healthSnapshotRefreshed, at: new Date().toISOString() });
+  // Warm after the response: the tags above are already invalidated, and the
+  // ingestion caller uses a short timeout it should not wait out.
+  const warmWorkspace = tags.includes(SUPABASE_CACHE_TAG);
+  if (warmWorkspace) {
+    after(async () => {
+      try {
+        await warmCompetitorWorkspaceInsights();
+      } catch (e) {
+        console.error("Workspace insights warm failed:", e);
+      }
+    });
+  }
+
+  return apiJsonOk({
+    revalidated: tags,
+    healthSnapshotRefreshed,
+    workspaceWarmScheduled: warmWorkspace,
+    at: new Date().toISOString(),
+  });
 }

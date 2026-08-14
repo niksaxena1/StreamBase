@@ -136,7 +136,16 @@ function RosterFlowDiagram({ flows, labels }: { flows: RosterFlowRow[]; labels: 
   );
 }
 
-export function CompetitorMovementDashboard({ latestRunDate, labels }: { latestRunDate: string; labels: LabelRow[] }) {
+export function CompetitorMovementDashboard({
+  latestRunDate,
+  labels,
+  trackCountByLabelKey,
+}: {
+  latestRunDate: string;
+  labels: LabelRow[];
+  /** Current tracked-track count per label, used to spot initial roster imports. */
+  trackCountByLabelKey?: Record<string, number>;
+}) {
   const colors = useThemeColors();
   const [data, setData] = useState<CompetitorMovementInsights | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -186,11 +195,39 @@ export function CompetitorMovementDashboard({ latestRunDate, labels }: { latestR
     .filter((flow) => flow.target === OUTSIDE_TRACKED_SET)
     .reduce((sum, flow) => sum + flow.track_count, 0);
 
+  // When a competitor is first onboarded its entire roster arrives from
+  // "outside the tracked set" on one day. That is an import, not label
+  // movement, so it is reported separately instead of inflating "New entries".
+  const rosterImports = (() => {
+    if (!trackCountByLabelKey) return { total: 0, labelNames: [] as string[] };
+    const trackCountByName = new Map<string, number>();
+    for (const label of labels) {
+      const count = trackCountByLabelKey[label.label_key];
+      if (typeof count === "number" && count > 0) trackCountByName.set(label.display_name, count);
+    }
+    let total = 0;
+    const labelNames: string[] = [];
+    for (const flow of flows) {
+      if (flow.source !== OUTSIDE_TRACKED_SET) continue;
+      const rosterSize = trackCountByName.get(flow.target);
+      if (!rosterSize) continue;
+      // ≥90% of the label's current roster entered within this window. The
+      // absolute floor keeps a tiny label's genuine additions from being
+      // misread as an import.
+      if (flow.track_count >= 25 && flow.track_count >= rosterSize * 0.9) {
+        total += flow.track_count;
+        labelNames.push(flow.target);
+      }
+    }
+    return { total, labelNames };
+  })();
+  const organicAdditions = additions - rosterImports.total;
+
   return (
     <div className="space-y-4">
       <div className="grid gap-px overflow-hidden rounded-lg border sm:grid-cols-3" style={{ borderColor: colors.border, background: colors.border }}>
         {[
-          ["New entries", additions, colors.positive],
+          ["New entries", organicAdditions, colors.positive],
           ["Cross-label moves", transfers, colors.info],
           ["Tracked exits", exits, colors.error],
         ].map(([label, value, color]) => (
@@ -200,6 +237,14 @@ export function CompetitorMovementDashboard({ latestRunDate, labels }: { latestR
           </div>
         ))}
       </div>
+
+      {rosterImports.total > 0 ? (
+        <p className="text-xs" style={{ color: colors.muted }}>
+          Excludes {formatInt(rosterImports.total)} tracks from newly tracked{" "}
+          {rosterImports.labelNames.length === 1 ? "label" : "labels"} ({rosterImports.labelNames.join(", ")}) — their
+          initial roster import, not roster movement. The flow below still shows them.
+        </p>
+      ) : null}
 
       <section className="sb-card p-4">
         <div className="flex items-start justify-between gap-3">
