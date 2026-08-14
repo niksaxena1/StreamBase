@@ -13,6 +13,7 @@ import requests
 
 from streambase_revalidate import notify_web_revalidate
 from streambase_postgrest import Postgrest
+from streambase_rate import load_stream_payout_usd
 
 STREAM_PAYOUT_USD = 0.002
 COMPETITOR_INTERPOLATION_LOOKBACK_DAYS = 14
@@ -300,6 +301,10 @@ def main():
     if only_playlist_keys:
         playlists = filter_playlists_by_keys(playlists, only_playlist_keys)
     pg = Postgrest(supabase_url, service_key, schema="competitor")
+
+    # health_config lives in the public schema, so the rate needs a public client.
+    global STREAM_PAYOUT_USD
+    STREAM_PAYOUT_USD = load_stream_payout_usd(Postgrest(supabase_url, service_key))
 
     existing = pg.select("ingestion_runs", "id,status", f"run_date=eq.{run_date.isoformat()}")
     if existing:

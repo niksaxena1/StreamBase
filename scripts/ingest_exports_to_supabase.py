@@ -13,6 +13,7 @@ import requests
 
 from streambase_revalidate import notify_web_revalidate
 from streambase_postgrest import Postgrest
+from streambase_rate import load_stream_payout_usd
 
 STREAM_PAYOUT_USD = 0.002
 
@@ -361,6 +362,10 @@ def main():
 
     pg = Postgrest(supabase_url=supabase_url, service_role_key=service_key)
     run_id: Optional[str] = None
+
+    # Estimated-revenue rate is configured in health_config (see streambase_rate).
+    global STREAM_PAYOUT_USD
+    STREAM_PAYOUT_USD = load_stream_payout_usd(pg)
 
     # Load warning thresholds from DB (falls back to module constants if unavailable).
     _cfg = load_health_config(pg)
