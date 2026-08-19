@@ -1,5 +1,6 @@
 import { CACHE_TTL_1H } from "@/lib/constants";
 import { cachedQueries, cachedQuery } from "@/lib/supabase/cache";
+import { queryErrorMessage } from "@/lib/supabase/rpcErrors";
 import { supabaseService } from "@/lib/supabase/service";
 
 const CATALOG_CONFIG_INITIAL_LIMIT = 1000;
@@ -77,7 +78,7 @@ export async function loadCatalogConfigArtists(): Promise<{
           const rows = await fetchArtistRows(svc);
           return { data: rows, error: null };
         } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
+          const message = queryErrorMessage(error);
           return { data: [] as CatalogConfigArtistRpcRow[], error: { message } };
         }
       },
@@ -103,7 +104,7 @@ export async function loadCatalogConfigTracks(): Promise<{
         const rows = await fetchTrackRows(svc);
         return { data: rows, error: null };
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = queryErrorMessage(error);
         return { data: [] as CatalogConfigTrackRpcRow[], error: { message } };
       }
     },

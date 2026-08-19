@@ -80,3 +80,5 @@ tmp/
 tmp_*.py
 output/
 /playlist-watch-smoke.png
+
+.env*
