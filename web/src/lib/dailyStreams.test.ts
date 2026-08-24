@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { dailyStreamValuesForDataset, trailingDailyAverage } from "./dailyStreams";
+import {
+  dailyStreamValuesForDataset,
+  dailyStreamValuesForMixedOwnHistory,
+  trailingDailyAverage,
+} from "./dailyStreams";
 
 const rowsDesc = [
   { total_streams_cumulative: 1_500_000, daily_streams_net: 20_000 },
@@ -45,5 +49,18 @@ describe("trailingDailyAverage", () => {
   it("returns null when there is nothing to average", () => {
     expect(trailingDailyAverage([null, null])).toBeNull();
     expect(trailingDailyAverage([])).toBeNull();
+  });
+});
+
+describe("dailyStreamValuesForMixedOwnHistory", () => {
+  it("does not subtract incompatible counters across the archive/live seam", () => {
+    const mixed = [
+      { total_streams_cumulative: 100, daily_streams_net: 8, history_source: "live" as const },
+      { total_streams_cumulative: 90, daily_streams_net: 7, history_source: "live" as const },
+      { total_streams_cumulative: 2_000, daily_streams_net: 6, history_source: "archive" as const },
+      { total_streams_cumulative: 1_994, daily_streams_net: null, history_source: "archive" as const },
+    ];
+
+    expect(dailyStreamValuesForMixedOwnHistory(mixed)).toEqual([10, 7, 6, null]);
   });
 });

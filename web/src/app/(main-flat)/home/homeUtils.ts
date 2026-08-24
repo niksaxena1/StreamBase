@@ -195,4 +195,8 @@ export function rollSum(
 }
 
 // Shared with the Playlists page; see @/lib/dailyStreams for the rationale.
-export { dailyStreamValuesForDataset, trailingDailyAverage } from "@/lib/dailyStreams";
+export {
+  dailyStreamValuesForDataset,
+  dailyStreamValuesForMixedOwnHistory,
+  trailingDailyAverage,
+} from "@/lib/dailyStreams";

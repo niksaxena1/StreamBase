@@ -48,6 +48,11 @@ type InteractiveChartSectionProps = {
    */
   selectedChart?: ChartType;
   onSelectChart?: (next: ChartType) => void;
+  /**
+   * Extra CSV-only columns keyed by chart date (e.g. entity-playlist series).
+   * Merged into the download rows; the rendered chart is unaffected.
+   */
+  csvExtraByDate?: Record<string, Record<string, number | null>>;
 };
 
 type ChartType = "daily" | "total";
@@ -70,6 +75,7 @@ export function InteractiveChartSection({
   annotations,
   selectedChart: selectedChartProp,
   onSelectChart,
+  csvExtraByDate,
 }: InteractiveChartSectionProps) {
   const [selectedChartState, setSelectedChartState] =
     useState<ChartType>("daily");
@@ -176,7 +182,9 @@ export function InteractiveChartSection({
             </div>
           </div>
           <ChartCsvDownloadButton
-            rows={currentChart.data as Array<Record<string, unknown>>}
+            rows={(currentChart.data as Array<Record<string, unknown>>).map((r) =>
+              csvExtraByDate ? { ...r, ...(csvExtraByDate[String(r.date)] ?? {}) } : r,
+            )}
             filename={`home-${slugifyForFilename(currentChart.title)}-${rangeDays}d-${todayIsoDate()}.csv`}
             title="Download CSV"
           />

@@ -70,14 +70,29 @@ jobs:
           key: playwright-chromium-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
       - name: Install dependencies
         if: steps.precheck.outputs.should_run == 'true'
+        timeout-minutes: 12
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          if [ "${{ steps.playwright_cache.outputs.cache-hit }}" = "true" ]; then
-            python -m playwright install-deps chromium
-          else
-            python -m playwright install --with-deps chromium
-          fi
+          # Playwright's OS-dependency install shells out to apt, which can hang
+          # indefinitely on a slow Ubuntu mirror (2026-08-19: 59 min stall on
+          # archive.ubuntu.com consumed the whole job budget and lost a full
+          # ingestion day). Bound each attempt and retry rather than stalling.
+          install_browser() {
+            if [ "${{ steps.playwright_cache.outputs.cache-hit }}" = "true" ]; then
+              timeout 240 python -m playwright install-deps chromium
+            else
+              timeout 480 python -m playwright install --with-deps chromium
+            fi
+          }
+          for attempt in 1 2 3; do
+            if install_browser; then exit 0; fi
+            echo "Playwright dependency install attempt $attempt failed or timed out; retrying..."
+            sudo rm -rf /var/lib/apt/lists/* || true
+            sleep 15
+          done
+          echo "Playwright dependency install failed after 3 attempts." >&2
+          exit 1
       - name: Write storage state from secret
         if: steps.precheck.outputs.should_run == 'true'
         env:

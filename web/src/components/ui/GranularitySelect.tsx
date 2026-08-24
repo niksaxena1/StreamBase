@@ -274,6 +274,7 @@ export function RangeSelect({
   customActive = false,
   customStart,
   customEnd,
+  archiveRangeDays,
 }: {
   value: number;
   onChange: (range: number) => void;
@@ -285,6 +286,8 @@ export function RangeSelect({
   customStart?: string | null;
   /** ISO date string for the active custom end date (used for chip label). */
   customEnd?: string | null;
+  /** Optional long-range choice for opt-in archived datasets. */
+  archiveRangeDays?: number;
 }) {
   const customLabel = customActive && customStart && customEnd
     ? formatDateRangeShort(customStart, customEnd)
@@ -297,10 +300,13 @@ export function RangeSelect({
   const tooltip = dayCount !== null && dayCount < 7
     ? `Chart display range · ${dayCount} day${dayCount === 1 ? "" : "s"}`
     : "Chart display range";
+  const options: readonly ChipDropdownOption<number>[] = archiveRangeDays
+    ? [...RANGES, { value: archiveRangeDays, label: `${archiveRangeDays}d` }]
+    : RANGES;
 
   return (
     <ChipDropdown
-      options={RANGES}
+      options={options}
       value={value}
       defaultValue={30}
       onChange={onChange}

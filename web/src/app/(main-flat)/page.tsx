@@ -27,6 +27,7 @@ export default async function Home({
     xy_date?: string;
     start?: string;
     end?: string;
+    legacy?: string;
   }>;
 }) {
   return timedServerStep("page.home", () => HomeContent({ searchParams }));
@@ -42,6 +43,7 @@ async function HomeContent({
     xy_date?: string;
     start?: string;
     end?: string;
+    legacy?: string;
   }>;
 }) {
   const sp = (await searchParams) ?? {};

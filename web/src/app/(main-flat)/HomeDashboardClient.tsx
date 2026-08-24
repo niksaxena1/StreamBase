@@ -51,22 +51,29 @@ import { HomeWeekendDipsSection } from "./home/HomeWeekendDipsSection";
 import { HomeHistorySection } from "./home/HomeHistorySection";
 import { HomeFilterBuilderSection } from "./home/HomeFilterBuilderSection";
 import { HomeConcentrationSection } from "./home/HomeConcentrationSection";
-import { dailyStreamValuesForDataset, trailingDailyAverage } from "./home/homeUtils";
+import {
+  dailyStreamValuesForDataset,
+  dailyStreamValuesForMixedOwnHistory,
+  trailingDailyAverage,
+} from "./home/homeUtils";
 
 // ============================================================================
 // Helpers (header-only)
 // ============================================================================
 
 function hrefWith(
-  existing: { scope?: string; range?: string; daily?: string; xy_date?: string },
-  patch: { scope?: string; range?: string; daily?: string; xy_date?: string | null },
+  existing: { scope?: string; range?: string; daily?: string; xy_date?: string; start?: string; end?: string; legacy?: string },
+  patch: { scope?: string; range?: string; daily?: string; xy_date?: string | null; start?: string | null; end?: string | null; legacy?: string | null },
 ) {
   const scope = (patch.scope ?? existing.scope ?? "all_catalog").toString();
   const range = (patch.range ?? existing.range ?? "30").toString();
   const daily = (patch.daily ?? existing.daily ?? "").toString();
   const xy_date =
     patch.xy_date === null ? null : (patch.xy_date ?? existing.xy_date ?? null);
-  return hrefWithPatchedSearchParams("", { scope, range, daily, xy_date }, { prefix: "/?" });
+  const start = patch.start === null ? null : (patch.start ?? existing.start ?? null);
+  const end = patch.end === null ? null : (patch.end ?? existing.end ?? null);
+  const legacy = patch.legacy === null ? null : (patch.legacy ?? existing.legacy ?? null);
+  return hrefWithPatchedSearchParams("", { scope, range, daily, xy_date, start, end, legacy }, { prefix: "/?" });
 }
 
 function ToggleLink(props: { href: string; active: boolean; children: React.ReactNode }) {
@@ -343,7 +350,9 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
       return Number.isFinite(v) ? v : 0;
     };
 
-    const dailyStreamValues = dailyStreamValuesForDataset(desc, props.datasetMode);
+    const dailyStreamValues = props.legacyHistoryEnabled
+      ? dailyStreamValuesForMixedOwnHistory(desc)
+      : dailyStreamValuesForDataset(desc, props.datasetMode);
 
     if (metric === "revenue") {
       const dailyDesc = desc.map((r, idx) => ({
@@ -380,7 +389,11 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
       }));
       const dailyDeltaDesc = desc.map((r, idx) => {
         const prev = idx < desc.length - 1 ? desc[idx + 1] : null;
-        const daily = prev ? Number(r.track_count ?? 0) - Number(prev.track_count ?? 0) : 0;
+        const crossesArchiveSeam =
+          props.legacyHistoryEnabled && prev && r.history_source !== prev.history_source;
+        const daily = prev && !crossesArchiveSeam
+          ? Number(r.track_count ?? 0) - Number(prev.track_count ?? 0)
+          : null;
         return { date: dataDateFromRunDate(r.date), value: daily };
       });
       const dailyValue =
@@ -429,11 +442,27 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
     metric,
     granularity,
     props.datasetMode,
+    props.legacyHistoryEnabled,
     props.history,
     props.latest,
     props.rangeDays,
     streamPayoutPerStreamUsd,
   ]);
+
+  // Entity-playlist (TG Total / P Total) values per chart date, appended as extra
+  // columns to the hero chart's CSV export. Keyed by data date to match chart rows.
+  const heroCsvExtraByDate = useMemo(() => {
+    const rows = props.entityHistory ?? [];
+    if (!rows.length) return undefined;
+    const out: Record<string, Record<string, number | null>> = {};
+    for (const r of rows) {
+      const dataDate = dataDateFromRunDate(r.date);
+      const cols = (out[dataDate] ??= {});
+      cols[`${r.name} Daily`] = r.daily_streams_net;
+      cols[`${r.name} Total`] = r.total_streams_cumulative;
+    }
+    return out;
+  }, [props.entityHistory]);
 
   const heroStatAccentColor = useMemo(() => {
     if (props.datasetMode !== "competitor" || metric !== "streams") return undefined;
@@ -575,6 +604,25 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
             </div>
           ) : null}
 
+          {props.datasetMode === "own" && props.playlistKey === "all_catalog" ? (
+            <div
+              className="sb-ring flex items-center rounded-full bg-white/60 p-0.5 dark:bg-white/10"
+              title="Include recovered 2023–2025 Grafana history"
+            >
+              <ToggleLink
+                active={props.legacyHistoryEnabled}
+                href={hrefWith(props.sp, {
+                  legacy: props.legacyHistoryEnabled ? null : "1",
+                  range: props.legacyHistoryEnabled ? "365" : "1200",
+                  start: null,
+                  end: null,
+                })}
+              >
+                Archived history
+              </ToggleLink>
+            </div>
+          ) : null}
+
           {granularity === "daily" && (
             <>
               <RangeSelect
@@ -584,6 +632,7 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
                 customActive={hasCustomRange}
                 customStart={props.sp.start ?? null}
                 customEnd={props.sp.end ?? null}
+                archiveRangeDays={props.legacyHistoryEnabled ? 1200 : undefined}
               />
               <DateRangePicker ref={datePickerRef} latestDate={props.latestDataDate ?? null} currentRangeDays={props.rangeDays} headless />
             </>
@@ -622,6 +671,19 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
         </div>
       ) : null}
 
+      {props.legacyHistoryEnabled ? (
+        <div
+          className="rounded-xl border p-3 text-sm"
+          style={{ borderColor: "var(--sb-border)", background: "var(--sb-surface)" }}
+        >
+          Archived Grafana history is included
+          {props.legacyHistoryFirstDate && props.legacyHistoryLastDate
+            ? ` (${props.legacyHistoryFirstDate} to ${props.legacyHistoryLastDate})`
+            : ""}
+          . It is ISRC-normalized and kept separate from live snapshots; counter resets are excluded from archived daily totals.
+        </div>
+      ) : null}
+
       <LazyInteractiveChartSection
         dailyStreamsData={chartDataDaily}
         totalStreamsData={chartDataTotal}
@@ -640,6 +702,7 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
         annotations={metric === "tracks" ? [] : (props.overrideAnnotations ?? [])}
         selectedChart={selectedChart}
         onSelectChart={setSelectedChart}
+        csvExtraByDate={heroCsvExtraByDate}
       />
 
       {props.historyErrorMessage ? (

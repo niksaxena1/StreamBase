@@ -7,10 +7,19 @@ export type HomeDashboardSearchParams = {
   xy_date?: string;
   start?: string;
   end?: string;
+  legacy?: string;
+};
+
+export type EntityHistoryRow = {
+  date: string;
+  name: string;
+  daily_streams_net: number | null;
+  total_streams_cumulative: number | null;
 };
 
 export type PlaylistDailyStatsRow = {
   date: string;
+  history_source?: "live" | "archive";
   track_count: number | null;
   total_streams_cumulative: number | null;
   daily_streams_net: number | null;
@@ -94,8 +103,13 @@ export type HomeDashboardServerProps = {
   playlistKey: "all_catalog" | "releases" | "ext";
   title: string;
   rangeDays: number;
+  legacyHistoryEnabled: boolean;
+  legacyHistoryFirstDate: string | null;
+  legacyHistoryLastDate: string | null;
   latest: PlaylistDailyStatsRow | null;
   history: PlaylistDailyStatsRow[];
+  /** Entity-playlist (TG Total / P Total) history for hero-chart CSV export columns. Own mode only. */
+  entityHistory: EntityHistoryRow[];
   playlistImageUrl: string | null;
   historyErrorMessage?: string | null;
   trackScatterPoints: TrackStreamsXYPoint[];

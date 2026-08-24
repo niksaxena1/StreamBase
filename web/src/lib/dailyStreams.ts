@@ -15,6 +15,7 @@
 export type DailyStreamSourceRow = {
   total_streams_cumulative: number | null;
   daily_streams_net?: number | null;
+  history_source?: "live" | "archive";
 };
 
 function safeNum(value: unknown): number {
@@ -38,6 +39,25 @@ export function dailyStreamValuesForDataset(
   return rowsDesc.map((row, index) => {
     if (index >= rowsDesc.length - 1) return null;
     return safeNum(row.total_streams_cumulative) - safeNum(rowsDesc[index + 1]?.total_streams_cumulative);
+  });
+}
+
+/**
+ * Daily values for the opt-in own-catalog archive. Archived rows use their
+ * quality-filtered stored deltas; live rows retain normal cumulative diffs.
+ * At the archive/live seam, use the live row's stored delta instead of
+ * subtracting counters produced by different systems.
+ */
+export function dailyStreamValuesForMixedOwnHistory(
+  rowsDesc: DailyStreamSourceRow[],
+): Array<number | null> {
+  return rowsDesc.map((row, index) => {
+    if (row.history_source === "archive") return row.daily_streams_net ?? null;
+    const previous = index < rowsDesc.length - 1 ? rowsDesc[index + 1] : null;
+    if (previous?.history_source === "live") {
+      return safeNum(row.total_streams_cumulative) - safeNum(previous.total_streams_cumulative);
+    }
+    return row.daily_streams_net ?? null;
   });
 }
 

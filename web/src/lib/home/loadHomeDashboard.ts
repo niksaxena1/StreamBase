@@ -5,6 +5,7 @@ import { normalizeReleaseDateFromRpc } from "@/components/charts/trackReleaseCoh
 import type {
   ArtistWeekendDipRow,
   HomeDashboardSearchParams,
+  EntityHistoryRow,
   HomeDashboardServerProps,
   ManualOverrideAnnotation,
   NegativeDailyStreamsRow,
@@ -693,12 +694,14 @@ export async function loadHomeDashboardData(args: {
   const includeDiagnostics = args.includeDiagnostics ?? true;
   const diagnosticsOnly = args.diagnosticsOnly ?? false;
 
-  let rangeDays = Math.max(7, Math.min(365, Number(sp.range ?? "30") || 30));
+  const legacyHistoryRequested = sp.legacy === "1";
+  const maxRangeDays = legacyHistoryRequested ? 1200 : 365;
+  let rangeDays = Math.max(7, Math.min(maxRangeDays, Number(sp.range ?? "30") || 30));
   if (sp.start && sp.end) {
     const start = new Date(`${sp.start}T00:00:00Z`);
     const end = new Date(`${sp.end}T00:00:00Z`);
     const calculatedDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-    rangeDays = Math.max(1, Math.min(365, calculatedDays));
+    rangeDays = Math.max(1, Math.min(maxRangeDays, calculatedDays));
   }
 
   const customRangeStart = sanitizeIsoDate(sp.start);
@@ -928,7 +931,7 @@ export async function loadHomeDashboardData(args: {
     if (competitorImageUrl) headerPlaylistImageUrl = competitorImageUrl;
   }
 
-  const { data: history, error: historyErr } = await cachedQuery<PlaylistDailyStatsRow[]>(
+  const historyResult = await cachedQuery<PlaylistDailyStatsRow[]>(
     async () => {
       if (datasetMode === "competitor" && competitorLabelKey) {
         const comp = svc.schema("competitor");
@@ -972,8 +975,85 @@ export async function loadHomeDashboardData(args: {
     CACHE_TTL_1H,
   );
 
+  let history = historyResult.data;
+  let historyErr = historyResult.error;
+  const legacyHistoryEnabled =
+    legacyHistoryRequested && datasetMode === "own" && playlistKey === "all_catalog" && !diagnosticsOnly;
+  let legacyHistoryFirstDate: string | null = null;
+  let legacyHistoryLastDate: string | null = null;
+  if (legacyHistoryEnabled) {
+    const legacyResult = await cachedQuery<PlaylistDailyStatsRow[]>(
+      async () => {
+        let q = svc
+          .from("legacy_catalog_daily_stats")
+          .select("date,track_count,total_streams_cumulative,daily_streams_net");
+        if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
+        return await q.order("date", { ascending: false }).limit(rangeDays + 7);
+      },
+      `home-legacy-catalog-history-v1-${rangeDays + 7}-rb${rollbackDate ?? "live"}`,
+      CACHE_TTL_1H,
+    );
+    if (legacyResult.error) {
+      historyErr = legacyResult.error;
+    } else {
+      const legacyRows = (legacyResult.data ?? []).map((row) => ({
+        ...row,
+        history_source: "archive" as const,
+      }));
+      legacyHistoryLastDate = legacyRows[0]?.date ?? null;
+      legacyHistoryFirstDate = legacyRows[legacyRows.length - 1]?.date ?? null;
+      const byDate = new Map<string, PlaylistDailyStatsRow>();
+      for (const row of legacyRows) byDate.set(row.date, row);
+      for (const row of history ?? []) byDate.set(row.date, { ...row, history_source: "live" });
+      history = [...byDate.values()]
+        .sort((a, b) => b.date.localeCompare(a.date))
+        .slice(0, rangeDays + 7);
+    }
+  }
+
   const latest = history && history.length > 0 ? history[0] : null;
   const latestRunDate = (latest as PlaylistDailyStatsRow | null)?.date ?? null;
+
+  // Entity-playlist history (TG Total / P Total): extra columns in the hero
+  // chart's CSV export. Own mode only; competitor mode has no entity playlists.
+  const entityHistoryPromise: Promise<EntityHistoryRow[]> =
+    datasetMode === "competitor" || diagnosticsOnly
+      ? Promise.resolve([])
+      : (async () => {
+          try {
+            const { data } = await cachedQuery(
+              async () => {
+                const { data: entityPlaylists } = await svc
+                  .from("playlists")
+                  .select("playlist_key,display_name")
+                  .eq("playlist_type", "Entity");
+                const rows = (entityPlaylists ?? []) as Array<{ playlist_key: string; display_name: string | null }>;
+                if (!rows.length) return { data: [] as EntityHistoryRow[], error: null };
+                const nameByKey = new Map(rows.map((p) => [p.playlist_key, (p.display_name ?? p.playlist_key).trim()]));
+                let q = svc
+                  .from("playlist_daily_stats")
+                  .select("date,playlist_key,daily_streams_net,total_streams_cumulative")
+                  .in("playlist_key", rows.map((p) => p.playlist_key));
+                if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
+                const res = await q.order("date", { ascending: false }).limit((rangeDays + 7) * rows.length);
+                return {
+                  data: ((res.data ?? []) as Array<{ date: string; playlist_key: string; daily_streams_net: number | null; total_streams_cumulative: number | null }>).map((r) => ({
+                    date: r.date,
+                    name: nameByKey.get(r.playlist_key) ?? r.playlist_key,
+                    daily_streams_net: r.daily_streams_net,
+                    total_streams_cumulative: r.total_streams_cumulative,
+                  })),
+                  error: res.error,
+                };
+              },
+              `home-entity-history-v1-${rangeDays + 7}-ov${overrideBuster}-rb${rollbackDate ?? "live"}`,
+              CACHE_TTL_1H,
+            );
+            return data ?? [];
+          } catch {
+            return [];
+          }
+        })();
 
   const title =
     datasetMode === "competitor"
@@ -1217,10 +1297,11 @@ export async function loadHomeDashboardData(args: {
     )
     : null;
 
-  const [{ selectedDataDate, scatter }, overrideAnnotations, diagnosticsResults] = await Promise.all([
+  const [{ selectedDataDate, scatter }, overrideAnnotations, diagnosticsResults, entityHistory] = await Promise.all([
     scatterPromise,
     overrideAnnotationsPromise,
     diagnosticsPromise,
+    entityHistoryPromise,
   ]);
 
   let artistWeekendDipsRaw: unknown[] = [];
@@ -1273,8 +1354,12 @@ export async function loadHomeDashboardData(args: {
     playlistKey,
     title,
     rangeDays,
+    legacyHistoryEnabled,
+    legacyHistoryFirstDate,
+    legacyHistoryLastDate,
     latest: latest as PlaylistDailyStatsRow | null,
     history: (history as PlaylistDailyStatsRow[] | null) ?? [],
+    entityHistory,
     playlistImageUrl: headerPlaylistImageUrl,
     historyErrorMessage: historyErr?.message ?? null,
     trackScatterPoints: scatter.points,

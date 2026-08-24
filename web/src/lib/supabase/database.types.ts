@@ -328,6 +328,129 @@ export type Database = {
         }
         Relationships: []
       }
+      legacy_catalog_daily_stats: {
+        Row: {
+          daily_streams_net: number | null
+          date: string
+          imported_at: string
+          missing_previous_track_count: number
+          reset_track_count: number
+          total_streams_cumulative: number
+          track_count: number
+        }
+        Insert: {
+          daily_streams_net?: number | null
+          date: string
+          imported_at?: string
+          missing_previous_track_count?: number
+          reset_track_count?: number
+          total_streams_cumulative: number
+          track_count: number
+        }
+        Update: {
+          daily_streams_net?: number | null
+          date?: string
+          imported_at?: string
+          missing_previous_track_count?: number
+          reset_track_count?: number
+          total_streams_cumulative?: number
+          track_count?: number
+        }
+        Relationships: []
+      }
+      legacy_track_daily_streams: {
+        Row: {
+          date: string
+          distinct_play_counts: number
+          first_observed_at: string | null
+          imported_at: string
+          isrc: string
+          last_observed_at: string | null
+          match_methods: string[]
+          mode_confidence: number
+          mode_frequency: number
+          observation_count: number
+          requires_track_create: boolean
+          selected_spotify_track_id: string
+          source_artist: string | null
+          source_id_count: number
+          source_song_name: string | null
+          source_spotify_ids: string[]
+          streams_cumulative: number
+        }
+        Insert: {
+          date: string
+          distinct_play_counts: number
+          first_observed_at?: string | null
+          imported_at?: string
+          isrc: string
+          last_observed_at?: string | null
+          match_methods?: string[]
+          mode_confidence: number
+          mode_frequency: number
+          observation_count: number
+          requires_track_create?: boolean
+          selected_spotify_track_id: string
+          source_artist?: string | null
+          source_id_count: number
+          source_song_name?: string | null
+          source_spotify_ids?: string[]
+          streams_cumulative: number
+        }
+        Update: {
+          date?: string
+          distinct_play_counts?: number
+          first_observed_at?: string | null
+          imported_at?: string
+          isrc?: string
+          last_observed_at?: string | null
+          match_methods?: string[]
+          mode_confidence?: number
+          mode_frequency?: number
+          observation_count?: number
+          requires_track_create?: boolean
+          selected_spotify_track_id?: string
+          source_artist?: string | null
+          source_id_count?: number
+          source_song_name?: string | null
+          source_spotify_ids?: string[]
+          streams_cumulative?: number
+        }
+        Relationships: []
+      }
+      legacy_tracks: {
+        Row: {
+          first_date: string
+          imported_at: string
+          isrc: string
+          last_date: string
+          latest_streams_cumulative: number
+          source_spotify_ids: string[]
+          spotify_artists: string | null
+          spotify_name: string | null
+        }
+        Insert: {
+          first_date: string
+          imported_at?: string
+          isrc: string
+          last_date: string
+          latest_streams_cumulative: number
+          source_spotify_ids?: string[]
+          spotify_artists?: string | null
+          spotify_name?: string | null
+        }
+        Update: {
+          first_date?: string
+          imported_at?: string
+          isrc?: string
+          last_date?: string
+          latest_streams_cumulative?: number
+          source_spotify_ids?: string[]
+          spotify_artists?: string | null
+          spotify_name?: string | null
+        }
+        Relationships: []
+      }
       ingestion_runs: {
         Row: {
           commit_sha: string | null

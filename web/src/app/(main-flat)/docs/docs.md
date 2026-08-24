@@ -369,11 +369,13 @@ Files:
 - What you can do:
   - Toggle scope: `all_catalog` / `releases` / `ext`
   - Toggle range: 30 / 90 / 365 days
+  - In All Catalog, enable **Archived history** to include the recovered 2023–2025 Grafana series (up to 1200 days)
   - View quick KPIs and charts
 
 Data:
 
-- `playlist_daily_stats` (cached)
+- `playlist_daily_stats` (cached, live/default)
+- `legacy_catalog_daily_stats` (cached, only when Archived history is enabled)
 
 File:
 
@@ -1486,6 +1488,7 @@ If you want SAI to be reliable, enforce answer structure.
 
 ## Changelog
 
+- 2026-08-20: Added opt-in Archived history for the ISRC-normalized 2023–2025 legacy Grafana dataset. Legacy rows remain provenance-separated from live snapshots and exclude counter resets from archived daily totals.
 - 2026-02-09: Major docs refresh: expanded Settings page (8 features), added config pages (`/catalog/config`, `/playlists/config`, `/playlists/config/settings`), updated performance section (partitioning is now implemented), added SAI/CRON env vars, expanded data dictionary (6 new tables/views), added 10+ missing RPCs, updated `playlists` table fields (`entity_playlist_key`, `playlist_type` semantics), route layout (`(main-flat)` primary), expanded API routes list, new health warning codes (`entity_distro_drift`, `distro_overlap`), GitHub Actions schedule/notes, and fixed SAI docs indexing path.
 - 2026-02-01: Added ingestion health warnings for missing/invalid SpotOnTrack stream totals (`catalog_streams_missing_prev_nonzero`, `catalog_missing_stream_snapshots`) and a critical check for day-over-day decreases in playlist total streams (`total_streams_decreased`).
 - 2026-01-31: Added migrations checklist, SAI ingestion spec, optional system stats RPC, and per-section tags/sources UI.
