@@ -75,8 +75,6 @@ export function FilterConcentrationView({
   const [showCurveModal, setShowCurveModal] = useState(false);
   const [showIsrc, setShowIsrc] = useState(false);
 
-  const hasDistroData = distroByIsrc && distroByIsrc.size > 0;
-
   const getValue = useCallback(
     (t: TrackFilterResult) =>
       viewMode === "daily" ? (t.daily_streams ?? 0) : (t.total_streams ?? 0),
@@ -117,7 +115,13 @@ export function FilterConcentrationView({
   const formatValue = (streams: number) =>
     isRevenue ? formatUsd(streams * streamPayoutPerStreamUsd) : formatInt(streams);
   const valueStyle = isRevenue ? ({ color: "#10b981" } as const) : ({ color: "var(--sb-positive)" } as const);
+  const secondaryValueStyle = { color: "var(--sb-muted)" } as const;
   const valueClass = "font-medium";
+
+  const formatDailyValue = (streams: number | null) => {
+    if (streams == null) return null;
+    return streams > 0 ? `+${formatValue(streams)}` : formatValue(streams);
+  };
 
   const csvRows = useMemo(
     () =>
@@ -130,12 +134,15 @@ export function FilterConcentrationView({
           artists: (t.spotify_artist_names ?? []).join(", "),
           release_date: t.release_date ?? "",
           distro_playlist: distro?.name ?? "",
+          total_streams: t.total_streams ?? 0,
+          daily_streams: t.daily_streams,
+          ranking_basis: viewMode,
           value: val,
           share_pct: grandTotal > 0 ? ((Math.max(0, val) / grandTotal) * 100).toFixed(2) : "0",
           cum_pct: (cumPcts[i] ?? 0).toFixed(2),
         };
       }),
-    [sorted, getValue, grandTotal, cumPcts, distroByIsrc],
+    [sorted, getValue, grandTotal, cumPcts, distroByIsrc, viewMode],
   );
 
   if (results.length === 0) {
@@ -147,7 +154,7 @@ export function FilterConcentrationView({
   }
 
   // Column count for threshold divider colSpan
-  const colCount = 7;
+  const colCount = 8;
 
   return (
     <>
@@ -155,7 +162,7 @@ export function FilterConcentrationView({
         {/* Controls row */}
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-3">
-            {/* Total / Daily toggle */}
+            {/* Total / Daily controls the concentration ranking and share columns. */}
             <div className="sb-ring flex items-center gap-0.5 rounded-full bg-white/60 p-0.5 dark:bg-white/10">
               <button type="button" onClick={() => setViewMode("total")} className={headerPill(viewMode === "total")}>
                 TOTAL
@@ -186,7 +193,20 @@ export function FilterConcentrationView({
             <ChartCsvDownloadButton
               filename={`filter-concentration-${viewMode}-${todayIsoDate()}.csv`}
               rows={csvRows}
-              title="Download concentration CSV"
+              headers={[
+                "track",
+                "isrc",
+                "artists",
+                "release_date",
+                "distro_playlist",
+                "total_streams",
+                "daily_streams",
+                "ranking_basis",
+                "value",
+                "share_pct",
+                "cum_pct",
+              ]}
+              title="Download concentration CSV (includes total and daily streams)"
             />
           </div>
         </div>
@@ -231,7 +251,8 @@ export function FilterConcentrationView({
               ),
               className: "hidden sm:table-cell",
             },
-            { label: isRevenue ? (viewMode === "daily" ? "DAILY REV" : "TOTAL REV") : (viewMode === "daily" ? "DAILY" : "TOTAL"), align: "right" as const },
+            { label: isRevenue ? "TOTAL REV" : "TOTAL STREAMS", align: "right" as const },
+            { label: isRevenue ? "DAILY REV" : "DAILY STREAMS", align: "right" as const },
             { label: "SHARE", align: "right" as const },
             { label: "CUM %", align: "right" as const },
           ]}
@@ -239,6 +260,8 @@ export function FilterConcentrationView({
         >
           {sorted.map((t, i) => {
             const val = Math.max(0, getValue(t));
+            const totalStreams = t.total_streams ?? 0;
+            const dailyStreams = t.daily_streams;
             const sharePct = grandTotal > 0 ? (val / grandTotal) * 100 : 0;
             const cumPct = cumPcts[i] ?? 0;
             const isThresholdRow = i === thresholdIdx;
@@ -304,8 +327,21 @@ export function FilterConcentrationView({
                       <span className="text-xs opacity-30" style={{ color: "var(--sb-muted)" }}>—</span>
                     )}
                   </TableCell>
-                  <TableCell numeric className={valueClass} style={valueStyle}>
-                    {viewMode === "daily" ? `+${formatValue(val)}` : formatValue(val)}
+                  <TableCell
+                    numeric
+                    className={valueClass}
+                    style={viewMode === "total" ? valueStyle : secondaryValueStyle}
+                  >
+                    {formatValue(totalStreams)}
+                  </TableCell>
+                  <TableCell
+                    numeric
+                    className={valueClass}
+                    empty={dailyStreams == null}
+                    emptyFallback="—"
+                    style={viewMode === "daily" ? valueStyle : secondaryValueStyle}
+                  >
+                    {formatDailyValue(dailyStreams)}
                   </TableCell>
                   <TableCell numeric className="text-xs font-mono" style={{ color: "var(--sb-muted)", opacity: 0.7 }}>
                     {sharePct.toFixed(1)}%
