@@ -15,6 +15,7 @@ import { useCallback, useId, useMemo, useRef } from "react";
 import { formatCompactMoney, formatInt, formatUsd2 } from "@/lib/format";
 import {
   computePaddedDomain,
+  computeRollingAvg7,
   computeWeekendDipMap,
   extractWeekendDipFromRechartsPayload,
   filterBucketedSeriesFromIsoDate,
@@ -47,6 +48,8 @@ export const COLLECTOR_COLORS: Record<string, string> = {
 export type ComparisonMode = "combined" | "individual" | "percentage";
 export type ComparisonMetric = "revenue" | "streams" | "tracks";
 
+const MA7_DATA_KEY_PREFIX = "_ma7_";
+
 export type CollectorDailyData = {
   date: string;
   collector: string;
@@ -58,7 +61,7 @@ export type CollectorDailyData = {
 
 type ChartDataPoint = {
   date: string;
-  [key: string]: number | string; // collector names or "combined" as keys
+  [key: string]: number | string | null; // collector names or "combined" as keys
 };
 
 function formatTooltipDate(dateString: string, granularity: Granularity = "daily"): string {
@@ -167,11 +170,14 @@ function CustomTooltip({
           </div>
         )}
         {payload.map((entry, index) => {
+          const isMA7 = entry.dataKey.startsWith(MA7_DATA_KEY_PREFIX);
+          const seriesKey = isMA7 ? entry.dataKey.slice(MA7_DATA_KEY_PREFIX.length) : entry.dataKey;
           const collectorName =
-            entry.dataKey === "combined"
+            seriesKey === "combined"
               ? "Combined Total"
-              : (seriesLabels?.[entry.dataKey] ?? entry.dataKey);
-          const color = entry.color || COLLECTOR_COLORS[entry.dataKey] || "#888";
+              : (seriesLabels?.[seriesKey] ?? seriesKey);
+          const displayName = isMA7 ? `${collectorName} MA7` : collectorName;
+          const color = entry.color || COLLECTOR_COLORS[seriesKey] || "#888";
 
           if (isPercentageMode) {
             const absValue = Number(dataPoint[`_abs_${entry.dataKey}`] ?? 0);
@@ -212,6 +218,7 @@ function CustomTooltip({
             );
           }
 
+          const rawValue = Number(entry.value ?? 0);
           return (
             <div key={index} className="text-xs flex items-center gap-2">
               <span
@@ -219,9 +226,9 @@ function CustomTooltip({
                 style={{ backgroundColor: color }}
               />
               <span style={{ color: "var(--sb-text)" }}>
-                {collectorName}:{" "}
+                {displayName}:{" "}
                 <span className="font-bold" style={{ color }}>
-                  {formatValue(Number(entry.value ?? 0))}
+                  {formatValue(metric === "revenue" ? rawValue : Math.round(rawValue))}
                 </span>
               </span>
             </div>
@@ -255,6 +262,7 @@ export function CollectorComparisonChart({
   metric,
   heightPx = 300,
   granularity = "daily",
+  showMA7 = false,
   onDateClick,
   seriesColors,
   seriesLabels,
@@ -266,6 +274,7 @@ export function CollectorComparisonChart({
   metric: ComparisonMetric;
   heightPx?: number;
   granularity?: Granularity;
+  showMA7?: boolean;
   onDateClick?: (date: string) => void;
   /** Override default collector colors (e.g. competitor label accent_hex). */
   seriesColors?: Record<string, string>;
@@ -370,23 +379,28 @@ export function CollectorComparisonChart({
       result.push(point);
     }
 
-    return filterBucketedSeriesFromIsoDate(result, granularity, chartStartDateIso);
-  }, [data, selectedCollectors, mode, metric, granularity, streamPayoutPerStreamUsd, chartStartDateIso]);
+    return result;
+  }, [data, selectedCollectors, mode, metric, granularity, streamPayoutPerStreamUsd]);
+
+  const visibleChartData = useMemo(
+    () => filterBucketedSeriesFromIsoDate(chartData, granularity, chartStartDateIso),
+    [chartData, chartStartDateIso, granularity],
+  );
 
   // Enrich chart data: percentage mode gets 7d averages + anomaly detection;
   // non-percentage modes get weekend dip enrichment.
   const enrichedChartData = useMemo(() => {
-    if (!chartData.length) return chartData;
+    if (!visibleChartData.length) return visibleChartData;
 
     if (mode === "percentage") {
       const ANOMALY_LOOKBACK = 14;
       const detectAnomalies = metric !== "tracks";
-      return chartData.map((point, i) => {
+      return visibleChartData.map((point, i) => {
         const enriched = { ...point } as Record<string, any>;
 
         for (const collector of selectedCollectors) {
           const windowStart = Math.max(0, i - 6);
-          const window = chartData.slice(windowStart, i + 1);
+          const window = visibleChartData.slice(windowStart, i + 1);
           const absValues = window.map((d) => Number(d[`_abs_${collector}`] ?? 0));
           enriched[`_avg7_${collector}`] =
             absValues.reduce((s, v) => s + v, 0) / absValues.length;
@@ -398,7 +412,7 @@ export function CollectorComparisonChart({
         }
 
         const lookStart = Math.max(0, i - ANOMALY_LOOKBACK);
-        const prevPoints = chartData.slice(lookStart, i);
+        const prevPoints = visibleChartData.slice(lookStart, i);
         let isAnomaly = false;
 
         if (prevPoints.length >= 5) {
@@ -436,9 +450,9 @@ export function CollectorComparisonChart({
       });
     }
 
-    if (!enableWeekendDip) return chartData;
+    if (!enableWeekendDip) return visibleChartData;
 
-    const dipSource = chartData.map((d) => {
+    const dipSource = visibleChartData.map((d) => {
       let val: number;
       if (mode === "combined") {
         val = Number(d["combined"] ?? 0);
@@ -449,11 +463,40 @@ export function CollectorComparisonChart({
     });
     const dipMap = computeWeekendDipMap(dipSource);
 
-    return chartData.map((d) => ({
+    return visibleChartData.map((d) => ({
       ...d,
       _weekendDipPct: dipMap.get(d.date) ?? null,
     }));
-  }, [chartData, enableWeekendDip, metric, mode, selectedCollectors]);
+  }, [visibleChartData, enableWeekendDip, metric, mode, selectedCollectors]);
+
+  const showMA7Lines = showMA7 && granularity === "daily" && mode !== "percentage";
+  const ma7SeriesKeys = useMemo(
+    () => (mode === "combined" ? ["combined"] : selectedCollectors),
+    [mode, selectedCollectors],
+  );
+  const displayedChartData = useMemo(() => {
+    if (!showMA7Lines) return enrichedChartData;
+
+    const ma7BySeries = new Map<string, Map<string, number | null>>();
+    for (const key of ma7SeriesKeys) {
+      const desc = [...chartData].reverse().map((point) => ({
+        date: String(point.date),
+        value: Number(point[key] ?? 0),
+      }));
+      ma7BySeries.set(
+        key,
+        new Map(computeRollingAvg7(desc).map((point) => [point.date, point.ma7] as const)),
+      );
+    }
+
+    return enrichedChartData.map((point) => {
+      const next: ChartDataPoint = { ...point };
+      for (const key of ma7SeriesKeys) {
+        next[`${MA7_DATA_KEY_PREFIX}${key}`] = ma7BySeries.get(key)?.get(String(point.date)) ?? null;
+      }
+      return next;
+    });
+  }, [chartData, enrichedChartData, ma7SeriesKeys, showMA7Lines]);
 
   const formatYTick = (n: number) => {
     if (mode === "percentage") return `${n.toFixed(0)}%`;
@@ -470,18 +513,18 @@ export function CollectorComparisonChart({
     if (granularity !== "daily") return undefined;
     if (!zoomDailyYAxis) return undefined;
     if (!zoomDailyYAxisCollectorComparison) return undefined;
-    if (!chartData.length) return undefined;
+    if (!visibleChartData.length) return undefined;
 
     const keys = mode === "combined" ? ["combined"] : selectedCollectors;
     const vals: Array<number | null> = [];
-    for (const row of chartData as any[]) {
+    for (const row of visibleChartData as any[]) {
       for (const k of keys) {
         const n = Number((row as any)?.[k]);
         vals.push(Number.isFinite(n) ? n : null);
       }
     }
     return computePaddedDomain(vals, { clampMinToZero: false, padRatio: 0.12, minAbsPad: 1 });
-  }, [chartData, granularity, mode, selectedCollectors, zoomDailyYAxis, zoomDailyYAxisCollectorComparison]);
+  }, [visibleChartData, granularity, mode, selectedCollectors, zoomDailyYAxis, zoomDailyYAxisCollectorComparison]);
 
   // Determine which lines to render
   const lineKeys = mode === "combined" ? ["combined"] : selectedCollectors;
@@ -502,10 +545,10 @@ export function CollectorComparisonChart({
 
   const highlightDates = useMemo(() => {
     if (granularity !== "daily") return [];
-    return chartData
+    return visibleChartData
       .filter((d) => isHighlightDayDateUtc(String(d.date ?? ""), weekHighlightDayUtc))
       .map((d) => String(d.date));
-  }, [chartData, granularity, weekHighlightDayUtc]);
+  }, [visibleChartData, granularity, weekHighlightDayUtc]);
 
   const sundayBandColor = getSundayAccentColor(
     areaKey ? getLineColor(areaKey) : combinedColor,
@@ -560,7 +603,7 @@ export function CollectorComparisonChart({
     if (date) onDateClick!(date);
   };
 
-  if (!enrichedChartData.length) {
+  if (!displayedChartData.length) {
     return (
       <div
         className="flex items-center justify-center text-sm"
@@ -590,7 +633,7 @@ export function CollectorComparisonChart({
     >
       <ResponsiveContainer width="100%" height={heightPx} minWidth={0}>
         <ComposedChart
-          data={enrichedChartData}
+          data={displayedChartData}
           margin={{ top: 6, right: 6, left: 0, bottom: 0 }}
           style={{ outline: "none" }}
         >
@@ -765,6 +808,30 @@ export function CollectorComparisonChart({
               />
             );
           })}
+
+          {showMA7Lines
+            ? lineKeys.map((key) => (
+                <Line
+                  key={`${MA7_DATA_KEY_PREFIX}${key}`}
+                  type="monotone"
+                  dataKey={`${MA7_DATA_KEY_PREFIX}${key}`}
+                  stroke={
+                    mode === "combined"
+                      ? themeColors.isDark
+                        ? "#ffffff"
+                        : "#000000"
+                      : getLineColor(key)
+                  }
+                  strokeWidth={1.75}
+                  strokeDasharray="5 5"
+                  strokeOpacity={0.5}
+                  dot={false}
+                  activeDot={false}
+                  connectNulls={false}
+                  isAnimationActive={false}
+                />
+              ))
+            : null}
         </ComposedChart>
       </ResponsiveContainer>
     </div>

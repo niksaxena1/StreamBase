@@ -216,6 +216,8 @@ export default async function CollectorsPage({
       : null;
   // Use custom end date if provided, otherwise use latestRunDate
   const rangeEnd = sp.end && sp.start ? addDaysISO(sp.end, SOT_DATA_LAG_DAYS) : latestRunDate;
+  // Seed strict trailing MA7 lines with the six points before the visible range.
+  const comparisonRangeStart = rangeStart ? addDaysIso(rangeStart, -6) : rangeStart;
 
   const results = await cachedQueries(
     {
@@ -284,7 +286,7 @@ export default async function CollectorsPage({
           .select(
             "collector,date,track_count,daily_streams_net,est_revenue_daily_net",
           )
-          .gte("date", rangeStart!)
+          .gte("date", comparisonRangeStart!)
           .lte("date", rangeEnd!)
           .order("date", { ascending: true }),
 
@@ -318,7 +320,7 @@ export default async function CollectorsPage({
       },
 
     },
-    `collectors-${selectedCollector}-${rangeStart}-${rangeEnd}-${latestRunDate}-artistsScoped1-entity${useEntityPlaylistsForTotals ? 1 : 0}-ov${overrideBuster}-rb${rollbackDate ?? "live"}`,
+    `collectors-${selectedCollector}-${comparisonRangeStart}-${rangeEnd}-${latestRunDate}-artistsScoped1-entity${useEntityPlaylistsForTotals ? 1 : 0}-ov${overrideBuster}-rb${rollbackDate ?? "live"}`,
     CACHE_TTL_1H,
   );
 

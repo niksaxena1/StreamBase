@@ -21,6 +21,7 @@ export const COLLECTORS_COMPARISON_STORAGE = {
   collectors: "sb:collectors:comparison:collectors",
   mode: "sb:collectors:comparison:mode",
   granularity: "sb:collectors:comparison:granularity",
+  ma7Visible: "sb:collectors:comparison:ma7_visible",
 } as const;
 
 export const COLLECTORS_MONTHLY_ACTUAL_REVENUE_STORAGE = {

@@ -250,6 +250,9 @@ export function CollectorsClient(props: {
     }
     return "individual";
   });
+  const [showComparisonMA7, setShowComparisonMA7] = useState<boolean>(() =>
+    readStoredBool(COLLECTORS_COMPARISON_STORAGE.ma7Visible, false),
+  );
 
   // Granularity is now controlled from the page header via props
   const granularity = props.granularity ?? "daily";
@@ -293,6 +296,10 @@ export function CollectorsClient(props: {
   useEffect(() => {
     writeStoredBool(COLLECTORS_DETAILS_STORAGE.tracksOpen, openTracks);
   }, [openTracks]);
+
+  useEffect(() => {
+    writeStoredBool(COLLECTORS_COMPARISON_STORAGE.ma7Visible, showComparisonMA7);
+  }, [showComparisonMA7]);
   
   // NOTE: searchParams and router are intentionally omitted from deps to avoid a
   // self-triggering loop (router.replace updates searchParams which re-fires this effect).
@@ -996,7 +1003,7 @@ export function CollectorsClient(props: {
       <div className="sb-card p-4 space-y-4">
         <SpotlightCard className="relative p-3 overflow-visible">
           <div className="flex flex-col gap-3">
-            <div className="flex items-start justify-between gap-2">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between lg:gap-2">
               <div>
                 <div className="flex items-center gap-2">
                   <Activity className="h-3.5 w-3.5 opacity-60" />
@@ -1009,18 +1016,29 @@ export function CollectorsClient(props: {
                 </div>
               </div>
 
-              <div className="flex flex-col items-end gap-2">
-                <ChipGroup segmented>
-                  {(["combined", "individual", "percentage"] as const).map((m) => (
-                    <Chip key={m} segmented selected={comparisonMode === m} onClick={() => setComparisonMode(m)}>
-                      {m === "combined" ? "Combined" : m === "individual" ? "Individual" : "Percentage"}
+              <div className="flex flex-col items-end gap-2 lg:w-auto">
+                <div className="flex flex-nowrap items-center justify-end gap-1.5">
+                  {granularity === "daily" && comparisonMode !== "percentage" ? (
+                    <Chip
+                      selected={showComparisonMA7}
+                      onClick={() => setShowComparisonMA7((visible) => !visible)}
+                      className="px-2 py-1 text-[10px]"
+                      title="Toggle trailing 7-day moving-average lines"
+                      aria-label="Toggle trailing 7-day moving-average lines"
+                    >
+                      MA7
                     </Chip>
-                  ))}
-                </ChipGroup>
-
-                <div className="flex flex-wrap items-center" style={{ gap: "0.2rem" }}>
-                  <CollectorMultiSelect selected={comparisonCollectors} onChange={setComparisonCollectors} />
+                  ) : null}
+                  <ChipGroup segmented>
+                    {(["combined", "individual", "percentage"] as const).map((m) => (
+                      <Chip key={m} segmented selected={comparisonMode === m} onClick={() => setComparisonMode(m)}>
+                        {m === "combined" ? "Combined" : m === "individual" ? "Individual" : "Percentage"}
+                      </Chip>
+                    ))}
+                  </ChipGroup>
                 </div>
+
+                <CollectorMultiSelect selected={comparisonCollectors} onChange={setComparisonCollectors} />
               </div>
             </div>
 
@@ -1053,6 +1071,7 @@ export function CollectorsClient(props: {
                 metric={metric}
                 heightPx={260}
                 granularity={granularity}
+                showMA7={showComparisonMA7}
                 onDateClick={granularity === "daily" ? handleDateClick : undefined}
               />
             </div>
