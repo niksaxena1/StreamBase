@@ -14,6 +14,17 @@ const PLAYLISTS: Array<{ key: string; label: string }> = [
   { key: "ext", label: "ext" },
   { key: "gahara_records_releases", label: "Gahara Records Releases" },
   { key: "groove_bassment_releases", label: "Groove Bassment Releases" },
+  { key: "p_total", label: "P Total" },
+  { key: "tg_total", label: "TG Total" },
+];
+
+const COLLECTOR_AGGREGATES: Array<{
+  key: string;
+  collector: string;
+  label: string;
+}> = [
+  { key: "collector:PL", collector: "PL", label: "P" },
+  { key: "collector:TG", collector: "TG", label: "TG" },
 ];
 
 type PlaylistDailyStatsRow = {
@@ -49,21 +60,62 @@ export async function GET() {
 
   const runDatesAsc = Array.from(new Set(runDatesDesc)).sort();
 
-  const results = await Promise.all(
-    PLAYLISTS.map(async (p) => {
-      const { data, error } = await svc
-        .from("playlist_daily_stats")
-        .select("date,total_streams_cumulative")
-        .eq("playlist_key", p.key)
-        .in("date", runDatesAsc);
+  const [playlistResults, collectorResults] = await Promise.all([
+    Promise.all(
+      PLAYLISTS.map(async (p) => {
+        const { data, error } = await svc
+          .from("playlist_daily_stats")
+          .select("date,total_streams_cumulative")
+          .eq("playlist_key", p.key)
+          .in("date", runDatesAsc);
 
-      if (error) {
-        return { key: p.key, label: p.label, rows: [] as PlaylistDailyStatsRow[], error: error.message };
-      }
+        if (error) {
+          return {
+            key: p.key,
+            label: p.label,
+            rows: [] as PlaylistDailyStatsRow[],
+            error: error.message,
+          };
+        }
 
-      return { key: p.key, label: p.label, rows: (data ?? []) as PlaylistDailyStatsRow[], error: null as string | null };
-    }),
-  );
+        return {
+          key: p.key,
+          label: p.label,
+          rows: (data ?? []) as PlaylistDailyStatsRow[],
+          error: null as string | null,
+        };
+      }),
+    ),
+    Promise.all(
+      COLLECTOR_AGGREGATES.map(async (aggregate) => {
+        const { data, error } = await svc
+          .from("collector_daily_agg")
+          .select("date,total_streams_cumulative")
+          .eq("collector", aggregate.collector)
+          .in("date", runDatesAsc);
+
+        if (error) {
+          return {
+            key: aggregate.key,
+            label: aggregate.label,
+            rows: [] as PlaylistDailyStatsRow[],
+            error: error.message,
+          };
+        }
+
+        return {
+          key: aggregate.key,
+          label: aggregate.label,
+          rows: (data ?? []) as PlaylistDailyStatsRow[],
+          error: null as string | null,
+        };
+      }),
+    ),
+  ]);
+
+  const results = [...playlistResults, ...collectorResults];
+  const queryError = results.find((result) => result.error)?.error;
+  if (queryError) return apiJsonErr(queryError, 500);
 
   const byPlaylistDate = new Map<string, Map<string, number | null>>();
   for (const p of results) {
@@ -76,29 +128,37 @@ export async function GET() {
     byPlaylistDate.set(p.key, m);
   }
 
+  const series = [
+    ...PLAYLISTS.map((playlist) => ({
+      key: playlist.key,
+      label: playlist.label,
+    })),
+    ...COLLECTOR_AGGREGATES.map((aggregate) => ({
+      key: aggregate.key,
+      label: aggregate.label,
+    })),
+  ];
   const header = [
     "Date",
-    "Releases (streams cumulative)",
-    "ext (streams cumulative)",
-    "Gahara Records Releases (streams cumulative)",
-    "Groove Bassment Releases (streams cumulative)",
+    ...series.map((item) => `${item.label} (streams cumulative)`),
   ];
-
-  const keyOrder = ["releases", "ext", "gahara_records_releases", "groove_bassment_releases"];
 
   const aoa: Array<Array<string | number | null>> = [
     header,
     ...runDatesAsc.map((runDate) => {
       const row: Array<string | number | null> = [dataDateFromRunDate(runDate)];
-      for (const k of keyOrder) {
-        row.push(byPlaylistDate.get(k)?.get(runDate) ?? null);
+      for (const item of series) {
+        row.push(byPlaylistDate.get(item.key)?.get(runDate) ?? null);
       }
       return row;
     }),
   ];
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws["!cols"] = [{ wch: 12 }, { wch: 26 }, { wch: 22 }, { wch: 38 }, { wch: 40 }];
+  ws["!cols"] = [
+    { wch: 12 },
+    ...series.map((item) => ({ wch: Math.max(22, item.label.length + 23) })),
+  ];
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Last 7 days");
@@ -109,7 +169,8 @@ export async function GET() {
   const filename = "playlist_streams_last_7_days.xlsx";
   return new NextResponse(body, {
     headers: {
-      "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "Content-Type":
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       "Content-Disposition": `attachment; filename="${filename}"`,
       "Cache-Control": "no-store",
     },
