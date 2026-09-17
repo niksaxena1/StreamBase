@@ -19,6 +19,8 @@
 | MusicUp | `musicup_releases` | `19rThvNZ2ajkvHC2Zp6s05` | `10438539` | `11226` |
 | Perfect Havoc | `perfect_havoc_records` | `5CTdZN6MZc0FOcUL0Olo6g` | `587437` | `11280` |
 | Million Hills | `million_hills_releases` | `1s2T5rJkG0LYiUswJKRY3o` | `17861230` | `11287` |
+| Lilly Era | `lilly_era_releases` | `5RfLnuLf2eUQbnOhS6GKUn` | `9814064` | `12263` |
+| Diepgraven | `diepgraven_records_all_releases` | `07MzpeD6a32EYRKuxp60o0` | `4704229` | `12262` |
 
 ## Isolation rule
 
