@@ -2,6 +2,7 @@ import { unstable_cache } from "next/cache";
 import { CACHE_TTL_1H } from "@/lib/constants";
 import { supabaseService } from "@/lib/supabase/service";
 import { normalizeKey, normalizeIsrc } from "./types";
+import { duplicatePlaylistIdWarnings } from "./duplicatePlaylistIds";
 import type {
   WarningRow,
   CatalogMissingSnapshotsDetailsJson,
@@ -406,6 +407,12 @@ async function computeActiveWarnings(
       details_json: { isrc_list: isrcList },
     });
   }
+
+  const { data: playlistConfig, error: playlistConfigError } = await svc
+    .from("playlists")
+    .select("playlist_key,display_name,spotify_playlist_id");
+  if (playlistConfigError) throw new Error(playlistConfigError.message);
+  active.push(...duplicatePlaylistIdWarnings(playlistConfig ?? [], targetRunDate));
 
   const criticalCount = active.filter(
     (w) => w.severity === "critical",

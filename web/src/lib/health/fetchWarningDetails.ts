@@ -1075,6 +1075,13 @@ export async function fetchDisplayedWarnings(
     run_date: String(w.run_date ?? ""),
     details_json: (w.details_json ?? null) as Record<string, unknown> | null,
   }));
+  // Include computed configuration warnings in All as well as Active.
+  const rawKeys = new Set(rawWarnings.map(warningIdentity));
+  for (const warning of activeWarnings) {
+    if (warning.code === "duplicate_spotify_playlist_id" && !rawKeys.has(warningIdentity(warning))) {
+      rawWarnings.push(warning);
+    }
+  }
   const activeKeys = new Set(activeWarnings.map(warningIdentity));
   const warnings =
     view === "active"

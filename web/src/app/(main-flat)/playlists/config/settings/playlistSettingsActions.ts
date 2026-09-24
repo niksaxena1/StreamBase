@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { cacheTagForKey } from "@/lib/supabase/cache";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
+import { recomputeActiveWarningSnapshot } from "@/lib/health/activeWarnings";
 
 function revalidatePlaylistCaches() {
   revalidateTag(cacheTagForKey("playlists-settings"), "max");
@@ -125,6 +126,9 @@ export async function updatePlaylist(formData: FormData) {
     .eq("playlist_key", playlistKey);
 
   if (upErr) throw new Error(upErr.message);
+  await recomputeActiveWarningSnapshot();
+  revalidateTag("health", "max");
+  revalidateTag("supabase", "max");
   revalidatePlaylistCaches();
 }
 
