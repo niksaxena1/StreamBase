@@ -16,6 +16,7 @@ import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 
 import { WarningsSection } from "@/components/health/WarningsSection";
 import { MissingCatalogSection } from "@/components/health/MissingCatalogSection";
+import { SpotifyAvailabilitySection } from "@/components/health/SpotifyAvailabilitySection";
 import { CompetitorHealthSection } from "./CompetitorHealthSection";
 import { ChartSkeleton, StatCardSkeleton, TableSkeleton } from "@/components/ui/Skeleton";
 
@@ -104,6 +105,10 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
 
       <Suspense fallback={<MissingSkeleton />}>
         <MissingCatalogSection runDate={shell.selectedRunDate} dataDate={shell.selectedDataDate} />
+      </Suspense>
+
+      <Suspense fallback={<MissingSkeleton />}>
+        <SpotifyAvailabilitySection />
       </Suspense>
 
       <CollapsibleSection title="Ingestion Runs (30d)" storageKey="sb:health:details:ingestion_runs">

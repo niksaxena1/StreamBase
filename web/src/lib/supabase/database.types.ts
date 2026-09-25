@@ -1147,6 +1147,91 @@ export type Database = {
         }
         Relationships: []
       }
+      spotify_track_availability: {
+        Row: {
+          first_checked_at: string
+          isrc: string
+          last_available_at: string | null
+          last_checked_at: string
+          markets_checked: string[]
+          reason: string | null
+          spotify_track_id: string
+          status: string
+          status_changed_at: string
+          unavailable_since: string | null
+        }
+        Insert: {
+          first_checked_at?: string
+          isrc: string
+          last_available_at?: string | null
+          last_checked_at?: string
+          markets_checked?: string[]
+          reason?: string | null
+          spotify_track_id: string
+          status: string
+          status_changed_at?: string
+          unavailable_since?: string | null
+        }
+        Update: {
+          first_checked_at?: string
+          isrc?: string
+          last_available_at?: string | null
+          last_checked_at?: string
+          markets_checked?: string[]
+          reason?: string | null
+          spotify_track_id?: string
+          status?: string
+          status_changed_at?: string
+          unavailable_since?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "spotify_track_availability_isrc_fkey"
+            columns: ["isrc"]
+            isOneToOne: true
+            referencedRelation: "tracks"
+            referencedColumns: ["isrc"]
+          },
+        ]
+      }
+      spotify_track_availability_events: {
+        Row: {
+          detected_at: string
+          event: string
+          id: number
+          isrc: string
+          notified_at: string | null
+          reason: string | null
+          spotify_track_id: string
+        }
+        Insert: {
+          detected_at?: string
+          event: string
+          id?: number
+          isrc: string
+          notified_at?: string | null
+          reason?: string | null
+          spotify_track_id: string
+        }
+        Update: {
+          detected_at?: string
+          event?: string
+          id?: number
+          isrc?: string
+          notified_at?: string | null
+          reason?: string | null
+          spotify_track_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "spotify_track_availability_events_isrc_fkey"
+            columns: ["isrc"]
+            isOneToOne: false
+            referencedRelation: "tracks"
+            referencedColumns: ["isrc"]
+          },
+        ]
+      }
       stream_lookup_results: {
         Row: {
           context: string
@@ -3309,6 +3394,18 @@ export type Database = {
         Returns: number
       }
       spotibase_system_stats: { Args: never; Returns: Json }
+      spotify_availability_candidates: {
+        Args: { p_lookback_days?: number }
+        Returns: {
+          album_image_url: string
+          artist_names: string[]
+          isrc: string
+          last_catalog_date: string
+          name: string
+          spotify_track_id: string
+          streams_cumulative: number
+        }[]
+      }
       track_series: {
         Args: { end_date: string; isrc: string; start_date: string }
         Returns: {

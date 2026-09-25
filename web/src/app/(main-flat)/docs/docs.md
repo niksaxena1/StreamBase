@@ -38,6 +38,7 @@ GitHub Actions scheduled workflows use **UTC**. Below is the same schedule shown
 
 | Workflow | When (UTC) | When (GMT+4) | What it does |
 |---|---:|---:|---|
+| Spotify takedown watch (`spotify_takedown_watch.yml`) | 04:37 | 08:37 | Checks every catalog track against the Spotify Web API and emails takedowns/restores (see **Spotify takedown watch**) |
 | Playlist refresh (`sot_daily_playlist_refresh.yml`) | 05:07 | 09:07 | Refreshes SpotOnTrack playlists |
 | Dashboard sync (`sot_daily_dashboard_sync.yml`) | 06:11 + 06:47 (fallback) | 10:11 + 10:47 | Keeps SpotOnTrack dashboards in sync with `config/playlists.csv` |
 | Daily export (`sot_daily_export.yml`) | 07:43 (primary) + 08:19 (fallback) + 11:23 (late retry) + 12:07 (final retry) | 11:43 + 12:19 + 15:23 + 16:07 | Exports dashboards → uploads to Storage → ingests into Supabase (idempotent; retries exit early once a run succeeds) |
@@ -468,6 +469,7 @@ Files:
   - Filter warnings by severity and playlist
   - Expand warnings to see impacted tracks (for supported warning types)
   - Export “missing catalog tracks” list
+  - See catalog tracks Spotify currently reports as unplayable (**Spotify availability** panel, fed by the daily takedown watch)
   - Download raw export CSVs for the selected run date
 
 Core warning types you’ll see:
@@ -493,6 +495,7 @@ Implementation pointers:
   - `supabase/migrations/20260130225814_add_health_missing_enrichment_tracks_rpc.sql`
   - `supabase/migrations/20260207214054_add_health_entity_distro_drift_rpc.sql`
   - `supabase/migrations/20260209020325_add_health_distro_overlap_rpc.sql`
+- Spotify availability panel: `web/src/components/health/SpotifyAvailabilitySection.tsx` (reads `spotify_track_availability`; see **Spotify takedown watch**)
 
 ### Settings (`/settings`)
 
@@ -728,6 +731,20 @@ Your DB may have additional columns; those are fine.
 | `refreshed_at` | timestamptz | Cache staleness control |
 
 ---
+
+### `spotify_track_availability` (takedown watch state)
+
+| Field | Type | Meaning / usage |
+|---|---|---|
+| `isrc` | text (PK → `tracks.isrc`) | Own-catalog track |
+| `spotify_track_id` | text | Id that was checked (from `tracks.spotify_track_id`) |
+| `status` | text | `available` / `unavailable` |
+| `reason` | text/null | `not_found` (404), `not_playable[:market]`, `no_markets`, `isrc_search_miss`, `relinked:<id>`, ... |
+| `markets_checked` | text[] | Markets tried on the last check (stops at the first playable one) |
+| `unavailable_since` | timestamptz/null | When the current unavailable streak was first seen |
+| `last_available_at` / `last_checked_at` / `status_changed_at` | timestamptz | Check bookkeeping |
+
+`spotify_track_availability_events` keeps the history: one row per `taken_down` / `restored` transition with `detected_at` and `notified_at` (null until the email went out; unsent events are retried on the next run).
 
 ## Warning code catalog (ingestion_warnings.code)
 
@@ -1000,6 +1017,21 @@ These are intentional guardrails to prevent the UI from trying to load “the en
 - In “Raw Exports”, click the `csv` link for the playlist key you want
 - If the link is missing, confirm `raw_exports` rows exist for that `run_id`
 
+### Spotify takedown watch
+
+SpotOnTrack data arrives ~2 days late, so a takedown normally surfaces late. `spotify_takedown_watch.yml` runs `scripts/check_spotify_track_availability.py` every morning (04:37 UTC):
+
+1. Candidates = every ISRC with a catalog snapshot (`track_daily_streams`) in the last 30 days, via `spotify_availability_candidates()`. Tracks without `spotify_track_id` are skipped (run Spotify enrichment first).
+2. `GET /v1/tracks/{id}?market=M` for US, GB, AE (override with the `SPOTIFY_AVAILABILITY_MARKETS` repo variable), stopping at the first market where it plays. 404 or `is_playable: false` everywhere = candidate takedown; `explicit`/`product` restrictions are ignored.
+3. Confirmed with a market-scoped ISRC search; if Spotify serves a playable copy under another id (relink / re-delivery) it is **not** reported.
+4. Transitions go to `spotify_track_availability_events` and one email lists every new takedown / restore.
+
+Safety valves: if ≥25 tracks and >10% of the catalog flip to unavailable in one run, or >50% of checks get no usable answer (e.g. Spotify API quota-mode changes), nothing is written or emailed and the workflow fails, so the failure email fires instead. Re-run with `skip_safety_valve=true` only after confirming a mass takedown is real.
+
+Diagnose one track: Actions → **Spotify Takedown Watch** → Run workflow → `track_id` (and optional `isrc`). It prints the raw API signals and verdict without touching the DB.
+
+Migration: `supabase/migrations/20260925183000_add_spotify_track_availability_watch.sql`.
+
 ### “Health shows non-catalog tracks; I know they’re intentional”
 
 - Go to `/settings`
@@ -1164,6 +1196,7 @@ Use this when you (or SAI) want to map what you see on screen to the canonical d
 | Table: `Playlist` | `ingestion_warnings.playlist_key` (nullable) |
 | Table: `Message` | `ingestion_warnings.message` |
 | `All Missing Catalog Tracks` | output of `health_missing_catalog_tracks(run_date)` |
+| `Spotify availability` | `spotify_track_availability` rows with `status = 'unavailable'` |
 | `Ingestion Runs (30d)` | last 30 rows from `ingestion_runs` |
 | `Raw Exports` | rows from `raw_exports` for the selected run |
 

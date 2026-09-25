@@ -1,0 +1,88 @@
+name: Spotify Takedown Watch
+
+# Own catalog only. Checks every catalog track against the Spotify Web API and
+# emails when one is taken down (or comes back), ~2 days before SpotOnTrack
+# data would show it. See scripts/check_spotify_track_availability.py.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Check without writing to Supabase or emailing"
+        required: false
+        default: "false"
+      track_id:
+        description: "Diagnose a single Spotify track id instead of a full run (prints raw API signals)"
+        required: false
+        default: ""
+      isrc:
+        description: "Optional ISRC for the single-track diagnosis"
+        required: false
+        default: ""
+      skip_safety_valve:
+        description: "Record a mass takedown anyway (only after confirming it is real)"
+        required: false
+        default: "false"
+  schedule:
+    # 08:37 Dubai / 04:37 UTC daily: before the SpotOnTrack jobs, so the alert
+    # is in the inbox at the start of the day.
+    - cron: "37 4 * * *"
+
+concurrency:
+  group: spotify-takedown-watch
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
+      SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
+      NOTIFY_SMTP_PASSWORD: ${{ secrets.NOTIFY_SMTP_PASSWORD }}
+      STREAMBASE_REVALIDATE_URL: ${{ secrets.STREAMBASE_REVALIDATE_URL }}
+      REVALIDATE_SECRET: ${{ secrets.REVALIDATE_SECRET }}
+      SPOTIFY_AVAILABILITY_MARKETS: ${{ vars.SPOTIFY_AVAILABILITY_MARKETS || 'US,GB,AE' }}
+      DRY_RUN: ${{ inputs.dry_run || 'false' }}
+      TRACK_ID: ${{ inputs.track_id || '' }}
+      ISRC: ${{ inputs.isrc || '' }}
+      SKIP_SAFETY_VALVE: ${{ inputs.skip_safety_valve || 'false' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Check Spotify availability
+        run: |
+          args=()
+          if [ -n "${TRACK_ID}" ]; then
+            args+=(--track-id "${TRACK_ID}" --isrc "${ISRC}")
+          else
+            [ "${DRY_RUN}" = "true" ] && args+=(--dry-run)
+            [ "${SKIP_SAFETY_VALVE}" = "true" ] && args+=(--skip-safety-valve)
+          fi
+          python scripts/check_spotify_track_availability.py "${args[@]}"
+
+      - name: Send failure notification
+        if: failure()
+        uses: ./.github/actions/notify-email
+        with:
+          password: ${{ secrets.NOTIFY_SMTP_PASSWORD }}
+          subject: "[StreamBase] Spotify Takedown Watch FAILED"
+          body: |
+            The Spotify Takedown Watch workflow failed, so takedowns may go unnoticed until it is fixed.
+            A deliberate stop (mass-takedown or "no usable answer" safety valve) also lands here; the run summary says which.
+
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
