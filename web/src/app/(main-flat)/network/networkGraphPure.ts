@@ -93,3 +93,25 @@ export function hexToRgba(hex: string, alpha: number): string {
 export function accentRgba(accentHex: string, alpha: number): string {
   return hexToRgba(accentHex, alpha);
 }
+
+/** Box/multi-select stats: collaboration edges inside the selection, their weight sum and union of shared ISRCs. */
+export function computeRangeSelectionStats(edges: GraphEdge[], rangeSelection: string[]) {
+  if (rangeSelection.length < 2) {
+    return {
+      internalEdges: [] as GraphEdge[],
+      unionIsrcs: [] as string[],
+      weightSum: 0,
+    };
+  }
+  const rs = new Set(rangeSelection);
+  const internalEdges = edges.filter((e) => rs.has(e.source) && rs.has(e.target));
+  const isrcs = new Set<string>();
+  let weightSum = 0;
+  for (const e of internalEdges) {
+    weightSum += e.weight ?? 0;
+    for (const t of e.shared_tracks ?? []) {
+      if (t.isrc) isrcs.add(t.isrc);
+    }
+  }
+  return { internalEdges, unionIsrcs: [...isrcs], weightSum };
+}

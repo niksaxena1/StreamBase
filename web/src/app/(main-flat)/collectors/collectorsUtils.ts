@@ -1,12 +1,22 @@
 import type { Granularity } from "@/components/ui/GranularitySelect";
 import type { CollectorDailyData } from "@/components/charts/CollectorComparisonChart";
+import {
+  computeDailyRollingAvg7,
+  computeRollingAvg7,
+  filterDailySeriesFromIsoDate,
+} from "@/components/charts/chartUtils";
+import { COLLECTOR_ORDER } from "./collectorsTypes";
 import type {
   CollectorOverlapArtistCell,
   CollectorOverlapCell,
   CollectorSeriesPoint,
+  CollectorTrackRow,
+  DrillKind,
   DrillPlaylistItem,
   DrillArtistItem,
   DrillTrackItem,
+  Metric,
+  TrackSort,
 } from "./collectorsTypes";
 
 export type CollectorPlaylistScopeRow = {
@@ -305,4 +315,283 @@ export function parseCollectorOverlapArtistCells(raw: unknown): CollectorOverlap
     collector_b_total: Number(row.collector_b_total ?? 0),
     jaccard: Number(row.jaccard ?? 0),
   }));
+}
+
+/** Per-collector daily sparklines (last 30 points) for the comparison table. */
+export function buildCollectorSparklines(
+  allCollectorsSeries: CollectorDailyData[],
+  chartStartDateIso: string,
+  streamPayoutPerStreamUsd: number,
+) {
+  const filtered = filterDailySeriesFromIsoDate(allCollectorsSeries ?? [], chartStartDateIso);
+  const byCollector = new Map<string, CollectorDailyData[]>();
+  for (const row of filtered) {
+    const c = String(row.collector ?? "").trim();
+    const d = String(row.date ?? "").trim();
+    if (!c || !d) continue;
+    const arr = byCollector.get(c) ?? [];
+    arr.push(row);
+    byCollector.set(c, arr);
+  }
+  for (const [c, arr] of byCollector) {
+    arr.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    byCollector.set(c, arr);
+  }
+
+  const build = (collector: string) => {
+    const rows = byCollector.get(collector) ?? [];
+    if (!rows.length) return { streams: null as number[] | null, revenue: null as number[] | null, tracks: null as number[] | null };
+
+    const streams = rows.map((r) => Number(r.daily_streams_net ?? 0)).filter((n) => Number.isFinite(n));
+    // Derived from the configured payout rate rather than the stored
+    // est_revenue_* columns so a changed Settings rate applies here too.
+    const revenue = rows
+      .map((r) => {
+        const n = Number(r.daily_streams_net ?? 0) * streamPayoutPerStreamUsd;
+        return Number.isFinite(n) ? n : null;
+      })
+      .filter((n): n is number => n !== null);
+
+    const tracksDelta: number[] = [];
+    for (let i = 1; i < rows.length; i++) {
+      const cur = Number(rows[i].track_count ?? 0);
+      const prev = Number(rows[i - 1].track_count ?? 0);
+      const d = Number.isFinite(cur) && Number.isFinite(prev) ? cur - prev : 0;
+      tracksDelta.push(d);
+    }
+
+    const takeLast = (arr: number[]) => (arr.length > 30 ? arr.slice(arr.length - 30) : arr);
+    return {
+      streams: takeLast(streams),
+      revenue: takeLast(revenue),
+      tracks: takeLast(tracksDelta),
+    };
+  };
+
+  const out = new Map<string, { streams: number[] | null; revenue: number[] | null; tracks: number[] | null }>();
+  for (const c of COLLECTOR_ORDER) {
+    out.set(c, build(c));
+  }
+  for (const c of byCollector.keys()) {
+    if (!out.has(c)) out.set(c, build(c));
+  }
+  return out;
+}
+
+/** Selected-collector revenue / streams / tracks series (cumulative + daily, with MA7), newest first. */
+export function buildCollectorMetricSeries(seriesDesc: CollectorSeriesPoint[], streamPayoutPerStreamUsd: number) {
+  const datesDesc = seriesDesc.map((p) => p.date);
+
+  const revenueTotalDesc = datesDesc.map((d, i) => ({
+    date: d,
+    value: Number(seriesDesc[i]?.total_streams_cumulative ?? 0) * streamPayoutPerStreamUsd,
+  }));
+  const revenueDailyDesc = datesDesc.map((d, i) => {
+    const curTotal = Number(seriesDesc[i]?.total_streams_cumulative ?? 0);
+    const prevTotal =
+      i + 1 < seriesDesc.length
+        ? Number(seriesDesc[i + 1]?.total_streams_cumulative ?? 0)
+        : curTotal;
+    if (i + 1 >= seriesDesc.length) return { date: d, daily: null };
+    const dailyStreams = Math.max(0, curTotal - prevTotal);
+    return { date: d, daily: dailyStreams * streamPayoutPerStreamUsd };
+  });
+
+  const streamsTotalDesc = datesDesc.map((d, i) => ({ date: d, value: Number(seriesDesc[i]?.total_streams_cumulative ?? 0) }));
+  const streamsDailyDesc = datesDesc.map((d, i) => {
+    const curTotal = Number(seriesDesc[i]?.total_streams_cumulative ?? 0);
+    const prevTotal =
+      i + 1 < seriesDesc.length
+        ? Number(seriesDesc[i + 1]?.total_streams_cumulative ?? 0)
+        : curTotal;
+    if (i + 1 >= seriesDesc.length) return { date: d, daily: null };
+    const daily = Math.max(0, curTotal - prevTotal);
+    return { date: d, daily };
+  });
+
+  const tracksTotalDesc = datesDesc.map((d, i) => ({ date: d, value: Number(seriesDesc[i]?.track_count ?? 0) }));
+  const tracksDailyDeltaDesc = datesDesc.map((d, i) => {
+    const cur = Number(seriesDesc[i]?.track_count ?? 0);
+    const prev = Number(seriesDesc[i + 1]?.track_count ?? 0);
+    return { date: d, daily: i + 1 < seriesDesc.length ? cur - prev : 0 };
+  });
+
+  return {
+    revenue: {
+      cumulative: computeRollingAvg7(revenueTotalDesc),
+      daily: computeDailyRollingAvg7(revenueDailyDesc),
+    },
+    streams: {
+      cumulative: computeRollingAvg7(streamsTotalDesc),
+      daily: computeDailyRollingAvg7(streamsDailyDesc),
+    },
+    tracks: {
+      cumulative: computeRollingAvg7(tracksTotalDesc),
+      daily: computeDailyRollingAvg7(tracksDailyDeltaDesc),
+    },
+  };
+}
+
+/** Drilldown modal rows: parse, filter by query, and sort by the effective metric. */
+export function filterSortDrillItems(
+  drillItems: unknown[],
+  drillKind: DrillKind,
+  debouncedDrillQuery: string,
+  metric: Metric,
+) {
+  const q = debouncedDrillQuery.trim().toLowerCase();
+  const effectiveMetric: Metric = drillKind === "tracks" && metric === "tracks" ? "streams" : metric;
+
+  if (drillKind === "playlists") {
+    let items = drillItems.map(parseDrillPlaylistItem).filter(Boolean) as DrillPlaylistItem[];
+    if (q) {
+      items = items.filter((p) => {
+        const name = (p.display_name ?? "").toLowerCase();
+        const key = (p.playlist_key ?? "").toLowerCase();
+        return name.includes(q) || key.includes(q);
+      });
+    }
+    items = [...items].sort((a, b) => {
+      const cmpNum = (x: number | null, y: number | null) => (y ?? -Infinity) - (x ?? -Infinity);
+      if (effectiveMetric === "tracks") return (b.track_count ?? 0) - (a.track_count ?? 0) || a.playlist_key.localeCompare(b.playlist_key);
+      if (effectiveMetric === "revenue") return cmpNum(a.est_revenue_daily_net, b.est_revenue_daily_net) || cmpNum(a.est_revenue_total, b.est_revenue_total) || a.playlist_key.localeCompare(b.playlist_key);
+      return cmpNum(a.daily_streams_net, b.daily_streams_net) || cmpNum(a.total_streams_cumulative, b.total_streams_cumulative) || a.playlist_key.localeCompare(b.playlist_key);
+    });
+    return items;
+  }
+
+  if (drillKind === "artists") {
+    let items = drillItems.map(parseDrillArtistItem).filter(Boolean) as DrillArtistItem[];
+    if (q) {
+      items = items.filter((a) => {
+        const name = String(a.name ?? "").toLowerCase();
+        const id = String(a.artist_id ?? "").toLowerCase();
+        return name.includes(q) || id.includes(q);
+      });
+    }
+    items = [...items].sort((a, b) => {
+      if (effectiveMetric === "tracks") return (b.track_count ?? 0) - (a.track_count ?? 0) || a.artist_id.localeCompare(b.artist_id);
+      const daily = (b.daily_streams_delta ?? 0) - (a.daily_streams_delta ?? 0);
+      return daily || (b.total_streams_cumulative ?? 0) - (a.total_streams_cumulative ?? 0) || a.artist_id.localeCompare(b.artist_id);
+    });
+    return items;
+  }
+
+  let items = drillItems.map(parseDrillTrackItem).filter(Boolean) as DrillTrackItem[];
+  if (q) {
+    items = items.filter((t) => {
+      const name = String(t.name ?? "").toLowerCase();
+      const isrc = String(t.isrc ?? "").toLowerCase();
+      const artists = (t.artist_names ?? []).join(", ").toLowerCase();
+      return name.includes(q) || isrc.includes(q) || artists.includes(q);
+    });
+  }
+  return items;
+}
+
+/** Collector tracks table rows: filter by query, then sort by the selected column. */
+export function filterSortCollectorTracks(
+  collectorTracks: CollectorTrackRow[],
+  debouncedTrackQuery: string,
+  trackSort: TrackSort,
+  tracksTableMetric: "streams" | "revenue",
+  payoutPerStreamUsd: number,
+) {
+  const q = debouncedTrackQuery.trim().toLowerCase();
+  let rows = collectorTracks ?? [];
+
+  if (q) {
+    rows = rows.filter((t) => {
+      const name = (t.name ?? "").toLowerCase();
+      const isrc = (t.isrc ?? "").toLowerCase();
+      const artists = (t.artist_names ?? []).join(", ").toLowerCase();
+      return name.includes(q) || isrc.includes(q) || artists.includes(q);
+    });
+  }
+
+  const safeNum = (n: number | null | undefined) => (n == null || Number.isNaN(n) ? null : Number(n));
+  const safeDateMs = (iso: string | null | undefined) => {
+    const s = String(iso ?? "").trim();
+    if (!s) return null;
+    const ms = new Date(`${s}T00:00:00Z`).getTime();
+    return Number.isFinite(ms) ? ms : null;
+  };
+
+  rows = [...rows].sort((a, b) => {
+    const aDeltaStreams = safeNum(a.daily_streams_delta);
+    const bDeltaStreams = safeNum(b.daily_streams_delta);
+    const aTotalStreams = safeNum(a.total_streams_cumulative);
+    const bTotalStreams = safeNum(b.total_streams_cumulative);
+    const aRelease = safeDateMs(a.release_date);
+    const bRelease = safeDateMs(b.release_date);
+    const aDistroCount = (a.distro_playlist_keys ?? []).length;
+    const bDistroCount = (b.distro_playlist_keys ?? []).length;
+
+    const toValue = (n: number | null) =>
+      n == null ? null : tracksTableMetric === "revenue" ? n * payoutPerStreamUsd : n;
+
+    const aDelta = toValue(aDeltaStreams);
+    const bDelta = toValue(bDeltaStreams);
+    const aTotal = toValue(aTotalStreams);
+    const bTotal = toValue(bTotalStreams);
+    const aName = (a.name ?? a.isrc ?? "").toLowerCase();
+    const bName = (b.name ?? b.isrc ?? "").toLowerCase();
+
+    const cmpNum = (x: number | null, y: number | null, dir: "asc" | "desc") => {
+      if (x == null && y == null) return 0;
+      if (x == null) return 1;
+      if (y == null) return -1;
+      return dir === "asc" ? x - y : y - x;
+    };
+
+    switch (trackSort) {
+      case "delta_desc":
+        return cmpNum(aDelta, bDelta, "desc") || cmpNum(aTotal, bTotal, "desc") || aName.localeCompare(bName);
+      case "delta_asc":
+        return cmpNum(aDelta, bDelta, "asc") || cmpNum(aTotal, bTotal, "desc") || aName.localeCompare(bName);
+      case "total_desc":
+        return cmpNum(aTotal, bTotal, "desc") || cmpNum(aDelta, bDelta, "desc") || aName.localeCompare(bName);
+      case "total_asc":
+        return cmpNum(aTotal, bTotal, "asc") || cmpNum(aDelta, bDelta, "desc") || aName.localeCompare(bName);
+      case "release_desc":
+        return cmpNum(aRelease, bRelease, "desc") || cmpNum(aTotal, bTotal, "desc") || aName.localeCompare(bName);
+      case "release_asc":
+        return cmpNum(aRelease, bRelease, "asc") || cmpNum(aTotal, bTotal, "desc") || aName.localeCompare(bName);
+      case "name_asc":
+        return aName.localeCompare(bName) || cmpNum(aTotal, bTotal, "desc");
+      case "name_desc":
+        return bName.localeCompare(aName) || cmpNum(aTotal, bTotal, "desc");
+      case "distro_desc":
+        return (bDistroCount - aDistroCount) || cmpNum(aTotal, bTotal, "desc") || aName.localeCompare(bName);
+      case "distro_asc":
+        return (aDistroCount - bDistroCount) || cmpNum(aTotal, bTotal, "desc") || aName.localeCompare(bName);
+      default:
+        return 0;
+    }
+  });
+
+  return rows;
+}
+
+/** Summary cards above the collector tracks table. */
+export function computeTopTrackCards(collectorTracks: CollectorTrackRow[]) {
+  const rows = collectorTracks ?? [];
+
+  const bestDelta = rows
+    .filter((t) => t.daily_streams_delta != null)
+    .reduce<typeof rows[number] | null>((best, cur) => {
+      if (!best) return cur;
+      return (cur.daily_streams_delta ?? -Infinity) > (best.daily_streams_delta ?? -Infinity) ? cur : best;
+    }, null);
+
+  const bestTotal = rows
+    .filter((t) => t.total_streams_cumulative != null)
+    .reduce<typeof rows[number] | null>((best, cur) => {
+      if (!best) return cur;
+      return (cur.total_streams_cumulative ?? -Infinity) > (best.total_streams_cumulative ?? -Infinity) ? cur : best;
+    }, null);
+
+  const distroCount = rows.filter((t) => (t.distro_playlist_keys ?? []).length > 0).length;
+
+  return { bestDelta, bestTotal, distroCount, totalCount: rows.length };
 }

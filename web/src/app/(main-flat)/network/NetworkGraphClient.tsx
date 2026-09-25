@@ -11,43 +11,17 @@ import {
 } from "react";
 import type { ForwardRefExoticComponent, RefAttributes } from "react";
 import dynamic from "next/dynamic";
-import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import type { ForceGraphMethods, ForceGraphProps } from "react-force-graph-2d";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import {
-  Search,
-  RotateCcw,
-  ImageIcon,
-  Scaling,
-  UserRound,
-  UserX,
-  Table2,
-  SquareDashed,
-  HelpCircle,
-  Download,
-  Loader2,
-  X,
-  Filter,
-  Music,
-} from "lucide-react";
+import { UserRound } from "lucide-react";
 import { fetchApiJson } from "@/lib/api";
 import { dispatchCompetitorLabelChange } from "@/lib/competitorAccentEvents";
 import type { DatasetMode } from "@/lib/datasetMode";
 import type { NetworkGraphMode } from "@/lib/network/loadNetworkPage";
-import { formatInt } from "@/lib/format";
-import { slugifyForFilename, todayIsoDate } from "@/lib/csv";
-import {
-  downloadNetworkViewXlsx,
-  type NetworkArtistStreamExportRow,
-  type NetworkTrackSheetEnrichment,
-  type NetworkViewExportEdge,
-} from "@/lib/networkViewXlsx";
+import type { NetworkArtistStreamExportRow } from "@/lib/networkViewXlsx";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
 import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
 import { useThemeColors } from "@/components/charts/useThemeColors";
-import { IconButton } from "@/components/ui/Button";
-import { MenuSelect, type MenuSelectOption } from "@/components/ui/MenuSelect";
-import { Modal } from "@/components/ui/Modal";
 import {
   ArtistDistroTracksModal,
   type ArtistDistroTrackRow,
@@ -67,44 +41,47 @@ import { FrozenEdgeTrackDetailModal } from "./FrozenEdgeTrackDetailModal";
 import { SharedTracksListModal } from "./SharedTracksListModal";
 import { NetworkArtistsTable } from "./NetworkArtistsTable";
 import { NetworkLinkCollaborationTooltipContent } from "./NetworkLinkCollaborationTooltip";
+import { NetworkNodeTooltipContent } from "./NetworkNodeTooltip";
+import { NetworkHelpModal } from "./NetworkHelpModal";
+import {
+  NetworkArtistSearch,
+  NetworkCoArtistFilter,
+  NetworkScopeMenu,
+  NetworkToolbarActions,
+  NetworkToolbarBanners,
+  NetworkToolbarStats,
+  NetworkTrackCountFilter,
+  buildNetworkScopeMenuOptions,
+} from "./NetworkToolbar";
 import {
   SelectionCollabsModal,
   SelectionScopedTracksModal,
   SelectionStatsPanel,
 } from "./NetworkSelectionPanels";
-import { SelectedArtistPanel, ToggleButton } from "./NetworkSelectedArtistPanel";
+import { CrossLabelSelectedPanel, SelectedArtistPanel } from "./NetworkSelectedArtistPanel";
 import {
   CAMERA_SAVE_MS,
   LS_NETWORK_CAMERA,
   LS_NETWORK_SHOW_GRID,
-  MAX_SEL_URL,
   readNetworkShowGridFromStorage,
-  NETWORK_GRID_MAX_LINES_PER_AXIS,
-  NETWORK_GRID_MINOR_MAX_LINES_PER_AXIS,
-  NETWORK_GRID_MINOR_MAX_PX,
-  NETWORK_GRID_MINOR_MIN_PX,
-  NETWORK_GRID_TARGET_PX,
   NETWORK_LONG_PRESS_MS,
   NETWORK_LONG_PRESS_MOVE_PX,
-  SPOTIBASE_PUBLIC_ORIGIN,
   SCOPE_CATALOG,
   SCOPE_CUSTOM,
 } from "./networkGraphConstants";
-import { getImage } from "./networkGraphImageCache";
+import { drawNetworkBackgroundGrid, pickNetworkNodeAtClientPos } from "./networkGraphCanvas";
 import {
   accentRgba,
   buildAdjacency,
   collaborationLinkKey,
+  computeRangeSelectionStats,
   isTypingTarget,
   linkEndpointId,
-  nearGridMultiple,
-  pickNiceGridStep,
-  scaleLinear,
   trackScopedCoartistCount,
   type FGLinkObj,
   type FGNodeObj,
 } from "./networkGraphPure";
-import type { CollabCountBasis, NetworkTableSortKey } from "./networkGraphTypes";
+import type { CollabCountBasis, NetworkTableSortKey, NetworkUrlPatch } from "./networkGraphTypes";
 import {
   buildNetworkQueryString,
   coartistCountInRange,
@@ -115,7 +92,6 @@ import {
   parseCollabRangeBounds,
   parseNetworkTableSort,
   parseTrackCountBounds,
-  parseTrackCountInputDraft,
   readNetworkToggles,
 } from "./networkGraphUrl";
 import {
@@ -125,10 +101,11 @@ import {
   formatNetworkScopeLabel,
   networkScopeIdentity,
   parseNetworkScope,
-  type NetworkScopeState,
 } from "./networkScope";
 import type { GraphNode, GraphEdge, NetworkPlaylistOption, SharedTrack } from "./networkTypes";
-
+import { runNetworkViewXlsxExport } from "./networkViewExport";
+import { useNetworkGraphPainters } from "./useNetworkGraphPainters";
+import { useNetworkNodeFilters } from "./useNetworkNodeFilters";
 // Force-graph uses Canvas/WebGL — must skip SSR.
 const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), {
   ssr: false,
@@ -435,55 +412,10 @@ export function NetworkGraphClient({
     return () => document.removeEventListener("visibilitychange", fn);
   }, []);
 
-  const playlistScopeOptions = useMemo((): MenuSelectOption[] => {
-    /* Match dashboard `Combobox` `isAllCatalog` tile (accent + Music). */
-    const catalogThumb = (
-      <div
-        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg"
-        style={{ backgroundColor: "var(--sb-accent)" }}
-        aria-hidden
-      >
-        <Music className="h-3.5 w-3.5" strokeWidth={2} style={{ color: "black" }} />
-      </div>
-    );
-    const customThumb = (
-      <div
-        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-[10px] font-semibold"
-        style={{ backgroundColor: "var(--sb-surface)", color: "var(--sb-accent)" }}
-        aria-hidden
-      >
-        +
-      </div>
-    );
-    const customLabel =
-      networkScope.mode === "custom"
-        ? formatNetworkScopeLabel(networkScope, playlistNameByKey)
-        : "Custom playlist scope…";
-    return [
-      { value: SCOPE_CATALOG, label: catalogScopeLabel, leading: catalogThumb },
-      { value: SCOPE_CUSTOM, label: customLabel, leading: customThumb },
-      ...scopePlaylists.map((p) => ({
-        value: p.playlist_key,
-        label: p.display_name,
-        leading: p.spotify_playlist_image_url ? (
-          <PreviewableArtwork
-            src={p.spotify_playlist_image_url}
-            alt={p.display_name}
-            width={24}
-            height={24}
-            interactive="inline"
-            className="h-6 w-6 shrink-0 rounded-lg object-cover"
-          />
-        ) : (
-          <div
-            className="h-6 w-6 shrink-0 rounded-lg"
-            style={{ backgroundColor: "var(--sb-surface)" }}
-            aria-hidden
-          />
-        ),
-      })),
-    ];
-  }, [scopePlaylists, networkScope, playlistNameByKey, catalogScopeLabel]);
+  const playlistScopeOptions = useMemo(
+    () => buildNetworkScopeMenuOptions(scopePlaylists, networkScope, playlistNameByKey, catalogScopeLabel),
+    [scopePlaylists, networkScope, playlistNameByKey, catalogScopeLabel],
+  );
 
   const scopeMenuValue = useMemo(() => {
     if (networkScope.mode === "catalog") return SCOPE_CATALOG;
@@ -512,71 +444,23 @@ export function NetworkGraphClient({
     return `Co-artists ${range}; ${collabCountBasis === "playlist" ? "playlist-wide" : "primary rows"}`;
   }, [collabFilterMin, collabFilterMax, collabCountBasis]);
 
-  // Compute node size range
-  const { minTrackCount, maxTrackCount } = useMemo(() => {
-    let min = Infinity;
-    let max = -Infinity;
-    for (const n of nodes) {
-      if (n.track_count < min) min = n.track_count;
-      if (n.track_count > max) max = n.track_count;
-    }
-    return { minTrackCount: min, maxTrackCount: max };
-  }, [nodes]);
-
-  /** Graph edge degree (co-primary links only when hide-non-primary — can undercount). */
-  const graphDegreeMap = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const e of edges) {
-      map.set(e.source, (map.get(e.source) ?? 0) + 1);
-      map.set(e.target, (map.get(e.target) ?? 0) + 1);
-    }
-    return map;
-  }, [edges]);
-
-  /** Distinct co-credited artists — basis picks playlist-wide vs primary-row-only. */
-  const trackCollabFilterMap = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const node of nodes) {
-      map.set(node.id, trackScopedCoartistCount(node, collabCountBasis));
-    }
-    return map;
-  }, [nodes, collabCountBasis]);
-
-  const collabVisibleNodeIds = useMemo(() => {
-    if (!collabRangeIsActive(collabFilterMin, collabFilterMax)) return null;
-    const s = new Set<string>();
-    for (const node of nodes) {
-      const cnt = trackCollabFilterMap.get(node.id) ?? 0;
-      if (coartistCountInRange(cnt, collabFilterMin, collabFilterMax)) s.add(node.id);
-    }
-    return s;
-  }, [nodes, trackCollabFilterMap, collabFilterMin, collabFilterMax]);
-
-  const { trackCountMinEffective, trackCountMaxEffective } = useMemo(() => {
-    const a = trackCountMin;
-    const b = trackCountMax;
-    if (a != null && b != null && a > b) {
-      return { trackCountMinEffective: b, trackCountMaxEffective: a };
-    }
-    return { trackCountMinEffective: a, trackCountMaxEffective: b };
-  }, [trackCountMin, trackCountMax]);
-
-  /** Co-artist filter ∩ in-scope track-count bounds (graph node `track_count`). */
-  const filteredVisibleNodeIds = useMemo(() => {
-    const hasCollab = collabVisibleNodeIds !== null;
-    const hasTc = trackCountMinEffective != null || trackCountMaxEffective != null;
-    if (!hasCollab && !hasTc) return null;
-
-    const out = new Set<string>();
-    for (const node of nodes) {
-      if (hasCollab && !collabVisibleNodeIds!.has(node.id)) continue;
-      const tc = node.track_count ?? 0;
-      if (trackCountMinEffective != null && tc < trackCountMinEffective) continue;
-      if (trackCountMaxEffective != null && tc > trackCountMaxEffective) continue;
-      out.add(node.id);
-    }
-    return out;
-  }, [nodes, collabVisibleNodeIds, trackCountMinEffective, trackCountMaxEffective]);
+  const {
+    minTrackCount,
+    maxTrackCount,
+    graphDegreeMap,
+    trackCollabFilterMap,
+    trackCountMinEffective,
+    trackCountMaxEffective,
+    filteredVisibleNodeIds,
+  } = useNetworkNodeFilters({
+    nodes,
+    edges,
+    collabCountBasis,
+    collabFilterMin,
+    collabFilterMax,
+    trackCountMin,
+    trackCountMax,
+  });
 
   const networkAdvAllowedIds = useMemo(() => {
     if (!networkAdvFilterApplied || !hasActiveConditions(networkAdvFilterApplied)) return null;
@@ -777,46 +661,14 @@ export function NetworkGraphClient({
       const fg = fgRef.current;
       const host = containerRef.current;
       if (!fg || !host) return null;
-      const r = host.getBoundingClientRect();
-      const px = clientX - r.left;
-      const py = clientY - r.top;
-      if (px < 0 || py < 0 || px > dimensions.width || py > dimensions.height) return null;
-      let k: number;
-      try {
-        k = fg.zoom();
-      } catch {
-        return null;
-      }
-      if (!Number.isFinite(k) || k < 0.001) return null;
-
-      let best: FGNodeObj | null = null;
-      let bestD = Infinity;
-      for (const n of graphData.nodes as FGNodeObj[]) {
-        const nx = n.x;
-        const ny = n.y;
-        if (!Number.isFinite(nx) || !Number.isFinite(ny)) continue;
-        const gx = nx as number;
-        const gy = ny as number;
-        const baseSize = scaleByTracks
-          ? scaleLinear(n.track_count ?? 1, minTrackCount, maxTrackCount, 3, 16)
-          : 5;
-        const hitSize = Math.max(baseSize, 6);
-        const hitR = hitSize * k;
-        let scr: { x: number; y: number };
-        try {
-          scr = fg.graph2ScreenCoords(gx, gy);
-        } catch {
-          continue;
-        }
-        const dx = px - scr.x;
-        const dy = py - scr.y;
-        const d = Math.hypot(dx, dy);
-        if (d <= hitR && d < bestD) {
-          bestD = d;
-          best = n;
-        }
-      }
-      return best;
+      return pickNetworkNodeAtClientPos(fg, host, clientX, clientY, {
+        width: dimensions.width,
+        height: dimensions.height,
+        nodes: graphData.nodes as FGNodeObj[],
+        scaleByTracks,
+        minTrackCount,
+        maxTrackCount,
+      });
     },
     [
       dimensions.width,
@@ -909,183 +761,21 @@ export function NetworkGraphClient({
     setXlsxExportAlert(null);
     setXlsxExportPhase("Preparing…");
     try {
-      const scopeSlug = slugifyForFilename(networkExportScopeLabel);
-      const isrcSet = new Set<string>();
-      for (const e of graphData.links) {
-        for (const t of e.shared_tracks ?? []) {
-          const id = String(t.isrc ?? "").trim();
-          if (id) isrcSet.add(id);
-        }
-      }
-      const isrcList = [...isrcSet];
-      const trackEnrichment = new Map<string, NetworkTrackSheetEnrichment>();
-      const ISRC_BATCH = 3500;
-      const ISRC_PARALLEL = 3;
-      let trackEnrichmentBatchFailures = 0;
-
-      const artistIdsForStats = graphData.nodes
-        .map((n) => n.id)
-        .filter((id) => String(id).trim().length > 0);
-
-      const artistStreamStatsPromise = (async (): Promise<{
-        map: Map<string, NetworkArtistStreamExportRow>;
-        ok: boolean;
-      }> => {
-        if (!artistIdsForStats.length) {
-          return { map: new Map(), ok: true };
-        }
-        try {
-          const js = await fetchApiJson<{
-            rows?: Array<{
-              artist_id: string;
-              total_streams_in_scope: number;
-              daily_streams_in_scope: number;
-              tracks_all_catalog: number;
-              total_streams_all_catalog: number;
-              daily_streams_all_catalog: number;
-            }>;
-          }>("/api/admin/network-export-artist-stream-stats", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              artistIds: artistIdsForStats,
-              playlistKey: playlistKey ?? null,
-              hideNonPrimary,
-            }),
-          });
-          const map = new Map<string, NetworkArtistStreamExportRow>();
-          for (const r of js.rows ?? []) {
-            map.set(r.artist_id, {
-              total_streams_in_scope: r.total_streams_in_scope,
-              daily_streams_in_scope: r.daily_streams_in_scope,
-              tracks_all_catalog: r.tracks_all_catalog,
-              total_streams_all_catalog: r.total_streams_all_catalog,
-              daily_streams_all_catalog: r.daily_streams_all_catalog,
-            });
-          }
-          return { map, ok: true };
-        } catch (e) {
-          console.error("network-export-artist-stream-stats:", e);
-          return { map: new Map(), ok: false };
-        }
-      })();
-
-      const parts: string[][] = [];
-      for (let i = 0; i < isrcList.length; i += ISRC_BATCH) {
-        parts.push(isrcList.slice(i, i + ISRC_BATCH));
-      }
-
-      if (parts.length) {
-        setXlsxExportPhase(`Track metadata 0/${parts.length}`);
-      } else if (artistIdsForStats.length) {
-        setXlsxExportPhase("Loading artist stream totals…");
-      }
-
-      let nextBatchIdx = 0;
-      let completedBatches = 0;
-
-      async function fetchOneIsrcBatch(part: string[]): Promise<void> {
-        let j: {
-          tracks?: Array<{
-            isrc: string;
-            name: string | null;
-            release_date: string | null;
-            totalStreams: number | null;
-            dailyStreams: number | null;
-            artistsOnTrack?: string;
-            distroPlaylists?: string;
-            spotify_track_id?: string | null;
-          }>;
-        };
-        try {
-          j = await fetchApiJson("/api/admin/isrc-batch-details", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ isrcs: part }),
-          });
-        } catch (e) {
-          trackEnrichmentBatchFailures += 1;
-          console.error("isrc-batch-details for export:", e);
-          return;
-        }
-        for (const t of j.tracks ?? []) {
-          const sid = t.spotify_track_id;
-          trackEnrichment.set(t.isrc, {
-            catalogName: t.name,
-            artistsOnTrack: t.artistsOnTrack ?? "",
-            totalStreams: t.totalStreams ?? null,
-            dailyStreams: t.dailyStreams ?? null,
-            releaseDate: t.release_date,
-            distroPlaylists: t.distroPlaylists ?? "",
-            spotifyTrackId: typeof sid === "string" && sid.trim() ? sid.trim() : null,
-          });
-        }
-      }
-
-      async function isrcWorker(): Promise<void> {
-        while (true) {
-          const i = nextBatchIdx++;
-          if (i >= parts.length) break;
-          await fetchOneIsrcBatch(parts[i]!);
-          completedBatches += 1;
-          setXlsxExportPhase(`Track metadata ${completedBatches}/${parts.length}`);
-        }
-      }
-
-      const workerCount = parts.length === 0 ? 0 : Math.min(ISRC_PARALLEL, parts.length);
-      await Promise.all(Array.from({ length: workerCount }, () => isrcWorker()));
-
-      setXlsxExportPhase("Finishing data…");
-      const { map: artistStreamStatsById, ok: artistStreamStatsOk } = await artistStreamStatsPromise;
-
-      setXlsxExportPhase("Building spreadsheet…");
-      const qs = searchParams.toString();
-      const pageUrl = `${SPOTIBASE_PUBLIC_ORIGIN}${pathname || ""}${qs ? `?${qs}` : ""}`;
-      const exportOrigin = SPOTIBASE_PUBLIC_ORIGIN;
-
-      await downloadNetworkViewXlsx({
-        meta: {
-          scopeLabel: networkExportScopeLabel,
-          hideNonPrimary,
-          collabFilterLabel: collabFilterExportLabel,
-          collabCountBasisLabel,
-          exportedAtIso: new Date().toISOString(),
-          pageUrl,
-          fullGraphArtistCount: nodes.length,
-          fullGraphCollaborationCount: edges.length,
-          trackEnrichmentIsrcRequested: isrcList.length,
-          trackEnrichmentIsrcLoaded: trackEnrichment.size,
-          trackEnrichmentBatchFailures,
-        },
-        viewNodes: graphData.nodes.map((n) => ({
-          id: n.id,
-          name: n.name,
-          track_count: n.track_count,
-        })),
-        viewEdges: graphData.links as unknown as NetworkViewExportEdge[],
-        fullEdges: edges as unknown as NetworkViewExportEdge[],
-        fullArtistNameById: new Map(nodes.map((n) => [n.id, n.name])),
-        fullCollabCountById: trackCollabFilterMap,
-        filenameBase: `network_${scopeSlug}_${todayIsoDate()}`,
-        exportOrigin,
-        trackEnrichment,
-        artistStreamStatsById,
+      await runNetworkViewXlsxExport({
+        networkExportScopeLabel,
+        hideNonPrimary,
+        collabFilterExportLabel,
+        collabCountBasisLabel,
+        graphData: { nodes: graphData.nodes, links: graphData.links },
+        nodes,
+        edges,
+        trackCollabFilterMap,
+        playlistKey,
+        pathname,
+        searchParams,
+        setXlsxExportPhase,
+        setXlsxExportAlert,
       });
-
-      const issues: string[] = [];
-      if (trackEnrichmentBatchFailures > 0) {
-        issues.push(
-          `${trackEnrichmentBatchFailures} track metadata batch request(s) failed`,
-        );
-      }
-      if (!artistStreamStatsOk && artistIdsForStats.length > 0) {
-        issues.push("Artist stream totals could not be loaded");
-      }
-      if (issues.length) {
-        setXlsxExportAlert(
-          `${issues.join(". ")}. The file still downloaded; check the Summary sheet and empty columns.`,
-        );
-      }
     } catch (err) {
       console.error("network xlsx export failed:", err);
       setXlsxExportAlert("Export failed. Check the console and try again.");
@@ -1118,21 +808,7 @@ export function NetworkGraphClient({
   const rangeSet = useMemo(() => new Set(rangeSelection), [rangeSelection]);
 
   const pushNetworkUrl = useCallback(
-    (patch: Partial<{
-      scope: NetworkScopeState;
-      hideNonPrimary: boolean;
-      scaleByTracks: boolean;
-      showImages: boolean;
-      tableView: boolean;
-      collabMin: number | null;
-      collabMax: number | null;
-      collabCountBasis: CollabCountBasis;
-      trackCountMin: number | null;
-      trackCountMax: number | null;
-      selectedIds: string[];
-      tableSortKey: NetworkTableSortKey;
-      tableSortDir: "asc" | "desc";
-    }>) => {
+    (patch: NetworkUrlPatch) => {
       const scope = patch.scope ?? scopeRef.current;
       const q = buildNetworkQueryString({
         scope,
@@ -1272,26 +948,7 @@ export function NetworkGraphClient({
     };
   }, []);
 
-  const rangeStats = useMemo(() => {
-    if (rangeSelection.length < 2) {
-      return {
-        internalEdges: [] as GraphEdge[],
-        unionIsrcs: [] as string[],
-        weightSum: 0,
-      };
-    }
-    const rs = new Set(rangeSelection);
-    const internalEdges = edges.filter((e) => rs.has(e.source) && rs.has(e.target));
-    const isrcs = new Set<string>();
-    let weightSum = 0;
-    for (const e of internalEdges) {
-      weightSum += e.weight ?? 0;
-      for (const t of e.shared_tracks ?? []) {
-        if (t.isrc) isrcs.add(t.isrc);
-      }
-    }
-    return { internalEdges, unionIsrcs: [...isrcs], weightSum };
-  }, [edges, rangeSelection]);
+  const rangeStats = useMemo(() => computeRangeSelectionStats(edges, rangeSelection), [edges, rangeSelection]);
 
   const selectionTotalsFetchKey = useMemo(() => {
     if (rangeSelection.length === 0) return "";
@@ -1383,159 +1040,22 @@ export function NetworkGraphClient({
     if (!isLinkHighlighted(pinnedLink)) clearPinnedLink();
   }, [pinnedLink, isLinkHighlighted, clearPinnedLink, selectedNodeId, rangeSelection]);
 
-  /* -------- Node rendering -------- */
+  /* -------- Node / link rendering -------- */
 
-  const nodeVal = useCallback(
-    (node: FGNodeObj) => {
-      if (!scaleByTracks) return 2;
-      return scaleLinear(node.track_count ?? 1, minTrackCount, maxTrackCount, 1, 12);
-    },
-    [scaleByTracks, minTrackCount, maxTrackCount],
-  );
-
-  const nodeCanvasObject = useCallback(
-    (node: FGNodeObj, ctx: CanvasRenderingContext2D, globalScale: number) => {
-      const id = node.id as string;
-      const highlighted = isHighlighted(id);
-      const alpha = highlighted ? 1 : 0.12;
-      const inRange = rangeSet.size > 0 && rangeSet.has(id);
-
-      const baseSize = scaleByTracks
-        ? scaleLinear(node.track_count ?? 1, minTrackCount, maxTrackCount, 3, 16)
-        : 5;
-      const size = baseSize;
-
-      const x = node.x ?? 0;
-      const y = node.y ?? 0;
-
-      ctx.save();
-      ctx.globalAlpha = alpha;
-
-      // Draw image or circle
-      const img = showImages && node.image_url ? getImage(node.image_url) : null;
-      if (img) {
-        ctx.beginPath();
-        ctx.arc(x, y, size, 0, 2 * Math.PI);
-        ctx.closePath();
-        ctx.clip();
-        ctx.drawImage(img, x - size, y - size, size * 2, size * 2);
-        // Border ring
-        ctx.restore();
-        ctx.save();
-        ctx.globalAlpha = alpha;
-        ctx.beginPath();
-        ctx.arc(x, y, size, 0, 2 * Math.PI);
-        ctx.strokeStyle = colors.accent;
-        ctx.lineWidth = 1.2 / globalScale;
-        ctx.stroke();
-      } else {
-        // Solid circle
-        ctx.beginPath();
-        ctx.arc(x, y, size, 0, 2 * Math.PI);
-        ctx.fillStyle =
-          id === selectedNodeId || inRange ? colors.accent : colors.accentStroke;
-        ctx.fill();
-
-        // Subtle glow for selected
-        if (id === selectedNodeId || inRange) {
-          ctx.shadowColor = colors.accent;
-          ctx.shadowBlur = 12;
-          ctx.fill();
-          ctx.shadowBlur = 0;
-        }
-      }
-
-      if (inRange) {
-        ctx.globalAlpha = 1;
-        ctx.beginPath();
-        ctx.arc(x, y, size + 2.5 / globalScale, 0, 2 * Math.PI);
-        ctx.strokeStyle = colors.accent;
-        ctx.lineWidth = 2 / globalScale;
-        ctx.stroke();
-      }
-
-      // Label (show when zoomed in or when highlighted)
-      const showLabel =
-        globalScale > 1.8 ||
-        id === selectedNodeId ||
-        inRange ||
-        id === (hoveredNode?.id as string);
-      if (showLabel && highlighted) {
-        const label = node.name ?? id;
-        const fontSize = Math.max(10 / globalScale, 2);
-        ctx.font = `${fontSize}px sans-serif`;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "top";
-        ctx.fillStyle = colors.text;
-        ctx.globalAlpha = alpha * 0.9;
-        ctx.fillText(label, x, y + size + 2 / globalScale);
-      }
-
-      ctx.restore();
-    },
-    [
-      isHighlighted,
-      scaleByTracks,
-      showImages,
-      minTrackCount,
-      maxTrackCount,
-      selectedNodeId,
-      hoveredNode,
-      colors,
-      rangeSet,
-    ],
-  );
-
-  // Hit area for pointer
-  const nodePointerAreaPaint = useCallback(
-    (node: FGNodeObj, color: string, ctx: CanvasRenderingContext2D) => {
-      const size = scaleByTracks
-        ? scaleLinear(node.track_count ?? 1, minTrackCount, maxTrackCount, 3, 16)
-        : 5;
-      const hitSize = Math.max(size, 6);
-      ctx.beginPath();
-      ctx.arc(node.x ?? 0, node.y ?? 0, hitSize, 0, 2 * Math.PI);
-      ctx.fillStyle = color;
-      ctx.fill();
-    },
-    [scaleByTracks, minTrackCount, maxTrackCount],
-  );
-
-  /* -------- Link rendering -------- */
-
-  const linkWidth = useCallback(
-    (link: FGLinkObj) => {
-      const w = (link as unknown as GraphEdge).weight ?? 1;
-      let width = Math.min(w * 0.8, 6);
-      const key = collaborationLinkKey(link);
-      const hoverOrPin =
-        (hoveredLink != null && collaborationLinkKey(hoveredLink) === key) ||
-        (pinnedLink != null && collaborationLinkKey(pinnedLink) === key);
-      if (hoverOrPin) width = Math.min(width + 1.25, 8);
-      return width;
-    },
-    [hoveredLink, pinnedLink],
-  );
-
-  const linkColor = useCallback(
-    (link: FGLinkObj) => {
-      const hl = isLinkHighlighted(link);
-      if (!hl) return colors.isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.03)";
-      const w = (link as unknown as GraphEdge).weight ?? 1;
-      let a = Math.min(0.15 + w * 0.1, 0.6);
-      const key = collaborationLinkKey(link);
-      const isHover =
-        hoveredLink != null && collaborationLinkKey(hoveredLink) === key;
-      const isPinned =
-        pinnedLink != null && collaborationLinkKey(pinnedLink) === key;
-      // Brighter stroke for interactive focus: hover preview or frozen tooltip anchor.
-      if (isHover || isPinned) {
-        a = Math.min(a + 0.24, 0.92);
-      }
-      return accentRgba(colors.accent, a);
-    },
-    [isLinkHighlighted, colors, hoveredLink, pinnedLink],
-  );
+  const { nodeVal, nodeCanvasObject, nodePointerAreaPaint, linkWidth, linkColor } = useNetworkGraphPainters({
+    scaleByTracks,
+    showImages,
+    minTrackCount,
+    maxTrackCount,
+    selectedNodeId,
+    hoveredNode,
+    hoveredLink,
+    pinnedLink,
+    rangeSet,
+    isHighlighted,
+    isLinkHighlighted,
+    colors,
+  });
 
   /** World-space grid (pans/zooms with the graph) for spatial reference while navigating. */
   const onRenderFramePre = useCallback(
@@ -1546,141 +1066,7 @@ export function NetworkGraphClient({
       if (!fg || w < 8 || h < 8 || !Number.isFinite(globalScale) || globalScale < 0.001) return;
       if (!showBackgroundGrid) return;
 
-      let tl: { x: number; y: number };
-      let br: { x: number; y: number };
-      try {
-        tl = fg.screen2GraphCoords(0, 0);
-        br = fg.screen2GraphCoords(w, h);
-      } catch {
-        return;
-      }
-
-      let minX = Math.min(tl.x, br.x);
-      let maxX = Math.max(tl.x, br.x);
-      let minY = Math.min(tl.y, br.y);
-      let maxY = Math.max(tl.y, br.y);
-
-      let step = pickNiceGridStep(NETWORK_GRID_TARGET_PX / globalScale);
-      const spanX = maxX - minX;
-      const spanY = maxY - minY;
-      for (let i = 0; i < 24; i++) {
-        if (
-          !(spanX > 0 && spanX / step > NETWORK_GRID_MAX_LINES_PER_AXIS) &&
-          !(spanY > 0 && spanY / step > NETWORK_GRID_MAX_LINES_PER_AXIS)
-        ) {
-          break;
-        }
-        step *= 2;
-      }
-      for (let i = 0; i < 24; i++) {
-        if (!(spanX > 0 && spanY > 0 && spanX / step < 5 && spanY / step < 5)) break;
-        step /= 2;
-      }
-      step = Math.max(step, 1e-8);
-
-      const pad = step;
-      minX -= pad;
-      maxX += pad;
-      minY -= pad;
-      maxY += pad;
-
-      const startX = Math.floor(minX / step) * step;
-      const startY = Math.floor(minY / step) * step;
-      const eps = step * 1e-9;
-
-      const baseAlpha = colors.isDark ? 0.055 : 0.048;
-      const zoomBoost = Math.min(1.2, Math.max(0.58, 0.58 + globalScale * 0.14));
-      const majorAlpha = Math.min(0.085, baseAlpha * zoomBoost);
-      const majorStroke = colors.isDark
-        ? `rgba(255,255,255,${majorAlpha})`
-        : `rgba(0,0,0,${majorAlpha})`;
-
-      const hairline = Math.max(0.55 / globalScale, 0.0008);
-
-      ctx.save();
-      ctx.lineCap = "square";
-
-      const sub = step / 5;
-      const minorPx = sub * globalScale;
-      const estMinorX = spanX / sub;
-      const estMinorY = spanY / sub;
-      const drawMinor =
-        minorPx >= NETWORK_GRID_MINOR_MIN_PX &&
-        minorPx <= NETWORK_GRID_MINOR_MAX_PX &&
-        estMinorX <= NETWORK_GRID_MINOR_MAX_LINES_PER_AXIS &&
-        estMinorY <= NETWORK_GRID_MINOR_MAX_LINES_PER_AXIS;
-
-      if (drawMinor) {
-        const minorAlpha = majorAlpha * 0.38;
-        const minorStroke = colors.isDark
-          ? `rgba(255,255,255,${minorAlpha})`
-          : `rgba(0,0,0,${minorAlpha})`;
-        const subStartX = Math.floor(minX / sub) * sub;
-        const subStartY = Math.floor(minY / sub) * sub;
-        const subEps = sub * 1e-9;
-        const dash = Math.max(2.2 / globalScale, 0.001);
-
-        ctx.strokeStyle = minorStroke;
-        ctx.lineWidth = Math.max(0.48 / globalScale, 0.0006);
-        ctx.setLineDash([dash, dash * 1.15]);
-
-        ctx.beginPath();
-        for (let gx = subStartX; gx <= maxX + subEps; gx += sub) {
-          if (nearGridMultiple(gx, step)) continue;
-          ctx.moveTo(gx, minY);
-          ctx.lineTo(gx, maxY);
-        }
-        ctx.stroke();
-
-        ctx.beginPath();
-        for (let gy = subStartY; gy <= maxY + subEps; gy += sub) {
-          if (nearGridMultiple(gy, step)) continue;
-          ctx.moveTo(minX, gy);
-          ctx.lineTo(maxX, gy);
-        }
-        ctx.stroke();
-
-        ctx.setLineDash([]);
-      }
-
-      ctx.strokeStyle = majorStroke;
-      ctx.lineWidth = hairline;
-
-      ctx.beginPath();
-      for (let gx = startX; gx <= maxX + eps; gx += step) {
-        ctx.moveTo(gx, minY);
-        ctx.lineTo(gx, maxY);
-      }
-      ctx.stroke();
-
-      ctx.beginPath();
-      for (let gy = startY; gy <= maxY + eps; gy += step) {
-        ctx.moveTo(minX, gy);
-        ctx.lineTo(maxX, gy);
-      }
-      ctx.stroke();
-
-      const originAlpha = Math.min(0.11, majorAlpha * 1.55);
-      const originStroke = colors.isDark
-        ? `rgba(255,255,255,${originAlpha})`
-        : `rgba(0,0,0,${originAlpha})`;
-      ctx.strokeStyle = originStroke;
-      ctx.lineWidth = Math.max(0.72 / globalScale, 0.001);
-
-      if (minX <= 0 && maxX >= 0) {
-        ctx.beginPath();
-        ctx.moveTo(0, minY);
-        ctx.lineTo(0, maxY);
-        ctx.stroke();
-      }
-      if (minY <= 0 && maxY >= 0) {
-        ctx.beginPath();
-        ctx.moveTo(minX, 0);
-        ctx.lineTo(maxX, 0);
-        ctx.stroke();
-      }
-
-      ctx.restore();
+      drawNetworkBackgroundGrid(ctx, globalScale, fg, w, h, colors.isDark);
     },
     [dimensions.width, dimensions.height, colors.isDark, showBackgroundGrid],
   );
@@ -2408,35 +1794,15 @@ export function NetworkGraphClient({
       );
     }
     if (hoveredNode) {
-      const n = hoveredNode as FGNode;
-      const id = n.id as string;
-      const coTracks = trackCollabFilterMap.get(id) ?? trackScopedCoartistCount(n, collabCountBasis);
-      const gDeg = graphDegreeMap.get(id) ?? 0;
-      const coOther =
-        collabCountBasis === "playlist"
-          ? trackScopedCoartistCount(n, "primary_rows")
-          : trackScopedCoartistCount(n, "playlist");
       return (
-        <div className="space-y-1">
-          <div className="font-semibold text-sm" style={{ color: colors.accent }}>
-            {n.name}
-          </div>
-          <div className="text-xs" style={{ color: colors.muted }}>
-            {n.track_count} track{n.track_count !== 1 ? "s" : ""} &middot;{" "}
-            {coTracks} co-artist{coTracks !== 1 ? "s" : ""}{" "}
-            {collabCountBasis === "playlist" ? "(playlist-wide)" : "(primary rows only)"}
-          </div>
-          {coOther !== coTracks ? (
-            <div className="text-[10px] leading-snug" style={{ color: colors.muted }}>
-              Other basis: {coOther}
-            </div>
-          ) : null}
-          {hideNonPrimary && gDeg !== coTracks ? (
-            <div className="text-[10px] leading-snug" style={{ color: colors.muted }}>
-              Graph links: {gDeg} (edges only between artists who are both primary somewhere in scope)
-            </div>
-          ) : null}
-        </div>
+        <NetworkNodeTooltipContent
+          node={hoveredNode as FGNode}
+          trackCollabFilterMap={trackCollabFilterMap}
+          graphDegreeMap={graphDegreeMap}
+          collabCountBasis={collabCountBasis}
+          hideNonPrimary={hideNonPrimary}
+          colors={colors}
+        />
       );
     }
     return null;
@@ -2617,161 +1983,7 @@ export function NetworkGraphClient({
         }}
       />
 
-      <Modal
-        open={shortcutsOpen}
-        onClose={() => setShortcutsOpen(false)}
-        title="Help"
-        maxWidthClassName="max-w-md"
-      >
-        <div className="space-y-4 text-sm" style={{ color: "var(--sb-text)" }}>
-          <section>
-            <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: colors.accent }}>
-              Keyboard
-            </h3>
-            <ul className="list-none space-y-2">
-              <li>
-                <kbd className="rounded border px-1.5 py-0.5 font-mono text-[11px]" style={{ borderColor: "var(--sb-border)" }}>/</kbd>{" "}
-                <span style={{ color: "var(--sb-muted)" }}>Focus search</span>
-              </li>
-              <li>
-                <kbd className="rounded border px-1.5 py-0.5 font-mono text-[11px]" style={{ borderColor: "var(--sb-border)" }}>?</kbd>{" "}
-                <span style={{ color: "var(--sb-muted)" }}>Open or close this panel</span>
-              </li>
-              <li>
-                <kbd className="rounded border px-1.5 py-0.5 font-mono text-[11px]" style={{ borderColor: "var(--sb-border)" }}>Esc</kbd>{" "}
-                <span style={{ color: "var(--sb-muted)" }}>
-                  Close modals, then clear a pinned collaboration tooltip, then box selection, then focused artist
-                </span>
-              </li>
-              <li>
-                <kbd className="rounded border px-1.5 py-0.5 font-mono text-[11px]" style={{ borderColor: "var(--sb-border)" }}>F</kbd>{" "}
-                <span style={{ color: "var(--sb-muted)" }}>Fit graph to view</span>
-              </li>
-            </ul>
-          </section>
-
-          <section>
-            <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: colors.accent }}>
-              Graph & selection
-            </h3>
-            <ul className="list-none space-y-2" style={{ color: "var(--sb-muted)" }}>
-              <li>
-                <span style={{ color: "var(--sb-text)" }}>Box select:</span> Alt+drag on desktop, or turn on{" "}
-                <span style={{ color: "var(--sb-text)", fontWeight: 600 }}>Select region</span> then drag.
-              </li>
-              <li>
-                <span style={{ color: "var(--sb-text)" }}>Distro tracks:</span> Ctrl/Cmd+click an artist node on desktop. Touch /
-                pen: press and hold ~{(NETWORK_LONG_PRESS_MS / 1000).toFixed(2)}s on a node (keep still; same timing as charts).
-              </li>
-              <li>
-                <span style={{ color: "var(--sb-text)" }}>Collaboration edges:</span> hover for shared tracks. Click an edge
-                (desktop) or press and hold ~{(NETWORK_LONG_PRESS_MS / 1000).toFixed(2)}s (touch / pen) to pin a rich tooltip
-                (artist avatars, track list). In the pinned tooltip: click a track for stream/revenue details and distro
-                playlists; Ctrl/⌘+click or long-press an artist for distro tracks (same as a node). Dismiss: canvas background,
-                click the same edge again, or Esc.
-              </li>
-              <li>
-                Touch / pen on empty canvas: hold still ~{(NETWORK_LONG_PRESS_MS / 1000).toFixed(2)}s, then drag a box. Dragging
-                without holding pans the graph. <span style={{ color: "var(--sb-text)", fontWeight: 600 }}>Select region</span>{" "}
-                starts a marquee immediately.
-              </li>
-              <li>
-                A faint grid moves with the graph. Zooming in can show finer dashed lines; x=0 and y=0 are slightly bolder when
-                visible.
-              </li>
-            </ul>
-          </section>
-
-          <section>
-            <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: colors.accent }}>
-              Toolbar filters
-            </h3>
-            <ul className="list-none space-y-2" style={{ color: "var(--sb-muted)" }}>
-              <li>
-                <span style={{ color: "var(--sb-text)" }}>Graph scope</span> (dropdown): all catalog, one playlist, or{" "}
-                <span style={{ color: "var(--sb-text)" }}>Custom playlist scope…</span> (modal: Any of / All of / Not in
-                selected playlists). Custom scopes use URL params{" "}
-                <code className="font-mono text-[11px]">net_scope=custom</code>,{" "}
-                <code className="font-mono text-[11px]">net_pl</code>,{" "}
-                <code className="font-mono text-[11px]">net_pl_m</code>.
-              </li>
-              <li>
-                <span style={{ color: "var(--sb-text)" }}>Co-artists</span>: min / max 0–999 (either or both; blank = open bound),
-                blur or Enter to apply. <span style={{ color: "var(--sb-text)" }}>Playlist</span> vs{" "}
-                <span style={{ color: "var(--sb-text)" }}>Lead only</span> changes what we count as a co-artist.
-              </li>
-              <li>
-                <span style={{ color: "var(--sb-text)" }}>Node tracks</span> filters by each node&apos;s in-scope{" "}
-                <code className="font-mono text-[11px]">track_count</code> (min / max).
-              </li>
-            </ul>
-          </section>
-
-          <section>
-            <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: colors.accent }}>
-              Toggles
-            </h3>
-            <ul className="list-none space-y-2" style={{ color: "var(--sb-muted)" }}>
-              <li>
-                <span style={{ color: "var(--sb-text)" }}>Scale by tracks</span> — node size from catalog track count.
-              </li>
-              <li>
-                <span style={{ color: "var(--sb-text)" }}>Show images</span> — avatars on nodes when available.
-              </li>
-              <li>
-                <span style={{ color: "var(--sb-text)" }}>Hide non-primary</span> — drop artists with no lead track in scope.
-              </li>
-              <li>
-                <span style={{ color: "var(--sb-text)" }}>Table</span> — sortable list of visible artists (avatars, sticky
-                header, row activates the graph, in-scope totals from the same API as the Excel Artists sheet). Values follow the
-                global metric (Streams / Revenue / Tracks→Streams) and payout rate like catalog tables. Sort order is stored in the
-                URL (
-                <code className="font-mono text-[11px]">tbl_sort</code>,{" "}
-                <code className="font-mono text-[11px]">tbl_dir</code>).
-              </li>
-              <li>
-                <span style={{ color: "var(--sb-text)" }}>Funnel</span> — advanced filters: AND/OR inside each group, and when
-                you add multiple groups, <span style={{ color: "var(--sb-text)", fontWeight: 600 }}>Combine groups</span> chooses
-                AND vs OR between them. Save/load presets in the modal (this device).
-              </li>
-            </ul>
-          </section>
-
-          <section>
-            <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: colors.accent }}>
-              Export & link
-            </h3>
-            <p className="text-[13px] leading-snug" style={{ color: "var(--sb-muted)" }}>
-              Download builds a multi-sheet <code className="font-mono text-[11px]">.xlsx</code> (Summary, Artists,
-              Collaborations, Tracks, Tracks unique) for the current scope and toolbar filters.
-            </p>
-            <p className="text-[13px] leading-snug mt-2" style={{ color: "var(--sb-muted)" }}>
-              Copy the address bar URL to share the view. Anyone signed in as an{" "}
-              <span style={{ color: "var(--sb-text)" }}>admin</span> can open it and get the same scope, toolbar filters, table
-              on/off, table sort, and multi-select (<code className="font-mono text-[11px]">sel=</code>, up to {MAX_SEL_URL}{" "}
-              ids).
-            </p>
-            <p className="text-[13px] leading-snug mt-2" style={{ color: "var(--sb-muted)" }}>
-              The URL encodes scope (<code className="font-mono text-[11px]">playlist=…</code> or custom{" "}
-              <code className="font-mono text-[11px]">net_scope</code> / <code className="font-mono text-[11px]">net_pl</code> /{" "}
-              <code className="font-mono text-[11px]">net_pl_m</code>), toggles,{" "}
-              <code className="font-mono text-[11px]">collab_min</code> /{" "}
-              <code className="font-mono text-[11px]">collab_max</code> (inclusive range; either or both),{" "}
-              <code className="font-mono text-[11px]">co_basis=primary</code>,{" "}
-              <code className="font-mono text-[11px]">tc_min</code> / <code className="font-mono text-[11px]">tc_max</code>,{" "}
-              <code className="font-mono text-[11px]">table=1</code>,{" "}
-              <code className="font-mono text-[11px]">tbl_sort</code> / <code className="font-mono text-[11px]">tbl_dir</code>{" "}
-              (including <code className="font-mono text-[11px]">streams_total</code> /{" "}
-              <code className="font-mono text-[11px]">streams_daily</code>).
-            </p>
-            <p className="text-[13px] leading-snug mt-2" style={{ color: "var(--sb-muted)" }}>
-              The advanced filter (<span style={{ color: "var(--sb-text)" }}>Funnel</span>) is not stored in the URL — presets
-              stay on this device; pan/zoom is saved in local storage per graph identity. Re-apply the funnel or align the camera
-              after opening a shared link.
-            </p>
-          </section>
-        </div>
-      </Modal>
+      <NetworkHelpModal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} colors={colors} />
 
       {/* Controls bar */}
       <div
@@ -2791,552 +2003,101 @@ export function NetworkGraphClient({
             Competitor overlap
           </span>
         ) : (
-          <MenuSelect
-            value={scopeMenuValue}
-            options={playlistScopeOptions}
-            onChange={(v) => {
-              if (v === SCOPE_CATALOG) {
-                pushNetworkUrl({ scope: DEFAULT_NETWORK_SCOPE });
-                return;
-              }
-              if (v === SCOPE_CUSTOM) {
-                setCustomScopeModalOpen(true);
-                return;
-              }
-              pushNetworkUrl({
-                scope: {
-                  mode: "playlist",
-                  playlistKey: v,
-                  customPlaylistKeys: [],
-                  customPlaylistMode: "any",
-                },
-              });
-            }}
-            ariaLabel="Graph scope: catalog, playlist, or custom playlists"
-            placeholder={catalogScopeLabel}
-            matchTriggerWidth={false}
-            className="min-w-[10rem] max-w-[min(100vw-8rem,17rem)]"
-            menuClassName="max-h-80 min-w-[min(100vw-2rem,17rem)] overflow-y-auto"
+          <NetworkScopeMenu
+            scopeMenuValue={scopeMenuValue}
+            playlistScopeOptions={playlistScopeOptions}
+            catalogScopeLabel={catalogScopeLabel}
+            pushNetworkUrl={pushNetworkUrl}
+            setCustomScopeModalOpen={setCustomScopeModalOpen}
           />
         )}
 
         {!isCrossLabelMode ? (
-        <div
-          className="flex flex-wrap items-center gap-1.5 rounded-lg px-2 py-1 text-[11px]"
-          style={{
-            backgroundColor: colors.isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)",
-            color: colors.text,
-          }}
-        >
-          <span
-            className="shrink-0 pl-0.5"
-            style={{ color: colors.muted }}
-            title="Filter artists by how many distinct other artists share at least one in-scope track with them. Min and max are inclusive (0–999); leave either blank for no bound. Blur or press Enter to apply. Use Playlist vs Lead only to choose how co-artists are counted."
-          >
-            Co-artists
-          </span>
-          <input
-            type="text"
-            inputMode="numeric"
-            autoComplete="off"
-            placeholder="Min"
-            aria-label="Minimum co-artist count on tracks (inclusive)"
-            className="w-11 min-w-0 rounded px-1.5 py-1 font-mono text-xs tabular-nums outline-none border"
-            style={{
-              borderColor: colors.border,
-              backgroundColor: colors.isDark ? "rgba(0,0,0,0.25)" : "rgba(255,255,255,0.7)",
-              color: colors.text,
-            }}
-            value={collabMinDraft}
-            onChange={(e) => {
-              const v = e.target.value;
-              if (v === "" || /^\d*$/.test(v)) setCollabMinDraft(v);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                (e.target as HTMLInputElement).blur();
-              }
-            }}
-            onBlur={commitCollabRange}
+          <NetworkCoArtistFilter
+            colors={colors}
+            collabMinDraft={collabMinDraft}
+            setCollabMinDraft={setCollabMinDraft}
+            collabMaxDraft={collabMaxDraft}
+            setCollabMaxDraft={setCollabMaxDraft}
+            commitCollabRange={commitCollabRange}
+            collabCountBasis={collabCountBasis}
+            setCollabCountBasis={setCollabCountBasis}
+            pushNetworkUrl={pushNetworkUrl}
           />
-          <span style={{ color: colors.muted }}>–</span>
-          <input
-            type="text"
-            inputMode="numeric"
-            autoComplete="off"
-            placeholder="Max"
-            aria-label="Maximum co-artist count on tracks (inclusive)"
-            className="w-11 min-w-0 rounded px-1.5 py-1 font-mono text-xs tabular-nums outline-none border"
-            style={{
-              borderColor: colors.border,
-              backgroundColor: colors.isDark ? "rgba(0,0,0,0.25)" : "rgba(255,255,255,0.7)",
-              color: colors.text,
-            }}
-            value={collabMaxDraft}
-            onChange={(e) => {
-              const v = e.target.value;
-              if (v === "" || /^\d*$/.test(v)) setCollabMaxDraft(v);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                (e.target as HTMLInputElement).blur();
-              }
-            }}
-            onBlur={commitCollabRange}
-          />
-          <div className="flex rounded-md overflow-hidden border shrink-0" style={{ borderColor: colors.border }}>
-            <button
-              type="button"
-              className="px-2 py-1 font-medium transition-colors"
-              aria-label="Co-artist count: playlist-wide (any credit on scoped tracks)"
-              title="Playlist: count distinct co-artists from every credit on in-scope tracks—any position on the track, not only where this artist is lead."
-              style={{
-                backgroundColor:
-                  collabCountBasis === "playlist"
-                    ? accentRgba(colors.accent, colors.isDark ? 0.14 : 0.2)
-                    : "transparent",
-                color: collabCountBasis === "playlist" ? colors.text : colors.muted,
-              }}
-              onClick={() => {
-                if (collabCountBasis === "playlist") return;
-                setCollabCountBasis("playlist");
-                pushNetworkUrl({ collabCountBasis: "playlist" });
-              }}
-            >
-              Playlist
-            </button>
-            <button
-              type="button"
-              className="px-2 py-1 font-medium transition-colors border-l"
-              aria-label="Co-artist count: lead rows only"
-              title="Lead only: count co-artists only on ISRCs where this artist is the primary (first Spotify credit) on that track."
-              style={{
-                borderColor: colors.border,
-                backgroundColor:
-                  collabCountBasis === "primary_rows"
-                    ? accentRgba(colors.accent, colors.isDark ? 0.14 : 0.2)
-                    : "transparent",
-                color: collabCountBasis === "primary_rows" ? colors.text : colors.muted,
-              }}
-              onClick={() => {
-                if (collabCountBasis === "primary_rows") return;
-                setCollabCountBasis("primary_rows");
-                pushNetworkUrl({ collabCountBasis: "primary_rows" });
-              }}
-            >
-              Lead only
-            </button>
-          </div>
-        </div>
         ) : null}
 
-        <div
-          className="flex flex-wrap items-center gap-1.5 rounded-lg px-2 py-1 text-[11px]"
-          style={{
-            backgroundColor: colors.isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)",
-            color: colors.text,
-          }}
-        >
-          <span
-            className="shrink-0 pl-0.5"
-            style={{ color: colors.muted }}
-            title="Filter visible nodes by each artist's in-scope track count (the same track_count used on the graph). Min and max are inclusive; leave blank for no bound."
-          >
-            {isCrossLabelMode ? "Label tracks" : "Node tracks"}
-          </span>
-          <input
-            type="text"
-            inputMode="numeric"
-            autoComplete="off"
-            placeholder="Min"
-            aria-label="Minimum in-scope track count on graph nodes"
-            className="w-14 min-w-0 rounded px-1.5 py-1 font-mono text-xs tabular-nums outline-none border"
-            style={{
-              borderColor: colors.border,
-              backgroundColor: colors.isDark ? "rgba(0,0,0,0.25)" : "rgba(255,255,255,0.7)",
-              color: colors.text,
-            }}
-            value={trackCountMinDraft}
-            onChange={(e) => {
-              const v = e.target.value;
-              if (v === "" || /^\d*$/.test(v)) setTrackCountMinDraft(v);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                (e.target as HTMLInputElement).blur();
-              }
-            }}
-            onBlur={() => {
-              const parsed = parseTrackCountInputDraft(trackCountMinDraft);
-              setTrackCountMin(parsed);
-              setTrackCountMinDraft(parsed == null ? "" : String(parsed));
-              pushNetworkUrl({ trackCountMin: parsed });
-            }}
-          />
-          <span style={{ color: colors.muted }}>–</span>
-          <input
-            type="text"
-            inputMode="numeric"
-            autoComplete="off"
-            placeholder="Max"
-            aria-label="Maximum in-scope track count on graph nodes"
-            className="w-14 min-w-0 rounded px-1.5 py-1 font-mono text-xs tabular-nums outline-none border"
-            style={{
-              borderColor: colors.border,
-              backgroundColor: colors.isDark ? "rgba(0,0,0,0.25)" : "rgba(255,255,255,0.7)",
-              color: colors.text,
-            }}
-            value={trackCountMaxDraft}
-            onChange={(e) => {
-              const v = e.target.value;
-              if (v === "" || /^\d*$/.test(v)) setTrackCountMaxDraft(v);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                (e.target as HTMLInputElement).blur();
-              }
-            }}
-            onBlur={() => {
-              const parsed = parseTrackCountInputDraft(trackCountMaxDraft);
-              setTrackCountMax(parsed);
-              setTrackCountMaxDraft(parsed == null ? "" : String(parsed));
-              pushNetworkUrl({ trackCountMax: parsed });
-            }}
-          />
-        </div>
+        <NetworkTrackCountFilter
+          colors={colors}
+          isCrossLabelMode={isCrossLabelMode}
+          trackCountMinDraft={trackCountMinDraft}
+          setTrackCountMinDraft={setTrackCountMinDraft}
+          setTrackCountMin={setTrackCountMin}
+          trackCountMaxDraft={trackCountMaxDraft}
+          setTrackCountMaxDraft={setTrackCountMaxDraft}
+          setTrackCountMax={setTrackCountMax}
+          pushNetworkUrl={pushNetworkUrl}
+        />
 
         {/* Icon toggles before search so narrow viewports don’t place Scale/Images on a row beside the search field */}
-        <div className="flex flex-nowrap items-center gap-1.5 sm:gap-2 shrink-0 overflow-x-auto min-w-0 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-          <ToggleButton
-            active={scaleByTracks}
-            onClick={() => pushNetworkUrl({ scaleByTracks: !scaleByTracks })}
-            icon={<Scaling size={14} />}
-            title="Scale by tracks"
-            colors={colors}
-          />
-
-          <ToggleButton
-            active={showImages}
-            onClick={() => pushNetworkUrl({ showImages: !showImages })}
-            icon={<ImageIcon size={14} />}
-            title="Show images"
-            colors={colors}
-          />
-
-          <ToggleButton
-            active={boxSelectArmed}
-            onClick={() => setBoxSelectArmed((v) => !v)}
-            icon={<SquareDashed size={14} />}
-            title="Select region"
-            colors={colors}
-          />
-
-          {!isCrossLabelMode ? (
-            <ToggleButton
-              active={hideNonPrimary}
-              onClick={() => pushNetworkUrl({ hideNonPrimary: !hideNonPrimary })}
-              icon={<UserX size={14} />}
-              title="Hide non-primary"
-              colors={colors}
-            />
-          ) : null}
-
-          <ToggleButton
-            active={tableView}
-            onClick={() => pushNetworkUrl({ tableView: !tableView })}
-            icon={<Table2 size={14} />}
-            title="Table view"
-            colors={colors}
-          />
-
-          <IconButton
-            type="button"
-            variant="ghost"
-            size="sm"
-            title="Advanced filters"
-            aria-label="Open advanced artist filters"
-            onClick={() => setNetworkAdvModalOpen(true)}
-            className="!h-8 !w-8 shrink-0 !rounded-lg"
-            style={{
-              color: networkAdvAppliedCount > 0 ? colors.accent : colors.muted,
-              backgroundColor:
-                networkAdvAppliedCount > 0
-                  ? accentRgba(colors.accent, colors.isDark ? 0.12 : 0.15)
-                  : colors.isDark
-                    ? "rgba(255,255,255,0.06)"
-                    : "rgba(0,0,0,0.04)",
-            }}
-          >
-            <Filter className="h-3.5 w-3.5" aria-hidden />
-          </IconButton>
-
-          <div className="w-px h-5 shrink-0 self-center" style={{ backgroundColor: colors.border }} />
-
-          {xlsxExportPhase ? (
-            <span
-              className="text-[11px] tabular-nums truncate max-w-[7rem] sm:max-w-[14rem] shrink-0"
-              style={{ color: colors.muted }}
-            >
-              {xlsxExportPhase}
-            </span>
-          ) : null}
-
-          <IconButton
-            type="button"
-            variant="ghost"
-            size="sm"
-            title={
-              isCompetitorDataset
-                ? "Excel export is not available in Competitor Mode yet"
-                : "Download Excel"
-            }
-            aria-label="Download Excel export of current network view"
-            disabled={xlsxExporting || isCompetitorDataset}
-            onClick={() => void handleExportViewXlsx()}
-            className="!h-8 !w-8 shrink-0 !rounded-lg"
-            style={{
-              color: colors.muted,
-              backgroundColor: colors.isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)",
-            }}
-          >
-            {xlsxExporting ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-            ) : (
-              <Download className="h-3.5 w-3.5" aria-hidden />
-            )}
-          </IconButton>
-
-          <IconButton
-            type="button"
-            variant="ghost"
-            size="sm"
-            title="Help"
-            aria-label="Help and shortcuts"
-            onClick={() => setShortcutsOpen(true)}
-            className="!h-8 !w-8 shrink-0 !rounded-lg"
-            style={{
-              color: colors.muted,
-              backgroundColor: colors.isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)",
-            }}
-          >
-            <HelpCircle className="h-3.5 w-3.5" aria-hidden />
-          </IconButton>
-
-          <IconButton
-            type="button"
-            variant="ghost"
-            size="sm"
-            title="Reset"
-            aria-label="Reset network view — clear selection, filters, search, saved camera; fit graph"
-            onClick={handleReset}
-            className="!h-8 !w-8 shrink-0 !rounded-lg"
-            style={{
-              color: colors.muted,
-              backgroundColor: colors.isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)",
-            }}
-          >
-            <RotateCcw className="h-3.5 w-3.5" aria-hidden />
-          </IconButton>
-        </div>
+        <NetworkToolbarActions
+          colors={colors}
+          isCrossLabelMode={isCrossLabelMode}
+          isCompetitorDataset={isCompetitorDataset}
+          scaleByTracks={scaleByTracks}
+          showImages={showImages}
+          boxSelectArmed={boxSelectArmed}
+          setBoxSelectArmed={setBoxSelectArmed}
+          hideNonPrimary={hideNonPrimary}
+          tableView={tableView}
+          pushNetworkUrl={pushNetworkUrl}
+          networkAdvAppliedCount={networkAdvAppliedCount}
+          setNetworkAdvModalOpen={setNetworkAdvModalOpen}
+          xlsxExportPhase={xlsxExportPhase}
+          xlsxExporting={xlsxExporting}
+          handleExportViewXlsx={handleExportViewXlsx}
+          setShortcutsOpen={setShortcutsOpen}
+          handleReset={handleReset}
+        />
 
         <div className="w-px h-5 max-sm:hidden shrink-0" style={{ backgroundColor: colors.border }} />
 
         {/* Search */}
-        <div className="relative min-w-0 w-full max-sm:basis-full sm:w-auto sm:max-w-md shrink sm:shrink-0">
-          <div
-            className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm w-full min-w-0"
-            style={{
-              backgroundColor: colors.isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)",
-              color: colors.text,
-            }}
-          >
-            <Search size={14} className="shrink-0" style={{ color: colors.muted }} />
-            <input
-              ref={searchInputRef}
-              type="text"
-              placeholder="Search artist…"
-              className="bg-transparent outline-none min-w-0 flex-1 sm:w-44 sm:flex-initial placeholder:opacity-40"
-              style={{ color: colors.text }}
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setSearchOpen(true);
-              }}
-              onFocus={() => setSearchOpen(true)}
-              onBlur={() => {
-                // Delay so click on result fires first
-                setTimeout(() => setSearchOpen(false), 200);
-              }}
-            />
-          </div>
+        <NetworkArtistSearch
+          colors={colors}
+          searchInputRef={searchInputRef}
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+          searchOpen={searchOpen}
+          setSearchOpen={setSearchOpen}
+          searchResults={searchResults}
+          focusOnArtist={focusOnArtist}
+        />
 
-          {/* Search dropdown */}
-          {searchOpen && searchResults.length > 0 && (
-            <div
-              className="absolute top-full left-0 right-0 sm:right-auto mt-1 rounded-lg shadow-lg z-50 overflow-hidden max-h-[300px] overflow-y-auto w-full sm:w-64 min-w-0"
-              style={{
-                backgroundColor: colors.card,
-                border: `1px solid ${colors.border}`,
-              }}
-            >
-              {searchResults.map((r) => (
-                <button
-                  key={r.id}
-                  className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:brightness-125 transition-all"
-                  style={{ color: colors.text }}
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    focusOnArtist(r.id);
-                  }}
-                >
-                  {r.image_url ? (
-                    <PreviewableArtwork
-                      src={r.image_url}
-                      alt={r.name}
-                      className="w-6 h-6 rounded-full object-cover flex-shrink-0"
-                      interactive="inline"
-                    />
-                  ) : (
-                    <div
-                      className="w-6 h-6 rounded-full flex-shrink-0"
-                      style={{ backgroundColor: colors.accent + "30" }}
-                    />
-                  )}
-                  <span className="truncate">{r.name}</span>
-                  <span className="ml-auto text-xs flex-shrink-0" style={{ color: colors.muted }}>
-                    {r.track_count} tracks
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {activeFiltersSummary.length > 0 ? (
-          <div
-            className="basis-full w-full flex flex-wrap items-center gap-x-2 gap-y-1 border-t pt-2 mt-1 -mx-4 px-4 text-[10px] leading-snug"
-            style={{ borderColor: colors.border, color: colors.muted }}
-          >
-            <span className="font-semibold uppercase tracking-wide opacity-80 shrink-0">
-              Combined filters
-            </span>
-            <span className="min-w-0">
-              {activeFiltersSummary.map((t, i) => (
-                <span key={i}>
-                  {i > 0 ? " · " : null}
-                  {t}
-                </span>
-              ))}
-            </span>
-          </div>
-        ) : null}
-
-        {/* Stats */}
-        <div className="ml-auto text-xs text-right" style={{ color: colors.muted }}>
-          {networkScope.mode === "playlist" || networkScope.mode === "custom" ? (
-            <span className="block sm:inline">
-              Scoped: {formatNetworkScopeLabel(networkScope, playlistNameByKey)}
-              {" · "}
-            </span>
-          ) : null}
-          {collabRangeIsActive(collabFilterMin, collabFilterMax) ||
-          trackCountMinEffective != null ||
-          trackCountMaxEffective != null ||
-          networkAdvAppliedCount > 0 ? (
-            <>
-              <span className="whitespace-nowrap">
-                {graphData.nodes.length} visible
-                {collabRangeIsActive(collabFilterMin, collabFilterMax) ? (
-                  <>
-                    {" "}
-                    ({formatCollabRangeSummary(collabFilterMin, collabFilterMax)} co-artists)
-                  </>
-                ) : null}
-                {(trackCountMinEffective != null || trackCountMaxEffective != null) && (
-                  <>
-                    {" "}
-                    (
-                    {trackCountMinEffective != null ? `≥${trackCountMinEffective}` : "any min"} tracks →{" "}
-                    {trackCountMaxEffective != null ? `≤${trackCountMaxEffective}` : "any max"})
-                  </>
-                )}
-                {" · "}
-                {graphData.links.length} links
-              </span>
-              <span className="opacity-70"> — full </span>
-            </>
-          ) : null}
-          {nodes.length} artists &middot; {edges.length} collabs
-        </div>
+        <NetworkToolbarStats
+          colors={colors}
+          activeFiltersSummary={activeFiltersSummary}
+          networkScope={networkScope}
+          playlistNameByKey={playlistNameByKey}
+          collabFilterMin={collabFilterMin}
+          collabFilterMax={collabFilterMax}
+          trackCountMinEffective={trackCountMinEffective}
+          trackCountMaxEffective={trackCountMaxEffective}
+          networkAdvAppliedCount={networkAdvAppliedCount}
+          graphData={graphData}
+          nodes={nodes}
+          edges={edges}
+        />
       </div>
 
-      {networkAdvFilterApplied &&
-      hasActiveConditions(networkAdvFilterApplied) &&
-      networkFilterUsesStreamFields(networkAdvFilterApplied) &&
-      networkAdvStreamStatsLoading ? (
-        <div
-          className="flex items-center gap-2 px-4 py-1.5 border-b text-xs"
-          style={{
-            borderColor: colors.border,
-            backgroundColor: colors.isDark ? "rgba(59,130,246,0.14)" : "rgba(59,130,246,0.1)",
-            color: colors.text,
-          }}
-        >
-          <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" aria-hidden />
-          <span>Loading stream stats for advanced filter…</span>
-        </div>
-      ) : null}
-
-      {networkAdvStreamStatsError &&
-      networkAdvFilterApplied &&
-      hasActiveConditions(networkAdvFilterApplied) &&
-      networkFilterUsesStreamFields(networkAdvFilterApplied) ? (
-        <div
-          className="flex items-start gap-2 px-4 py-2 border-b text-sm"
-          style={{
-            borderColor: colors.border,
-            backgroundColor: colors.isDark ? "rgba(245,158,11,0.12)" : "rgba(245,158,11,0.15)",
-            color: colors.text,
-          }}
-        >
-          <span className="flex-1 min-w-0">{networkAdvStreamStatsError}</span>
-          <button
-            type="button"
-            className="shrink-0 rounded-md p-1 hover:opacity-80"
-            style={{ color: colors.muted }}
-            aria-label="Dismiss stream stats error"
-            onClick={() => setNetworkAdvStreamStatsError(null)}
-          >
-            <X className="h-4 w-4" aria-hidden />
-          </button>
-        </div>
-      ) : null}
-
-      {xlsxExportAlert ? (
-        <div
-          className="flex items-start gap-2 px-4 py-2 border-b text-sm"
-          style={{
-            borderColor: colors.border,
-            backgroundColor: colors.isDark ? "rgba(245,158,11,0.12)" : "rgba(245,158,11,0.15)",
-            color: colors.text,
-          }}
-        >
-          <span className="flex-1 min-w-0">{xlsxExportAlert}</span>
-          <button
-            type="button"
-            className="shrink-0 rounded-md p-1 hover:opacity-80"
-            style={{ color: colors.muted }}
-            aria-label="Dismiss export notice"
-            onClick={() => setXlsxExportAlert(null)}
-          >
-            <X className="h-4 w-4" aria-hidden />
-          </button>
-        </div>
-      ) : null}
+      <NetworkToolbarBanners
+        colors={colors}
+        networkAdvFilterApplied={networkAdvFilterApplied}
+        networkAdvStreamStatsLoading={networkAdvStreamStatsLoading}
+        networkAdvStreamStatsError={networkAdvStreamStatsError}
+        setNetworkAdvStreamStatsError={setNetworkAdvStreamStatsError}
+        xlsxExportAlert={xlsxExportAlert}
+        setXlsxExportAlert={setXlsxExportAlert}
+      />
 
       <ArtistDistroTracksModal
         open={distroModalOpen}
@@ -3400,55 +2161,14 @@ export function NetworkGraphClient({
 
       {/* Selected node info panel */}
       {selectedNodeId && isCrossLabelMode ? (
-        <div
-          className="border-t px-4 py-3 flex flex-wrap items-center gap-3 shrink-0"
-          style={{ borderColor: colors.border, backgroundColor: colors.card }}
-        >
-          {(() => {
-            const node = graphData.nodes.find((n) => n.id === selectedNodeId);
-            if (!node) return null;
-            return (
-              <>
-                {node.image_url ? (
-                  <PreviewableArtwork
-                    src={node.image_url}
-                    alt={node.name}
-                    width={40}
-                    height={40}
-                    interactive="inline"
-                    className="h-10 w-10 shrink-0 rounded-lg object-cover"
-                  />
-                ) : null}
-                <div className="min-w-0 flex-1">
-                  <div className="font-semibold truncate" style={{ color: colors.text }}>
-                    {node.name}
-                  </div>
-                  <div className="text-xs tabular-nums" style={{ color: colors.muted }}>
-                    {formatInt(node.track_count)} active playlist tracks ·{" "}
-                    {graphDegreeMap.get(selectedNodeId) ?? 0} shared-track links to other labels
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  className="rounded-lg px-3 py-1.5 text-xs font-medium shrink-0"
-                  style={{ backgroundColor: "var(--sb-accent)", color: "var(--sb-accent-text,#000)" }}
-                  onClick={() => void switchCompetitorLabel(selectedNodeId)}
-                >
-                  Open competitor
-                </button>
-                <button
-                  type="button"
-                  className="rounded-lg px-2 py-1.5 text-xs shrink-0"
-                  style={{ color: colors.muted }}
-                  onClick={() => setSelectedNodeId(null)}
-                  aria-label="Close selection"
-                >
-                  <X className="h-4 w-4" aria-hidden />
-                </button>
-              </>
-            );
-          })()}
-        </div>
+        <CrossLabelSelectedPanel
+          selectedNodeId={selectedNodeId}
+          nodes={graphData.nodes}
+          graphDegreeMap={graphDegreeMap}
+          colors={colors}
+          switchCompetitorLabel={switchCompetitorLabel}
+          setSelectedNodeId={setSelectedNodeId}
+        />
       ) : null}
       {selectedNodeId && !isCrossLabelMode ? (
         <SelectedArtistPanel

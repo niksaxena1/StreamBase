@@ -90,6 +90,13 @@ export type CollectorSeriesPoint = {
   est_revenue_daily_net: number;
 };
 
+/** Playlist display metadata for the selected collector (artwork + name lookups). */
+export type SelectedPlaylistMeta = {
+  playlist_key: string;
+  display_name: string;
+  spotify_playlist_image_url: string | null;
+};
+
 export type TopPlaylistRow = {
   playlist_key: string;
   display_name: string;
@@ -115,6 +122,19 @@ export type CollectorTrackRow = {
 };
 
 export type DrillKind = "playlists" | "artists" | "tracks";
+
+// Track sort types (collector tracks table)
+export type TrackSort =
+  | "delta_desc"
+  | "delta_asc"
+  | "total_desc"
+  | "total_asc"
+  | "release_desc"
+  | "release_asc"
+  | "name_asc"
+  | "name_desc"
+  | "distro_desc"
+  | "distro_asc";
 
 export type DateBreakdownTrack = {
   isrc: string;
