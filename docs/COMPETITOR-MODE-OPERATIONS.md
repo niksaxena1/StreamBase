@@ -96,7 +96,7 @@ For ingestion correctness, use **/health** in Competitor Mode. The page supports
 - **Unenriched tracks:** paginated drill-down (`?enrich_page=`).
 - **Config drift:** compares `config/competitor_playlists.csv` to `competitor.playlists`.
 
-SQL: `migrations/add_competitor_health_enhancements.sql` (distinct track RPC, unenriched paging, warning history MV).
+SQL: `supabase/migrations/20260527155647_add_competitor_health_enhancements.sql` (distinct track RPC, unenriched paging, warning history MV).
 
 ## Intentional omissions
 

@@ -1,6 +1,6 @@
 -- Migration: Adopt track_daily_streams_effective for RPCs
 -- Run this in your Supabase SQL editor AFTER:
---   - `migrations/add_track_daily_stream_overrides.sql`
+--   - `supabase/migrations/20260201152444_add_track_daily_stream_overrides.sql`
 --
 -- Goal:
 -- - Ensure key RPCs and health queries incorporate manual stream overrides.

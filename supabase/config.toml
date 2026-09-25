@@ -1,0 +1,3 @@
+# Supabase CLI project config. Only the migrations workflow is used today
+# (`supabase link` + `supabase db push`); local-stack settings use CLI defaults.
+project_id = "StreamBase"

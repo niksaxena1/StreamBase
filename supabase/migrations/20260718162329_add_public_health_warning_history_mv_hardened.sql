@@ -2,7 +2,7 @@
 -- add_public_health_warning_history_mv_hardened).
 --
 -- Public-schema twin of competitor.health_warning_history_mv. The repo has
--- shipped migrations/add_health_warning_history_mv.sql (and the ingestion
+-- shipped supabase/migrations/20260304195142_add_health_warning_history_mv.sql (and the ingestion
 -- script has called the refresh function nightly) but it was never applied to
 -- prod; /api/health-history had been using its slow raw-table fallback and the
 -- nightly refresh logged a swallowed warning. This version additionally pins

@@ -245,8 +245,8 @@ async function getInventoryBestEffort(): Promise<Inventory> {
 
 async function getRepoMigrationsBestEffort(): Promise<string[]> {
   try {
-    // Next runs from `web/`; migrations are at repo root.
-    const dir = path.join(process.cwd(), "..", "migrations");
+    // Next runs from `web/`; migrations live in `supabase/migrations/` at repo root.
+    const dir = path.join(process.cwd(), "..", "supabase", "migrations");
     const names = await readdir(dir);
     return names
       .filter((n) => n.toLowerCase().endsWith(".sql"))

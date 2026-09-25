@@ -27,9 +27,9 @@ Do not blur them. Competitor work should be additive and schema-scoped; own-cata
 ## Competitor system map
 
 - Config: `config/competitor_playlists.csv`
-- DB foundation: `migrations/add_competitor_foundation.sql`
-- Accent colors: `migrations/add_competitor_label_accent_hex.sql`, `web/src/lib/competitorLabelAccents.ts`, `web/scripts/extract-competitor-accents.ts`
-- Analytics RPCs: `migrations/add_competitor_analytics_rpcs.sql`, `migrations/add_competitor_label_scoped_analytics.sql`
+- DB foundation: `supabase/migrations/20260517014520_add_competitor_foundation.sql`
+- Accent colors: `supabase/migrations/20260526152516_add_competitor_label_accent_hex.sql`, `web/src/lib/competitorLabelAccents.ts`, `web/scripts/extract-competitor-accents.ts`
+- Analytics RPCs: `supabase/migrations/20260517014521_add_competitor_analytics_rpcs.sql`, `supabase/migrations/20260517191923_add_competitor_label_scoped_analytics.sql`
 - UI:
   - Home: `web/src/lib/home/loadHomeDashboard.ts`, `web/src/app/(main-flat)/HomeDashboardClient.tsx`
   - Playlists: `web/src/app/(main-flat)/playlists/page.tsx`
@@ -65,7 +65,7 @@ npm run extract-competitor-accents
 npx eslint "src/app/(main-flat)/competitors/page.tsx"
 ```
 
-If touching Supabase SQL, update the corresponding docs and leave migration filenames descriptive enough that future agents can reconstruct the rollout order.
+If touching Supabase SQL, add a new timestamped file with `supabase migration new <descriptive_name>` (lands in `supabase/migrations/`; never edit an already-applied file), keep it idempotent, and update the corresponding docs. Apply with `supabase db push`; see `supabase/README.md`.
 
 ## Supabase Data API Grants
 
