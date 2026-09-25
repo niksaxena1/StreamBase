@@ -64,11 +64,15 @@ The three SpotOnTrack workflows use `config/competitor_playlists.csv`. The Spoti
 
 ## Adding another competitor
 
-1. Add the label + playlist rows in a migration.
-2. Add the playlist to `config/competitor_playlists.csv`.
-3. Run refresh → dashboard sync → export → Spotify enrichment.
-4. Run `cd web && npm run extract-competitor-accents -- --force` for new labels.
-5. Verify `/competitors` and the global competitor selector.
+`competitor.labels` / `competitor.playlists` are the source of truth. The competitor workflows regenerate `config/competitor_playlists.csv` from them at the start of every run (`scripts/export_competitor_config_from_db.py`), so no migration or CSV commit is needed.
+
+1. In SpotOnTrack, open the competitor playlist and create an empty dashboard for it.
+2. On `/competitors`, click **Add competitor**: choose a new or existing label, then paste the Spotify playlist link, the SpotOnTrack playlist link and the dashboard link (keys are derived from the names; accent is optional).
+3. Wait for the next scheduled runs (refresh 05:23 → dashboard sync 08:53 → export 11:29 UTC) or run those three workflows manually in that order. Spotify enrichment fills thumbnails/metadata on its next run.
+4. Optional: `cd web && npm run extract-competitor-accents -- --force` if you left the accent blank.
+5. Optional: refresh the committed snapshot with `python scripts/export_competitor_config_from_db.py` and commit it (`--check` shows drift). `/health` (Competitor Mode) flags when the snapshot is behind.
+
+To stop tracking a playlist or label, set `is_active = false` on its row; the next run drops it from the generated config.
 
 ## What the `/competitors` page is for
 

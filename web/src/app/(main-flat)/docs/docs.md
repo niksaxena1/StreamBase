@@ -74,6 +74,8 @@ Competitor Mode is a parallel analytics universe, not a merge into your own cata
 
 The selected competitor is global. One competitor may own multiple playlists, and changing the selector changes supported competitor-aware surfaces across the app.
 
+Adding a competitor: `/competitors` → **Add competitor** writes `competitor.labels` / `competitor.playlists`; each competitor workflow regenerates `config/competitor_playlists.csv` from the database before running, so the new playlist is tracked from the next scheduled run (see `docs/COMPETITOR-MODE-OPERATIONS.md`).
+
 Competitor RPCs used by `/competitors` (schema `competitor`):
 
 - `label_distinct_artist_counts(p_run_date)`

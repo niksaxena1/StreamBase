@@ -60,6 +60,14 @@ jobs:
           done
           echo "Playwright dependency install failed after 3 attempts." >&2
           exit 1
+      - name: Generate competitor config from database
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        # competitor.playlists is the source of truth (the /competitors "Add
+        # competitor" form writes there); falls back to the committed CSV if
+        # the database can't be read.
+        run: python scripts/export_competitor_config_from_db.py
       - name: Write storage state from secret
         env:
           SOT_STORAGE_STATE_B64: ${{ secrets.SOT_STORAGE_STATE_B64 }}

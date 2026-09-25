@@ -26,7 +26,7 @@ Do not blur them. Competitor work should be additive and schema-scoped; own-cata
 
 ## Competitor system map
 
-- Config: `config/competitor_playlists.csv`
+- Config: `competitor.labels` / `competitor.playlists` are the source of truth (added via **Add competitor** on `/competitors` → `web/src/app/api/competitors/onboard/route.ts`). Workflows regenerate `config/competitor_playlists.csv` from them (`scripts/export_competitor_config_from_db.py`); the committed CSV is a snapshot/fallback.
 - DB foundation: `supabase/migrations/20260517014520_add_competitor_foundation.sql`
 - Accent colors: `supabase/migrations/20260526152516_add_competitor_label_accent_hex.sql`, `web/src/lib/competitorLabelAccents.ts`, `web/scripts/extract-competitor-accents.ts`
 - Analytics RPCs: `supabase/migrations/20260517014521_add_competitor_analytics_rpcs.sql`, `supabase/migrations/20260517191923_add_competitor_label_scoped_analytics.sql`
@@ -53,7 +53,7 @@ Do not blur them. Competitor work should be additive and schema-scoped; own-cata
 
 - Home/Playlists/Catalog in Competitor Mode should use the selected competitor, not raw cross-label URLs.
 - `/competitors` should show the same labels/playlists that exist in `competitor.labels` and `competitor.playlists`.
-- `config/competitor_playlists.csv` and `competitor.playlists` should remain aligned.
+- `config/competitor_playlists.csv` is a snapshot of `competitor.playlists`; refresh it with `python scripts/export_competitor_config_from_db.py` (`--check` reports drift). New competitors do not need a migration.
 - Daily competitor track deltas should be populated; flag any blanks as a regression.
 
 ## Common commands

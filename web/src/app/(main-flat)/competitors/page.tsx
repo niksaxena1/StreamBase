@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/shell/PageHeader";
 import { formatDateISO } from "@/lib/format";
 import { FreshnessLabel, SectionEmptyState } from "@/components/ui/DataStates";
 
+import { AddCompetitorButton } from "./AddCompetitorButton";
 import { CompetitorsWorkspace } from "./CompetitorsWorkspace";
 
 export const dynamic = "force-dynamic";
@@ -35,7 +36,7 @@ export default async function CompetitorsPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Competitors" subtitle={subtitle} />
+      <PageHeader title="Competitors" subtitle={subtitle} actions={<AddCompetitorButton />} />
 
       {core ? (
         <CompetitorsWorkspace core={core} />
