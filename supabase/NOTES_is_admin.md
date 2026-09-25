@@ -1,6 +1,6 @@
 # `public.is_admin()` dependency
 
-Several migrations and RLS policies call `public.is_admin()` (for example `health_config`, `health_warning_exclusions` after [security_hardening_revoke_anon_execute_and_rls.sql](migrations/20260331143336_security_hardening_revoke_anon_execute_and_rls.sql)).
+Several migrations and RLS policies call `public.is_admin()` (for example `health_config`, `health_warning_exclusions` after [security_hardening_revoke_anon_execute_and_rls.sql](migrations/20260331143335_security_hardening_revoke_anon_execute_and_rls.sql)).
 
 This repository does **not** ship a canonical `is_admin` implementation because it is environment-specific (single admin email, JWT claims, or an admin table).
 
