@@ -52,21 +52,21 @@ The three SpotOnTrack workflows use `config/competitor_playlists.csv`. The Spoti
 3. Run the competitor export workflow.
 4. Run the Spotify competitor enrichment workflow to fill track metadata and playlist thumbnails.
 5. Run `cd web && npm run extract-competitor-accents -- --force` if adding a new label or changing playlist artwork. Accents are harmonized in `web/src/lib/competitorLabelAccents.ts` (extract script + every label load) so charts, cards, and `--sb-accent` share one resolved hex per label.
-6. Switch Settings ? Dataset ? Competitor Mode.
+6. Switch Settings → Dataset → Competitor Mode.
 7. Verify the competitor appears under `/competitors`, Playlists, Catalog, Home, and Search.
 
 ## UI surfaces
 
-- `/` ? selected competitor overview
-- `/playlists` ? competitor playlists, totals, current tracks, and daily deltas when history exists
-- `/catalog` ? competitor artists/tracks
-- `/competitors` ? competitive intelligence workspace with Overview, Compare, Movement, Catalog intelligence, and Data health views
+- `/` — selected competitor overview
+- `/playlists` — competitor playlists, totals, current tracks, and daily deltas when history exists
+- `/catalog` — competitor artists/tracks
+- `/competitors` — competitive intelligence workspace with Overview, Compare, Movement, Catalog intelligence, and Data health views
 
 ## Adding another competitor
 
 1. Add the label + playlist rows in a migration.
 2. Add the playlist to `config/competitor_playlists.csv`.
-3. Run refresh ? dashboard sync ? export ? Spotify enrichment.
+3. Run refresh → dashboard sync → export → Spotify enrichment.
 4. Run `cd web && npm run extract-competitor-accents -- --force` for new labels.
 5. Verify `/competitors` and the global competitor selector.
 

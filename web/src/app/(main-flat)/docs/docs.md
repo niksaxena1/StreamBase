@@ -38,12 +38,14 @@ GitHub Actions scheduled workflows use **UTC**. Below is the same schedule shown
 
 | Workflow | When (UTC) | When (GMT+4) | What it does |
 |---|---:|---:|---|
-| Dashboard sync (`sot_daily_dashboard_sync.yml`) | 06:00 + 06:30 (fallback) | 10:00 + 10:30 | Keeps SpotOnTrack dashboards in sync with `config/playlists.csv` |
-| Playlist refresh (`sot_daily_playlist_refresh.yml`) | 05:00 | 09:00 | Refreshes SpotOnTrack playlists |
-| Daily export (`sot_daily_export.yml`) | 07:30 (primary) + 08:30 (fallback) | 11:30 + 12:30 | Exports dashboards → uploads to Storage → ingests into Supabase (idempotent) |
-| RapidAPI stale-track fix (`rapidapi_stale_fix.yml`) | 09:15 | 13:15 | Attempts own-catalog stale-track corrections after export |
-| Spotify enrichment (`spotify_enrich.yml`) | 10:00 | 14:00 | Enriches missing track metadata via Spotify |
-| Artist image cache refresh (`spotify_artist_image_refresh.yml`) | 15:00 (first Friday) | 19:00 (first Friday) | Refreshes cached Spotify artist images (monthly) |
+| Playlist refresh (`sot_daily_playlist_refresh.yml`) | 05:07 | 09:07 | Refreshes SpotOnTrack playlists |
+| Dashboard sync (`sot_daily_dashboard_sync.yml`) | 06:11 + 06:47 (fallback) | 10:11 + 10:47 | Keeps SpotOnTrack dashboards in sync with `config/playlists.csv` |
+| Daily export (`sot_daily_export.yml`) | 07:43 (primary) + 08:19 (fallback) + 11:23 (late retry) + 12:07 (final retry) | 11:43 + 12:19 + 15:23 + 16:07 | Exports dashboards → uploads to Storage → ingests into Supabase (idempotent; retries exit early once a run succeeds) |
+| RapidAPI stale-track fix (`rapidapi_stale_fix.yml`) | 09:41 | 13:41 | Attempts own-catalog stale-track corrections after export |
+| Spotify enrichment (`spotify_enrich.yml`) | 10:29, odd days of the month | 14:29 | Refreshes own playlist thumbnails, then enriches missing track metadata via Spotify |
+| Own ingestion watchdog (`sot_own_ingestion_watchdog.yml`) | 13:53 | 17:53 | Emails if today's own-catalog ingestion still hasn't succeeded after all export retries |
+| Spotify playlist watch (`spotify_playlist_watch_daily.yml`) | 15:11 | 19:11 | Collects watchlist follower counts and evaluates Playlist Watch alert rules |
+| Artist image cache refresh (`spotify_artist_image_refresh.yml`) | 15:00, first Friday of the month | 19:00 | Refreshes cached Spotify artist images (monthly) |
 
 ### Competitor Mode schedule
 
@@ -51,22 +53,23 @@ Competitor workflows are intentionally separate from the own-catalog workflows: 
 
 | Workflow | When (UTC) | When (GMT+4) | What it does |
 |---|---:|---:|---|
-| Competitor playlist refresh (`sot_competitor_daily_playlist_refresh.yml`) | 05:15 | 09:15 | Refreshes SpotOnTrack competitor playlists |
-| Competitor dashboard sync (`sot_competitor_daily_dashboard_sync.yml`) | 06:15 + 06:45 (fallback) | 10:15 + 10:45 | Mirrors competitor playlists into SpotOnTrack dashboards |
-| Competitor export (`sot_competitor_daily_export.yml`) | 08:00 + 09:00 (fallback) | 12:00 + 13:00 | Exports competitor dashboards and ingests them into the `competitor` schema |
-| Spotify competitor enrichment (`spotify_competitor_enrich.yml`) | 10:20 | 14:20 | Enriches competitor tracks with Spotify metadata |
+| Competitor playlist refresh (`sot_competitor_daily_playlist_refresh.yml`) | 05:23 | 09:23 | Refreshes SpotOnTrack competitor playlists |
+| Competitor dashboard sync (`sot_competitor_daily_dashboard_sync.yml`) | 08:53 + 09:29 (fallback) | 12:53 + 13:29 | Mirrors competitor playlists into SpotOnTrack dashboards |
+| Competitor export (`sot_competitor_daily_export.yml`) | 11:29 (primary) + 12:13 + 12:43 + 13:17 (retries) | 15:29 + 16:13 + 16:43 + 17:17 | Exports competitor dashboards and ingests them into the `competitor` schema |
+| Spotify competitor enrichment (`spotify_competitor_enrich.yml`) | 11:09, even days of the month | 15:09 | Refreshes competitor playlist thumbnails, then enriches competitor tracks with Spotify metadata |
+| Competitor ingestion watchdog (`sot_competitor_ingestion_watchdog.yml`) | 14:29 | 18:29 | Emails if today's competitor ingestion still hasn't succeeded after all export retries |
 
-The competitor jobs are offset from the own-catalog jobs to reduce shared pressure on GitHub runners, SpotOnTrack, and Spotify API rate limits.
+The competitor jobs are offset from the own-catalog jobs to reduce shared pressure on GitHub runners, SpotOnTrack, and Spotify API rate limits. Scheduled minutes are deliberately off the hour (GitHub delays `:00` schedules under load).
 
 ### Competitor Mode pages
 
 Competitor Mode is a parallel analytics universe, not a merge into your own catalog:
 
-- **Home** ? overview for the selected competitor across all of its tracked playlists
-- **Playlists** ? playlist-level totals plus current tracks; daily per-track deltas appear once at least two snapshots exist
-- **Catalog** ? competitor artists and tracks
-- **Competitors** ? competitive-intelligence cockpit: label comparison chart/table, cross-label movers, catalog churn, overlap matrix (pipeline health is on `/health`)
-- **Health** ? competitor ingestion checks (stale playlists, row mismatches, warnings, missing totals)
+- **Home** — overview for the selected competitor across all of its tracked playlists
+- **Playlists** — playlist-level totals plus current tracks; daily per-track deltas appear once at least two snapshots exist
+- **Catalog** — competitor artists and tracks
+- **Competitors** — competitive-intelligence cockpit: label comparison chart/table, cross-label movers, catalog churn, overlap matrix (pipeline health is on `/health`)
+- **Health** — competitor ingestion checks (stale playlists, row mismatches, warnings, missing totals)
 
 The selected competitor is global. One competitor may own multiple playlists, and changing the selector changes supported competitor-aware surfaces across the app.
 
