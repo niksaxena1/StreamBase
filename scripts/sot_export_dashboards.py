@@ -163,6 +163,14 @@ def ensure_logged_in(page, email: str, password: str) -> bool:
     return not is_logged_out(page)
 
 
+def is_confirmed_empty_dashboard(page) -> bool:
+    # Missing controls alone can mean a loading, login or error page.
+    return (
+        page.get_by_role("heading", name="No items in this dashboard", exact=True).is_visible()
+        and page.locator("table a[href*='/tracks/']").count() == 0
+    )
+
+
 def wait_for_export_button(page) -> bool:
     btn = page.get_by_role("button", name="Export CSV")
     try:
@@ -269,11 +277,13 @@ def download_one(page, pl: Playlist, out_path: Path) -> Tuple[bool, str]:
     if is_logged_out(page):
         return False, "logged_out"
 
-    if not wait_for_export_button(page):
-        if pl.allow_empty:
+    if is_confirmed_empty_dashboard(page) or not wait_for_export_button(page):
+        if not is_confirmed_empty_dashboard(page):
+            return False, "export_button_not_visible"
+        if pl.allow_empty and not pl.is_catalog and pl.min_rows == 0:
             write_empty_export(out_path)
-            return True, "empty_dashboard_export_button_not_visible"
-        return False, "export_button_not_visible"
+            return True, "confirmed_empty_dashboard"
+        return False, "empty_dashboard_not_allowed"
 
     try:
         with page.expect_download(timeout=DOWNLOAD_TIMEOUT_MS) as dl_info:

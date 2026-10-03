@@ -138,6 +138,10 @@ def goto_best_effort(page, url: str) -> None:
     page.goto(url, wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
 
 
+# Both dashboard and playlist track rows live in tables; sidebar quick links do not.
+TRACK_LINK_SELECTOR = "table a[href*='/tracks/']"
+
+
 def wait_for_tracks_or_empty_state(page, timeout_ms: int = 15_000) -> None:
     """
     Wait for either some track links to appear or an explicit empty state to render.
@@ -148,12 +152,14 @@ def wait_for_tracks_or_empty_state(page, timeout_ms: int = 15_000) -> None:
         if page_looks_blocked(page):
             return
         try:
-            if page.locator("a[href*='/tracks/']").count() > 0:
+            if page.locator(TRACK_LINK_SELECTOR).count() > 0:
                 return
         except Exception:
             pass
         # Empty-state heuristics (best-effort; wording may vary).
         try:
+            if page.get_by_role("heading", name="No items in this dashboard", exact=True).is_visible():
+                return
             if page.locator("text=/\\b0\\s+tracks\\b/i").count() > 0:
                 return
             if page.locator("text=/\\bno\\s+tracks\\b/i").count() > 0:
@@ -350,12 +356,12 @@ def scan_dashboard_tracks(page, dashboard_url: str) -> Set[str]:
     fast_pause(0.35, 0.75)
     wait_for_tracks_or_empty_state(page, timeout_ms=12_000)
 
-    selectors = ["a[href*='/tracks/']", "a[href^='/tracks/']"]
+    selectors = [TRACK_LINK_SELECTOR]
 
     last_count = 0
     stable_rounds = 0
     for _ in range(320):
-        count = page.locator("a[href*='/tracks/']").count()
+        count = page.locator(TRACK_LINK_SELECTOR).count()
         if count > last_count:
             last_count = count
             stable_rounds = 0
@@ -374,7 +380,7 @@ def scan_playlist_tracks(page, playlist_url: str) -> List[str]:
     fast_pause(0.5, 1.1)
     wait_for_tracks_or_empty_state(page, timeout_ms=15_000)
 
-    selectors = ["a[href*='/tracks/']", "a[href^='/tracks/']"]
+    selectors = [TRACK_LINK_SELECTOR]
 
     # IMPORTANT:
     # Do NOT return early if we see some tracks initially.
