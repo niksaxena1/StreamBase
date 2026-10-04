@@ -10,7 +10,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable, List, Optional, Sequence, Set, Tuple
+from typing import Callable, Iterable, List, Optional, Sequence, Set, Tuple
 from urllib.parse import urlparse
 
 from playwright.sync_api import TimeoutError as PWTimeout
@@ -56,6 +56,7 @@ class SyncTask:
     dashboard_name: str
     sot_playlist_id: str
     min_rows: int = 0
+    allow_empty: bool = False
 
 
 def fast_pause(a: float, b: float) -> None:
@@ -140,6 +141,24 @@ def goto_best_effort(page, url: str) -> None:
 
 # Both dashboard and playlist track rows live in tables; sidebar quick links do not.
 TRACK_LINK_SELECTOR = "table a[href*='/tracks/']"
+
+
+def confirmed_empty_page(page, url: str, *, dashboard: bool) -> bool:
+    if (page.url or "").rstrip("/") != url.rstrip("/") or is_logged_out(page) or page_looks_blocked(page):
+        return False
+    if page.locator(TRACK_LINK_SELECTOR).count() != 0:
+        return False
+    if dashboard:
+        return page.get_by_role("heading", name="No items in this dashboard", exact=True).is_visible()
+    # SOT renders an empty playlist as its loaded Tracks section without a table.
+    # Require the page controls too; absent rows on a loading/error page are not proof.
+    return (
+        page.get_by_role("heading", name=re.compile(r"Tracks$", re.I)).is_visible()
+        and page.get_by_role("button", name="Refresh now", exact=True).is_visible()
+        and page.locator("table").count() == 0
+        and page.get_by_text(re.compile(r"^Updated\s")).first.is_visible()
+        and not page.get_by_text(re.compile(r"^Loading", re.I)).first.is_visible()
+    )
 
 
 def wait_for_tracks_or_empty_state(page, timeout_ms: int = 15_000) -> None:
@@ -434,7 +453,10 @@ def scan_playlist_tracks(page, playlist_url: str) -> List[str]:
     return urls
 
 
-def scan_with_retry(scan_fn, page, url: str, max_attempts: int = RETRIES, refresh: bool = False):
+def scan_with_retry(
+    scan_fn, page, url: str, max_attempts: int = RETRIES, refresh: bool = False,
+    empty_check: Optional[Callable[[], bool]] = None,
+):
     last_note = "empty"
     for attempt in range(1, max_attempts + 1):
         try:
@@ -447,6 +469,8 @@ def scan_with_retry(scan_fn, page, url: str, max_attempts: int = RETRIES, refres
             out = []
             last_note = "error"
         if out and len(out) > 0:
+            return out
+        if last_note == "empty" and empty_check is not None and empty_check():
             return out
 
         # If we hit an anti-bot / outage page, waiting longer is more effective than tight retries.
@@ -464,7 +488,7 @@ def scan_with_retry(scan_fn, page, url: str, max_attempts: int = RETRIES, refres
 
         fast_pause(0.6 + attempt * 0.2, 1.0 + attempt * 0.3)
 
-    return out
+    return out if last_note == "empty" else None
 
 
 def enable_turbo_blocking(context) -> None:
@@ -603,6 +627,11 @@ def load_sync_tasks(path: str) -> List[SyncTask]:
                     dashboard_name=dashboard_name,
                     sot_playlist_id=sot_playlist_id,
                     min_rows=max(0, min_rows),
+                    allow_empty=(
+                        str(row.get("allow_empty") or "").strip().lower() in {"true", "1", "yes", "y"}
+                        and str(row.get("is_catalog") or "").strip().lower() not in {"true", "1", "yes", "y"}
+                        and min_rows <= 0
+                    ),
                 )
             )
 
@@ -643,6 +672,7 @@ def run_sync(
     total_removed = 0
     total_errors = 0
     total_skipped = 0
+    total_expected_empty = 0
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=headless)
@@ -695,13 +725,27 @@ def run_sync(
             # retry that re-navigates and re-scans up to TASK_RETRIES times before skipping.
             dashboard_set: Set[str] = set()
             playlist_set: Set[str] = set()
+            expected_empty = False
             for attempt in range(1, TASK_RETRIES + 1):
                 if is_logged_out(page):
                     ensure_logged_in(page, email=email, password=password)
 
-                dashboard_set = set(scan_with_retry(scan_dashboard_tracks, page, task.dashboard_url, refresh=False) or [])
-                playlist_tracks = scan_with_retry(scan_playlist_tracks, page, playlist_url, refresh=True)
+                dashboard_empty_check = lambda: confirmed_empty_page(page, task.dashboard_url, dashboard=True)
+                dashboard_tracks = scan_with_retry(
+                    scan_dashboard_tracks, page, task.dashboard_url, refresh=False,
+                    empty_check=dashboard_empty_check if task.allow_empty else None,
+                )
+                dashboard_set = set(dashboard_tracks or [])
+                dashboard_empty = task.allow_empty and dashboard_tracks is not None and not dashboard_set and dashboard_empty_check()
+                playlist_empty_check = lambda: confirmed_empty_page(page, playlist_url, dashboard=False)
+                playlist_tracks = scan_with_retry(
+                    scan_playlist_tracks, page, playlist_url, refresh=True,
+                    empty_check=playlist_empty_check if dashboard_empty else None,
+                )
                 playlist_set = set(playlist_tracks or [])
+                expected_empty = dashboard_empty and playlist_tracks is not None and not playlist_set and playlist_empty_check()
+                if expected_empty:
+                    break
 
                 # If both are non-empty (and meet any configured minimum), proceed.
                 min_ok = (task.min_rows <= 0) or (len(playlist_set) >= task.min_rows)
@@ -737,6 +781,12 @@ def run_sync(
 
             print(f"✅ Dashboard tracks found: {len(dashboard_set)}")
             print(f"✅ Playlist tracks found:  {len(playlist_set)}")
+
+            if expected_empty:
+                print("Already synced: empty (allow_empty=true; both pages confirmed empty).")
+                log_row(log_path, task, -1, playlist_url, "ok", "already synced: confirmed expected empty")
+                total_expected_empty += 1
+                continue
 
             # SAFETY: never mirror to/from empty
             if len(playlist_set) == 0:
@@ -927,6 +977,7 @@ def run_sync(
         "total_removed": total_removed,
         "total_errors": total_errors,
         "total_skipped": total_skipped,
+        "total_expected_empty": total_expected_empty,
         "tasks_total": len(tasks),
     }
     summary_path = Path(".artifacts") / "sync_summary.json"

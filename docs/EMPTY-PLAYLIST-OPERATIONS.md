@@ -18,7 +18,14 @@ the same thing as negative track listening.
 
 Dashboard synchronization reads track links from tables, not SOT's shared
 QUICK LINKS sidebar. Its existing zero-source safety remains in force: an
-empty scan never authorizes wiping a populated dashboard. When intentionally
+empty scan never authorizes wiping a populated dashboard. Explicitly allowlisted
+non-catalog playlists with no positive minimum are recorded as
+`already synced: empty` when the dashboard shows its empty-state heading and
+the source playlist has a loaded Tracks section, update controls and no table
+or loading indicator. These tasks count in `total_expected_empty`, not
+`total_skipped`, so they do not trigger skip emails or repeated empty retries.
+Blocked, incomplete, unapproved or populated pages retain the existing safety
+handling. When intentionally
 emptying another distributor, confirm both its source playlist and SOT
 dashboard are genuinely empty before enabling `allow_empty`.
 
