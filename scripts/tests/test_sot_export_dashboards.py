@@ -97,7 +97,7 @@ class EmptyExportTests(unittest.TestCase):
     def test_only_confirmed_distributor_exemptions_are_configured(self):
         config = Path(__file__).resolve().parents[2] / "config" / "playlists.csv"
         playlists = load_playlists_csv(str(config))
-        self.assertEqual({p.key for p in playlists if p.allow_empty}, {"fh_offstep", "tps_emubands"})
+        self.assertEqual({p.key for p in playlists if p.allow_empty}, {"fh_offstep", "tps_emubands", "ghr_emubands"})
         self.assertFalse(any(p.allow_empty for p in playlists if p.is_catalog))
 
 

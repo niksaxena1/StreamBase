@@ -1,7 +1,7 @@
 # Intentionally empty distributor playlists
 
-`config/playlists.csv` explicitly allows empty exports for FH OFFstep and TPS
-EmuBands. Other playlists remain protected; do not enable this for catalog
+`config/playlists.csv` explicitly allows empty exports for FH OFFstep, TPS
+EmuBands and GHR EmuBands. Other playlists remain protected; do not enable this for catalog
 sources or playlists with a positive `min_rows` requirement.
 
 The exporter accepts an empty dashboard only when SOT visibly says
