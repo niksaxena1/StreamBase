@@ -1,7 +1,9 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { Dispatch, ReactNode, SetStateAction } from "react";
+import { X } from "lucide-react";
 import type { ThemeColors } from "@/components/charts/useThemeColors";
+import { formatInt } from "@/lib/format";
 import { accentRgba } from "./networkGraphPure";
 import type { GraphEdge, GraphNode } from "./page";
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
@@ -191,6 +193,75 @@ export function SelectedArtistPanel({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/** Cross-label (competitor overlap) mode: selected label summary with a shortcut to open that competitor. */
+export function CrossLabelSelectedPanel({
+  selectedNodeId,
+  nodes,
+  graphDegreeMap,
+  colors,
+  switchCompetitorLabel,
+  setSelectedNodeId,
+}: {
+  selectedNodeId: string;
+  nodes: GraphNode[];
+  graphDegreeMap: Map<string, number>;
+  colors: ThemeColors;
+  switchCompetitorLabel: (labelKey: string) => Promise<void>;
+  setSelectedNodeId: Dispatch<SetStateAction<string | null>>;
+}) {
+  return (
+    <div
+      className="border-t px-4 py-3 flex flex-wrap items-center gap-3 shrink-0"
+      style={{ borderColor: colors.border, backgroundColor: colors.card }}
+    >
+      {(() => {
+        const node = nodes.find((n) => n.id === selectedNodeId);
+        if (!node) return null;
+        return (
+          <>
+            {node.image_url ? (
+              <PreviewableArtwork
+                src={node.image_url}
+                alt={node.name}
+                width={40}
+                height={40}
+                interactive="inline"
+                className="h-10 w-10 shrink-0 rounded-lg object-cover"
+              />
+            ) : null}
+            <div className="min-w-0 flex-1">
+              <div className="font-semibold truncate" style={{ color: colors.text }}>
+                {node.name}
+              </div>
+              <div className="text-xs tabular-nums" style={{ color: colors.muted }}>
+                {formatInt(node.track_count)} active playlist tracks ·{" "}
+                {graphDegreeMap.get(selectedNodeId) ?? 0} shared-track links to other labels
+              </div>
+            </div>
+            <button
+              type="button"
+              className="rounded-lg px-3 py-1.5 text-xs font-medium shrink-0"
+              style={{ backgroundColor: "var(--sb-accent)", color: "var(--sb-accent-text,#000)" }}
+              onClick={() => void switchCompetitorLabel(selectedNodeId)}
+            >
+              Open competitor
+            </button>
+            <button
+              type="button"
+              className="rounded-lg px-2 py-1.5 text-xs shrink-0"
+              style={{ color: colors.muted }}
+              onClick={() => setSelectedNodeId(null)}
+              aria-label="Close selection"
+            >
+              <X className="h-4 w-4" aria-hidden />
+            </button>
+          </>
+        );
+      })()}
     </div>
   );
 }
