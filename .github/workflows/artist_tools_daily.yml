@@ -4,9 +4,6 @@ permissions:
   contents: read
 
 on:
-  workflow_run:
-    workflows: ["RapidAPI Stale Track Fix"]
-    types: [completed]
   schedule:
     - cron: "17 13 * * *"
   workflow_dispatch:
@@ -27,8 +24,6 @@ concurrency:
 
 jobs:
   daily:
-    # ANY upstream conclusion; never propagate an upstream manual test.
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.event != 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:

@@ -10,24 +10,25 @@ flowchart LR
   Head --> CompetitorRefresh[SOT Competitor Daily Playlist Refresh]
   OwnRefresh -->|success + 10 minute wait| OwnSync[SOT Daily Dashboard Sync]
   OwnSync -->|success| OwnExport[SOT Daily Export]
-  OwnExport -->|success| Fix[RapidAPI Stale Track Fix]
-  Fix -->|any conclusion, except manual| Artist[Artist Tools Daily]
+  OwnExport -->|ingested: gh workflow run| Fix[RapidAPI Stale Track Fix]
+  Fix -->|always: gh workflow run| Artist[Artist Tools Daily]
   CompetitorRefresh -->|success + 10 minute wait| CompetitorSync[SOT Competitor Daily Dashboard Sync]
   CompetitorSync -->|success| CompetitorExport[SOT Competitor Daily Export]
 ```
 
-Each downstream workflow listens for `workflow_run` with `types: [completed]`.
-Refresh/sync/export/RapidAPI stages require upstream `success`; Artist Tools Daily
-accepts any RapidAPI conclusion so quota/provider failures still get a fallback.
+Sync and export listen for `workflow_run` with `types: [completed]` and require
+upstream `success`. GitHub stops `workflow_run` chains after three levels, so the
+last two hand-offs are explicit dispatches (`gh workflow run` with `GITHUB_TOKEN`,
+which GitHub allows): the export starts the RapidAPI stale fix after a real ingest,
+and the stale fix always starts Artist Tools Daily, even when RapidAPI failed or
+ran out of quota.
 Dashboard sync first
 waits 600 seconds on chained runs so SpotOnTrack can process playlist refreshes.
 Manual and cron syncs do not wait.
 
 GitHub requires the `workflow_run` and `repository_dispatch` workflow definitions
 to exist on the default branch (`main`); merge these changes before enabling the
-external scheduler. Chained runs check out the default branch. The own-catalog
-chain uses GitHub's maximum of three downstream `workflow_run` levels.
-See [GitHub workflow events](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows).
+external scheduler. Chained runs check out the default branch. See [GitHub workflow events](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows).
 
 ## External head trigger
 
@@ -101,19 +102,14 @@ run the next step manually (or let its fallback cron pick it up). Only scheduled
 
 ## artist.tools second source and stale fallback
 
-Artist Tools Daily follows `RapidAPI Stale Track Fix` on any completion, excluding
-upstream `workflow_dispatch` tests. It records own-catalog cumulative counts even
+Artist Tools Daily is dispatched by `RapidAPI Stale Track Fix` on any completion. It records own-catalog cumulative counts even
 for tracks RapidAPI fixed, then repairs remaining stale tracks without replacing
 existing overrides. It retains the fewer-than-500 safety boundary. Only Supabase
 URL/service-role secrets are needed; rotating OAuth tokens live in a private table.
 Successful UTC-date runs are skipped by the cron and optional 19:00-local Windows
 fallback. See [authorization, limits, comparisons and setup](ARTIST-TOOLS-SOURCE.md).
 
-The existing own chain already uses GitHub's three downstream `workflow_run`
-levels. This fourth chained listener cannot run when RapidAPI itself is at that
-depth. The 13:17 UTC artist.tools cron and PC fallback are therefore required;
-the listener works for eligible shorter RapidAPI chains (such as its cron).
-See [GitHub's workflow chain depth limit](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run).
+The 13:17 UTC cron and the optional PC task remain as fallbacks.
 
 ## Incremental dashboard sync
 
