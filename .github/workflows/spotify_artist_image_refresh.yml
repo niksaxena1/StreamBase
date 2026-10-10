@@ -12,8 +12,9 @@ on:
         required: false
         default: "31"
   schedule:
-    # First Friday of the month at 19:00 Asia/Abu_Dhabi (UTC+4) => 15:00 UTC
-    - cron: "0 15 1-7 * 5"
+    # Fridays at 19:00 Asia/Abu_Dhabi (UTC+4) => 15:00 UTC. Cron ORs
+    # day-of-month and day-of-week, so the first-seven-days check is in the job.
+    - cron: "0 15 * * 5"
 
 concurrency:
   group: spotify-artist-image-refresh
@@ -32,10 +33,23 @@ jobs:
       MAX_REFRESH: ${{ inputs.max_refresh || '5000' }}
       MAX_AGE_DAYS: ${{ inputs.max_age_days || '31' }}
     steps:
+      - name: Gate scheduled runs to the first Friday
+        id: schedule_gate
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ] && [ "$(date -u +%-d)" -gt 7 ]; then
+            echo "Not the first Friday of the month; skipping."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Checkout
+        if: steps.schedule_gate.outputs.run == 'true'
         uses: actions/checkout@v7
 
       - name: Setup Node
+        if: steps.schedule_gate.outputs.run == 'true'
         uses: actions/setup-node@v7
         with:
           node-version: "20"
@@ -43,10 +57,12 @@ jobs:
           cache-dependency-path: web/package-lock.json
 
       - name: Install web dependencies
+        if: steps.schedule_gate.outputs.run == 'true'
         run: npm ci
         working-directory: web
 
       - name: Refresh cached artist images
+        if: steps.schedule_gate.outputs.run == 'true'
         run: node scripts/refresh_spotify_artist_images.mjs
         working-directory: web
 

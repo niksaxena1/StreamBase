@@ -32,41 +32,47 @@ Where the main pieces live in this repo:
 
 ## Daily automation schedule (GitHub Actions)
 
-GitHub Actions scheduled workflows use **UTC**. Below is the same schedule shown in **UTC** and **GMT+4** (GST / Asia/Abu_Dhabi).
+GitHub Actions crons use **UTC**. Times below also show Dubai time (UTC+4). Cron rows are scheduled fallbacks: the playlist refresh starts from a `daily-pipeline` repository dispatch, and successful refresh/sync completions start the next workflow when the previous run finishes. Those chains do not wait for the fallback cron. GitHub can delay cron starts.
 
 ### Own-catalog schedule
 
-| Workflow | When (UTC) | When (GMT+4) | What it does |
-|---|---:|---:|---|
-| Dashboard sync (`sot_daily_dashboard_sync.yml`) | 06:00 + 06:30 (fallback) | 10:00 + 10:30 | Keeps SpotOnTrack dashboards in sync with `config/playlists.csv` |
-| Playlist refresh (`sot_daily_playlist_refresh.yml`) | 05:00 | 09:00 | Refreshes SpotOnTrack playlists |
-| Daily export (`sot_daily_export.yml`) | 07:30 (primary) + 08:30 (fallback) | 11:30 + 12:30 | Exports dashboards → uploads to Storage → ingests into Supabase (idempotent) |
-| RapidAPI stale-track fix (`rapidapi_stale_fix.yml`) | 09:15 | 13:15 | Attempts own-catalog stale-track corrections after export |
-| Spotify enrichment (`spotify_enrich.yml`) | 10:00 | 14:00 | Enriches missing track metadata via Spotify |
-| Artist image cache refresh (`spotify_artist_image_refresh.yml`) | 15:00 (first Friday) | 19:00 (first Friday) | Refreshes cached Spotify artist images (monthly) |
+| Workflow | Trigger / time (UTC) | Dubai (UTC+4) | What it does |
+|---|---|---:|---|
+| Spotify Takedown Watch (`spotify_takedown_watch.yml`) | Daily cron 04:37 | 08:37 | Checks own-catalog tracks for Spotify availability changes |
+| Playlist refresh (`sot_daily_playlist_refresh.yml`) | `daily-pipeline` repository dispatch; daily fallback cron 05:07 | 09:07 | Refreshes SpotOnTrack playlists |
+| Dashboard sync (`sot_daily_dashboard_sync.yml`) | After successful refresh completes; daily fallback cron 06:11 | 10:11 | Keeps SpotOnTrack dashboards in sync with `config/playlists.csv` |
+| Daily export (`sot_daily_export.yml`) | After successful sync completes; daily fallback cron 07:43 | 11:43 | Exports dashboards → uploads to Storage → ingests into Supabase (idempotent) |
+| RapidAPI stale-track fix (`rapidapi_stale_fix.yml`) | Dispatched after a successful, current-UTC-date own-catalog export is ingested; daily fallback cron 09:41 | 13:41 | Attempts own-catalog stale-track corrections |
+| Spotify enrichment (`spotify_enrich.yml`) | 10:29 UTC on odd days of the month | 14:29 | Refreshes own playlist thumbnails, then enriches missing track metadata via Spotify |
+| Own ingestion watchdog (`sot_own_ingestion_watchdog.yml`) | Daily cron 13:53 | 17:53 | Emails if today's own-catalog ingestion has not succeeded |
+| Artist Tools Daily (`artist_tools_daily.yml`) | Dispatched whenever RapidAPI stale-fix finishes; daily fallback cron 13:17 | 17:17 | Records artist counts and repairs remaining stale tracks |
+| Spotify artist image cache refresh (`spotify_artist_image_refresh.yml`) | Fridays at 15:00; runs only when UTC day-of-month is 1–7 | 19:00 | Refreshes cached Spotify artist images once on the month's first Friday; manual dispatch is not date-gated |
+| Spotify Playlist Watch Daily (`spotify_playlist_watch_daily.yml`) | Daily cron 15:11 | 19:11 | Collects watchlist follower counts and evaluates alert rules |
+| Pipeline Quality CI (`pipeline_quality.yml`) | Matching pull requests and pushes to `main` that change configured paths; event-triggered, no cron | Event-driven | Runs pipeline tests and workflow lint |
 
 ### Competitor Mode schedule
 
 Competitor workflows are intentionally separate from the own-catalog workflows: they use different workflow files, config, concurrency groups, and the `competitor` database schema.
 
-| Workflow | When (UTC) | When (GMT+4) | What it does |
-|---|---:|---:|---|
-| Competitor playlist refresh (`sot_competitor_daily_playlist_refresh.yml`) | 05:15 | 09:15 | Refreshes SpotOnTrack competitor playlists |
-| Competitor dashboard sync (`sot_competitor_daily_dashboard_sync.yml`) | 06:15 + 06:45 (fallback) | 10:15 + 10:45 | Mirrors competitor playlists into SpotOnTrack dashboards |
-| Competitor export (`sot_competitor_daily_export.yml`) | 08:00 + 09:00 (fallback) | 12:00 + 13:00 | Exports competitor dashboards and ingests them into the `competitor` schema |
-| Spotify competitor enrichment (`spotify_competitor_enrich.yml`) | 10:20 | 14:20 | Enriches competitor tracks with Spotify metadata |
+| Workflow | Trigger / time (UTC) | Dubai (UTC+4) | What it does |
+|---|---|---:|---|
+| Playlist refresh (`sot_competitor_daily_playlist_refresh.yml`) | `daily-pipeline` repository dispatch; daily fallback cron 05:23 | 09:23 | Refreshes SpotOnTrack competitor playlists |
+| Dashboard sync (`sot_competitor_daily_dashboard_sync.yml`) | After successful refresh completes; daily fallback cron 08:53 | 12:53 | Mirrors competitor playlists into SpotOnTrack dashboards |
+| Export (`sot_competitor_daily_export.yml`) | After successful sync completes; daily fallback cron 11:29 | 15:29 | Exports competitor dashboards and ingests them into the `competitor` schema |
+| Spotify competitor enrichment (`spotify_competitor_enrich.yml`) | 11:09 UTC on even days of the month | 15:09 | Refreshes competitor playlist thumbnails, then enriches competitor tracks with Spotify metadata |
+| Competitor ingestion watchdog (`sot_competitor_ingestion_watchdog.yml`) | Daily cron 14:29 | 18:29 | Emails if today's competitor ingestion has not succeeded |
 
-The competitor jobs are offset from the own-catalog jobs to reduce shared pressure on GitHub runners, SpotOnTrack, and Spotify API rate limits.
+The own-catalog export also dispatches RapidAPI stale fix after successful ingestion, which then dispatches Artist Tools Daily when it completes. Each chained step starts after its predecessor completes; cron triggers are fallbacks and may independently start a run. See `docs/DAILY-PIPELINE.md` for the chain and external scheduler details.
 
 ### Competitor Mode pages
 
 Competitor Mode is a parallel analytics universe, not a merge into your own catalog:
 
-- **Home** ? overview for the selected competitor across all of its tracked playlists
-- **Playlists** ? playlist-level totals plus current tracks; daily per-track deltas appear once at least two snapshots exist
-- **Catalog** ? competitor artists and tracks
-- **Competitors** ? competitive-intelligence cockpit: label comparison chart/table, cross-label movers, catalog churn, overlap matrix (pipeline health is on `/health`)
-- **Health** ? competitor ingestion checks (stale playlists, row mismatches, warnings, missing totals)
+- **Home** — overview for the selected competitor across all of its tracked playlists
+- **Playlists** — playlist-level totals plus current tracks; daily per-track deltas appear once at least two snapshots exist
+- **Catalog** — competitor artists and tracks
+- **Competitors** — competitive-intelligence cockpit: label comparison chart/table, cross-label movers, catalog churn, overlap matrix (pipeline health is on `/health`)
+- **Health** — competitor ingestion checks (stale playlists, row mismatches, warnings, missing totals)
 
 The selected competitor is global. One competitor may own multiple playlists, and changing the selector changes supported competitor-aware surfaces across the app.
 
@@ -1510,10 +1516,10 @@ The independent `spotify_takedown_watch.yml` workflow runs daily at **04:37 UTC 
 5. Definitive results update `public.spotify_track_availability`, keyed by stable `tracks.isrc`. It stores status, reason, markets checked, first/last checks, last availability, status-change time, and unavailable-since time. `public.spotify_track_availability_events` records `taken_down`/`restored` transitions with detection and notification timestamps. Unknown results leave prior state intact.
 6. The workflow sends combined alerts through `.github/actions/notify-email`, then acknowledges only the successfully delivered event IDs. Unsent events remain pending for the next run. An alert JSON audit artifact is retained for seven days. Standalone CLI runs retain SMTP delivery using `NOTIFY_SMTP_PASSWORD` (and optional `TAKEDOWN_ALERT_TO`/`TAKEDOWN_ALERT_FROM` overrides).
 
-For **3,200 unique tracks**, all playable in the first market, a batch-capable app uses **64 track requests plus one token request**. If every batch needs all three markets, it uses up to **192 track requests plus up to 3,200 ISRC searches**. Single-track fallback uses **one rejected batch probe plus 3,200?9,600 track requests and up to 3,200 searches**. Null slots, retries, or token refreshes add requests. Calls are sequential with a default minimum interval of 0.5 seconds, bounded retries, and respect for `Retry-After`; a wait over 120 seconds aborts. Spotify's rate limit varies by app, so this throttle is not a quota guarantee. The workflow allows 180 minutes for fallback and backoff.
+For **3,200 unique tracks**, all playable in the first market, a batch-capable app uses **64 track requests plus one token request**. If every batch needs all three markets, it uses up to **192 track requests plus up to 3,200 ISRC searches**. Single-track fallback uses **one rejected batch probe plus 3,200–9,600 track requests and up to 3,200 searches**. Null slots, retries, or token refreshes add requests. Calls are sequential with a default minimum interval of 0.5 seconds, bounded retries, and respect for `Retry-After`; a wait over 120 seconds aborts. Spotify's rate limit varies by app, so this throttle is not a quota guarantee. The workflow allows 180 minutes for fallback and backoff.
 
 Safety valves run **before any database writes or transition emails**: at least 25 new takedowns and more than 10% of checked tracks stops the run; more than 50% inconclusive answers also stops it. The run also stops before Spotify checks, writes, or transition emails if the full fetched candidate count is less than 50% of the stored checked rows in `spotify_track_availability`, including an empty result after previous checks. This count guard applies to dry runs and compares the full candidate set before `--limit`; it cannot be bypassed by `skip_safety_valve`. Investigate pagination and the snapshot window if it trips. All guards return nonzero and trigger the workflow failure notification. Only the mass-flip guard can be bypassed with `skip_safety_valve=true`, after manually confirming the takedown. Dry runs also respect these guards and never write or email transitions.
 
-In Actions, choose **Spotify Takedown Watch ? Run workflow ? dry_run=true** for a read-only catalog check. To diagnose one track without database access, set `track_id` and optional `isrc`, or run `python scripts/check_spotify_track_availability.py --track-id ID --isrc ISRC`. Full local checks support `--dry-run`, `--limit`, `--lookback-days`, and `--min-interval`.
+In Actions, choose **Spotify Takedown Watch → Run workflow → dry_run=true** for a read-only catalog check. To diagnose one track without database access, set `track_id` and optional `isrc`, or run `python scripts/check_spotify_track_availability.py --track-id ID --isrc ISRC`. Full local checks support `--dry-run`, `--limit`, `--lookback-days`, and `--min-interval`.
 
 The watch has its own concurrency group and is not chained into the daily ingestion pipeline. Successful state writes request the shared best-effort web cache refresh so the Health panel updates promptly. Its verdict covers the configured markets, not a guarantee of worldwide availability or the legal reason for removal.
