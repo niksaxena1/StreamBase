@@ -461,7 +461,16 @@ def require_https(url):
 def authorize(pg, account="default"):
     session = requests.Session()
     origin = "https://app.artist.tools"
-    protected = session.get(origin + "/.well-known/oauth-protected-resource", timeout=30)
+    # RFC 9728: metadata for https://app.artist.tools/mcp lives at the path-inserted
+    # URL (/.well-known/oauth-protected-resource/mcp); the root form is a fallback.
+    mcp_path = urlsplit(MCP_URL).path.rstrip("/")
+    protected = None
+    for candidate in (origin + "/.well-known/oauth-protected-resource" + mcp_path,
+                      origin + "/.well-known/oauth-protected-resource"):
+        protected = session.get(candidate, timeout=30)
+        content_type = next((v for k, v in protected.headers.items() if k.lower() == "content-type"), "")
+        if protected.ok and "json" in content_type:
+            break
     protected.raise_for_status()
     resource = protected.json()
     issuer = resource["authorization_servers"][0].rstrip("/")

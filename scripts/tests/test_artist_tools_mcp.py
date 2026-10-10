@@ -295,13 +295,37 @@ def test_pacing_for_free_tool_quotas():
     assert tokens.waits[3] >= 12
 
 
+def test_authorize_falls_back_to_root_protected_resource_metadata(monkeypatch):
+    seen = []
+
+    class HTTP:
+        def get(self, url, **kwargs):
+            seen.append(url)
+            if url.endswith("oauth-protected-resource/mcp"):
+                return Response("<html>", 404, {"Content-Type": "text/html"})
+            if url.endswith("oauth-protected-resource"):
+                return Response({"resource": mcp.MCP_URL, "authorization_servers": ["http://insecure.invalid"]})
+            raise AssertionError(url)
+
+    monkeypatch.setattr(mcp.requests, "Session", lambda: HTTP())
+    with pytest.raises(mcp.ArtistToolsError):
+        mcp.authorize(OAuthPG())
+    assert seen == [
+        "https://app.artist.tools/.well-known/oauth-protected-resource/mcp",
+        "https://app.artist.tools/.well-known/oauth-protected-resource",
+    ]
+
+
 def test_authorize_discovery_pkce_callback_and_store(monkeypatch, capsys):
     pg, opened, posted = OAuthPG(), [], []
 
     class HTTP:
         def get(self, url, **kwargs):
-            if url.endswith("oauth-protected-resource"):
+            # Live artist.tools: path-inserted metadata is JSON; the root form is an HTML 404.
+            if url.endswith("oauth-protected-resource/mcp"):
                 return Response({"resource": mcp.MCP_URL, "authorization_servers": ["https://auth.invalid"]})
+            if url.endswith("oauth-protected-resource"):
+                return Response("<html>", 404, {"Content-Type": "text/html"})
             assert url == "https://auth.invalid/.well-known/oauth-authorization-server"
             return Response({"authorization_endpoint": "https://auth.invalid/authorize", "token_endpoint": "https://auth.invalid/token",
                              "registration_endpoint": "https://auth.invalid/register", "token_endpoint_auth_methods_supported": ["none"]})
