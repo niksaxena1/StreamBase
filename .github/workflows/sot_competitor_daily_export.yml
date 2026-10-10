@@ -5,16 +5,12 @@ permissions:
   contents: read
 
 on:
+  workflow_run:
+    workflows: ["SOT Competitor Daily Dashboard Sync"]
+    types: [completed]
   schedule:
-    # First window starts after the competitor dashboard sync can realistically
-    # finish (sync crons 08:53/09:29 UTC, up to 180 min): earlier 10:11/10:47
-    # crons routinely failed the sync gate while the sync was still running.
+    # Fallback after the 08:53 UTC sync window; the gate blocks early exports.
     - cron: "29 11 * * *"
-    - cron: "13 12 * * *"
-    # Late retries cover GitHub schedule delays and dashboard syncs that finish
-    # after the early export windows.
-    - cron: "43 12 * * *"
-    - cron: "17 13 * * *"
   workflow_dispatch:
     inputs:
       run_date:
@@ -38,6 +34,7 @@ concurrency:
 
 jobs:
   export:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -45,8 +42,10 @@ jobs:
       - name: Compute run date (UTC)
         id: run_date
         shell: bash
+        env:
+          MANUAL_RUN_DATE: ${{ github.event_name == 'workflow_dispatch' && inputs.run_date || '' }}
         run: |
-          RUN_DATE="${{ github.event.inputs.run_date }}"
+          RUN_DATE="$MANUAL_RUN_DATE"
           if [ -z "$RUN_DATE" ]; then RUN_DATE=$(date -u +'%Y-%m-%d'); fi
           echo "run_date=$RUN_DATE" >> "$GITHUB_OUTPUT"
       - name: "Gate: require successful Competitor Dashboard Sync"
@@ -55,7 +54,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Soft gate: a miss skips this run instead of failing it (later crons retry;
+          # Soft gate: a miss skips this run instead of failing it (the chain retries;
           # the 14:29 UTC competitor watchdog alerts if no data lands all day).
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.skip_sync_gate }}" = "true" ]; then
             echo "gate_ok=true" >> "$GITHUB_OUTPUT"
@@ -171,7 +170,7 @@ jobs:
           subject: "[StreamBase] Competitor Export/Ingest FAILED"
           body: |
             The competitor export/ingest workflow failed (this may be a gate failure
-            if the dashboard sync has not succeeded yet today; later retry crons or
+            if the dashboard sync has not succeeded yet today; the sync chain or
             the 14:29 UTC competitor watchdog will confirm whether data landed).
 
             Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

@@ -5,12 +5,19 @@ permissions:
   contents: read
 
 on:
+  workflow_run:
+    workflows: ["SOT Competitor Daily Playlist Refresh"]
+    types: [completed]
   schedule:
-    # After Own Catalog sync/export windows to avoid shared SpotOnTrack pressure.
+    # Fallback if the refresh chain is missed; skip if already synced today.
     - cron: "53 8 * * *"
-    - cron: "29 9 * * *"
   workflow_dispatch:
     inputs:
+      full_sync:
+        description: "Force a full dashboard sync (also automatic on Sundays UTC)"
+        required: false
+        type: boolean
+        default: false
       dry_run:
         description: "Preview only (no clicking)"
         required: false
@@ -36,9 +43,13 @@ concurrency:
 
 jobs:
   sync:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 180
     steps:
+      - name: Wait for SpotOnTrack to process playlist refresh
+        if: github.event_name == 'workflow_run'
+        run: sleep 600
       - uses: actions/checkout@v4
       - name: "Pre-check: skip if already synced successfully today"
         id: precheck
@@ -100,18 +111,36 @@ jobs:
         run: |
           if [ -z "$SOT_STORAGE_STATE_B64" ]; then exit 0; fi
           echo "$SOT_STORAGE_STATE_B64" | base64 --decode > sot_state.json
+      - name: Restore dashboard sync state
+        if: steps.precheck.outputs.should_run == 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: .sync-state/competitor.json
+          key: sot-sync-state-competitor-${{ github.run_id }}
+          restore-keys: sot-sync-state-competitor-
       - name: Sync competitor dashboards to playlists
         if: steps.precheck.outputs.should_run == 'true'
         env:
           SOT_EMAIL: ${{ secrets.SOT_EMAIL }}
           SOT_PASSWORD: ${{ secrets.SOT_PASSWORD }}
+          SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
+          SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           ARGS="--headless"
+          if [ "$(date -u +%u)" = "7" ] || [ "${{ inputs.full_sync }}" = "true" ]; then ARGS="$ARGS --full"; fi
           if [ "${{ inputs.dry_run }}" = "true" ]; then ARGS="$ARGS --dry-run"; fi
           if [ "${{ inputs.add_only }}" = "true" ]; then ARGS="$ARGS --no-sync"; fi
           if [ -n "${{ inputs.limit }}" ]; then ARGS="$ARGS --limit ${{ inputs.limit }}"; fi
           if [ -n "${{ inputs.playlist_keys }}" ]; then ARGS="$ARGS --only-playlist-keys ${{ inputs.playlist_keys }}"; fi
-          python scripts/sot_sync_dashboards.py --config config/competitor_playlists.csv --storage-state sot_state.json $ARGS
+          python scripts/sot_sync_dashboards.py --config config/competitor_playlists.csv --storage-state sot_state.json --state-file .sync-state/competitor.json $ARGS
+      - name: Save dashboard sync state (including partial progress)
+        if: always() && steps.precheck.outputs.should_run == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .sync-state/competitor.json
+          key: sot-sync-state-competitor-${{ github.run_id }}
       - name: Upload sync log artifact
         if: always() && steps.precheck.outputs.should_run == 'true'
         uses: actions/upload-artifact@v4

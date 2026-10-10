@@ -5,13 +5,12 @@ permissions:
   contents: read
 
 on:
+  workflow_run:
+    workflows: ["SOT Daily Dashboard Sync"]
+    types: [completed]
   schedule:
-    # Primary run + fallbacks to reduce missed schedules.
-    # Idempotency is enforced via a Supabase pre-check (see steps below).
+    # Fallback; the sync gate and Supabase pre-check keep it idempotent.
     - cron: "43 7 * * *" # 11:43 Dubai / 07:43 UTC daily
-    - cron: "19 8 * * *" # 12:19 Dubai / 08:19 UTC fallback
-    - cron: "23 11 * * *" # 15:23 Dubai / 11:23 UTC late retry
-    - cron: "7 12 * * *" # 16:07 Dubai / 12:07 UTC final retry
   workflow_dispatch:
     inputs:
       run_date:
@@ -31,6 +30,7 @@ on:
 
 jobs:
   export:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -44,8 +44,10 @@ jobs:
       - name: Compute run date (UTC)
         id: run_date
         shell: bash
+        env:
+          MANUAL_RUN_DATE: ${{ github.event_name == 'workflow_dispatch' && inputs.run_date || '' }}
         run: |
-          RUN_DATE="${{ github.event.inputs.run_date }}"
+          RUN_DATE="$MANUAL_RUN_DATE"
           if [ -z "$RUN_DATE" ]; then RUN_DATE=$(date -u +'%Y-%m-%d'); fi
           echo "run_date=$RUN_DATE" >> "$GITHUB_OUTPUT"
 
