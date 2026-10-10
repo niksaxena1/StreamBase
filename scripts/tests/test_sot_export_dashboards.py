@@ -8,6 +8,8 @@ from scripts.sot_export_dashboards import (
     Playlist,
     count_csv_rows,
     download_one,
+    download_with_retries,
+    PWTimeout,
     filter_playlists_by_keys,
     load_playlists_csv,
 )
@@ -31,6 +33,19 @@ class TargetedExportTests(unittest.TestCase):
 
 
 class EmptyExportTests(unittest.TestCase):
+    def test_navigation_timeout_is_retried_then_succeeds(self):
+        page = MagicMock()
+        with patch("scripts.sot_export_dashboards.download_one", side_effect=[PWTimeout("navigation"), (True, "downloaded")]) as attempt, patch("scripts.sot_export_dashboards.time.sleep"):
+            self.assertEqual(download_with_retries(page, None, Path("unused.csv")), (True, "downloaded"))
+        self.assertEqual(attempt.call_count, 2)
+
+    def test_persistent_timeout_returns_failure_after_bounded_retries(self):
+        page = MagicMock()
+        page.reload.side_effect = PWTimeout("reload")
+        with patch("scripts.sot_export_dashboards.MAX_EXPORT_RETRIES", 2), patch("scripts.sot_export_dashboards.download_one", side_effect=PWTimeout("navigation")) as attempt, patch("scripts.sot_export_dashboards.time.sleep"):
+            self.assertEqual(download_with_retries(page, None, Path("unused.csv")), (False, "failed_after_retries:page_timeout"))
+        self.assertEqual(attempt.call_count, 2)
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)

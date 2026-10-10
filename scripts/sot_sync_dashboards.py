@@ -150,12 +150,17 @@ def confirmed_empty_page(page, url: str, *, dashboard: bool) -> bool:
         return False
     if dashboard:
         return page.get_by_role("heading", name="No items in this dashboard", exact=True).is_visible()
-    # SOT renders an empty playlist as its loaded Tracks section without a table.
+    # SOT renders either no table or an explicit empty-state row in the table.
     # Require the page controls too; absent rows on a loading/error page are not proof.
     return (
         page.get_by_role("heading", name=re.compile(r"Tracks$", re.I)).is_visible()
         and page.get_by_role("button", name="Refresh now", exact=True).is_visible()
-        and page.locator("table").count() == 0
+        and (
+            page.locator("table").count() == 0
+            or page.locator("table").get_by_text(
+                "It looks like this playlist was empty at this date.", exact=True
+            ).is_visible()
+        )
         and page.get_by_text(re.compile(r"^Updated\s")).first.is_visible()
         and not page.get_by_text(re.compile(r"^Loading", re.I)).first.is_visible()
     )

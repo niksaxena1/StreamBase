@@ -21,8 +21,9 @@ QUICK LINKS sidebar. Its existing zero-source safety remains in force: an
 empty scan never authorizes wiping a populated dashboard. Explicitly allowlisted
 non-catalog playlists with no positive minimum are recorded as
 `already synced: empty` when the dashboard shows its empty-state heading and
-the source playlist has a loaded Tracks section, update controls and no table
-or loading indicator. These tasks count in `total_expected_empty`, not
+the source playlist has a loaded Tracks section, update controls, no track links
+and no loading indicator. It may have no table or a table explicitly stating
+`It looks like this playlist was empty at this date.` These tasks count in `total_expected_empty`, not
 `total_skipped`, so they do not trigger skip emails or repeated empty retries.
 Blocked, incomplete, unapproved or populated pages retain the existing safety
 handling. When intentionally
@@ -34,6 +35,10 @@ deployed, a successful export/ingestion is needed before reviewing missing-day
 intervals for any justified overrides.
 
 Focused verification:
+
+Export navigation/readiness timeouts participate in the bounded export retry
+loop, including when they happen before the CSV download starts. Persistent
+timeouts still fail the export rather than being mistaken for empty data.
 
 ```powershell
 python -m unittest scripts.tests.test_sot_export_dashboards scripts.tests.test_sot_sync_dashboards

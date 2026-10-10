@@ -69,6 +69,28 @@ class TrackTableScanTests(unittest.TestCase):
 
 
 class ExpectedEmptySyncTests(unittest.TestCase):
+    def test_empty_playlist_table_requires_explicit_empty_message(self):
+        page = Mock()
+        page.url = "https://example.com/playlist"
+        tracks, table = Mock(), Mock()
+        tracks.count.return_value = 0
+        table.count.return_value = 1
+        page.locator.side_effect = lambda selector: table if selector == "table" else tracks
+        page.get_by_role.return_value.is_visible.return_value = True
+        updated, loading = Mock(), Mock()
+        updated.first.is_visible.return_value = True
+        loading.first.is_visible.return_value = False
+        page.get_by_text.side_effect = lambda pattern: loading if "Loading" in pattern.pattern else updated
+        with patch("scripts.sot_sync_dashboards.page_looks_blocked", return_value=False):
+            table.get_by_text.return_value.is_visible.return_value = True
+            self.assertTrue(confirmed_empty_page(page, page.url, dashboard=False))
+            table.get_by_text.assert_called_with("It looks like this playlist was empty at this date.", exact=True)
+            table.get_by_text.return_value.is_visible.return_value = False
+            self.assertFalse(confirmed_empty_page(page, page.url, dashboard=False))
+            table.get_by_text.return_value.is_visible.return_value = True
+            tracks.count.return_value = 1
+            self.assertFalse(confirmed_empty_page(page, page.url, dashboard=False))
+
     def test_config_only_allows_explicit_non_catalog_zero_minimum(self):
         with tempfile.TemporaryDirectory() as td:
             config = Path(td) / "playlists.csv"

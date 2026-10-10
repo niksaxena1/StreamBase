@@ -304,7 +304,11 @@ def download_one(page, pl: Playlist, out_path: Path) -> Tuple[bool, str]:
 def download_with_retries(page, pl: Playlist, out_path: Path) -> Tuple[bool, str]:
     last = "unknown"
     for attempt in range(1, MAX_EXPORT_RETRIES + 1):
-        ok, note = download_one(page, pl, out_path)
+        try:
+            ok, note = download_one(page, pl, out_path)
+        except PWTimeout:
+            # Navigation/readiness can fail before download_one's download guard.
+            ok, note = False, "page_timeout"
         if ok:
             return True, note
 
