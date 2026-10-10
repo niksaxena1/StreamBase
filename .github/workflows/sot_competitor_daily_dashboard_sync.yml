@@ -50,7 +50,7 @@ jobs:
       - name: Wait for SpotOnTrack to process playlist refresh
         if: github.event_name == 'workflow_run'
         run: sleep 600
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: "Pre-check: skip if already synced successfully today"
         id: precheck
         shell: bash
@@ -67,7 +67,7 @@ jobs:
             if [ "$OK" = "true" ]; then SHOULD_RUN="false"; echo "Already synced successfully today; skipping."; fi
           fi
           echo "should_run=$SHOULD_RUN" >> "$GITHUB_OUTPUT"
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         if: steps.precheck.outputs.should_run == 'true'
         with:
           python-version: "3.12"
@@ -75,7 +75,7 @@ jobs:
       - name: Cache Playwright browsers
         if: steps.precheck.outputs.should_run == 'true'
         id: playwright_cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
@@ -113,7 +113,7 @@ jobs:
           echo "$SOT_STORAGE_STATE_B64" | base64 --decode > sot_state.json
       - name: Restore dashboard sync state
         if: steps.precheck.outputs.should_run == 'true'
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: .sync-state/competitor.json
           key: sot-sync-state-competitor-${{ github.run_id }}
@@ -137,13 +137,13 @@ jobs:
           python scripts/sot_sync_dashboards.py --config config/competitor_playlists.csv --storage-state sot_state.json --state-file .sync-state/competitor.json $ARGS
       - name: Save dashboard sync state (including partial progress)
         if: always() && steps.precheck.outputs.should_run == 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: .sync-state/competitor.json
           key: sot-sync-state-competitor-${{ github.run_id }}
       - name: Upload sync log artifact
         if: always() && steps.precheck.outputs.should_run == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sot-competitor-dashboard-sync-${{ github.run_id }}
           path: .artifacts/
