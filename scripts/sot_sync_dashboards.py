@@ -7,6 +7,7 @@ import re
 import shutil
 import sys
 import time
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -15,6 +16,11 @@ from urllib.parse import urlparse
 
 from playwright.sync_api import TimeoutError as PWTimeout
 from playwright.sync_api import sync_playwright
+
+if __package__:
+    from .sot_sync_state import SpotifySnapshots, SyncState, resolve_dataset
+else:
+    from sot_sync_state import SpotifySnapshots, SyncState, resolve_dataset
 
 SOT_BASE = "https://www.spotontrack.com"
 SOT_PLAYLIST_URL = SOT_BASE + "/playlists/spotify/{sot_playlist_id}"
@@ -653,6 +659,9 @@ def run_sync(
     limit: Optional[int],
     only_playlist_keys: Optional[Set[str]],
     fail_on_errors: bool,
+    state_file: Optional[str] = None,
+    full: bool = False,
+    dataset: Optional[str] = None,
 ) -> int:
     email = (os.environ.get("SOT_EMAIL") or "").strip()
     password = (os.environ.get("SOT_PASSWORD") or "").strip()
@@ -678,28 +687,52 @@ def run_sync(
     total_errors = 0
     total_skipped = 0
     total_expected_empty = 0
+    skipped_unchanged = 0
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=headless)
+    state = SyncState(state_file, dry_run=dry_run) if state_file else None
+    snapshots = SpotifySnapshots(resolve_dataset(config_path, dataset)) if state else None
+    pending_tasks = []
+    for task in tasks:
+        snapshot = snapshots.get(task.playlist_key) if snapshots else None
+        if state and state.should_skip(task, snapshot, full=full):
+            print(f"[skip-unchanged] {task.playlist_key}")
+            skipped_unchanged += 1
+            state.persist()
+        else:
+            pending_tasks.append((task, snapshot))
 
-        context_options = {"viewport": {"width": 1400, "height": 900}}
-        if storage_state_path and Path(storage_state_path).exists():
-            context_options["storage_state"] = storage_state_path
+    # All-unchanged runs need neither Playwright nor a SOT login/navigation.
+    with (sync_playwright() if pending_tasks else nullcontext()) as p:
+        if pending_tasks:
+            browser = p.chromium.launch(headless=headless)
 
-        context = browser.new_context(**context_options)
-        enable_turbo_blocking(context)
-        page = context.new_page()
+            context_options = {"viewport": {"width": 1400, "height": 900}}
+            if storage_state_path and Path(storage_state_path).exists():
+                context_options["storage_state"] = storage_state_path
 
-        # Warm-up / login check.
-        page.goto(SOT_BASE + "/dashboard", wait_until="networkidle", timeout=NAV_TIMEOUT_MS)
-        if is_logged_out(page):
-            if not ensure_logged_in(page, email=email, password=password):
-                print("❌ Not logged in and no valid fallback credentials.")
-                context.close()
-                browser.close()
-                return 3
+            context = browser.new_context(**context_options)
+            enable_turbo_blocking(context)
+            page = context.new_page()
 
-        for n, task in enumerate(tasks, start=1):
+            # Warm-up / login check.
+            page.goto(SOT_BASE + "/dashboard", wait_until="networkidle", timeout=NAV_TIMEOUT_MS)
+            if is_logged_out(page):
+                if not ensure_logged_in(page, email=email, password=password):
+                    print("❌ Not logged in and no valid fallback credentials.")
+                    context.close()
+                    browser.close()
+                    return 3
+
+        for n, (task, snapshot) in enumerate(pending_tasks, start=1):
+            if state:
+                state.invalidate(task.playlist_key)
+
+            def checkpoint(successful: bool = False) -> None:
+                if state:
+                    state.complete(task, snapshot, successful=(
+                        successful and dashboard_tracks is not None and playlist_tracks is not None
+                    ), track_count=len(playlist_set))
+
             # Rotate browser context periodically to avoid accumulated throttling.
             if n > 1 and (n - 1) % CONTEXT_ROTATION_INTERVAL == 0:
                 print(f"\n🔄 Rotating browser context (every {CONTEXT_ROTATION_INTERVAL} tasks)...")
@@ -791,6 +824,7 @@ def run_sync(
                 print("Already synced: empty (allow_empty=true; both pages confirmed empty).")
                 log_row(log_path, task, -1, playlist_url, "ok", "already synced: confirmed expected empty")
                 total_expected_empty += 1
+                checkpoint(successful=True)
                 continue
 
             # SAFETY: never mirror to/from empty
@@ -806,6 +840,7 @@ def run_sync(
                     f"playlist scan returned 0 after retries (task_retries={TASK_RETRIES}) debug_html={html_p or 'n/a'} debug_png={png_p or 'n/a'}",
                 )
                 total_skipped += 1
+                checkpoint()
                 continue
 
             if task.min_rows > 0 and len(playlist_set) < task.min_rows:
@@ -820,6 +855,7 @@ def run_sync(
                     f"playlist scan below min_rows ({len(playlist_set)} < {task.min_rows}) debug_html={html_p or 'n/a'} debug_png={png_p or 'n/a'}",
                 )
                 total_skipped += 1
+                checkpoint()
                 continue
 
             if should_skip_empty_dashboard(len(dashboard_set), len(playlist_set)):
@@ -834,6 +870,7 @@ def run_sync(
                     f"dashboard scan returned 0 after retries (task_retries={TASK_RETRIES}) debug_html={html_p or 'n/a'} debug_png={png_p or 'n/a'}",
                 )
                 total_skipped += 1
+                checkpoint()
                 continue
 
             if len(dashboard_set) == 0 and len(playlist_set) > 0:
@@ -872,14 +909,17 @@ def run_sync(
                         f"suspicious_scan: playlist={len(playlist_set)} dashboard={len(dashboard_set)} remove={len(to_remove)}",
                     )
                     total_skipped += 1
+                    checkpoint()
                     continue
 
             if dry_run:
                 print("🟡 DRY RUN: skipping clicking for this task.")
+                checkpoint()
                 continue
 
             if len(to_add) == 0 and len(to_remove) == 0:
                 print("✅ Already mirrored. Nothing to do.")
+                checkpoint(successful=not no_sync or not (dashboard_set - playlist_set))
                 continue
 
             # Add first (safer): if the job fails mid-run, we prefer leaving extra tracks
@@ -970,11 +1010,16 @@ def run_sync(
             total_removed += removed_ok
             total_added += added_ok
             total_errors += (removed_err + added_err)
+            # Add-only work with remaining extras is not a completed mirror.
+            checkpoint(successful=(removed_err + added_err == 0) and (
+                not no_sync or not (dashboard_set - playlist_set)
+            ))
 
             print(f"✅ Task done: removed {removed_ok} (err {removed_err}) | added {added_ok} (err {added_err})")
 
-        context.close()
-        browser.close()
+        if pending_tasks:
+            context.close()
+            browser.close()
 
     # Write machine-readable summary for CI notification workflow.
     summary = {
@@ -984,6 +1029,7 @@ def run_sync(
         "total_skipped": total_skipped,
         "total_expected_empty": total_expected_empty,
         "tasks_total": len(tasks),
+        "skipped_unchanged": skipped_unchanged,
     }
     summary_path = Path(".artifacts") / "sync_summary.json"
     summary_path.parent.mkdir(parents=True, exist_ok=True)
@@ -995,6 +1041,8 @@ def run_sync(
     print(f"➕ Total added:   {total_added}")
     print(f"⚠️ Total errors:  {total_errors}")
     print(f"⏭️ Total skipped: {total_skipped}")
+    if state:
+        print(f"[sync-state] Skipped unchanged: {skipped_unchanged}")
     print(f"📄 Log file:      {log_path}")
 
     if fail_on_errors and total_errors > 0:
@@ -1006,6 +1054,10 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default="config/playlists.csv", help="CSV config path")
     ap.add_argument("--storage-state", default="sot_state.json", help="Playwright storage state JSON path")
+    ap.add_argument("--state-file", default=None, help="Successful-sync JSON state path (enables unchanged skipping)")
+    ap.add_argument("--full", action="store_true", help="Sync every task regardless of state; still update state")
+    ap.add_argument("--dataset", choices=("own", "competitor"), default=None,
+                    help="Playlist dataset (default: competitor if config filename contains competitor, else own)")
     ap.add_argument("--headless", action="store_true", help="Run headless")
     ap.add_argument("--no-sync", action="store_true", help="Disable mirroring (add-only mode)")
     ap.add_argument("--dry-run", action="store_true", help="Preview changes only (no clicking)")
@@ -1028,5 +1080,8 @@ if __name__ == "__main__":
             limit=args.limit,
             only_playlist_keys={x.strip() for x in args.only_playlist_keys.split(",") if x.strip()} or None,
             fail_on_errors=args.fail_on_errors,
+            state_file=args.state_file,
+            full=args.full,
+            dataset=args.dataset,
         )
     )

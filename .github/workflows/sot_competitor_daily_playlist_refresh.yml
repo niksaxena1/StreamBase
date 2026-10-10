@@ -1,6 +1,8 @@
 name: SOT Competitor Daily Playlist Refresh
 
 on:
+  repository_dispatch:
+    types: [daily-pipeline]
   schedule:
     # 09:23 Dubai (GST, UTC+4) == 05:23 UTC
     - cron: "23 5 * * *"
