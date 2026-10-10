@@ -1,5 +1,5 @@
+import { perfServerStep } from "@/lib/perfTiming.server";
 import { cache } from "react";
-import type { User } from "@supabase/supabase-js";
 
 import { normalizeAppAccess, type AppAccess, type AppAccessRow } from "@/lib/appAccess";
 import {
@@ -23,7 +23,7 @@ export type RequestUserSettingsRow = {
 export type RequestAppContext = {
   sb: Awaited<ReturnType<typeof supabaseServer>>;
   svc: ReturnType<typeof supabaseService>;
-  user: User | null;
+  user: { id: string; email?: string } | null;
   isAdmin: boolean;
   appAccess: AppAccess;
   settings: RequestUserSettingsRow;
@@ -43,12 +43,20 @@ export function buildRequestShellContext(args: {
   });
 }
 
-export const getRequestAppContext = cache(async (): Promise<RequestAppContext> => {
+export const getRequestAppContext = cache(() =>
+  perfServerStep("getRequestAppContext", loadRequestAppContext),
+);
+
+async function loadRequestAppContext(): Promise<RequestAppContext> {
   const sb = await supabaseServer();
   const svc = supabaseService();
-  const {
-    data: { user },
-  } = await sb.auth.getUser();
+  // ES256 claims are signature/expiry verified locally (JWKS may fetch on a cold process).
+  // This path consumes identity only; authorization is still checked below on every request.
+  const { data, error } = await sb.auth.getClaims();
+  const claims = error ? null : data?.claims;
+  const user = typeof claims?.sub === "string" && claims.sub
+    ? { id: claims.sub, email: typeof claims.email === "string" ? claims.email : undefined }
+    : null;
 
   if (!user) {
     const appAccess = normalizeAppAccess(null, false);
@@ -101,4 +109,4 @@ export const getRequestAppContext = cache(async (): Promise<RequestAppContext> =
       competitorLabels,
     }),
   };
-});
+}
