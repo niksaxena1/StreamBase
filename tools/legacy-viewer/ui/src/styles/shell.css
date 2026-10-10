@@ -1,0 +1,184 @@
+/* App shell additions: wide-screen cap, search button, quick-jump palette, content-shaped skeletons. */
+main#main-content {
+  width: 100%;
+  max-width: 1680px;
+  margin-inline: auto;
+}
+.stat-value {
+  font-size: clamp(20px, 1.7vw, 28px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.search-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 6px 8px 6px 12px;
+  border: 1px solid var(--sb-border-2);
+  border-radius: var(--sb-radius-full);
+  background: var(--sb-panel);
+  font-size: 12px;
+  font-weight: 500;
+}
+.search-button:hover {
+  background: var(--sb-row-hover);
+}
+.search-button kbd {
+  margin: 0;
+  font-size: 10.5px;
+}
+.topbar .segmented button {
+  min-width: 46px;
+  font-family: var(--font-mono);
+}
+
+/* Quick jump */
+dialog.palette {
+  position: fixed;
+  inset: 0;
+  width: min(680px, 94vw);
+  max-width: none;
+  max-height: none;
+  height: fit-content;
+  margin: 11vh auto auto;
+  padding: 0;
+  border: 1px solid var(--sb-border-2);
+  border-radius: 16px;
+  background: var(--sb-bg);
+  color: var(--sb-text);
+  box-shadow: var(--sb-shadow-elevated);
+  overflow: hidden;
+}
+dialog.palette::backdrop {
+  background: rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(3px);
+}
+.palette-box {
+  display: grid;
+}
+.palette-input {
+  width: 100%;
+  min-height: 52px;
+  padding: 12px 18px;
+  border: 0;
+  border-bottom: 1px solid var(--sb-border);
+  border-radius: 0;
+  background: transparent;
+  font-size: 15px;
+}
+.palette-input:focus-visible {
+  outline: none;
+  box-shadow: inset 0 -2px 0 var(--sb-accent-stroke);
+}
+.palette-list {
+  max-height: min(56vh, 460px);
+  overflow-y: auto;
+  padding: 6px;
+}
+.palette-heading {
+  padding: 8px 10px 4px;
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--sb-muted);
+}
+.palette-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.palette-row.active {
+  background: var(--sb-accent);
+  color: var(--sb-accent-text);
+}
+.palette-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.palette-primary {
+  font-weight: 550;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.palette-secondary {
+  font-size: 12px;
+  opacity: 0.7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.palette-trailing {
+  font-size: 11px;
+  opacity: 0.7;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
+.palette-note {
+  margin: 0;
+  padding: 22px 14px;
+  text-align: center;
+  color: var(--sb-muted);
+}
+.palette-foot {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  padding: 8px 14px;
+  border-top: 1px solid var(--sb-border);
+  font-size: 11px;
+  color: var(--sb-muted);
+}
+.palette-foot kbd {
+  font-size: 10px;
+  padding: 0 4px;
+  min-width: 0;
+}
+.palette-dataset {
+  margin-left: auto;
+}
+
+/* Content-shaped skeletons */
+.skeleton-row {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 16px;
+  align-items: center;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--sb-border);
+}
+.skeleton-row.skeleton-head {
+  padding-block: 10px;
+}
+.skeleton-cell-art {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.skeleton-table .table-card {
+  padding: 0;
+  overflow: hidden;
+}
+.skeleton-body-row td {
+  padding-block: 12px;
+}
+.report-skeleton .report-summary {
+  margin-bottom: 14px;
+}
+.skeleton-tiles > div > .skeleton {
+  display: block;
+}
+@media (max-width: 1500px) {
+  .topbar-readonly {
+    display: none;
+  }
+}

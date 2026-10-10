@@ -1,0 +1,54 @@
+# Archive data, exports, credentials and local build/runtime artifacts
+__pycache__/
+*.py[cod]
+*.duckdb*
+*.parquet
+*.csv
+*.csv.gz
+*.tsv
+*.sqlite*
+*.db
+*.dump
+*.sql.gz
+*.tar*
+*.zip
+*.7z
+*.exe
+*.dll
+*.pyd
+*.pem
+*.key
+.env*
+*.local
+*.log
+*.jsonl
+.viewer.json
+.tmp/
+.venv/
+venv/
+node_modules/
+dist/
+data/
+art/
+output/
+package/
+packages/
+packaged/
+pyinstaller-work/
+build/temp*/
+build/lib*/
+build/bdist*/
+*.egg-info/
+.playwright-cli/
+.playwright/
+sweep_failures.json
+# Keep build/ source and ui/build/offline.ts; generated output belongs elsewhere.
+
+# Additional temporary files and conventional packaged application folders
+.tmp
+*.tmp
+StreamBase Legacy Viewer/
+StreamBase Legacy Archive Viewer/
+legacy-package*/
+build/cache/
+build/out*/

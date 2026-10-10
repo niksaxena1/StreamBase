@@ -1,0 +1,2 @@
+@echo off
+powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -Command "$locks=@(Join-Path '%~dp0' '.viewer.json'); $alt=Join-Path $env:LOCALAPPDATA 'StreamBaseLegacyViewer'; if(Test-Path -LiteralPath $alt){$locks+=Get-ChildItem -LiteralPath $alt -Filter *.json | ForEach-Object FullName}; foreach($p in $locks){ if(Test-Path -LiteralPath $p){ try { $v=Get-Content -LiteralPath $p -Raw | ConvertFrom-Json; Invoke-RestMethod -Method Post -Uri ('http://127.0.0.1:'+$v.port+'/api/shutdown') -Headers @{'X-Viewer-Token'=$v.token} -TimeoutSec 5 | Out-Null } catch {} } }"
