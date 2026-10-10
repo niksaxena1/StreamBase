@@ -1,6 +1,7 @@
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { getPlaylist } from "@/lib/spotify";
+import { isOwnedPlaylistImageUrl } from "@/lib/playlists/ownedPlaylistImage";
 import { apiJsonErr, apiJsonOk, readJsonBodyOptional, requireAdmin } from "@/lib/api/server";
 
 type Body = {
@@ -52,13 +53,16 @@ export async function POST(req: Request) {
     if (!id) continue;
     try {
       const meta = await getPlaylist(id);
+      const keepOwnedImage = isOwnedPlaylistImageUrl(p.spotify_playlist_image_url);
       const { error: upErr } = await svc
         .from("playlists")
         .update({
           spotify_playlist_name: meta.name,
-          // Spotify playlists may intentionally have no cover. Keep the
-          // existing cached/custom thumbnail instead of replacing it with null.
-          spotify_playlist_image_url: meta.imageUrl ?? p.spotify_playlist_image_url,
+          // Keep project-owned Storage/local logos even when Spotify still
+          // returns a mosaic or leftover album art after the cover was removed.
+          spotify_playlist_image_url: keepOwnedImage
+            ? p.spotify_playlist_image_url
+            : (meta.imageUrl ?? p.spotify_playlist_image_url),
           spotify_last_fetched_at: new Date().toISOString(),
         })
         .eq("playlist_key", p.playlist_key);

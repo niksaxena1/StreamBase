@@ -109,6 +109,26 @@ For ingestion correctness, use **/health** in Competitor Mode. The page supports
 
 SQL: `migrations/add_competitor_health_enhancements.sql` (distinct track RPC, unenriched paging, warning history MV).
 
+## Missing-day overrides (2026-10-03)
+
+Apply `migrations/fix_competitor_override_only_gap_days.sql` after
+`optimize_effective_stream_views_pushdown.sql`, followed by
+`optimize_competitor_override_only_gap_projection.sql`. The earlier narrow competitor
+view omitted override-only dates. The corrected view includes them without
+creating raw snapshots. The projection emits unoverridden raw rows plus every
+override once, avoiding partitioned-raw lookups for override-only rows.
+The negative-stream RPC uses a windowed predecessor
+instead of self-joining the full union history, and still requires consecutive
+calendar dates. Existing grants and own-catalog queries are unchanged.
+
+For a missed import, use observed per-ISRC cumulative anchors and write only
+`competitor.track_daily_stream_overrides`. Record estimated midpoint values,
+flat fills and conservative carry-forwards distinctly in the note. Do not
+smooth counter resets or invent histories for newly observed tracks. Recompute
+playlist summaries through the latest observed date and revalidate app caches.
+Verify the narrow effective view includes the filled date, not merely that
+the override table contains rows.
+
 ## Intentional omissions
 
 Competitor Mode does not currently include collectors or distributor/entity health logic. Those concepts are specific to the own-catalog universe and should not be half-reused.
