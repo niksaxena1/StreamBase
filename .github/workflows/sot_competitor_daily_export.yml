@@ -134,6 +134,13 @@ jobs:
         run: |
           if [ -z "$SOT_STORAGE_STATE_B64" ]; then exit 0; fi
           echo "$SOT_STORAGE_STATE_B64" | base64 --decode > sot_state.json
+      - name: Regenerate competitor config from database (CSV fallback)
+        if: steps.precheck.outputs.should_run == 'true'
+        continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python scripts/export_competitor_config_from_db.py
       - name: Export competitor dashboards
         if: steps.precheck.outputs.should_run == 'true'
         env:

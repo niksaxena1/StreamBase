@@ -70,6 +70,8 @@ Competitor Mode is a parallel analytics universe, not a merge into your own cata
 
 The selected competitor is global. One competitor may own multiple playlists, and changing the selector changes supported competitor-aware surfaces across the app.
 
+Adding a competitor (admin): `/competitors`, then **Add competitor** writes `competitor.labels` / `competitor.playlists`, the pipeline config source of truth. Each competitor workflow regenerates `config/competitor_playlists.csv` before reading it, so the next pipeline run picks up the playlist. Manual refresh/sync runs require manually starting the next stage. Blank accents use the canonical palette until an administrator runs artwork accent extraction after Spotify thumbnail enrichment (see `docs/COMPETITOR-MODE-OPERATIONS.md`).
+
 Competitor RPCs used by `/competitors` (schema `competitor`):
 
 - `label_distinct_artist_counts(p_run_date)`

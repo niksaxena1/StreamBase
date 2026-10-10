@@ -43,7 +43,7 @@ Competitor data lives in the `competitor` schema. It must never be written into 
 - `SOT Competitor Daily Export`
 - `Spotify competitor enrichment`
 
-The three SpotOnTrack workflows use `config/competitor_playlists.csv`. The Spotify competitor enrichment workflow also refreshes missing `competitor.playlists.spotify_playlist_image_url` values before track enrichment.
+The three SpotOnTrack workflows regenerate `config/competitor_playlists.csv` from `competitor.labels` / `competitor.playlists` immediately before reading it. DB configuration is the source of truth; the committed CSV is a generated snapshot and outage fallback. The exporter keeps CSV-only rows with a warning and excludes inactive DB labels/playlists. Any DB/read/render/write failure preserves the snapshot, and the regeneration step cannot fail the job. The Spotify competitor enrichment workflow also refreshes missing `competitor.playlists.spotify_playlist_image_url` values before track enrichment.
 
 The SpotOnTrack workflows now chain on success: Playlist Refresh → Dashboard
 Sync (after a 10-minute processing wait) → Export. One external
@@ -58,11 +58,11 @@ behavior, run-date semantics, and failure recovery.
 
 ## First-run checklist
 
-1. Run the competitor playlist refresh workflow; success starts dashboard sync and export automatically.
+1. Start the daily chain with `repository_dispatch: daily-pipeline` (which starts both universes) or wait for the refresh fallback cron. Manual refresh/sync runs do not chain: run refresh, dashboard sync, and export manually in that order.
 2. Monitor the competitor dashboard sync workflow as it populates the SpotOnTrack dashboard.
 3. Verify the chained competitor export workflow succeeds.
 4. Run the Spotify competitor enrichment workflow to fill track metadata and playlist thumbnails.
-5. Run `cd web && npm run extract-competitor-accents -- --force` if adding a new label or changing playlist artwork. Accents are harmonized in `web/src/lib/competitorLabelAccents.ts` (extract script + every label load) so charts, cards, and `--sb-accent` share one resolved hex per label.
+5. Run `cd web && npm run extract-competitor-accents` for new labels with blank accents after thumbnails are available; use `--force` to re-extract existing/custom accents or changed artwork. Accents are harmonized in `web/src/lib/competitorLabelAccents.ts` (extract script + every label load) so charts, cards, and `--sb-accent` share one resolved hex per label.
 6. Switch Settings ? Dataset ? Competitor Mode.
 7. Verify the competitor appears under `/competitors`, Playlists, Catalog, Home, and Search.
 
@@ -75,11 +75,28 @@ behavior, run-date semantics, and failure recovery.
 
 ## Adding another competitor
 
-1. Add the label + playlist rows in a migration.
-2. Add the playlist to `config/competitor_playlists.csv`.
-3. Run refresh ? dashboard sync ? export ? Spotify enrichment.
-4. Run `cd web && npm run extract-competitor-accents -- --force` for new labels.
-5. Verify `/competitors` and the global competitor selector.
+Apply `migrations/add_competitor_onboarding_config_columns.sql` once, after
+`add_competitor_foundation.sql` and `add_competitor_label_accent_hex.sql`. It adds
+`sot_dashboard_name` and `min_rows` to `competitor.playlists`, backfills all 17
+current CSV rows using generated UPDATE statements, and grants only `service_role`
+configuration access. Reapplying preserves configured dashboard names and row limits.
+Unique indexes enforce playlist/dashboard identity across concurrent submissions,
+including inactive rows; existing duplicates must be resolved before applying it.
+It creates no public tables and changes no own-catalog workflows. Apply this migration
+before using the form; it is not applied automatically by the app or workflows.
+
+1. In SpotOnTrack, open the competitor playlist and create an empty dashboard for it.
+2. As an administrator in Competitor Mode, open `/competitors` and click **Add competitor**. Choose a new or existing label, enter names, and paste the Spotify playlist, SpotOnTrack playlist, and dashboard links. Keys are derived from the names and may be overridden. Dashboard name defaults to playlist name; minimum rows defaults to 1.
+3. The admin-only `POST /api/competitors/onboard` validates inputs before constructing the service-role client. It rejects existing keys, Spotify/SpotOnTrack playlists and dashboards, writes only `competitor.labels` / `competitor.playlists`, and removes a newly created label if playlist insertion fails. Successful writes invalidate only the competitor ops page and selector cache; own-catalog cache tags are untouched. No per-competitor migration or CSV commit is needed.
+4. The next refresh picks up the new playlist. Successful non-manual refresh chains to dashboard sync after a 10-minute wait, then export; fallback crons remain 05:23 / 08:53 / 11:29 UTC. To start sooner, run all three manually in order (manual refresh/sync do not chain). Totals appear after ingestion; daily deltas need two snapshots.
+5. Run Spotify competitor enrichment to populate thumbnails. If the accent was blank, it is stored as NULL: every label load already calls `applyResolvedLabelAccents` to give it a canonical palette fallback, including harmonization and pinned-brand handling. Then run `cd web && npm run extract-competitor-accents` with the existing Supabase credentials to extract and persist its artwork accent through the same resolver as existing labels. This is an operator step, not an automatic workflow. Provided accents are harmonized at load time too; `--force` intentionally re-extracts all existing/custom accents.
+6. Verify `/competitors` and the global competitor selector. Optionally refresh and commit the snapshot with `python scripts/export_competitor_config_from_db.py`; `--check` reports drift and fails on DB errors. `/health` in Competitor Mode distinguishes a stale committed snapshot from rows missing in the DB.
+
+To stop tracking a playlist or label, set `is_active = false`; the next generated
+config excludes it. If generation would produce no rows, the exporter conservatively
+keeps the committed snapshot and warns, so disabling the entire universe also requires
+stopping its workflows. During DB outages, pipelines continue using the committed
+snapshot, which may omit recently onboarded playlists. Keep it current for recovery.
 
 ## What the `/competitors` page is for
 
