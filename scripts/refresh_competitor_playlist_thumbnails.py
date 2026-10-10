@@ -32,6 +32,15 @@ def has_missing_image_filter(force: bool) -> Optional[str]:
     return None if force else "spotify_playlist_image_url=is.null"
 
 
+def is_owned_playlist_image_url(url: Optional[str]) -> bool:
+    value = (url or "").strip()
+    if not value:
+        return False
+    if value.startswith("/playlist-logos/"):
+        return True
+    return "/storage/v1/object/public/playlist-logos/" in value
+
+
 def playlist_key_filter(playlist_keys: List[str]) -> Optional[str]:
     clean = [key.strip() for key in playlist_keys if key.strip()]
     if not clean:
@@ -76,23 +85,32 @@ class Postgrest:
             raise RuntimeError(f"Select {self.schema}.playlists failed: {response.status_code} {response.text[:500]}")
         return response.json()
 
-    def update_playlist(self, playlist_key: str, meta: Dict[str, Any]) -> None:
+    def update_playlist(
+        self,
+        playlist_key: str,
+        meta: Dict[str, Any],
+        current_image_url: Optional[str] = None,
+    ) -> None:
         headers = dict(self.h)
         headers["Prefer"] = "return=minimal"
+        keep_owned = is_owned_playlist_image_url(current_image_url)
         if self.schema == "public":
-            # Mirrors the in-app admin refresh: keep an existing thumbnail when
-            # Spotify reports no cover, and stamp the fetch bookkeeping columns.
+            # Mirrors the in-app admin refresh: keep owned Storage/local logos,
+            # and keep an existing thumbnail when Spotify reports no cover.
             patch: Dict[str, Any] = {
                 "spotify_playlist_name": meta.get("name"),
                 "spotify_last_fetched_at": datetime.now(timezone.utc).isoformat(),
             }
-            if meta.get("image_url"):
-                patch["spotify_playlist_image_url"] = meta.get("image_url")
+            incoming = meta.get("image_url")
+            if incoming and not keep_owned:
+                patch["spotify_playlist_image_url"] = incoming
         else:
             patch = {
-                "spotify_playlist_image_url": meta.get("image_url"),
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }
+            incoming = meta.get("image_url")
+            if not keep_owned:
+                patch["spotify_playlist_image_url"] = incoming
         response = requests.patch(
             f"{self.base}/playlists?playlist_key=eq.{quote(playlist_key, safe='')}",
             headers=headers,
@@ -176,7 +194,7 @@ def refresh_batch(pg: Postgrest, sp: Spotify, limit: int, force: bool, playlist_
             attempted += 1
             try:
                 meta = sp.get_playlist(spotify_playlist_id)
-                pg.update_playlist(playlist_key, meta)
+                pg.update_playlist(playlist_key, meta, row.get("spotify_playlist_image_url"))
                 updated += 1
                 print(f"OK {playlist_key}: {meta.get('name')} ({'image' if meta.get('image_url') else 'no image'})")
             except Exception as exc:
