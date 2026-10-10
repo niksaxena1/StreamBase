@@ -11,13 +11,15 @@ flowchart LR
   OwnRefresh -->|success + 10 minute wait| OwnSync[SOT Daily Dashboard Sync]
   OwnSync -->|success| OwnExport[SOT Daily Export]
   OwnExport -->|success| Fix[RapidAPI Stale Track Fix]
+  Fix -->|any conclusion, except manual| Artist[Artist Tools Daily]
   CompetitorRefresh -->|success + 10 minute wait| CompetitorSync[SOT Competitor Daily Dashboard Sync]
   CompetitorSync -->|success| CompetitorExport[SOT Competitor Daily Export]
 ```
 
-Each downstream workflow listens for `workflow_run` with `types: [completed]` and
-runs its job only when the upstream conclusion is `success`. Unsuccessful upstream
-conclusions stop that chain. Dashboard sync first
+Each downstream workflow listens for `workflow_run` with `types: [completed]`.
+Refresh/sync/export/RapidAPI stages require upstream `success`; Artist Tools Daily
+accepts any RapidAPI conclusion so quota/provider failures still get a fallback.
+Dashboard sync first
 waits 600 seconds on chained runs so SpotOnTrack can process playlist refreshes.
 Manual and cron syncs do not wait.
 
@@ -72,6 +74,7 @@ as a fallback; GitHub may start these runs late.
 | SOT Daily Dashboard Sync | `11 6 * * *` | 10:11 |
 | SOT Daily Export | `43 7 * * *` | 11:43 |
 | RapidAPI Stale Track Fix | `41 9 * * *` | 13:41 |
+| Artist Tools Daily | `17 13 * * *` | 17:17 |
 | SOT Competitor Daily Playlist Refresh | `23 5 * * *` | 09:23 |
 | SOT Competitor Daily Dashboard Sync | `53 8 * * *` | 12:53 |
 | SOT Competitor Daily Export | `29 11 * * *` | 15:29 |
@@ -95,6 +98,22 @@ Manual (`workflow_dispatch`) runs do NOT start their downstream chain, so a dry
 run or limited test sync can never trigger a real export. After a manual repair,
 run the next step manually (or let its fallback cron pick it up). Only scheduled,
 `repository_dispatch` and chained (`workflow_run`) runs propagate.
+
+## artist.tools second source and stale fallback
+
+Artist Tools Daily follows `RapidAPI Stale Track Fix` on any completion, excluding
+upstream `workflow_dispatch` tests. It records own-catalog cumulative counts even
+for tracks RapidAPI fixed, then repairs remaining stale tracks without replacing
+existing overrides. It retains the fewer-than-500 safety boundary. Only Supabase
+URL/service-role secrets are needed; rotating OAuth tokens live in a private table.
+Successful UTC-date runs are skipped by the cron and optional 19:00-local Windows
+fallback. See [authorization, limits, comparisons and setup](ARTIST-TOOLS-SOURCE.md).
+
+The existing own chain already uses GitHub's three downstream `workflow_run`
+levels. This fourth chained listener cannot run when RapidAPI itself is at that
+depth. The 13:17 UTC artist.tools cron and PC fallback are therefore required;
+the listener works for eligible shorter RapidAPI chains (such as its cron).
+See [GitHub's workflow chain depth limit](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run).
 
 ## Incremental dashboard sync
 

@@ -1,0 +1,58 @@
+name: Artist Tools Daily
+
+permissions:
+  contents: read
+
+on:
+  workflow_run:
+    workflows: ["RapidAPI Stale Track Fix"]
+    types: [completed]
+  schedule:
+    - cron: "17 13 * * *"
+  workflow_dispatch:
+    inputs:
+      date:
+        description: UTC observation date (blank = today; historical counts unavailable)
+        required: false
+        type: string
+      max_adds:
+        description: Maximum folder additions (0 to 250)
+        required: false
+        type: string
+        default: "240"
+
+concurrency:
+  group: artist-tools-daily
+  cancel-in-progress: false
+
+jobs:
+  daily:
+    # ANY upstream conclusion; never propagate an upstream manual test.
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.event != 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install requests
+      - name: Record counts and run fallback repair
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          INPUT_DATE: ${{ inputs.date }}
+          INPUT_MAX_ADDS: ${{ inputs.max_adds }}
+        shell: bash
+        run: |
+          args=(run --runner github --skip-if-done --max-adds "${INPUT_MAX_ADDS:-240}")
+          if [ -n "$INPUT_DATE" ]; then args+=(--date "$INPUT_DATE"); fi
+          python scripts/artist_tools_daily.py "${args[@]}"
+      - name: Upload summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: artist-tools-summary
+          path: .artifacts/artist_tools_summary.json
+          if-no-files-found: warn
