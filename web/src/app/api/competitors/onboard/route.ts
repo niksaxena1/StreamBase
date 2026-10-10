@@ -72,7 +72,7 @@ async function onboard(
   if (error) {
     if (MIGRATION_ERROR_CODES.has(error.code)) {
       return apiJsonErr(
-        "Database is missing competitor onboarding configuration/function. Apply migrations/add_competitor_onboarding_config_columns.sql, then retry.",
+        "Database is missing competitor onboarding configuration/function. Apply supabase/migrations/20261010205727_add_competitor_onboarding_config_columns.sql, then retry.",
         503,
       );
     }

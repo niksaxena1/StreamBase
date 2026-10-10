@@ -2,8 +2,8 @@
 --
 -- Adds column-safe / RLS-friendly surfaces for playlist stats, track metadata,
 -- playlist+latest-stats join, and collector aggregates.
--- Run after add_public_views_for_ledgenta_playlist_integration.sql and
--- grant_anon_read_playlist_daily_stats.sql (playlist_daily_stats anon policy).
+-- Run after supabase/migrations/20260423143135_add_public_views_for_ledgenta_playlist_integration.sql and
+-- supabase/migrations/20260423143137_grant_anon_read_playlist_daily_stats.sql (playlist_daily_stats anon policy).
 
 -- 1) Expand playlists_public (collector + display_order for Ledgenta sorting/grouping)
 -- Keep the existing column order for CREATE OR REPLACE VIEW compatibility,
@@ -57,7 +57,7 @@ LEFT JOIN public.playlist_daily_stats s
 
 GRANT SELECT ON public.playlists_with_latest_stats_public TO anon, authenticated;
 
--- 5) Collector aggregates (requires collector_daily_agg view from add_collectors_aggregate_views.sql)
+-- 5) Collector aggregates (requires collector_daily_agg view from supabase/migrations/20260126181735_add_collectors_aggregate_views.sql)
 CREATE OR REPLACE VIEW public.collector_daily_agg_public AS
 SELECT collector, date, track_count,
        total_streams_cumulative, daily_streams_net,

@@ -25,7 +25,7 @@ What you use it for:
 Where the main pieces live in this repo:
 
 - **Automation scripts** (export/sync/ingest/enrich): `scripts/`
-- **Database migrations + RPCs** (apply in Supabase SQL editor): `migrations/`
+- **Database migrations + RPCs** (apply via Supabase MCP or CLI): `supabase/migrations/` (unique UTC timestamp, then descriptive name; see `supabase/README.md` for history reconciliation)
 - **Web app** (Next.js App Router): `web/`
 
 ---
@@ -138,8 +138,8 @@ You have 2 “truthy” ways to do this:
 
 Implementation pointers:
 
-- Catalog aggregates: `migrations/add_catalog_artist_aggregate_rpcs.sql`
-- Search hover stats: `migrations/add_search_stats_aggregate_rpcs.sql`
+- Catalog aggregates: `supabase/migrations/20260130192235_add_catalog_artist_aggregate_rpcs.sql`
+- Search hover stats: `supabase/migrations/20260130200846_add_search_stats_aggregate_rpcs.sql`
 
 ### View a track’s total streams (and daily streams)
 
@@ -251,7 +251,7 @@ Source of truth:
 Implementation pointers:
 
 - Ingestion derivation: `scripts/ingest_exports_to_supabase.py`
-- Several RPCs treat `all_catalog` as a union playlist (see `migrations/add_playlists_fast_tables_rpcs.sql` and enrichment/missing tracks RPCs).
+- Several RPCs treat `all_catalog` as a union playlist (see `supabase/migrations/20260130200845_add_playlists_fast_tables_rpcs.sql` and enrichment/missing tracks RPCs).
 
 ---
 
@@ -408,7 +408,7 @@ Implementation pointers:
 
 - Page (server): `web/src/app/(main-flat)/catalog/page.tsx`
 - UI (client): `web/src/app/(main-flat)/catalog/CatalogPageClient.tsx`
-- RPCs: `migrations/add_catalog_artist_aggregate_rpcs.sql`
+- RPCs: `supabase/migrations/20260130192235_add_catalog_artist_aggregate_rpcs.sql`
 
 Also note:
 
@@ -428,7 +428,7 @@ Also note:
 Implementation pointers:
 
 - Page: `web/src/app/(main-flat)/playlists/page.tsx`
-- Fast tables RPCs: `migrations/add_playlists_fast_tables_rpcs.sql`
+- Fast tables RPCs: `supabase/migrations/20260130200845_add_playlists_fast_tables_rpcs.sql`
 
 ### Collectors (`/collectors`)
 
@@ -454,7 +454,7 @@ Data sources:
 
 Where those collector tables come from:
 
-- `migrations/add_collectors_aggregate_views.sql` creates the views:
+- `supabase/migrations/20260126181735_add_collectors_aggregate_views.sql` creates the views:
   - `collector_daily_agg`
   - `collector_daily_compare`
 
@@ -493,11 +493,11 @@ Implementation pointers:
 - Expandable row UI: `web/src/components/health/WarningRow.tsx`
 - Health summary API (polling): `web/src/app/api/health-summary/route.ts`
 - Health RPCs:
-  - `migrations/add_health_missing_catalog_rpcs.sql`
-  - `migrations/add_health_track_count_swing_rpc.sql`
-  - `migrations/add_health_missing_enrichment_tracks_rpc.sql`
-  - `migrations/add_health_entity_distro_drift_rpc.sql`
-  - `migrations/add_health_distro_overlap_rpc.sql`
+  - `supabase/migrations/20260130200843_add_health_missing_catalog_rpcs.sql`
+  - `supabase/migrations/20260130200844_add_health_track_count_swing_rpc.sql`
+  - `supabase/migrations/20260130225814_add_health_missing_enrichment_tracks_rpc.sql`
+  - `supabase/migrations/20260207214054_add_health_entity_distro_drift_rpc.sql`
+  - `supabase/migrations/20260209020325_add_health_distro_overlap_rpc.sql`
 
 ### Settings (`/settings`)
 
@@ -520,10 +520,10 @@ Files:
 
 DB setup:
 
-- Apply `migrations/add_user_settings_table.sql` (creates `user_settings` for per-user preferences)
-- Apply `migrations/add_collector_entity_playlist_stats_setting.sql` (adds the TG/PL entity-playlist collector stats toggle and scoped SQL objects)
-- Apply `migrations/add_track_daily_stream_overrides.sql` (creates `track_daily_stream_overrides` + effective views + recompute RPC)
-- Apply `migrations/adopt_track_daily_streams_effective.sql` (updates key RPCs to read the effective stream snapshots)
+- Apply `supabase/migrations/20260131022936_add_user_settings_table.sql` (creates `user_settings` for per-user preferences)
+- Apply `supabase/migrations/20260521004156_add_collector_entity_playlist_stats_setting.sql` (adds the TG/PL entity-playlist collector stats toggle and scoped SQL objects)
+- Apply `supabase/migrations/20260201152444_add_track_daily_stream_overrides.sql` (creates `track_daily_stream_overrides` + effective views + recompute RPC)
+- Apply `supabase/migrations/20260201152445_adopt_track_daily_streams_effective.sql` (updates key RPCs to read the effective stream snapshots)
 
 ### Catalog Config (`/catalog/config`)
 
@@ -606,7 +606,7 @@ Files:
 ## Data dictionary (fields used by the app)
 
 <!-- tags: schema, data-dictionary, tables -->
-<!-- sources: scripts/ingest_exports_to_supabase.py, web/src/app/(main-flat)/*, web/src/app/(main)/*, migrations/*.sql -->
+<!-- sources: scripts/ingest_exports_to_supabase.py, web/src/app/(main-flat)/*, web/src/app/(main)/*, supabase/migrations/*.sql -->
 
 This is a **practical schema snapshot**: it lists the fields that the current app code relies on most.
 Your DB may have additional columns; those are fine.
@@ -826,91 +826,91 @@ StreamBase pushes “heavy computations” into Postgres for:
 
 Key RPC sets:
 
-- Search: `migrations/add_search_all_rpc.sql`
-- Catalog artist aggregates: `migrations/add_catalog_artist_aggregate_rpcs.sql`
-- Playlists heavy tables: `migrations/add_playlists_fast_tables_rpcs.sql`
+- Search: `supabase/migrations/20260129190439_add_search_all_rpc.sql`
+- Catalog artist aggregates: `supabase/migrations/20260130192235_add_catalog_artist_aggregate_rpcs.sql`
+- Playlists heavy tables: `supabase/migrations/20260130200845_add_playlists_fast_tables_rpcs.sql`
 - Home scatter: `home_track_scatter_points` (returns all catalog tracks + streams for a run date)
 - Collectors (paged drilldowns):
-  - `migrations/add_collector_tracks_rpc_paged.sql` (`collector_tracks_paged`)
-  - `migrations/add_collector_artists_stats_rpc_paged.sql` (`collector_artists_stats_paged`)
-  - `migrations/add_collector_artist_counts_rpc.sql` (`collector_artist_counts_for_date`)
+  - `supabase/migrations/20260131193318_add_collector_tracks_rpc_paged.sql` (`collector_tracks_paged`)
+  - `supabase/migrations/20260205185143_add_collector_artists_stats_rpc_paged.sql` (`collector_artists_stats_paged`)
+  - `supabase/migrations/20260205183925_add_collector_artist_counts_rpc.sql` (`collector_artist_counts_for_date`)
 - Health drilldowns:
-  - `migrations/add_health_missing_catalog_rpcs.sql`
-  - `migrations/add_health_track_count_swing_rpc.sql`
-  - `migrations/add_health_missing_enrichment_tracks_rpc.sql`
-  - `migrations/add_health_entity_distro_drift_rpc.sql` (`health_entity_distro_drift`)
-  - `migrations/add_health_distro_overlap_rpc.sql` (`health_distro_overlap_tracks`)
-  - `migrations/add_health_unplayable_candidates_rpc.sql` (`health_unplayable_candidates`)
-- Search hover stats: `migrations/add_search_stats_aggregate_rpcs.sql`
-- Stream override cascade: `spotibase_recompute_playlist_daily_stats_cascade`, `spotibase_remove_stream_override`; manual overrides feed `track_daily_streams_effective_public`, `playlist_daily_stats`, and `artist_daily_stats` (see `migrations/fix_data_integrity_constraints.sql` and `migrations/adopt_effective_artist_daily_stats.sql`)
+  - `supabase/migrations/20260130200843_add_health_missing_catalog_rpcs.sql`
+  - `supabase/migrations/20260130200844_add_health_track_count_swing_rpc.sql`
+  - `supabase/migrations/20260130225814_add_health_missing_enrichment_tracks_rpc.sql`
+  - `supabase/migrations/20260207214054_add_health_entity_distro_drift_rpc.sql` (`health_entity_distro_drift`)
+  - `supabase/migrations/20260209020325_add_health_distro_overlap_rpc.sql` (`health_distro_overlap_tracks`)
+  - `supabase/migrations/20260130225816_add_health_unplayable_candidates_rpc.sql` (`health_unplayable_candidates`)
+- Search hover stats: `supabase/migrations/20260130200846_add_search_stats_aggregate_rpcs.sql`
+- Stream override cascade: `spotibase_recompute_playlist_daily_stats_cascade`, `spotibase_remove_stream_override`; manual overrides feed `track_daily_streams_effective_public`, `playlist_daily_stats`, and `artist_daily_stats` (see `supabase/migrations/20260207214055_fix_data_integrity_constraints.sql` and `supabase/migrations/20260709132451_adopt_effective_artist_daily_stats.sql`)
 - Playlists batch counts: `playlists_latest_track_counts`
-- Artist collaboration graph: `migrations/add_artist_collaboration_graph_rpc.sql` (`artist_collaboration_graph`)
-- System stats (Docs): `migrations/add_spotibase_system_stats_rpc.sql`
+- Artist collaboration graph: `supabase/migrations/20260209124432_add_artist_collaboration_graph_rpc.sql` (`artist_collaboration_graph`)
+- System stats (Docs): `supabase/migrations/20260130225822_add_spotibase_system_stats_rpc.sql`
 
 ---
 
 ## Migrations checklist (what must be applied in Supabase)
 
 <!-- tags: migrations, database, setup -->
-<!-- sources: migrations/*.sql -->
+<!-- sources: supabase/migrations/*.sql -->
 
 If a feature is acting “weird”, the first thing to verify is whether the required SQL migrations have been applied in your Supabase project.
 
 ### Required (core)
 
-- `migrations/add_search_all_rpc.sql`
+- `supabase/migrations/20260129190439_add_search_all_rpc.sql`
   - Enables the unified search RPC (`search_all`) and trigram indexes.
   - Without it: `/api/search` will fail or return empty results.
 
-- `migrations/add_search_stats_aggregate_rpcs.sql`
+- `supabase/migrations/20260130200846_add_search_stats_aggregate_rpcs.sql`
   - Enables hover stats RPCs for artist/playlist totals.
   - Without it: search hover numbers will be missing/incorrect.
 
-- `migrations/add_catalog_artist_aggregate_rpcs.sql`
+- `supabase/migrations/20260130192235_add_catalog_artist_aggregate_rpcs.sql`
   - Enables fast artist aggregates for `/catalog`.
   - Without it: catalog will fall back to slow patterns or error when calling missing RPCs.
 
-- `migrations/add_playlists_fast_tables_rpcs.sql`
+- `supabase/migrations/20260130200845_add_playlists_fast_tables_rpcs.sql`
   - Enables fast playlist membership tables for `/playlists`.
   - Without it: playlist drilldowns (top/added/removed) will be missing/slow.
 
 ### Health drilldowns (recommended)
 
-- `migrations/add_health_missing_catalog_rpcs.sql`
-- `migrations/add_health_track_count_swing_rpc.sql`
-- `migrations/add_health_missing_enrichment_tracks_rpc.sql`
+- `supabase/migrations/20260130200843_add_health_missing_catalog_rpcs.sql`
+- `supabase/migrations/20260130200844_add_health_track_count_swing_rpc.sql`
+- `supabase/migrations/20260130225814_add_health_missing_enrichment_tracks_rpc.sql`
 
 Without these: `/health` can still show the warning rows, but expansions/drilldowns may be missing or slow.
 
 ### Ingestion banner + health counts (recommended)
 
-- `migrations/add_ingestion_read_policies.sql`
+- `supabase/migrations/20260130225818_add_ingestion_read_policies.sql`
 
 Without it (when GRANT/RLS policies are missing): the site-wide ingestion banner may show `Data ingestion status: unknown`, and warning counts/badges may be missing.
 
 ### Collectors
 
-- `migrations/add_collectors_aggregate_views.sql`
+- `supabase/migrations/20260126181735_add_collectors_aggregate_views.sql`
 
 Without it: `/collectors` will error when querying `collector_daily_agg` / `collector_daily_compare`.
 
 ### Optional (docs/system)
 
-- `migrations/add_spotibase_system_stats_rpc.sql`
+- `supabase/migrations/20260130225822_add_spotibase_system_stats_rpc.sql`
   - Enables `/docs` to display live system sizing stats (tracks/playlists/artists/etc).
   - Without it: the `/docs` stats box will show partial values.
 
-- `migrations/add_spotibase_docs_inventory_rpc.sql`
+- `supabase/migrations/20260130225821_add_spotibase_docs_inventory_rpc.sql`
   - Enables `/docs` “Inventory” box (repo migrations list + optional DB inventory JSON).
   - Without it: the DB inventory section shows “—”.
 
-- `migrations/add_sai_docs_embeddings.sql` (optional, SAI)
+- `supabase/migrations/20260130225820_add_sai_docs_embeddings.sql` (optional, SAI)
   - Enables docs embeddings storage (`sai_doc_chunks`) + the `sai_docs_search` RPC.
   - Without it: SAI falls back to lexical docs search (or has no vector retrieval if enabled in code).
 
 ### Optional (partitioning automation)
 
-- `migrations/add_ensure_track_daily_streams_partitions.sql`
+- `supabase/migrations/20260207192115_add_ensure_track_daily_streams_partitions.sql`
   - Adds `ensure_track_daily_streams_partitions(months_ahead)` which is used by `/api/cron/ensure-partitions`.
   - If you have partitioned `track_daily_streams`, you should run this monthly (Vercel Cron recommended; set `CRON_SECRET` in `web/env.example`).
 
@@ -931,7 +931,7 @@ This section is intentionally **honest**: it describes what the current design *
 
 These are conservative, based on:
 
-- existing index + RPC patterns in `migrations/`
+- existing index + RPC patterns in `supabase/migrations/`
 - the fact that search RPC is explicitly designed for “~10k rows” scale
 - deliberate UI-side limits (bounded result sizes)
 
@@ -1016,11 +1016,11 @@ These are intentional guardrails to prevent the UI from trying to load “the en
 Checklist:
 
 - Confirm search migration exists/applied:
-  - `migrations/add_search_all_rpc.sql` (trigram + `search_all`)
+  - `supabase/migrations/20260129190439_add_search_all_rpc.sql` (trigram + `search_all`)
 - Confirm stats migration exists/applied:
-  - `migrations/add_search_stats_aggregate_rpcs.sql`
+  - `supabase/migrations/20260130200846_add_search_stats_aggregate_rpcs.sql`
 - Confirm artist cache table exists:
-  - `migrations/add_spotify_artist_image_cache.sql`
+  - `supabase/migrations/20260130225823_add_spotify_artist_image_cache.sql`
 - If images are missing:
   - run `web/scripts/refresh_spotify_artist_images.mjs` (or let on-demand refresh fill hot entries)
 
@@ -1036,7 +1036,7 @@ Checklist:
 ## Collectors admin guide (how to maintain collectors)
 
 <!-- tags: collectors, admin, playlists -->
-<!-- sources: web/src/app/(main-flat)/collectors/page.tsx, migrations/add_collectors_aggregate_views.sql -->
+<!-- sources: web/src/app/(main-flat)/collectors/page.tsx, supabase/migrations/20260126181735_add_collectors_aggregate_views.sql -->
 
 ### What a collector is (in this codebase)
 
@@ -1045,10 +1045,10 @@ Checklist:
 
 ### How collector metrics are computed
 
-- Views are created in `migrations/add_collectors_aggregate_views.sql`:
+- Views are created in `supabase/migrations/20260126181735_add_collectors_aggregate_views.sql`:
   - `collector_daily_agg`: sums `playlist_daily_stats` across all playlists assigned to a collector, per day
   - `collector_daily_compare`: adds window comparisons (yesterday delta, delta vs previous 7-day average)
-- `migrations/add_collector_entity_playlist_stats_setting.sql` adds an opt-in alternate scope where TG uses `tg_total` and PL uses `p_total`; other collectors remain assigned-playlist based.
+- `supabase/migrations/20260521004156_add_collector_entity_playlist_stats_setting.sql` adds an opt-in alternate scope where TG uses `tg_total` and PL uses `p_total`; other collectors remain assigned-playlist based.
 
 ### How to add/remove playlists from a collector
 
@@ -1177,7 +1177,7 @@ Use this when you (or SAI) want to map what you see on screen to the canonical d
 ## Data contracts / invariants (things that should always be true)
 
 <!-- tags: contracts, invariants, correctness -->
-<!-- sources: scripts/ingest_exports_to_supabase.py, migrations/*.sql -->
+<!-- sources: scripts/ingest_exports_to_supabase.py, supabase/migrations/*.sql -->
 
 These are “system rules” that future changes should preserve unless you intentionally redesign.
 
@@ -1245,7 +1245,7 @@ If these disagree, likely causes:
 ## Index & performance checklist (what to verify when scaling)
 
 <!-- tags: performance, indexes, database -->
-<!-- sources: migrations/add_search_all_rpc.sql, migrations/add_search_stats_aggregate_rpcs.sql, migrations/add_catalog_artist_aggregate_rpcs.sql, migrations/add_playlists_fast_tables_rpcs.sql -->
+<!-- sources: supabase/migrations/20260129190439_add_search_all_rpc.sql, supabase/migrations/20260130200846_add_search_stats_aggregate_rpcs.sql, supabase/migrations/20260130192235_add_catalog_artist_aggregate_rpcs.sql, supabase/migrations/20260130200845_add_playlists_fast_tables_rpcs.sql -->
 
 When performance regresses, it’s usually one of:
 
@@ -1255,7 +1255,7 @@ When performance regresses, it’s usually one of:
 
 ### Must-have indexes (current migrations)
 
-- Search: trigram GIN indexes on names (`add_search_all_rpc.sql`)
+- Search: trigram GIN indexes on names (`supabase/migrations/20260129190439_add_search_all_rpc.sql`)
 - Artist contains filter: GIN on `tracks.spotify_artist_ids`
 - Snapshot lookups: composite indexes on `track_daily_streams`
 - Membership: partial indexes for current/removed memberships
@@ -1312,7 +1312,7 @@ Only do this with a deliberate plan:
 When adding a feature that touches data:
 
 - **Database**
-  - add a migration (`migrations/*.sql`)
+  - add a migration (`supabase/migrations/*.sql`)
   - add indexes before heavy RPC logic
 - **Web**
   - prefer RPCs for heavy queries
@@ -1436,7 +1436,7 @@ This keeps SAI grounded in the actual system behavior and avoids hallucinating.
 - Primary: `web/src/app/(main-flat)/docs/docs.md`
 - Secondary:
   - `scripts/ingest_exports_to_supabase.py` (warning meanings + ingestion logic)
-  - `migrations/*.sql` (RPC definitions + performance indexes)
+  - `supabase/migrations/*.sql` (RPC definitions + performance indexes)
 
 #### Chunking rules
 
@@ -1509,7 +1509,7 @@ If you want SAI to be reliable, enforce answer structure.
 
 The independent `spotify_takedown_watch.yml` workflow runs daily at **04:37 UTC / 08:37 Dubai**, ahead of the usual SpotOnTrack data lag. It watches only the own catalog; competitor tables and pipelines are unaffected.
 
-**Apply `migrations/add_spotify_track_availability_watch.sql` before the workflow's first run.** It creates two backend-only tables with RLS enabled and explicit service-role SELECT/INSERT/UPDATE grants, plus the service-role-only `spotify_availability_candidates()` RPC. The admin-gated own-catalog `/health` page uses the service client to read the **Spotify availability** panel. The panel hides before the migration or first successful check.
+**Apply `supabase/migrations/20261010203810_add_spotify_track_availability_watch.sql` before the workflow's first run.** It creates two backend-only tables with RLS enabled and explicit service-role SELECT/INSERT/UPDATE grants, plus the service-role-only `spotify_availability_candidates()` RPC. The admin-gated own-catalog `/health` page uses the service client to read the **Spotify availability** panel. The panel hides before the migration or first successful check.
 
 1. Candidates are ISRCs with a `track_daily_streams` snapshot in the past 30 days. The RPC includes latest cumulative streams for alert context. The shared `Postgrest.rpc_all()` helper fetches every page in stable ISRC order, advancing by the actual returned row count until an empty page, so the Data API max-rows cap cannot limit the watch to the first 1,000 tracks. Missing `tracks.spotify_track_id` values are counted and skipped; run Spotify enrichment to fill them.
 2. The script obtains a client-credentials token, as existing Spotify enrichment and sync-state helpers do. It calls `GET /v1/tracks?ids=...&market=M` with up to 50 IDs, fetching market batches on demand and stopping each track at its first playable market. The default markets are US, GB, AE; override with the `SPOTIFY_AVAILABILITY_MARKETS` repository variable.

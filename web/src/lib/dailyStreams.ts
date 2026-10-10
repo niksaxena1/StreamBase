@@ -8,7 +8,7 @@
  * previously missing track total is backfilled, which would report a track's entire
  * lifetime streams as one day's growth. The stored `daily_streams_net` is computed
  * per-track and membership-aware (see
- * migrations/add_competitor_playlist_stats_recompute.sql), so it is the correct source.
+ * supabase/migrations/20260727024514_add_competitor_playlist_stats_recompute.sql), so it is the correct source.
  */
 
 /** Minimal row shape; both Home and Playlists row types satisfy it structurally. */

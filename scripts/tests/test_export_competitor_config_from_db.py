@@ -284,7 +284,7 @@ def test_extra_csv_knobs_survive_db_merge():
 
 
 def test_migration_backfills_every_current_csv_row():
-    migration = REPO_CSV.parents[1] / "migrations" / "add_competitor_onboarding_config_columns.sql"
+    migration = REPO_CSV.parents[1] / "supabase" / "migrations" / "20261010205727_add_competitor_onboarding_config_columns.sql"
     sql = migration.read_text(encoding="utf-8")
     rows = m.read_csv_rows(str(REPO_CSV))
     for row in rows:

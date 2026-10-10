@@ -2,13 +2,13 @@
 -- add_public_health_warning_history_mv_hardened).
 --
 -- Public-schema twin of competitor.health_warning_history_mv. The repo has
--- shipped migrations/add_health_warning_history_mv.sql (and the ingestion
+-- shipped supabase/migrations/20260304195142_add_health_warning_history_mv.sql (and the ingestion
 -- script has called the refresh function nightly) but it was never applied to
 -- prod; /api/health-history had been using its slow raw-table fallback and the
 -- nightly refresh logged a swallowed warning. This version additionally pins
 -- search_path and locks execute to service_role, matching
--- security_hardening_revoke_anon_execute_and_rls.sql conventions.
--- Supersedes add_health_warning_history_mv.sql.
+-- supabase/migrations/20260331143335_security_hardening_revoke_anon_execute_and_rls.sql conventions.
+-- Supersedes supabase/migrations/20260304195142_add_health_warning_history_mv.sql.
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS public.health_warning_history_mv AS
 SELECT

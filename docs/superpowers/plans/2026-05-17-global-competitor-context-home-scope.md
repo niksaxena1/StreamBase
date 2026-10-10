@@ -22,7 +22,7 @@
 ### Task 1: Persist the selected competitor label
 
 **Files:**
-- Create: `migrations/add_user_settings_competitor_label_key.sql`
+- Create: `supabase/migrations/20260517151013_add_user_settings_competitor_label_key.sql`
 - Modify: `web/src/app/api/user-settings/all/route.ts`
 - Modify: `web/src/app/api/user-settings/dataset-mode/route.ts`
 - Add tests under existing dataset/settings test files

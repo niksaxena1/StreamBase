@@ -14,9 +14,9 @@
 
 ### New files
 
-- `migrations/add_competitor_foundation.sql` — creates the competitor schema, tables, helper functions, RLS posture, and seed rows for Paraíso.
-- `migrations/add_competitor_analytics_rpcs.sql` — competitor equivalents for the minimum playlist/artist/track/search read APIs needed by v1.
-- `migrations/add_user_settings_dataset_mode.sql` — persists `own | competitor` per user.
+- `supabase/migrations/20260517014520_add_competitor_foundation.sql` — creates the competitor schema, tables, helper functions, RLS posture, and seed rows for Paraíso.
+- `supabase/migrations/20260517014521_add_competitor_analytics_rpcs.sql` — competitor equivalents for the minimum playlist/artist/track/search read APIs needed by v1.
+- `supabase/migrations/20260517014522_add_user_settings_dataset_mode.sql` — persists `own | competitor` per user.
 - `config/competitor_playlists.csv` — Paraíso pilot config.
 - `scripts/ingest_competitor_exports_to_supabase.py` — competitor-only ETL, adapted from the own-catalog ingestion path.
 - `.github/workflows/sot_competitor_daily_playlist_refresh.yml` — competitor refresh workflow.
@@ -46,12 +46,12 @@
 ## Task 1: Create the competitor database foundation
 
 **Files:**
-- Create: `migrations/add_competitor_foundation.sql`
-- Create: `migrations/add_user_settings_dataset_mode.sql`
+- Create: `supabase/migrations/20260517014520_add_competitor_foundation.sql`
+- Create: `supabase/migrations/20260517014522_add_user_settings_dataset_mode.sql`
 
 - [ ] **Step 1: Write the failing SQL expectation note**
 
-Create a short verification block at the bottom of `migrations/add_competitor_foundation.sql` as comments describing the expected schema objects and Paraíso seed rows:
+Create a short verification block at the bottom of `supabase/migrations/20260517014520_add_competitor_foundation.sql` as comments describing the expected schema objects and Paraíso seed rows:
 
 ```sql
 -- Verification checklist after apply:
@@ -186,7 +186,7 @@ alter table public.user_settings
 Run:
 
 ```powershell
-rg -n "create table if not exists competitor|dataset_mode|ensure_track_daily_streams_partitions" migrations\add_competitor_foundation.sql migrations\add_user_settings_dataset_mode.sql
+rg -n "create table if not exists competitor|dataset_mode|ensure_track_daily_streams_partitions" supabase/migrations/20260517014520_add_competitor_foundation.sql supabase/migrations/20260517014522_add_user_settings_dataset_mode.sql
 ```
 
 Expected: all created objects and setting definitions are present.
@@ -194,14 +194,14 @@ Expected: all created objects and setting definitions are present.
 - [ ] **Step 5: Commit**
 
 ```powershell
-git add migrations/add_competitor_foundation.sql migrations/add_user_settings_dataset_mode.sql
+git add supabase/migrations/20260517014520_add_competitor_foundation.sql supabase/migrations/20260517014522_add_user_settings_dataset_mode.sql
 git commit -m "Add competitor data foundation"
 ```
 
 ## Task 2: Add competitor analytics RPCs
 
 **Files:**
-- Create: `migrations/add_competitor_analytics_rpcs.sql`
+- Create: `supabase/migrations/20260517014521_add_competitor_analytics_rpcs.sql`
 
 - [ ] **Step 1: Define the minimum RPC contract in SQL comments**
 
@@ -234,7 +234,7 @@ Return rows for competitor tracks, artists, and playlists with the same broad sh
 Run:
 
 ```powershell
-rg -n "create or replace function competitor\.(search_all|playlists_latest_track_counts|playlist_current_tracks|playlist_removed_tracks|playlist_top_tracks_total|catalog_artist_series|catalog_artist_top_tracks_total|catalog_artist_top_tracks_daily)" migrations\add_competitor_analytics_rpcs.sql
+rg -n "create or replace function competitor\.(search_all|playlists_latest_track_counts|playlist_current_tracks|playlist_removed_tracks|playlist_top_tracks_total|catalog_artist_series|catalog_artist_top_tracks_total|catalog_artist_top_tracks_daily)" supabase/migrations/20260517014521_add_competitor_analytics_rpcs.sql
 ```
 
 Expected: all v1 functions appear once.
@@ -242,7 +242,7 @@ Expected: all v1 functions appear once.
 - [ ] **Step 6: Commit**
 
 ```powershell
-git add migrations/add_competitor_analytics_rpcs.sql
+git add supabase/migrations/20260517014521_add_competitor_analytics_rpcs.sql
 git commit -m "Add competitor analytics RPCs"
 ```
 

@@ -4,7 +4,7 @@
  * This script attempts to add the column using Supabase's REST API.
  * 
  * If this doesn't work, run the SQL migration file directly in Supabase SQL Editor:
- * migrations/add_playlist_type_column.sql
+ * supabase/migrations/20260126154527_add_playlist_type_column.sql
  */
 
 import { createClient } from "@supabase/supabase-js";

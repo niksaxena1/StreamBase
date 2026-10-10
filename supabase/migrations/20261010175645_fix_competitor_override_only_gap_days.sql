@@ -1,4 +1,4 @@
--- Restore override-only competitor days after optimize_effective_stream_views_pushdown.sql.
+-- Restore override-only competitor days after supabase/migrations/20260810003702_optimize_effective_stream_views_pushdown.sql.
 -- Keep the narrow projection and UNION ALL branches so date/ISRC filters can push down.
 CREATE OR REPLACE VIEW competitor.track_daily_streams_effective_public AS
 SELECT t.date,t.isrc,
