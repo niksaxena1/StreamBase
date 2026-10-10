@@ -200,6 +200,10 @@ class FakePg:
         assert name == "spotify_availability_candidates"
         return self.candidates
 
+    def rpc_all(self, name, params, *, order, page_size=1000):
+        assert order == "isrc.asc"
+        return self.rpc(name, params)
+
     def select_all(self, table, select, filters, order=None, page_size=1000):
         rows = self.tables[table]
         if filters == "notified_at=is.null":

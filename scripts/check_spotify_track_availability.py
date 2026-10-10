@@ -474,7 +474,9 @@ def run_single(sp: Spotify, track_id: str, isrc: str, markets: Sequence[str]) ->
 
 
 def run(pg: Postgrest, sp: Spotify, args: argparse.Namespace, markets: Sequence[str]) -> int:
-    candidates = pg.rpc("spotify_availability_candidates", {"p_lookback_days": args.lookback_days}) or []
+    candidates = pg.rpc_all(
+        "spotify_availability_candidates", {"p_lookback_days": args.lookback_days}, order="isrc.asc"
+    )
     checkable = [c for c in candidates if (c.get("spotify_track_id") or "").strip()]
     missing_ids = len(candidates) - len(checkable)
     if args.limit:
@@ -487,6 +489,17 @@ def run(pg: Postgrest, sp: Spotify, args: argparse.Namespace, markets: Sequence[
         "isrc=not.is.null",
         order="isrc.asc",
     )
+    # Compare the full fetched catalog before --limit, including dry runs.
+    # A truncated/empty RPC must never silently replace a catalog-wide check.
+    if len(candidates) < len(prev_rows) * 0.5:
+        msg = (
+            f"Refusing to check only {len(candidates)} candidates against {len(prev_rows)} previously checked tracks "
+            "(< 50%); possible candidate truncation or unexpected catalog shrinkage. "
+            "Nothing written or emailed. Check RPC pagination and the catalog snapshot window."
+        )
+        print(msg)
+        write_step_summary(f"## Spotify takedown watch\n- **{msg}**")
+        return 4
     prev_by_isrc = {r["isrc"]: r for r in prev_rows}
     tracks_by_isrc = {c["isrc"]: c for c in candidates}
 
