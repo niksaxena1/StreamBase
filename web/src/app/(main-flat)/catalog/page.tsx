@@ -5,6 +5,7 @@ import CatalogLoading from "./loading";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { cachedQuery } from "@/lib/supabase/cache";
+import { fetchOrderedPages } from "@/lib/supabase/orderedPages";
 import { getArtistsCached } from "@/lib/spotify";
 import { RememberParamRedirect } from "@/components/dashboard/RememberParamRedirect";
 import { CatalogPageClient } from "./CatalogPageClient";
@@ -142,30 +143,21 @@ async function fetchAllTrackSeries(
   sb: SupabaseClient,
   args: { isrc: string; startDate: string; endDate: string; maxRows?: number },
 ) {
-  const pageSize = API_LOOKUP_PAGE_SIZE;
-  const out: Array<{ date: string; streams_cumulative: number | null }> = [];
-  let from = 0;
-  const max = args.maxRows ?? API_LOOKUP_TRACK_MAX;
-
-  while (from < max) {
-    const to = from + pageSize - 1;
-    const { data } = await sb
+  return fetchOrderedPages<{ date: string; streams_cumulative: number | null }>({
+    pageSize: API_LOOKUP_PAGE_SIZE,
+    maxRows: args.maxRows ?? API_LOOKUP_TRACK_MAX,
+    fetchPage: (from, withCount) => {
+      const query = sb
       .from("track_daily_streams_effective_public")
       .select("date,streams_cumulative")
       .eq("isrc", args.isrc)
       .gte("date", args.startDate)
       .lte("date", args.endDate)
       .order("date", { ascending: false })
-      .range(from, to);
-
-    const rows = (data ?? []) as Array<{ date: string; streams_cumulative: number | null }>;
-    if (!rows.length) break;
-    out.push(...rows);
-    if (rows.length < pageSize) break;
-    from += pageSize;
-  }
-
-  return out;
+      .range(from, from + API_LOOKUP_PAGE_SIZE - 1);
+      return withCount ? query.setHeader("Prefer", "count=exact") : query;
+    },
+  });
 }
 
 async function fetchCatalogArtistSeries(
@@ -1037,6 +1029,50 @@ async function CatalogPageContent({
   }
 
   // Artist series + top tracks are computed in Postgres (scales to large tables).
+  // The selected track series and image metadata do not depend on those aggregates.
+  const trackSeriesPromise = isrc && latestRunDate && startRunDate && maPaddedStartRunDate
+    ? cachedQuery(
+        async () => ({
+          data: await fetchAllTrackSeries(svc, {
+            isrc,
+            startDate: maPaddedStartRunDate,
+            endDate: latestRunDate,
+            maxRows: API_LOOKUP_TRACK_MAX,
+          }),
+          error: null,
+        }),
+        `catalog-track-series-${isrc}-${maPaddedStartRunDate}-${latestRunDate}-ov${overrideBuster}`,
+        CACHE_TTL_1H,
+      )
+    : Promise.resolve({ data: [] as Array<{ date: string; streams_cumulative: number | null }>, error: null });
+  const selectedAndSomeArtistIds = Array.from(
+    new Set([artistId, ...artists.slice(0, CATALOG_ARTIST_THUMBNAILS_MAX).map((a) => a.id)].filter(Boolean)),
+  );
+  const artistDataPromise = getArtistsCached(svc, selectedAndSomeArtistIds, { maxAgeDays: 31 });
+  const selectedTrackPromise = isrc
+    ? cachedQuery(
+        async () => await svc.from("tracks")
+          .select("name,spotify_album_image_url,spotify_track_id,spotify_artist_names,spotify_artist_ids,release_date")
+          .eq("isrc", isrc).maybeSingle(),
+        `track-selected-${isrc}`,
+        CACHE_TTL_1H,
+      )
+    : Promise.resolve({ data: null, error: null });
+  const trackOverridesPromise = isrc && latestRunDate && startRunDate
+    ? cachedQuery(
+        async () => {
+          let q = svc.from("track_daily_stream_overrides").select("date,note")
+            .eq("isrc", isrc).gte("date", startRunDate).lte("date", latestRunDate);
+          if (hideStaleAnnotations) q = q.not("note", "like", "stale-fix:%");
+          return await q.order("date", { ascending: false });
+        },
+        `track-overrides-${isrc}-${startRunDate}-${latestRunDate}-ov${overrideBuster}-stale${hideStaleAnnotations ? "1" : "0"}`,
+        CACHE_TTL_1H,
+      )
+    : Promise.resolve({ data: [], error: null });
+  // Observe failures immediately even while independent metadata is loading.
+  void trackSeriesPromise.catch(() => {});
+  void artistDataPromise.catch(() => {});
   const [{ data: seriesRows }, { data: topTotalRows }, { data: topDailyRows }] = await Promise.all([
     latestRunDate && startRunDate && maPaddedStartRunDate
       ? cachedQuery(
@@ -1214,43 +1250,9 @@ async function CatalogPageContent({
 
   // Selected track panels (optional). Wrap in cachedQuery: series data only changes
   // when a new ingestion run completes (daily), but can include many paginated rows.
-  const trackSeries = isrc && latestRunDate && startRunDate && maPaddedStartRunDate
-    ? (
-        await cachedQuery(
-          async () => ({
-            data: await fetchAllTrackSeries(svc, {
-              isrc,
-              startDate: maPaddedStartRunDate,
-              endDate: latestRunDate,
-              maxRows: API_LOOKUP_TRACK_MAX,
-            }),
-            error: null,
-          }),
-          `catalog-track-series-${isrc}-${maPaddedStartRunDate}-${latestRunDate}-ov${overrideBuster}`,
-          CACHE_TTL_1H,
-        )
-      ).data ?? []
-    : ([] as Array<{ date: string; streams_cumulative: number | null }>);
+  const trackSeries = (await trackSeriesPromise).data ?? [];
 
-  const trackOverrideAnnotations =
-    isrc && latestRunDate && startRunDate
-      ? (
-          await cachedQuery(
-            async () => {
-              let q = svc
-                .from("track_daily_stream_overrides")
-                .select("date,note")
-                .eq("isrc", isrc)
-                .gte("date", startRunDate)
-                .lte("date", latestRunDate);
-              if (hideStaleAnnotations) q = q.not("note", "like", "stale-fix:%");
-              return await q.order("date", { ascending: false });
-            },
-            `track-overrides-${isrc}-${startRunDate}-${latestRunDate}-ov${overrideBuster}-stale${hideStaleAnnotations ? "1" : "0"}`,
-            CACHE_TTL_1H,
-          )
-        ).data
-      : [];
+  const trackOverrideAnnotations = (await trackOverridesPromise).data;
 
   const trackOverrideAnnotationsDataDate = ((trackOverrideAnnotations ?? []) as TrackOverrideRow[])
     .filter((r) => !!r?.date)
@@ -1375,10 +1377,7 @@ async function CatalogPageContent({
 
   // Artist images for dropdown + header. Use the cached path to avoid hammering Spotify on every request.
   // We cap thumbnails to avoid very large, cold-cache Spotify fetches.
-  const selectedAndSomeArtistIds = Array.from(
-    new Set([artistId, ...artists.slice(0, CATALOG_ARTIST_THUMBNAILS_MAX).map((a) => a.id)].filter(Boolean)),
-  );
-  const artistDataMap = await getArtistsCached(svc, selectedAndSomeArtistIds, { maxAgeDays: 31 });
+  const artistDataMap = await artistDataPromise;
   const selectedArtistImageUrl = artistDataMap.get(artistId)?.imageUrl ?? null;
   const artistsWithImages = artists.map((a) => ({
     ...a,
@@ -1395,16 +1394,7 @@ async function CatalogPageContent({
     releaseDate: string | null;
   } | null = null;
   if (isrc) {
-    const { data: trackData } = await cachedQuery(
-      async () =>
-        await svc
-          .from("tracks")
-          .select("name,spotify_album_image_url,spotify_track_id,spotify_artist_names,spotify_artist_ids,release_date")
-          .eq("isrc", isrc)
-          .maybeSingle(),
-      `track-selected-${isrc}`,
-      CACHE_TTL_1H,
-    );
+    const { data: trackData } = await selectedTrackPromise;
     if (trackData) {
       const track = trackData as {
         name: string | null;
