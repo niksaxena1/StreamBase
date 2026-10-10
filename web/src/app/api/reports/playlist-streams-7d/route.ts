@@ -5,6 +5,7 @@ import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { dataDateFromRunDate } from "@/lib/sotDates";
 import { apiJsonErr, requireAdmin } from "@/lib/api/server";
+import { reportRunDates } from "@/lib/playlistReportRange";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -32,10 +33,18 @@ type PlaylistDailyStatsRow = {
   total_streams_cumulative: number | null;
 };
 
-export async function GET() {
+export async function GET(request: Request) {
   const sb = await supabaseServer();
   const auth = await requireAdmin(sb);
   if (!auth.ok) return auth.response;
+
+  const params = new URL(request.url).searchParams;
+  let customDates: string[] | null;
+  try {
+    customDates = reportRunDates(params.get("start"), params.get("end"));
+  } catch (error) {
+    return apiJsonErr((error as Error).message, 400);
+  }
 
   const svc = supabaseService();
 
@@ -58,7 +67,11 @@ export async function GET() {
     return apiJsonErr("No Releases rows found", 404);
   }
 
-  const runDatesAsc = Array.from(new Set(runDatesDesc)).sort();
+  if (customDates && customDates[customDates.length - 1] > runDatesDesc[0]) {
+    return apiJsonErr("End date exceeds the latest available data", 400);
+  }
+
+  const runDatesAsc = customDates ?? Array.from(new Set(runDatesDesc)).sort();
 
   const [playlistResults, collectorResults] = await Promise.all([
     Promise.all(
@@ -161,12 +174,14 @@ export async function GET() {
   ];
 
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Last 7 days");
+  XLSX.utils.book_append_sheet(wb, ws, customDates ? "Selected dates" : "Last 7 days");
 
   const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
   const body = new Uint8Array(buf);
 
-  const filename = "playlist_streams_last_7_days.xlsx";
+  const filename = customDates
+    ? `playlist_streams_${params.get("start")}_to_${params.get("end")}.xlsx`
+    : "playlist_streams_last_7_days.xlsx";
   return new NextResponse(body, {
     headers: {
       "Content-Type":
