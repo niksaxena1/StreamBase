@@ -66,10 +66,13 @@ configured separately; committing these workflows does not create that schedule.
 
 ## Fallback schedules and run dates
 
-All existing manual triggers remain available. Each workflow keeps one daily cron
-as a fallback; GitHub may start these runs late.
+All existing manual triggers remain available. The SpotOnTrack refresh, sync, and
+export workflows keep these daily crons as fallbacks; GitHub may start them late.
+The external `daily-pipeline` dispatch starts both refresh heads. A successful
+refresh starts its dashboard sync, and a successful sync starts its export when
+the prior run completes.
 
-| Workflow | Cron (UTC) | Dubai time |
+| Workflow | Cron (UTC) | Dubai (UTC+4) |
 | --- | --- | --- |
 | SOT Daily Playlist Refresh | `7 5 * * *` | 09:07 |
 | SOT Daily Dashboard Sync | `11 6 * * *` | 10:11 |
@@ -106,7 +109,9 @@ run the export manually (or let its fallback cron pick it up).
 The own-export dispatch starts the stale fixer only for an export dated UTC today.
 Successful historical manual re-ingestions do not dispatch today's repair jobs.
 
-Artist Tools Daily is dispatched by `RapidAPI Stale Track Fix` on any completion. It records own-catalog cumulative counts even
+Artist Tools Daily is dispatched by `RapidAPI Stale Track Fix` on any completion
+and also has a daily 13:17 UTC (17:17 Dubai) cron fallback. It records own-catalog
+cumulative counts even
 for tracks RapidAPI fixed, then repairs remaining stale tracks without replacing
 existing overrides. It retains the fewer-than-500 safety boundary. Only Supabase
 URL/service-role secrets are needed; rotating OAuth tokens live in a private table.
@@ -131,10 +136,20 @@ The script must support `--state-file` and `--full` when this is merged. Sync ad
 Other days use the script's incremental behavior. Cache entries are immutable;
 rerunning the same run ID can restore its existing entry but cannot overwrite it.
 
+## Other scheduled workflows
+
+These scheduled workflows run independently of the SpotOnTrack completion chains:
+
+- Spotify enrichment runs at 10:29 UTC (14:29 Dubai) on odd UTC calendar days; competitor enrichment runs at 11:09 UTC (15:09 Dubai) on even UTC calendar days.
+- Spotify Takedown Watch runs daily at 04:37 UTC (08:37 Dubai), and Spotify Playlist Watch Daily runs daily at 15:11 UTC (19:11 Dubai).
+- Artist image refresh is scheduled Fridays at 15:00 UTC (19:00 Dubai). Its job guard limits scheduled runs to UTC dates 1–7, so it runs on the month's first Friday. Manual dispatches bypass the date guard.
+- Pipeline Quality CI runs on matching pull requests and pushes to `main`; it has no cron.
+
 ## Watchdogs
 
-Own and competitor ingestion watchdogs keep their existing 13:53 / 14:29 UTC
-crons and manual triggers. The competitor stale-summary RPC normally returns a
+Own and competitor ingestion watchdogs run on daily 13:53 / 14:29 UTC (17:53 /
+18:29 Dubai) crons and support manual triggers. The competitor stale-summary RPC
+normally returns a
 row list (`RETURNS TABLE`), but PostgREST can also return a single object or an
 error object. Because `curl` returns HTTP error bodies without `--fail`, assuming
 every nonempty JSON response supports `d[0]` caused `KeyError: 0` on an object.
