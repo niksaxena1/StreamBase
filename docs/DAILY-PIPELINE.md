@@ -10,22 +10,25 @@ flowchart LR
   Head --> CompetitorRefresh[SOT Competitor Daily Playlist Refresh]
   OwnRefresh -->|success + 10 minute wait| OwnSync[SOT Daily Dashboard Sync]
   OwnSync -->|success| OwnExport[SOT Daily Export]
-  OwnExport -->|success| Fix[RapidAPI Stale Track Fix]
+  OwnExport -->|ingested: gh workflow run| Fix[RapidAPI Stale Track Fix]
+  Fix -->|always: gh workflow run| Artist[Artist Tools Daily]
   CompetitorRefresh -->|success + 10 minute wait| CompetitorSync[SOT Competitor Daily Dashboard Sync]
   CompetitorSync -->|success| CompetitorExport[SOT Competitor Daily Export]
 ```
 
-Each downstream workflow listens for `workflow_run` with `types: [completed]` and
-runs its job only when the upstream conclusion is `success`. Unsuccessful upstream
-conclusions stop that chain. Dashboard sync first
+Sync and export listen for `workflow_run` with `types: [completed]` and require
+upstream `success`. GitHub stops `workflow_run` chains after three levels, so the
+last two hand-offs are explicit dispatches (`gh workflow run` with `GITHUB_TOKEN`,
+which GitHub allows): the export starts the RapidAPI stale fix after a real ingest,
+and the stale fix always starts Artist Tools Daily, even when RapidAPI failed or
+ran out of quota.
+Dashboard sync first
 waits 600 seconds on chained runs so SpotOnTrack can process playlist refreshes.
 Manual and cron syncs do not wait.
 
 GitHub requires the `workflow_run` and `repository_dispatch` workflow definitions
 to exist on the default branch (`main`); merge these changes before enabling the
-external scheduler. Chained runs check out the default branch. The own-catalog
-chain uses GitHub's maximum of three downstream `workflow_run` levels.
-See [GitHub workflow events](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows).
+external scheduler. Chained runs check out the default branch. See [GitHub workflow events](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows).
 
 ## External head trigger
 
@@ -72,6 +75,7 @@ as a fallback; GitHub may start these runs late.
 | SOT Daily Dashboard Sync | `11 6 * * *` | 10:11 |
 | SOT Daily Export | `43 7 * * *` | 11:43 |
 | RapidAPI Stale Track Fix | `41 9 * * *` | 13:41 |
+| Artist Tools Daily | `17 13 * * *` | 17:17 |
 | SOT Competitor Daily Playlist Refresh | `23 5 * * *` | 09:23 |
 | SOT Competitor Daily Dashboard Sync | `53 8 * * *` | 12:53 |
 | SOT Competitor Daily Export | `29 11 * * *` | 15:29 |
@@ -91,10 +95,25 @@ script uses UTC today and requires today's own-catalog stale-ingestion warning;
 its cron behavior is unchanged. A chained stale fix follows a successful own
 export, including an export that skipped because today's ingestion already exists.
 
-Manual (`workflow_dispatch`) runs do NOT start their downstream chain, so a dry
-run or limited test sync can never trigger a real export. After a manual repair,
-run the next step manually (or let its fallback cron pick it up). Only scheduled,
-`repository_dispatch` and chained (`workflow_run`) runs propagate.
+Manual (`workflow_dispatch`) refresh/sync runs do NOT start their downstream chain,
+so a dry run or limited test sync cannot trigger an export. Successful own exports
+dated UTC today, including manual exports, dispatch the stale fixer; historical
+exports do not. RapidAPI completion dispatches artist.tools. After a manual sync,
+run the export manually (or let its fallback cron pick it up).
+
+## artist.tools second source and stale fallback
+
+The own-export dispatch starts the stale fixer only for an export dated UTC today.
+Successful historical manual re-ingestions do not dispatch today's repair jobs.
+
+Artist Tools Daily is dispatched by `RapidAPI Stale Track Fix` on any completion. It records own-catalog cumulative counts even
+for tracks RapidAPI fixed, then repairs remaining stale tracks without replacing
+existing overrides. It retains the fewer-than-500 safety boundary. Only Supabase
+URL/service-role secrets are needed; rotating OAuth tokens live in a private table.
+Successful UTC-date runs are skipped by the cron and optional 19:00-local Windows
+fallback. See [authorization, limits, comparisons and setup](ARTIST-TOOLS-SOURCE.md).
+
+The 13:17 UTC cron and the optional PC task remain as fallbacks.
 
 ## Incremental dashboard sync
 

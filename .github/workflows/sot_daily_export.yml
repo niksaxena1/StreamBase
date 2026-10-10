@@ -1,7 +1,7 @@
 name: SOT Daily Export
 
 permissions:
-  actions: read
+  actions: write
   contents: read
 
 on:
@@ -311,3 +311,17 @@ jobs:
           password: ${{ secrets.NOTIFY_SMTP_PASSWORD }}
           subject: ${{ steps.notify_check.outputs.subject }}
           body: ${{ steps.notify_check.outputs.body }}
+
+      # workflow_run chains stop at three levels (refresh -> sync -> export), so
+      # hand off to the stale fix with a dispatch instead (allowed for GITHUB_TOKEN).
+      - name: Start stale-track fix
+        if: success() && steps.ingest.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPORT_RUN_DATE: ${{ steps.run_date.outputs.run_date }}
+        run: |
+          if [ "$EXPORT_RUN_DATE" != "$(date -u +%F)" ]; then
+            echo "Skipping stale-track fix: export date is not UTC today."
+            exit 0
+          fi
+          gh workflow run rapidapi_stale_fix.yml --repo "$GITHUB_REPOSITORY" --ref "${{ github.ref_name }}"

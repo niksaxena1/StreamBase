@@ -2,11 +2,9 @@ name: RapidAPI Stale Track Fix
 
 permissions:
   contents: read
+  actions: write
 
 on:
-  workflow_run:
-    workflows: ["SOT Daily Export"]
-    types: [completed]
   schedule:
     - cron: "41 9 * * *" # 13:41 Dubai / 09:41 UTC daily
   workflow_dispatch:
@@ -19,7 +17,6 @@ on:
 
 jobs:
   fix:
-    if: github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event != 'workflow_dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -375,3 +372,10 @@ jobs:
           subject: ${{ steps.notify_check.outputs.subject }}
           body: ${{ steps.notify_check.outputs.body }}
           html_body: ${{ steps.notify_check.outputs.html_body }}
+
+      # Always hand off to artist.tools, including when RapidAPI failed or hit quota.
+      - name: Start artist.tools fallback
+        if: always() && github.event.inputs.mock_email_preview != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run artist_tools_daily.yml --repo "$GITHUB_REPOSITORY" --ref "${{ github.ref_name }}"
