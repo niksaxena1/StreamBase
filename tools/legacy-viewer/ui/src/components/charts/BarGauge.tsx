@@ -1,0 +1,1 @@
+export { BarGauge } from "./index";

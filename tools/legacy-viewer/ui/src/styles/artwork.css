@@ -1,0 +1,506 @@
+/* Artwork, pickers, track hero, top-track cards, monthly bars, chart flags. StreamBase tokens only. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- artwork ---------------------------------------------------------------------------- */
+.artwork {
+  --art-size: 32px;
+  display: inline-flex;
+  flex: none;
+  width: var(--art-size);
+  height: var(--art-size);
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid var(--sb-border);
+  background: var(--sb-panel);
+  vertical-align: middle;
+}
+.artwork-square {
+  border-radius: 4px;
+}
+.artwork-round {
+  border-radius: 50%;
+}
+.artwork img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.artwork-button {
+  cursor: zoom-in;
+  transition: opacity var(--sb-motion-control) var(--sb-ease-out),
+    transform var(--sb-motion-control) var(--sb-ease-out);
+}
+.artwork-button:hover {
+  opacity: 0.88;
+}
+.artwork-button:focus-visible {
+  outline: 2px solid var(--sb-accent);
+  outline-offset: 2px;
+}
+.artwork-tile {
+  align-items: center;
+  justify-content: center;
+  color: var(--sb-text);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  font-family: var(--font-display, "Space Grotesk Variable", sans-serif);
+  user-select: none;
+  --tone: var(--sb-tracks);
+  background: color-mix(in srgb, var(--tone) 16%, var(--sb-card));
+  border-color: color-mix(in srgb, var(--tone) 30%, var(--sb-border));
+}
+.artwork-tile.tone-tracks {
+  --tone: var(--sb-tracks);
+}
+.artwork-tile.tone-revenue {
+  --tone: var(--sb-revenue);
+}
+.artwork-tile.tone-info {
+  --tone: var(--sb-info);
+}
+.artwork-tile.tone-warning {
+  --tone: var(--sb-warning);
+}
+.artwork-tile.tone-accent {
+  --tone: var(--sb-accent-stroke);
+}
+.artwork-preview {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(3px);
+}
+.artwork-preview-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 16px;
+  max-width: min(320px, 100%);
+  color: var(--sb-text);
+  background: var(--sb-bg);
+  border: 1px solid var(--sb-border-2);
+  border-radius: var(--sb-radius);
+  box-shadow: var(--sb-shadow-elevated);
+}
+.artwork-preview-card p {
+  margin: 0;
+  font-weight: 550;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.artwork-preview-image {
+  display: block;
+  width: 160px;
+  height: 160px;
+  object-fit: cover;
+  border: 1px solid var(--sb-border);
+}
+.artwork-preview-image.square {
+  border-radius: 4px;
+}
+.artwork-preview-image.round {
+  border-radius: 50%;
+}
+.cell-art {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* ---- picker rows ------------------------------------------------------------------------- */
+.combobox {
+  position: relative;
+}
+.combobox-thumb {
+  position: absolute;
+  z-index: 1;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  display: inline-flex;
+}
+.combobox input.has-thumb {
+  padding-left: 40px;
+}
+.popover .rich-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  padding: 5px 8px;
+}
+.popover .option-text {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+.popover .option-primary {
+  color: var(--sb-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.popover .option-secondary {
+  color: var(--sb-muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.popover .option-trailing {
+  margin-left: auto;
+  color: var(--sb-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  padding-left: 8px;
+}
+/* The accent highlight is a lime fill with black text in both themes. */
+.popover .active .option-primary,
+.popover .active .option-secondary,
+.popover .active .option-trailing {
+  color: var(--sb-accent-text);
+}
+.popover .active .option-secondary,
+.popover .active .option-trailing {
+  opacity: 0.7;
+}
+
+/* ---- track hero -------------------------------------------------------------------------- */
+.lookup-hero {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 18px;
+  padding: 14px 18px;
+  margin-bottom: 14px;
+}
+.lookup-hero .hero-title {
+  margin: 0;
+  font-family: var(--font-display, "Space Grotesk Variable", sans-serif);
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+.lookup-hero .hero-artists {
+  margin: 3px 0 6px;
+  font-size: 14px;
+}
+.lookup-hero .hero-meta {
+  gap: 12px;
+}
+.isrc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px 2px 10px;
+  border: 1px solid var(--sb-border);
+  border-radius: var(--sb-radius-full);
+  background: var(--sb-row-hover);
+}
+.isrc-chip code {
+  font-size: 12px;
+}
+.isrc-copy {
+  min-width: 26px;
+  min-height: 26px;
+  border-radius: 50%;
+  background: transparent;
+  line-height: 1;
+}
+.isrc-copy:hover {
+  background: var(--sb-row-hover);
+}
+.isrc-status {
+  min-width: 0;
+}
+.isrc-status:empty {
+  display: none;
+}
+.lookup-hero .hero-stat,
+.lookup-hero .hero-spark {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.lookup-hero .hero-stat {
+  align-items: flex-end;
+  text-align: right;
+}
+.lookup-hero .hero-stat strong {
+  font-size: 26px;
+  font-weight: 550;
+  letter-spacing: -0.04em;
+  line-height: 1.1;
+}
+.sparkline {
+  display: block;
+  overflow: visible;
+}
+@media (max-width: 1050px) {
+  .lookup-hero {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .lookup-hero .hero-stat,
+  .lookup-hero .hero-spark {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    text-align: left;
+  }
+}
+.detail-header-art {
+  flex-direction: row;
+  align-items: flex-start;
+}
+.detail-header-text {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.artist-photo-row {
+  margin: -4px 0 12px;
+}
+
+/* ---- top-track cards --------------------------------------------------------------------- */
+.top-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 12px;
+  margin: 0 0 20px;
+  padding: 0;
+  list-style: none;
+}
+.top-card {
+  position: relative;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--sb-border);
+  border-radius: var(--sb-radius);
+  background: var(--sb-card);
+  box-shadow: var(--sb-shadow-compact);
+  transition: background var(--sb-motion-control) var(--sb-ease-out),
+    border-color var(--sb-motion-control) var(--sb-ease-out);
+}
+.top-card:hover {
+  background: var(--sb-panel-hover);
+  border-color: var(--sb-border-2);
+}
+.top-card .artwork-button {
+  position: relative;
+  z-index: 2;
+}
+.top-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.top-card-title {
+  font-weight: 600;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-decoration: none;
+}
+/* Stretched link: the whole card opens Track lookup; artwork stays clickable above it. */
+.top-card-title::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+.top-card-title:focus-visible {
+  outline: none;
+}
+.top-card:focus-within {
+  outline: 2px solid var(--sb-accent);
+  outline-offset: 1px;
+}
+.top-card-artist {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.top-card-stats {
+  display: flex;
+  gap: 16px;
+  margin: 6px 0 0;
+}
+.top-card-stats > div {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.top-card-stats dt {
+  font-size: 11px;
+}
+.top-card-stats dd {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 550;
+}
+
+/* ---- monthly bars + chart extras --------------------------------------------------------- */
+.monthly-bars {
+  margin: 0 0 8px;
+}
+.monthly-bars-key {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 0;
+}
+.monthly-bars-key .swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+.monthly-bars-key .swatch.warn {
+  margin-left: 6px;
+}
+.recharts-bar-rectangle {
+  outline: none;
+}
+.chart-zoom {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--sb-border);
+  border-radius: var(--sb-radius-full);
+  background: var(--sb-panel);
+}
+.chart-actions .chart-zoom .button {
+  min-height: 24px;
+  padding: 2px 9px;
+  border-color: transparent;
+  background: transparent;
+}
+.chart-actions .chart-zoom .button[aria-pressed="true"] {
+  background: var(--sb-text);
+  color: var(--sb-bg);
+}
+.chart-toggle {
+  gap: 6px;
+  white-space: nowrap;
+}
+.chart-flag-tooltip {
+  position: absolute;
+  z-index: 5;
+  min-width: 0;
+  max-width: 280px;
+  pointer-events: none;
+}
+.chart-flag-tooltip p,
+.chart-flag-line {
+  margin: 2px 0 0;
+}
+.chart-flag {
+  cursor: default;
+  outline: none;
+}
+.chart-flag:focus-visible circle {
+  stroke-width: 2.5;
+}
+
+/* The animated counter is a span inside the tile's <strong>; keep the tile's big type. */
+.lookup-tiles strong span {
+  font-size: inherit;
+}
+/* The hover dot must not steal pointer events from milestone flags beneath it. */
+.recharts-active-dot,
+.recharts-active-dot * {
+  pointer-events: none;
+}
+
+/* ---- table density: ~36px rows --------------------------------------------------------------- */
+.table-card td .icon-button,
+.table-card td .button.icon-button {
+  min-height: 24px;
+  min-width: 24px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+}
+.table-card td .row {
+  gap: 6px;
+}
+.table-card.nowrap td {
+  white-space: nowrap;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.table-card.nowrap td .row {
+  flex-wrap: nowrap;
+}
+.table-card.nowrap th {
+  white-space: nowrap;
+}
+.cell-art > :last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cell-art {
+  max-width: 100%;
+}
+.table-card td .chip {
+  padding: 1px 8px;
+}
+.table-card.nowrap td,
+.table-card.nowrap th {
+  padding-left: 10px;
+  padding-right: 10px;
+}
+/* A block-level flex row avoids the extra line-box height an inline-flex cell adds (keeps rows ~36px). */
+.table-card .cell-art {
+  display: flex;
+}
+.top-cards {
+  grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+}
+.top-card-stats {
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+.top-card-stats dd {
+  white-space: nowrap;
+}
+.monthly-bars *:focus,
+.monthly-bars *:focus-visible {
+  outline: none;
+}
