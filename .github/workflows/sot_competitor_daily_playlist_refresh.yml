@@ -27,14 +27,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: "pip"
       - name: Cache Playwright browsers
         id: playwright_cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
@@ -79,7 +79,7 @@ jobs:
           python scripts/sot_refresh_playlists.py --config config/competitor_playlists.csv --storage-state sot_state.json $ARGS
       - name: Upload refresh logs artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sot-competitor-playlist-refresh-${{ github.run_id }}
           path: .artifacts/

@@ -1,3 +1,4 @@
+import { perfServerStep } from "@/lib/perfTiming.server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChart";
@@ -677,7 +678,7 @@ export async function loadHomeDiagnosticsDataForUser(args: {
   };
 }
 
-export async function loadHomeDashboardData(args: {
+type HomeDashboardLoadArgs = {
   sb: SupabaseClient;
   svc: Svc;
   userId: string;
@@ -688,7 +689,13 @@ export async function loadHomeDashboardData(args: {
   diagnosticsOnly?: boolean;
   /** Pre-fetched user_settings row (from getRequestAppContext) to skip the duplicate read. */
   settings?: Record<string, unknown> | null;
-}): Promise<HomeDashboardServerProps> {
+};
+
+export async function loadHomeDashboardData(args: HomeDashboardLoadArgs): Promise<HomeDashboardServerProps> {
+  return perfServerStep("loadHomeDashboardData", () => loadHomeDashboardDataImpl(args));
+}
+
+async function loadHomeDashboardDataImpl(args: HomeDashboardLoadArgs): Promise<HomeDashboardServerProps> {
   const { sb, svc, userId, sp } = args;
   const includeScatter = args.includeScatter ?? true;
   const includeDiagnostics = args.includeDiagnostics ?? true;
@@ -847,6 +854,7 @@ export async function loadHomeDashboardData(args: {
   // Competitor name + playlists lookups are independent of each other, so run them in
   // parallel when we're in Competitor Mode.
   let competitorPlaylists: HomeDashboardServerProps["competitorPlaylists"] = [];
+  let competitorDetailsPromise: Promise<void> | null = null;
   if (datasetMode === "competitor") {
     const isSpecificCompetitor =
       !!competitorLabelKey && competitorLabelKey !== ALL_COMPETITORS_KEY;
@@ -915,20 +923,12 @@ export async function loadHomeDashboardData(args: {
         })()
       : Promise.resolve([]);
 
-    const [resolvedName, resolvedPlaylists] = await Promise.all([labelNamePromise, playlistsPromise]);
-    competitorLabelName = resolvedName;
-    competitorPlaylists = resolvedPlaylists;
-  }
-
-  let headerPlaylistImageUrl = playlistImageUrl;
-  if (
-    datasetMode === "competitor" &&
-    competitorLabelKey &&
-    competitorLabelKey !== ALL_COMPETITORS_KEY
-  ) {
-    const competitorImageUrl =
-      competitorPlaylists.find((p) => p.spotify_playlist_image_url)?.spotify_playlist_image_url ?? null;
-    if (competitorImageUrl) headerPlaylistImageUrl = competitorImageUrl;
+    competitorDetailsPromise = Promise.all([labelNamePromise, playlistsPromise]).then(([resolvedName, resolvedPlaylists]) => {
+      competitorLabelName = resolvedName;
+      competitorPlaylists = resolvedPlaylists;
+    });
+    // Unset/all-label selection may resolve the key; a specific key is already stable.
+    if (!isSpecificCompetitor) await competitorDetailsPromise;
   }
 
   const historyResult = await cachedQuery<PlaylistDailyStatsRow[]>(
@@ -974,6 +974,19 @@ export async function loadHomeDashboardData(args: {
     `home-playlist-stats-v5-${datasetMode}-${competitorLabelKey ?? "none"}-${playlistKey}-${diagnosticsOnly ? "diag" : rangeDays + 7}-ov${overrideBuster}-rb${rollbackDate ?? "live"}`,
     CACHE_TTL_1H,
   );
+
+  await competitorDetailsPromise;
+
+  let headerPlaylistImageUrl = playlistImageUrl;
+  if (
+    datasetMode === "competitor" &&
+    competitorLabelKey &&
+    competitorLabelKey !== ALL_COMPETITORS_KEY
+  ) {
+    const competitorImageUrl =
+      competitorPlaylists.find((p) => p.spotify_playlist_image_url)?.spotify_playlist_image_url ?? null;
+    if (competitorImageUrl) headerPlaylistImageUrl = competitorImageUrl;
+  }
 
   let history = historyResult.data;
   let historyErr = historyResult.error;
@@ -1151,12 +1164,12 @@ export async function loadHomeDashboardData(args: {
     const isrcs = Array.from(new Set(overrideRows.map((r) => (r?.isrc ?? "").trim()).filter(Boolean)));
     if (!isrcs.length) return [];
 
-    const metaByIsrc = await fetchTrackMetaByIsrc(svc, isrcs);
+    const metaPromise = fetchTrackMetaByIsrc(svc, isrcs);
 
     const membershipPlaylistKeys =
       playlistKey === "all_catalog" ? (["releases", "ext"] as const) : ([playlistKey] as const);
 
-    const { data: membershipRowsRaw } = await cachedQuery(
+    const membershipPromise = cachedQuery(
       async () =>
         await svc
           .from("playlist_memberships")
@@ -1169,6 +1182,8 @@ export async function loadHomeDashboardData(args: {
       `home-memberships-for-overrides-${playlistKey}-${startRunDate}-${endRunDate}-${isrcs.length}`,
       CACHE_TTL_1H,
     );
+
+    const [metaByIsrc, { data: membershipRowsRaw }] = await Promise.all([metaPromise, membershipPromise]);
 
     const membershipRows = (membershipRowsRaw ?? []) as PlaylistMembershipRow[];
     const membershipsByIsrc = new Map<string, PlaylistMembershipRow[]>();

@@ -1,5 +1,5 @@
+import { perfServerStep } from "@/lib/perfTiming.server";
 import { cache } from "react";
-import type { User } from "@supabase/supabase-js";
 
 import { normalizeAppAccess, type AppAccess, type AppAccessRow } from "@/lib/appAccess";
 import {
@@ -23,7 +23,7 @@ export type RequestUserSettingsRow = {
 export type RequestAppContext = {
   sb: Awaited<ReturnType<typeof supabaseServer>>;
   svc: ReturnType<typeof supabaseService>;
-  user: User | null;
+  user: { id: string; email?: string } | null;
   isAdmin: boolean;
   appAccess: AppAccess;
   settings: RequestUserSettingsRow;
@@ -43,14 +43,21 @@ export function buildRequestShellContext(args: {
   });
 }
 
-export const getRequestAppContext = cache(async (): Promise<RequestAppContext> => {
+export const getRequestAppContext = cache(() =>
+  perfServerStep("getRequestAppContext", loadRequestAppContext),
+);
+
+async function loadRequestAppContext(): Promise<RequestAppContext> {
   const sb = await supabaseServer();
   const svc = supabaseService();
-  const {
-    data: { user },
-  } = await sb.auth.getUser();
+  // getClaims() verifies the ES256 token locally, so the per-user lookups can start
+  // immediately. It does NOT detect revoked sessions (sign-out elsewhere), so
+  // getUser() still runs in parallel and is the gate: no live session, no access.
+  const { data, error } = await sb.auth.getClaims();
+  const claims = error ? null : data?.claims;
+  const claimedUserId = typeof claims?.sub === "string" && claims.sub ? claims.sub : null;
 
-  if (!user) {
+  const signedOut = (): RequestAppContext => {
     const appAccess = normalizeAppAccess(null, false);
     return {
       sb,
@@ -65,23 +72,30 @@ export const getRequestAppContext = cache(async (): Promise<RequestAppContext> =
         competitorLabels: [],
       }),
     };
-  }
+  };
 
-  const [adminResult, accessResult, settingsResult] = await Promise.all([
+  if (!claimedUserId) return signedOut();
+
+  const [userResult, adminResult, accessResult, settingsResult] = await Promise.all([
+    sb.auth.getUser(),
     sb.rpc("is_admin"),
     svc
       .from("app_user_access")
       .select("own_catalog,competitor,playlist_watch,playlist_watch_admin")
-      .eq("user_id", user.id)
+      .eq("user_id", claimedUserId)
       .maybeSingle(),
     svc
       .from("user_settings")
       .select(
         "dataset_mode,competitor_label_key,hide_stale_override_annotations,hide_stale_annotations_exclude_catalog,artificial_streams_spike_ratio,artificial_streams_include_weekends_user",
       )
-      .eq("user_id", user.id)
+      .eq("user_id", claimedUserId)
       .maybeSingle(),
   ]);
+
+  const sessionUser = userResult.data?.user ?? null;
+  if (!sessionUser || sessionUser.id !== claimedUserId) return signedOut();
+  const user = { id: sessionUser.id, email: sessionUser.email ?? undefined };
 
   const isAdmin = Boolean(adminResult.data);
   const appAccess = normalizeAppAccess(accessResult.data as AppAccessRow, isAdmin);
@@ -101,4 +115,4 @@ export const getRequestAppContext = cache(async (): Promise<RequestAppContext> =
       competitorLabels,
     }),
   };
-});
+}

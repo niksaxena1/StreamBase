@@ -1,3 +1,5 @@
+import PlaylistsLoading from "./loading";
+import { perfServerStep } from "@/lib/perfTiming.server";
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import Link from "next/link";
 import type { Metadata } from "next";
@@ -122,11 +124,18 @@ async function fetchPlaylistDashboardSummary(
   return (rows[0] as PlaylistDashboardSummaryRow | undefined) ?? null;
 }
 
-
 export default async function PlaylistsPage(props: {
   searchParams?: Promise<{ playlist_key?: string; range?: string; view?: string; start?: string; end?: string }>;
 }) {
-  return timedServerStep("page.playlists", () => PlaylistsPageContent(props));
+  return (
+    <Suspense fallback={<PlaylistsLoading />}>
+      <PlaylistsData {...props} />
+    </Suspense>
+  );
+}
+
+async function PlaylistsData(props: Parameters<typeof PlaylistsPage>[0]) {
+  return timedServerStep("page.playlists", () => perfServerStep("loadPlaylistsPage", () => PlaylistsPageContent(props)));
 }
 
 async function PlaylistsPageContent({
@@ -155,14 +164,15 @@ async function PlaylistsPageContent({
   const datasetMode = normalizeDatasetMode(datasetSettings?.dataset_mode);
 
   if (datasetMode === "competitor") {
-    const rollbackDate = await getRollbackDate();
-    const rollbackRunDate = rollbackDate ? rollbackDataDateToRunDate(rollbackDate) : null;
     const comp = svc.schema("competitor");
-    const { data: activeLabels } = await comp
-      .from("labels")
-      .select("label_key,display_name")
-      .eq("is_active", true)
-      .order("display_name", { ascending: true });
+    const [rollbackDate, { data: activeLabels }] = await Promise.all([
+      getRollbackDate(),
+      comp.from("labels")
+        .select("label_key,display_name")
+        .eq("is_active", true)
+        .order("display_name", { ascending: true }),
+    ]);
+    const rollbackRunDate = rollbackDate ? rollbackDataDateToRunDate(rollbackDate) : null;
     const competitorLabelKey = resolveCompetitorLabelKey(datasetSettings?.competitor_label_key, activeLabels ?? []);
     let competitorPlaylistsQuery = comp
       .from("playlists")
@@ -199,7 +209,7 @@ async function PlaylistsPageContent({
           : "/playlists",
       );
     }
-    const [{ data: latest }, { data: prev }, { data: history }, { data: latestCounts }] = await Promise.all([
+    const [{ data: latest }, { data: prev }, { data: history }, { data: latestCounts }, removedRows] = await Promise.all([
       (() => {
         let q = comp
           .from("playlist_daily_stats")
@@ -227,6 +237,10 @@ async function PlaylistsPageContent({
       comp.rpc("playlists_latest_track_counts", {
         p_keys: competitorOptions.map((p) => p.playlist_key),
       }),
+      comp.rpc("playlist_removed_tracks", {
+        playlist_key: effectivePlaylistKey,
+        limit_rows: 500,
+      }),
     ]);
     const statsMap = new Map<string, number | null>(
       (latestCounts ?? []).map((stat: any) => [String(stat.playlist_key), stat.track_count == null ? null : Number(stat.track_count)]),
@@ -243,10 +257,7 @@ async function PlaylistsPageContent({
     const prevDate = (prev as { date: string } | null)?.date ?? null;
     const hist = (history ?? []) as PlaylistDailyStatsRow[];
     const hasOnlyOneSnapshot = hist.length === 1;
-    const removedRows = await comp.rpc("playlist_removed_tracks", {
-      playlist_key: effectivePlaylistKey,
-      limit_rows: 500,
-    });
+
     const currentRows = await comp.rpc("playlist_current_tracks", {
       playlist_key: effectivePlaylistKey,
       run_date: latestDate,
@@ -353,34 +364,43 @@ async function PlaylistsPageContent({
     );
   }
 
-  let hideStaleAnnotations = false;
-  try {
-    const { data: uSettings } = await sb
-      .from("user_settings")
-      .select("hide_stale_override_annotations")
-      .eq("user_id", user.id)
-      .maybeSingle();
-    hideStaleAnnotations = Boolean((uSettings as Record<string, unknown> | null)?.hide_stale_override_annotations);
-  } catch {
-    // graceful fallback
-  }
+  const hideStaleAnnotationsPromise = (async () => {
+    let hideStaleAnnotations = false;
+    try {
+      const { data: uSettings } = await sb
+        .from("user_settings")
+        .select("hide_stale_override_annotations")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      hideStaleAnnotations = Boolean((uSettings as Record<string, unknown> | null)?.hide_stale_override_annotations);
+    } catch {
+      // graceful fallback
+    }
+
+    return hideStaleAnnotations;
+  })();
 
   // Cache-buster: include count + max(id) in cache keys so both additions AND
   // removals of overrides invalidate stale playlist stats caches.
-  let overrideBuster = "0";
-  try {
-    const { count, data: latestOverride } = await svc
-      .from("track_daily_stream_overrides")
-      .select("id", { count: "exact" })
-      .order("id", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    const maxId = Number((latestOverride as any)?.id ?? 0);
-    const total = Number(count ?? 0);
-    overrideBuster = `${total}-${maxId}`;
-  } catch {
-    // ignore
-  }
+  const overrideBusterPromise = (async () => {
+    let overrideBuster = "0";
+    try {
+      const { count, data: latestOverride } = await svc
+        .from("track_daily_stream_overrides")
+        .select("id", { count: "exact" })
+        .order("id", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const maxId = Number((latestOverride as any)?.id ?? 0);
+      const total = Number(count ?? 0);
+      overrideBuster = `${total}-${maxId}`;
+    } catch {
+      // ignore
+    }
+
+    return overrideBuster;
+  })();
+  const [hideStaleAnnotations, overrideBuster] = await Promise.all([hideStaleAnnotationsPromise, overrideBusterPromise]);
 
   // Backwards-compat: old query-driven list view
   if ((sp.view ?? "").trim().toLowerCase() === "list") {
@@ -405,6 +425,32 @@ async function PlaylistsPageContent({
   const rollbackDate = await getRollbackDate();
   const rollbackRunDate = rollbackDate ? rollbackDataDateToRunDate(rollbackDate) : null;
 
+  const playlistsPromise = cachedQuery(
+    async () =>
+      await svc
+        .from("playlists")
+        .select("playlist_key,display_name,is_catalog,spotify_playlist_id,spotify_playlist_image_url")
+        .order("display_order", { ascending: true, nullsFirst: false })
+        .order("display_name", { ascending: true }),
+    "playlists-list",
+    3600,
+  );
+  const dashboardSummaryPromise = playlistsPromise.then(({ data: rows }) => {
+    // The original loader skips this RPC when an invalid key redirects.
+    if (!(rows ?? []).some((row) => row.playlist_key === playlistKey)) return { data: null, error: null };
+    return cachedQuery(
+      async () => ({
+        data: await fetchPlaylistDashboardSummary(svc, {
+          playlistKey,
+          asOfDate: rollbackRunDate,
+        }),
+        error: null,
+      }),
+      `playlist-dashboard-summary-v1-${playlistKey}-rb${rollbackDate ?? "live"}`,
+      3600,
+    );
+  });
+
   // Dashboard view - show analytics for selected playlist (cached for 1 hour)
   const [
     { data: playlists },
@@ -412,16 +458,7 @@ async function PlaylistsPageContent({
     { data: prev },
     { data: history },
   ] = await Promise.all([
-    cachedQuery(
-      async () =>
-        await svc
-          .from("playlists")
-          .select("playlist_key,display_name,is_catalog,spotify_playlist_id,spotify_playlist_image_url")
-          .order("display_order", { ascending: true, nullsFirst: false })
-          .order("display_name", { ascending: true }),
-      "playlists-list",
-      3600,
-    ),
+    playlistsPromise,
     cachedQuery(
       async () => {
         let q = svc
@@ -521,21 +558,11 @@ async function PlaylistsPageContent({
     return null;
   }
 
-  const { data: dashboardSummary } = await cachedQuery(
-    async () => ({
-      data: await fetchPlaylistDashboardSummary(svc, {
-        playlistKey,
-        asOfDate: rollbackRunDate,
-      }),
-      error: null,
-    }),
-    `playlist-dashboard-summary-v1-${playlistKey}-rb${rollbackDate ?? "live"}`,
-    3600,
-  );
+  const { data: dashboardSummary } = await dashboardSummaryPromise;
   const summaryArtistCount = parseRpcBigint((dashboardSummary as PlaylistDashboardSummaryRow | null)?.distinct_artist_count);
   const summaryRemovedTracksCount = parseRpcBigint((dashboardSummary as PlaylistDashboardSummaryRow | null)?.removed_tracks_count);
 
-  const { data: playlistArtistCountRaw } = summaryArtistCount == null ? await cachedQuery(
+  const playlistArtistCountPromise = summaryArtistCount == null ? cachedQuery(
     async () => {
       if (!latestDate) return { data: null, error: null };
       return await svc.rpc("playlist_distinct_artist_count", {
@@ -547,14 +574,22 @@ async function PlaylistsPageContent({
     3600,
   ) : { data: null };
 
-  const playlistArtistCount = summaryArtistCount ?? parseRpcBigint(playlistArtistCountRaw);
-
   const playlistTrackCountDisplay =
     (latest as PlaylistDailyStatsRow | null)?.track_count ??
     statsMap.get(playlistKey) ??
     null;
 
   const hist = (history ?? []) as PlaylistDailyStatsRow[];
+
+  const removedRowsPromise = summaryRemovedTracksCount == null ? cachedQuery(
+    async () =>
+      await svc.rpc("playlist_removed_tracks", {
+        playlist_key: playlistKey,
+        limit_rows: 500,
+      }),
+    `playlist-removed-rows-v2-${playlistKey}-${latestDate ?? "none"}-${latestSourceRunId ?? "none"}`,
+    86400,
+  ) : { data: null };
 
   // Manual stream override annotations for charts (run-date scoped; UI shows data-date).
   const overrideAnnotations: ManualOverrideAnnotation[] = await (async () => {
@@ -583,7 +618,7 @@ async function PlaylistsPageContent({
     );
     if (!isrcs.length) return [];
 
-    const { data: trackMetaRaw } = await cachedQuery(
+    const trackMetaPromise = cachedQuery(
       async () =>
         await svc
           .from("tracks")
@@ -593,18 +628,10 @@ async function PlaylistsPageContent({
       `playlist-overrides-track-meta-v2-${[...isrcs].sort().join(",")}`,
       3600,
     );
-    const trackMeta = (trackMetaRaw ?? []) as TrackMetaRow[];
-    const metaByIsrc = new Map<string, TrackMetaRow>();
-    for (const m of trackMeta) {
-      const key = (m?.isrc ?? "").trim();
-      if (!key) continue;
-      if (!metaByIsrc.has(key)) metaByIsrc.set(key, m);
-    }
-
     const membershipPlaylistKeys =
       playlistKey === "all_catalog" ? (["releases", "ext"] as const) : ([playlistKey] as const);
 
-    const { data: membershipRowsRaw } = await cachedQuery(
+    const membershipPromise = cachedQuery(
       async () =>
         await svc
           .from("playlist_memberships")
@@ -617,6 +644,15 @@ async function PlaylistsPageContent({
       `playlist-memberships-for-overrides-${playlistKey}-${startRunDate}-${endRunDate}-${isrcs.length}`,
       3600,
     );
+
+    const [{ data: trackMetaRaw }, { data: membershipRowsRaw }] = await Promise.all([trackMetaPromise, membershipPromise]);
+    const trackMeta = (trackMetaRaw ?? []) as TrackMetaRow[];
+    const metaByIsrc = new Map<string, TrackMetaRow>();
+    for (const m of trackMeta) {
+      const key = (m?.isrc ?? "").trim();
+      if (!key) continue;
+      if (!metaByIsrc.has(key)) metaByIsrc.set(key, m);
+    }
 
     const membershipRows = (membershipRowsRaw ?? []) as PlaylistMembershipRow[];
     const membershipsByIsrc = new Map<string, PlaylistMembershipRow[]>();
@@ -663,15 +699,8 @@ async function PlaylistsPageContent({
   })();
 
   // Removed count is displayed in the metrics panel; we cap at 500 (same as UI table).
-  const { data: removedRows } = summaryRemovedTracksCount == null ? await cachedQuery(
-    async () =>
-      await svc.rpc("playlist_removed_tracks", {
-        playlist_key: playlistKey,
-        limit_rows: 500,
-      }),
-    `playlist-removed-rows-v2-${playlistKey}-${latestDate ?? "none"}-${latestSourceRunId ?? "none"}`,
-    86400,
-  ) : { data: null };
+  const [{ data: playlistArtistCountRaw }, { data: removedRows }] = await Promise.all([playlistArtistCountPromise, removedRowsPromise]);
+  const playlistArtistCount = summaryArtistCount ?? parseRpcBigint(playlistArtistCountRaw);
   const removedTracksCount = summaryRemovedTracksCount ?? (Array.isArray(removedRows) ? removedRows.length : 0);
 
   const playlistTrackCountNumeric =
