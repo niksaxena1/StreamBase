@@ -39,7 +39,7 @@ jobs:
       cancel-in-progress: false
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Compute run date (UTC)
         id: run_date
@@ -122,7 +122,7 @@ jobs:
 
           echo "should_run=$SHOULD_RUN" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         if: steps.precheck.outputs.should_run == 'true'
         with:
           python-version: "3.12"
@@ -131,7 +131,7 @@ jobs:
       - name: Cache Playwright browsers
         if: steps.precheck.outputs.should_run == 'true'
         id: playwright_cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
@@ -183,7 +183,7 @@ jobs:
 
       - name: Upload exports artifact
         if: steps.precheck.outputs.should_run == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sot-exports-${{ github.run_id }}
           path: exports/
