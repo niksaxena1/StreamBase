@@ -18,6 +18,7 @@ import json
 import random
 import time
 from typing import List, Optional
+from urllib.parse import urlencode
 
 import requests
 
@@ -169,3 +170,36 @@ class Postgrest:
         if r.status_code not in (200, 204):
             raise RuntimeError(f"RPC {function_name} failed: {r.status_code} {r.text[:500]}")
         return r.json() if r.content else None
+
+    def rpc_all(
+        self,
+        function_name: str,
+        params: Optional[dict] = None,
+        *,
+        order: str,
+        page_size: int = 1000,
+    ) -> List[dict]:
+        """Page a read-only table-valued RPC using a stable, unique order.
+
+        Use only for functions safe to call repeatedly. Keep fetching until
+        an empty page, advancing by the actual number returned: a server-side
+        max-rows cap may be smaller than the requested page size.
+        """
+        if page_size < 1 or not order.strip():
+            raise ValueError("Paged RPCs require a positive page size and stable order")
+        out: List[dict] = []
+        offset = 0
+        payload = json.dumps(params or {})
+        while True:
+            query = urlencode({"order": order, "limit": page_size, "offset": offset})
+            url = f"{self.base}/rpc/{function_name}?{query}"
+            r = self._request("POST", url, self.h, data=payload, idempotent=True)
+            if r.status_code not in (200, 206):
+                raise RuntimeError(f"Paged RPC {function_name} failed at offset {offset}: {r.status_code} {r.text[:500]}")
+            batch = r.json()
+            if not isinstance(batch, list) or any(not isinstance(row, dict) for row in batch):
+                raise RuntimeError(f"Paged RPC {function_name} returned invalid rows at offset {offset}")
+            if not batch:
+                return out
+            out.extend(batch)
+            offset += len(batch)
