@@ -12,6 +12,11 @@ import artist_tools_mcp as mcp
 NOW = datetime(2026, 10, 10, 10, tzinfo=timezone.utc)
 
 
+@pytest.fixture(autouse=True)
+def isolated_recovery_directory(tmp_path, monkeypatch):
+    monkeypatch.setenv("RUNNER_TEMP", str(tmp_path))
+
+
 class Response:
     def __init__(self, body=None, status=200, headers=None, lines=()):
         self.body, self.status_code = body, status

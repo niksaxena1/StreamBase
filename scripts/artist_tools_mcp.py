@@ -1,7 +1,7 @@
 """Service-role OAuth store and serialized, free-plan artist.tools MCP client.
 
-No credentials are written to files or printed. The lease covers the whole job,
-including refresh-token rotation and long rate-limit waits.
+Credentials are never printed. Failed token persistence uses a private recovery
+file outside the repo. The lease covers refresh rotation and rate-limit waits.
 """
 import argparse
 import base64
@@ -10,6 +10,7 @@ import hashlib
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 import os
+from pathlib import Path
 import random
 import secrets
 import time
@@ -53,6 +54,35 @@ def database_from_env():
     return Postgrest(url, key)
 
 
+def owner_only(path, directory=False):
+    """POSIX 0600/0700; Windows protected DACL granting only OWNER RIGHTS."""
+    if os.name != "nt":
+        path.chmod(0o700 if directory else 0o600)
+        return
+    import ctypes
+    from ctypes import wintypes
+    advapi = ctypes.WinDLL("advapi32", use_last_error=True)
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    descriptor = ctypes.c_void_p()
+    convert = advapi.ConvertStringSecurityDescriptorToSecurityDescriptorW
+    convert.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, ctypes.POINTER(ctypes.c_void_p), ctypes.c_void_p]
+    convert.restype = wintypes.BOOL
+    set_security = advapi.SetFileSecurityW
+    set_security.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, ctypes.c_void_p]
+    set_security.restype = wintypes.BOOL
+    kernel.LocalFree.argtypes = [ctypes.c_void_p]
+    kernel.LocalFree.restype = ctypes.c_void_p
+    sddl = "D:P(A;OICI;FA;;;OW)" if directory else "D:P(A;;FA;;;OW)"
+    if not convert(sddl, 1, ctypes.byref(descriptor), None):
+        raise ArtistToolsError("Could not create owner-only recovery permissions.")
+    try:
+        # DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION
+        if not set_security(str(path), 0x80000004, descriptor):
+            raise ArtistToolsError("Could not secure the local OAuth recovery file.")
+    finally:
+        kernel.LocalFree(descriptor)
+
+
 class TokenManager:
     def __init__(self, pg, account="default", session=None, now=utcnow, sleep=time.sleep):
         self.pg, self.account = pg, account
@@ -62,6 +92,70 @@ class TokenManager:
         self.row = None
         self.renew_at = None
         self.held = False
+        self.keep_lease = False
+        self.pending_recovery = None
+
+    @property
+    def recovery_path(self):
+        base = os.environ.get("RUNNER_TEMP") or os.environ.get("LOCALAPPDATA")
+        if not base:
+            base = os.environ.get("XDG_STATE_HOME") or str(Path.home() / ".local" / "state")
+        fingerprint = hashlib.sha256(f"{self.pg.base}\n{self.account}".encode()).hexdigest()
+        path = (Path(base) / "StreamBase" / "artist-tools-recovery" / f"{fingerprint}.json").resolve()
+        if path.is_relative_to(Path(__file__).resolve().parents[1]):
+            raise ArtistToolsError("OAuth recovery storage must be outside the repository.")
+        return path
+
+    def _load_recovery(self):
+        path = self.recovery_path
+        if not path.exists():
+            return None
+        try:
+            owner_only(path)
+            pending = json.loads(path.read_text(encoding="utf-8"))
+            values = pending["values"]
+            allowed = {"client_id", "client_secret", "token_endpoint", "access_token", "access_token_expires_at",
+                       "refresh_token", "refresh_token_obtained_at", "updated_at"}
+            if (pending["account"] != self.account or pending["database"] != self.pg.base
+                    or set(values) - allowed or not values.get("refresh_token")
+                    or not values.get("access_token")):
+                raise ValueError("Recovery identity mismatch")
+            uuid.UUID(pending["lock_owner"])
+            return pending
+        except Exception:
+            raise ArtistToolsError("Private OAuth recovery file is unreadable or invalid; no credentials logged.") from None
+
+    def _save_recovery(self, values):
+        path = self.recovery_path
+        path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        owner_only(path.parent, directory=True)  # Secure directory BEFORE creating secret content.
+        temporary = path.with_suffix(f".{uuid.uuid4()}.tmp")
+        payload = {"account": self.account, "database": self.pg.base, "lock_owner": self.owner,
+                   "previous_refresh_token": self.row.get("refresh_token"),
+                   "values": {"client_id": self.row.get("client_id"), "client_secret": self.row.get("client_secret"),
+                              "token_endpoint": self.row.get("token_endpoint"), **values}}
+        try:
+            fd = os.open(temporary, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as output:
+                owner_only(temporary)
+                json.dump(payload, output)
+                output.flush()
+                os.fsync(output.fileno())
+            os.replace(temporary, path)
+        finally:
+            temporary.unlink(missing_ok=True)
+        return path
+
+    def _restore_recovery(self):
+        pending = self.pending_recovery
+        if not pending:
+            return
+        # A later reauthorization/rotation supersedes a stale local recovery.
+        if self.row.get("refresh_token") in (pending.get("previous_refresh_token"), pending["values"]["refresh_token"]):
+            self.persist(pending["values"])
+        else:
+            self.recovery_path.unlink(missing_ok=True)
+        self.pending_recovery = None
 
     def _patch(self, values, filters):
         headers = {**self.pg.h, "Prefer": "return=representation"}
@@ -87,9 +181,13 @@ class TokenManager:
         return f"{self.account_filter}&lock_owner=eq.{self.owner}&locked_until=gt.{now}"
 
     def __enter__(self):
+        self.pending_recovery = self._load_recovery()
         now = self.now()
+        # The private file allows an immediate, conditional lease transfer on
+        # this machine. Two recovering runners still cannot both acquire it.
+        recover_owner = f",lock_owner.eq.{self.pending_recovery['lock_owner']}" if self.pending_recovery else ""
         filters = (f"{self.account_filter}&or=(locked_until.is.null,"
-                   f"locked_until.lt.{quote(now.isoformat(), safe='')})")
+                   f"locked_until.lt.{quote(now.isoformat(), safe='')}{recover_owner})")
         rows = self._patch({"lock_owner": self.owner,
                             "locked_until": (now + timedelta(minutes=10)).isoformat()}, filters)
         if not rows or rows[0].get("lock_owner") != self.owner:
@@ -101,6 +199,9 @@ class TokenManager:
 
     def __exit__(self, exc_type, exc, tb):
         if self.held:
+            if self.keep_lease:
+                self.held = False  # Leave database owner/expiry intact for recovery.
+                return
             try:
                 self._patch({"lock_owner": None, "locked_until": None},
                             f"{self.account_filter}&lock_owner=eq.{self.owner}")
@@ -131,14 +232,33 @@ class TokenManager:
         self.heartbeat()
 
     def persist(self, values):
-        self.heartbeat()
-        rows = self._patch({**values, "updated_at": self.now().isoformat()}, self._owned_filter())
-        if not rows or rows[0].get("lock_owner") != self.owner:
-            raise ArtistToolsError("Could not persist OAuth tokens under the lease; stopping.")
-        self.row.update(values)
+        patch = {**values, "updated_at": self.now().isoformat()}
+        # Acquiring a conditional lease is not idempotent. Token persistence IS:
+        # retry the same values here, separately from the lease PATCH semantics,
+        # including 500-after-commit and connection/timeout errors.
+        for attempt in range(4):
+            try:
+                self.heartbeat()
+                rows = self._patch(patch, self._owned_filter())
+                if not rows or rows[0].get("lock_owner") != self.owner:
+                    raise ArtistToolsError("Could not persist OAuth tokens under the lease; stopping.")
+                self.row.update(values)
+                self.keep_lease = False
+                self.recovery_path.unlink(missing_ok=True)
+                return
+            except ArtistToolsError:
+                if attempt < 3:
+                    self.sleep(2 ** attempt + random.uniform(0, 1))
+        self.keep_lease = True
+        try:
+            path = self._save_recovery(values)
+        except Exception:
+            raise ArtistToolsError("OAuth persistence and secure recovery write failed; lease retained. Re-run authorize.") from None
+        raise ArtistToolsError(f"OAuth token persistence failed; private recovery saved at {path}. Lease retained; next local run will restore it.")
 
     def access_token(self, force_refresh=False):
         self.heartbeat()
+        self._restore_recovery()  # BEFORE trying a possibly invalid old refresh token.
         expiry = self.row.get("access_token_expires_at")
         if (not force_refresh and self.row.get("access_token") and expiry
                 and timestamp(expiry) > self.now() + timedelta(minutes=5)):
@@ -262,12 +382,12 @@ class MCPClient:
             message["params"] = params
         refreshed = False
         for attempt in range(6):
-            self._pace(tool)
             headers = {"Authorization": f"Bearer {self.tokens.access_token()}",
                        "Accept": "application/json, text/event-stream",
                        "MCP-Protocol-Version": self.protocol_version}
             if self.session_id:
                 headers["Mcp-Session-Id"] = self.session_id
+            self._pace(tool)  # Schedule from actual send time, AFTER any slow refresh.
             try:
                 response = self.session.post(MCP_URL, json=message, headers=headers, timeout=60, stream=True)
             except requests.RequestException:

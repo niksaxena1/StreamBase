@@ -1,6 +1,6 @@
 """Record artist.tools own-catalog counts and repair stale tracks after RapidAPI."""
 import argparse
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import date, timedelta
 import json
 from pathlib import Path
@@ -78,16 +78,26 @@ def override_rows(run_date, stale, observations, previous, existing):
 def write_overrides(pg, rows):
     if not rows:
         return []
-    # INSERT ON CONFLICT DO NOTHING also protects a RapidAPI/manual override
-    # committed after our read. Merge-upsert would overwrite it in that race.
-    response = pg._request(
-        "POST", f"{pg.base}/track_daily_stream_overrides?on_conflict=date,isrc",
-        {**pg.h, "Prefer": "resolution=ignore-duplicates,return=representation"},
-        data=json.dumps(rows), idempotent=True,
-    )
-    if response.status_code not in (200, 201):
-        raise ArtistToolsError("Could not write artist.tools overrides.")
-    return response.json()
+    # Refresh each candidate immediately before the write; the warning is an
+    # earlier snapshot and SOT may have re-ingested a larger value since then.
+    written = []
+    for row in rows:
+        current = pg.select("track_daily_streams_effective_public", "isrc,streams_cumulative",
+                            f"date=eq.{row['date']}&isrc=eq.{row['isrc']}&limit=1")
+        value = next((item.get("streams_cumulative") for item in current if isrc_of(item) == row["isrc"]), None)
+        if value is None or row["streams_cumulative_override"] <= int(value):
+            continue
+        # One write directly after each read, rather than checking all tracks
+        # before a later batch. Conflict-ignore still protects concurrent fixes.
+        response = pg._request(
+            "POST", f"{pg.base}/track_daily_stream_overrides?on_conflict=date,isrc",
+            {**pg.h, "Prefer": "resolution=ignore-duplicates,return=representation"},
+            data=json.dumps([row]), idempotent=True,
+        )
+        if response.status_code not in (200, 201):
+            raise ArtistToolsError("Could not write artist.tools overrides.")
+        written.extend(response.json())
+    return written
 
 
 def is_done(pg, run_date):
@@ -107,7 +117,13 @@ def execute(pg, client, run_date, max_adds, summary):
     tracks = pg.select_all("tracks", "isrc,name,spotify_track_id,latest:track_daily_streams(streams_cumulative)",
                            f"spotify_track_id=not.is.null&latest.order=date.desc&latest.limit=1&latest.date=lte.{run_date}",
                            order="isrc.asc")
-    by_spotify = {track["spotify_track_id"]: track for track in tracks}
+    isrcs_by_spotify = defaultdict(set)
+    for track in tracks:
+        isrcs_by_spotify[track["spotify_track_id"]].add(isrc_of(track))
+    ambiguous = {spotify_id: sorted(isrcs) for spotify_id, isrcs in isrcs_by_spotify.items() if len(isrcs) > 1}
+    summary["ambiguous_spotify_ids"] = ambiguous
+    by_spotify = {spotify_id: next(iter(isrcs)) if len(isrcs) == 1 else None
+                  for spotify_id, isrcs in isrcs_by_spotify.items()}
     saved_rows = pg.select_all("artist_tools_saved_tracks", "spotify_track_id", "", order="spotify_track_id.asc")
     saved = {row["spotify_track_id"] for row in saved_rows}
     summary["affected"] = len(stale)
@@ -119,12 +135,16 @@ def execute(pg, client, run_date, max_adds, summary):
 
     # Bootstrap the ledger from the owner's existing folder before any adds.
     if not saved and max_adds > 0:
-        for items in folder_pages(client):
-            rows = [{"spotify_track_id": item["spotifyId"],
-                     "isrc": isrc_of(by_spotify[item["spotifyId"]]) if item["spotifyId"] in by_spotify else None}
-                    for item in items]
-            pg.upsert("artist_tools_saved_tracks", rows, "spotify_track_id")
-            saved.update(row["spotify_track_id"] for row in rows)
+        try:
+            for items in folder_pages(client):
+                rows = [{"spotify_track_id": item["spotifyId"], "isrc": by_spotify.get(item["spotifyId"])}
+                        for item in items]
+                pg.upsert("artist_tools_saved_tracks", rows, "spotify_track_id")
+                saved.update(row["spotify_track_id"] for row in rows)
+        except DailyLimit:
+            summary.update(reconcile_daily_limited=True, observation_incomplete=True,
+                           remaining_unsaved=len(priority_tracks(tracks, stale, history, saved)))
+            return  # Cannot reconcile safely or list observations with this quota exhausted.
         summary["reconciled"] = len(saved)
 
     for track in priority_tracks(tracks, stale, history, saved)[:max_adds]:
@@ -140,7 +160,7 @@ def execute(pg, client, run_date, max_adds, summary):
         if result.get("added") is not True:
             raise ArtistToolsError("artist.tools did not confirm the folder add.")
         pg.upsert("artist_tools_saved_tracks", [{"spotify_track_id": track["spotify_track_id"],
-                                                "isrc": isrc_of(track)}], "spotify_track_id")
+                                                "isrc": by_spotify[track["spotify_track_id"]]}], "spotify_track_id")
         saved.add(track["spotify_track_id"])
         summary["added"] += 1
     summary["remaining_unsaved"] = len(priority_tracks(tracks, stale, history, saved))
@@ -151,15 +171,15 @@ def execute(pg, client, run_date, max_adds, summary):
                 raise ArtistToolsError("UTC date changed during observation; rerun for the current date.")
             rows = []
             for item in items:
-                track = by_spotify.get(item.get("spotifyId"))
+                spotify_id = item.get("spotifyId")
                 value = item.get("streams")
-                if not track or value is None:
+                if spotify_id not in by_spotify or value is None:
                     continue
                 # Never coerce fractional/boolean counts into a valid observation.
                 if isinstance(value, bool) or not str(value).isdigit():
                     raise ArtistToolsError("artist.tools returned an invalid stream count.")
                 rows.append({"date": run_date, "spotify_track_id": item["spotifyId"],
-                             "isrc": isrc_of(track), "streams": int(value), "observed_at": utcnow().isoformat()})
+                             "isrc": by_spotify[spotify_id], "streams": int(value), "observed_at": utcnow().isoformat()})
             pg.upsert("artist_tools_track_streams", rows, "date,spotify_track_id")
             summary["observed"] += len(rows)
     except DailyLimit:
@@ -171,11 +191,15 @@ def execute(pg, client, run_date, max_adds, summary):
         return
 
     # Read persisted observations so retries can recover earlier partial pages.
-    observed = pg.select_all("artist_tools_track_streams", "isrc,streams",
+    observed = pg.select_all("artist_tools_track_streams", "spotify_track_id,isrc,streams",
                              f"date=eq.{run_date}", order="spotify_track_id.asc")
     observations = {}
     for row in observed:
+        if row["spotify_track_id"] in ambiguous:
+            continue  # Includes observations persisted before this mapping became ambiguous.
         isrc = isrc_of(row)
+        if not isrc:
+            continue
         # Multiple Spotify versions sharing an ISRC: avoid selecting the highest
         # version's unrelated count; repair from the catalog's mapped ID only.
         if isrc not in observations:
@@ -210,7 +234,7 @@ def run(pg, run_date, runner="manual", max_adds=240, skip_if_done=False,
     summary = {"run_date": run_date, "runner": runner, "status": "running", "added": 0,
                "observed": 0, "fixed": 0, "remaining_unsaved": None, "rate_limited": False,
                "daily_limited": False, "add_daily_limited": False, "observe_daily_limited": False,
-               "observation_incomplete": False, "error": None}
+               "reconcile_daily_limited": False, "observation_incomplete": False, "error": None}
     started = utcnow().isoformat()
     client = None
     try:
@@ -249,8 +273,11 @@ def run(pg, run_date, runner="manual", max_adds=240, skip_if_done=False,
         summary.update(status="failed", error=str(exc), lease_busy=True)
         return 1
     except Exception as exc:
-        summary.update(status="failed", error=str(exc) if isinstance(exc, ArtistToolsError)
-                       else f"Job failed ({type(exc).__name__}); details withheld.")
+        error = str(exc) if isinstance(exc, ArtistToolsError) else f"Job failed ({type(exc).__name__}); details withheld."
+        # A failed run-row write must not hide the token-recovery instructions
+        # when the same database outage also prevented token persistence.
+        summary.update(status="failed", error=f"{summary['error']} Finalization failed: {error}"
+                       if summary["error"] else error)
         return 1
     finally:
         write_summary(summary)

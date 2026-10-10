@@ -26,11 +26,14 @@ CREATE TABLE IF NOT EXISTS public.artist_tools_saved_tracks (
 CREATE TABLE IF NOT EXISTS public.artist_tools_track_streams (
   date date NOT NULL,
   spotify_track_id text NOT NULL,
-  isrc text NOT NULL,
+  isrc text,
   streams bigint NOT NULL CHECK (streams >= 0),
   observed_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (date, spotify_track_id)
 );
+-- A shared Spotify ID has an observation but cannot be assigned to one ISRC.
+-- Also upgrade installations that applied the original NOT NULL definition.
+ALTER TABLE public.artist_tools_track_streams ALTER COLUMN isrc DROP NOT NULL;
 CREATE INDEX IF NOT EXISTS artist_tools_track_streams_isrc_date_idx
   ON public.artist_tools_track_streams (isrc, date);
 

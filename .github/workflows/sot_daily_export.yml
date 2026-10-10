@@ -318,4 +318,10 @@ jobs:
         if: success() && steps.ingest.outcome == 'success'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow run rapidapi_stale_fix.yml --repo "$GITHUB_REPOSITORY" --ref "${{ github.ref_name }}"
+          EXPORT_RUN_DATE: ${{ steps.run_date.outputs.run_date }}
+        run: |
+          if [ "$EXPORT_RUN_DATE" != "$(date -u +%F)" ]; then
+            echo "Skipping stale-track fix: export date is not UTC today."
+            exit 0
+          fi
+          gh workflow run rapidapi_stale_fix.yml --repo "$GITHUB_REPOSITORY" --ref "${{ github.ref_name }}"

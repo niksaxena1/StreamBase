@@ -11,7 +11,8 @@ deletes or removes folder entries.
 
 1. Apply `migrations/add_artist_tools_source.sql` after the existing track override
    migration. It creates four service-role-only tables with RLS enabled and no
-   policies. Review the grants when applying it; no live migration is part of this
+   policies. Reapply it to existing installations to allow a NULL ISRC on ambiguous
+   Spotify-ID observations. Review the grants when applying it; no live migration is part of this
    implementation. `artist_tools_oauth` is a secret credential store: do not expose
    its rows in application pages, SQL exports, logs, or analytics.
 2. Install Python 3.12 and `requests`. Provide `SUPABASE_URL` and
@@ -26,7 +27,7 @@ deletes or removes folder entries.
 3. Sign into artist.tools and approve in the browser within five minutes. Discovery,
    dynamic registration, PKCE S256, state validation, and a loopback callback on a
    free port store client credentials and tokens in the `default` OAuth row. Tokens
-   are never printed or saved locally. No MCP token GitHub secret is needed.
+   are never printed. No MCP token GitHub secret is needed.
 4. Merge the workflow onto the default branch. Existing GitHub secrets
    `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are the only required secrets.
    Configure the optional [Windows fallback](../scripts/windows/README-artist-tools.md)
@@ -39,9 +40,19 @@ authorization share an atomic ten-minute account lease, renewed during long runs
 and retry waits. A second runner aborts; a crashed runner's lease expires after ten
 minutes. A 401 gets one refresh and retry. `invalid_grant` is a hard failure with
 the message **re-run authorize**: run the same one-time command again. UI revocation
-invalidates both tokens. If a process crashes after server-side rotation but before
-the database write, reauthorization is likewise required; OAuth and Postgres cannot
-make that remote rotation atomic.
+invalidates both tokens. Persistence retries the identical token values, including
+a 500 returned after a successful database write. If retries fail, the job retains
+the lease and saves a private recovery JSON outside the repository:
+`$RUNNER_TEMP/StreamBase/artist-tools-recovery` on GitHub, or
+`%LOCALAPPDATA%\StreamBase\artist-tools-recovery` on the PC (POSIX files use 0600;
+Windows files use a protected owner-only DACL). Nothing in this directory is an
+artifact. The next run on the same machine can conditionally reclaim that lease
+and restore the pending token before attempting refresh or reporting `invalid_grant`.
+The file is removed after persistence succeeds; stale recovery never replaces a
+newer authorization. A different machine waits for lease expiry and cannot read
+this local recovery. GitHub's runner temp is ephemeral: if the runner disappears,
+or the process crashes before creating recovery, reauthorization can still be
+required. OAuth and Postgres cannot make the remote rotation atomic.
 
 ## Limits and daily behavior
 
@@ -52,7 +63,8 @@ make that remote rotation atomic.
 - Lists: 5/minute, 250/day; pages of 100, maximum 100 pages. Requests are paced
   sequentially and retryable limits respect `retryAfterSeconds` with backoff and
   jitter. Daily add exhaustion stops adding cleanly, then observation proceeds.
-  An observation daily limit records partial coverage and available pages; quota
+  Bootstrap reconciliation quota exhaustion also records incomplete coverage and
+  exits successfully before any additions. An observation daily limit records partial coverage and available pages; quota
   exhaustion alone is not a hard failure. `observation_incomplete` flags this in
   the summary. Counts beyond the 100-page bound are a hard error.
 
@@ -66,12 +78,18 @@ Adds prioritize today's latest `individual_tracks_stale` warning, then frequency
 in the last 90 days of stale warnings, then latest raw cumulative streams descending.
 With an empty saved-track ledger, all existing folder pages are reconciled before
 the first add, including unrelated owner's entries (these are never deleted).
-Only own-catalog Spotify IDs map to ISRC observations. Pages are persisted as they
+Only own-catalog Spotify IDs map to observations. An ID shared by multiple own
+ISRCs is recorded once by Spotify ID with NULL `isrc`, listed with all candidate
+ISRCs under `ambiguous_spotify_ids` in the summary, and never used for an override
+(including older observations of that ID). Pages are persisted as they
 are read; tracks without a count are not given fabricated observations.
 
 Repairs use the latest warning for D, only when the full warning has **fewer than
 500 tracks**, and require no existing override of any kind, a D observation strictly
-above the stale count, and a count at least the previous day's effective value.
+above the stale count AND today's current effective count, and a count at least
+the previous day's effective value. Today's value is read for each candidate
+immediately before its conflict-ignore write, so a completed SOT re-ingestion
+that raised the current count is respected.
 Missing previous-day values and ambiguous Spotify versions are skipped. Writes
 use `ON CONFLICT DO NOTHING`, protecting even concurrent RapidAPI/manual fixes.
 The row shape matches the existing overrides with note `stale-fix: artist.tools auto`.
@@ -99,7 +117,7 @@ select a.date, a.isrc, t.name, a.spotify_track_id,
        e.streams_cumulative as effective,
        a.streams - s.streams_cumulative as artist_tools_minus_sot
 from public.artist_tools_track_streams a
-join public.tracks t on t.isrc = a.isrc
+left join public.tracks t on t.isrc = a.isrc
 left join public.track_daily_streams s on s.date = a.date and s.isrc = a.isrc
 left join public.track_daily_stream_overrides o on o.date = a.date and o.isrc = a.isrc
 left join public.track_daily_streams_effective_public e

@@ -95,12 +95,16 @@ script uses UTC today and requires today's own-catalog stale-ingestion warning;
 its cron behavior is unchanged. A chained stale fix follows a successful own
 export, including an export that skipped because today's ingestion already exists.
 
-Manual (`workflow_dispatch`) runs do NOT start their downstream chain, so a dry
-run or limited test sync can never trigger a real export. After a manual repair,
-run the next step manually (or let its fallback cron pick it up). Only scheduled,
-`repository_dispatch` and chained (`workflow_run`) runs propagate.
+Manual (`workflow_dispatch`) refresh/sync runs do NOT start their downstream chain,
+so a dry run or limited test sync cannot trigger an export. Successful own exports
+dated UTC today, including manual exports, dispatch the stale fixer; historical
+exports do not. RapidAPI completion dispatches artist.tools. After a manual sync,
+run the export manually (or let its fallback cron pick it up).
 
 ## artist.tools second source and stale fallback
+
+The own-export dispatch starts the stale fixer only for an export dated UTC today.
+Successful historical manual re-ingestions do not dispatch today's repair jobs.
 
 Artist Tools Daily is dispatched by `RapidAPI Stale Track Fix` on any completion. It records own-catalog cumulative counts even
 for tracks RapidAPI fixed, then repairs remaining stale tracks without replacing
