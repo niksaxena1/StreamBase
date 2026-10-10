@@ -91,9 +91,10 @@ script uses UTC today and requires today's own-catalog stale-ingestion warning;
 its cron behavior is unchanged. A chained stale fix follows a successful own
 export, including an export that skipped because today's ingestion already exists.
 
-Any successful manual refresh or sync also starts its downstream chain. Manual
-preview/limit inputs do not propagate: a successful dry run can start real
-downstream work. Historical manual exports can trigger a stale fix for UTC today.
+Manual (`workflow_dispatch`) runs do NOT start their downstream chain, so a dry
+run or limited test sync can never trigger a real export. After a manual repair,
+run the next step manually (or let its fallback cron pick it up). Only scheduled,
+`repository_dispatch` and chained (`workflow_run`) runs propagate.
 
 ## Incremental dashboard sync
 
