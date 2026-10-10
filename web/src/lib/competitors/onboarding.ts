@@ -1,7 +1,7 @@
 /**
  * Parsing + validation for the /competitors "Add competitor" form.
  *
- * The form writes competitor.labels / competitor.playlists directly; the
+ * The form writes competitor.labels / competitor.playlists atomically via RPC; the
  * competitor workflows regenerate config/competitor_playlists.csv from those
  * tables (scripts/export_competitor_config_from_db.py), so no migration or
  * CSV commit is needed to start tracking a new playlist.

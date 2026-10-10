@@ -27,6 +27,7 @@ Do not blur them. Competitor work should be additive and schema-scoped; own-cata
 ## Competitor system map
 
 - Config: `competitor.labels` / `competitor.playlists` are the source of truth (admin **Add competitor** on `/competitors`, `web/src/app/api/competitors/onboard/route.ts`). Workflows regenerate `config/competitor_playlists.csv` via `scripts/export_competitor_config_from_db.py`; the committed CSV is a generated snapshot/fallback.
+- Atomic service-role-only onboarding RPC: `competitor.onboard_competitor` (label + playlist in one transaction; identical retries return existing records).
 - Onboarding config columns/backfill: `migrations/add_competitor_onboarding_config_columns.sql` (after the foundation and accent migrations).
 - DB foundation: `migrations/add_competitor_foundation.sql`
 - Accent colors: `migrations/add_competitor_label_accent_hex.sql`, `web/src/lib/competitorLabelAccents.ts`, `web/scripts/extract-competitor-accents.ts`
@@ -54,7 +55,7 @@ Do not blur them. Competitor work should be additive and schema-scoped; own-cata
 
 - Home/Playlists/Catalog in Competitor Mode should use the selected competitor, not raw cross-label URLs.
 - `/competitors` should show the same labels/playlists that exist in `competitor.labels` and `competitor.playlists`.
-- `config/competitor_playlists.csv` is a snapshot: `python scripts/export_competitor_config_from_db.py --check` reports drift; omit `--check` to refresh it. CSV-only rows are retained; inactive DB labels/playlists are excluded.
+- `config/competitor_playlists.csv` is a snapshot: `python scripts/export_competitor_config_from_db.py --check` reports drift; omit `--check` to refresh it. Exact-count pagination verifies both DB tables. Missing playlists/labels retain committed CSV rows with warnings; only explicitly inactive received playlist rows can remove them. Fewer DB playlists than committed rows or unverifiable counts cause whole-snapshot fallback.
 - New labels with blank accents use `applyResolvedLabelAccents` palette fallback at load time. After Spotify enrichment fills thumbnails, run `cd web && npm run extract-competitor-accents` to persist artwork accents; use `--force` only to re-extract existing/custom accents.
 - Daily competitor track deltas should be populated; flag any blanks as a regression.
 

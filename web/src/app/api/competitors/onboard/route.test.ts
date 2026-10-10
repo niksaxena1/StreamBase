@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   schema: vi.fn(),
   path: vi.fn(),
   tag: vi.fn(),
+  transaction: vi.fn(),
+  from: vi.fn(),
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -20,12 +22,13 @@ vi.mock("next/cache", () => ({
 import { POST } from "./route";
 import { cacheTagForKey } from "@/lib/supabase/cache";
 
-type Result = { data: unknown; error: { code?: string; message: string } | null };
-type Query = { table: string; operation?: string; payload?: unknown; filters: Record<string, unknown> };
-let results: (Result | Error)[];
-let queries: Query[];
-const ok = (data: unknown = null): Result => ({ data, error: null });
-const fail = (code: string): Result => ({ data: null, error: { code, message: "Insert failed" } });
+const ok = (data: unknown): { data: unknown; error: null } => ({ data, error: null });
+const fail = (code: string, details = "") => ({ data: null, error: { code, details, message: "Onboarding failed" } });
+const saved = {
+  label_key: "new_label", playlist_key: "new_label_releases", created_label: true, already_exists: false,
+  label: { label_key: "new_label", display_name: "New Label", accent_hex: null, is_active: true },
+  playlist: { playlist_key: "new_label_releases", label_key: "new_label", display_order: 5, is_active: true },
+};
 
 const body = {
   label: { mode: "new", display_name: "New Label" },
@@ -43,42 +46,14 @@ function request(payload: unknown = body) {
   });
 }
 
-function lookups(label: unknown = null) {
-  results = [ok(label), ok(), ok([]), ok([]), ok([]), ok([{ display_order: 4 }])];
-}
-
 beforeEach(() => {
   vi.resetAllMocks();
-  queries = [];
-  lookups();
   mocks.getUser.mockResolvedValue({ data: { user: { id: "admin" } } });
   mocks.rpc.mockResolvedValue({ data: true, error: null });
   mocks.service.mockReturnValue({ schema: mocks.schema });
-  mocks.schema.mockImplementation((schema: string) => {
-    expect(schema).toBe("competitor");
-    return {
-      from(table: string) {
-        const result = results.shift();
-        if (!result) throw new Error("Unexpected query");
-        const query: Query = { table, filters: {} };
-        queries.push(query);
-        const chain = {
-          select() { query.operation = "select"; return chain; },
-          eq(key: string, value: unknown) { query.filters[key] = value; return chain; },
-          limit() { return chain; },
-          order() { return chain; },
-          maybeSingle() { return chain; },
-          insert(payload: unknown) { query.operation = "insert"; query.payload = payload; return chain; },
-          update(payload: unknown) { query.operation = "update"; query.payload = payload; return chain; },
-          delete() { query.operation = "delete"; return chain; },
-          then(resolve: (value: Result) => unknown, reject: (error: Error) => unknown) {
-            return (result instanceof Error ? Promise.reject(result) : Promise.resolve(result)).then(resolve, reject);
-          },
-        };
-        return chain;
-      },
-    };
-  });
+  mocks.schema.mockReturnValue({ rpc: mocks.transaction, from: mocks.from });
+  mocks.from.mockImplementation(() => { throw new Error("Use the atomic RPC, not table requests"); });
+  mocks.transaction.mockResolvedValue(ok(saved));
 });
 
 describe("POST /api/competitors/onboard", () => {
@@ -97,94 +72,99 @@ describe("POST /api/competitors/onboard", () => {
   });
 
   it("creates a label and playlist only in competitor with derived config", async () => {
-    results.push(ok(), ok());
     const res = await POST(request());
     expect(res.status).toBe(201);
-    expect(await res.json()).toMatchObject({ success: true, data: {
-      label_key: "new_label", playlist_key: "new_label_releases", created_label: true,
-    } });
+    expect((await res.json()).data).toEqual(saved);
     expect(mocks.rpc).toHaveBeenCalledWith("is_admin");
     expect(mocks.rpc.mock.invocationCallOrder[0]).toBeLessThan(mocks.service.mock.invocationCallOrder[0]);
-    expect(queries.filter((q) => q.operation === "insert")).toEqual([
-      { table: "labels", operation: "insert", filters: {}, payload: {
-        label_key: "new_label", display_name: "New Label", accent_hex: null, is_active: true,
-      } },
-      { table: "playlists", operation: "insert", filters: {}, payload: {
-        playlist_key: "new_label_releases", label_key: "new_label", display_name: "New Label Releases",
-        spotify_playlist_id: "07MzpeD6a32EYRKuxp60o0", sot_playlist_id: 123,
-        sot_dashboard_url: "https://www.spotontrack.com/dashboard/456", sot_dashboard_name: "New Label Releases",
-        min_rows: 1, display_order: 5, is_active: true,
-      } },
-    ]);
-    expect(results).toEqual([]);
+    expect(mocks.schema).toHaveBeenCalledExactlyOnceWith("competitor");
+    expect(mocks.transaction).toHaveBeenCalledExactlyOnceWith("onboard_competitor", {
+      p_label_mode: "new", p_label_key: "new_label", p_label_display_name: "New Label", p_accent_hex: null,
+      p_playlist_key: "new_label_releases", p_playlist_display_name: "New Label Releases",
+      p_spotify_playlist_id: "07MzpeD6a32EYRKuxp60o0", p_sot_playlist_id: 123,
+      p_sot_dashboard_url: "https://www.spotontrack.com/dashboard/456",
+      p_sot_dashboard_name: "New Label Releases", p_min_rows: 1,
+    });
+    expect(mocks.from).not.toHaveBeenCalled();
     expect(mocks.path).toHaveBeenCalledWith("/competitors");
     expect(mocks.tag).toHaveBeenCalledExactlyOnceWith(cacheTagForKey("competitor-shell-labels-v2"), { expire: 0 });
   });
 
-  it("adds to an existing label without inserting or deleting that label", async () => {
-    lookups({ label_key: "soave", is_active: true });
-    results.push(ok());
-    expect((await POST(request({ ...body, label: { mode: "existing", label_key: "soave" } }))).status).toBe(201);
-    expect(queries.filter((q) => q.table === "labels").map((q) => q.operation)).toEqual(["select"]);
+  it("adds to an existing label without requesting label creation", async () => {
+    const existing = { ...saved, label_key: "soave", created_label: false, label: { ...saved.label, label_key: "soave" } };
+    mocks.transaction.mockResolvedValue(ok(existing));
+    const res = await POST(request({ ...body, label: { mode: "existing", label_key: "soave" } }));
+    expect(res.status).toBe(201);
+    expect((await res.json()).data).toEqual(existing);
+    expect(mocks.transaction.mock.calls[0][1]).toMatchObject({
+      p_label_mode: "existing", p_label_key: "soave", p_label_display_name: null, p_accent_hex: null,
+    });
+    expect(mocks.from).not.toHaveBeenCalled();
   });
 
-  it("reactivates an inactive existing label", async () => {
-    lookups({ label_key: "soave", is_active: false });
-    results.push(ok(), ok());
-    expect((await POST(request({ ...body, label: { mode: "existing", label_key: "soave" } }))).status).toBe(201);
-    expect(queries.find((q) => q.operation === "update")).toMatchObject({
-      table: "labels", filters: { label_key: "soave" }, payload: { is_active: true },
-    });
+  it("returns the existing label reactivated in the same transaction", async () => {
+    const existing = { ...saved, label_key: "soave", created_label: false, label: { ...saved.label, label_key: "soave", is_active: true } };
+    mocks.transaction.mockResolvedValue(ok(existing));
+    const response = await POST(request({ ...body, label: { mode: "existing", label_key: "soave" } }));
+    expect(response.status).toBe(201);
+    expect((await response.json()).data.label.is_active).toBe(true);
+    expect(mocks.transaction).toHaveBeenCalledTimes(1);
+    expect(mocks.from).not.toHaveBeenCalled();
   });
 
   it.each([
-    [0, "label.label_key"], [1, "playlist.playlist_key"], [2, "playlist.spotify_playlist"],
-    [3, "playlist.sot_playlist"], [4, "playlist.sot_dashboard_url"],
-  ])("rejects duplicate identity lookup %s before any writes", async (index, field) => {
-    results[index as number] = ok(index === 0 ? { label_key: "new_label" } : index === 1
-      ? { playlist_key: "tracked" } : [{ playlist_key: "tracked" }]);
+    "label.label_key", "playlist.playlist_key", "playlist.spotify_playlist",
+    "playlist.sot_playlist", "playlist.sot_dashboard_url",
+  ])("rejects duplicate %s with a field error and no separate writes", async (field) => {
+    mocks.transaction.mockResolvedValue(fail("23505", field));
     const res = await POST(request());
     expect(res.status).toBe(409);
-    expect((await res.json()).fields).toHaveProperty(field as string);
-    expect(queries.every((q) => q.operation === "select")).toBe(true);
+    expect((await res.json()).fields).toEqual({ [field]: "Onboarding failed" });
+    expect(mocks.transaction).toHaveBeenCalledTimes(1);
+    expect(mocks.from).not.toHaveBeenCalled();
     expect(mocks.tag).not.toHaveBeenCalled();
   });
 
-  it("rejects unknown existing labels and lookup failures before writing", async () => {
-    expect((await POST(request({ ...body, label: { mode: "existing", label_key: "unknown" } }))).status).toBe(400);
-    lookups();
-    results[3] = fail("42703");
+  it("rejects unknown existing labels and transaction lookup failures", async () => {
+    mocks.transaction.mockResolvedValueOnce(fail("22023", "label.label_key"));
+    const unknown = await POST(request({ ...body, label: { mode: "existing", label_key: "unknown" } }));
+    expect(unknown.status).toBe(400);
+    expect((await unknown.json()).fields).toEqual({ "label.label_key": "Onboarding failed" });
+    mocks.transaction.mockResolvedValueOnce(fail("08006"));
     expect((await POST(request())).status).toBe(500);
-    expect(queries.every((q) => q.operation === "select")).toBe(true);
+    expect(mocks.from).not.toHaveBeenCalled();
   });
 
-  it.each(["42703", "PGRST204", "23505", "other", "throw"])("rolls back the new label on playlist failure %s", async (code) => {
-    results.push(ok(), code === "throw" ? new Error("Transport failure") : fail(code), ok());
+  it.each(["42703", "42883", "PGRST202", "PGRST204", "23505", "other", "throw"])("handles atomic failure %s without client-side compensating writes", async (code) => {
+    if (code === "throw") mocks.transaction.mockRejectedValueOnce(new Error("Transport failure"));
+    else mocks.transaction.mockResolvedValueOnce(fail(code));
     const res = await POST(request());
-    expect(res.status).toBe(["42703", "PGRST204"].includes(code) ? 503 : code === "23505" ? 409 : 500);
-    expect(queries.at(-1)).toEqual({ table: "labels", operation: "delete", filters: { label_key: "new_label" } });
-    if (["42703", "PGRST204"].includes(code)) {
-      expect((await res.json()).error).toContain("migrations/add_competitor_onboarding_config_columns.sql");
-    }
-    expect(results).toEqual([]);
+    const missing = ["42703", "42883", "PGRST202", "PGRST204"].includes(code);
+    expect(res.status).toBe(missing ? 503 : code === "23505" ? 409 : 500);
+    expect(mocks.transaction).toHaveBeenCalledTimes(1);
+    expect(mocks.from).not.toHaveBeenCalled();
+    expect(mocks.tag).not.toHaveBeenCalled();
+    if (missing) expect((await res.json()).error).toContain("migrations/add_competitor_onboarding_config_columns.sql");
   });
 
-  it("does not roll back an existing label on playlist failure", async () => {
-    lookups({ label_key: "soave", is_active: true });
-    results.push(fail("other"));
+  it("does not delete an existing label on transaction failure", async () => {
+    mocks.transaction.mockResolvedValueOnce(fail("other"));
     expect((await POST(request({ ...body, label: { mode: "existing", label_key: "soave" } }))).status).toBe(500);
-    expect(queries.some((q) => q.operation === "delete")).toBe(false);
+    expect(mocks.from).not.toHaveBeenCalled();
   });
 
-  it("does not insert a playlist after label insertion fails", async () => {
-    results.push(fail("23505"));
+  it("does not issue a separate playlist insert when label creation fails", async () => {
+    mocks.transaction.mockResolvedValueOnce(fail("23505", "label.label_key"));
     expect((await POST(request())).status).toBe(409);
-    expect(queries.at(-1)?.table).toBe("labels");
-    expect(queries.some((q) => q.operation === "delete")).toBe(false);
+    expect(mocks.transaction).toHaveBeenCalledTimes(1);
+    expect(mocks.from).not.toHaveBeenCalled();
   });
 
-  it("returns an error if rollback fails", async () => {
-    results.push(ok(), fail("other"), fail("other"));
-    expect((await POST(request())).status).toBe(500);
+  it("rejects malformed RPC results without refreshing caches", async () => {
+    for (const value of [null, [], {}, { ...saved, label_key: "other" }, { ...saved, already_exists: undefined }]) {
+      mocks.transaction.mockResolvedValueOnce(ok(value));
+      expect((await POST(request())).status).toBe(500);
+    }
+    expect(mocks.tag).not.toHaveBeenCalled();
   });
 });

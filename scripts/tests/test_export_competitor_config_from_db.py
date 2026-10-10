@@ -2,12 +2,118 @@ import csv
 import io
 from pathlib import Path
 from unittest.mock import Mock
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 
 import export_competitor_config_from_db as m
 
 REPO_CSV = Path(__file__).resolve().parents[2] / "config" / "competitor_playlists.csv"
+
+
+def test_exact_counts_follow_capped_pages(monkeypatch):
+    committed = m.read_csv_rows(str(REPO_CSV))
+    playlists = _db_rows_from_csv(committed)
+    labels = [{"label_key": key, "is_active": True} for key in sorted({r["label_key"] for r in committed})]
+
+    def capped_response(method, url, **kwargs):
+        parsed = urlparse(url)
+        source = playlists if parsed.path.endswith("/playlists") else labels
+        offset = int(parse_qs(parsed.query)["offset"][0])
+        batch = source[offset:offset + 5]  # Server cap below requested page size.
+        response = Mock(status_code=200, headers={
+            "Content-Range": f"{offset}-{offset + len(batch) - 1}/{len(source)}",
+        })
+        response.json.return_value = batch
+        return response
+
+    http = Mock(side_effect=capped_response)
+    monkeypatch.setattr("streambase_postgrest.requests.request", http)
+    db, active_labels = m.load_from_db(m.Postgrest("https://example.invalid", "test-key", schema="competitor"))
+    assert db == playlists
+    assert active_labels == {r["label_key"] for r in committed}
+    for call in http.call_args_list:
+        assert call.kwargs["headers"]["Prefer"] == "count=exact"
+        assert call.kwargs["headers"]["Accept-Profile"] == "competitor"
+
+
+def test_missing_label_never_drops_committed_playlist():
+    committed = m.read_csv_rows(str(REPO_CSV))
+    playlists = _db_rows_from_csv(committed)
+    missing_label = committed[-1]["label_key"]
+    rows, warnings = m.build_rows(playlists, {r["label_key"] for r in committed} - {missing_label}, committed)
+    assert rows == committed
+    assert any(missing_label in warning for warning in warnings)
+
+
+@pytest.mark.parametrize("problem", ["missing_count", "partial_body", "changed_total", "early_empty"])
+def test_unverified_exact_counts_fall_back_without_writes(tmp_path, monkeypatch, problem):
+    snapshot = tmp_path / "c.csv"
+    snapshot.write_bytes(REPO_CSV.read_bytes())
+    db = _db_rows_from_csv(m.read_csv_rows(str(snapshot)))
+    first = Mock(status_code=206, headers={"Content-Range": f"0-4/{len(db)}"})
+    first.json.return_value = db[:5]
+    second = Mock(status_code=200, headers={"Content-Range": f"5-{len(db) - 1}/{len(db)}"})
+    second.json.return_value = db[5:]
+    if problem == "missing_count":
+        first.headers = {"Content-Range": "0-4/*"}
+    elif problem == "partial_body":
+        first.headers = {"Content-Range": f"0-{len(db) - 1}/{len(db)}"}
+    elif problem == "changed_total":
+        second.headers = {"Content-Range": f"5-{len(db) - 1}/{len(db) + 1}"}
+    else:
+        second.headers = {"Content-Range": f"*/{len(db)}"}
+        second.json.return_value = []
+    http = Mock(side_effect=[first, second])
+    monkeypatch.setattr("streambase_postgrest.requests.request", http)
+    monkeypatch.setenv("SUPABASE_URL", "https://example.invalid")
+    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "test-key")
+    assert m.main(["--csv", str(snapshot)]) == 0
+    assert snapshot.read_bytes() == REPO_CSV.read_bytes()
+
+
+def test_missing_playlist_is_kept_when_new_db_rows_make_count_large_enough():
+    committed = m.read_csv_rows(str(REPO_CSV))
+    db = _db_rows_from_csv(committed)[:-1]
+    new = {**db[0], "playlist_key": "new_releases"}
+    rows, warnings = m.build_rows(db + [new], {r["label_key"] for r in committed}, committed)
+    assert rows[:len(committed)] == committed
+    assert rows[-1]["playlist_key"] == "new_releases"
+    assert committed[-1]["playlist_key"] in warnings[0]
+
+
+def test_only_explicitly_inactive_received_playlists_remove_committed_rows():
+    committed = m.read_csv_rows(str(REPO_CSV))
+    db = _db_rows_from_csv(committed)
+    db[0]["is_active"] = False
+    db[1].pop("is_active")
+    db[2]["is_active"] = None
+    rows, warnings = m.build_rows(db, set(), committed)
+    assert rows == committed[1:]
+    assert len(warnings) == len(committed) - 1
+
+
+def test_exact_count_empty_table_is_verifiable(monkeypatch):
+    response = Mock(status_code=200, headers={"Content-Range": "*/0"})
+    response.json.return_value = []
+    monkeypatch.setattr("streambase_postgrest.requests.request", Mock(return_value=response))
+    assert m.load_from_db(m.Postgrest("https://example.invalid", "test-key", schema="competitor")) == ([], set())
+
+
+def test_missing_row_falls_back_to_entire_committed_csv(tmp_path, monkeypatch, capsys):
+    snapshot = tmp_path / "competitor_playlists.csv"
+    snapshot.write_bytes(REPO_CSV.read_bytes())
+    committed = m.read_csv_rows(str(snapshot))
+    db = _db_rows_from_csv(committed)[:-1]
+    db[0]["display_name"] = "Changed in DB"  # Prove whole-file fallback, not a merge.
+    monkeypatch.setenv("SUPABASE_URL", "https://example.invalid")
+    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "test-key")
+    monkeypatch.setattr(m, "Postgrest", Mock())
+    monkeypatch.setattr(m, "load_from_db", lambda pg: (db, {r["label_key"] for r in committed}))
+    assert m.main(["--csv", str(snapshot)]) == 0
+    assert snapshot.read_bytes() == REPO_CSV.read_bytes()
+    assert committed[-1]["playlist_key"] in capsys.readouterr().out
+    assert m.main(["--csv", str(snapshot), "--check"]) == 2
 
 
 def _db_rows_from_csv(rows):

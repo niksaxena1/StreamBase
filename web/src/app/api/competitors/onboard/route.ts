@@ -10,7 +10,11 @@ import { cacheTagForKey } from "@/lib/supabase/cache";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const MISSING_COLUMN_CODE = "42703";
+const MIGRATION_ERROR_CODES = new Set(["42703", "42883", "PGRST202", "PGRST204"]);
+const ERROR_FIELDS = new Set([
+  "body", "label.label_key", "playlist.playlist_key", "playlist.spotify_playlist",
+  "playlist.sot_playlist", "playlist.sot_dashboard_url",
+]);
 
 /** Error envelope plus per-field messages the form shows inline. */
 function fieldErrors(fields: Record<string, string>, status: number): NextResponse {
@@ -52,96 +56,35 @@ async function onboard(
 ) {
   const comp = supabaseService().schema("competitor");
 
-  const [labelRes, keyRes, spotifyRes, sotRes, dashboardRes, orderRes] = await Promise.all([
-    comp.from("labels").select("label_key,is_active").eq("label_key", playlist.label_key).maybeSingle(),
-    comp.from("playlists").select("playlist_key").eq("playlist_key", playlist.playlist_key).maybeSingle(),
-    comp
-      .from("playlists")
-      .select("playlist_key")
-      .eq("spotify_playlist_id", playlist.spotify_playlist_id)
-      .limit(1),
-    comp.from("playlists").select("playlist_key").eq("sot_playlist_id", playlist.sot_playlist_id).limit(1),
-    comp
-      .from("playlists")
-      .select("playlist_key")
-      .eq("sot_dashboard_url", playlist.sot_dashboard_url)
-      .limit(1),
-    comp
-      .from("playlists")
-      .select("display_order")
-      .eq("label_key", playlist.label_key)
-      .order("display_order", { ascending: false, nullsFirst: false })
-      .limit(1),
-  ]);
-  const lookupError = [labelRes, keyRes, spotifyRes, sotRes, dashboardRes, orderRes].find((r) => r.error)?.error;
-  if (lookupError) return apiJsonErr(lookupError.message, 500);
-
-  if (label.mode === "existing" && !labelRes.data) {
-    return fieldErrors({ "label.label_key": "Unknown label" }, 400);
-  }
-  if (label.mode === "new" && labelRes.data) {
-    return fieldErrors({ "label.label_key": `Label key "${label.label_key}" already exists; pick it as an existing label` }, 409);
-  }
-  if (keyRes.data) {
-    return fieldErrors({ "playlist.playlist_key": `Playlist key "${playlist.playlist_key}" already exists` }, 409);
-  }
-  const spotifyDupe = (spotifyRes.data as Array<{ playlist_key: string }> | null)?.[0];
-  if (spotifyDupe) {
-    return fieldErrors({ "playlist.spotify_playlist": `Already tracked as "${spotifyDupe.playlist_key}"` }, 409);
-  }
-  const dashboardDupe = (dashboardRes.data as Array<{ playlist_key: string }> | null)?.[0];
-  const sotDupe = (sotRes.data as Array<{ playlist_key: string }> | null)?.[0];
-  if (sotDupe) {
-    return fieldErrors({ "playlist.sot_playlist": `Already tracked as "${sotDupe.playlist_key}"` }, 409);
-  }
-  if (dashboardDupe) {
-    return fieldErrors({ "playlist.sot_dashboard_url": `Dashboard already used by "${dashboardDupe.playlist_key}"` }, 409);
-  }
-
-  const now = new Date().toISOString();
-  if (label.mode === "new") {
-    const { error } = await comp.from("labels").insert({
-      label_key: label.label_key,
-      display_name: label.display_name,
-      accent_hex: label.accent_hex,
-      is_active: true,
-    });
-    if (error) return apiJsonErr(error.message, error.code === "23505" ? 409 : 500);
-  } else if ((labelRes.data as { is_active?: boolean } | null)?.is_active === false) {
-    const { error } = await comp
-      .from("labels")
-      .update({ is_active: true, updated_at: now })
-      .eq("label_key", label.label_key);
-    if (error) return apiJsonErr(error.message, 500);
-  }
-
-  const lastOrder = (orderRes.data as Array<{ display_order: number | null }> | null)?.[0]?.display_order;
-  async function rollbackNewLabel() {
-    if (label.mode !== "new") return;
-    const { error } = await comp.from("labels").delete().eq("label_key", label.label_key);
-    if (error) throw new Error("Could not roll back new label");
-  }
-  let playlistErr;
-  try {
-    const result = await comp.from("playlists").insert({
-      ...playlist,
-      display_order: typeof lastOrder === "number" ? lastOrder + 1 : 1,
-      is_active: true,
-    });
-    playlistErr = result.error;
-  } catch (error) {
-    await rollbackNewLabel();
-    throw error;
-  }
-  if (playlistErr) {
-    await rollbackNewLabel();
-    if (playlistErr.code === MISSING_COLUMN_CODE || playlistErr.code === "PGRST204") {
+  const { data, error } = await comp.rpc("onboard_competitor", {
+    p_label_mode: label.mode,
+    p_label_key: label.label_key,
+    p_label_display_name: label.mode === "new" ? label.display_name : null,
+    p_accent_hex: label.mode === "new" ? label.accent_hex : null,
+    p_playlist_key: playlist.playlist_key,
+    p_playlist_display_name: playlist.display_name,
+    p_spotify_playlist_id: playlist.spotify_playlist_id,
+    p_sot_playlist_id: playlist.sot_playlist_id,
+    p_sot_dashboard_url: playlist.sot_dashboard_url,
+    p_sot_dashboard_name: playlist.sot_dashboard_name,
+    p_min_rows: playlist.min_rows,
+  });
+  if (error) {
+    if (MIGRATION_ERROR_CODES.has(error.code)) {
       return apiJsonErr(
-        "Database is missing competitor.playlists.sot_dashboard_name/min_rows. Apply migrations/add_competitor_onboarding_config_columns.sql, then retry.",
+        "Database is missing competitor onboarding configuration/function. Apply migrations/add_competitor_onboarding_config_columns.sql, then retry.",
         503,
       );
     }
-    return apiJsonErr(playlistErr.message, playlistErr.code === "23505" ? 409 : 500);
+    const status = error.code === "23505" ? 409 : error.code === "22023" ? 400 : 500;
+    if (ERROR_FIELDS.has(error.details)) return fieldErrors({ [error.details]: error.message }, status);
+    return apiJsonErr(error.message, status);
+  }
+  if (!data || typeof data !== "object" || Array.isArray(data)
+      || data.label_key !== label.label_key || data.playlist_key !== playlist.playlist_key
+      || typeof data.already_exists !== "boolean" || typeof data.created_label !== "boolean"
+      || !data.label || !data.playlist) {
+    return apiJsonErr("Invalid competitor onboarding result. Please retry.", 500);
   }
 
   // Refresh the ops page and selector immediately, without invalidating the
@@ -149,9 +92,5 @@ async function onboard(
   revalidatePath("/competitors");
   revalidateTag(cacheTagForKey("competitor-shell-labels-v2"), { expire: 0 });
 
-  return apiJsonOk({
-    label_key: playlist.label_key,
-    playlist_key: playlist.playlist_key,
-    created_label: label.mode === "new",
-  }, { status: 201 });
+  return apiJsonOk(data, { status: data.already_exists ? 200 : 201 });
 }

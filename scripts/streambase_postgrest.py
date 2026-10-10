@@ -16,6 +16,7 @@ Retry semantics:
 
 import json
 import random
+import re
 import time
 from typing import List, Optional
 from urllib.parse import urlencode
@@ -136,12 +137,15 @@ class Postgrest:
         filters: str,
         page_size: int = 1000,
         order: Optional[str] = None,
+        require_exact_count: bool = False,
     ) -> List[dict]:
         """
         Supabase PostgREST commonly enforces a max row limit (often 1000);
         paginate with limit/offset. Pass `order` (e.g. "id.asc") for a stable
         pagination key when the table has one.
         """
+        if require_exact_count:
+            return self.select_all_exact(table, select, filters, page_size, order)
         out: List[dict] = []
         offset = 0
         while True:
@@ -158,6 +162,54 @@ class Postgrest:
                 break
             offset += page_size
         return out
+
+    def select_all_exact(
+        self,
+        table: str,
+        select: str,
+        filters: str,
+        page_size: int = 1000,
+        order: Optional[str] = None,
+    ) -> List[dict]:
+        """Verify a complete read using exact counts, including server-capped pages.
+
+        Short pages are not an end marker. Advance by the received row count
+        until Content-Range's total is reached; reject missing/inconsistent
+        counts, ranges, changed totals and premature empty pages.
+        """
+        if page_size < 1 or not order:
+            raise ValueError("Exact-count selects require positive page size and stable order")
+        headers = {**self.h, "Prefer": "count=exact"}
+        out: List[dict] = []
+        total = None
+        while True:
+            offset = len(out)
+            url = f"{self.base}/{table}?select={select}&{filters}&order={order}&limit={page_size}&offset={offset}"
+            response = self._request("GET", url, headers, idempotent=True)
+            if response.status_code not in (200, 206):
+                raise RuntimeError(f"Exact-count select {table} failed: {response.status_code}")
+            batch = response.json()
+            if not isinstance(batch, list) or any(not isinstance(row, dict) for row in batch):
+                raise RuntimeError(f"Exact-count select {table} returned invalid rows")
+            content_range = response.headers.get("Content-Range", "")
+            match = re.fullmatch(r"(?:(\d+)-(\d+)|\*)/(\d+)", content_range)
+            if not match:
+                raise RuntimeError(f"Exact-count select {table} has no verifiable Content-Range")
+            received_total = int(match[3])
+            if total is not None and total != received_total:
+                raise RuntimeError(f"Exact-count select {table} changed during pagination")
+            total = received_total
+            if not batch:
+                if total == offset and match[1] is None:
+                    return out
+                raise RuntimeError(f"Exact-count select {table} stopped before all rows arrived")
+            if (match[1] is None or int(match[1]) != offset
+                    or int(match[2]) != offset + len(batch) - 1
+                    or offset + len(batch) > total):
+                raise RuntimeError(f"Exact-count select {table} returned an inconsistent range")
+            out.extend(batch)
+            if len(out) == total:
+                return out
 
     def rpc(self, function_name: str, params: Optional[dict] = None, idempotent: bool = True) -> Optional[dict]:
         """Call a PostgREST RPC function.

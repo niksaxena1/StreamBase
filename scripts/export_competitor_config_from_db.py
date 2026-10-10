@@ -7,9 +7,10 @@ and ingestion scripts (which read the CSV) pick up UI-added playlists without a
 commit.
 
 Transition safety:
-- Rows in the committed CSV whose playlist_key is not in the database at all
-  are kept (with a warning), so nothing silently drops out of the pipelines.
-  A playlist marked is_active = false in the database is removed.
+- A committed row is removed only when its received DB playlist explicitly
+  has is_active = false. Missing playlists/labels preserve committed rows and
+  warn. Fewer DB playlists than committed rows causes whole-snapshot fallback.
+- Both DB tables are paged with exact counts and verified Content-Range totals.
 - If the database can't be read (or returns no active playlists), the
   committed CSV is left untouched and the script exits 0 unless --strict.
 
@@ -79,10 +80,19 @@ def build_rows(
 
     rows: List[Dict[str, str]] = []
     for p in db_playlists:
-        if not p.get("is_active", True) or str(p.get("label_key") or "") not in active_labels:
+        key = str(p.get("playlist_key") or "").strip()
+        prev = committed_by_key.get(key)
+        if p.get("is_active") is False:
+            continue
+        label_key = str(p.get("label_key") or "")
+        if label_key not in active_labels:
+            if prev:
+                rows.append(dict(prev))
+                warnings.append(f"{key}: label {label_key} absent/inactive in DB response; kept committed CSV row")
+            else:
+                warnings.append(f"{key}: label {label_key} absent/inactive in DB response; skipped new playlist")
             continue
         row = db_row_to_csv(p)
-        prev = committed_by_key.get(row["playlist_key"])
         # Preserve CSV-only knobs the DB doesn't model (e.g. allow_empty).
         if prev:
             for k, v in prev.items():
@@ -95,7 +105,7 @@ def build_rows(
     for r in committed:
         key = r.get("playlist_key", "")
         if key and key not in known_keys:
-            warnings.append(f"{key}: in committed CSV but not in competitor.playlists; kept (add it to the DB)")
+            warnings.append(f"{key}: in committed CSV but not in competitor.playlists response; kept committed CSV row")
             rows.append(dict(r))
     # Keep snapshot order even if the DB returns rows in another order. Append
     # new playlists in the stable order supplied by load_from_db.
@@ -137,8 +147,14 @@ def load_from_db(pg: Postgrest) -> Tuple[List[dict], set]:
         "display_order,is_active,created_at",
         "playlist_key=not.is.null",
         order="created_at.asc,playlist_key.asc",
+        require_exact_count=True,
     )
-    labels = pg.select_all("labels", "label_key,is_active", "label_key=not.is.null", order="label_key.asc")
+    labels = pg.select_all("labels", "label_key,is_active", "label_key=not.is.null", order="label_key.asc",
+                           require_exact_count=True)
+    if len({p["playlist_key"] for p in playlists}) != len(playlists):
+        raise ValueError("Duplicate playlist identities in DB response")
+    if len({label["label_key"] for label in labels}) != len(labels):
+        raise ValueError("Duplicate label identities in DB response")
     active_labels = {str(l["label_key"]) for l in labels if l.get("is_active", True)}
     return playlists, active_labels
 
@@ -176,6 +192,10 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     for w in warnings:
         print(f"⚠️ {w}")
+    if len(db_playlists) < len(committed):
+        print(f"DB returned fewer playlists ({len(db_playlists)}) than committed CSV ({len(committed)}); "
+              f"using committed {args.csv} unchanged.")
+        return 2 if args.strict or args.check else 0
     if not rows:
         msg = "DB returned no active competitor playlists"
         if args.strict or args.check:
