@@ -2,7 +2,7 @@
 --
 -- All competitor RPCs that previously read competitor.track_daily_streams directly now
 -- read competitor.track_daily_streams_effective_public, so manual and auto-interpolated
--- overrides (see add_competitor_stream_overrides_and_interpolation.sql) flow into every
+-- overrides (see supabase/migrations/20260727013735_add_competitor_stream_overrides_and_interpolation.sql) flow into every
 -- competitor dashboard. Definitions below are the live production definitions with only
 -- the table reference swapped. ensure_track_daily_streams_partitions is intentionally
 -- untouched (DDL helper on the physical table).

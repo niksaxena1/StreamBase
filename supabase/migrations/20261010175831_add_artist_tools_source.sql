@@ -1,4 +1,4 @@
--- Apply after add_track_daily_stream_overrides.sql. Own catalog only.
+-- Apply after supabase/migrations/20260201152444_add_track_daily_stream_overrides.sql. Own catalog only.
 BEGIN;
 
 CREATE TABLE IF NOT EXISTS public.artist_tools_oauth (

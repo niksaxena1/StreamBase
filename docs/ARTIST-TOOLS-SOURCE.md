@@ -9,7 +9,7 @@ deletes or removes folder entries.
 
 ## Rollout and authorization
 
-1. Apply `migrations/add_artist_tools_source.sql` after the existing track override
+1. Apply `supabase/migrations/20261010175831_add_artist_tools_source.sql` after the existing track override
    migration. It creates four service-role-only tables with RLS enabled and no
    policies. Reapply it to existing installations to allow a NULL ISRC on ambiguous
    Spotify-ID observations. Review the grants when applying it; no live migration is part of this

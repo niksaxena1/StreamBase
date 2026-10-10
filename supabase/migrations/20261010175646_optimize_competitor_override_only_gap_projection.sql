@@ -1,4 +1,4 @@
--- Follow-up to fix_competitor_override_only_gap_days.sql.
+-- Follow-up to supabase/migrations/20261010175645_fix_competitor_override_only_gap_days.sql.
 -- Emit unoverridden raw observations plus every override exactly once.
 -- This avoids probing the partitioned raw table for each override-only row.
 CREATE OR REPLACE VIEW competitor.track_daily_streams_effective_public AS

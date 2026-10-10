@@ -27,7 +27,7 @@ STALE_SOURCE_DATA_IDENTICAL_RATIO = 0.90  # 90% of tracks identical → stale_so
 TRACK_COUNT_SWING_HARD_FAIL_RATIO = 0.70  # 70% catalog swing → abort ingestion
 INDIVIDUAL_TRACKS_STALE_CRITICAL_COUNT = 15  # >= N stale tracks → critical (else warn)
 
-# Artificial stream spike detection (same-day-of-week baseline; see migrations/add_artificial_streams_detection.sql)
+# Artificial stream spike detection (same-day-of-week baseline; see supabase/migrations/20260331143329_add_artificial_streams_detection.sql)
 ARTIFICIAL_STREAMS_SPIKE_RATIO = 1.25
 ARTIFICIAL_STREAMS_MIN_BASELINE = 50.0
 ARTIFICIAL_STREAMS_LOOKBACK_WEEKS = 4.0

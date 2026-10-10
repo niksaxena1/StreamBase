@@ -1,6 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // /docs reads the migration inventory outside web/ at request time.
+  outputFileTracingIncludes: {
+    "/docs": ["../supabase/migrations/*.sql"],
+  },
   experimental: {
     // User-specific dataset/access/settings routes must never remain in the
     // client router cache after a mutation. Daily analytics are cached at the

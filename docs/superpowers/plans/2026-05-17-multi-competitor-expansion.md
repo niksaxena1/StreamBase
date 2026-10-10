@@ -12,7 +12,7 @@
 
 ### Task 1: Seed competitor metadata
 **Files:**
-- Create: `migrations/add_soave_and_chillyourmind_competitors.sql`
+- Create: `supabase/migrations/20260517194743_add_soave_and_chillyourmind_competitors.sql`
 
 - [ ] Add idempotent inserts for `competitor.labels` and `competitor.playlists`
 - [ ] Verify SQL is rerunnable and uses stable keys

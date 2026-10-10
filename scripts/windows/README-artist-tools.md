@@ -1,6 +1,6 @@
 # Windows artist.tools fallback
 
-Apply `migrations/add_artist_tools_source.sql` first. Install Python 3.12 with
+Apply `supabase/migrations/20261010175831_add_artist_tools_source.sql` first. Install Python 3.12 with
 `python` on PATH and `python -m pip install requests`. The wrapper loads only the
 Supabase configuration from `web/.env.local`, using `NEXT_PUBLIC_SUPABASE_URL`
 when `SUPABASE_URL` is absent, and never echoes credentials. It does not remove

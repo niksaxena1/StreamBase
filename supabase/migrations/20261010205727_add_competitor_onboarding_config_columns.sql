@@ -1,4 +1,4 @@
--- Competitor DB config for UI onboarding. Apply after add_competitor_label_accent_hex.sql.
+-- Competitor DB config for UI onboarding. Apply after supabase/migrations/20260526152516_add_competitor_label_accent_hex.sql.
 -- Additive, idempotent, competitor-only; no public tables or grants are changed.
 BEGIN;
 

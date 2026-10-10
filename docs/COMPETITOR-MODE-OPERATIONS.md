@@ -76,8 +76,8 @@ behavior, run-date semantics, and failure recovery.
 
 ## Adding another competitor
 
-Apply `migrations/add_competitor_onboarding_config_columns.sql` once, after
-`add_competitor_foundation.sql` and `add_competitor_label_accent_hex.sql`. It adds
+Apply `supabase/migrations/20261010205727_add_competitor_onboarding_config_columns.sql` once, after
+`supabase/migrations/20260517014520_add_competitor_foundation.sql` and `supabase/migrations/20260526152516_add_competitor_label_accent_hex.sql`. It adds
 `sot_dashboard_name` and `min_rows` to `competitor.playlists`, backfills all 17
 current CSV rows using generated UPDATE statements, and grants only `service_role`
 configuration access. It also defines `competitor.onboard_competitor`, a `SECURITY INVOKER` function with a fixed `pg_catalog, competitor` search path. EXECUTE is revoked from PUBLIC/anon/authenticated and granted only to service_role. Reapplying preserves configured dashboard names and row limits.
@@ -127,13 +127,13 @@ For ingestion correctness, use **/health** in Competitor Mode. The page supports
 - **Unenriched tracks:** paginated drill-down (`?enrich_page=`).
 - **Config drift:** compares `config/competitor_playlists.csv` to `competitor.playlists`.
 
-SQL: `migrations/add_competitor_health_enhancements.sql` (distinct track RPC, unenriched paging, warning history MV).
+SQL: `supabase/migrations/20260527155647_add_competitor_health_enhancements.sql` (distinct track RPC, unenriched paging, warning history MV).
 
 ## Missing-day overrides (2026-10-03)
 
-Apply `migrations/fix_competitor_override_only_gap_days.sql` after
-`optimize_effective_stream_views_pushdown.sql`, followed by
-`optimize_competitor_override_only_gap_projection.sql`. The earlier narrow competitor
+Apply `supabase/migrations/20261010175645_fix_competitor_override_only_gap_days.sql` after
+`supabase/migrations/20260810003702_optimize_effective_stream_views_pushdown.sql`, followed by
+`supabase/migrations/20261010175646_optimize_competitor_override_only_gap_projection.sql`. The earlier narrow competitor
 view omitted override-only dates. The corrected view includes them without
 creating raw snapshots. The projection emits unoverridden raw rows plus every
 override once, avoiding partitioned-raw lookups for override-only rows.

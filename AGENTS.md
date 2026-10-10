@@ -28,10 +28,10 @@ Do not blur them. Competitor work should be additive and schema-scoped; own-cata
 
 - Config: `competitor.labels` / `competitor.playlists` are the source of truth (admin **Add competitor** on `/competitors`, `web/src/app/api/competitors/onboard/route.ts`). Workflows regenerate `config/competitor_playlists.csv` via `scripts/export_competitor_config_from_db.py`; the committed CSV is a generated snapshot/fallback.
 - Atomic service-role-only onboarding RPC: `competitor.onboard_competitor` (label + playlist in one transaction; identical retries return existing records).
-- Onboarding config columns/backfill: `migrations/add_competitor_onboarding_config_columns.sql` (after the foundation and accent migrations).
-- DB foundation: `migrations/add_competitor_foundation.sql`
-- Accent colors: `migrations/add_competitor_label_accent_hex.sql`, `web/src/lib/competitorLabelAccents.ts`, `web/scripts/extract-competitor-accents.ts`
-- Analytics RPCs: `migrations/add_competitor_analytics_rpcs.sql`, `migrations/add_competitor_label_scoped_analytics.sql`
+- Onboarding config columns/backfill: `supabase/migrations/20261010205727_add_competitor_onboarding_config_columns.sql` (after the foundation and accent migrations).
+- DB foundation: `supabase/migrations/20260517014520_add_competitor_foundation.sql`
+- Accent colors: `supabase/migrations/20260526152516_add_competitor_label_accent_hex.sql`, `web/src/lib/competitorLabelAccents.ts`, `web/scripts/extract-competitor-accents.ts`
+- Analytics RPCs: `supabase/migrations/20260517014521_add_competitor_analytics_rpcs.sql`, `supabase/migrations/20260517191923_add_competitor_label_scoped_analytics.sql`
 - UI:
   - Home: `web/src/lib/home/loadHomeDashboard.ts`, `web/src/app/(main-flat)/HomeDashboardClient.tsx`
   - Playlists: `web/src/app/(main-flat)/playlists/page.tsx`
@@ -68,7 +68,7 @@ npm run extract-competitor-accents
 npx eslint "src/app/(main-flat)/competitors/page.tsx"
 ```
 
-If touching Supabase SQL, update the corresponding docs and leave migration filenames descriptive enough that future agents can reconstruct the rollout order.
+If touching Supabase SQL, add migrations at `supabase/migrations/<UTC timestamp>_<descriptive_name>.sql` (`YYYYMMDDHHMMSS` in UTC), update the corresponding docs, and ensure unique versions with prerequisites before follow-ups. Apply via Supabase MCP or CLI; see `supabase/README.md` for the workflow. A one-time CLI history baseline is a manual owner decision: reconcile existing MCP records before repairing history; never automatically baseline by date cutoff.
 
 ## Supabase Data API Grants
 

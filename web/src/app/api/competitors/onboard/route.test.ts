@@ -144,7 +144,7 @@ describe("POST /api/competitors/onboard", () => {
     expect(mocks.transaction).toHaveBeenCalledTimes(1);
     expect(mocks.from).not.toHaveBeenCalled();
     expect(mocks.tag).not.toHaveBeenCalled();
-    if (missing) expect((await res.json()).error).toContain("migrations/add_competitor_onboarding_config_columns.sql");
+    if (missing) expect((await res.json()).error).toContain("supabase/migrations/20261010205727_add_competitor_onboarding_config_columns.sql");
   });
 
   it("does not delete an existing label on transaction failure", async () => {

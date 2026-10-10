@@ -1,6 +1,6 @@
 -- Migration: Competitor stream overrides + effective view + stale-run interpolation
 --
--- Mirrors the own-catalog machinery (see add_track_daily_stream_overrides.sql):
+-- Mirrors the own-catalog machinery (see supabase/migrations/20260201152444_add_track_daily_stream_overrides.sql):
 -- - competitor.track_daily_stream_overrides: per-(date,isrc) corrections; raw snapshots untouched.
 -- - competitor.track_daily_streams_effective(_public): resolved series, override wins.
 -- - competitor.spotibase_interpolate_stale_streams: auto-fills "stale" runs (Spot On Track
