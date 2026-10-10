@@ -4,26 +4,25 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChart";
 import { normalizeReleaseDateFromRpc } from "@/components/charts/trackReleaseCohorts";
 import type {
-  ArtistWeekendDipRow,
   HomeDashboardSearchParams,
   EntityHistoryRow,
   HomeDashboardServerProps,
   ManualOverrideAnnotation,
-  NegativeDailyStreamsRow,
-  ArtificialStreamSpikeRow,
   PlaylistDailyStatsRow,
-  TrackWeekendDipRow,
 } from "@/app/(main-flat)/home/homeTypes";
-import type { HomeDiagnosticsApiPayload } from "@/lib/home/homeDiagnosticsApi";
+export { loadHomeDiagnosticsDataForUser } from "@/lib/home/loadHomeDiagnostics";
 import { CACHE_TTL_1H, HOME_SCATTER_HARD_CAP } from "@/lib/constants";
 import { getRollbackDate, rollbackDataDateToRunDate } from "@/lib/rollback";
 import { SOT_DATA_LAG_DAYS, addDaysISO, dataDateFromRunDate } from "@/lib/sotDates";
 import { cachedQuery } from "@/lib/supabase/cache";
+import { createPageScheduler, fetchOrderedPages, type PageScheduler } from "@/lib/supabase/orderedPages";
 import { supabaseService } from "@/lib/supabase/service";
 import { normalizeDatasetMode } from "@/lib/datasetMode";
 import { aggregateCompetitorPlaylistHistory } from "@/lib/competitorAnalytics";
 import { ALL_COMPETITORS_KEY, resolveCompetitorLabelKey } from "@/lib/competitorContext";
-import { timedServerStep } from "@/lib/serverTiming";
+import { loadHomeDiagnostics } from "@/lib/home/loadHomeDiagnostics";
+import { resolveHomeDataset } from "@/lib/home/homeDataset.server";
+import type { RequestAppContext } from "@/lib/requestAppContext.server";
 
 type Svc = ReturnType<typeof supabaseService>;
 
@@ -81,70 +80,54 @@ function sanitizeIsoDate(v: unknown): string | null {
 }
 
 async function fetchTrackScatterPoints(svc: Svc, args: { runDate: string; prevDate: string }) {
-  const pageSize = 1000;
-  const hardCap = HOME_SCATTER_HARD_CAP;
-
-  const out: Record<string, unknown>[] = [];
-  const seenIsrc = new Set<string>();
-
-  for (let offset = 0; offset < hardCap; offset += pageSize) {
-    const { data, error } = await svc
+  const rows = await fetchOrderedPages<Record<string, unknown>>({
+    pageSize: 1000,
+    maxRows: HOME_SCATTER_HARD_CAP,
+    fetchPage: async (offset, withCount) => {
+      const { data, error, count } = await svc
       .rpc("home_track_scatter_points", {
         p_run_date: args.runDate,
         p_prev_date: args.prevDate,
-      })
-      .range(offset, offset + pageSize - 1);
-
-    if (error) throw error;
-    const rows = (data ?? []) as Record<string, unknown>[];
-    if (!rows.length) break;
-
-    for (const r of rows) {
-      const isrc = String(r?.isrc ?? "").trim();
-      if (!isrc) continue;
-      if (seenIsrc.has(isrc)) continue;
-      seenIsrc.add(isrc);
-      out.push(r);
-    }
-
-    if (rows.length < pageSize) break;
-  }
-
-  return out;
+      }, withCount ? { count: "exact" } : undefined)
+      .range(offset, offset + 999);
+      if (error) throw error;
+      return { data, count };
+    },
+  });
+  return uniqueScatterRows(rows);
 }
 
 async function fetchCompetitorTrackScatterPoints(
   svc: Svc,
-  args: { labelKey: string; runDate: string; prevDate: string },
+  args: { labelKey: string; runDate: string; prevDate: string; schedule: PageScheduler },
 ) {
-  const pageSize = 1000;
-  const hardCap = HOME_SCATTER_HARD_CAP;
-  const out: Record<string, unknown>[] = [];
-  const seenIsrc = new Set<string>();
-
-  for (let offset = 0; offset < hardCap; offset += pageSize) {
-    const { data, error } = await svc
+  const rows = await fetchOrderedPages<Record<string, unknown>>({
+    pageSize: 1000,
+    maxRows: HOME_SCATTER_HARD_CAP,
+    fetchPage: (offset, withCount) => args.schedule(async () => {
+      const { data, error, count } = await svc
       .schema("competitor")
       .rpc("home_track_scatter_points_for_label", {
         label_key: args.labelKey,
         run_date: args.runDate,
         prev_date: args.prevDate,
-      })
-      .range(offset, offset + pageSize - 1);
+      }, withCount ? { count: "exact" } : undefined)
+      .range(offset, offset + 999);
+      if (error) throw error;
+      return { data, count };
+    }),
+  });
+  return uniqueScatterRows(rows);
+}
 
-    if (error) throw error;
-    const rows = (data ?? []) as Record<string, unknown>[];
-    if (!rows.length) break;
-    for (const r of rows) {
-      const isrc = String(r?.isrc ?? "").trim();
-      if (!isrc || seenIsrc.has(isrc)) continue;
-      seenIsrc.add(isrc);
-      out.push(r);
-    }
-    if (rows.length < pageSize) break;
-  }
-
-  return out;
+function uniqueScatterRows(rows: Record<string, unknown>[]) {
+  const seenIsrc = new Set<string>();
+  return rows.filter((row) => {
+    const isrc = String(row?.isrc ?? "").trim();
+    if (!isrc || seenIsrc.has(isrc)) return false;
+    seenIsrc.add(isrc);
+    return true;
+  });
 }
 
 function shortHash(s: string): string {
@@ -412,6 +395,8 @@ export async function resolveHomeScatterSelection(args: {
   competitorLabelKey: string | null;
   latestRunDate: string | null;
   latestDataDate: string | null;
+  /** Already started alongside the playlist date lookup by the API loader. */
+  latestTrackRunDate?: string | null;
 }) {
   const { svc, sp, datasetMode, competitorLabelKey, latestRunDate, latestDataDate } = args;
   const selectedDataDate = sanitizeIsoDate(sp.xy_date) ?? latestDataDate;
@@ -419,14 +404,8 @@ export async function resolveHomeScatterSelection(args: {
 
   if (datasetMode === "competitor" && competitorLabelKey && !sp.xy_date) {
     try {
-      const { data: latestTrackRow } = await svc
-        .schema("competitor")
-        .from("track_daily_streams")
-        .select("date")
-        .order("date", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      const latestTrackRunDate = (latestTrackRow as { date?: string } | null)?.date ?? null;
+      const latestTrackRunDate = args.latestTrackRunDate !== undefined
+        ? args.latestTrackRunDate : await fetchLatestCompetitorTrackRunDate(svc);
       if (latestTrackRunDate) selectedRunDate = latestTrackRunDate;
     } catch {
       // Keep the history-derived date as a safe fallback.
@@ -434,6 +413,16 @@ export async function resolveHomeScatterSelection(args: {
   }
 
   return { selectedDataDate, selectedRunDate };
+}
+
+async function fetchLatestCompetitorTrackRunDate(svc: Svc): Promise<string | null> {
+  try {
+    const { data } = await svc.schema("competitor").from("track_daily_streams")
+      .select("date").order("date", { ascending: false }).limit(1).maybeSingle();
+    return (data as { date?: string } | null)?.date ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export async function loadHomeScatterPoints(args: {
@@ -444,12 +433,18 @@ export async function loadHomeScatterPoints(args: {
   selectedRunDate: string | null;
 }): Promise<{ points: TrackStreamsXYPoint[]; errorMessage: string | null }> {
   const { svc, datasetMode, competitorLabelKey, competitorLabelName, selectedRunDate } = args;
+  // Keep unresolved competitor selections empty, including when a stale cache
+  // entry or a caller-supplied date would otherwise reach the own-catalog RPC.
+  if (datasetMode === "competitor" && !competitorLabelKey) {
+    return { points: [], errorMessage: null };
+  }
   const scatterCacheKey = `home-track-scatter-v11-${datasetMode}-${competitorLabelKey ?? "none"}-${selectedRunDate ?? "none"}`;
   const { data: trackScatterPoints, error: trackScatterErr } = await cachedQuery(
     async () => {
       if (!selectedRunDate) return { data: [] as TrackStreamsXYPoint[], error: null };
 
       const prevRunDate = addDaysIso(selectedRunDate, -1);
+      const schedule = createPageScheduler(4);
 
       const rows =
         datasetMode === "competitor" && competitorLabelKey
@@ -469,6 +464,7 @@ export async function loadHomeScatterPoints(args: {
                       labelKey: label.label_key,
                       runDate: selectedRunDate,
                       prevDate: prevRunDate,
+                      schedule,
                     })).map((row) => ({
                       ...row,
                       competitor_label_key: label.label_key,
@@ -481,6 +477,7 @@ export async function loadHomeScatterPoints(args: {
                 labelKey: competitorLabelKey,
                 runDate: selectedRunDate,
                 prevDate: prevRunDate,
+                schedule,
               })).map((row) => ({
                 ...row,
                 competitor_label_key: competitorLabelKey,
@@ -560,6 +557,7 @@ export async function loadHomeScatterDataForUser(args: {
   svc: Svc;
   userId: string;
   sp: HomeDashboardSearchParams;
+  context?: Pick<RequestAppContext, "settings" | "shellContext">;
 }): Promise<{ points: TrackStreamsXYPoint[]; errorMessage: string | null; dataDate: string | null }> {
   const { svc, userId, sp } = args;
   const scope = (sp.scope ?? "all_catalog").toLowerCase();
@@ -568,7 +566,7 @@ export async function loadHomeScatterDataForUser(args: {
 
   // Settings and rollback date are independent; fetch them together.
   const [settingsRes, rollbackDate] = await Promise.all([
-    svc
+    args.context ? Promise.resolve({ data: args.context.settings }) : svc
       .from("user_settings")
       .select("dataset_mode,competitor_label_key")
       .eq("user_id", userId)
@@ -576,40 +574,18 @@ export async function loadHomeScatterDataForUser(args: {
     getRollbackDate(),
   ]);
   const settings = settingsRes.data;
-  const datasetMode = normalizeDatasetMode(settings?.dataset_mode);
-  let competitorLabelKey =
-    typeof settings?.competitor_label_key === "string" && settings.competitor_label_key.trim()
-      ? settings.competitor_label_key.trim()
-      : null;
-  let competitorLabelName: string | null = null;
-
-  if (datasetMode === "competitor" && competitorLabelKey && competitorLabelKey !== ALL_COMPETITORS_KEY) {
-    const { data: label } = await svc
-      .schema("competitor")
-      .from("labels")
-      .select("display_name")
-      .eq("label_key", competitorLabelKey)
-      .maybeSingle();
-    competitorLabelName = (label as { display_name?: string | null } | null)?.display_name ?? competitorLabelKey;
-  }
-  if (datasetMode === "competitor" && (!competitorLabelKey || competitorLabelKey === ALL_COMPETITORS_KEY)) {
-    const { data: labels } = await svc
-      .schema("competitor")
-      .from("labels")
-      .select("label_key,display_name")
-      .eq("is_active", true)
-      .order("display_name", { ascending: true });
-    const typedLabels = (labels ?? []) as Array<{ label_key: string; display_name: string }>;
-    competitorLabelKey = competitorLabelKey === ALL_COMPETITORS_KEY ? ALL_COMPETITORS_KEY : resolveCompetitorLabelKey(null, typedLabels);
-    competitorLabelName =
-      competitorLabelKey === ALL_COMPETITORS_KEY
-        ? "All Competitors"
-        : typedLabels.find((label) => label.label_key === competitorLabelKey)?.display_name ?? competitorLabelKey;
-  }
+  const { datasetMode, competitorLabelKey, competitorLabelName } = await resolveHomeDataset({
+    svc, settings, labels: args.context?.shellContext.competitorLabels,
+  });
 
   const rollbackRunDate = rollbackDate ? rollbackDataDateToRunDate(rollbackDate) : null;
 
-  const { data: latestRow } = await cachedQuery<{ date: string } | null>(
+  // The track snapshot date does not depend on playlist history or rollback.
+  const latestTrackPromise = datasetMode === "competitor" && competitorLabelKey && !sp.xy_date
+    ? fetchLatestCompetitorTrackRunDate(svc) : Promise.resolve(null);
+  const latestRowPromise = datasetMode === "competitor" && !competitorLabelKey
+    ? Promise.resolve({ data: null, error: null })
+    : cachedQuery<{ date: string } | null>(
     async () => {
       if (datasetMode === "competitor" && competitorLabelKey) {
         const comp = svc.schema("competitor");
@@ -632,6 +608,8 @@ export async function loadHomeScatterDataForUser(args: {
     CACHE_TTL_1H,
   );
 
+  const [{ data: latestRow }, latestTrackRunDate] = await Promise.all([latestRowPromise, latestTrackPromise]);
+
   const latestRunDate = latestRow?.date ?? null;
   const latestDataDate = latestRunDate ? dataDateFromRunDate(latestRunDate) : null;
   const { selectedDataDate, selectedRunDate } = await resolveHomeScatterSelection({
@@ -641,6 +619,7 @@ export async function loadHomeScatterDataForUser(args: {
     competitorLabelKey,
     latestRunDate,
     latestDataDate,
+    latestTrackRunDate,
   });
   const scatter = await loadHomeScatterPoints({
     svc,
@@ -651,31 +630,6 @@ export async function loadHomeScatterDataForUser(args: {
   });
 
   return { points: scatter.points, errorMessage: scatter.errorMessage, dataDate: selectedDataDate };
-}
-
-export async function loadHomeDiagnosticsDataForUser(args: {
-  sb: SupabaseClient;
-  svc: Svc;
-  userId: string;
-  sp: HomeDashboardSearchParams;
-}): Promise<HomeDiagnosticsApiPayload> {
-  const props = await loadHomeDashboardData({
-    ...args,
-    includeScatter: false,
-    includeDiagnostics: true,
-    // Fetch only what the 4 diagnostics RPCs need (settings, health config,
-    // latest run date) — skip history rows, override annotations, playlist
-    // images, and competitor playlist lists the home page already loaded.
-    diagnosticsOnly: true,
-  });
-
-  return {
-    artistWeekendDips: props.artistWeekendDips,
-    trackWeekendDips: props.trackWeekendDips,
-    negativeDailyStreams: props.negativeDailyStreams,
-    artificialStreamSpikes: props.artificialStreamSpikes,
-    errorMessage: props.homeDiagnosticsErrorMessage ?? null,
-  };
 }
 
 type HomeDashboardLoadArgs = {
@@ -931,7 +885,9 @@ async function loadHomeDashboardDataImpl(args: HomeDashboardLoadArgs): Promise<H
     if (!isSpecificCompetitor) await competitorDetailsPromise;
   }
 
-  const historyResult = await cachedQuery<PlaylistDailyStatsRow[]>(
+  const historyResult = datasetMode === "competitor" && !competitorLabelKey
+    ? { data: [] as PlaylistDailyStatsRow[], error: null }
+    : await cachedQuery<PlaylistDailyStatsRow[]>(
     async () => {
       if (datasetMode === "competitor" && competitorLabelKey) {
         const comp = svc.schema("competitor");
@@ -1223,93 +1179,10 @@ async function loadHomeDashboardDataImpl(args: HomeDashboardLoadArgs): Promise<H
     return out;
   })();
 
-  const competitorRpcLabelKey =
-    datasetMode === "competitor" && competitorLabelKey && competitorLabelKey !== ALL_COMPETITORS_KEY
-      ? competitorLabelKey
-      : null;
-  const weekendAnchorDate = datasetMode === "competitor" ? latestRunDate : latestDataDate;
-
-  const artificialSpikesCacheKey = `home-artificial-stream-spikes-v6-${datasetMode}-${competitorRpcLabelKey ?? "none"}-${artificialSpikeRatio}-${artificialMinBaseline}-${artificialGraceDays}-${artificialThresholdCrossing}-${artificialIncludeWeekends ? "wknd1" : "wknd0"}-${spikeFilterRunStart ?? "none"}-${spikeFilterRunEnd ?? "none"}-ov${overrideBuster}`;
-
   const diagnosticsPromise = includeDiagnostics
-    ? timedServerStep("home.diagnostics", () =>
-      Promise.all([
-        cachedQuery(
-          async () => {
-            if (datasetMode === "competitor") {
-              return await svc.schema("competitor").rpc("home_artist_weekend_dips", {
-                p_min_weekday_avg: 0,
-                p_anchor_snapshot_date: weekendAnchorDate ?? null,
-                p_label_key: competitorRpcLabelKey,
-              });
-            }
-            return await svc.rpc("home_artist_weekend_dips", {
-              p_min_weekday_avg: 0,
-              p_anchor_data_date: latestDataDate ?? null,
-            });
-          },
-          `home-artist-weekend-dips-v4-${datasetMode}-${competitorRpcLabelKey ?? "none"}-${playlistKey}-${weekendAnchorDate ?? "none"}-ov${overrideBuster}`,
-          CACHE_TTL_1H,
-        ),
-        cachedQuery(
-          async () => {
-            if (datasetMode === "competitor") {
-              return await svc.schema("competitor").rpc("home_track_weekend_dips", {
-                p_min_weekday_avg: 0,
-                p_anchor_snapshot_date: weekendAnchorDate ?? null,
-                p_label_key: competitorRpcLabelKey,
-              });
-            }
-            return await svc.rpc("home_track_weekend_dips", {
-              p_min_weekday_avg: 0,
-              p_anchor_data_date: latestDataDate ?? null,
-            });
-          },
-          `home-track-weekend-dips-v4-${datasetMode}-${competitorRpcLabelKey ?? "none"}-${playlistKey}-${weekendAnchorDate ?? "none"}-ov${overrideBuster}`,
-          CACHE_TTL_1H,
-        ),
-        cachedQuery(
-          async () => {
-            if (datasetMode === "competitor") {
-              return await svc.schema("competitor").rpc("home_negative_daily_streams", {
-                p_label_key: competitorRpcLabelKey,
-              });
-            }
-            return await svc.rpc("home_negative_daily_streams");
-          },
-          `home-negative-daily-v5-${datasetMode}-${competitorRpcLabelKey ?? "none"}-ov${overrideBuster}`,
-          CACHE_TTL_1H,
-        ),
-        cachedQuery(
-          async () => {
-            if (datasetMode === "competitor") {
-              return await svc.schema("competitor").rpc("home_artificial_stream_spikes", {
-                p_spike_ratio: artificialSpikeRatio,
-                p_min_baseline: artificialMinBaseline,
-                p_grace_days: artificialGraceDays,
-                p_threshold_crossing_max: artificialThresholdCrossing,
-                p_include_weekends: artificialIncludeWeekends,
-                p_start_date: spikeFilterRunStart,
-                p_end_date: spikeFilterRunEnd,
-                p_label_key: competitorRpcLabelKey,
-              });
-            }
-            const { data, error } = await svc.rpc("home_artificial_stream_spikes", {
-              p_spike_ratio: artificialSpikeRatio,
-              p_min_baseline: artificialMinBaseline,
-              p_grace_days: artificialGraceDays,
-              p_threshold_crossing_max: artificialThresholdCrossing,
-              p_include_weekends: artificialIncludeWeekends,
-              p_start_date: spikeFilterRunStart ?? undefined,
-              p_end_date: spikeFilterRunEnd ?? undefined,
-            });
-            return { data, error };
-          },
-          artificialSpikesCacheKey,
-          CACHE_TTL_1H,
-        ),
-      ]),
-    )
+    ? loadHomeDiagnostics({ svc, datasetMode, competitorLabelKey, playlistKey, latestRunDate, latestDataDate,
+        artificialSpikeRatio, artificialMinBaseline, artificialGraceDays, artificialThresholdCrossing,
+        artificialIncludeWeekends, spikeFilterRunStart, spikeFilterRunEnd, overrideBuster })
     : null;
 
   const [{ selectedDataDate, scatter }, overrideAnnotations, diagnosticsResults, entityHistory] = await Promise.all([
@@ -1318,48 +1191,6 @@ async function loadHomeDashboardDataImpl(args: HomeDashboardLoadArgs): Promise<H
     diagnosticsPromise,
     entityHistoryPromise,
   ]);
-
-  let artistWeekendDipsRaw: unknown[] = [];
-  let trackWeekendDipsRaw: unknown[] = [];
-  let negativeDailyStreamsRaw: unknown[] = [];
-  let artificialStreamSpikesRaw: unknown[] = [];
-  let homeDiagnosticsErrorMessage: string | null = null;
-
-  if (diagnosticsResults) {
-    const [
-      artistWeekendDipsResult,
-      trackWeekendDipsResult,
-      negativeDailyStreamsResult,
-      artificialStreamSpikesResult,
-    ] = diagnosticsResults;
-    artistWeekendDipsRaw = (artistWeekendDipsResult.data ?? []) as unknown[];
-    trackWeekendDipsRaw = (trackWeekendDipsResult.data ?? []) as unknown[];
-    negativeDailyStreamsRaw = (negativeDailyStreamsResult.data ?? []) as unknown[];
-    artificialStreamSpikesRaw = (artificialStreamSpikesResult.data ?? []) as unknown[];
-    homeDiagnosticsErrorMessage =
-      artistWeekendDipsResult.error?.message ??
-      trackWeekendDipsResult.error?.message ??
-      negativeDailyStreamsResult.error?.message ??
-      artificialStreamSpikesResult.error?.message ??
-      null;
-  }
-
-  const artificialStreamSpikes: ArtificialStreamSpikeRow[] = (artificialStreamSpikesRaw as Record<string, unknown>[]).map(
-    (r) => ({
-      isrc: String(r.isrc ?? "").trim(),
-      name: typeof r.name === "string" ? r.name : String(r.isrc ?? ""),
-      artist_names: Array.isArray(r.artist_names) ? (r.artist_names as string[]) : null,
-      artist_ids: Array.isArray(r.artist_ids) ? (r.artist_ids as string[]) : null,
-      album_image_url: typeof r.album_image_url === "string" ? r.album_image_url : null,
-      date: String(r.date ?? "").slice(0, 10),
-      daily_streams: Number(r.daily_streams ?? 0) || 0,
-      avg_same_dow:
-        r.avg_same_dow != null && Number.isFinite(Number(r.avg_same_dow)) ? Number(r.avg_same_dow) : null,
-      spike_ratio:
-        r.spike_ratio != null && Number.isFinite(Number(r.spike_ratio)) ? Number(r.spike_ratio) : null,
-      streams_cumulative: Number(r.streams_cumulative ?? 0) || 0,
-    }),
-  );
 
   return {
     sp,
@@ -1384,12 +1215,12 @@ async function loadHomeDashboardDataImpl(args: HomeDashboardLoadArgs): Promise<H
     latestRunDate,
     latestDataDate,
     overrideAnnotations,
-    artistWeekendDips: (artistWeekendDipsRaw as ArtistWeekendDipRow[] | null) ?? [],
-    trackWeekendDips: (trackWeekendDipsRaw as TrackWeekendDipRow[] | null) ?? [],
-    negativeDailyStreams: (negativeDailyStreamsRaw as NegativeDailyStreamsRow[] | null) ?? [],
-    artificialStreamSpikes,
+    artistWeekendDips: diagnosticsResults?.artistWeekendDips ?? [],
+    trackWeekendDips: diagnosticsResults?.trackWeekendDips ?? [],
+    negativeDailyStreams: diagnosticsResults?.negativeDailyStreams ?? [],
+    artificialStreamSpikes: diagnosticsResults?.artificialStreamSpikes ?? [],
     homeDiagnosticsDeferred: !includeDiagnostics,
-    homeDiagnosticsErrorMessage,
+    homeDiagnosticsErrorMessage: diagnosticsResults?.errorMessage ?? null,
     artificialStreamSpikeRatio: artificialSpikeRatio,
     artificialMinBaseline: artificialMinBaseline,
     artificialIncludeWeekends,

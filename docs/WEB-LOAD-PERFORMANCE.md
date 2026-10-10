@@ -84,3 +84,65 @@ Production `next start` on port 3100 returns HTTP 307 for session-less Home and
 invalid-cookie Home/Playlists requests. The build's loadable manifest confirms
 separate chunks for both deferred chart sections. No authenticated browser
 session was available for a visual/TTFB check.
+
+## Home API and Catalog scheduling (perf/web-load-2)
+
+The extended 80 ms harness captured API responses, Catalog props, and query
+multisets before changes; its temporary baseline remains unchanged. A canonical
+JSON diff traced the initial equality failure to harness normalization stripping
+an existing Playlists `select("id", { count: "exact" })` option. Restoring verbatim
+recording fixed it. `STREAMBASE_PERF_DIFF=1` writes canonical expected/actual files
+beside the baseline to expose hidden representation differences.
+
+| `[perf]` label | Before ms | After ms |
+| --- | ---: | ---: |
+| own.diagnostics | 408.6 | 329.1 |
+| competitor.diagnostics | 482.4 | 402.9 |
+| own.scatter | 1062.7 | 584.8 |
+| competitor.scatter | 1305.7 | 659.3 |
+| own.catalog | 1385.7 | 900.7 |
+| competitor.catalog | 648.3 | 645.3 |
+
+Timings include authorization. Scatter uses 6,500 rows with a duplicate across a
+page boundary; Catalog uses a synthetic 3,500-row stress case. Real selected-track
+date windows usually fit one page. The unused 2,000-row recent-track helper is
+unchanged; the active dropdown already uses `catalog_artist_options`.
+
+Home APIs reuse request settings/labels without changing the identity gate or
+caching authorization across requests. Diagnostics loads only its inputs and four
+parallel RPCs; scatter overlaps playlist/track date reads. Inactive keys retain
+their lookup, and unordered all-competitors enumeration preserves point order.
+Catalog overlaps series, aggregates, annotations, selected-track metadata, and
+artist images; its competitor path is unchanged.
+
+Paging requests an exact count on the first page, fetches remaining ranges at
+concurrency four, and merges in page order. All-competitors loads share that limit
+across labels. Missing counts fall back to sequential reads; caps, deduplication,
+and terminal-page behavior are preserved. Fixtures do not measure database count
+cost or authenticated browser performance.
+
+All payloads match exactly. Home/Playlists/Catalog query multisets match verbatim.
+API settings queries are replaced by the context settings query; known-label name
+reads are removed. The harness asserts these exact signature differences once,
+then compares every retained query verbatim and checks count headers separately.
+
+Verification: lint has zero errors (218 warnings); TypeScript passes; full Vitest
+passes 467 tests (one opt-in benchmark skipped); the explicit benchmark passes.
+The production build passes.
+Regressions cover ranges/rollback/overrides, null settings, label selections,
+invalid/revoked sessions, paging order/caps/fallback/errors, and shared concurrency.
+No SQL, migrations, staleTimes, cache TTLs, or accounting logic changed.
+
+## Review follow-up: label failures and growing pages
+
+An empty shell-label list now falls back to live competitor labels. If that lookup
+is empty or fails, Home history and scatter stay empty rather than querying own
+analytics, including when a scatter date is supplied. Diagnostics retains its
+competitor RPC scope. These regressions failed before the fix.
+
+The first paging count now only schedules concurrent work. If the last scheduled
+page is full, sequential reads continue until a short page or the original cap.
+Growth tests preserve page order and duplicate rows, including an initially empty
+terminal page that becomes full. The revoked-session regression asserts both
+Home APIs return 401 with only authorization reads and no analytics queries;
+the identity gate is unchanged.
