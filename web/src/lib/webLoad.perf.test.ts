@@ -12,6 +12,7 @@ const fixture = vi.hoisted(() => {
   let rollback: string | null = null;
   let settingsOverrides: Record<string, unknown> = {};
   let healthRows: Array<{ key: string; value_numeric: unknown }> = [];
+  let labelState: { shellEmpty?: boolean; liveEmpty?: boolean; liveFailed?: boolean } = {};
   const queries: string[] = [];
   const countPreferences: string[] = [];
   const delay = () => new Promise((resolve) => setTimeout(resolve, 80));
@@ -58,7 +59,10 @@ const fixture = vi.hoisted(() => {
       else if (name === "user_settings") data = { dataset_mode: mode, competitor_label_key: savedLabelKey, hide_stale_override_annotations: false, ...settingsOverrides };
       else if (name === "health_config") data = healthRows;
       else if (name === "spotibase_override_version") data = "1-1";
-      else if (name === "labels") data = [{ label_key: "label", display_name: "Label" }];
+      else if (name === "labels") {
+        if (labelState.liveFailed) return resolve({ data: null, error: { message: "labels unavailable" }, count: 0 });
+        data = labelState.liveEmpty ? [] : [{ label_key: "label", display_name: "Label" }];
+      }
       else if (name === "playlists") data = selection.includes("playlist_key") ? [{ playlist_key: "all_catalog", display_name: "All Catalog", is_catalog: true }] : [];
       else if (name === "playlist_daily_stats") data = history;
       else if (name === "track_daily_stream_overrides") data = selection === "id" ? [{ id: 1 }] : [{ date: "2026-10-09", isrc: "ISRC", note: "Manual" }];
@@ -88,15 +92,17 @@ const fixture = vi.hoisted(() => {
     setMode: (value: string) => { mode = value; },
     setInvalid: (value: boolean) => { invalid = value; },
     setRevoked: (value: boolean) => { revoked = value; },
-    configure: (label: string | null = "label", rollbackDate: string | null = null, overrides: Record<string, unknown> = {}, health: typeof healthRows = []) => {
+    configure: (label: string | null = "label", rollbackDate: string | null = null, overrides: Record<string, unknown> = {}, health: typeof healthRows = [], labels: typeof labelState = {}) => {
       savedLabelKey = label; rollback = rollbackDate; settingsOverrides = overrides; healthRows = health;
+      labelState = labels;
     },
+    shellLabels: () => labelState.shellEmpty ? [] : [{ label_key: "label", display_name: "Label", image_url: null, accent_hex: "abcdef" }],
     cookie: () => rollback ? { value: rollback } : undefined,
   };
 });
 vi.mock("@/lib/supabase/server", () => ({ supabaseServer: async () => fixture.client() }));
 vi.mock("@/lib/supabase/service", () => ({ supabaseService: () => fixture.client() }));
-vi.mock("@/lib/competitorContext.server", async (original) => ({ ...await original<object>(), loadCompetitorLabelsWithImages: async () => [{ label_key: "label", display_name: "Label", image_url: null, accent_hex: "abcdef" }] }));
+vi.mock("@/lib/competitorContext.server", async (original) => ({ ...await original<object>(), loadCompetitorLabelsWithImages: async () => fixture.shellLabels() }));
 vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => fixture.cookie() }) }));
 vi.mock("next/cache", () => ({ unstable_cache: (fn: unknown) => fn }));
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw new Error(`redirect:${url}`); } }));
@@ -109,7 +115,8 @@ import { GET as diagnosticsGET } from "@/app/api/home/diagnostics/route";
 import { GET as scatterGET } from "@/app/api/home/scatter/route";
 import CatalogPage from "@/app/(main-flat)/catalog/page";
 import { getRequestAppContext } from "@/lib/requestAppContext.server";
-import { loadHomeDashboardData, loadHomeDiagnosticsDataForUser, loadHomeScatterDataForUser } from "@/lib/home/loadHomeDashboard";
+import { loadHomeDashboardData, loadHomeDiagnosticsDataForUser, loadHomeScatterDataForUser, loadHomeScatterPoints } from "@/lib/home/loadHomeDashboard";
+import { resolveHomeDataset } from "@/lib/home/homeDataset.server";
 import { normalizeHomeDiagnosticsApiPayload } from "@/lib/home/homeDiagnosticsApi";
 import HomePage from "@/app/(main-flat)/page";
 import PlaylistsPage from "@/app/(main-flat)/playlists/page";
@@ -225,6 +232,63 @@ describe.skipIf(process.env.STREAMBASE_PERF_LOG !== "1")("web load benchmark", (
 
 // Always run the authorization regression; the timing comparison remains opt-in.
 describe("Home API loader equivalence", () => {
+  it("falls back to live labels when cached shell labels are empty", async () => {
+    fixture.setMode("competitor");
+    fixture.configure(null, null, {}, [], { shellEmpty: true });
+    try {
+      const context = await getRequestAppContext();
+      fixture.queries.length = 0;
+      const selection = await resolveHomeDataset({ svc: context.svc, settings: context.settings, labels: context.shellContext.competitorLabels });
+      expect(selection).toEqual({ datasetMode: "competitor", competitorLabelKey: "__all__", competitorLabelName: "All Competitors" });
+      expect(fixture.queries.map((q) => JSON.parse(q).slice(0, 2))).toEqual([["competitor", "labels"]]);
+      const scatter = await loadHomeScatterDataForUser({ svc: context.svc, userId: "fixture", sp: {}, context });
+      expect(scatter.points).toHaveLength(6499);
+      expect(fixture.queries.some((q) => {
+        const [schema, name] = JSON.parse(q);
+        return schema === "public" && ["playlist_daily_stats", "home_track_scatter_points"].includes(name);
+      })).toBe(false);
+    } finally { fixture.configure(); }
+  });
+
+  for (const unavailable of ["empty", "failed"] as const) {
+    it(`never reads public analytics when live competitor labels are ${unavailable}`, async () => {
+      fixture.setMode("competitor");
+      fixture.configure(null, null, {}, [], { shellEmpty: true, liveEmpty: unavailable === "empty", liveFailed: unavailable === "failed" });
+      try {
+        const context = await getRequestAppContext();
+        fixture.queries.length = 0;
+        for (const sp of [{}, { xy_date: "2026-10-06" }]) {
+          const scatter = await loadHomeScatterDataForUser({ svc: context.svc, userId: "fixture", sp, context });
+          expect(scatter).toEqual({ points: [], errorMessage: null, dataDate: sp.xy_date ?? null });
+        }
+        // A direct caller with a known date must also be unable to select own data.
+        expect(await loadHomeScatterPoints({ svc: context.svc, datasetMode: "competitor", competitorLabelKey: null,
+          competitorLabelName: null, selectedRunDate: "2026-10-09" })).toEqual({ points: [], errorMessage: null });
+        await loadHomeDiagnosticsDataForUser({ sb: context.sb, svc: context.svc, userId: "fixture", sp: {}, context });
+        await loadHomeDashboardData({ sb: context.sb, svc: context.svc, userId: "fixture", sp: {}, settings: context.settings,
+          includeScatter: true, includeDiagnostics: true });
+        expect(fixture.queries.some((q) => {
+          const [schema, name] = JSON.parse(q);
+          return schema === "public" && (name === "playlist_daily_stats" || name.startsWith("home_"));
+        })).toBe(false);
+      } finally { fixture.configure(); }
+    });
+  }
+
+  it("returns 401 for revoked Home API sessions without analytics queries", async () => {
+    fixture.setMode("competitor");
+    fixture.setRevoked(true);
+    try {
+      for (const [path, route] of [["diagnostics", diagnosticsGET], ["scatter", scatterGET]] as const) {
+        fixture.queries.length = 0;
+        const response = await route(new NextRequest(`https://fixture.invalid/api/home/${path}`));
+        expect(response.status).toBe(401);
+        expect(await response.json()).toEqual({ success: false, error: "unauthenticated" });
+        expect(fixture.queries.map((q) => JSON.parse(q)[1]).sort()).toEqual(["app_user_access", "is_admin", "user_settings"]);
+      }
+    } finally { fixture.setRevoked(false); }
+  });
+
   for (const revoked of [false, true]) {
     it(`rejects ${revoked ? "revoked" : "invalid"} API sessions before analytics`, async () => {
       fixture.setInvalid(!revoked);

@@ -433,6 +433,11 @@ export async function loadHomeScatterPoints(args: {
   selectedRunDate: string | null;
 }): Promise<{ points: TrackStreamsXYPoint[]; errorMessage: string | null }> {
   const { svc, datasetMode, competitorLabelKey, competitorLabelName, selectedRunDate } = args;
+  // Keep unresolved competitor selections empty, including when a stale cache
+  // entry or a caller-supplied date would otherwise reach the own-catalog RPC.
+  if (datasetMode === "competitor" && !competitorLabelKey) {
+    return { points: [], errorMessage: null };
+  }
   const scatterCacheKey = `home-track-scatter-v11-${datasetMode}-${competitorLabelKey ?? "none"}-${selectedRunDate ?? "none"}`;
   const { data: trackScatterPoints, error: trackScatterErr } = await cachedQuery(
     async () => {
@@ -578,7 +583,9 @@ export async function loadHomeScatterDataForUser(args: {
   // The track snapshot date does not depend on playlist history or rollback.
   const latestTrackPromise = datasetMode === "competitor" && competitorLabelKey && !sp.xy_date
     ? fetchLatestCompetitorTrackRunDate(svc) : Promise.resolve(null);
-  const latestRowPromise = cachedQuery<{ date: string } | null>(
+  const latestRowPromise = datasetMode === "competitor" && !competitorLabelKey
+    ? Promise.resolve({ data: null, error: null })
+    : cachedQuery<{ date: string } | null>(
     async () => {
       if (datasetMode === "competitor" && competitorLabelKey) {
         const comp = svc.schema("competitor");
@@ -878,7 +885,9 @@ async function loadHomeDashboardDataImpl(args: HomeDashboardLoadArgs): Promise<H
     if (!isSpecificCompetitor) await competitorDetailsPromise;
   }
 
-  const historyResult = await cachedQuery<PlaylistDailyStatsRow[]>(
+  const historyResult = datasetMode === "competitor" && !competitorLabelKey
+    ? { data: [] as PlaylistDailyStatsRow[], error: null }
+    : await cachedQuery<PlaylistDailyStatsRow[]>(
     async () => {
       if (datasetMode === "competitor" && competitorLabelKey) {
         const comp = svc.schema("competitor");

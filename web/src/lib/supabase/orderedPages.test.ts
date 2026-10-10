@@ -2,6 +2,40 @@ import { describe, expect, it } from "vitest";
 import { createPageScheduler, fetchOrderedPages } from "./orderedPages";
 
 describe("ordered counted pages", () => {
+  it("continues after counted pages when the dataset grows", async () => {
+    const source = [0, 1, 2, 3, 4];
+    const offsets: number[] = [];
+    const result = await fetchOrderedPages({
+      pageSize: 2,
+      maxRows: 20,
+      fetchPage: async (offset, withCount) => {
+        offsets.push(offset);
+        if (offset === 2) source.push(4, 5, 6, 7);
+        // Resolve the second concurrent page before the first.
+        await new Promise((resolve) => setTimeout(resolve, offset === 2 ? 5 : 0));
+        return { data: source.slice(offset, offset + 2), count: withCount ? 5 : null };
+      },
+    });
+    expect(result).toEqual([0, 1, 2, 3, 4, 4, 5, 6, 7]);
+    expect(offsets).toEqual([0, 2, 4, 6, 8]);
+  });
+
+  it("continues when the counted empty terminal page becomes full", async () => {
+    const source = [0, 1, 2, 3];
+    const offsets: number[] = [];
+    const result = await fetchOrderedPages({
+      pageSize: 2,
+      maxRows: 20,
+      fetchPage: async (offset, withCount) => {
+        offsets.push(offset);
+        if (offset === 2) source.push(4, 5, 6, 7, 8);
+        return { data: source.slice(offset, offset + 2), count: withCount ? 4 : null };
+      },
+    });
+    expect(result).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(offsets).toEqual([0, 2, 4, 6, 8]);
+  });
+
   for (const count of [0, 3, 4, 8, 27, 40]) {
     it(`matches sequential ranges and rows for ${count} rows`, async () => {
       const source = Array.from({ length: count }, (_, i) => i);

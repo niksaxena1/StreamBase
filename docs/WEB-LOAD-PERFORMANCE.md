@@ -132,3 +132,17 @@ The production build passes.
 Regressions cover ranges/rollback/overrides, null settings, label selections,
 invalid/revoked sessions, paging order/caps/fallback/errors, and shared concurrency.
 No SQL, migrations, staleTimes, cache TTLs, or accounting logic changed.
+
+## Review follow-up: label failures and growing pages
+
+An empty shell-label list now falls back to live competitor labels. If that lookup
+is empty or fails, Home history and scatter stay empty rather than querying own
+analytics, including when a scatter date is supplied. Diagnostics retains its
+competitor RPC scope. These regressions failed before the fix.
+
+The first paging count now only schedules concurrent work. If the last scheduled
+page is full, sequential reads continue until a short page or the original cap.
+Growth tests preserve page order and duplicate rows, including an initially empty
+terminal page that becomes full. The revoked-session regression asserts both
+Home APIs return 401 with only authorization reads and no analytics queries;
+the identity gate is unchanged.

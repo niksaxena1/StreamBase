@@ -53,5 +53,14 @@ export async function fetchOrderedPages<T>(args: {
       if (rows.length < pageSize) return out;
     }
   }
+  // The first count is only a scheduling hint: ingestion may append rows while
+  // these pages are in flight. A full final page needs the original sequential
+  // continuation, bounded by page starts just as in the legacy loop.
+  for (let offset = end; offset < maxRows; offset += pageSize) {
+    const { data } = await fetchPage(offset, false);
+    const rows = data ?? [];
+    out.push(...rows);
+    if (rows.length < pageSize) break;
+  }
   return out;
 }

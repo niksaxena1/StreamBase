@@ -27,7 +27,9 @@ export async function resolveHomeDataset(args: {
           competitorLabelName = label?.display_name ?? competitorLabelKey;
         }
       } else {
-        const typedLabels = labels ?? (await svc.schema("competitor").from("labels")
+        // An empty shell list may represent a failed image/label cache load.
+        // It must not suppress the live lookup that resolves an unset selection.
+        const typedLabels = labels?.length ? labels : (await svc.schema("competitor").from("labels")
           .select("label_key,display_name").eq("is_active", true)
           .order("display_name", { ascending: true })).data ?? [];
         competitorLabelKey = competitorLabelKey === ALL_COMPETITORS_KEY

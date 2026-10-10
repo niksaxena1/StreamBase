@@ -59,7 +59,9 @@ export async function loadHomeDiagnosticsDataForUser(args: {
     const rollbackRunDate = rollbackDate ? rollbackDataDateToRunDate(rollbackDate) : null;
     // Use the same diagnostic-only history key and query as Home. No annotations,
     // images, entity history, or chart payloads are loaded or constructed here.
-    const { data: history } = await cachedQuery<PlaylistDailyStatsRow[]>(async () => {
+    const { data: history } = datasetMode === "competitor" && !competitorLabelKey
+      ? { data: [] as PlaylistDailyStatsRow[] }
+      : await cachedQuery<PlaylistDailyStatsRow[]>(async () => {
       if (datasetMode === "competitor" && competitorLabelKey) {
         const comp = svc.schema("competitor");
         let q = comp.from("playlists").select("playlist_key").eq("is_active", true);
