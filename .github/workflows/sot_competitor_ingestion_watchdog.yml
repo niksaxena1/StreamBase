@@ -5,7 +5,7 @@ permissions:
 
 on:
   schedule:
-    # 18:29 Dubai (GST, UTC+4) == 14:29 UTC, after all Competitor export retries.
+    # 18:29 Dubai (GST, UTC+4) == 14:29 UTC, after the Competitor export fallback.
     - cron: "29 14 * * *"
   workflow_dispatch:
     inputs:
@@ -50,6 +50,33 @@ jobs:
           STATS_COUNT="0"
           STALE_EFFECTIVE="?"
 
+          # PostgREST can return rows, a single object, or an HTTP error object.
+          # curl without --fail also returns error bodies on HTTP 4xx/5xx.
+          postgrest_field() {
+            python3 - "$@" <<'PY'
+          import json
+          import sys
+
+          raw, field, fallback = sys.argv[1:]
+          try:
+              row = json.loads(raw)
+              if isinstance(row, list):
+                  row = row[0] if row else None
+              if not isinstance(row, dict) or any(k in row for k in ("code", "message", "error")):
+                  value = fallback
+              else:
+                  value = row.get(field)
+                  if value is None or isinstance(value, (dict, list, bool)) or value == "":
+                      value = fallback
+                  if field == "stale_effective":
+                      value = str(value)
+                      value = int(value) if value.isascii() and value.isdigit() else fallback
+          except (ValueError, TypeError, IndexError):
+              value = fallback
+          print(value)
+          PY
+          }
+
           if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
             SHOULD_NOTIFY="true"
             SUBJECT="[StreamBase] Competitor watchdog cannot check Supabase"
@@ -61,9 +88,9 @@ jobs:
             RUN_JSON=$(curl -sS "${AUTH_HEADERS[@]}" \
               "$BASE/ingestion_runs?select=id,status,logs_url,created_at&run_date=eq.${RUN_DATE}&order=created_at.desc&limit=1" || echo "[]")
 
-            STATUS=$(python3 -c "import json,sys; d=json.loads(sys.argv[1] or '[]'); print((d[0].get('status') if d else 'missing') or 'missing')" "$RUN_JSON")
-            RUN_ID=$(python3 -c "import json,sys; d=json.loads(sys.argv[1] or '[]'); print((d[0].get('id') if d else '') or '')" "$RUN_JSON")
-            LOGS_URL=$(python3 -c "import json,sys; d=json.loads(sys.argv[1] or '[]'); print((d[0].get('logs_url') if d else '') or '')" "$RUN_JSON")
+            STATUS=$(postgrest_field "$RUN_JSON" status missing)
+            RUN_ID=$(postgrest_field "$RUN_JSON" id "")
+            LOGS_URL=$(postgrest_field "$RUN_JSON" logs_url "")
 
             SNAPSHOT_RANGE=$(curl -sSI "${AUTH_HEADERS[@]}" -H "Prefer: count=exact" \
               "$BASE/track_daily_streams?select=isrc&date=eq.${RUN_DATE}" | tr -d '\r' | awk -F'/' 'tolower($0) ~ /^content-range:/ {print $2}' | tail -1)
@@ -76,7 +103,7 @@ jobs:
             STALE_JSON=$(curl -sS -X POST "${AUTH_HEADERS[@]}" -H "Content-Profile: competitor" \
               -H "Content-Type: application/json" -d "{\"p_date\":\"${RUN_DATE}\"}" \
               "$BASE/rpc/spotibase_stale_summary" || echo "[]")
-            STALE_EFFECTIVE=$(python3 -c "import json,sys; d=json.loads(sys.argv[1] or '[]'); print((d[0].get('stale_effective') if d else '?'))" "$STALE_JSON")
+            STALE_EFFECTIVE=$(postgrest_field "$STALE_JSON" stale_effective "?")
 
             if [ "$STATUS" != "success" ] || [ "$SNAPSHOT_COUNT" = "0" ] || [ "$STATS_COUNT" = "0" ]; then
               SHOULD_NOTIFY="true"

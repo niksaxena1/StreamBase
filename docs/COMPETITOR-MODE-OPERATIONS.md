@@ -45,11 +45,22 @@ Competitor data lives in the `competitor` schema. It must never be written into 
 
 The three SpotOnTrack workflows use `config/competitor_playlists.csv`. The Spotify competitor enrichment workflow also refreshes missing `competitor.playlists.spotify_playlist_image_url` values before track enrichment.
 
+The SpotOnTrack workflows now chain on success: Playlist Refresh → Dashboard
+Sync (after a 10-minute processing wait) → Export. One external
+`repository_dispatch` event of type `daily-pipeline` starts both the own-catalog
+and competitor refresh heads, with independent concurrency groups and schemas.
+Fallback crons remain at 05:23 UTC (refresh), 08:53 UTC (sync), and 11:29 UTC
+(export); sync/export prechecks prevent repeat daily work. The competitor ingestion
+watchdog remains at 14:29 UTC. Dashboard sync restores competitor state, saves
+partial progress, and runs a full sync on Sundays UTC or with manual `full_sync`.
+See [Daily pipeline](DAILY-PIPELINE.md) for external scheduler setup, manual-run
+behavior, run-date semantics, and failure recovery.
+
 ## First-run checklist
 
-1. Run the competitor playlist refresh workflow.
-2. Run the competitor dashboard sync workflow to populate the SpotOnTrack dashboard.
-3. Run the competitor export workflow.
+1. Run the competitor playlist refresh workflow; success starts dashboard sync and export automatically.
+2. Monitor the competitor dashboard sync workflow as it populates the SpotOnTrack dashboard.
+3. Verify the chained competitor export workflow succeeds.
 4. Run the Spotify competitor enrichment workflow to fill track metadata and playlist thumbnails.
 5. Run `cd web && npm run extract-competitor-accents -- --force` if adding a new label or changing playlist artwork. Accents are harmonized in `web/src/lib/competitorLabelAccents.ts` (extract script + every label load) so charts, cards, and `--sb-accent` share one resolved hex per label.
 6. Switch Settings ? Dataset ? Competitor Mode.
