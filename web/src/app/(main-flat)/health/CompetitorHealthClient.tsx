@@ -468,9 +468,16 @@ export function CompetitorHealthClient({ data }: { data: CompetitorHealthPageDat
 
       {data.configDrift.length > 0 ? (
         <CollapsibleSection title="Config drift" storageKey="sb:health:competitor:config_drift">
-          <Alert variant="warning" title="config/competitor_playlists.csv mismatch">
-            {data.configDrift.length} playlist config issue(s) vs database.
-          </Alert>
+          {data.configDrift.some((row) => row.issue === "missing_in_db") ? (
+            <Alert variant="warning" title="Playlists missing from competitor.playlists">
+              CSV-only rows still run in the pipelines and should be added to the database, the config source of truth.
+            </Alert>
+          ) : (
+            <Alert variant="info" title="Committed config snapshot is behind the database">
+              Workflows regenerate their config from the database before running, using the committed snapshot during outages.
+              Refresh the repo copy with <code>python scripts/export_competitor_config_from_db.py</code> and commit it.
+            </Alert>
+          )}
           <GlassTable headers={["Playlist", "Issue", "Label"]}>
             {data.configDrift.map((row) => (
               <TableRow key={`${row.playlist_key}-${row.issue}`}>

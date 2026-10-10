@@ -118,6 +118,13 @@ jobs:
           path: .sync-state/competitor.json
           key: sot-sync-state-competitor-${{ github.run_id }}
           restore-keys: sot-sync-state-competitor-
+      - name: Regenerate competitor config from database (CSV fallback)
+        if: steps.precheck.outputs.should_run == 'true'
+        continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python scripts/export_competitor_config_from_db.py
       - name: Sync competitor dashboards to playlists
         if: steps.precheck.outputs.should_run == 'true'
         env:
