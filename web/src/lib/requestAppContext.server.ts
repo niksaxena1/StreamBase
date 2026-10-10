@@ -50,15 +50,14 @@ export const getRequestAppContext = cache(() =>
 async function loadRequestAppContext(): Promise<RequestAppContext> {
   const sb = await supabaseServer();
   const svc = supabaseService();
-  // ES256 claims are signature/expiry verified locally (JWKS may fetch on a cold process).
-  // This path consumes identity only; authorization is still checked below on every request.
+  // getClaims() verifies the ES256 token locally, so the per-user lookups can start
+  // immediately. It does NOT detect revoked sessions (sign-out elsewhere), so
+  // getUser() still runs in parallel and is the gate: no live session, no access.
   const { data, error } = await sb.auth.getClaims();
   const claims = error ? null : data?.claims;
-  const user = typeof claims?.sub === "string" && claims.sub
-    ? { id: claims.sub, email: typeof claims.email === "string" ? claims.email : undefined }
-    : null;
+  const claimedUserId = typeof claims?.sub === "string" && claims.sub ? claims.sub : null;
 
-  if (!user) {
+  const signedOut = (): RequestAppContext => {
     const appAccess = normalizeAppAccess(null, false);
     return {
       sb,
@@ -73,23 +72,30 @@ async function loadRequestAppContext(): Promise<RequestAppContext> {
         competitorLabels: [],
       }),
     };
-  }
+  };
 
-  const [adminResult, accessResult, settingsResult] = await Promise.all([
+  if (!claimedUserId) return signedOut();
+
+  const [userResult, adminResult, accessResult, settingsResult] = await Promise.all([
+    sb.auth.getUser(),
     sb.rpc("is_admin"),
     svc
       .from("app_user_access")
       .select("own_catalog,competitor,playlist_watch,playlist_watch_admin")
-      .eq("user_id", user.id)
+      .eq("user_id", claimedUserId)
       .maybeSingle(),
     svc
       .from("user_settings")
       .select(
         "dataset_mode,competitor_label_key,hide_stale_override_annotations,hide_stale_annotations_exclude_catalog,artificial_streams_spike_ratio,artificial_streams_include_weekends_user",
       )
-      .eq("user_id", user.id)
+      .eq("user_id", claimedUserId)
       .maybeSingle(),
   ]);
+
+  const sessionUser = userResult.data?.user ?? null;
+  if (!sessionUser || sessionUser.id !== claimedUserId) return signedOut();
+  const user = { id: sessionUser.id, email: sessionUser.email ?? undefined };
 
   const isAdmin = Boolean(adminResult.data);
   const appAccess = normalizeAppAccess(accessResult.data as AppAccessRow, isAdmin);

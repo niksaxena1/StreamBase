@@ -7,13 +7,14 @@ import { tmpdir } from "node:os";
 const fixture = vi.hoisted(() => {
   let mode = "own";
   let invalid = false;
+  let revoked = false;
   const queries: string[] = [];
   const delay = () => new Promise((resolve) => setTimeout(resolve, 80));
   const history = [{ date: "2026-10-09", track_count: 1, total_streams_cumulative: 1000, daily_streams_net: 100, est_revenue_total: null, est_revenue_daily_net: null, source_run_id: "run" }];
   function client(schema = "public") {
     return {
       auth: {
-        getUser: async () => { await delay(); return { data: { user: invalid ? null : { id: "fixture", email: "fixture@example.invalid" } } }; },
+        getUser: async () => { await delay(); return { data: { user: invalid || revoked ? null : { id: "fixture", email: "fixture@example.invalid" } } }; },
         getClaims: async () => ({ data: invalid ? null : { claims: { sub: "fixture", email: "fixture@example.invalid" } }, error: invalid ? new Error("invalid") : null }),
       },
       schema: (name: string) => client(name),
@@ -56,7 +57,7 @@ const fixture = vi.hoisted(() => {
     };
     return query;
   }
-  return { client, queries, setMode: (value: string) => { mode = value; }, setInvalid: (value: boolean) => { invalid = value; } };
+  return { client, queries, setMode: (value: string) => { mode = value; }, setInvalid: (value: boolean) => { invalid = value; }, setRevoked: (value: boolean) => { revoked = value; } };
 });
 vi.mock("@/lib/supabase/server", () => ({ supabaseServer: async () => fixture.client() }));
 vi.mock("@/lib/supabase/service", () => ({ supabaseService: () => fixture.client() }));
@@ -128,6 +129,18 @@ describe("request identity gate", () => {
       expect(fixture.queries).toEqual([]);
     } finally {
       fixture.setInvalid(false);
+    }
+  });
+  it("rejects a revoked session even when its token claims still verify", async () => {
+    fixture.setRevoked(true);
+    try {
+      const context = await getRequestAppContext();
+      expect(context.user).toBeNull();
+      expect(context.isAdmin).toBe(false);
+      expect(context.settings).toBeNull();
+      await expect(HomePage({})).rejects.toThrow("redirect:/login");
+    } finally {
+      fixture.setRevoked(false);
     }
   });
   it("keeps invalid playlist redirects from issuing summary/annotation queries", async () => {
