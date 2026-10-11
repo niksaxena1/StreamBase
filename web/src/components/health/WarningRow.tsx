@@ -426,7 +426,7 @@ export function WarningRow({
     const src = expandedData.tracks;
     if (!Array.isArray(src)) return [];
     return src
-      .filter((t: TrackBase) => !t.album_image_url)
+      .filter((t: TrackBase) => !t.album_image_url && !t.spotify_not_found_since)
       .map((t: TrackBase) => (t.isrc ?? "").trim().toUpperCase())
       .filter(Boolean)
       .slice(0, 50);

@@ -9,6 +9,7 @@ export type TrackRow = {
   spotify_artist_ids: string[] | null;
   spotify_artist_names: string[] | null;
   spotify_album_image_url: string | null;
+  spotify_not_found_since?: string | null;
   release_date?: string | null;
 };
 

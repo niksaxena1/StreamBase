@@ -6,6 +6,7 @@ import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
 import { ExportMissingTracksButton } from "@/components/health/ExportMissingTracksButton";
 import { SectionHeader } from "@/components/ui/SectionHeader";
+import { SpotifyNotFoundBadge } from "@/components/ui/SpotifyNotFoundBadge";
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 
 /**
@@ -73,6 +74,7 @@ export async function MissingCatalogSection({
                   >
                     {track.name || track.isrc}
                   </Link>
+                  <SpotifyNotFoundBadge since={track.spotify_not_found_since} imageUrl={track.album_image_url} />
                   <div className="mt-0.5">
                     <CopyableIsrc
                       isrc={track.isrc}

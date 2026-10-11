@@ -618,6 +618,8 @@ Your DB may have additional columns; those are fine.
 | `last_seen` | date | Last ingestion date this ISRC appeared |
 | `spotify_track_id` | text | Spotify track id (if enriched) |
 | `spotify_album_image_url` | text | Album artwork URL used by UI tables |
+| `spotify_lookup_misses` | integer | Consecutive Spotify ISRC search misses; resets on a match (own and competitor tracks) |
+| `spotify_not_found_since` | timestamptz | Confirmed absent after two search misses; excluded from missing-enrichment Health warnings and shown as ?Not on Spotify? beside missing artwork |
 | `spotify_artist_ids` | text[] | Spotify artist ids (array) |
 | `spotify_artist_names` | text[] | Spotify artist names (array, aligned with ids) |
 
@@ -1537,3 +1539,23 @@ Safety valves run **before any database writes or transition emails**: at least 
 In Actions, choose **Spotify Takedown Watch → Run workflow → dry_run=true** for a read-only catalog check. To diagnose one track without database access, set `track_id` and optional `isrc`, or run `python scripts/check_spotify_track_availability.py --track-id ID --isrc ISRC`. Full local checks support `--dry-run`, `--limit`, `--lookback-days`, and `--min-interval`.
 
 The watch has its own concurrency group and is not chained into the daily ingestion pipeline. Successful state writes request the shared best-effort web cache refresh so the Health panel updates promptly. Its verdict covers the configured markets, not a guarantee of worldwide availability or the legal reason for removal.
+
+
+### Spotify ISRC search misses
+
+Migration `20261011161525_add_spotify_not_found_tracking.sql` adds lookup tracking to
+`public.tracks` and `competitor.tracks` without changing track identity or mixing
+catalogs. Apply it before deploying the updated enrichment scripts and web queries.
+The migration is applied in production.
+
+Two consecutive search misses mark a track as ?Not on Spotify?. Both normal and
+`--only-missing` batches then defer it for 30 days; `--isrc` remains an explicit
+immediate retry. Manual misses leave lookup tracking unchanged; a successful
+lookup clears the miss count and absence date.
+Public tracks retain the first confirmation date and use `spotify_last_fetched_at`
+to schedule monthly rechecks. Competitor tracks do not have that timestamp, so a
+recheck miss refreshes `spotify_not_found_since` to restart the 30-day window.
+Tracking writes are best-effort. Spotify API errors, malformed search responses,
+and ISRCs that normalize to empty do not count as misses.
+These tracks are excluded from missing-enrichment Health warnings and competitor
+missing-metadata counts/lists. Other data-quality warnings still apply.

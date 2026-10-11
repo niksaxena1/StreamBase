@@ -1,3 +1,4 @@
+import { logWarn } from "@/lib/logger";
 import { unstable_cache } from "next/cache";
 import { CACHE_TTL_1H } from "@/lib/constants";
 import { supabaseService } from "@/lib/supabase/service";
@@ -248,11 +249,17 @@ async function computeActiveWarnings(
               (isrc) => !isExcludedEnrichment(w.playlist_key!, isrc),
             );
           if (filtered.length === 0) return; // all excluded → suppress
-          const { data: rows } = await svc
+          const { data: rows, error } = await svc
             .from("tracks")
             .select("isrc")
             .in("isrc", filtered)
-            .is("spotify_artist_ids", null);
+            .is("spotify_artist_ids", null)
+            .is("spotify_not_found_since", null);
+          if (error) {
+            logWarn("Spotify status verification failed; keeping enrichment warning", error);
+            enrActive.add(w.playlist_key);
+            return;
+          }
           const stillMissing = ((rows ?? []) as Array<Record<string, unknown>>).filter(
             (r) =>
               !isExcludedEnrichment(
@@ -261,7 +268,8 @@ async function computeActiveWarnings(
               ),
           );
           if (stillMissing.length > 0) enrActive.add(w.playlist_key!);
-        } catch {
+        } catch (error) {
+          logWarn("Spotify status verification failed; keeping enrichment warning", error);
           enrActive.add(w.playlist_key!);
         }
       }),

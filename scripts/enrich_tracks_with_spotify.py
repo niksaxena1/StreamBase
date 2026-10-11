@@ -29,29 +29,15 @@ def norm_isrc_for_lookup(s: str) -> str:
     return re.sub(r"[^A-Z0-9]", "", raw)
 
 
-class Postgrest:
-    def __init__(self, supabase_url: str, service_role_key: str):
-        self.base = supabase_url.rstrip("/") + "/rest/v1"
-        self.h = {
-            "Authorization": f"Bearer {service_role_key}",
-            "apikey": service_role_key,
-            "Content-Type": "application/json",
-        }
+try:
+    from .streambase_postgrest import Postgrest as SharedPostgrest
+    from .spotify_lookup_tracking import TRACKING_FIELDS, lookup_candidate_filter, record_lookup, spotify_search_items
+except ImportError:
+    from streambase_postgrest import Postgrest as SharedPostgrest
+    from spotify_lookup_tracking import TRACKING_FIELDS, lookup_candidate_filter, record_lookup, spotify_search_items
 
-    def select(self, table: str, select: str, filters: str) -> List[dict]:
-        url = f"{self.base}/{table}?select={select}&{filters}"
-        r = requests.get(url, headers=self.h, timeout=180)
-        if r.status_code != 200:
-            raise RuntimeError(f"Select {table} failed: {r.status_code} {r.text[:500]}")
-        return r.json()
 
-    def patch(self, table: str, patch_obj: dict, filters: str):
-        url = f"{self.base}/{table}?{filters}"
-        headers = dict(self.h)
-        headers["Prefer"] = "return=minimal"
-        r = requests.patch(url, headers=headers, json=patch_obj, timeout=180)
-        if r.status_code not in (200, 204):
-            raise RuntimeError(f"Patch {table} failed: {r.status_code} {r.text[:500]}")
+Postgrest = SharedPostgrest
 
 
 class Spotify:
@@ -113,7 +99,8 @@ class Spotify:
                 continue
             q = requests.utils.quote(f"isrc:{query_isrc}")
             resp = self.get(f"/search?q={q}&type=track&limit=1")
-            item = ((resp.get("tracks") or {}).get("items") or [None])[0]
+            items = spotify_search_items(resp)
+            item = items[0] if items else None
             if item:
                 break
         else:
@@ -151,7 +138,7 @@ def enrich_single(pg: Postgrest, sp: Spotify, isrc: str):
     if not isrc:
         raise SystemExit("--isrc value cannot be empty")
 
-    rows = pg.select("tracks", "isrc,name", f"isrc=eq.{isrc}&limit=1")
+    rows = pg.select("tracks", f"isrc,name,{TRACKING_FIELDS}", f"isrc=eq.{isrc}&limit=1")
     if not rows:
         raise SystemExit(f"No track found in DB with ISRC {isrc}")
 
@@ -168,6 +155,7 @@ def enrich_single(pg: Postgrest, sp: Spotify, isrc: str):
         return
 
     pg.patch("tracks", hit, f"isrc=eq.{isrc}")
+    record_lookup(pg, rows[0], True, True)
     sp_name = hit.get("spotify_album_name") or "?"
     sp_artists = ", ".join(hit.get("spotify_artist_names") or []) or "?"
     print(f"Re-enriched: {sp_artists} – {sp_name} (track {hit.get('spotify_track_id')})")
@@ -182,7 +170,11 @@ def enrich_batch(pg: Postgrest, sp: Spotify, limit: int, only_missing: bool = Fa
     if only_missing:
         filters.insert(0, "spotify_artist_ids=is.null")
 
-    candidates = pg.select("tracks", "isrc,name,spotify_artist_ids,spotify_last_fetched_at", "&".join(filters))
+    candidates = pg.select(
+        "tracks",
+        f"isrc,name,spotify_artist_ids,spotify_last_fetched_at,{TRACKING_FIELDS}",
+        "&".join([*filters, lookup_candidate_filter(True)]),
+    )
     if not candidates:
         print("No tracks to enrich.")
         return
@@ -196,14 +188,16 @@ def enrich_batch(pg: Postgrest, sp: Spotify, limit: int, only_missing: bool = Fa
 
     for row in candidates:
         isrc_db = (row.get("isrc") or "").strip()
-        if not isrc_db:
+        if not norm_isrc_for_lookup(isrc_db):
             continue
         try:
             hit = sp.find_track_by_isrc(isrc_db)
             if not hit:
                 miss += 1
+                record_lookup(pg, row, False, True)
                 continue
             pg.patch("tracks", hit, f"isrc=eq.{isrc_db}")
+            record_lookup(pg, row, True, True)
             ok += 1
             if ok % 20 == 0:
                 print(f"Enriched {ok} tracks...")

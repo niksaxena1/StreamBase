@@ -1,3 +1,4 @@
+import { SpotifyNotFoundBadge } from "@/components/ui/SpotifyNotFoundBadge";
 import { Alert } from "@/components/ui/Alert";
 import type { CatalogTrackSelection } from "@/lib/catalogSelection";
 
@@ -6,6 +7,8 @@ import type { TrackRow } from "./catalogPageUtils";
 export function CatalogTrackUnavailable(props: {
   datasetMode: "own" | "competitor";
   isrc: string;
+  spotifyNotFoundSince?: string | null;
+  albumImageUrl?: string | null;
   reason: Extract<CatalogTrackSelection<TrackRow>, { kind: "unavailable" }>["reason"];
 }) {
   const copy =
@@ -28,6 +31,9 @@ export function CatalogTrackUnavailable(props: {
     <div className="space-y-4">
       <Alert variant="warning" title={copy.title}>
         {copy.body}
+        <div className="mt-2">
+          <SpotifyNotFoundBadge since={props.spotifyNotFoundSince} imageUrl={props.albumImageUrl} />
+        </div>
       </Alert>
     </div>
   );

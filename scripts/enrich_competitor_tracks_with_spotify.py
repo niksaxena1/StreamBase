@@ -31,41 +31,17 @@ def candidate_filters(limit: int, only_missing: bool = False) -> List[str]:
     return filters
 
 
-class Postgrest:
+try:
+    from .streambase_postgrest import Postgrest as SharedPostgrest
+    from .spotify_lookup_tracking import TRACKING_FIELDS, lookup_candidate_filter, record_lookup, spotify_search_items
+except ImportError:
+    from streambase_postgrest import Postgrest as SharedPostgrest
+    from spotify_lookup_tracking import TRACKING_FIELDS, lookup_candidate_filter, record_lookup, spotify_search_items
+
+
+class Postgrest(SharedPostgrest):
     def __init__(self, supabase_url: str, service_role_key: str, profile: str = "competitor"):
-        self.base = supabase_url.rstrip("/") + "/rest/v1"
-        self.h = {
-            "Authorization": f"Bearer {service_role_key}",
-            "apikey": service_role_key,
-            "Content-Type": "application/json",
-            "Accept-Profile": profile,
-            "Content-Profile": profile,
-        }
-
-    def select(self, table: str, select: str, filters: str) -> List[dict]:
-        url = f"{self.base}/{table}?select={select}&{filters}"
-        response = requests.get(url, headers=self.h, timeout=180)
-        if response.status_code != 200:
-            raise RuntimeError(f"Select {table} failed: {response.status_code} {response.text[:500]}")
-        return response.json()
-
-    def patch(self, table: str, patch_obj: dict, filters: str):
-        url = f"{self.base}/{table}?{filters}"
-        headers = dict(self.h)
-        headers["Prefer"] = "return=minimal"
-        response = requests.patch(url, headers=headers, json=patch_obj, timeout=180)
-        if response.status_code not in (200, 204):
-            raise RuntimeError(f"Patch {table} failed: {response.status_code} {response.text[:500]}")
-
-    def upsert(self, table: str, rows: List[dict], conflict: str):
-        if not rows:
-            return
-        url = f"{self.base}/{table}?on_conflict={conflict}"
-        headers = dict(self.h)
-        headers["Prefer"] = "resolution=merge-duplicates,return=minimal"
-        response = requests.post(url, headers=headers, json=rows, timeout=180)
-        if response.status_code not in (200, 201, 204):
-            raise RuntimeError(f"Upsert {table} failed: {response.status_code} {response.text[:500]}")
+        super().__init__(supabase_url, service_role_key, schema=profile)
 
 
 class Spotify:
@@ -125,7 +101,8 @@ class Spotify:
                 continue
             query = requests.utils.quote(f"isrc:{query_isrc}")
             payload = self.get(f"/search?q={query}&type=track&limit=1")
-            item = ((payload.get("tracks") or {}).get("items") or [None])[0]
+            items = spotify_search_items(payload)
+            item = items[0] if items else None
             if item:
                 break
         if not item:
@@ -190,7 +167,7 @@ def enrich_single(pg: Postgrest, pg_public: Postgrest, sp: Spotify, isrc: str):
     if not isrc:
         raise SystemExit("--isrc value cannot be empty")
 
-    rows = pg.select("tracks", "isrc,name", f"isrc=eq.{isrc}&limit=1")
+    rows = pg.select("tracks", f"isrc,name,{TRACKING_FIELDS}", f"isrc=eq.{isrc}&limit=1")
     if not rows:
         raise SystemExit(f"No competitor track found with ISRC {isrc}")
 
@@ -200,6 +177,7 @@ def enrich_single(pg: Postgrest, pg_public: Postgrest, sp: Spotify, isrc: str):
         print(f"No Spotify match found for competitor ISRC {isrc}.")
         return
     pg.patch("tracks", hit, f"isrc=eq.{isrc}")
+    record_lookup(pg, rows[0], True, False)
     cache_artist_images(pg_public, sp, hit.get("spotify_artist_ids") or [])
     print(f"Re-enriched competitor track {isrc}")
 
@@ -207,8 +185,8 @@ def enrich_single(pg: Postgrest, pg_public: Postgrest, sp: Spotify, isrc: str):
 def enrich_batch(pg: Postgrest, pg_public: Postgrest, sp: Spotify, limit: int, only_missing: bool = False):
     candidates = pg.select(
         "tracks",
-        "isrc,name,spotify_artist_ids",
-        "&".join(candidate_filters(limit, only_missing)),
+        f"isrc,name,spotify_artist_ids,{TRACKING_FIELDS}",
+        "&".join([*candidate_filters(limit, only_missing), lookup_candidate_filter(False)]),
     )
     if not candidates:
         print("No competitor tracks to enrich.")
@@ -224,14 +202,16 @@ def enrich_batch(pg: Postgrest, pg_public: Postgrest, sp: Spotify, limit: int, o
     artist_ids_to_cache = set()
     for row in candidates:
         isrc = (row.get("isrc") or "").strip()
-        if not isrc:
+        if not norm_isrc_for_lookup(isrc):
             continue
         try:
             hit = sp.find_track_by_isrc(isrc)
             if not hit:
                 miss += 1
+                record_lookup(pg, row, False, False)
                 continue
             pg.patch("tracks", hit, f"isrc=eq.{isrc}")
+            record_lookup(pg, row, True, False)
             artist_ids_to_cache.update(hit.get("spotify_artist_ids") or [])
             ok += 1
             if ok % 20 == 0:

@@ -1,3 +1,4 @@
+import { hydrateSpotifyLookupStatus } from "./spotifyLookupStatus";
 import { supabaseService } from "@/lib/supabase/service";
 import { getActiveWarningSummary } from "./activeWarnings";
 import type {
@@ -157,7 +158,7 @@ async function fetchDetailsTracks(
   const { data: trackRows, error } = await svc
     .from("tracks")
     .select(
-      "isrc,name,spotify_track_id,spotify_artist_names,spotify_artist_ids,spotify_album_image_url",
+      "isrc,name,spotify_track_id,spotify_artist_names,spotify_artist_ids,spotify_album_image_url,spotify_not_found_since",
     )
     .in("isrc", [...allIsrcs]);
 
@@ -176,6 +177,7 @@ async function fetchDetailsTracks(
       artist_names: (t.spotify_artist_names ?? null) as string[] | null,
       artist_ids: (t.spotify_artist_ids ?? null) as string[] | null,
       album_image_url: (t.spotify_album_image_url ?? null) as string | null,
+      spotify_not_found_since: (t.spotify_not_found_since ?? null) as string | null,
     });
   }
 
@@ -190,6 +192,7 @@ async function fetchDetailsTracks(
         artist_names: meta?.artist_names ?? null,
         artist_ids: meta?.artist_ids ?? null,
         album_image_url: meta?.album_image_url ?? null,
+        spotify_not_found_since: meta?.spotify_not_found_since ?? null,
         ...extra,
       };
     });
@@ -517,10 +520,11 @@ async function fetchEnrichmentTracks(
           const { data: rows, error } = await svc
             .from("tracks")
             .select(
-              "isrc,name,spotify_artist_names,spotify_artist_ids,spotify_album_image_url",
+              "isrc,name,spotify_artist_names,spotify_artist_ids,spotify_album_image_url,spotify_not_found_since",
             )
             .in("isrc", filtered)
-            .is("spotify_artist_ids", null);
+            .is("spotify_artist_ids", null)
+            .is("spotify_not_found_since", null);
 
           if (error) {
             result.set(w.playlist_key, null);
@@ -534,6 +538,7 @@ async function fetchEnrichmentTracks(
               artist_names: (t.spotify_artist_names ?? null) as string[] | null,
               artist_ids: (t.spotify_artist_ids ?? null) as string[] | null,
               album_image_url: (t.spotify_album_image_url ?? null) as string | null,
+              spotify_not_found_since: (t.spotify_not_found_since ?? null) as string | null,
             }))
             .filter((t) => !isExcludedEnr(excl, w.playlist_key!, t.isrc));
 
@@ -551,6 +556,18 @@ async function fetchEnrichmentTracks(
             result.set(w.playlist_key, null);
             return;
           }
+          // Legacy warnings use an RPC whose row shape predates lookup tracking.
+          // Verify its candidates against tracks before displaying them.
+          const { data: eligible, error: eligibleError } = await svc
+            .from("tracks")
+            .select("isrc,spotify_not_found_since")
+            .in("isrc", (rows ?? []).map((t) => String(t.isrc)))
+            .is("spotify_not_found_since", null);
+          if (eligibleError) {
+            result.set(w.playlist_key, null);
+            return;
+          }
+          const eligibleIsrcs = new Set((eligible ?? []).map((t) => normalizeIsrc(t.isrc)));
           const tracks: TrackBase[] = ((rows ?? []) as Array<Record<string, unknown>>)
             .map((t) => ({
               isrc: normalizeIsrc(t.isrc),
@@ -559,7 +576,7 @@ async function fetchEnrichmentTracks(
               artist_ids: (t.artist_ids ?? null) as string[] | null,
               album_image_url: (t.album_image_url ?? null) as string | null,
             }))
-            .filter((t) => !isExcludedEnr(excl, w.playlist_key!, t.isrc));
+            .filter((t) => eligibleIsrcs.has(t.isrc) && !isExcludedEnr(excl, w.playlist_key!, t.isrc));
           result.set(w.playlist_key, tracks);
         } catch {
           result.set(w.playlist_key, null);
@@ -1267,6 +1284,16 @@ export async function fetchDisplayedWarnings(
   const safePage = Math.min(Math.max(1, page), totalPages);
   const start = (safePage - 1) * pageSize;
   const pageWarnings = all.slice(start, start + pageSize);
+  const visibleTracks: TrackBase[] = [];
+  for (const warning of pageWarnings) {
+    const expanded = warning.expandedData;
+    if (!expanded) continue;
+    if ("tracks" in expanded) visibleTracks.push(...(expanded.tracks ?? []));
+    if (expanded.type === "track_count_swing") visibleTracks.push(...expanded.swing.added, ...expanded.swing.removed);
+    if (expanded.type === "entity_distro_drift") visibleTracks.push(...expanded.drift.extra, ...expanded.drift.missing);
+    if (expanded.type === "total_streams_decreased") visibleTracks.push(...(expanded.removedTracks ?? []));
+  }
+  await hydrateSpotifyLookupStatus(svc, visibleTracks);
 
   return { warnings: pageWarnings, totalCount, page: safePage, pageSize, totalPages, summary };
 }
@@ -1304,6 +1331,7 @@ export async function fetchMissingCatalogTracks(
     }),
   );
 
+  await hydrateSpotifyLookupStatus(svc, all);
   return enabled
     ? all.filter((t) => !t.playlists.some((pk) => isExcludedNc(excl, pk, t.isrc)))
     : all;

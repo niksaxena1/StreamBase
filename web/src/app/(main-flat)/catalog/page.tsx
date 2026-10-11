@@ -65,7 +65,7 @@ async function fetchRecentTracksMetaForArtists(sb: SupabaseClient, maxRows = 200
   // For full discovery, the global search (`/api/search`) is the scalable path.
   const { data, error } = await sb
     .from("tracks")
-    .select("isrc,name,spotify_artist_ids,spotify_artist_names,spotify_album_image_url")
+    .select("isrc,name,spotify_artist_ids,spotify_artist_names,spotify_album_image_url,spotify_not_found_since")
     .not("spotify_artist_ids", "is", null)
     .order("last_seen", { ascending: false })
     .limit(maxRows);
@@ -263,7 +263,7 @@ async function CatalogPageContent({
         async () =>
           await svc
             .from("tracks")
-            .select("isrc,name,spotify_artist_ids,spotify_artist_names,spotify_album_image_url,release_date")
+            .select("isrc,name,spotify_artist_ids,spotify_artist_names,spotify_album_image_url,spotify_not_found_since,release_date")
             .contains("spotify_artist_ids", [artistId])
             .order("last_seen", { ascending: false })
             .limit(1)
@@ -306,7 +306,7 @@ async function CatalogPageContent({
     async () =>
       await svc
         .from("tracks")
-        .select("isrc,name,spotify_artist_ids,spotify_artist_names,spotify_album_image_url,release_date")
+        .select("isrc,name,spotify_artist_ids,spotify_artist_names,spotify_album_image_url,spotify_not_found_since,release_date")
         .contains("spotify_artist_ids", [artistId])
         .order("last_seen", { ascending: false })
         .limit(800),
@@ -337,7 +337,7 @@ async function CatalogPageContent({
       async () =>
         await svc
           .from("tracks")
-          .select("isrc,name,spotify_artist_ids,spotify_artist_names,spotify_album_image_url,release_date")
+          .select("isrc,name,spotify_artist_ids,spotify_artist_names,spotify_album_image_url,spotify_not_found_since,release_date")
           .eq("isrc", requestedIsrc)
           .maybeSingle(),
       `catalog-requested-track-v1-${requestedIsrc}`,
@@ -353,11 +353,12 @@ async function CatalogPageContent({
       );
     }
 
+    const resolvedRequestedTrack = (requestedTrack ?? null) as TrackRow | null;
     const selection = resolveCatalogTrackSelection({
       requestedArtistId: artistId,
       requestedIsrc,
       artistTracks,
-      resolvedTrack: (requestedTrack ?? null) as TrackRow | null,
+      resolvedTrack: resolvedRequestedTrack,
       resolvedTrackIsActiveInScope: true,
     });
 
@@ -370,6 +371,8 @@ async function CatalogPageContent({
           datasetMode="own"
           isrc={requestedIsrc}
           reason={selection.reason}
+          spotifyNotFoundSince={resolvedRequestedTrack?.spotify_not_found_since}
+          albumImageUrl={resolvedRequestedTrack?.spotify_album_image_url}
         />
       );
     }
@@ -422,7 +425,7 @@ async function CatalogPageContent({
   const selectedTrackPromise = isrc
     ? cachedQuery(
         async () => await svc.from("tracks")
-          .select("name,spotify_album_image_url,spotify_track_id,spotify_artist_names,spotify_artist_ids,release_date")
+          .select("name,spotify_album_image_url,spotify_not_found_since,spotify_track_id,spotify_artist_names,spotify_artist_ids,release_date")
           .eq("isrc", isrc).maybeSingle(),
         `track-selected-${isrc}`,
         CACHE_TTL_1H,
@@ -542,13 +545,14 @@ async function CatalogPageContent({
   if (missingTopIsrcs.length) {
     const { data: metaRows, error } = await svc
       .from("tracks")
-      .select("isrc,spotify_artist_ids,spotify_artist_names,release_date")
+      .select("isrc,spotify_artist_ids,spotify_artist_names,spotify_not_found_since,release_date")
       .in("isrc", missingTopIsrcs);
     if (error) {
       logWarn("Error fetching top-track artist metadata", error);
     } else {
       for (const r of (metaRows ?? []) as Array<{
         isrc: string;
+        spotify_not_found_since: string | null;
         spotify_artist_ids: string[] | null;
         spotify_artist_names: string[] | null;
         release_date: string | null;
@@ -560,6 +564,7 @@ async function CatalogPageContent({
           spotify_artist_ids: r.spotify_artist_ids ?? null,
           spotify_artist_names: r.spotify_artist_names ?? null,
           spotify_album_image_url: null,
+          spotify_not_found_since: r.spotify_not_found_since ?? null,
           release_date: r.release_date ?? null,
         });
       }
@@ -578,6 +583,7 @@ async function CatalogPageContent({
       daily: null,
       name: r.name ?? null,
       albumImageUrl: r.album_image_url ?? null,
+      spotifyNotFoundSince: meta?.spotify_not_found_since ?? null,
       artistNames: meta?.spotify_artist_names ?? null,
       artistIds: meta?.spotify_artist_ids ?? null,
       releaseDate: (meta?.release_date ?? "").trim() || null,
@@ -595,6 +601,7 @@ async function CatalogPageContent({
       total: r.total ?? null,
       name: r.name ?? null,
       albumImageUrl: r.album_image_url ?? null,
+      spotifyNotFoundSince: meta?.spotify_not_found_since ?? null,
       artistNames: meta?.spotify_artist_names ?? null,
       artistIds: meta?.spotify_artist_ids ?? null,
       releaseDate: (meta?.release_date ?? "").trim() || null,
@@ -649,6 +656,7 @@ async function CatalogPageContent({
       isrc: t.isrc, 
       name: t.name ?? t.isrc,
       albumImageUrl: t.spotify_album_image_url ?? null,
+      spotifyNotFoundSince: t.spotify_not_found_since ?? null,
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
@@ -666,7 +674,8 @@ async function CatalogPageContent({
   // Fetch selected track details if isrc is available
   let selectedTrack: { 
     name: string | null; 
-    albumImageUrl: string | null; 
+    albumImageUrl: string | null;
+    spotifyNotFoundSince?: string | null;
     spotifyTrackId: string | null;
     artistNames: string[] | null;
     artistIds: string[] | null;
@@ -678,6 +687,7 @@ async function CatalogPageContent({
       const track = trackData as {
         name: string | null;
         spotify_album_image_url: string | null;
+        spotify_not_found_since: string | null;
         spotify_track_id: string | null;
         spotify_artist_names: string[] | null;
         spotify_artist_ids: string[] | null;
@@ -686,6 +696,7 @@ async function CatalogPageContent({
       selectedTrack = {
         name: track.name ?? null,
         albumImageUrl: track.spotify_album_image_url ?? null,
+        spotifyNotFoundSince: track.spotify_not_found_since ?? null,
         spotifyTrackId: track.spotify_track_id ?? null,
         artistNames: track.spotify_artist_names ?? null,
         artistIds: track.spotify_artist_ids ?? null,

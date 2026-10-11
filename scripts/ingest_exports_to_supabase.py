@@ -1331,7 +1331,7 @@ def main():
                 unenriched = pg.select_all(
                     "tracks",
                     "isrc",
-                    "spotify_artist_ids=is.null",
+                    "spotify_artist_ids=is.null&spotify_not_found_since=is.null",
                     page_size=1000,
                 )
                 unenriched_set = {t["isrc"] for t in unenriched}

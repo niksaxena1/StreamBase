@@ -1,3 +1,4 @@
+import { logError } from "@/lib/logger";
 import { CACHE_TTL_1H } from "@/lib/constants";
 import { isAllCompetitorsKey } from "@/lib/competitorContext";
 import { addDaysISO, dataDateFromRunDate, runDateFromDataDate } from "@/lib/sotDates";
@@ -229,7 +230,8 @@ export async function loadCompetitorHealthPage(args: {
         comp
           .from("tracks")
           .select("isrc", { count: "exact", head: true })
-          .or("spotify_artist_ids.is.null,spotify_album_image_url.is.null"),
+          .or("spotify_artist_ids.is.null,spotify_album_image_url.is.null")
+          .is("spotify_not_found_since", null),
         comp
           .from("playlists")
           .select("playlist_key", { count: "exact", head: true })
@@ -496,15 +498,32 @@ export async function loadCompetitorHealthPage(args: {
         };
       });
 
-      const unenrichedRows: CompetitorUnenrichedTrack[] = ((unenrichedRowsResult.data ?? []) as Array<
-        Record<string, unknown>
-      >).map((t) => ({
-        isrc: String(t.isrc ?? ""),
-        name: String(t.name ?? t.isrc ?? ""),
-        album_image_url: (t.album_image_url as string | null) ?? null,
-        missing_artists: Boolean(t.missing_artists),
-        missing_image: Boolean(t.missing_image),
-      }));
+      const unenrichedCandidates = (unenrichedRowsResult.data ?? []) as Array<Record<string, unknown>>;
+      const notFoundIsrcs = new Set<string>();
+      if (unenrichedCandidates.length > 0) {
+        try {
+          const { data: notFound, error: notFoundError } = await comp.from("tracks")
+            .select("isrc")
+            .in("isrc", unenrichedCandidates.map((track) => String(track.isrc)))
+            .not("spotify_not_found_since", "is", null);
+          if (notFoundError) {
+            logError("Competitor Spotify status lookup failed", notFoundError);
+          } else {
+            for (const track of notFound ?? []) notFoundIsrcs.add(String(track.isrc));
+          }
+        } catch (error) {
+          logError("Competitor Spotify status lookup failed", error);
+        }
+      }
+      const unenrichedRows: CompetitorUnenrichedTrack[] = unenrichedCandidates
+        .filter((track) => !notFoundIsrcs.has(String(track.isrc)))
+        .map((t) => ({
+          isrc: String(t.isrc ?? ""),
+          name: String(t.name ?? t.isrc ?? ""),
+          album_image_url: (t.album_image_url as string | null) ?? null,
+          missing_artists: Boolean(t.missing_artists),
+          missing_image: Boolean(t.missing_image),
+        }));
 
       const configDrift = buildConfigDrift(loadCompetitorConfigPlaylists(), playlists);
 

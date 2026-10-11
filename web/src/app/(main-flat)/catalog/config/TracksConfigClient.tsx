@@ -20,6 +20,7 @@ type Track = {
   release_date: string | null;
   last_seen: string | null;
   albumImageUrl: string | null;
+  spotifyNotFoundSince?: string | null;
   artistNames: string[] | null;
   artistIds: string[] | null;
   externalUrl: string | null;

@@ -139,7 +139,7 @@ export async function renderCompetitorCatalogContent({
       const { data: recentTracks } = competitorIsrcs.length
         ? await comp
             .from("tracks")
-            .select("isrc,name,spotify_artist_ids,spotify_artist_names,spotify_album_image_url,release_date")
+            .select("isrc,name,spotify_artist_ids,spotify_artist_names,spotify_album_image_url,spotify_not_found_since,release_date")
             .in("isrc", competitorIsrcs)
             .not("spotify_artist_ids", "is", null)
             .order("last_seen", { ascending: false })
@@ -178,7 +178,7 @@ export async function renderCompetitorCatalogContent({
         async () =>
           await comp
             .from("tracks")
-            .select("isrc,name,spotify_artist_ids,spotify_artist_names,spotify_album_image_url,release_date")
+            .select("isrc,name,spotify_artist_ids,spotify_artist_names,spotify_album_image_url,spotify_not_found_since,release_date")
             .eq("isrc", requestedIsrc)
             .maybeSingle(),
         `catalog-comp-requested-track-v1-${requestedIsrc}`,
@@ -248,6 +248,8 @@ export async function renderCompetitorCatalogContent({
           datasetMode="competitor"
           isrc={requestedIsrc}
           reason={selection.reason}
+          spotifyNotFoundSince={resolvedTrack?.spotify_not_found_since}
+          albumImageUrl={resolvedTrack?.spotify_album_image_url}
         />
       );
     }
@@ -334,7 +336,8 @@ export async function renderCompetitorCatalogContent({
   const topRows = artistTracks.map((t) => ({
     isrc: t.isrc,
     name: t.name,
-    album_image_url: t.spotify_album_image_url,
+    albumImageUrl: t.spotify_album_image_url,
+    spotifyNotFoundSince: t.spotify_not_found_since ?? null,
     total: todayByIsrc.has(t.isrc) ? todayByIsrc.get(t.isrc)! : null,
     daily:
       todayByIsrc.has(t.isrc) && prevByIsrc.has(t.isrc)
@@ -415,7 +418,7 @@ export async function renderCompetitorCatalogContent({
         trackCount={artistTracks.length}
         artists={artists.map((a) => ({ ...a, imageUrl: null }))}
         artistId={effectiveArtistId}
-        tracks={artistTracks.map((t) => ({ isrc: t.isrc, name: t.name ?? t.isrc, albumImageUrl: t.spotify_album_image_url ?? null }))}
+        tracks={artistTracks.map((t) => ({ isrc: t.isrc, name: t.name ?? t.isrc, albumImageUrl: t.spotify_album_image_url ?? null, spotifyNotFoundSince: t.spotify_not_found_since ?? null }))}
         isrc={selectedIsrc}
         artistName={artistName}
         artistImageUrl={null}
@@ -426,6 +429,7 @@ export async function renderCompetitorCatalogContent({
             ? {
                 name: selectedTrackRow.name,
                 albumImageUrl: selectedTrackRow.spotify_album_image_url ?? null,
+                spotifyNotFoundSince: selectedTrackRow.spotify_not_found_since ?? null,
                 spotifyTrackId: null,
                 artistNames: selectedTrackRow.spotify_artist_names ?? null,
                 artistIds: selectedTrackRow.spotify_artist_ids ?? null,

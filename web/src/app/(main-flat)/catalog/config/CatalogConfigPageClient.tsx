@@ -50,6 +50,7 @@ function mapTracks(rows: CatalogConfigTrackRpcRow[]) {
     release_date: track.release_date ?? null,
     last_seen: track.last_seen ?? null,
     albumImageUrl: track.spotify_album_image_url ?? null,
+    spotifyNotFoundSince: track.spotify_not_found_since ?? null,
     artistNames: track.spotify_artist_names ?? null,
     artistIds: track.spotify_artist_ids ?? null,
     externalUrl: track.spotify_track_id ? `https://open.spotify.com/track/${track.spotify_track_id}` : null,
