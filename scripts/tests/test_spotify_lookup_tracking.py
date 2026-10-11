@@ -128,7 +128,8 @@ def test_tracking_write_failure_does_not_stop_batch(pipeline, found, capsys):
 @pytest.mark.parametrize("found", [False, True])
 def test_explicit_single_lookup_also_tracks_results(pipeline, found):
     pg = Mock()
-    pg.select.return_value = [{"isrc": "GBABC2600001", "spotify_lookup_misses": 1}]
+    row = {"isrc": "GBABC2600001", "spotify_lookup_misses": 2, "spotify_not_found_since": NOW.isoformat()}
+    pg.select.return_value = [row]
     sp = Mock()
     sp.get_artists.return_value = []
     sp.find_track_by_isrc.return_value = {"spotify_track_id": "found"} if found else None
@@ -136,9 +137,10 @@ def test_explicit_single_lookup_also_tracks_results(pipeline, found):
         pipeline.enrich_single(pg, Mock(), sp, "GBABC2600001")
     else:
         pipeline.enrich_single(pg, sp, "GBABC2600001")
-    patch = pg.patch.call_args.args[1]
-    assert patch["spotify_lookup_misses"] == (0 if found else 2)
-    assert patch["spotify_not_found_since"] == (None if found else NOW.isoformat())
+    for call in pg.patch.call_args_list:
+        row.update(call.args[1])
+    assert row["spotify_lookup_misses"] == (0 if found else 2)
+    assert row["spotify_not_found_since"] == (None if found else NOW.isoformat())
 
 
 def test_spotify_errors_are_not_search_misses(pipeline, capsys):
@@ -162,3 +164,64 @@ def test_healthy_hit_does_not_add_a_tracking_write(pipeline):
         "spotify_not_found_since": None,
     }, hit)
     pg.patch.assert_called_once_with("tracks", hit, "isrc=eq.GBABC2600001")
+
+
+@pytest.mark.parametrize("isrc", ["", "  ", "--- / !!!", "____"])
+def test_empty_normalized_isrc_is_not_a_miss(pipeline, isrc, capsys):
+    pg, sp = run_batch(pipeline, {"isrc": isrc, "spotify_lookup_misses": 1})
+    pg.patch.assert_not_called()
+    sp.find_track_by_isrc.assert_not_called()
+    assert "miss=0" in capsys.readouterr().out
+    spotify = pipeline.Spotify("offline", "offline")
+    spotify.get = Mock()
+    assert spotify.find_track_by_isrc(isrc) is None
+    spotify.get.assert_not_called()
+
+
+@pytest.mark.parametrize("body", [None, [], {}, {"tracks": None}, {"tracks": {}},
+    {"tracks": {"items": None}}, {"tracks": {"items": {}}},
+    {"tracks": {"items": "invalid"}}, {"tracks": {"items": [None]}}])
+@pytest.mark.parametrize("after_valid_empty_search", [False, True])
+def test_malformed_200_response_never_records_a_miss(pipeline, body, after_valid_empty_search, capsys):
+    pg = Mock()
+    pg.select.return_value = [{"isrc": "GB-ABC-26-00001", "spotify_lookup_misses": 1}]
+    sp = pipeline.Spotify("offline", "offline")
+    sp.get = Mock(side_effect=[{"tracks": {"items": []}}, body] if after_valid_empty_search else [body])
+    sp.get_artists = Mock(return_value=[])
+    if pipeline is competitor:
+        pipeline.enrich_batch(pg, Mock(), sp, 10)
+    else:
+        pipeline.enrich_batch(pg, sp, 10)
+    pg.patch.assert_not_called()
+    assert "miss=0 fail=1" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("misses,since", [(0, None), (1, None), (5, "2026-08-01T00:00:00Z")])
+def test_manual_miss_preserves_existing_tracking(pipeline, misses, since):
+    row = {"isrc": "GBABC2600001", "spotify_lookup_misses": misses, "spotify_not_found_since": since}
+    pg = Mock()
+    pg.select.return_value = [row]
+    sp = Mock()
+    sp.find_track_by_isrc.return_value = None
+    if pipeline is competitor:
+        pipeline.enrich_single(pg, Mock(), sp, row["isrc"])
+    else:
+        pipeline.enrich_single(pg, sp, row["isrc"])
+    for call in pg.patch.call_args_list:
+        assert "spotify_lookup_misses" not in call.args[1]
+        assert "spotify_not_found_since" not in call.args[1]
+    assert row["spotify_lookup_misses"] == misses
+    assert row["spotify_not_found_since"] == since
+
+
+def test_two_valid_empty_searches_still_count_a_batch_miss(pipeline):
+    pg = Mock()
+    pg.select.return_value = [{"isrc": "GBABC2600001", "spotify_lookup_misses": 1}]
+    sp = pipeline.Spotify("offline", "offline")
+    sp.get = Mock(return_value={"tracks": {"items": []}})
+    sp.get_artists = Mock(return_value=[])
+    if pipeline is competitor:
+        pipeline.enrich_batch(pg, Mock(), sp, 10)
+    else:
+        pipeline.enrich_batch(pg, sp, 10)
+    assert pg.patch.call_args.args[1]["spotify_lookup_misses"] == 2

@@ -1,3 +1,4 @@
+import { logError } from "@/lib/logger";
 import { CACHE_TTL_1H } from "@/lib/constants";
 import { isAllCompetitorsKey } from "@/lib/competitorContext";
 import { addDaysISO, dataDateFromRunDate, runDateFromDataDate } from "@/lib/sotDates";
@@ -229,7 +230,7 @@ export async function loadCompetitorHealthPage(args: {
         comp
           .from("tracks")
           .select("isrc", { count: "exact", head: true })
-          .or("spotify_artist_ids.is.null,spotify_artist_ids.eq.{},spotify_album_image_url.is.null")
+          .or("spotify_artist_ids.is.null,spotify_album_image_url.is.null")
           .is("spotify_not_found_since", null),
         comp
           .from("playlists")
@@ -333,13 +334,10 @@ export async function loadCompetitorHealthPage(args: {
               return q;
             })()
           : Promise.resolve({ data: [], error: null }),
-        comp.from("tracks")
-          .select("isrc,name,album_image_url:spotify_album_image_url,spotify_artist_ids,spotify_not_found_since")
-          .or("spotify_artist_ids.is.null,spotify_artist_ids.eq.{},spotify_album_image_url.is.null")
-          .is("spotify_not_found_since", null)
-          .order("name", { ascending: true, nullsFirst: false })
-          .order("isrc")
-          .range((unenrichedPage - 1) * UNENRICHED_PAGE_SIZE, unenrichedPage * UNENRICHED_PAGE_SIZE - 1),
+        comp.rpc("unenriched_tracks_paged", {
+          p_offset: (unenrichedPage - 1) * UNENRICHED_PAGE_SIZE,
+          p_limit: UNENRICHED_PAGE_SIZE,
+        }),
       ]);
 
       const stats = (statsResult.data ?? []) as Array<{
@@ -500,15 +498,32 @@ export async function loadCompetitorHealthPage(args: {
         };
       });
 
-      const unenrichedRows: CompetitorUnenrichedTrack[] = ((unenrichedRowsResult.data ?? []) as Array<
-        Record<string, unknown>
-      >).map((t) => ({
-        isrc: String(t.isrc ?? ""),
-        name: String(t.name ?? t.isrc ?? ""),
-        album_image_url: (t.album_image_url as string | null) ?? null,
-        missing_artists: !Array.isArray(t.spotify_artist_ids) || t.spotify_artist_ids.length === 0,
-        missing_image: t.album_image_url == null,
-      }));
+      const unenrichedCandidates = (unenrichedRowsResult.data ?? []) as Array<Record<string, unknown>>;
+      const notFoundIsrcs = new Set<string>();
+      if (unenrichedCandidates.length > 0) {
+        try {
+          const { data: notFound, error: notFoundError } = await comp.from("tracks")
+            .select("isrc")
+            .in("isrc", unenrichedCandidates.map((track) => String(track.isrc)))
+            .not("spotify_not_found_since", "is", null);
+          if (notFoundError) {
+            logError("Competitor Spotify status lookup failed", notFoundError);
+          } else {
+            for (const track of notFound ?? []) notFoundIsrcs.add(String(track.isrc));
+          }
+        } catch (error) {
+          logError("Competitor Spotify status lookup failed", error);
+        }
+      }
+      const unenrichedRows: CompetitorUnenrichedTrack[] = unenrichedCandidates
+        .filter((track) => !notFoundIsrcs.has(String(track.isrc)))
+        .map((t) => ({
+          isrc: String(t.isrc ?? ""),
+          name: String(t.name ?? t.isrc ?? ""),
+          album_image_url: (t.album_image_url as string | null) ?? null,
+          missing_artists: Boolean(t.missing_artists),
+          missing_image: Boolean(t.missing_image),
+        }));
 
       const configDrift = buildConfigDrift(loadCompetitorConfigPlaylists(), playlists);
 

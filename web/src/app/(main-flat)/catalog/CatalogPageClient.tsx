@@ -268,7 +268,7 @@ export function CatalogPageClient(props: {
     [props.artists],
   );
   const trackComboboxOptions = useMemo(
-    () => props.tracks.map((t) => ({ value: t.isrc, label: t.name, imageUrl: t.albumImageUrl, spotifyNotFoundSince: t.spotifyNotFoundSince })),
+    () => props.tracks.map((t) => ({ value: t.isrc, label: t.name, imageUrl: t.albumImageUrl })),
     [props.tracks],
   );
 

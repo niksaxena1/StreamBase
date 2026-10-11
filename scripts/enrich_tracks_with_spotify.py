@@ -31,10 +31,10 @@ def norm_isrc_for_lookup(s: str) -> str:
 
 try:
     from .streambase_postgrest import Postgrest as SharedPostgrest
-    from .spotify_lookup_tracking import TRACKING_FIELDS, lookup_candidate_filter, record_lookup
+    from .spotify_lookup_tracking import TRACKING_FIELDS, lookup_candidate_filter, record_lookup, spotify_search_items
 except ImportError:
     from streambase_postgrest import Postgrest as SharedPostgrest
-    from spotify_lookup_tracking import TRACKING_FIELDS, lookup_candidate_filter, record_lookup
+    from spotify_lookup_tracking import TRACKING_FIELDS, lookup_candidate_filter, record_lookup, spotify_search_items
 
 
 Postgrest = SharedPostgrest
@@ -99,7 +99,8 @@ class Spotify:
                 continue
             q = requests.utils.quote(f"isrc:{query_isrc}")
             resp = self.get(f"/search?q={q}&type=track&limit=1")
-            item = ((resp.get("tracks") or {}).get("items") or [None])[0]
+            items = spotify_search_items(resp)
+            item = items[0] if items else None
             if item:
                 break
         else:
@@ -150,7 +151,6 @@ def enrich_single(pg: Postgrest, sp: Spotify, isrc: str):
     print("Searching Spotify...")
     hit = sp.find_track_by_isrc(isrc)
     if not hit:
-        record_lookup(pg, rows[0], False, True)
         print(f"No Spotify match found for ISRC {isrc}. Enrichment fields left cleared.")
         return
 
@@ -188,7 +188,7 @@ def enrich_batch(pg: Postgrest, sp: Spotify, limit: int, only_missing: bool = Fa
 
     for row in candidates:
         isrc_db = (row.get("isrc") or "").strip()
-        if not isrc_db:
+        if not norm_isrc_for_lookup(isrc_db):
             continue
         try:
             hit = sp.find_track_by_isrc(isrc_db)

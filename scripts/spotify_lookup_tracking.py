@@ -38,3 +38,12 @@ def record_lookup(pg, row: dict, found: bool, has_last_fetched: bool) -> None:
         pg.patch("tracks", patch, f"isrc=eq.{row['isrc']}")
     except Exception as exc:
         print(f"WARN Spotify lookup tracking {row.get('isrc')}: {exc}")
+
+
+def spotify_search_items(payload) -> list:
+    """Only a valid search response can establish a Spotify lookup miss."""
+    tracks = payload.get("tracks") if isinstance(payload, dict) else None
+    items = tracks.get("items") if isinstance(tracks, dict) else None
+    if not isinstance(items, list) or any(not isinstance(item, dict) for item in items):
+        raise ValueError("Malformed Spotify search response: expected tracks.items list")
+    return items

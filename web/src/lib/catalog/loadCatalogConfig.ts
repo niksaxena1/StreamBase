@@ -1,3 +1,4 @@
+import { logWarn } from "@/lib/logger";
 import { CACHE_TTL_1H } from "@/lib/constants";
 import { cachedQueries, cachedQuery } from "@/lib/supabase/cache";
 import { queryErrorMessage } from "@/lib/supabase/rpcErrors";
@@ -49,13 +50,20 @@ async function fetchTrackRows(svc: ReturnType<typeof supabaseService>) {
     // artwork is missing, keeping the query out of normal catalog hot paths.
     const missingArtworkIsrcs = batch.filter((row) => !row.spotify_album_image_url).map((row) => row.isrc);
     for (let start = 0; start < missingArtworkIsrcs.length; start += 200) {
-      const { data: tracking, error: trackingError } = await svc.from("tracks")
-        .select("isrc,spotify_not_found_since")
-        .in("isrc", missingArtworkIsrcs.slice(start, start + 200));
-      if (trackingError) throw trackingError;
-      const sinceByIsrc = new Map((tracking ?? []).map((row) => [row.isrc, row.spotify_not_found_since]));
-      for (const row of batch) {
-        if (sinceByIsrc.has(row.isrc)) row.spotify_not_found_since = sinceByIsrc.get(row.isrc) ?? null;
+      try {
+        const { data: tracking, error: trackingError } = await svc.from("tracks")
+          .select("isrc,spotify_not_found_since")
+          .in("isrc", missingArtworkIsrcs.slice(start, start + 200));
+        if (trackingError) {
+          logWarn("Catalog Spotify status hydration failed", trackingError);
+          continue;
+        }
+        const sinceByIsrc = new Map((tracking ?? []).map((row) => [row.isrc, row.spotify_not_found_since]));
+        for (const row of batch) {
+          if (sinceByIsrc.has(row.isrc)) row.spotify_not_found_since = sinceByIsrc.get(row.isrc) ?? null;
+        }
+      } catch (error) {
+        logWarn("Catalog Spotify status hydration failed", error);
       }
     }
     rows.push(...batch);

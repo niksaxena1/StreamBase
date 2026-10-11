@@ -4,14 +4,12 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Check, User, Music } from "lucide-react";
 import { formatInt } from "@/lib/format";
 import { foldForSearch } from "@/lib/searchFold";
-import { SpotifyNotFoundBadge } from "@/components/ui/SpotifyNotFoundBadge";
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 
 export type ComboboxOption = {
   value: string;
   label: string;
   imageUrl?: string | null;
-  spotifyNotFoundSince?: string | null;
   isAllCatalog?: boolean;
   trackCount?: number | null;
 };
@@ -166,7 +164,6 @@ export function Combobox(props: {
                     )
                   ) : null}
                   <span className="truncate">{o.label}</span>
-                  <SpotifyNotFoundBadge since={o.spotifyNotFoundSince} imageUrl={o.imageUrl} />
                 </div>
                 <div className="flex items-center gap-3 flex-shrink-0">
                   {o.trackCount !== null && o.trackCount !== undefined && (

@@ -1546,14 +1546,16 @@ The watch has its own concurrency group and is not chained into the daily ingest
 Migration `20261011161525_add_spotify_not_found_tracking.sql` adds lookup tracking to
 `public.tracks` and `competitor.tracks` without changing track identity or mixing
 catalogs. Apply it before deploying the updated enrichment scripts and web queries.
-It is prepared locally and has not been applied by this change.
+The migration is applied in production.
 
 Two consecutive search misses mark a track as ?Not on Spotify?. Both normal and
 `--only-missing` batches then defer it for 30 days; `--isrc` remains an explicit
-immediate retry. A successful lookup clears the miss count and absence date.
+immediate retry. Manual misses leave lookup tracking unchanged; a successful
+lookup clears the miss count and absence date.
 Public tracks retain the first confirmation date and use `spotify_last_fetched_at`
 to schedule monthly rechecks. Competitor tracks do not have that timestamp, so a
 recheck miss refreshes `spotify_not_found_since` to restart the 30-day window.
-Tracking writes are best-effort, and Spotify API errors do not count as misses.
+Tracking writes are best-effort. Spotify API errors, malformed search responses,
+and ISRCs that normalize to empty do not count as misses.
 These tracks are excluded from missing-enrichment Health warnings and competitor
 missing-metadata counts/lists. Other data-quality warnings still apply.

@@ -5,8 +5,11 @@ const fixture = vi.hoisted(() => ({
   tracks: [] as Array<Record<string, unknown>>,
   queries: [] as Array<{ table: string; filters: Array<[string, ...unknown[]]> }>,
   trackError: false,
+  throwTrackError: false,
+  warn: vi.fn(),
 }));
 
+vi.mock("@/lib/logger", () => ({ logWarn: fixture.warn }));
 vi.mock("next/cache", () => ({ unstable_cache: (fn: unknown) => fn }));
 vi.mock("@/lib/supabase/service", () => ({
   supabaseService: () => ({
@@ -25,6 +28,7 @@ vi.mock("@/lib/supabase/service", () => ({
           details_json: { isrc_list: ["MISSING", "REMOVED", "RESTORED"] },
         }];
         if (table === "tracks") {
+          if (fixture.throwTrackError) throw new Error("offline");
           data = fixture.tracks.filter((row) => filters.every(([method, key, value]) => {
             if (method === "is") return row[String(key)] == null;
             if (method === "in") return (value as unknown[]).includes(row[String(key)]);
@@ -43,6 +47,8 @@ beforeEach(() => {
   fixture.queries.length = 0;
   fixture.tracks = [];
   fixture.trackError = false;
+  fixture.throwTrackError = false;
+  fixture.warn.mockClear();
 });
 
 describe("active missing-enrichment warnings", () => {
@@ -71,4 +77,20 @@ describe("active missing-enrichment warnings", () => {
     const summary = await recomputeActiveWarningSnapshot("2026-10-11");
     expect(summary.warnings.map((w) => w.code)).toEqual(["tracks_missing_enrichment"]);
   });
+
+  it("logs a failed status read and treats tracks as not excluded", async () => {
+    fixture.tracks = [{ isrc: "REMOVED", spotify_artist_ids: null, spotify_not_found_since: "2026-10-01" }];
+    fixture.trackError = true;
+    const summary = await recomputeActiveWarningSnapshot("2026-10-11");
+    expect(summary.warnings.map((w) => w.code)).toEqual(["tracks_missing_enrichment"]);
+    expect(fixture.warn).toHaveBeenCalledOnce();
+  });
+
+  it("logs a thrown status error without breaking Health", async () => {
+    fixture.throwTrackError = true;
+    const summary = await recomputeActiveWarningSnapshot("2026-10-11");
+    expect(summary.warnings.map((w) => w.code)).toEqual(["tracks_missing_enrichment"]);
+    expect(fixture.warn).toHaveBeenCalledOnce();
+  });
+
 });
