@@ -66,13 +66,7 @@ File:
 
 - `web/src/app/(main-flat)/page.tsx`
 
-<<<<<<< HEAD
-On Health, expand **Events** below warning history for a newest-first timeline of discoveries, playlist changes, stream repairs, ingestion runs, and large daily movements. Choose 7, 30, or 90 days and filter by type. Own-catalog Events also include Spotify takedowns/restorations, including suppressed alerts marked “already dead in StreamBase.” Removals occur the day after the last active membership day. Snapshot events show data dates; ingestion dates are marked `run`. Streams lag SpotOnTrack by about two days. Movement comparisons use seven prior complete days and require at least 90% paired-track coverage; less complete days show **Partial data** instead of a movement alert.
-
-The selected competitor is global. One competitor may own multiple playlists, and changing the selector changes supported competitor-aware surfaces across the app.
-=======
 ### Catalog (`/catalog`)
->>>>>>> origin/main
 
 - Purpose: artist-first catalog analytics with optional track drilldown.
 - What you can do:
@@ -169,6 +163,8 @@ Tracks daily Spotify follower counts for watched playlists. Search and sort the 
   - Expand warnings to see impacted tracks (for supported warning types)
   - Export “missing catalog tracks” list
   - Download raw export CSVs for the selected run date
+
+On Health, expand **Events** below warning history for a newest-first timeline of discoveries, playlist changes, stream repairs, ingestion runs, and large daily movements. Choose 7, 30, or 90 days and filter by type. Own-catalog Events also include Spotify takedowns/restorations, including suppressed alerts marked “already dead in StreamBase.” Removals occur the day after the last active membership day. Snapshot events show data dates; ingestion dates are marked `run`. Streams lag SpotOnTrack by about two days. Movement comparisons use seven prior complete days and require at least 90% paired-track coverage; less complete days show **Partial data** instead of a movement alert.
 
 Core warning types you’ll see:
 
