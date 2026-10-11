@@ -1,5 +1,5 @@
 -- Prerequisite: 20261011023115_add_home_diagnostic_snapshots.sql.
--- Retain run_date >= p_run_date - 30, including the boundary day.
+-- Retain run_date >= p_run_date - 2, including the boundary day.
 -- CREATE OR REPLACE preserves the service-role-only EXECUTE grants.
 
 CREATE OR REPLACE FUNCTION public.refresh_home_diag_snapshots(p_run_date date)
@@ -48,7 +48,7 @@ BEGIN
     RAISE EXCEPTION 'overrides changed while refreshing Home diagnostics';
   END IF;
   DELETE FROM public.home_diag_snapshots
-  WHERE run_date < p_run_date - 30;
+  WHERE run_date < p_run_date - 2;
 END;
 $$;
 
@@ -109,6 +109,6 @@ BEGIN
     RAISE EXCEPTION 'overrides changed while refreshing competitor Home diagnostics';
   END IF;
   DELETE FROM competitor.home_diag_snapshots
-  WHERE run_date < p_run_date - 30;
+  WHERE run_date < p_run_date - 2;
 END;
 $$;
