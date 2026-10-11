@@ -101,6 +101,7 @@ export async function cachedQuery<T>(
   queryFn: () => Promise<SupabaseQueryResult<T>>,
   key: string,
   revalidateSeconds: number | false = DEFAULT_REVALIDATE_SECONDS,
+  additionalTags: string[] = [],
 ): Promise<SupabaseQueryResult<T>> {
   try {
     return await unstable_cache(
@@ -129,7 +130,7 @@ export async function cachedQuery<T>(
         revalidate: revalidateSeconds,
         // Generic tag plus key-specific tag so we can either
         // revalidate everything or target specific keys.
-        tags: [SUPABASE_CACHE_TAG, cacheTagForKey(key)],
+        tags: [SUPABASE_CACHE_TAG, cacheTagForKey(key), ...additionalTags],
       },
     )();
   } catch (error) {

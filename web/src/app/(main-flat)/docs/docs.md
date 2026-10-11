@@ -111,6 +111,12 @@ Implementation pointers:
 
 Shows how artists connect through tracks in the selected catalog or playlist scope. Choose the full catalog, one playlist, or a custom playlist scope; filter the graph by region, primary credits, co-artist count, track count, or advanced artist conditions. You can scale nodes by track count, show artist images, switch to a table, inspect artist details, and export the current own-catalog view to Excel.
 
+- Explore artist collaborations in the selected own-catalog or competitor playlist scope. The all-competitors view shows label overlap.
+- **Size by streams** is on by default. Artist radii use a clamped square-root scale of available daily streams; edge widths use the combined daily streams of unique shared ISRCs. Daily streams come from the latest two effective cumulative snapshots in the selected schema. Missing metrics keep the existing default size. Turn the toggle off for uniform sizes, or use the existing **Scale by tracks** control.
+- **Colour by cluster** is off by default. Detection starts on first enable, runs in short client-side chunks, and caches completed results by graph topology. Weighted, deterministic label propagation groups artists by shared-track count. The eight largest communities by daily streams have distinct muted colours; other communities share an “other” tone, and singletons are neutral grey. The **Clusters** panel lists communities with at least two artists, showing their leading artist, artist count and summed daily streams, sorted by streams. Click a cluster to highlight and zoom to it; with images enabled, cluster colours appear on artwork rings.
+- The time slider starts at **All time**. Choose a date to include collaborations whose earliest shared track appeared by then, using release date with first-seen fallback. Undated collaborations remain visible only in All time. **Highlight last 30 days** brightens collaborations first appearing during the thirty UTC dates ending today and dims the rest.
+- Sizing, cluster colouring, the date cutoff and recent highlighting are saved in the URL. Known zero and unavailable daily streams share the same minimum visible radius. Slider dragging filters edges without recalculating the layout; artists without visible edges under a date cutoff are dimmed in place. Existing filters, selection, track modals and exports remain available; collaboration counts and exports follow the date cutoff.
+
 ### Competitors (`/competitors`)
 
 Admin-only workspace for the separate competitor dataset. Its tabs show an overview, label comparisons, track movement, catalog intelligence, and data health. Compare selected labels, inspect gainers/losers and catalog adds/removals, and review overlaps and ingestion warnings. **Add competitor** creates a label and its first playlist; a label can have more playlists managed by the pipeline configuration.
@@ -163,6 +169,8 @@ Tracks daily Spotify follower counts for watched playlists. Search and sort the 
   - Expand warnings to see impacted tracks (for supported warning types)
   - Export “missing catalog tracks” list
   - Download raw export CSVs for the selected run date
+
+On Health, expand **Events** below warning history for a newest-first timeline of discoveries, playlist changes, stream repairs, ingestion runs, and large daily movements. Choose 7, 30, or 90 days and filter by type. Own-catalog Events also include Spotify takedowns/restorations, including suppressed alerts marked “already dead in StreamBase.” Removals occur the day after the last active membership day. Snapshot events show data dates; ingestion dates are marked `run`. Streams lag SpotOnTrack by about two days. Movement comparisons use seven prior complete days and require at least 90% paired-track coverage; less complete days show **Partial data** instead of a movement alert.
 
 Core warning types you’ll see:
 

@@ -5,9 +5,19 @@ import type { CollabCountBasis, NetworkTableSortKey } from "./networkGraphTypes"
 export function readNetworkToggles(sp: URLSearchParams) {
   return {
     scaleByTracks: sp.get("scale_tracks") === "1",
+    sizeByStreams: sp.get("size_streams") !== "0" && sp.get("scale_tracks") !== "1",
+    colourByCluster: sp.get("clusters") === "1",
+    highlightRecent: sp.get("recent_collabs") === "1",
+    throughDay: parseNetworkThroughDay(sp.get("net_time")),
     showImages: sp.get("images") !== "0",
     tableView: sp.get("table") === "1",
   };
+}
+
+export function parseNetworkThroughDay(raw: string | null): number | null {
+  if (!raw || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null;
+  const time = Date.parse(`${raw}T00:00:00Z`);
+  return Number.isFinite(time) && new Date(time).toISOString().slice(0, 10) === raw ? time / 86_400_000 : null;
 }
 
 function parseTrackCountBound(raw: string | null): number | null {
@@ -117,6 +127,10 @@ export function buildNetworkQueryString(args: {
   scope: NetworkScopeState;
   hideNonPrimary: boolean;
   scaleByTracks: boolean;
+  sizeByStreams?: boolean;
+  colourByCluster?: boolean;
+  highlightRecent?: boolean;
+  throughDay?: number | null;
   showImages: boolean;
   tableView: boolean;
   collabMin: number | null;
@@ -132,6 +146,10 @@ export function buildNetworkQueryString(args: {
   appendNetworkScopeToSearchParams(p, args.scope);
   if (args.hideNonPrimary) p.set("hide_non_primary", "1");
   if (args.scaleByTracks) p.set("scale_tracks", "1");
+  if (args.sizeByStreams === false) p.set("size_streams", "0");
+  if (args.colourByCluster) p.set("clusters", "1");
+  if (args.highlightRecent) p.set("recent_collabs", "1");
+  if (args.throughDay != null) p.set("net_time", new Date(args.throughDay * 86_400_000).toISOString().slice(0, 10));
   if (!args.showImages) p.set("images", "0");
   if (args.tableView) p.set("table", "1");
   if (args.collabMin != null) p.set("collab_min", String(args.collabMin));

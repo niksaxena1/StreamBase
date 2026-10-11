@@ -18,6 +18,7 @@ import { WarningsSection } from "@/components/health/WarningsSection";
 import { MissingCatalogSection } from "@/components/health/MissingCatalogSection";
 import { SpotifyAvailabilitySection } from "@/components/health/SpotifyAvailabilitySection";
 import { CompetitorHealthSection } from "./CompetitorHealthSection";
+import { EventsSection } from "@/components/health/EventsSection";
 import { ChartSkeleton, StatCardSkeleton, TableSkeleton } from "@/components/ui/Skeleton";
 
 export const dynamic = "force-dynamic";
@@ -102,6 +103,8 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
       </Suspense>
 
       <WarningHistoryChart />
+
+      <EventsSection mode="own" />
 
       <Suspense fallback={<MissingSkeleton />}>
         <SpotifyAvailabilitySection />
