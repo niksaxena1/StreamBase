@@ -368,7 +368,7 @@ def test_run_suppresses_only_already_dead_takedowns(monkeypatch, values, expecte
         assert sent == []
     else:
         assert event.get("notified_at")
-        assert "suppressed_reason" not in event
+        assert event.get("suppressed_reason") is None
         assert len(sent) == 1
     assert len(pg.effective_queries) == 1
     assert "isrc=in.(QZ0000000000)" in pg.effective_queries[0][1]
@@ -387,7 +387,7 @@ def test_run_restoration_is_always_emailed(monkeypatch):
     event = pg.tables["spotify_track_availability_events"][0]
     assert event["event"] == "restored"
     assert event.get("notified_at")
-    assert "suppressed_reason" not in event
+    assert event.get("suppressed_reason") is None
     assert len(sent) == 1 and "1 restored" in sent[0][1]
     assert pg.effective_queries == []
 

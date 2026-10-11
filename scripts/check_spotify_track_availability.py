@@ -364,7 +364,7 @@ def already_dead_takedowns(pg: Postgrest, events: List[dict], tracks_by_isrc: Di
         if tracks_by_isrc.get(e["isrc"], {}).get("last_catalog_date")
     }
     if not dated:
-        return {e["isrc"]: "already_zero_total" for e in candidates}
+        return {}  # No catalog history to judge by: keep emailing.
 
     start = min(dated.values()) - timedelta(days=14)
     end = max(dated.values())
@@ -384,8 +384,7 @@ def already_dead_takedowns(pg: Postgrest, events: List[dict], tracks_by_isrc: Di
         isrc = event["isrc"]
         catalog_date = dated.get(isrc)
         if catalog_date is None:
-            suppressed[isrc] = "already_zero_total"
-            continue
+            continue  # Unknown in StreamBase: email it.
         values = [
             row for row in rows_by_isrc.get(isrc, [])
             if date.fromisoformat(str(row["date"])[:10]) <= catalog_date
@@ -632,10 +631,10 @@ def run(pg: Postgrest, sp: Spotify, args: argparse.Namespace, markets: Sequence[
             suppressed = already_dead_takedowns(pg, new_events, tracks_by_isrc)
             summary[4] = f"- Already dead in StreamBase (not emailed): {len(suppressed)}"
             for event in new_events:
+                # PostgREST bulk inserts need identical keys on every row.
                 reason = suppressed.get(event["isrc"])
-                if reason:
-                    event["notified_at"] = now_iso
-                    event["suppressed_reason"] = reason
+                event["notified_at"] = now_iso if reason else None
+                event["suppressed_reason"] = reason
             pg.insert("spotify_track_availability_events", new_events)
     for start in range(0, len(upserts), 500):
         pg.upsert("spotify_track_availability", upserts[start : start + 500], on_conflict="isrc")
