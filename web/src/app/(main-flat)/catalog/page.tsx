@@ -137,16 +137,45 @@ async function CatalogPageContent({
     const excludeCatalog = Boolean(datasetSettings?.hide_stale_annotations_exclude_catalog);
     const hideStaleAnnotations = wantsHide && !excludeCatalog;
 
+    // Rollback caps the latest-run lookup; neither depends on artist metadata.
+    const latestRunPromise = (async () => {
+      // Global time-rollback: if active, cap all queries at this date.
+      const rollbackDate = await getRollbackDate();
+      const rollbackRunDate = rollbackDate ? rollbackDataDateToRunDate(rollbackDate) : null;
+
+      // Canonical latest RUN date (DB snapshot date) - cached, capped by rollback
+      return cachedQuery(
+        async () => {
+          let q = svc
+            .from("playlist_daily_stats")
+            .select("date")
+            .eq("playlist_key", "all_catalog");
+          if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
+          return await q
+            .order("date", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+        },
+        `latest-date-all-catalog-rb${rollbackDate ?? "live"}`,
+        CACHE_TTL_1H,
+      );
+    })();
+    // Observe early failures; the original promise is still awaited below.
+    void latestRunPromise.catch(() => {});
+
     // Cache-buster: include count + max(id) in cache keys so both additions AND
     // removals of overrides invalidate stale catalog aggregate caches.
-    let overrideBuster = "0";
-    try {
-      // Single fast index-only aggregate (max id + count) computed in Postgres.
-      const { data: version } = await svc.rpc("spotibase_override_version");
-      if (typeof version === "string" && version) overrideBuster = version;
-    } catch {
-      // ignore (function may not exist yet)
-    }
+    const overrideBusterPromise = (async () => {
+      let overrideBuster = "0";
+      try {
+        // Single fast index-only aggregate (max id + count) computed in Postgres.
+        const { data: version } = await svc.rpc("spotibase_override_version");
+        if (typeof version === "string" && version) overrideBuster = version;
+      } catch {
+        // ignore (function may not exist yet)
+      }
+      return overrideBuster;
+    })();
 
     const artistId = (sp.artist_id ?? "").trim();
     const requestedIsrc = (sp.isrc ?? "").trim();
@@ -224,6 +253,33 @@ async function CatalogPageContent({
       );
     }
 
+    const isrc = requestedIsrc || null;
+    const selectedTrackPromise = isrc
+      ? cachedQuery(
+          async () => await svc.from("tracks")
+            .select("name,spotify_album_image_url,spotify_track_id,spotify_artist_names,spotify_artist_ids,release_date")
+            .eq("isrc", isrc).maybeSingle(),
+          `track-selected-${isrc}`,
+          CACHE_TTL_1H,
+        )
+      : Promise.resolve({ data: null, error: null });
+    void selectedTrackPromise.catch(() => {});
+
+    // Track list for this artist (cached for 1 hour)
+    const artistTracksPromise = cachedQuery(
+      async () =>
+        await svc
+          .from("tracks")
+          .select("isrc,name,spotify_artist_ids,spotify_artist_names,spotify_album_image_url,release_date")
+          .contains("spotify_artist_ids", [artistId])
+          .order("last_seen", { ascending: false })
+          .limit(800),
+      // Bump cache version when selected columns change (release_date added).
+      `artist-tracks-v3-${artistId}`,
+      CACHE_TTL_1H,
+    );
+    void artistTracksPromise.catch(() => {});
+
     // We don't have an artists table; the distinct-artist dropdown is computed in
     // Postgres (catalog_artist_options) instead of paging thousands of track rows
     // to the web server and deriving it in JS.
@@ -285,19 +341,13 @@ async function CatalogPageContent({
       }
     }
 
-  // Track list for this artist (cached for 1 hour)
-  const { data: tracks, error: tracksError } = await cachedQuery(
-    async () =>
-      await svc
-        .from("tracks")
-        .select("isrc,name,spotify_artist_ids,spotify_artist_names,spotify_album_image_url,release_date")
-        .contains("spotify_artist_ids", [artistId])
-        .order("last_seen", { ascending: false })
-        .limit(800),
-    // Bump cache version when selected columns change (release_date added).
-    `artist-tracks-v3-${artistId}`,
-    CACHE_TTL_1H,
+  const selectedAndSomeArtistIds = Array.from(
+    new Set([artistId, ...artists.slice(0, CATALOG_ARTIST_THUMBNAILS_MAX).map((a) => a.id)].filter(Boolean)),
   );
+  const artistDataPromise = getArtistsCached(svc, selectedAndSomeArtistIds, { maxAgeDays: 31 });
+  void artistDataPromise.catch(() => {});
+
+  const { data: tracks, error: tracksError } = await artistTracksPromise;
 
   if (tracksError) {
     logError("Error fetching artist tracks", tracksError);
@@ -366,33 +416,12 @@ async function CatalogPageContent({
     artistNameFor(artistTracks, artistId) ??
     artistId;
 
-  // Global time-rollback: if active, cap all queries at this date.
-  const rollbackDate = await getRollbackDate();
-  const rollbackRunDate = rollbackDate ? rollbackDataDateToRunDate(rollbackDate) : null;
-
-  // Canonical latest RUN date (DB snapshot date) - cached, capped by rollback
-  const { data: latestRun } = await cachedQuery(
-    async () => {
-      let q = svc
-        .from("playlist_daily_stats")
-        .select("date")
-        .eq("playlist_key", "all_catalog");
-      if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
-      return await q
-        .order("date", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-    },
-    `latest-date-all-catalog-rb${rollbackDate ?? "live"}`,
-    CACHE_TTL_1H,
-  );
+  const { data: latestRun } = await latestRunPromise;
 
   const latestRunDate = (latestRun as PlaylistDailyStatsRow | null)?.date ?? null;
   const startRunDate = latestRunDate ? addDays(latestRunDate, -rangeDays) : null;
   const maPaddedStartRunDate =
     latestRunDate && startRunDate ? addDays(startRunDate, -MA7_LOOKBACK_DAYS) : null;
-
-  const isrc = requestedIsrc || null;
 
   // Auto-select first track alphabetically if no track is selected and tracks are available
   if (!isrc && artistTracks.length > 0) {
@@ -411,6 +440,25 @@ async function CatalogPageContent({
     }
   }
 
+  // Selected track playlist memberships (active as-of latestRunDate)
+  const selectedTrackPlaylistMembershipsPromise = fetchSelectedTrackPlaylistMemberships(svc, { isrc, latestRunDate });
+  void selectedTrackPlaylistMembershipsPromise.catch(() => {});
+
+  const overrideBuster = await overrideBusterPromise;
+
+  // Artist-wide override annotations for the top charts.
+  // Overrides are stored per-track per-run-date; annotate the artist charts for any track override.
+  const artistOverrideAnnotationsPromise = fetchArtistOverrideAnnotations(svc, {
+    artistId,
+    artistTracks,
+    isrcs,
+    startRunDate,
+    latestRunDate,
+    hideStaleAnnotations,
+    overrideBuster,
+  });
+  void artistOverrideAnnotationsPromise.catch(() => {});
+
   // Artist series + top tracks are computed in Postgres (scales to large tables).
   // The selected track series and image metadata do not depend on those aggregates.
   const trackSeriesPromise = isrc && latestRunDate && startRunDate && maPaddedStartRunDate
@@ -428,19 +476,6 @@ async function CatalogPageContent({
         CACHE_TTL_1H,
       )
     : Promise.resolve({ data: [] as Array<{ date: string; streams_cumulative: number | null }>, error: null });
-  const selectedAndSomeArtistIds = Array.from(
-    new Set([artistId, ...artists.slice(0, CATALOG_ARTIST_THUMBNAILS_MAX).map((a) => a.id)].filter(Boolean)),
-  );
-  const artistDataPromise = getArtistsCached(svc, selectedAndSomeArtistIds, { maxAgeDays: 31 });
-  const selectedTrackPromise = isrc
-    ? cachedQuery(
-        async () => await svc.from("tracks")
-          .select("name,spotify_album_image_url,spotify_track_id,spotify_artist_names,spotify_artist_ids,release_date")
-          .eq("isrc", isrc).maybeSingle(),
-        `track-selected-${isrc}`,
-        CACHE_TTL_1H,
-      )
-    : Promise.resolve({ data: null, error: null });
   const trackOverridesPromise = isrc && latestRunDate && startRunDate
     ? cachedQuery(
         async () => {
@@ -455,7 +490,7 @@ async function CatalogPageContent({
     : Promise.resolve({ data: [], error: null });
   // Observe failures immediately even while independent metadata is loading.
   void trackSeriesPromise.catch(() => {});
-  void artistDataPromise.catch(() => {});
+  void trackOverridesPromise.catch(() => {});
   const [{ data: seriesRows }, { data: topTotalRows }, { data: topDailyRows }] = await Promise.all([
     latestRunDate && startRunDate && maPaddedStartRunDate
       ? cachedQuery(
@@ -530,6 +565,8 @@ async function CatalogPageContent({
   const topIsrcs = new Set<string>();
   for (const r of (topTotalRows ?? []) as CatalogTopTrackRow[]) topIsrcs.add(r.isrc);
   for (const r of (topDailyRows ?? []) as CatalogTopTrackRow[]) topIsrcs.add(r.isrc);
+  const distroByIsrcPromise = fetchTopTrackDistroPlaylists(svc, { artistId, latestRunDate, topIsrcs });
+  void distroByIsrcPromise.catch(() => {});
   const missingTopIsrcs = Array.from(topIsrcs).filter((x) => x && !trackMetaByIsrc.has(x));
   if (missingTopIsrcs.length) {
     const { data: metaRows, error } = await svc
@@ -559,7 +596,7 @@ async function CatalogPageContent({
   }
 
   // Batch-fetch the distro playlist (playlist_type = 'Distro') for every top-track ISRC.
-  const distroByIsrc = await fetchTopTrackDistroPlaylists(svc, { artistId, latestRunDate, topIsrcs });
+  const distroByIsrc = await distroByIsrcPromise;
 
   const topByCumulative = ((topTotalRows ?? []) as CatalogTopTrackRow[]).map((r) => {
     const meta = trackMetaByIsrc.get(r.isrc) ?? null;
@@ -644,17 +681,7 @@ async function CatalogPageContent({
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  // Artist-wide override annotations for the top charts.
-  // Overrides are stored per-track per-run-date; annotate the artist charts for any track override.
-  const artistOverrideAnnotationsDataDate: ManualOverrideAnnotation[] = await fetchArtistOverrideAnnotations(svc, {
-    artistId,
-    artistTracks,
-    isrcs,
-    startRunDate,
-    latestRunDate,
-    hideStaleAnnotations,
-    overrideBuster,
-  });
+  const artistOverrideAnnotationsDataDate: ManualOverrideAnnotation[] = await artistOverrideAnnotationsPromise;
 
   // Artist images for dropdown + header. Use the cached path to avoid hammering Spotify on every request.
   // We cap thumbnails to avoid very large, cold-cache Spotify fetches.
@@ -696,8 +723,7 @@ async function CatalogPageContent({
     }
   }
 
-  // Selected track playlist memberships (active as-of latestRunDate)
-  const selectedTrackPlaylistMemberships = await fetchSelectedTrackPlaylistMemberships(svc, { isrc, latestRunDate });
+  const selectedTrackPlaylistMemberships = await selectedTrackPlaylistMembershipsPromise;
 
   return (
     <div className="space-y-4">

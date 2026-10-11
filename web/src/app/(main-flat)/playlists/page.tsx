@@ -364,6 +364,35 @@ async function PlaylistsPageContent({
     );
   }
 
+  const isDashboardRequest = Boolean(playlistKey) && (sp.view ?? "").trim().toLowerCase() !== "list";
+  const playlistsPromise = isDashboardRequest ? cachedQuery(
+    async () =>
+      await svc
+        .from("playlists")
+        .select("playlist_key,display_name,is_catalog,spotify_playlist_id,spotify_playlist_image_url")
+        .order("display_order", { ascending: true, nullsFirst: false })
+        .order("display_name", { ascending: true }),
+    "playlists-list",
+    3600,
+  ) : Promise.resolve({ data: [], error: null });
+  // Fetch latest stats for all playlists in a single query (replaces N+1 pattern).
+  const allPlaylistsLatestStatsPromise = isDashboardRequest ? playlistsPromise.then(({ data: playlists }) => cachedQuery(
+    async () => {
+      const playlistKeys = (playlists ?? []).map((p: any) => p.playlist_key);
+      if (playlistKeys.length === 0) return { data: [], error: null };
+
+      return await svc.rpc("playlists_latest_track_counts", {
+        p_keys: playlistKeys,
+      });
+    },
+    "playlists-all-latest-stats-v3",
+    3600,
+  )) : Promise.resolve({ data: [], error: null });
+
+  // Keep early failures observed while settings and rollback are loading.
+  void playlistsPromise.catch(() => {});
+  void allPlaylistsLatestStatsPromise.catch(() => {});
+
   const hideStaleAnnotationsPromise = (async () => {
     let hideStaleAnnotations = false;
     try {
@@ -400,7 +429,11 @@ async function PlaylistsPageContent({
 
     return overrideBuster;
   })();
-  const [hideStaleAnnotations, overrideBuster] = await Promise.all([hideStaleAnnotationsPromise, overrideBusterPromise]);
+  const [hideStaleAnnotations, overrideBuster, rollbackDate] = await Promise.all([
+    hideStaleAnnotationsPromise,
+    overrideBusterPromise,
+    isDashboardRequest ? getRollbackDate() : Promise.resolve(null),
+  ]);
 
   // Backwards-compat: old query-driven list view
   if ((sp.view ?? "").trim().toLowerCase() === "list") {
@@ -422,19 +455,8 @@ async function PlaylistsPageContent({
   }
 
   // Global time-rollback: if active, cap all queries at this date.
-  const rollbackDate = await getRollbackDate();
   const rollbackRunDate = rollbackDate ? rollbackDataDateToRunDate(rollbackDate) : null;
 
-  const playlistsPromise = cachedQuery(
-    async () =>
-      await svc
-        .from("playlists")
-        .select("playlist_key,display_name,is_catalog,spotify_playlist_id,spotify_playlist_image_url")
-        .order("display_order", { ascending: true, nullsFirst: false })
-        .order("display_name", { ascending: true }),
-    "playlists-list",
-    3600,
-  );
   const dashboardSummaryPromise = playlistsPromise.then(({ data: rows }) => {
     // The original loader skips this RPC when an invalid key redirects.
     if (!(rows ?? []).some((row) => row.playlist_key === playlistKey)) return { data: null, error: null };
@@ -451,6 +473,223 @@ async function PlaylistsPageContent({
     );
   });
 
+  void dashboardSummaryPromise.catch(() => {});
+
+  const latestPromise = cachedQuery(
+    async () => {
+      let q = svc
+        .from("playlist_daily_stats")
+        .select(
+          "date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net,source_run_id",
+        )
+        .eq("playlist_key", playlistKey);
+      if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
+      return await q
+        .order("date", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+    },
+    `playlist-latest-v2-${playlistKey}-ov${overrideBuster}-rb${rollbackDate ?? "live"}`,
+    3600,
+  );
+
+  const prevPromise = cachedQuery(
+    async () => {
+      let q = svc
+        .from("playlist_daily_stats")
+        .select("date")
+        .eq("playlist_key", playlistKey);
+      if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
+      return await q
+        .order("date", { ascending: false })
+        .range(1, 1)
+        .maybeSingle();
+    },
+    `playlist-prev-v2-${playlistKey}-ov${overrideBuster}-rb${rollbackDate ?? "live"}`,
+    3600,
+  );
+
+  const historyPromise = cachedQuery(
+    async () => {
+      let q = svc
+        .from("playlist_daily_stats")
+        .select(
+          "date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net,missing_streams_track_count",
+        )
+        .eq("playlist_key", playlistKey);
+      if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
+      return await q
+        .order("date", { ascending: false })
+        .limit(rangeDays);
+    },
+    `playlist-history-v2-${playlistKey}-${rangeDays}-ov${overrideBuster}-rb${rollbackDate ?? "live"}`,
+    3600,
+  );
+
+  function parseRpcBigint(v: unknown): number | null {
+    if (v == null) return null;
+    if (typeof v === "number" && Number.isFinite(v)) return Math.trunc(v);
+    if (typeof v === "string" && v.trim() !== "") {
+      const n = Number(v);
+      return Number.isFinite(n) ? Math.trunc(n) : null;
+    }
+    return null;
+  }
+
+  const membershipCountsPromise = Promise.all([playlistsPromise, latestPromise, dashboardSummaryPromise]).then(
+    async ([{ data: playlists }, { data: latest }, { data: dashboardSummary }]) => {
+      if (!(playlists ?? []).some((row) => row.playlist_key === playlistKey)) {
+        return { playlistArtistCount: null, removedTracksCount: 0 };
+      }
+      const latestDate = (latest as PlaylistDailyStatsRow | null)?.date ?? null;
+      const latestSourceRunId = (latest as PlaylistDailyStatsRow | null)?.source_run_id ?? null;
+      const summaryArtistCount = parseRpcBigint((dashboardSummary as PlaylistDashboardSummaryRow | null)?.distinct_artist_count);
+      const summaryRemovedTracksCount = parseRpcBigint((dashboardSummary as PlaylistDashboardSummaryRow | null)?.removed_tracks_count);
+
+      const playlistArtistCountPromise = summaryArtistCount == null ? cachedQuery(
+        async () => {
+          if (!latestDate) return { data: null, error: null };
+          return await svc.rpc("playlist_distinct_artist_count", {
+            playlist_key: playlistKey,
+            run_date: latestDate,
+          });
+        },
+        `playlist-distinct-artist-count-v1-${playlistKey}-${latestDate}-rb${rollbackDate ?? "live"}`,
+        3600,
+      ) : { data: null };
+
+      const removedRowsPromise = summaryRemovedTracksCount == null ? cachedQuery(
+        async () =>
+          await svc.rpc("playlist_removed_tracks", {
+            playlist_key: playlistKey,
+            limit_rows: 500,
+          }),
+        `playlist-removed-rows-v2-${playlistKey}-${latestDate ?? "none"}-${latestSourceRunId ?? "none"}`,
+        86400,
+      ) : { data: null };
+
+      // Removed count is displayed in the metrics panel; we cap at 500 (same as UI table).
+      const [{ data: playlistArtistCountRaw }, { data: removedRows }] = await Promise.all([playlistArtistCountPromise, removedRowsPromise]);
+      const playlistArtistCount = summaryArtistCount ?? parseRpcBigint(playlistArtistCountRaw);
+      const removedTracksCount = summaryRemovedTracksCount ?? (Array.isArray(removedRows) ? removedRows.length : 0);
+
+      return { playlistArtistCount, removedTracksCount };
+    },
+  );
+  void membershipCountsPromise.catch(() => {});
+
+  // Manual stream override annotations for charts (run-date scoped; UI shows data-date).
+  const overrideAnnotationsPromise = Promise.all([playlistsPromise, historyPromise]).then(
+    async ([{ data: playlists }, { data: history }]): Promise<ManualOverrideAnnotation[]> => {
+      const hist = (history ?? []) as PlaylistDailyStatsRow[];
+      if (!(playlists ?? []).some((row) => row.playlist_key === playlistKey)) return [];
+      if (!hist.length) return [];
+      const endRunDate = (hist[0]?.date ?? "").trim();
+      const startRunDate = (hist[hist.length - 1]?.date ?? "").trim();
+      if (!startRunDate || !endRunDate) return [];
+
+      const { data: overrideRowsRaw } = await cachedQuery(
+        async () => {
+          let q = svc
+            .from("track_daily_stream_overrides")
+            .select("date,isrc,note")
+            .gte("date", startRunDate)
+            .lte("date", endRunDate);
+          if (hideStaleAnnotations) q = q.not("note", "like", "stale-fix:%");
+          return await q.order("date", { ascending: false }).limit(500);
+        },
+        `playlist-overrides-range-${startRunDate}-${endRunDate}-stale${hideStaleAnnotations ? "1" : "0"}`,
+        3600,
+      );
+
+      const overrideRows = (overrideRowsRaw ?? []) as TrackOverrideRow[];
+      const isrcs = Array.from(
+        new Set(overrideRows.map((r) => (r?.isrc ?? "").trim()).filter(Boolean)),
+      );
+      if (!isrcs.length) return [];
+
+      const trackMetaPromise = cachedQuery(
+        async () =>
+          await svc
+            .from("tracks")
+            .select("isrc,name,spotify_album_image_url,spotify_artist_names")
+            .in("isrc", isrcs)
+            .limit(2000),
+        `playlist-overrides-track-meta-v2-${[...isrcs].sort().join(",")}`,
+        3600,
+      );
+      const membershipPlaylistKeys =
+        playlistKey === "all_catalog" ? (["releases", "ext"] as const) : ([playlistKey] as const);
+
+      const membershipPromise = cachedQuery(
+        async () =>
+          await svc
+            .from("playlist_memberships")
+            .select("playlist_key,isrc,valid_from,valid_to")
+            .in("playlist_key", [...membershipPlaylistKeys])
+            .in("isrc", isrcs)
+            .lte("valid_from", endRunDate)
+            .or(`valid_to.is.null,valid_to.gte.${startRunDate}`)
+            .limit(5000),
+        `playlist-memberships-for-overrides-${playlistKey}-${startRunDate}-${endRunDate}-${isrcs.length}`,
+        3600,
+      );
+
+      const [{ data: trackMetaRaw }, { data: membershipRowsRaw }] = await Promise.all([trackMetaPromise, membershipPromise]);
+      const trackMeta = (trackMetaRaw ?? []) as TrackMetaRow[];
+      const metaByIsrc = new Map<string, TrackMetaRow>();
+      for (const m of trackMeta) {
+        const key = (m?.isrc ?? "").trim();
+        if (!key) continue;
+        if (!metaByIsrc.has(key)) metaByIsrc.set(key, m);
+      }
+
+      const membershipRows = (membershipRowsRaw ?? []) as PlaylistMembershipRow[];
+      const membershipsByIsrc = new Map<string, PlaylistMembershipRow[]>();
+      for (const m of membershipRows) {
+        const key = (m?.isrc ?? "").trim();
+        if (!key) continue;
+        const arr = membershipsByIsrc.get(key) ?? [];
+        arr.push(m);
+        membershipsByIsrc.set(key, arr);
+      }
+
+      const out: ManualOverrideAnnotation[] = [];
+      for (const o of overrideRows) {
+        const d = (o?.date ?? "").trim();
+        const isrc = (o?.isrc ?? "").trim();
+        if (!d || !isrc) continue;
+        if (!isIsoDateInRange({ d, start: startRunDate, end: endRunDate })) continue;
+
+        const memberships = membershipsByIsrc.get(isrc) ?? [];
+        const isActive = memberships.some((m) => isMembershipActiveAtDate(m, d));
+        if (!isActive) continue;
+
+        const meta = metaByIsrc.get(isrc) ?? null;
+        const artist = meta?.spotify_artist_names?.[0] ?? null;
+        const trackName = meta?.name ?? null;
+        const title =
+          artist && trackName
+            ? `${artist} - ${trackName}`
+            : trackName
+            ? trackName
+            : artist
+            ? artist
+            : isrc;
+
+        out.push({
+          date: dataDateFromRunDate(d),
+          title,
+          imageUrl: meta?.spotify_album_image_url ?? null,
+          note: (o.note ?? "").trim() || `Manual override (ISRC: ${isrc})`,
+        });
+      }
+
+      return out;
+    },
+  );
+  void overrideAnnotationsPromise.catch(() => {});
+
   // Dashboard view - show analytics for selected playlist (cached for 1 hour)
   const [
     { data: playlists },
@@ -459,69 +698,18 @@ async function PlaylistsPageContent({
     { data: history },
   ] = await Promise.all([
     playlistsPromise,
-    cachedQuery(
-      async () => {
-        let q = svc
-          .from("playlist_daily_stats")
-          .select(
-            "date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net,source_run_id",
-          )
-          .eq("playlist_key", playlistKey);
-        if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
-        return await q
-          .order("date", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-      },
-      `playlist-latest-v2-${playlistKey}-ov${overrideBuster}-rb${rollbackDate ?? "live"}`,
-      3600,
-    ),
-    cachedQuery(
-      async () => {
-        let q = svc
-          .from("playlist_daily_stats")
-          .select("date")
-          .eq("playlist_key", playlistKey);
-        if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
-        return await q
-          .order("date", { ascending: false })
-          .range(1, 1)
-          .maybeSingle();
-      },
-      `playlist-prev-v2-${playlistKey}-ov${overrideBuster}-rb${rollbackDate ?? "live"}`,
-      3600,
-    ),
-    cachedQuery(
-      async () => {
-        let q = svc
-          .from("playlist_daily_stats")
-          .select(
-            "date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net,missing_streams_track_count",
-          )
-          .eq("playlist_key", playlistKey);
-        if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
-        return await q
-          .order("date", { ascending: false })
-          .limit(rangeDays);
-      },
-      `playlist-history-v2-${playlistKey}-${rangeDays}-ov${overrideBuster}-rb${rollbackDate ?? "live"}`,
-      3600,
-    ),
+    latestPromise,
+    prevPromise,
+    historyPromise,
   ]);
 
-  // Fetch latest stats for all playlists in a single query (replaces N+1 pattern).
-  const { data: allPlaylistsLatestStats } = await cachedQuery(
-    async () => {
-      const playlistKeys = (playlists ?? []).map((p: any) => p.playlist_key);
-      if (playlistKeys.length === 0) return { data: [], error: null };
+  const latestDate = (latest as PlaylistDailyStatsRow | null)?.date ?? null;
+  const latestSourceRunId = (latest as PlaylistDailyStatsRow | null)?.source_run_id ?? null;
+  const prevDate = (prev as { date: string } | null)?.date ?? null;
 
-      return await svc.rpc("playlists_latest_track_counts", {
-        p_keys: playlistKeys,
-      });
-    },
-    "playlists-all-latest-stats-v3",
-    3600,
-  );
+  const hist = (history ?? []) as PlaylistDailyStatsRow[];
+
+  const { data: allPlaylistsLatestStats } = await allPlaylistsLatestStatsPromise;
 
   const statsMap = new Map(
     (allPlaylistsLatestStats ?? []).map((stat: any) => [stat.playlist_key, stat.track_count])
@@ -544,164 +732,15 @@ async function PlaylistsPageContent({
     ? `https://open.spotify.com/playlist/${spotifyPlaylistId}`
     : null;
 
-  const latestDate = (latest as PlaylistDailyStatsRow | null)?.date ?? null;
-  const latestSourceRunId = (latest as PlaylistDailyStatsRow | null)?.source_run_id ?? null;
-  const prevDate = (prev as { date: string } | null)?.date ?? null;
-
-  function parseRpcBigint(v: unknown): number | null {
-    if (v == null) return null;
-    if (typeof v === "number" && Number.isFinite(v)) return Math.trunc(v);
-    if (typeof v === "string" && v.trim() !== "") {
-      const n = Number(v);
-      return Number.isFinite(n) ? Math.trunc(n) : null;
-    }
-    return null;
-  }
-
-  const { data: dashboardSummary } = await dashboardSummaryPromise;
-  const summaryArtistCount = parseRpcBigint((dashboardSummary as PlaylistDashboardSummaryRow | null)?.distinct_artist_count);
-  const summaryRemovedTracksCount = parseRpcBigint((dashboardSummary as PlaylistDashboardSummaryRow | null)?.removed_tracks_count);
-
-  const playlistArtistCountPromise = summaryArtistCount == null ? cachedQuery(
-    async () => {
-      if (!latestDate) return { data: null, error: null };
-      return await svc.rpc("playlist_distinct_artist_count", {
-        playlist_key: playlistKey,
-        run_date: latestDate,
-      });
-    },
-    `playlist-distinct-artist-count-v1-${playlistKey}-${latestDate}-rb${rollbackDate ?? "live"}`,
-    3600,
-  ) : { data: null };
-
   const playlistTrackCountDisplay =
     (latest as PlaylistDailyStatsRow | null)?.track_count ??
     statsMap.get(playlistKey) ??
     null;
 
-  const hist = (history ?? []) as PlaylistDailyStatsRow[];
-
-  const removedRowsPromise = summaryRemovedTracksCount == null ? cachedQuery(
-    async () =>
-      await svc.rpc("playlist_removed_tracks", {
-        playlist_key: playlistKey,
-        limit_rows: 500,
-      }),
-    `playlist-removed-rows-v2-${playlistKey}-${latestDate ?? "none"}-${latestSourceRunId ?? "none"}`,
-    86400,
-  ) : { data: null };
-
-  // Manual stream override annotations for charts (run-date scoped; UI shows data-date).
-  const overrideAnnotations: ManualOverrideAnnotation[] = await (async () => {
-    if (!hist.length) return [];
-    const endRunDate = (hist[0]?.date ?? "").trim();
-    const startRunDate = (hist[hist.length - 1]?.date ?? "").trim();
-    if (!startRunDate || !endRunDate) return [];
-
-    const { data: overrideRowsRaw } = await cachedQuery(
-      async () => {
-        let q = svc
-          .from("track_daily_stream_overrides")
-          .select("date,isrc,note")
-          .gte("date", startRunDate)
-          .lte("date", endRunDate);
-        if (hideStaleAnnotations) q = q.not("note", "like", "stale-fix:%");
-        return await q.order("date", { ascending: false }).limit(500);
-      },
-      `playlist-overrides-range-${startRunDate}-${endRunDate}-stale${hideStaleAnnotations ? "1" : "0"}`,
-      3600,
-    );
-
-    const overrideRows = (overrideRowsRaw ?? []) as TrackOverrideRow[];
-    const isrcs = Array.from(
-      new Set(overrideRows.map((r) => (r?.isrc ?? "").trim()).filter(Boolean)),
-    );
-    if (!isrcs.length) return [];
-
-    const trackMetaPromise = cachedQuery(
-      async () =>
-        await svc
-          .from("tracks")
-          .select("isrc,name,spotify_album_image_url,spotify_artist_names")
-          .in("isrc", isrcs)
-          .limit(2000),
-      `playlist-overrides-track-meta-v2-${[...isrcs].sort().join(",")}`,
-      3600,
-    );
-    const membershipPlaylistKeys =
-      playlistKey === "all_catalog" ? (["releases", "ext"] as const) : ([playlistKey] as const);
-
-    const membershipPromise = cachedQuery(
-      async () =>
-        await svc
-          .from("playlist_memberships")
-          .select("playlist_key,isrc,valid_from,valid_to")
-          .in("playlist_key", [...membershipPlaylistKeys])
-          .in("isrc", isrcs)
-          .lte("valid_from", endRunDate)
-          .or(`valid_to.is.null,valid_to.gte.${startRunDate}`)
-          .limit(5000),
-      `playlist-memberships-for-overrides-${playlistKey}-${startRunDate}-${endRunDate}-${isrcs.length}`,
-      3600,
-    );
-
-    const [{ data: trackMetaRaw }, { data: membershipRowsRaw }] = await Promise.all([trackMetaPromise, membershipPromise]);
-    const trackMeta = (trackMetaRaw ?? []) as TrackMetaRow[];
-    const metaByIsrc = new Map<string, TrackMetaRow>();
-    for (const m of trackMeta) {
-      const key = (m?.isrc ?? "").trim();
-      if (!key) continue;
-      if (!metaByIsrc.has(key)) metaByIsrc.set(key, m);
-    }
-
-    const membershipRows = (membershipRowsRaw ?? []) as PlaylistMembershipRow[];
-    const membershipsByIsrc = new Map<string, PlaylistMembershipRow[]>();
-    for (const m of membershipRows) {
-      const key = (m?.isrc ?? "").trim();
-      if (!key) continue;
-      const arr = membershipsByIsrc.get(key) ?? [];
-      arr.push(m);
-      membershipsByIsrc.set(key, arr);
-    }
-
-    const out: ManualOverrideAnnotation[] = [];
-    for (const o of overrideRows) {
-      const d = (o?.date ?? "").trim();
-      const isrc = (o?.isrc ?? "").trim();
-      if (!d || !isrc) continue;
-      if (!isIsoDateInRange({ d, start: startRunDate, end: endRunDate })) continue;
-
-      const memberships = membershipsByIsrc.get(isrc) ?? [];
-      const isActive = memberships.some((m) => isMembershipActiveAtDate(m, d));
-      if (!isActive) continue;
-
-      const meta = metaByIsrc.get(isrc) ?? null;
-      const artist = meta?.spotify_artist_names?.[0] ?? null;
-      const trackName = meta?.name ?? null;
-      const title =
-        artist && trackName
-          ? `${artist} - ${trackName}`
-          : trackName
-          ? trackName
-          : artist
-          ? artist
-          : isrc;
-
-      out.push({
-        date: dataDateFromRunDate(d),
-        title,
-        imageUrl: meta?.spotify_album_image_url ?? null,
-        note: (o.note ?? "").trim() || `Manual override (ISRC: ${isrc})`,
-      });
-    }
-
-    return out;
-  })();
-
-  // Removed count is displayed in the metrics panel; we cap at 500 (same as UI table).
-  const [{ data: playlistArtistCountRaw }, { data: removedRows }] = await Promise.all([playlistArtistCountPromise, removedRowsPromise]);
-  const playlistArtistCount = summaryArtistCount ?? parseRpcBigint(playlistArtistCountRaw);
-  const removedTracksCount = summaryRemovedTracksCount ?? (Array.isArray(removedRows) ? removedRows.length : 0);
+  const [{ playlistArtistCount, removedTracksCount }, overrideAnnotations] = await Promise.all([
+    membershipCountsPromise,
+    overrideAnnotationsPromise,
+  ]);
 
   const playlistTrackCountNumeric =
     playlistTrackCountDisplay != null ? Number(playlistTrackCountDisplay) : null;

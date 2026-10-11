@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { Fragment } from "react";
 import { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ExternalLink, Download, List, ChevronRight, User, Loader2 } from "lucide-react";
 import { formatDateISO, formatDateOrdinalDMonYYYY, formatInt, formatUsd } from "@/lib/format";
@@ -12,8 +13,7 @@ import { Combobox } from "@/components/ui/Combobox";
 import { SpotlightCard } from "@/components/ui/SpotlightCard";
 import { AnimatedCounter } from "@/components/ui/AnimatedCounter";
 import { CatalogMetricsClient } from "./CatalogMetricsClient";
-import { DailyStreamsChart } from "@/components/charts/DailyStreamsChart";
-import { DailyStreamsWithMAChart } from "@/components/charts/DailyStreamsWithMAChart";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
 import { downloadCsv, slugifyForFilename, todayIsoDate } from "@/lib/csv";
 import { dataDateFromRunDate } from "@/lib/sotDates";
@@ -39,6 +39,15 @@ import { useLongPress } from "@/components/charts/useLongPress";
 import type { TrackSeriesPoint, TrackDailyPoint, SelectedTrack, TrackPlaylistMembership, TopTrack, ChartDataPoint, DailyDataPoint, ArtistOption, TrackOption } from "./catalogTypes";
 import { sortTopTracks, toggleSort, type SortState, type TopSortKey } from "./catalogUtils";
 import { FreshnessLabel } from "@/components/ui/DataStates";
+
+const DailyStreamsChart = dynamic(
+  () => import("@/components/charts/DailyStreamsChart").then((mod) => mod.DailyStreamsChart),
+  { loading: () => <Skeleton className="h-[220px] w-full" /> },
+);
+const DailyStreamsWithMAChart = dynamic(
+  () => import("@/components/charts/DailyStreamsWithMAChart").then((mod) => mod.DailyStreamsWithMAChart),
+  { loading: () => <Skeleton className="h-[220px] w-full" /> },
+);
 
 // Defined at module level so its identity is stable across renders.
 // Putting it inside the component would create a new type on every render,
