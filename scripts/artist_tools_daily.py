@@ -7,6 +7,7 @@ from pathlib import Path
 
 from artist_tools_mcp import (ArtistToolsError, DailyLimit, LeaseBusy, MCPClient,
                               TokenManager, database_from_env, utcnow)
+from streambase_home_snapshots import refresh_own_home_snapshots
 
 MAX_AUTO_FIX_TRACKS = 500  # Same exclusive ceiling as rapidapi_stale_fix.py
 SUMMARY_PATH = Path(".artifacts/artist_tools_summary.json")
@@ -222,6 +223,7 @@ def execute(pg, client, run_date, max_adds, summary):
     # idempotent; one invocation per run, regardless of override count.
     if written or any(row.get("note") == "stale-fix: artist.tools auto" for row in existing):
         pg.rpc("spotibase_recompute_playlist_daily_stats_cascade", {"p_start_date": run_date})
+        return True  # Refresh diagnostics once the provider lease is released.
 
 
 def write_summary(summary):
@@ -237,6 +239,7 @@ def run(pg, run_date, runner="manual", max_adds=240, skip_if_done=False,
                "reconcile_daily_limited": False, "observation_incomplete": False, "error": None}
     started = utcnow().isoformat()
     client = None
+    refresh_snapshots = False
     try:
         if skip_if_done and is_done(pg, run_date):
             summary.update(status="success", skipped=True)
@@ -254,7 +257,7 @@ def run(pg, run_date, runner="manual", max_adds=240, skip_if_done=False,
             client = client_factory(tokens)
             try:
                 tokens.access_token()  # Broken authorization fails even with an empty catalog.
-                execute(pg, client, run_date, max_adds, summary)
+                refresh_snapshots = bool(execute(pg, client, run_date, max_adds, summary))
                 summary["status"] = "success"
             except Exception as exc:
                 summary["status"] = "failed"
@@ -267,6 +270,10 @@ def run(pg, run_date, runner="manual", max_adds=240, skip_if_done=False,
                     "status": summary["status"], "started_at": started, "finished_at": utcnow().isoformat(),
                     "added_count": summary["added"], "observed_count": summary["observed"],
                     "fixed_count": summary["fixed"], "details": dict(summary)}], "run_date")
+        # Database retries can exceed the OAuth lease duration; snapshots are
+        # best effort and must not make a completed provider job lose its lease.
+        if refresh_snapshots and summary["status"] == "success":
+            refresh_own_home_snapshots(pg, date.fromisoformat(run_date))
         return 0 if summary["status"] == "success" else 1
     except LeaseBusy as exc:
         # Do not clobber the active runner's run row or credentials.

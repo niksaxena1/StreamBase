@@ -165,6 +165,18 @@ and independent warning-and-continue failures. Each call has a 150-second SQL
 timeout and uses the shared PostgREST client. A refresh is atomic across its
 kinds, so errors cannot publish a partially refreshed scope.
 
+The post-ingestion own-catalog override writers (`rapidapi_stale_fix.py`,
+`artist_tools_daily.py`, and manual `artist_tools_stale_repair.py apply`) also
+refresh own snapshots after their cascade recompute. Snapshot failures warn
+and continue; existing job status and summaries remain intact. Competitor
+ingestion completes reconciliation, interpolation and rebasing before its
+snapshot refresh; no later competitor job currently writes overrides.
+
+The follow-up `20261011024435_prune_home_diagnostic_snapshots.sql` replaces both
+refresh functions to prune rows with `run_date < p_run_date - 30` after a
+successful refresh. The boundary day is retained. Competitor pruning covers
+all labels in its own table; grants and schema isolation remain unchanged.
+
 Kinds: negative daily streams (no window), artist and track weekend dips
 (`p_min_weekday_avg=0`; own anchor `run_date-2`, competitor anchor `run_date`),
 and artificial spikes (ratio 1.25, minimum baseline 50, grace 14 days,

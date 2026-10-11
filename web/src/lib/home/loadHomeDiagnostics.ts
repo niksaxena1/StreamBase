@@ -169,8 +169,10 @@ export async function loadHomeDiagnostics(args: DiagnosticsArgs): Promise<HomeDi
       live,
       maxSnapshotRows: 1000,
     });
-  const defaultWeekendAnchor = datasetMode === "competitor" ||
-    (!!latestRunDate && latestDataDate === dataDateFromRunDate(latestRunDate));
+  // Every caller derives own latestDataDate as latestRunDate - SOT_DATA_LAG_DAYS,
+  // matching the refresh RPC's anchor; competitor uses latestRunDate directly.
+  // queryDiagnostic already excludes missing run dates.
+  const defaultWeekendAnchor = true;
   const defaultSpikes = usesDefaultSpikeParameters({ runDate: latestRunDate,
     ratio: artificialSpikeRatio, baseline: artificialMinBaseline, graceDays: artificialGraceDays,
     crossingMax: artificialThresholdCrossing, includeWeekends: artificialIncludeWeekends,

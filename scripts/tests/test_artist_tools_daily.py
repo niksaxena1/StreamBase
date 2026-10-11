@@ -136,6 +136,9 @@ def folder(*pairs):
 def summary_path(tmp_path, monkeypatch):
     monkeypatch.setattr(daily, "SUMMARY_PATH", tmp_path / "summary.json")
     monkeypatch.setattr(daily, "utcnow", lambda: datetime(2026, 10, 10, 10, tzinfo=timezone.utc))
+    # Keep the existing cascade assertions focused on repair behavior. The real
+    # best-effort snapshot hook is exercised in test_home_snapshots_after_overrides.
+    monkeypatch.setattr(daily, "refresh_own_home_snapshots", lambda *_: None)
 
 
 def run(pg, client, **kwargs):

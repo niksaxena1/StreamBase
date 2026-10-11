@@ -1515,6 +1515,9 @@ The displayed calculations stay the same. Default spike settings are ratio
 30-day inclusive window ending on the selected latest run date. Changed
 settings or windows use the existing live calculations. Missing snapshots,
 new stream overrides or a newer successful ingestion also use live results.
+Own-catalog stale-track repair jobs refresh diagnostics after writing stream
+overrides. Successful refreshes retain snapshots from the run date back through
+30 days earlier; older selections continue to use live calculations.
 See `docs/COMPETITOR-MODE-OPERATIONS.md` for migration and refresh details.
 
 ## Daily Spotify takedown watch

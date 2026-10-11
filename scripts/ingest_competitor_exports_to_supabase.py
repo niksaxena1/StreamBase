@@ -523,6 +523,8 @@ def main():
     )
 
     # Refresh the web app's cached analytics now that new data is live.
+    # normalize_competitor_analytics above completes every override mutation
+    # (reconcile, interpolate, rebase) before publishing diagnostic snapshots.
     refresh_competitor_home_snapshots(pg, run_date)
     notify_web_revalidate()
 

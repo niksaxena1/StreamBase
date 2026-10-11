@@ -26,11 +26,13 @@ import json
 import os
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import List
 
 import requests
+from streambase_postgrest import Postgrest
+from streambase_home_snapshots import refresh_own_home_snapshots
 
 MAX_AUTO_FIX_TRACKS = 500
 BEAT_ANALYTICS_DAILY_CAP = 50
@@ -50,39 +52,6 @@ RATE_LIMIT_MS = 1100
 REQUEST_TIMEOUT_SECONDS = 12
 OVERRIDE_FLUSH_BATCH_SIZE = 25
 MAX_RUNTIME_SECONDS = 40 * 60
-
-
-class Postgrest:
-    def __init__(self, supabase_url: str, service_role_key: str):
-        self.base = supabase_url.rstrip("/") + "/rest/v1"
-        self.h = {
-            "Authorization": f"Bearer {service_role_key}",
-            "apikey": service_role_key,
-            "Content-Type": "application/json",
-        }
-
-    def select(self, table: str, select: str, filters: str) -> list:
-        url = f"{self.base}/{table}?select={select}&{filters}"
-        r = requests.get(url, headers=self.h, timeout=60)
-        if r.status_code != 200:
-            raise RuntimeError(f"Select {table} failed: {r.status_code} {r.text[:500]}")
-        return r.json()
-
-    def upsert(self, table: str, rows: list, on_conflict: str):
-        if not rows:
-            return
-        url = f"{self.base}/{table}?on_conflict={on_conflict}"
-        headers = dict(self.h)
-        headers["Prefer"] = "resolution=merge-duplicates,return=minimal"
-        r = requests.post(url, headers=headers, data=json.dumps(rows), timeout=60)
-        if r.status_code not in (200, 201, 204):
-            raise RuntimeError(f"Upsert {table} failed: {r.status_code} {r.text[:500]}")
-
-    def rpc(self, fn_name: str, params: dict):
-        url = f"{self.base.rsplit('/rest/v1', 1)[0]}/rest/v1/rpc/{fn_name}"
-        r = requests.post(url, headers=self.h, data=json.dumps(params), timeout=180)
-        if r.status_code not in (200, 204):
-            raise RuntimeError(f"RPC {fn_name} failed: {r.status_code} {r.text[:500]}")
 
 
 def fetch_beat_analytics_streams(spotify_track_id: str, api_key: str) -> int | None:
@@ -507,6 +476,7 @@ def main():
 
         pg.rpc("spotibase_recompute_playlist_daily_stats_cascade", {"p_start_date": run_date})
         print("  Recompute complete.")
+        refresh_own_home_snapshots(pg, date.fromisoformat(run_date))
     else:
         print("\n  No overrides to write.")
 
