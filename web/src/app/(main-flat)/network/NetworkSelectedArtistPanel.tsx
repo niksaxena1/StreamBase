@@ -27,6 +27,7 @@ export function ToggleButton({
       type="button"
       title={title}
       aria-label={title}
+      aria-pressed={active}
       className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs transition-colors"
       style={{
         color: active ? colors.accent : colors.muted,

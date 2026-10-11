@@ -107,6 +107,9 @@ import type { GraphNode, GraphEdge, NetworkPlaylistOption, SharedTrack } from ".
 import { runNetworkViewXlsxExport } from "./networkViewExport";
 import { useNetworkGraphPainters } from "./useNetworkGraphPainters";
 import { useNetworkNodeFilters } from "./useNetworkNodeFilters";
+import { useNetworkCommunities } from "./useNetworkCommunities";
+import { DAY_MS, buildClusterColors, collaborationAppearanceDay, collaborationVisible, timeConnectedNodeIds, visibleStreamNodeRadius } from "./networkInsights";
+import { NetworkClustersPanel, NetworkTimeSlider, type NetworkCluster } from "./NetworkInsightsControls";
 // Force-graph uses Canvas/WebGL — must skip SSR.
 const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), {
   ssr: false,
@@ -172,6 +175,34 @@ export function NetworkGraphClient({
 
   // Controls (URL-synced toggles — see effects below)
   const [scaleByTracks, setScaleByTracks] = useState(() => readNetworkToggles(searchParams).scaleByTracks);
+  const [sizeByStreams, setSizeByStreams] = useState(() => readNetworkToggles(searchParams).sizeByStreams);
+  const [colourByCluster, setColourByCluster] = useState(() => readNetworkToggles(searchParams).colourByCluster);
+  const [highlightRecent, setHighlightRecent] = useState(() => readNetworkToggles(searchParams).highlightRecent);
+  const [throughDay, setThroughDay] = useState(() => readNetworkToggles(searchParams).throughDay);
+  const [activeCluster, setActiveCluster] = useState<string | null>(null);
+  const [todayDay] = useState(() => Math.floor(Date.now() / DAY_MS));
+  // The panel is currently opened by the colour toggle; neither requests detection while off.
+  const communities = useNetworkCommunities(nodes, edges, colourByCluster);
+  const clusterColors = useMemo(() => buildClusterColors(nodes, communities, colors.accent, colors.isDark), [nodes, communities, colors.accent, colors.isDark]);
+  const maxNodeStreams = useMemo(() => nodes.reduce((max, node) => Math.max(max, node.daily_streams ?? 0), 0), [nodes]);
+  const maxEdgeStreams = useMemo(() => edges.reduce((max, edge) => Math.max(max, edge.daily_streams ?? 0), 0), [edges]);
+  const appearanceByKey = useMemo(() => new Map(edges.map((edge) => [collaborationLinkKey(edge as FGLinkObj), collaborationAppearanceDay(edge)])), [edges]);
+  const timeBounds = useMemo(() => {
+    let min = Infinity;
+    let max = -Infinity;
+    let unknownCount = 0;
+    for (const day of appearanceByKey.values()) {
+      if (day == null) { unknownCount++; continue; }
+      min = Math.min(min, day);
+      max = Math.max(max, day);
+    }
+    return { minDay: Number.isFinite(min) ? min : null, maxDay: Number.isFinite(max) ? max : null, unknownCount };
+  }, [appearanceByKey]);
+  const linkVisible = useCallback((link: FGLinkObj) => collaborationVisible(appearanceByKey.get(collaborationLinkKey(link)) ?? null, throughDay), [appearanceByKey, throughDay]);
+  const nodeClusterColor = useCallback((id: string) => {
+    const cluster = communities?.get(id);
+    return colourByCluster && cluster ? clusterColors.get(cluster) ?? null : null;
+  }, [communities, colourByCluster, clusterColors]);
   const [showImages, setShowImages] = useState(() => readNetworkToggles(searchParams).showImages);
   const [tableView, setTableView] = useState(() => readNetworkToggles(searchParams).tableView);
   const [collabFilterMin, setCollabFilterMin] = useState<number | null>(() =>
@@ -384,6 +415,10 @@ export function NetworkGraphClient({
   useEffect(() => {
     const r = readNetworkToggles(searchParams);
     setScaleByTracks(r.scaleByTracks);
+    setSizeByStreams(r.sizeByStreams);
+    setColourByCluster(r.colourByCluster);
+    setHighlightRecent(r.highlightRecent);
+    setThroughDay(r.throughDay);
     setShowImages(r.showImages);
     setTableView(r.tableView);
     const cf = parseCollabRangeBounds(searchParams);
@@ -575,10 +610,10 @@ export function NetworkGraphClient({
 
   const neighborsView = useMemo(() => {
     const fe = edges.filter(
-      (e) => combinedVisibleNodeIds.has(e.source) && combinedVisibleNodeIds.has(e.target),
+      (e) => combinedVisibleNodeIds.has(e.source) && combinedVisibleNodeIds.has(e.target) && linkVisible(e as FGLinkObj),
     );
     return buildAdjacency(fe).neighbors;
-  }, [edges, combinedVisibleNodeIds]);
+  }, [edges, combinedVisibleNodeIds, linkVisible]);
 
   const collabDegreeMatchesFilter = useCallback(
     (deg: number) => coartistCountInRange(deg, collabFilterMin, collabFilterMax),
@@ -656,6 +691,40 @@ export function NetworkGraphClient({
     return { nodes: fnodes, links: flinks };
   }, [nodes, edges, combinedVisibleNodeIds]);
 
+  // This view is for counts/export only. ForceGraph always receives the stable layout graphData.
+  const visibleGraphData = useMemo(() => ({ nodes: graphData.nodes, links: graphData.links.filter((link) => linkVisible(link as FGLinkObj)) }), [graphData, linkVisible]);
+  const visibleEdges = useMemo(() => edges.filter((edge) => combinedVisibleNodeIds.has(edge.source) && combinedVisibleNodeIds.has(edge.target) && linkVisible(edge as FGLinkObj)), [edges, combinedVisibleNodeIds, linkVisible]);
+  const timeConnectedIds = useMemo(() => timeConnectedNodeIds(visibleEdges), [visibleEdges]);
+  const clusters = useMemo(() => {
+    if (!communities) return [];
+    const grouped = new Map<string, GraphNode[]>();
+    for (const node of nodes) {
+      if (!combinedVisibleNodeIds.has(node.id)) continue;
+      const id = communities.get(node.id)!;
+      if (!grouped.has(id)) grouped.set(id, []);
+      grouped.get(id)!.push(node);
+    }
+    return [...grouped].map(([id, artists]): NetworkCluster => {
+      artists.sort((a, b) => (b.daily_streams ?? 0) - (a.daily_streams ?? 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+      const known = artists.filter((artist) => artist.daily_streams != null);
+      return { id, name: `${artists[0].name} and ${artists.length - 1} others`, artistIds: artists.map((artist) => artist.id), dailyStreams: known.length ? known.reduce((sum, artist) => sum + artist.daily_streams!, 0) : null };
+    }).filter((cluster) => cluster.artistIds.length >= 2)
+      .sort((a, b) => (b.dailyStreams ?? 0) - (a.dailyStreams ?? 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  }, [communities, nodes, combinedVisibleNodeIds]);
+  const selectCluster = useCallback((cluster: NetworkCluster | null) => {
+    setActiveCluster(cluster?.id ?? null);
+    setSelectedNodeId(null);
+    setRangeSelection([]);
+    clearPinnedLink();
+    const ids = cluster ? new Set(cluster.artistIds) : null;
+    fgRef.current?.zoomToFit(600, 40, (node) => !ids || ids.has(String(node.id)));
+  }, [clearPinnedLink]);
+  const nodeRadius = useCallback((node: FGNodeObj) => {
+    if (sizeByStreams) return visibleStreamNodeRadius(node.daily_streams, maxNodeStreams);
+    if (!scaleByTracks) return 5;
+    return minTrackCount === maxTrackCount ? 9.5 : 3 + ((node.track_count - minTrackCount) / (maxTrackCount - minTrackCount)) * 13;
+  }, [sizeByStreams, maxNodeStreams, scaleByTracks, minTrackCount, maxTrackCount]);
+
   /** Screen hit-test aligned with `nodePointerAreaPaint` (touch long-press → distro modal). */
   const pickVisibleNodeAtClientPos = useCallback(
     (clientX: number, clientY: number): FGNodeObj | null => {
@@ -666,18 +735,14 @@ export function NetworkGraphClient({
         width: dimensions.width,
         height: dimensions.height,
         nodes: graphData.nodes as FGNodeObj[],
-        scaleByTracks,
-        minTrackCount,
-        maxTrackCount,
+        nodeRadius,
       });
     },
     [
       dimensions.width,
       dimensions.height,
       graphData.nodes,
-      scaleByTracks,
-      minTrackCount,
-      maxTrackCount,
+      nodeRadius,
     ],
   );
 
@@ -767,7 +832,7 @@ export function NetworkGraphClient({
         hideNonPrimary,
         collabFilterExportLabel,
         collabCountBasisLabel,
-        graphData: { nodes: graphData.nodes, links: graphData.links },
+        graphData: visibleGraphData,
         nodes,
         edges,
         trackCollabFilterMap,
@@ -790,6 +855,7 @@ export function NetworkGraphClient({
     collabFilterExportLabel,
     graphData.nodes,
     graphData.links,
+    visibleGraphData,
     edges,
     nodes,
     trackCollabFilterMap,
@@ -810,11 +876,16 @@ export function NetworkGraphClient({
 
   const pushNetworkUrl = useCallback(
     (patch: NetworkUrlPatch) => {
+      if (patch.colourByCluster === false) setActiveCluster(null);
       const scope = patch.scope ?? scopeRef.current;
       const q = buildNetworkQueryString({
         scope,
         hideNonPrimary: patch.hideNonPrimary ?? hideNonPrimary,
         scaleByTracks: patch.scaleByTracks ?? scaleByTracks,
+        sizeByStreams: patch.sizeByStreams ?? sizeByStreams,
+        colourByCluster: patch.colourByCluster ?? colourByCluster,
+        highlightRecent: patch.highlightRecent ?? highlightRecent,
+        throughDay: patch.throughDay !== undefined ? patch.throughDay : throughDay,
         showImages: patch.showImages ?? showImages,
         tableView: patch.tableView ?? tableView,
         collabMin: patch.collabMin !== undefined ? patch.collabMin : collabFilterMin,
@@ -826,7 +897,9 @@ export function NetworkGraphClient({
         tableSortKey: patch.tableSortKey ?? tableSort.key,
         tableSortDir: patch.tableSortDir ?? tableSort.dir,
       });
-      router.replace((pathname || "/network") + q, { scroll: false });
+      const url = (pathname || "/network") + q;
+      if (patch.scope !== undefined || patch.hideNonPrimary !== undefined) router.replace(url, { scroll: false });
+      else window.history.replaceState(null, "", url);
     },
     [
       pathname,
@@ -835,6 +908,10 @@ export function NetworkGraphClient({
       tableSort.dir,
       hideNonPrimary,
       scaleByTracks,
+      sizeByStreams,
+      colourByCluster,
+      highlightRecent,
+      throughDay,
       showImages,
       tableView,
       collabFilterMin,
@@ -887,6 +964,10 @@ export function NetworkGraphClient({
       scope: scopeRef.current,
       hideNonPrimary,
       scaleByTracks,
+      sizeByStreams,
+      colourByCluster,
+      highlightRecent,
+      throughDay,
       showImages,
       tableView,
       collabMin: collabFilterMin,
@@ -903,12 +984,16 @@ export function NetworkGraphClient({
       if (typeof window === "undefined") return;
       const cur = `${pathname}${window.location.search}`;
       if (nextPath === cur) return;
-      router.replace(nextPath, { scroll: false });
+      window.history.replaceState(null, "", nextPath);
     }, 200);
     return () => clearTimeout(t);
   }, [
     rangeSelection,
     scaleByTracks,
+    sizeByStreams,
+    colourByCluster,
+    highlightRecent,
+    throughDay,
     showImages,
     tableView,
     collabFilterMin,
@@ -949,7 +1034,7 @@ export function NetworkGraphClient({
     };
   }, []);
 
-  const rangeStats = useMemo(() => computeRangeSelectionStats(edges, rangeSelection), [edges, rangeSelection]);
+  const rangeStats = useMemo(() => computeRangeSelectionStats(visibleEdges, rangeSelection), [visibleEdges, rangeSelection]);
 
   const selectionTotalsFetchKey = useMemo(() => {
     if (rangeSelection.length === 0) return "";
@@ -1013,26 +1098,30 @@ export function NetworkGraphClient({
   // Is a node highlighted?
   const isHighlighted = useCallback(
     (nodeId: string) => {
+      if (throughDay != null && !timeConnectedIds.has(nodeId)) return false;
       if (rangeSet.size > 0) return rangeSet.has(nodeId);
+      if (colourByCluster && activeCluster) return communities?.get(nodeId) === activeCluster;
       if (!selectedNodeId) return true;
       if (nodeId === selectedNodeId) return true;
       return neighborsView.get(selectedNodeId)?.has(nodeId) ?? false;
     },
-    [rangeSet, selectedNodeId, neighborsView],
+    [rangeSet, selectedNodeId, neighborsView, colourByCluster, activeCluster, communities, throughDay, timeConnectedIds],
   );
 
   // Is a link highlighted?
   const isLinkHighlighted = useCallback(
     (link: FGLinkObj) => {
+      if (!linkVisible(link)) return false;
       const srcId = linkEndpointId(link.source);
       const tgtId = linkEndpointId(link.target);
       if (rangeSet.size >= 2) {
         return rangeSet.has(srcId) && rangeSet.has(tgtId);
       }
+      if (colourByCluster && activeCluster) return communities?.get(srcId) === activeCluster && communities?.get(tgtId) === activeCluster;
       if (!selectedNodeId) return true;
       return srcId === selectedNodeId || tgtId === selectedNodeId;
     },
-    [rangeSet, selectedNodeId],
+    [rangeSet, selectedNodeId, linkVisible, colourByCluster, activeCluster, communities],
   );
 
   // Drop frozen link tooltip if focus mode changes and that edge is no longer in the highlighted set.
@@ -1041,13 +1130,21 @@ export function NetworkGraphClient({
     if (!isLinkHighlighted(pinnedLink)) clearPinnedLink();
   }, [pinnedLink, isLinkHighlighted, clearPinnedLink, selectedNodeId, rangeSelection]);
 
+  useEffect(() => {
+    if (hoveredLink && !linkVisible(hoveredLink)) setHoveredLink(null);
+  }, [hoveredLink, linkVisible]);
+
   /* -------- Node / link rendering -------- */
 
   const { nodeVal, nodeCanvasObject, nodePointerAreaPaint, linkWidth, linkColor } = useNetworkGraphPainters({
-    scaleByTracks,
+    nodeRadius,
+    nodeClusterColor,
+    sizeByStreams,
+    maxEdgeStreams,
+    highlightRecent,
+    appearanceByKey,
+    todayDay,
     showImages,
-    minTrackCount,
-    maxTrackCount,
     selectedNodeId,
     hoveredNode,
     hoveredLink,
@@ -1132,6 +1229,7 @@ export function NetworkGraphClient({
 
   const handleNodeClick = useCallback(
     (node: FGNodeObj, event: MouseEvent) => {
+      setActiveCluster(null);
       const id = node.id as string;
       if (suppressNextNodeClickRef.current) {
         suppressNextNodeClickRef.current = false;
@@ -1175,6 +1273,7 @@ export function NetworkGraphClient({
   );
 
   const handleBackgroundClick = useCallback(() => {
+    setActiveCluster(null);
     setSelectedNodeId(null);
     setRangeSelection([]);
     clearPinnedLink();
@@ -1556,6 +1655,7 @@ export function NetworkGraphClient({
     (artistId: string) => {
       const node = graphData.nodes.find((n) => n.id === artistId);
       if (!node) return;
+      setActiveCluster(null);
       setSelectedNodeId(artistId);
       setSearchQuery("");
       setSearchOpen(false);
@@ -1660,6 +1760,12 @@ export function NetworkGraphClient({
       // ignore
     }
     setSelectedNodeId(null);
+    setActiveCluster(null);
+    setThroughDay(null);
+    setHighlightRecent(false);
+    setColourByCluster(false);
+    setSizeByStreams(true);
+    setScaleByTracks(false);
     setRangeSelection([]);
     setSearchQuery("");
     setCollabFilterMin(null);
@@ -1681,6 +1787,11 @@ export function NetworkGraphClient({
     clearLinkPinLongPress();
     pushNetworkUrl({
       scope: DEFAULT_NETWORK_SCOPE,
+      sizeByStreams: true,
+      scaleByTracks: false,
+      colourByCluster: false,
+      highlightRecent: false,
+      throughDay: null,
       selectedIds: [],
       collabMin: null,
       collabMax: null,
@@ -1875,6 +1986,7 @@ export function NetworkGraphClient({
           setSelectedNodeId(null);
           return;
         }
+        if (activeCluster) setActiveCluster(null);
         return;
       }
       if (e.key === "?" || (e.shiftKey && e.key === "/")) {
@@ -1908,6 +2020,7 @@ export function NetworkGraphClient({
     pinnedLink,
     rangeSelection.length,
     selectedNodeId,
+    activeCluster,
     closeDistroModal,
     clearPinnedLink,
     clearLinkPinLongPress,
@@ -2044,6 +2157,8 @@ export function NetworkGraphClient({
           isCrossLabelMode={isCrossLabelMode}
           isCompetitorDataset={isCompetitorDataset}
           scaleByTracks={scaleByTracks}
+          sizeByStreams={sizeByStreams}
+          colourByCluster={colourByCluster}
           showImages={showImages}
           boxSelectArmed={boxSelectArmed}
           setBoxSelectArmed={setBoxSelectArmed}
@@ -2083,11 +2198,16 @@ export function NetworkGraphClient({
           trackCountMinEffective={trackCountMinEffective}
           trackCountMaxEffective={trackCountMaxEffective}
           networkAdvAppliedCount={networkAdvAppliedCount}
-          graphData={graphData}
+          graphData={visibleGraphData}
           nodes={nodes}
           edges={edges}
         />
       </div>
+
+      <NetworkTimeSlider {...timeBounds} throughDay={throughDay} onChange={setThroughDay}
+        onCommit={(day) => pushNetworkUrl({ throughDay: day })}
+        highlightRecent={highlightRecent} onToggleRecent={() => pushNetworkUrl({ highlightRecent: !highlightRecent })}
+        visibleCount={visibleGraphData.links.length} colors={colors} />
 
       <NetworkToolbarBanners
         colors={colors}
@@ -2174,7 +2294,7 @@ export function NetworkGraphClient({
         <SelectedArtistPanel
           nodeId={selectedNodeId}
           nodes={graphData.nodes}
-          edges={edges}
+          edges={visibleEdges}
           neighbors={neighborsView}
           coArtistsOnTracks={(() => {
             const nn = nodes.find((n) => n.id === selectedNodeId);
@@ -2210,6 +2330,7 @@ export function NetworkGraphClient({
 
       {/* Graph + optional table */}
       <div className="flex flex-1 flex-col min-h-0 min-w-0">
+        <div className="flex flex-1 min-h-0 min-w-0 flex-col sm:flex-row">
         <div
           ref={containerRef}
           className="relative min-h-[220px] min-w-0 flex-1 touch-none overflow-hidden"
@@ -2250,6 +2371,7 @@ export function NetworkGraphClient({
           // Link
           linkSource="source"
           linkTarget="target"
+          linkVisibility={linkVisible}
           linkWidth={linkWidth}
           linkColor={linkColor}
           linkCurvature={0.15}
@@ -2306,6 +2428,9 @@ export function NetworkGraphClient({
               </ViewportAwareTooltip>
             </div>
           )}
+        </div>
+        {colourByCluster && <NetworkClustersPanel clusters={clusters} loading={communities == null} activeCluster={activeCluster}
+          onSelect={selectCluster} colors={colors} clusterColors={clusterColors} isCrossLabelMode={isCrossLabelMode} />}
         </div>
         {tableView ? (
           <NetworkArtistsTable

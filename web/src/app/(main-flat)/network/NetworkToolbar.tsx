@@ -15,6 +15,7 @@ import {
   X,
   Filter,
   Music,
+  Palette,
 } from "lucide-react";
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import type { ThemeColors } from "@/components/charts/useThemeColors";
@@ -384,6 +385,8 @@ export function NetworkToolbarActions({
   isCrossLabelMode,
   isCompetitorDataset,
   scaleByTracks,
+  sizeByStreams,
+  colourByCluster,
   showImages,
   boxSelectArmed,
   setBoxSelectArmed,
@@ -402,6 +405,8 @@ export function NetworkToolbarActions({
   isCrossLabelMode: boolean;
   isCompetitorDataset: boolean;
   scaleByTracks: boolean;
+  sizeByStreams: boolean;
+  colourByCluster: boolean;
   showImages: boolean;
   boxSelectArmed: boolean;
   setBoxSelectArmed: Dispatch<SetStateAction<boolean>>;
@@ -419,8 +424,22 @@ export function NetworkToolbarActions({
   return (
     <div className="flex flex-nowrap items-center gap-1.5 sm:gap-2 shrink-0 overflow-x-auto min-w-0 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
       <ToggleButton
+        active={sizeByStreams}
+        onClick={() => pushNetworkUrl({ sizeByStreams: !sizeByStreams, scaleByTracks: false })}
+        icon={<Scaling size={14} />}
+        title="Size by streams"
+        colors={colors}
+      />
+      <ToggleButton
+        active={colourByCluster}
+        onClick={() => pushNetworkUrl({ colourByCluster: !colourByCluster })}
+        icon={<Palette size={14} />}
+        title="Colour by cluster"
+        colors={colors}
+      />
+      <ToggleButton
         active={scaleByTracks}
-        onClick={() => pushNetworkUrl({ scaleByTracks: !scaleByTracks })}
+        onClick={() => pushNetworkUrl({ scaleByTracks: !scaleByTracks, sizeByStreams: false })}
         icon={<Scaling size={14} />}
         title="Scale by tracks"
         colors={colors}
