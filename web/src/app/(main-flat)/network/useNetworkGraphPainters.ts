@@ -106,7 +106,7 @@ export function useNetworkGraphPainters({
       }
 
       if (inRange) {
-        ctx.globalAlpha = 1;
+        ctx.globalAlpha = alpha;
         ctx.beginPath();
         ctx.arc(x, y, size + 2.5 / globalScale, 0, 2 * Math.PI);
         ctx.strokeStyle = colors.accent;

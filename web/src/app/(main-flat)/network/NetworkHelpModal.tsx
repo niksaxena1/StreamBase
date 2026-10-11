@@ -33,13 +33,16 @@ export function NetworkHelpModal({
           </p>
           <p className="text-[13px] leading-snug mt-2" style={{ color: "var(--sb-muted)" }}>
             Colour by cluster opens communities ranked by daily streams. Click a community to highlight
-            and fit its artists. With images on, cluster colours appear on the artwork rings.
+            and fit its artists. The eight leading communities have distinct colours; smaller communities
+            share a muted tone. Single artists are grey and omitted from the panel. With images on,
+            cluster colours appear on the artwork rings.
           </p>
           <p className="text-[13px] leading-snug mt-2" style={{ color: "var(--sb-muted)" }}>
             The time slider includes collaborations whose earliest shared track was released by the selected
             date, falling back to first-seen when release date is unavailable. All time includes undated
             collaborations. Highlight last 30 days brightens new collaborations and dims older ones.
-            These controls are saved in the URL, and dragging the slider preserves artist positions.
+            Artists without visible collaborations are dimmed in place. These controls are saved in the
+            URL, and dragging the slider preserves artist positions.
           </p>
         </section>
 

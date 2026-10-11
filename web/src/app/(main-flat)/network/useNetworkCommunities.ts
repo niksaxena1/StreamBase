@@ -1,14 +1,19 @@
 "use client";
-import { useEffect, useState } from "react";
-import { communitySteps } from "./networkInsights";
+import { useEffect, useMemo, useState } from "react";
+import { communityGraphIdentity, communitySteps } from "./networkInsights";
 import type { GraphEdge, GraphNode } from "./networkTypes";
-export function useNetworkCommunities(nodes: GraphNode[], edges: GraphEdge[]) {
+// Bound memory while retaining completed graphs across toggle changes and equivalent reloads.
+const graphCache = new Map<string, Map<string, string>>();
+const MAX_CACHED_GRAPHS = 4;
+
+export function useNetworkCommunities(nodes: GraphNode[], edges: GraphEdge[], enabled: boolean) {
+  const identity = useMemo(() => enabled ? communityGraphIdentity(nodes, edges) : null, [nodes, edges, enabled]);
   const [result, setResult] = useState<{
-    nodes: GraphNode[];
-    edges: GraphEdge[];
+    identity: string;
     labels: Map<string, string>;
   } | null>(null);
   useEffect(() => {
+    if (!enabled || identity == null || graphCache.has(identity)) return;
     const steps = communitySteps(nodes, edges);
     let timer: ReturnType<typeof setTimeout>;
     const run = () => {
@@ -16,13 +21,16 @@ export function useNetworkCommunities(nodes: GraphNode[], edges: GraphEdge[]) {
       let next = steps.next();
       while (!next.done && performance.now() < deadline)
         next = steps.next();
-      if (next.done)
-        setResult({ nodes, edges, labels: next.value });
+      if (next.done) {
+        graphCache.set(identity, next.value);
+        if (graphCache.size > MAX_CACHED_GRAPHS) graphCache.delete(graphCache.keys().next().value!);
+        setResult({ identity, labels: next.value });
+      }
       else
         timer = setTimeout(run, 0);
     };
     timer = setTimeout(run, 0);
     return () => clearTimeout(timer);
-  }, [nodes, edges]);
-  return result?.nodes === nodes && result.edges === edges ? result.labels : null;
+  }, [nodes, edges, enabled, identity]);
+  return identity == null ? null : graphCache.get(identity) ?? (result?.identity === identity ? result.labels : null);
 }

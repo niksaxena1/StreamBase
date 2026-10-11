@@ -3,15 +3,17 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { DEFAULT_ADMIN_APP_ACCESS } from "@/lib/appAccess";
 import { DEFAULT_NETWORK_SCOPE, type NetworkScopeState } from "@/app/(main-flat)/network/networkScope";
 import type { CollaborationGraph } from "@/app/(main-flat)/network/networkTypes";
-import { loadNetworkInsights } from "./loadNetworkInsights";
+import { loadNetworkInsights, networkIdentifierBatches } from "./loadNetworkInsights";
 import type { NetworkPageShell } from "./loadNetworkPage";
 type Row = Record<string, unknown>;
 type RequestLog = {
   schema: string;
   table: string;
 };
-function fixtureClient(failSnapshots = false) {
+function fixtureClient(failSnapshots = false, tableOverrides?: Record<string, Row[]>, delayMs = 0) {
   const requests: RequestLog[] = [];
+  let active = 0;
+  let peak = 0;
   const tables: Record<string, Row[]> = {
     tracks: [
       { isrc: "shared-1", release_date: "2026-09-01", first_seen: "2026-10-01", spotify_artist_ids: ["a", "b"] },
@@ -34,6 +36,7 @@ function fixtureClient(failSnapshots = false) {
       { isrc: "missing", date: "2026-10-11", streams_cumulative: 200 },
     ],
   };
+  Object.assign(tables, tableOverrides);
   const client = { schema: (schema: string) => ({ from: (table: string) => {
         requests.push({ schema, table });
         let rows = [...(tables[table] ?? [])];
@@ -53,14 +56,20 @@ function fixtureClient(failSnapshots = false) {
           },
           range: (start: number, end: number) => { rows = rows.slice(start, end + 1); return query; },
           limit: (count: number) => { rows = rows.slice(0, count); return query; },
-          then: (resolve: (result: {
+          then: async (resolve: (result: {
             data: Row[] | null;
             error: Error | null;
-          }) => void) => resolve(failSnapshots && table === "track_daily_streams_effective_public" ? { data: null, error: new Error("Unavailable") } : { data: rows, error: null }),
+          }) => void) => {
+            active++;
+            peak = Math.max(peak, active);
+            if (delayMs) await new Promise((done) => setTimeout(done, delayMs));
+            active--;
+            resolve(failSnapshots && table === "track_daily_streams_effective_public" ? { data: null, error: new Error("Unavailable") } : { data: rows, error: null });
+          },
         };
         return query;
       } }) };
-  return { client: client as unknown as SupabaseClient, requests };
+  return { client: client as unknown as SupabaseClient, requests, peakConcurrency: () => peak };
 }
 const graph = (): CollaborationGraph => ({
   nodes: ["a", "b", "c"].map((id) => ({ id, name: id, image_url: null, track_count: 1 })),
@@ -69,6 +78,37 @@ const graph = (): CollaborationGraph => ({
 const playlists = [{ playlist_key: "main", display_name: "Main", spotify_playlist_image_url: null }];
 const shell = (datasetMode: "own" | "competitor", crossLabel = false): NetworkPageShell => ({ datasetMode, graphMode: crossLabel ? "cross-label" : "artists", competitorLabelKey: datasetMode === "competitor" ? "label" : null, appAccess: DEFAULT_ADMIN_APP_ACCESS });
 describe("network insight enrichment", () => {
+  it("measures 14 requests with a four-request cap for 1,600 artists/tracks", async () => {
+    const nodes = Array.from({ length: 1600 }, (_, index) => ({
+      id: `artist-${index}`, name: `Artist ${index}`, track_count: 1, image_url: null,
+    }));
+    const tracks = nodes.map((node, index) => ({
+      isrc: `ISRC${String(index).padStart(8, "0")}`, spotify_artist_ids: [node.id],
+      release_date: "2026-01-01", first_seen: "2026-01-01",
+    }));
+    const snapshots = tracks.flatMap((track) => [
+      { isrc: track.isrc, date: "2026-10-10", streams_cumulative: 500 },
+      { isrc: track.isrc, date: "2026-10-11", streams_cumulative: 510 },
+    ]);
+    const { client, requests, peakConcurrency } = fixtureClient(false, {
+      tracks, track_daily_streams_effective_public: snapshots,
+    }, 1);
+    const result = await loadNetworkInsights(client, { nodes, edges: [] }, shell("own"), DEFAULT_NETWORK_SCOPE, []);
+    expect(result.nodes.every((node) => node.daily_streams === 10)).toBe(true);
+    expect(requests.filter((request) => request.table === "tracks")).toHaveLength(8);
+    expect(requests.filter((request) => request.table === "track_daily_streams_effective_public")).toHaveLength(6);
+    expect(requests).toHaveLength(14);
+    expect(peakConcurrency()).toBe(4);
+  });
+  it("uses 500-ISRC batches but splits longer encoded filters", () => {
+    const isrcs = Array.from({ length: 1600 }, (_, index) => `ISRC${String(index).padStart(8, "0")}`);
+    expect(networkIdentifierBatches(isrcs).map((batch) => batch.length)).toEqual([500, 500, 500, 100]);
+    const long = Array.from({ length: 510 }, (_, index) => `${index}-${"x".repeat(100)}`);
+    const batches = networkIdentifierBatches(long);
+    expect(batches.flat()).toEqual(long);
+    expect(batches.every((batch) => batch.length < 500)).toBe(true);
+    expect(batches.every((batch) => batch.reduce((bytes, value) => bytes + encodeURIComponent(value).length + 3, 0) <= 7600)).toBe(true);
+  });
   it("uses public metadata/two snapshots and sums each shared track once", async () => {
     const { client, requests } = fixtureClient();
     const input = graph();

@@ -108,7 +108,7 @@ import { runNetworkViewXlsxExport } from "./networkViewExport";
 import { useNetworkGraphPainters } from "./useNetworkGraphPainters";
 import { useNetworkNodeFilters } from "./useNetworkNodeFilters";
 import { useNetworkCommunities } from "./useNetworkCommunities";
-import { DAY_MS, collaborationAppearanceDay, collaborationVisible, clusterColor, streamNodeRadius } from "./networkInsights";
+import { DAY_MS, buildClusterColors, collaborationAppearanceDay, collaborationVisible, timeConnectedNodeIds, visibleStreamNodeRadius } from "./networkInsights";
 import { NetworkClustersPanel, NetworkTimeSlider, type NetworkCluster } from "./NetworkInsightsControls";
 // Force-graph uses Canvas/WebGL — must skip SSR.
 const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), {
@@ -181,7 +181,9 @@ export function NetworkGraphClient({
   const [throughDay, setThroughDay] = useState(() => readNetworkToggles(searchParams).throughDay);
   const [activeCluster, setActiveCluster] = useState<string | null>(null);
   const [todayDay] = useState(() => Math.floor(Date.now() / DAY_MS));
-  const communities = useNetworkCommunities(nodes, edges);
+  // The panel is currently opened by the colour toggle; neither requests detection while off.
+  const communities = useNetworkCommunities(nodes, edges, colourByCluster);
+  const clusterColors = useMemo(() => buildClusterColors(nodes, communities, colors.accent, colors.isDark), [nodes, communities, colors.accent, colors.isDark]);
   const maxNodeStreams = useMemo(() => nodes.reduce((max, node) => Math.max(max, node.daily_streams ?? 0), 0), [nodes]);
   const maxEdgeStreams = useMemo(() => edges.reduce((max, edge) => Math.max(max, edge.daily_streams ?? 0), 0), [edges]);
   const appearanceByKey = useMemo(() => new Map(edges.map((edge) => [collaborationLinkKey(edge as FGLinkObj), collaborationAppearanceDay(edge)])), [edges]);
@@ -199,8 +201,8 @@ export function NetworkGraphClient({
   const linkVisible = useCallback((link: FGLinkObj) => collaborationVisible(appearanceByKey.get(collaborationLinkKey(link)) ?? null, throughDay), [appearanceByKey, throughDay]);
   const nodeClusterColor = useCallback((id: string) => {
     const cluster = communities?.get(id);
-    return colourByCluster && cluster ? clusterColor(cluster, colors.accent, colors.isDark) : null;
-  }, [communities, colourByCluster, colors.accent, colors.isDark]);
+    return colourByCluster && cluster ? clusterColors.get(cluster) ?? null : null;
+  }, [communities, colourByCluster, clusterColors]);
   const [showImages, setShowImages] = useState(() => readNetworkToggles(searchParams).showImages);
   const [tableView, setTableView] = useState(() => readNetworkToggles(searchParams).tableView);
   const [collabFilterMin, setCollabFilterMin] = useState<number | null>(() =>
@@ -692,6 +694,7 @@ export function NetworkGraphClient({
   // This view is for counts/export only. ForceGraph always receives the stable layout graphData.
   const visibleGraphData = useMemo(() => ({ nodes: graphData.nodes, links: graphData.links.filter((link) => linkVisible(link as FGLinkObj)) }), [graphData, linkVisible]);
   const visibleEdges = useMemo(() => edges.filter((edge) => combinedVisibleNodeIds.has(edge.source) && combinedVisibleNodeIds.has(edge.target) && linkVisible(edge as FGLinkObj)), [edges, combinedVisibleNodeIds, linkVisible]);
+  const timeConnectedIds = useMemo(() => timeConnectedNodeIds(visibleEdges), [visibleEdges]);
   const clusters = useMemo(() => {
     if (!communities) return [];
     const grouped = new Map<string, GraphNode[]>();
@@ -705,7 +708,8 @@ export function NetworkGraphClient({
       artists.sort((a, b) => (b.daily_streams ?? 0) - (a.daily_streams ?? 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
       const known = artists.filter((artist) => artist.daily_streams != null);
       return { id, name: `${artists[0].name} and ${artists.length - 1} others`, artistIds: artists.map((artist) => artist.id), dailyStreams: known.length ? known.reduce((sum, artist) => sum + artist.daily_streams!, 0) : null };
-    }).sort((a, b) => (b.dailyStreams ?? 0) - (a.dailyStreams ?? 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    }).filter((cluster) => cluster.artistIds.length >= 2)
+      .sort((a, b) => (b.dailyStreams ?? 0) - (a.dailyStreams ?? 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   }, [communities, nodes, combinedVisibleNodeIds]);
   const selectCluster = useCallback((cluster: NetworkCluster | null) => {
     setActiveCluster(cluster?.id ?? null);
@@ -716,7 +720,7 @@ export function NetworkGraphClient({
     fgRef.current?.zoomToFit(600, 40, (node) => !ids || ids.has(String(node.id)));
   }, [clearPinnedLink]);
   const nodeRadius = useCallback((node: FGNodeObj) => {
-    if (sizeByStreams) return streamNodeRadius(node.daily_streams, maxNodeStreams);
+    if (sizeByStreams) return visibleStreamNodeRadius(node.daily_streams, maxNodeStreams);
     if (!scaleByTracks) return 5;
     return minTrackCount === maxTrackCount ? 9.5 : 3 + ((node.track_count - minTrackCount) / (maxTrackCount - minTrackCount)) * 13;
   }, [sizeByStreams, maxNodeStreams, scaleByTracks, minTrackCount, maxTrackCount]);
@@ -1094,13 +1098,14 @@ export function NetworkGraphClient({
   // Is a node highlighted?
   const isHighlighted = useCallback(
     (nodeId: string) => {
+      if (throughDay != null && !timeConnectedIds.has(nodeId)) return false;
       if (rangeSet.size > 0) return rangeSet.has(nodeId);
       if (colourByCluster && activeCluster) return communities?.get(nodeId) === activeCluster;
       if (!selectedNodeId) return true;
       if (nodeId === selectedNodeId) return true;
       return neighborsView.get(selectedNodeId)?.has(nodeId) ?? false;
     },
-    [rangeSet, selectedNodeId, neighborsView, colourByCluster, activeCluster, communities],
+    [rangeSet, selectedNodeId, neighborsView, colourByCluster, activeCluster, communities, throughDay, timeConnectedIds],
   );
 
   // Is a link highlighted?
@@ -2425,7 +2430,7 @@ export function NetworkGraphClient({
           )}
         </div>
         {colourByCluster && <NetworkClustersPanel clusters={clusters} loading={communities == null} activeCluster={activeCluster}
-          onSelect={selectCluster} colors={colors} isCrossLabelMode={isCrossLabelMode} />}
+          onSelect={selectCluster} colors={colors} clusterColors={clusterColors} isCrossLabelMode={isCrossLabelMode} />}
         </div>
         {tableView ? (
           <NetworkArtistsTable
