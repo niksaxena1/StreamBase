@@ -3,7 +3,7 @@ Prepare and apply manual stale-track overrides sourced from artist.tools.
 
 This helper intentionally does not fetch stream counts. artist.tools remains the
 human-visible source of truth; the script only handles deterministic plumbing.
-For historical tooltip repairs, artist.tools dates align to the SpotiBase run
+For historical tooltip repairs, artist.tools dates align to the StreamBase run
 date, not the shifted UI data date. If a target-date tooltip is missing, ask
 the user before applying interpolation or another anchor.
 

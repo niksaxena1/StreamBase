@@ -10,7 +10,7 @@ Authorize once from PowerShell (also use this command after revocation,
 `invalid_grant`, or expiry of the 90-day refresh token):
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\SpotiBase-wt\artist-tools\scripts\windows\artist_tools_fallback.ps1" -Authorize
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\StreamBase\scripts\windows\artist_tools_fallback.ps1" -Authorize
 ```
 
 Complete the browser prompt within five minutes. The loopback callback uses a
@@ -21,7 +21,7 @@ when Supabase environment variables are already set, is
 Register the fallback yourself, in PowerShell as your normal Windows account:
 
 ```powershell
-$action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "C:\SpotiBase-wt\artist-tools\scripts\windows\artist_tools_fallback.ps1"' -WorkingDirectory 'C:\SpotiBase-wt\artist-tools'
+$action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "C:\StreamBase\scripts\windows\artist_tools_fallback.ps1"' -WorkingDirectory 'C:\StreamBase'
 $triggers = @((New-ScheduledTaskTrigger -Daily -At '19:00'), (New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"))
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 2)
 $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited

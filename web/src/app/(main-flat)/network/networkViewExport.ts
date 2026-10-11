@@ -6,7 +6,7 @@ import {
   type NetworkTrackSheetEnrichment,
   type NetworkViewExportEdge,
 } from "@/lib/networkViewXlsx";
-import { SPOTIBASE_PUBLIC_ORIGIN } from "./networkGraphConstants";
+import { STREAMBASE_PUBLIC_ORIGIN } from "./networkGraphConstants";
 import type { GraphEdge, GraphNode } from "./networkTypes";
 
 /**
@@ -176,8 +176,8 @@ export async function runNetworkViewXlsxExport({
 
   setXlsxExportPhase("Building spreadsheet…");
   const qs = searchParams.toString();
-  const pageUrl = `${SPOTIBASE_PUBLIC_ORIGIN}${pathname || ""}${qs ? `?${qs}` : ""}`;
-  const exportOrigin = SPOTIBASE_PUBLIC_ORIGIN;
+  const pageUrl = `${STREAMBASE_PUBLIC_ORIGIN}${pathname || ""}${qs ? `?${qs}` : ""}`;
+  const exportOrigin = STREAMBASE_PUBLIC_ORIGIN;
 
   await downloadNetworkViewXlsx({
     meta: {

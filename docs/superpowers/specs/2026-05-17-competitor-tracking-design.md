@@ -5,7 +5,7 @@ Status: Proposed for implementation
 
 ## Goal
 
-Add a second analytical universe to SpotiBase for competitor catalogs while keeping the current own-catalog data model clean and trustworthy. The first pilot will ingest one competitor playlist:
+Add a second analytical universe to StreamBase for competitor catalogs while keeping the current own-catalog data model clean and trustworthy. The first pilot will ingest one competitor playlist:
 
 - Competitor: Paraíso
 - Spotify playlist: Paraíso Releases
@@ -13,11 +13,11 @@ Add a second analytical universe to SpotiBase for competitor catalogs while keep
 - SpotOnTrack playlist URL: https://www.spotontrack.com/playlists/spotify/8948445
 - SpotOnTrack dashboard URL: https://www.spotontrack.com/dashboard/8609
 
-The pilot should let the user switch SpotiBase into a dedicated Competitor Mode and inspect competitor tracks, artists, playlists, and competitor-wide aggregates with the same basic analytical depth as the own-catalog mode, while omitting collector/distributor-specific concepts that do not apply.
+The pilot should let the user switch StreamBase into a dedicated Competitor Mode and inspect competitor tracks, artists, playlists, and competitor-wide aggregates with the same basic analytical depth as the own-catalog mode, while omitting collector/distributor-specific concepts that do not apply.
 
 ## Product shape
 
-SpotiBase will have two top-level modes:
+StreamBase will have two top-level modes:
 
 1. **Own Catalog Mode** — current behavior and current tables remain unchanged.
 2. **Competitor Mode** — the app reads from competitor-specific tables/RPCs and adopts a clearly distinct visual treatment so the active universe is always obvious.
@@ -75,7 +75,7 @@ For the pilot, keep daily competitor facts in the competitor schema even when an
 
 ### Shared screens in v1
 
-Competitor Mode should support the same basic surfaces as current SpotiBase where the semantics still fit:
+Competitor Mode should support the same basic surfaces as current StreamBase where the semantics still fit:
 
 - Home overview using competitor-wide aggregates
 - Playlists dashboard
@@ -168,7 +168,7 @@ The own-catalog workflows should continue to run unchanged.
 
 - Competitor daily streams should be partitioned monthly from day one.
 - Keep playlist-level aggregates precomputed.
-- Reuse the existing pagination/downsampling habits already present in SpotiBase.
+- Reuse the existing pagination/downsampling habits already present in StreamBase.
 - The pilot scale is not expected to require a second Supabase project; the main engineering risk is semantic bleed, not raw row count.
 
 ## Error handling and safety

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * SpotiBase - Health audit for recent ingestion days (Supabase).
+ * StreamBase - Health audit for recent ingestion days (Supabase).
  *
  * - Reads Supabase URL + service role key from environment variables, OR best-effort from `web/.env.local`.
  * - Queries ingestion_runs / ingestion_warnings / raw_exports / track_daily_streams / playlist_daily_stats.

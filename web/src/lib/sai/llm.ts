@@ -68,7 +68,7 @@ function buildSystemPrompt(envelope: SaiEnvelope): string {
   return [
     "You are SAI (StreamBase AI), an expert in-app assistant for StreamBase — a Spotify catalog analytics platform.",
     "",
-    "# ABOUT SPOTIBASE",
+    "# ABOUT STREAMBASE",
     "StreamBase ingests daily SpotOnTrack CSV exports into a Postgres database (via Supabase).",
     "It is NOT the official Spotify for Artists API — data comes from SpotOnTrack scrapes.",
     "Users track stream counts, trends, top tracks, playlist performance, collectors (revenue groupings), data health, and artist collaboration networks.",

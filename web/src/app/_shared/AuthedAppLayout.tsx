@@ -32,7 +32,7 @@ export async function AuthedAppLayout({
     redirect("/login");
   }
 
-  const pathname = (await headers()).get("x-spotibase-pathname") ?? "";
+  const pathname = (await headers()).get("x-streambase-pathname") ?? "";
   const isPlaylistWatchPath = pathname === "/playlist-watch" || pathname.startsWith("/playlist-watch/");
   const streamBaseRedirect = streamBaseAccessRedirectPath(appAccess);
   if (streamBaseRedirect && !isPlaylistWatchPath) {
