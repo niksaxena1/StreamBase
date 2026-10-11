@@ -389,7 +389,7 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
             />
           )}
           <Area
-            type={typical ? "linear" : "monotone"}
+            type="monotone"
             dataKey={typical ? "_rangeValue" : "value"}
             name="value"
             stroke={strokeZeroOffset ? `url(#${gid}-stroke)` : effectiveColor}
@@ -402,7 +402,7 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
           />
           {hasMA7 && (
             <Line
-              type={typical ? "linear" : "monotone"}
+              type="monotone"
               dataKey={typical ? "_rangeMa7" : "ma7"}
               stroke={effectiveMaColor}
               strokeWidth={3}
