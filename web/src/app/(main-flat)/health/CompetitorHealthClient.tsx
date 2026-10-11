@@ -1,5 +1,8 @@
 "use client";
 
+import { EventsSection } from "@/components/health/EventsSection";
+import { ALL_COMPETITORS_KEY } from "@/lib/competitorContext";
+
 import Link from "@/components/shell/RouteLink";
 import { useSearchParams } from "next/navigation";
 import { useNavigationRouter as useRouter } from "@/components/shell/useNavigationRouter";
@@ -420,6 +423,8 @@ export function CompetitorHealthClient({ data }: { data: CompetitorHealthPageDat
       </CollapsibleSection>
 
       <CompetitorWarningHistoryChart />
+
+      <EventsSection mode="competitor" labelKey={data.selectedLabelKey ?? ALL_COMPETITORS_KEY} />
 
       <CollapsibleSection
         title={`Unenriched tracks (${formatInt(data.unenriched.totalCount)})`}

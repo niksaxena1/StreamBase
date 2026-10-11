@@ -13,6 +13,7 @@ export function CollapsibleSection({
   actions,
   storageKey,
   defaultOpen = false,
+  onOpenChange,
   children,
 }: {
   title: ReactNode;
@@ -21,6 +22,7 @@ export function CollapsibleSection({
   /** localStorage key to persist open/closed state. Omit to skip persistence. */
   storageKey?: string;
   defaultOpen?: boolean;
+  onOpenChange?: (open: boolean) => void;
   children: ReactNode;
 }) {
   const [open, setOpen] = useStoredBoolState(storageKey ?? "sb:collapsible:ephemeral", defaultOpen);
@@ -28,7 +30,7 @@ export function CollapsibleSection({
   return (
     <details
       open={open}
-      onToggle={(ev) => setOpen(ev.currentTarget.open)}
+      onToggle={(ev) => { setOpen(ev.currentTarget.open); onOpenChange?.(ev.currentTarget.open); }}
       className="rounded-xl border sb-panel p-3"
       style={{ borderColor: "var(--sb-border)" }}
     >
