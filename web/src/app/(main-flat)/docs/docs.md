@@ -12,6 +12,10 @@ The **SAI / chatbot** sections are optional and live near the bottom.
 
 ---
 
+## Part 1: Using StreamBase
+
+This part explains what the app is, what each page is for, and how to do common tasks.
+
 ## What is StreamBase?
 
 StreamBase is a **daily ingestion + analytics app** for SpotOnTrack exports: it turns CSV snapshots into a queryable Postgres dataset and a web UI for tracking your catalog and playlists over time.
@@ -30,74 +34,222 @@ Where the main pieces live in this repo:
 
 ---
 
-## Daily automation schedule (GitHub Actions)
+## What each page does (and everything you can do on it)
 
-Times are **UTC** with Dubai time (UTC+4). The SpotOnTrack pipelines are started by the Supabase database scheduler (pg_cron) through a GitHub `repository_dispatch`, because GitHub's own crons start several hours late. The scheduler waits for SpotOnTrack to process each refresh, retries once, and emails an alert if a day is not ingested by 08:30 UTC. Other workflows below still use GitHub crons, which GitHub can delay.
+### Login (`/login`)
 
-### Own-catalog schedule
+- Purpose: authenticate via Supabase Auth.
+- What you can do:
+  - Sign in with email/password
+  - Redirect back to the originally requested page via `?next=...`
 
-| Workflow | Trigger / time (UTC) | Dubai (UTC+4) | What it does |
-|---|---|---:|---|
-| Spotify Takedown Watch (`spotify_takedown_watch.yml`) | Daily cron 04:37 | 08:37 | Checks own-catalog tracks for Spotify availability changes |
-| Own daily pipeline (`sot_own_daily_pipeline.yml`) | Refresh dispatched 05:07; sync + export 10 min after refresh succeeds; fallback cron 09:00 | 09:07 | Refreshes SpotOnTrack playlists, syncs dashboards with `config/playlists.csv`, exports and ingests into Supabase (idempotent) |
-| RapidAPI stale-track fix (`rapidapi_stale_fix.yml`) | Dispatched after a successful, current-UTC-date own-catalog export is ingested; daily fallback cron 09:41 | 13:41 | Attempts own-catalog stale-track corrections |
-| Spotify enrichment (`spotify_enrich.yml`) | 10:29 UTC on odd days of the month | 14:29 | Refreshes own playlist thumbnails, then enriches missing track metadata via Spotify |
-| Deadline check (Supabase `ops.pipeline_tick`) | 08:30 | 12:30 | Emails if today's own-catalog ingestion has not succeeded |
-| Artist Tools Daily (`artist_tools_daily.yml`) | Dispatched whenever RapidAPI stale-fix finishes; daily fallback cron 13:17 | 17:17 | Records artist counts and repairs remaining stale tracks |
-| Spotify artist image cache refresh (`spotify_artist_image_refresh.yml`) | Fridays at 15:00; runs only when UTC day-of-month is 1–7 | 19:00 | Refreshes cached Spotify artist images once on the month's first Friday; manual dispatch is not date-gated |
-| Spotify Playlist Watch Daily (`spotify_playlist_watch_daily.yml`) | Daily cron 15:11 | 19:11 | Collects watchlist follower counts and evaluates alert rules |
-| Pipeline Quality CI (`pipeline_quality.yml`) | Matching pull requests and pushes to `main` that change configured paths; event-triggered, no cron | Event-driven | Runs pipeline tests and workflow lint |
+Files:
 
-### Competitor Mode schedule
+- `web/src/app/(auth)/login/page.tsx`
+- `web/src/app/(auth)/login/ui.tsx`
 
-Competitor workflows are intentionally separate from the own-catalog workflows: they use different workflow files, config, concurrency groups, and the `competitor` database schema.
+### Home (`/`)
 
-| Workflow | Trigger / time (UTC) | Dubai (UTC+4) | What it does |
-|---|---|---:|---|
-| Competitor daily pipeline (`sot_competitor_daily_pipeline.yml`) | Refresh dispatched 05:23; sync + export 10 min after refresh succeeds; fallback cron 09:30 | 09:23 | Refreshes competitor playlists, mirrors them into SpotOnTrack dashboards, exports and ingests into the `competitor` schema |
-| Spotify competitor enrichment (`spotify_competitor_enrich.yml`) | 11:09 UTC on even days of the month | 15:09 | Refreshes competitor playlist thumbnails, then enriches competitor tracks with Spotify metadata |
-| Deadline check (Supabase `ops.pipeline_tick`) | 08:30 | 12:30 | Emails if today's competitor ingestion has not succeeded |
+- Purpose: high-level overview of “All / Releases / Ext”.
+- What you can do:
+  - Toggle scope: `all_catalog` / `releases` / `ext`
+  - Toggle range: 30 / 90 / 365 days
+  - In All Catalog, enable **Archived history** to include the recovered 2023–2025 Grafana series (up to 1200 days)
+  - View quick KPIs and charts
 
-The own-catalog export also dispatches RapidAPI stale fix after successful ingestion, which then dispatches Artist Tools Daily when it completes. See `docs/DAILY-PIPELINE.md` for the scheduler, manual runs and recovery.
+Data:
 
-### Competitor Mode pages
+- `playlist_daily_stats` (cached, live/default)
+- `legacy_catalog_daily_stats` (cached, only when Archived history is enabled)
 
-Competitor Mode is a parallel analytics universe, not a merge into your own catalog:
+File:
 
-- **Home** — overview for the selected competitor across all of its tracked playlists
-- **Playlists** — playlist-level totals plus current tracks; daily per-track deltas appear once at least two snapshots exist
-- **Catalog** — competitor artists and tracks
-- **Competitors** — competitive-intelligence cockpit: label comparison chart/table, cross-label movers, catalog churn, overlap matrix (pipeline health is on `/health`)
-- **Health** — competitor ingestion checks (stale playlists, row mismatches, warnings, missing totals)
+- `web/src/app/(main-flat)/page.tsx`
 
-The selected competitor is global. One competitor may own multiple playlists, and changing the selector changes supported competitor-aware surfaces across the app.
+### Catalog (`/catalog`)
 
-Adding a competitor (admin): `/competitors`, then **Add competitor** writes `competitor.labels` / `competitor.playlists`, the pipeline config source of truth. Each competitor workflow regenerates `config/competitor_playlists.csv` before reading it, so the next pipeline run picks up the playlist. Manual refresh/sync runs require manually starting the next stage. Blank accents use the canonical palette until an administrator runs artwork accent extraction after Spotify thumbnail enrichment (see `docs/COMPETITOR-MODE-OPERATIONS.md`).
+- Purpose: artist-first catalog analytics with optional track drilldown.
+- What you can do:
+  - Select an artist
+  - Select a track within that artist
+  - Switch metrics (streams vs revenue; track panels stay streams/revenue)
+  - Download CSVs (charts + top track tables)
+  - Change time range (30/90/365)
 
-Competitor RPCs used by `/competitors` (schema `competitor`):
+Important semantics:
 
-- `label_distinct_artist_counts(p_run_date)`
-- `label_daily_series(p_start_date, p_end_date)` — per-label chart series (aggregated server-side)
-- `label_top_tracks_daily(p_run_date, p_limit, p_direction)` — gainers/losers
-- `label_membership_churn(p_window_days, p_as_of)` — catalog adds/removes
-- `label_overlap_matrix(p_as_of)` — pairwise shared track counts (Jaccard in RPC; UI shows counts)
-- `label_overlap_artist_matrix(p_as_of)` — pairwise shared Spotify artist counts
-- `label_overlap_tracks` / `label_overlap_artists` — drill-down for overlap matrix cells
+- Artist series and “top tracks” are computed in Postgres RPCs.
+- Track daily values are derived from cumulative snapshots.
 
-Notes:
+Implementation pointers:
 
-- The export workflow has a **sync gate**: it blocks if there is no **successful** Dashboard Sync run for the same UTC date (unless you manually override).
-- The export workflow also has an **idempotency pre-check**: if `ingestion_runs` already shows `status=success` for that run date, it exits early unless `force_reingest=true` is set on a manual dispatch.
-- There is also a manual-only workflow: `sot_debug_scan_tracks.yml` (use it when a specific dashboard/playlist needs debugging; it uploads screenshots/logs as artifacts).
+- Page (server): `web/src/app/(main-flat)/catalog/page.tsx`
+- UI (client): `web/src/app/(main-flat)/catalog/CatalogPageClient.tsx`
+- RPCs: `supabase/migrations/20260130192235_add_catalog_artist_aggregate_rpcs.sql`
 
-Common secrets used by workflows:
+Also note:
 
-- `SOT_EMAIL`, `SOT_PASSWORD` (SpotOnTrack automation)
-- `SOT_STORAGE_STATE_B64` (optional login/session state)
-- `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (upload + ingestion)
-- `SUPABASE_STORAGE_BUCKET`, `SUPABASE_STORAGE_PREFIX` (optional storage upload)
-- `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET` (Spotify enrichment/image refresh)
-- `NOTIFY_SMTP_PASSWORD` (email notifications on failures/anomalies)
+- `/artists/<spotify_artist_id>` redirects to `/catalog?artist_id=<spotify_artist_id>`
+- `/tracks/<ISRC>` redirects to `/catalog?isrc=<ISRC>`
+
+### Playlists (`/playlists`)
+
+- Purpose: playlist performance + membership drilldowns over time.
+- What you can do:
+  - Select a playlist
+  - Change time range
+  - View “top tracks” in the playlist
+  - View “added” and “removed” tracks (membership changes)
+  - Open playlist on Spotify (if enriched with Spotify playlist id)
+
+Implementation pointers:
+
+- Page: `web/src/app/(main-flat)/playlists/page.tsx`
+- Fast tables RPCs: `supabase/migrations/20260130200845_add_playlists_fast_tables_rpcs.sql`
+
+### Network (`/network`)
+
+Shows how artists connect through tracks in the selected catalog or playlist scope. Choose the full catalog, one playlist, or a custom playlist scope; filter the graph by region, primary credits, co-artist count, track count, or advanced artist conditions. You can scale nodes by track count, show artist images, switch to a table, inspect artist details, and export the current own-catalog view to Excel.
+
+### Competitors (`/competitors`)
+
+Admin-only workspace for the separate competitor dataset. Its tabs show an overview, label comparisons, track movement, catalog intelligence, and data health. Compare selected labels, inspect gainers/losers and catalog adds/removals, and review overlaps and ingestion warnings. **Add competitor** creates a label and its first playlist; a label can have more playlists managed by the pipeline configuration.
+
+### Collectors (`/collectors`)
+
+Collectors are **groups of playlists** (think “collection buckets”) based on the `playlists.collector` column.
+
+- Purpose:
+  - Compare collectors to each other (daily revenue/streams/tracks)
+  - Drill into a single collector’s series
+  - See top playlists within that collector for the latest day
+- What you can do:
+  - Select a collector (`A`, `K`, `N`, `PL`, `TG`, `NL`)
+  - Change date range (30/90/365) or pick a custom date range
+  - Toggle metric: Revenue / Streams / Tracks
+  - Download CSVs (daily/cumulative charts + monthly aggregation)
+
+Data sources:
+
+- `playlists.collector` (assignment of playlists to collectors)
+- `collector_daily_agg` (time series aggregate table)
+- `collector_daily_compare` (compare view/table for the latest day)
+- Optional Settings toggle: `collector_entity_playlist_stats_enabled` switches TG to `tg_total` and PL to `p_total` using `collector_daily_agg_entity_playlists`, `collector_daily_compare_entity_playlists`, and scoped collector RPCs.
+- `playlist_daily_stats` (top playlists within the selected collector for the latest date)
+
+Where those collector tables come from:
+
+- `supabase/migrations/20260126181735_add_collectors_aggregate_views.sql` creates the views:
+  - `collector_daily_agg`
+  - `collector_daily_compare`
+
+Files:
+
+- `web/src/app/(main-flat)/collectors/page.tsx`
+- `web/src/app/(main-flat)/collectors/CollectorsClient.tsx`
+
+### Playlist Watch (`/playlist-watch`)
+
+Tracks daily Spotify follower counts for watched playlists. Search and sort the list, filter active playlists/favorites/archived items, open follower history, and view playlist owner details. You can add one or more Spotify playlist URLs, URIs, or IDs; mark favorites; archive or restore playlists; and manage follower alert rules and their alert history. Archived playlists keep their saved history but are not checked by the daily follower job.
+
+### Health (`/health`)
+
+- Purpose:
+  - Show ingestion runs (last ~30)
+  - Show warnings for selected date (critical/warn/info)
+  - Provide drilldowns to understand exactly what broke and how to fix it
+- What you can do:
+  - Filter warnings by severity and playlist
+  - Expand warnings to see impacted tracks (for supported warning types)
+  - Export “missing catalog tracks” list
+  - Download raw export CSVs for the selected run date
+
+Core warning types you’ll see:
+
+| Code | What it means | Typical fix |
+|---|---|---|
+| `missing_export` | Expected daily CSV not present | Fix exporter / SpotOnTrack dashboard config |
+| `zero_row_export` | CSV exists but has 0 rows | Investigate export failure or wrong dashboard |
+| `min_rows_failed` | Safety: export too small, ingestion aborted | Increase dashboard stability / adjust `min_rows` after verifying reality |
+| `track_count_swing` | Track count changed too much vs yesterday | Expand to see added/removed; validate export integrity |
+| `track_count_swing_hard_fail` | Safety: huge catalog swing, ingestion aborted | Almost always partial export; fix exporter |
+| `non_catalog_tracks_present` | Playlist contains tracks not in catalog snapshot that day | Add exclusions if intentional or fix catalog export/enrichment |
+| `tracks_missing_enrichment` | Tracks missing Spotify enrichment (`spotify_artist_ids` is null) | Run enrichment workflow to populate metadata |
+
+Implementation pointers:
+
+- Page: `web/src/app/(main-flat)/health/page.tsx`
+- Expandable row UI: `web/src/components/health/WarningRow.tsx`
+- Health summary API (polling): `web/src/app/api/health-summary/route.ts`
+- Health RPCs:
+  - `supabase/migrations/20260130200843_add_health_missing_catalog_rpcs.sql`
+  - `supabase/migrations/20260130200844_add_health_track_count_swing_rpc.sql`
+  - `supabase/migrations/20260130225814_add_health_missing_enrichment_tracks_rpc.sql`
+  - `supabase/migrations/20260207214054_add_health_entity_distro_drift_rpc.sql`
+  - `supabase/migrations/20260209020325_add_health_distro_overlap_rpc.sql`
+
+### Settings (`/settings`)
+
+- Purpose: operational controls, user preferences, and data repair tools.
+- What you can do:
+  - **Health exclusions**: add/remove track exclusions for `non_catalog_tracks_present` and `tracks_missing_enrichment` warnings
+  - **Manual stream overrides**: repair missing/incorrect SpotOnTrack snapshots for specific (run date, ISRC) with an audit note
+  - **Payout rate**: configure the USD-per-1000-streams rate used for revenue estimates across the app
+  - **Currency display**: choose how revenue numbers are formatted
+  - **Collector stats scope**: optionally use `TG Total` / `P Total` entity playlists for TG and PL collector stats
+  - **Chart preferences**: week highlight day, chart start date, y-axis zoom behavior
+  - **Home dashboard filters**: toggle which scopes/sections appear on the Home page
+  - **SAI toggle**: enable/disable the AI assistant chat widget
+
+Files:
+
+- `web/src/app/(main-flat)/settings/page.tsx`
+- `web/src/app/(main-flat)/settings/TrackExclusionForm.tsx`
+- `web/src/app/(main-flat)/settings/ManualStreamOverrideForm.tsx`
+
+DB setup:
+
+- Apply `supabase/migrations/20260131022936_add_user_settings_table.sql` (creates `user_settings` for per-user preferences)
+- Apply `supabase/migrations/20260521004156_add_collector_entity_playlist_stats_setting.sql` (adds the TG/PL entity-playlist collector stats toggle and scoped SQL objects)
+- Apply `supabase/migrations/20260201152444_add_track_daily_stream_overrides.sql` (creates `track_daily_stream_overrides` + effective views + recompute RPC)
+- Apply `supabase/migrations/20260201152445_adopt_track_daily_streams_effective.sql` (updates key RPCs to read the effective stream snapshots)
+
+### Catalog Config (`/catalog/config`)
+
+- Purpose: admin view of all artists and tracks in the system with stats.
+- What you can do:
+  - Browse all artists (with track counts and stream totals)
+  - Browse all tracks (with total/daily streams)
+  - Search/filter within each list
+
+Files:
+
+- `web/src/app/(main-flat)/catalog/config/page.tsx`
+
+### Playlists Config (`/playlists/config`)
+
+- Purpose: admin view of all playlists with operational metadata.
+- What you can do:
+  - See all playlists with track counts, streams, and thumbnails
+  - Trigger Spotify thumbnail refresh
+  - Navigate to per-playlist settings
+
+Files:
+
+- `web/src/app/(main-flat)/playlists/config/page.tsx`
+
+### Playlist Settings (`/playlists/config/settings`)
+
+- Purpose: edit operational metadata for a playlist.
+- What you can do:
+  - Set/change the **collector** assignment
+  - Set/change **playlist type** (Catalog, Label, Entity, Distro)
+  - Set/change **entity playlist key** (links a Distro playlist to its Entity)
+  - Set/change **Spotify playlist ID** and **display order**
+
+Files:
+
+- `web/src/app/(main-flat)/playlists/config/settings/page.tsx`
 
 ---
 
@@ -216,7 +368,7 @@ Common causes:
 
 ### Artist identity
 
-- There is **no dedicated `artists` table** today.
+- There is **no dedicated `artists` table** today. Catalog artist series are computed on demand from track snapshots and overrides; the old `artist_daily_stats` summary table is retired and is no longer read or written (`20261011141439_compute_artist_series_on_demand.sql`).
 - Artists are derived from arrays on tracks:
   - `tracks.spotify_artist_ids[]`
   - `tracks.spotify_artist_names[]`
@@ -248,6 +400,92 @@ Implementation pointers:
 
 - Ingestion derivation: `scripts/ingest_exports_to_supabase.py`
 - Several RPCs treat `all_catalog` as a union playlist (see `supabase/migrations/20260130200845_add_playlists_fast_tables_rpcs.sql` and enrichment/missing tracks RPCs).
+
+---
+
+## Recent app behavior
+
+The date label says **Latest data date**. Hover over it or focus it with the keyboard to see when the next automatic update starts (09:07 Dubai for own catalog; 09:23 Dubai for Competitor Mode).
+
+Daily stream charts have **Full range** and **Typical range** choices. Typical range limits the vertical scale to make ordinary days easier to compare; use Full range to include the largest values. Where the chart remembers a choice, it is saved in this browser.
+
+Recently visited pages can stay in the browser navigation cache for up to three minutes. Successful changes refresh the current page data. A dataset or competitor selection change is synchronized to other open tabs when the app detects it.
+
+Vercel runs the web functions in Mumbai (`bom1`).
+
+
+## Part 2: Technical reference
+
+This part describes how the system is built, protected, and operated.
+
+## Daily automation schedule (GitHub Actions)
+
+Times are **UTC** with Dubai time (UTC+4). The Supabase database scheduler starts the own-catalog pipeline at 05:07 UTC and the competitor pipeline at 05:23 UTC. It can retry a failed or stalled stage once and emails an alert when ingestion has not succeeded by 08:30 UTC. GitHub Actions runs the dispatched work; its scheduled fallback runs may start late.
+
+### Own-catalog schedule
+
+| Workflow | Trigger / time (UTC) | Dubai (UTC+4) | What it does |
+|---|---|---:|---|
+| Spotify Takedown Watch (`spotify_takedown_watch.yml`) | Daily cron 04:37 | 08:37 | Checks own-catalog tracks for Spotify availability changes |
+| Own daily pipeline (`sot_own_daily_pipeline.yml`) | Database scheduler dispatch at 05:07; sync + export after refresh succeeds; GitHub fallback cron 09:00 | 09:07 | Refreshes SpotOnTrack playlists, syncs dashboards with `config/playlists.csv`, exports and ingests into Supabase (idempotent) |
+| RapidAPI stale-track fix (`rapidapi_stale_fix.yml`) | Dispatched after a successful, current-UTC-date own-catalog export is ingested; daily fallback cron 09:41 | 13:41 | Attempts own-catalog stale-track corrections |
+| Spotify enrichment (`spotify_enrich.yml`) | 10:29 UTC on odd days of the month | 14:29 | Refreshes own playlist thumbnails, then enriches missing track metadata via Spotify |
+| Deadline check (Supabase `ops.pipeline_tick`) | 08:30 | 12:30 | Emails if today's own-catalog ingestion has not succeeded |
+| Artist Tools Daily (`artist_tools_daily.yml`) | Dispatched whenever RapidAPI stale-fix finishes; daily fallback cron 13:17 | 17:17 | Records artist counts and repairs remaining stale tracks |
+| Spotify artist image cache refresh (`spotify_artist_image_refresh.yml`) | Fridays at 15:00; runs only when UTC day-of-month is 1–7 | 19:00 | Refreshes cached Spotify artist images once on the month's first Friday; manual dispatch is not date-gated |
+| Spotify Playlist Watch Daily (`spotify_playlist_watch_daily.yml`) | Daily cron 15:11 | 19:11 | Collects watchlist follower counts and evaluates alert rules |
+| Pipeline Quality CI (`pipeline_quality.yml`) | Matching pull requests and pushes to `main` that change configured paths; event-triggered, no cron | Event-driven | Runs pipeline tests and workflow lint |
+
+### Competitor Mode schedule
+
+Competitor workflows are intentionally separate from the own-catalog workflows: they use different workflow files, config, concurrency groups, and the `competitor` database schema.
+
+| Workflow | Trigger / time (UTC) | Dubai (UTC+4) | What it does |
+|---|---|---:|---|
+| Competitor daily pipeline (`sot_competitor_daily_pipeline.yml`) | Database scheduler dispatch at 05:23; sync + export after refresh succeeds; GitHub fallback cron 09:30 | 09:23 | Refreshes competitor playlists, syncs dashboards, exports and ingests into the `competitor` schema |
+| Spotify competitor enrichment (`spotify_competitor_enrich.yml`) | 11:09 UTC on even days of the month | 15:09 | Refreshes competitor playlist thumbnails, then enriches competitor tracks with Spotify metadata |
+| Deadline check (Supabase `ops.pipeline_tick`) | 08:30 | 12:30 | Emails if today's competitor ingestion has not succeeded |
+
+After a successful current-day own-catalog ingestion, the pipeline starts RapidAPI stale-track repair; that workflow starts Artist Tools Daily when it finishes. Artist Tools Daily also has its own scheduled fallback. See `docs/DAILY-PIPELINE.md` for recovery details.
+
+### Competitor Mode pages
+
+Competitor Mode is a parallel analytics universe, not a merge into your own catalog:
+
+- **Home** — overview for the selected competitor across all of its tracked playlists
+- **Playlists** — playlist-level totals plus current tracks; daily per-track deltas appear once at least two snapshots exist
+- **Catalog** — competitor artists and tracks
+- **Competitors** — competitive-intelligence cockpit: label comparison chart/table, cross-label movers, catalog churn, overlap matrix (pipeline health is on `/health`)
+- **Health** — competitor ingestion checks (stale playlists, row mismatches, warnings, missing totals)
+
+The selected competitor is global. One competitor may own multiple playlists, and changing the selector changes supported competitor-aware surfaces across the app.
+
+Adding a competitor (admin): `/competitors`, then **Add competitor** writes `competitor.labels` / `competitor.playlists`, the pipeline config source of truth. Each competitor workflow regenerates `config/competitor_playlists.csv` before reading it, so the next pipeline run picks up the playlist. Manual refresh/sync runs require manually starting the next stage. Blank accents use the canonical palette until an administrator runs artwork accent extraction after Spotify thumbnail enrichment (see `docs/COMPETITOR-MODE-OPERATIONS.md`).
+
+Competitor RPCs used by `/competitors` (schema `competitor`):
+
+- `label_distinct_artist_counts(p_run_date)`
+- `label_daily_series(p_start_date, p_end_date)` — per-label chart series (aggregated server-side)
+- `label_top_tracks_daily(p_run_date, p_limit, p_direction)` — gainers/losers
+- `label_membership_churn(p_window_days, p_as_of)` — catalog adds/removes
+- `label_overlap_matrix(p_as_of)` — pairwise shared track counts (Jaccard in RPC; UI shows counts)
+- `label_overlap_artist_matrix(p_as_of)` — pairwise shared Spotify artist counts
+- `label_overlap_tracks` / `label_overlap_artists` — drill-down for overlap matrix cells
+
+Notes:
+
+- For manual stage-by-stage recovery only, the legacy export workflow has a **sync gate**: it blocks if there is no **successful** Dashboard Sync run for the same UTC date (unless you manually override). The daily pipeline handles these stages itself.
+- The export workflow also has an **idempotency pre-check**: if `ingestion_runs` already shows `status=success` for that run date, it exits early unless `force_reingest=true` is set on a manual dispatch.
+- There is also a manual-only workflow: `sot_debug_scan_tracks.yml` (use it when a specific dashboard/playlist needs debugging; it uploads screenshots/logs as artifacts). The own and competitor ingestion watchdog workflows are manual-only; the database scheduler sends the daily deadline alert.
+
+Common secrets used by workflows:
+
+- `SOT_EMAIL`, `SOT_PASSWORD` (SpotOnTrack automation)
+- `SOT_STORAGE_STATE_B64` (optional login/session state)
+- `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (upload + ingestion)
+- `SUPABASE_STORAGE_BUCKET`, `SUPABASE_STORAGE_PREFIX` (optional storage upload)
+- `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET` (Spotify enrichment/image refresh)
+- `NOTIFY_SMTP_PASSWORD` (email notifications on failures/anomalies)
 
 ---
 
@@ -350,213 +588,6 @@ Used by `scripts/ingest_exports_to_supabase.py`:
 - Optional:
   - `SUPABASE_STORAGE_BUCKET` (defaults to `spotibase-exports`)
   - `SUPABASE_STORAGE_PREFIX` (defaults to `exports`)
-
----
-
-## What each page does (and everything you can do on it)
-
-### Login (`/login`)
-
-- Purpose: authenticate via Supabase Auth.
-- What you can do:
-  - Sign in with email/password
-  - Redirect back to the originally requested page via `?next=...`
-
-Files:
-
-- `web/src/app/(auth)/login/page.tsx`
-- `web/src/app/(auth)/login/ui.tsx`
-
-### Home (`/`)
-
-- Purpose: high-level overview of “All / Releases / Ext”.
-- What you can do:
-  - Toggle scope: `all_catalog` / `releases` / `ext`
-  - Toggle range: 30 / 90 / 365 days
-  - In All Catalog, enable **Archived history** to include the recovered 2023–2025 Grafana series (up to 1200 days)
-  - View quick KPIs and charts
-
-Data:
-
-- `playlist_daily_stats` (cached, live/default)
-- `legacy_catalog_daily_stats` (cached, only when Archived history is enabled)
-
-File:
-
-- `web/src/app/(main-flat)/page.tsx`
-
-### Catalog (`/catalog`)
-
-- Purpose: artist-first catalog analytics with optional track drilldown.
-- What you can do:
-  - Select an artist
-  - Select a track within that artist
-  - Switch metrics (streams vs revenue; track panels stay streams/revenue)
-  - Download CSVs (charts + top track tables)
-  - Change time range (30/90/365)
-
-Important semantics:
-
-- Artist series and “top tracks” are computed in Postgres RPCs.
-- Track daily values are derived from cumulative snapshots.
-
-Implementation pointers:
-
-- Page (server): `web/src/app/(main-flat)/catalog/page.tsx`
-- UI (client): `web/src/app/(main-flat)/catalog/CatalogPageClient.tsx`
-- RPCs: `supabase/migrations/20260130192235_add_catalog_artist_aggregate_rpcs.sql`
-
-Also note:
-
-- `/artists/<spotify_artist_id>` redirects to `/catalog?artist_id=<spotify_artist_id>`
-- `/tracks/<ISRC>` redirects to `/catalog?isrc=<ISRC>`
-
-### Playlists (`/playlists`)
-
-- Purpose: playlist performance + membership drilldowns over time.
-- What you can do:
-  - Select a playlist
-  - Change time range
-  - View “top tracks” in the playlist
-  - View “added” and “removed” tracks (membership changes)
-  - Open playlist on Spotify (if enriched with Spotify playlist id)
-
-Implementation pointers:
-
-- Page: `web/src/app/(main-flat)/playlists/page.tsx`
-- Fast tables RPCs: `supabase/migrations/20260130200845_add_playlists_fast_tables_rpcs.sql`
-
-### Collectors (`/collectors`)
-
-Collectors are **groups of playlists** (think “collection buckets”) based on the `playlists.collector` column.
-
-- Purpose:
-  - Compare collectors to each other (daily revenue/streams/tracks)
-  - Drill into a single collector’s series
-  - See top playlists within that collector for the latest day
-- What you can do:
-  - Select a collector (`A`, `K`, `N`, `PL`, `TG`, `NL`)
-  - Change date range (30/90/365) or pick a custom date range
-  - Toggle metric: Revenue / Streams / Tracks
-  - Download CSVs (daily/cumulative charts + monthly aggregation)
-
-Data sources:
-
-- `playlists.collector` (assignment of playlists to collectors)
-- `collector_daily_agg` (time series aggregate table)
-- `collector_daily_compare` (compare view/table for the latest day)
-- Optional Settings toggle: `collector_entity_playlist_stats_enabled` switches TG to `tg_total` and PL to `p_total` using `collector_daily_agg_entity_playlists`, `collector_daily_compare_entity_playlists`, and scoped collector RPCs.
-- `playlist_daily_stats` (top playlists within the selected collector for the latest date)
-
-Where those collector tables come from:
-
-- `supabase/migrations/20260126181735_add_collectors_aggregate_views.sql` creates the views:
-  - `collector_daily_agg`
-  - `collector_daily_compare`
-
-Files:
-
-- `web/src/app/(main-flat)/collectors/page.tsx`
-- `web/src/app/(main-flat)/collectors/CollectorsClient.tsx`
-
-### Health (`/health`)
-
-- Purpose:
-  - Show ingestion runs (last ~30)
-  - Show warnings for selected date (critical/warn/info)
-  - Provide drilldowns to understand exactly what broke and how to fix it
-- What you can do:
-  - Filter warnings by severity and playlist
-  - Expand warnings to see impacted tracks (for supported warning types)
-  - Export “missing catalog tracks” list
-  - Download raw export CSVs for the selected run date
-
-Core warning types you’ll see:
-
-| Code | What it means | Typical fix |
-|---|---|---|
-| `missing_export` | Expected daily CSV not present | Fix exporter / SpotOnTrack dashboard config |
-| `zero_row_export` | CSV exists but has 0 rows | Investigate export failure or wrong dashboard |
-| `min_rows_failed` | Safety: export too small, ingestion aborted | Increase dashboard stability / adjust `min_rows` after verifying reality |
-| `track_count_swing` | Track count changed too much vs yesterday | Expand to see added/removed; validate export integrity |
-| `track_count_swing_hard_fail` | Safety: huge catalog swing, ingestion aborted | Almost always partial export; fix exporter |
-| `non_catalog_tracks_present` | Playlist contains tracks not in catalog snapshot that day | Add exclusions if intentional or fix catalog export/enrichment |
-| `tracks_missing_enrichment` | Tracks missing Spotify enrichment (`spotify_artist_ids` is null) | Run enrichment workflow to populate metadata |
-
-Implementation pointers:
-
-- Page: `web/src/app/(main-flat)/health/page.tsx`
-- Expandable row UI: `web/src/components/health/WarningRow.tsx`
-- Health summary API (polling): `web/src/app/api/health-summary/route.ts`
-- Health RPCs:
-  - `supabase/migrations/20260130200843_add_health_missing_catalog_rpcs.sql`
-  - `supabase/migrations/20260130200844_add_health_track_count_swing_rpc.sql`
-  - `supabase/migrations/20260130225814_add_health_missing_enrichment_tracks_rpc.sql`
-  - `supabase/migrations/20260207214054_add_health_entity_distro_drift_rpc.sql`
-  - `supabase/migrations/20260209020325_add_health_distro_overlap_rpc.sql`
-
-### Settings (`/settings`)
-
-- Purpose: operational controls, user preferences, and data repair tools.
-- What you can do:
-  - **Health exclusions**: add/remove track exclusions for `non_catalog_tracks_present` and `tracks_missing_enrichment` warnings
-  - **Manual stream overrides**: repair missing/incorrect SpotOnTrack snapshots for specific (run date, ISRC) with an audit note
-  - **Payout rate**: configure the USD-per-1000-streams rate used for revenue estimates across the app
-  - **Currency display**: choose how revenue numbers are formatted
-  - **Collector stats scope**: optionally use `TG Total` / `P Total` entity playlists for TG and PL collector stats
-  - **Chart preferences**: week highlight day, chart start date, y-axis zoom behavior
-  - **Home dashboard filters**: toggle which scopes/sections appear on the Home page
-  - **SAI toggle**: enable/disable the AI assistant chat widget
-
-Files:
-
-- `web/src/app/(main-flat)/settings/page.tsx`
-- `web/src/app/(main-flat)/settings/TrackExclusionForm.tsx`
-- `web/src/app/(main-flat)/settings/ManualStreamOverrideForm.tsx`
-
-DB setup:
-
-- Apply `supabase/migrations/20260131022936_add_user_settings_table.sql` (creates `user_settings` for per-user preferences)
-- Apply `supabase/migrations/20260521004156_add_collector_entity_playlist_stats_setting.sql` (adds the TG/PL entity-playlist collector stats toggle and scoped SQL objects)
-- Apply `supabase/migrations/20260201152444_add_track_daily_stream_overrides.sql` (creates `track_daily_stream_overrides` + effective views + recompute RPC)
-- Apply `supabase/migrations/20260201152445_adopt_track_daily_streams_effective.sql` (updates key RPCs to read the effective stream snapshots)
-
-### Catalog Config (`/catalog/config`)
-
-- Purpose: admin view of all artists and tracks in the system with stats.
-- What you can do:
-  - Browse all artists (with track counts and stream totals)
-  - Browse all tracks (with total/daily streams)
-  - Search/filter within each list
-
-Files:
-
-- `web/src/app/(main-flat)/catalog/config/page.tsx`
-
-### Playlists Config (`/playlists/config`)
-
-- Purpose: admin view of all playlists with operational metadata.
-- What you can do:
-  - See all playlists with track counts, streams, and thumbnails
-  - Trigger Spotify thumbnail refresh
-  - Navigate to per-playlist settings
-
-Files:
-
-- `web/src/app/(main-flat)/playlists/config/page.tsx`
-
-### Playlist Settings (`/playlists/config/settings`)
-
-- Purpose: edit operational metadata for a playlist.
-- What you can do:
-  - Set/change the **collector** assignment
-  - Set/change **playlist type** (Catalog, Label, Entity, Distro)
-  - Set/change **entity playlist key** (links a Distro playlist to its Entity)
-  - Set/change **Spotify playlist ID** and **display order**
-
-Files:
-
-- `web/src/app/(main-flat)/playlists/config/settings/page.tsx`
 
 ---
 
@@ -782,6 +813,8 @@ Notes:
   - best-effort Spotify lookup by ISRC (for album image)
 - `/api/spotify-track-batch` (**authenticated**)
   - batch Spotify lookup by ISRC (bounded to 50 ISRCs, concurrency-limited)
+- `/api/playlist-watch/*` (**authenticated**)
+  - add, update, and archive watched playlists; load owner details and playlist alert rules/history
 - `/api/cron/ensure-partitions`
   - ops endpoint used by Vercel Cron to keep `track_daily_streams` monthly partitions created ahead of time
   - requires `CRON_SECRET` (Authorization: Bearer)
@@ -1505,9 +1538,7 @@ If you want SAI to be reliable, enforce answer structure.
 
 ## Home diagnostics performance
 
-After ingestion, StreamBase precomputes negative daily stream corrections,
-artist and track weekend dips, and artificial spikes in separate own-catalog
-and competitor snapshot tables. Competitor label scatter is also precomputed.
+After each successful ingestion, StreamBase refreshes Home diagnostic snapshots for negative daily stream corrections, artist and track weekend dips, and artificial spikes. Own-catalog and competitor snapshots are kept separately; competitor label scatter is also precomputed. Home uses these snapshots when they match the selected date, scope, and settings, and falls back to live calculations when a snapshot does not apply or is unavailable.
 The displayed calculations stay the same. Default spike settings are ratio
 1.25, baseline 50, grace 14 days, crossing cap 1500, weekends excluded and a
 30-day inclusive window ending on the selected latest run date. Changed
@@ -1530,7 +1561,7 @@ The independent `spotify_takedown_watch.yml` workflow runs daily at **04:37 UTC 
 4. A single-track 404, an empty market list, or unplayability across the configured markets is confirmed with `GET /v1/search?q=isrc:...&type=track&market=M&limit=1` in the first market. Search is also used when the track response lacks playability fields. Playable relinked or re-delivered copies count as available. Listener restrictions (`explicit`/`product`) do not count as takedowns. Unknown restriction reasons, HTTP errors, and malformed search responses are inconclusive.
 5. Definitive results update `public.spotify_track_availability`, keyed by stable `tracks.isrc`. It stores status, reason, markets checked, first/last checks, last availability, status-change time, and unavailable-since time. `public.spotify_track_availability_events` records `taken_down`/`restored` transitions with detection and notification timestamps. Unknown results leave prior state intact.
 6. The workflow sends combined alerts through `.github/actions/notify-email`, then acknowledges only the successfully delivered event IDs. Unsent events remain pending for the next run. An alert JSON audit artifact is retained for seven days. Standalone CLI runs retain SMTP delivery using `NOTIFY_SMTP_PASSWORD` (and optional `TAKEDOWN_ALERT_TO`/`TAKEDOWN_ALERT_FROM` overrides).
-New takedowns are not emailed when effective cumulative streams were already zero/null on the last catalog date or stayed flat across the last seven available catalog dates; fewer than seven dates do not trigger suppression, and restorations are always emailed.
+New takedown emails are suppressed when the track was already dead in StreamBase: its effective cumulative streams were zero/null on the last catalog date or stayed flat across the last seven available catalog dates. Fewer than seven dates do not trigger the flat-stream suppression, and restorations are still emailed.
 
 For **3,200 unique tracks**, all playable in the first market, a batch-capable app uses **64 track requests plus one token request**. If every batch needs all three markets, it uses up to **192 track requests plus up to 3,200 ISRC searches**. Single-track fallback uses **one rejected batch probe plus 3,200–9,600 track requests and up to 3,200 searches**. Null slots, retries, or token refreshes add requests. Calls are sequential with a default minimum interval of 0.5 seconds, bounded retries, and respect for `Retry-After`; a wait over 120 seconds aborts. Spotify's rate limit varies by app, so this throttle is not a quota guarantee. The workflow allows 180 minutes for fallback and backoff.
 
@@ -1548,9 +1579,10 @@ Migration `20261011161525_add_spotify_not_found_tracking.sql` adds lookup tracki
 catalogs. Apply it before deploying the updated enrichment scripts and web queries.
 The migration is applied in production.
 
-Two consecutive search misses mark a track as ?Not on Spotify?. Both normal and
-`--only-missing` batches then defer it for 30 days; `--isrc` remains an explicit
-immediate retry. Manual misses leave lookup tracking unchanged; a successful
+Two consecutive search misses mark a track as "Not on Spotify". Both normal and
+`--only-missing` batches then defer it for 30 days; the enrichment process rechecks
+these tracks monthly, and `--isrc` remains an explicit immediate retry. New tracks
+are enriched immediately after ingestion by the pipeline. Manual misses leave lookup tracking unchanged; a successful
 lookup clears the miss count and absence date.
 Public tracks retain the first confirmation date and use `spotify_last_fetched_at`
 to schedule monthly rechecks. Competitor tracks do not have that timestamp, so a

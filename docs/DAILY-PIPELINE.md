@@ -108,8 +108,8 @@ state. Each run saves state after sync with an `always()` condition, including
 partial progress on failure, under a key ending in its `github.run_id`.
 See [saving caches after failures](https://github.com/actions/cache/tree/main/save#always-save-cache).
 
-The script must support `--state-file` and `--full` when this is merged. Sync adds
-`--full` on Sundays UTC or when its new manual boolean input `full_sync` is true.
+The sync script supports `--state-file` and `--full`. The workflow adds
+`--full` on Sundays UTC or when its manual boolean input `full_sync` is true.
 Other days use the script's incremental behavior. Cache entries are immutable;
 rerunning the same run ID can restore its existing entry but cannot overwrite it.
 
@@ -124,16 +124,9 @@ These scheduled workflows run independently of the SpotOnTrack completion chains
 
 ## Watchdogs
 
-Own and competitor ingestion watchdogs run on daily 13:53 / 14:29 UTC (17:53 /
-18:29 Dubai) crons and support manual triggers. The competitor stale-summary RPC
-normally returns a
-row list (`RETURNS TABLE`), but PostgREST can also return a single object or an
-error object. Because `curl` returns HTTP error bodies without `--fail`, assuming
-every nonempty JSON response supports `d[0]` caused `KeyError: 0` on an object.
-
-Both watchdogs now normalize ingestion responses before reading fields. The
-competitor stale-summary parser accepts list/object responses and reports `?` for
-errors, empty, malformed, or invalid count responses without failing the job.
-The own watchdog does not call that RPC, but had the same list-only ingestion
-parsing. Unknown ingestion status still produces the existing incomplete-data
-notification; an unknown stale count remains informational.
+The own and competitor ingestion watchdog workflows are manual-only; they do not
+run on daily schedules. The Supabase database scheduler checks ingestion status
+and sends the 08:30 UTC deadline email when a successful run is missing. The
+manual workflows remain available for diagnosis. They normalize list, object,
+empty, malformed, and error responses before reporting ingestion status; unknown
+stale counts are informational.
