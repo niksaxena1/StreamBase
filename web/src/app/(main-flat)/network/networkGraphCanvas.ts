@@ -6,7 +6,7 @@ import {
   NETWORK_GRID_MINOR_MIN_PX,
   NETWORK_GRID_TARGET_PX,
 } from "./networkGraphConstants";
-import { nearGridMultiple, pickNiceGridStep, scaleLinear, type FGNodeObj } from "./networkGraphPure";
+import { nearGridMultiple, pickNiceGridStep, type FGNodeObj } from "./networkGraphPure";
 import type { GraphEdge, GraphNode } from "./networkTypes";
 
 /**
@@ -168,12 +168,10 @@ export function pickNetworkNodeAtClientPos(
     width: number;
     height: number;
     nodes: FGNodeObj[];
-    scaleByTracks: boolean;
-    minTrackCount: number;
-    maxTrackCount: number;
+    nodeRadius: (node: FGNodeObj) => number;
   },
 ): FGNodeObj | null {
-  const { width, height, nodes, scaleByTracks, minTrackCount, maxTrackCount } = view;
+  const { width, height, nodes, nodeRadius } = view;
   const r = host.getBoundingClientRect();
   const px = clientX - r.left;
   const py = clientY - r.top;
@@ -194,9 +192,7 @@ export function pickNetworkNodeAtClientPos(
     if (!Number.isFinite(nx) || !Number.isFinite(ny)) continue;
     const gx = nx as number;
     const gy = ny as number;
-    const baseSize = scaleByTracks
-      ? scaleLinear(n.track_count ?? 1, minTrackCount, maxTrackCount, 3, 16)
-      : 5;
+    const baseSize = nodeRadius(n);
     const hitSize = Math.max(baseSize, 6);
     const hitR = hitSize * k;
     let scr: { x: number; y: number };

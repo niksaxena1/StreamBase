@@ -17,6 +17,10 @@ export type NetworkUrlPatch = Partial<{
   scope: NetworkScopeState;
   hideNonPrimary: boolean;
   scaleByTracks: boolean;
+  sizeByStreams: boolean;
+  colourByCluster: boolean;
+  highlightRecent: boolean;
+  throughDay: number | null;
   showImages: boolean;
   tableView: boolean;
   collabMin: number | null;

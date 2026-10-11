@@ -10,6 +10,7 @@ import type { DatasetMode } from "@/lib/datasetMode";
 import { getRequestAppContext } from "@/lib/requestAppContext.server";
 import { cachedQuery } from "@/lib/supabase/cache";
 import { getArtistsCached } from "@/lib/spotify";
+import { loadNetworkInsights } from "./loadNetworkInsights";
 
 export type NetworkGraphMode = "artists" | "cross-label";
 
@@ -157,7 +158,7 @@ export async function loadNetworkGraph(args: {
   const hideNonPrimary = parseHideNonPrimary(args.searchParams.hide_non_primary);
 
   if (args.shell.graphMode === "cross-label") {
-    const cacheKey = "network-graph-cross-label-v2";
+    const cacheKey = "network-graph-cross-label-insights-v3";
     const cached = await cachedQuery(
       async () => {
         const { data, error } = await svc.schema("competitor").rpc("cross_label_overlap_graph", {
@@ -165,7 +166,7 @@ export async function loadNetworkGraph(args: {
         });
         if (error) return { data: null, error };
         return {
-          data: (data as CollaborationGraph) ?? { nodes: [], edges: [] },
+          data: await loadNetworkInsights(svc, (data as CollaborationGraph) ?? { nodes: [], edges: [] }, args.shell, networkScope, args.playlists),
           error: null,
         };
       },
@@ -190,7 +191,7 @@ export async function loadNetworkGraph(args: {
       };
     }
 
-    const cacheKey = `network-graph-competitor-v2-${labelKey}-${scopeCacheKey(networkScope, hideNonPrimary)}`;
+    const cacheKey = `network-graph-competitor-insights-v3-${labelKey}-${scopeCacheKey(networkScope, hideNonPrimary)}`;
     const cached = await cachedQuery(
       async () => {
         const { data, error } = await svc.schema("competitor").rpc("artist_collaboration_graph", {
@@ -205,7 +206,7 @@ export async function loadNetworkGraph(args: {
         });
         if (error) return { data: null, error };
         return {
-          data: (data as CollaborationGraph) ?? { nodes: [], edges: [] },
+          data: await loadNetworkInsights(svc, (data as CollaborationGraph) ?? { nodes: [], edges: [] }, args.shell, networkScope, args.playlists),
           error: null,
         };
       },
@@ -220,7 +221,7 @@ export async function loadNetworkGraph(args: {
     };
   }
 
-  const cacheKey = `network-graph-${scopeCacheKey(networkScope, hideNonPrimary)}`;
+  const cacheKey = `network-graph-insights-v3-${scopeCacheKey(networkScope, hideNonPrimary)}`;
   const cached = await cachedQuery(
     async () => {
       const { data, error } = await svc.rpc("artist_collaboration_graph", {
@@ -234,7 +235,7 @@ export async function loadNetworkGraph(args: {
       });
       if (error) return { data: null, error };
       return {
-        data: (data as CollaborationGraph) ?? { nodes: [], edges: [] },
+        data: await loadNetworkInsights(svc, (data as CollaborationGraph) ?? { nodes: [], edges: [] }, args.shell, networkScope, args.playlists),
         error: null,
       };
     },

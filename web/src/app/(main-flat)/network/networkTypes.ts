@@ -5,12 +5,16 @@ export type GraphNode = {
   image_url: string | null;
   co_artists_any_track?: number;
   co_artists_primary_tracks?: number;
+  daily_streams?: number | null;
 };
 
 export type SharedTrack = {
   isrc: string;
   name: string | null;
   album_image_url?: string | null;
+  release_date?: string | null;
+  first_seen?: string | null;
+  daily_streams?: number | null;
 };
 
 export type GraphEdge = {
@@ -18,6 +22,7 @@ export type GraphEdge = {
   target: string;
   weight: number;
   shared_tracks: SharedTrack[];
+  daily_streams?: number | null;
 };
 
 export type CollaborationGraph = {

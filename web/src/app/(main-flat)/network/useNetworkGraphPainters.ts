@@ -6,21 +6,25 @@ import { getImage } from "./networkGraphImageCache";
 import {
   accentRgba,
   collaborationLinkKey,
-  scaleLinear,
   type FGLinkObj,
   type FGNodeObj,
 } from "./networkGraphPure";
 import type { GraphEdge } from "./networkTypes";
+import { collaborationIsRecent, streamEdgeWidth } from "./networkInsights";
 
 /**
  * ForceGraph2D paint callbacks: node size, node canvas drawing, pointer hit area, link width and
  * link color. Focus / selection state is owned by the caller and passed in.
  */
 export function useNetworkGraphPainters({
-  scaleByTracks,
+  nodeRadius,
+  nodeClusterColor,
+  sizeByStreams,
+  maxEdgeStreams,
+  highlightRecent,
+  appearanceByKey,
+  todayDay,
   showImages,
-  minTrackCount,
-  maxTrackCount,
   selectedNodeId,
   hoveredNode,
   hoveredLink,
@@ -30,10 +34,14 @@ export function useNetworkGraphPainters({
   isLinkHighlighted,
   colors,
 }: {
-  scaleByTracks: boolean;
+  nodeRadius: (node: FGNodeObj) => number;
+  nodeClusterColor: (id: string) => string | null;
+  sizeByStreams: boolean;
+  maxEdgeStreams: number;
+  highlightRecent: boolean;
+  appearanceByKey: Map<string, number | null>;
+  todayDay: number;
   showImages: boolean;
-  minTrackCount: number;
-  maxTrackCount: number;
   selectedNodeId: string | null;
   hoveredNode: FGNodeObj | null;
   hoveredLink: FGLinkObj | null;
@@ -45,13 +53,7 @@ export function useNetworkGraphPainters({
 }) {
   /* -------- Node rendering -------- */
 
-  const nodeVal = useCallback(
-    (node: FGNodeObj) => {
-      if (!scaleByTracks) return 2;
-      return scaleLinear(node.track_count ?? 1, minTrackCount, maxTrackCount, 1, 12);
-    },
-    [scaleByTracks, minTrackCount, maxTrackCount],
-  );
+  const nodeVal = useCallback(() => 2, []);
 
   const nodeCanvasObject = useCallback(
     (node: FGNodeObj, ctx: CanvasRenderingContext2D, globalScale: number) => {
@@ -60,10 +62,8 @@ export function useNetworkGraphPainters({
       const alpha = highlighted ? 1 : 0.12;
       const inRange = rangeSet.size > 0 && rangeSet.has(id);
 
-      const baseSize = scaleByTracks
-        ? scaleLinear(node.track_count ?? 1, minTrackCount, maxTrackCount, 3, 16)
-        : 5;
-      const size = baseSize;
+      const size = nodeRadius(node);
+      const cluster = nodeClusterColor(id);
 
       const x = node.x ?? 0;
       const y = node.y ?? 0;
@@ -85,15 +85,15 @@ export function useNetworkGraphPainters({
         ctx.globalAlpha = alpha;
         ctx.beginPath();
         ctx.arc(x, y, size, 0, 2 * Math.PI);
-        ctx.strokeStyle = colors.accent;
-        ctx.lineWidth = 1.2 / globalScale;
+        ctx.strokeStyle = cluster ?? colors.accent;
+        ctx.lineWidth = (cluster ? 3 : 1.2) / globalScale;
         ctx.stroke();
       } else {
         // Solid circle
         ctx.beginPath();
         ctx.arc(x, y, size, 0, 2 * Math.PI);
         ctx.fillStyle =
-          id === selectedNodeId || inRange ? colors.accent : colors.accentStroke;
+          cluster ?? (id === selectedNodeId || inRange ? colors.accent : colors.accentStroke);
         ctx.fill();
 
         // Subtle glow for selected
@@ -135,10 +135,9 @@ export function useNetworkGraphPainters({
     },
     [
       isHighlighted,
-      scaleByTracks,
+      nodeRadius,
+      nodeClusterColor,
       showImages,
-      minTrackCount,
-      maxTrackCount,
       selectedNodeId,
       hoveredNode,
       colors,
@@ -149,16 +148,14 @@ export function useNetworkGraphPainters({
   // Hit area for pointer
   const nodePointerAreaPaint = useCallback(
     (node: FGNodeObj, color: string, ctx: CanvasRenderingContext2D) => {
-      const size = scaleByTracks
-        ? scaleLinear(node.track_count ?? 1, minTrackCount, maxTrackCount, 3, 16)
-        : 5;
+      const size = nodeRadius(node);
       const hitSize = Math.max(size, 6);
       ctx.beginPath();
       ctx.arc(node.x ?? 0, node.y ?? 0, hitSize, 0, 2 * Math.PI);
       ctx.fillStyle = color;
       ctx.fill();
     },
-    [scaleByTracks, minTrackCount, maxTrackCount],
+    [nodeRadius],
   );
 
   /* -------- Link rendering -------- */
@@ -166,7 +163,7 @@ export function useNetworkGraphPainters({
   const linkWidth = useCallback(
     (link: FGLinkObj) => {
       const w = (link as unknown as GraphEdge).weight ?? 1;
-      let width = Math.min(w * 0.8, 6);
+      let width = sizeByStreams ? streamEdgeWidth(link.daily_streams, maxEdgeStreams, w) : 0.8;
       const key = collaborationLinkKey(link);
       const hoverOrPin =
         (hoveredLink != null && collaborationLinkKey(hoveredLink) === key) ||
@@ -174,7 +171,7 @@ export function useNetworkGraphPainters({
       if (hoverOrPin) width = Math.min(width + 1.25, 8);
       return width;
     },
-    [hoveredLink, pinnedLink],
+    [hoveredLink, pinnedLink, sizeByStreams, maxEdgeStreams],
   );
 
   const linkColor = useCallback(
@@ -184,6 +181,7 @@ export function useNetworkGraphPainters({
       const w = (link as unknown as GraphEdge).weight ?? 1;
       let a = Math.min(0.15 + w * 0.1, 0.6);
       const key = collaborationLinkKey(link);
+      if (highlightRecent) a = collaborationIsRecent(appearanceByKey.get(key) ?? null, todayDay) ? 0.85 : 0.045;
       const isHover =
         hoveredLink != null && collaborationLinkKey(hoveredLink) === key;
       const isPinned =
@@ -194,7 +192,7 @@ export function useNetworkGraphPainters({
       }
       return accentRgba(colors.accent, a);
     },
-    [isLinkHighlighted, colors, hoveredLink, pinnedLink],
+    [isLinkHighlighted, colors, hoveredLink, pinnedLink, highlightRecent, appearanceByKey, todayDay],
   );
 
   return { nodeVal, nodeCanvasObject, nodePointerAreaPaint, linkWidth, linkColor };

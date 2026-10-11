@@ -24,6 +24,27 @@ export function NetworkHelpModal({
       <div className="space-y-4 text-sm" style={{ color: "var(--sb-text)" }}>
         <section>
           <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: colors.accent }}>
+            Streams, clusters & time
+          </h3>
+          <p className="text-[13px] leading-snug" style={{ color: "var(--sb-muted)" }}>
+            Size by streams is on by default: artist radii and collaboration widths use available daily
+            stream deltas in the current scope. Missing metrics keep their default size. Switch it off
+            for uniform sizes, or use Scale by tracks for the existing track-count sizing.
+          </p>
+          <p className="text-[13px] leading-snug mt-2" style={{ color: "var(--sb-muted)" }}>
+            Colour by cluster opens communities ranked by daily streams. Click a community to highlight
+            and fit its artists. With images on, cluster colours appear on the artwork rings.
+          </p>
+          <p className="text-[13px] leading-snug mt-2" style={{ color: "var(--sb-muted)" }}>
+            The time slider includes collaborations whose earliest shared track was released by the selected
+            date, falling back to first-seen when release date is unavailable. All time includes undated
+            collaborations. Highlight last 30 days brightens new collaborations and dims older ones.
+            These controls are saved in the URL, and dragging the slider preserves artist positions.
+          </p>
+        </section>
+
+        <section>
+          <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: colors.accent }}>
             Keyboard
           </h3>
           <ul className="list-none space-y-2">
