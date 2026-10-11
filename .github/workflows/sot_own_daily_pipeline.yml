@@ -86,6 +86,7 @@ jobs:
           STAGE: ${{ steps.resolve.outputs.stage }}
           RUN_DATE: ${{ steps.resolve.outputs.run_date }}
           FORCE: ${{ inputs.force_reingest }}
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
           SKIP="false"
           if [ "$FORCE" = "true" ]; then
@@ -98,9 +99,12 @@ jobs:
             if echo "$HIT" | grep -q "\"status\":\"success\""; then
               echo "Already ingested for $RUN_DATE. Skipping."
               SKIP="true"
-              bash scripts/pipeline_record_stage.sh own "$RUN_DATE" sync_export skipped "Already ingested"
-              if [ "$STAGE" = "full" ] || [ "$STAGE" = "refresh" ]; then
-                bash scripts/pipeline_record_stage.sh own "$RUN_DATE" refresh skipped "Already ingested"
+              # Previews must never advance the database scheduler, even on a skip.
+              if [ "$DRY_RUN" != "true" ]; then
+                bash scripts/pipeline_record_stage.sh own "$RUN_DATE" sync_export skipped "Already ingested"
+                if [ "$STAGE" = "full" ] || [ "$STAGE" = "refresh" ]; then
+                  bash scripts/pipeline_record_stage.sh own "$RUN_DATE" refresh skipped "Already ingested"
+                fi
               fi
             else
               echo "No successful ingestion found for $RUN_DATE. Proceeding."
@@ -129,6 +133,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Record refresh started
+        if: inputs.dry_run != true
         run: bash scripts/pipeline_record_stage.sh own "$RUN_DATE" refresh started
 
       - uses: ./.github/actions/sot-setup
@@ -167,11 +172,10 @@ jobs:
             Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
       - name: Record refresh result
-        if: always()
+        if: always() && inputs.dry_run != true
         env:
           STAGE_STATUS: ${{ job.status == 'success' && 'success' || 'failure' }}
-          DETAIL: ${{ inputs.dry_run && 'Dry run (preview only)' || '' }}
-        run: bash scripts/pipeline_record_stage.sh own "$RUN_DATE" refresh "$STAGE_STATUS" "$DETAIL"
+        run: bash scripts/pipeline_record_stage.sh own "$RUN_DATE" refresh "$STAGE_STATUS"
 
   sync_export:
     needs: [precheck, refresh]
@@ -182,7 +186,7 @@ jobs:
       (needs.precheck.outputs.stage == 'full' || needs.precheck.outputs.stage == 'sync_export') &&
       (needs.refresh.result == 'success' || (needs.precheck.outputs.stage == 'sync_export' && needs.refresh.result == 'skipped'))
     runs-on: ubuntu-latest
-    timeout-minutes: 100
+    timeout-minutes: 130
     env:
       RUN_DATE: ${{ needs.precheck.outputs.run_date }}
     steps:
@@ -193,6 +197,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Record sync/export started
+        if: inputs.dry_run != true
         run: bash scripts/pipeline_record_stage.sh own "$RUN_DATE" sync_export started
 
       - uses: ./.github/actions/sot-setup
@@ -486,8 +491,7 @@ jobs:
           body: ${{ steps.notification.outputs.body }}
 
       - name: Record sync/export result
-        if: always()
+        if: always() && inputs.dry_run != true
         env:
           STAGE_STATUS: ${{ job.status == 'success' && 'success' || 'failure' }}
-          DETAIL: ${{ inputs.dry_run && 'Dry run (export and ingestion skipped)' || '' }}
-        run: bash scripts/pipeline_record_stage.sh own "$RUN_DATE" sync_export "$STAGE_STATUS" "$DETAIL"
+        run: bash scripts/pipeline_record_stage.sh own "$RUN_DATE" sync_export "$STAGE_STATUS"

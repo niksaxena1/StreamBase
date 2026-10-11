@@ -29,7 +29,7 @@ on:
         type: string
 
 concurrency:
-  group: sot-own-dashboard-sync
+  group: sot-own-pipeline
   cancel-in-progress: false
 
 jobs:

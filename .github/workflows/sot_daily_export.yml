@@ -30,7 +30,7 @@ jobs:
     timeout-minutes: 30
 
     concurrency:
-      group: sot-own-export
+      group: sot-own-pipeline
       cancel-in-progress: false
 
     steps:

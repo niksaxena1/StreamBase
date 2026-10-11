@@ -15,7 +15,7 @@ on:
         type: string
 
 concurrency:
-  group: sot-own-refresh
+  group: sot-own-pipeline
   cancel-in-progress: false
 
 jobs:
