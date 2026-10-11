@@ -13,6 +13,7 @@ import requests
 
 from streambase_revalidate import notify_web_revalidate
 from streambase_postgrest import Postgrest
+from streambase_home_snapshots import refresh_competitor_home_snapshots
 from streambase_rate import load_stream_payout_usd
 
 STREAM_PAYOUT_USD = 0.002
@@ -522,6 +523,7 @@ def main():
     )
 
     # Refresh the web app's cached analytics now that new data is live.
+    refresh_competitor_home_snapshots(pg, run_date)
     notify_web_revalidate()
 
 

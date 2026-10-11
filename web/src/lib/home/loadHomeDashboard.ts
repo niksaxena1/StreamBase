@@ -22,6 +22,7 @@ import { aggregateCompetitorPlaylistHistory } from "@/lib/competitorAnalytics";
 import { ALL_COMPETITORS_KEY, resolveCompetitorLabelKey } from "@/lib/competitorContext";
 import { loadHomeDiagnostics } from "@/lib/home/loadHomeDiagnostics";
 import { resolveHomeDataset } from "@/lib/home/homeDataset.server";
+import { readHomeDiagnosticSnapshot, snapshotOrLive } from "@/lib/home/homeDiagnosticSnapshots";
 import type { RequestAppContext } from "@/lib/requestAppContext.server";
 
 type Svc = ReturnType<typeof supabaseService>;
@@ -99,25 +100,34 @@ async function fetchTrackScatterPoints(svc: Svc, args: { runDate: string; prevDa
 
 async function fetchCompetitorTrackScatterPoints(
   svc: Svc,
-  args: { labelKey: string; runDate: string; prevDate: string; schedule: PageScheduler },
+  args: { labelKey: string; runDate: string; prevDate: string; schedule: PageScheduler; overrideVersion: string | null },
 ) {
-  const rows = await fetchOrderedPages<Record<string, unknown>>({
-    pageSize: 1000,
-    maxRows: HOME_SCATTER_HARD_CAP,
-    fetchPage: (offset, withCount) => args.schedule(async () => {
-      const { data, error, count } = await svc
-      .schema("competitor")
-      .rpc("home_track_scatter_points_for_label", {
-        label_key: args.labelKey,
-        run_date: args.runDate,
-        prev_date: args.prevDate,
-      }, withCount ? { count: "exact" } : undefined)
-      .range(offset, offset + 999);
-      if (error) throw error;
-      return { data, count };
+  const result = await snapshotOrLive<Record<string, unknown>[]>({
+    eligible: args.prevDate === addDaysISO(args.runDate, -1),
+    overrideVersion: args.overrideVersion,
+    read: () => args.schedule(() => readHomeDiagnosticSnapshot({ svc, dataset: "competitor",
+      runDate: args.runDate, labelKey: args.labelKey, kind: "track_scatter_points_for_label" })),
+    live: async () => ({
+      data: await fetchOrderedPages<Record<string, unknown>>({
+        pageSize: 1000,
+        maxRows: HOME_SCATTER_HARD_CAP,
+        fetchPage: (offset, withCount) => args.schedule(async () => {
+          const { data, error, count } = await svc
+            .schema("competitor")
+            .rpc("home_track_scatter_points_for_label", {
+              label_key: args.labelKey,
+              run_date: args.runDate,
+              prev_date: args.prevDate,
+            }, withCount ? { count: "exact" } : undefined)
+            .range(offset, offset + 999);
+          if (error) throw error;
+          return { data, count };
+        }),
+      }),
+      error: null,
     }),
   });
-  return uniqueScatterRows(rows);
+  return uniqueScatterRows((result.data ?? []).slice(0, HOME_SCATTER_HARD_CAP));
 }
 
 function uniqueScatterRows(rows: Record<string, unknown>[]) {
@@ -445,6 +455,13 @@ export async function loadHomeScatterPoints(args: {
 
       const prevRunDate = addDaysIso(selectedRunDate, -1);
       const schedule = createPageScheduler(4);
+      let overrideVersion: string | null = null;
+      if (datasetMode === "competitor") {
+        try {
+          const version = await svc.schema("competitor").rpc("spotibase_override_version");
+          if (!version.error && typeof version.data === "string") overrideVersion = version.data;
+        } catch { /* A failed version read forces live scatter. */ }
+      }
 
       const rows =
         datasetMode === "competitor" && competitorLabelKey
@@ -465,6 +482,7 @@ export async function loadHomeScatterPoints(args: {
                       runDate: selectedRunDate,
                       prevDate: prevRunDate,
                       schedule,
+                      overrideVersion,
                     })).map((row) => ({
                       ...row,
                       competitor_label_key: label.label_key,
@@ -478,6 +496,7 @@ export async function loadHomeScatterPoints(args: {
                 runDate: selectedRunDate,
                 prevDate: prevRunDate,
                 schedule,
+                overrideVersion,
               })).map((row) => ({
                 ...row,
                 competitor_label_key: competitorLabelKey,
