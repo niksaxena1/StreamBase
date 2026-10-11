@@ -475,56 +475,65 @@ async function PlaylistsPageContent({
 
   void dashboardSummaryPromise.catch(() => {});
 
-  const latestPromise = cachedQuery(
-    async () => {
-      let q = svc
-        .from("playlist_daily_stats")
-        .select(
-          "date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net,source_run_id",
-        )
-        .eq("playlist_key", playlistKey);
-      if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
-      return await q
-        .order("date", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-    },
-    `playlist-latest-v2-${playlistKey}-ov${overrideBuster}-rb${rollbackDate ?? "live"}`,
-    3600,
-  );
+  const latestPromise = playlistsPromise.then(({ data: rows }) => {
+    if (!(rows ?? []).some((row) => row.playlist_key === playlistKey)) return { data: null, error: null };
+    return cachedQuery(
+      async () => {
+        let q = svc
+          .from("playlist_daily_stats")
+          .select(
+            "date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net,source_run_id",
+          )
+          .eq("playlist_key", playlistKey);
+        if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
+        return await q
+          .order("date", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+      },
+      `playlist-latest-v2-${playlistKey}-ov${overrideBuster}-rb${rollbackDate ?? "live"}`,
+      3600,
+    );
+  });
 
-  const prevPromise = cachedQuery(
-    async () => {
-      let q = svc
-        .from("playlist_daily_stats")
-        .select("date")
-        .eq("playlist_key", playlistKey);
-      if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
-      return await q
-        .order("date", { ascending: false })
-        .range(1, 1)
-        .maybeSingle();
-    },
-    `playlist-prev-v2-${playlistKey}-ov${overrideBuster}-rb${rollbackDate ?? "live"}`,
-    3600,
-  );
+  const prevPromise = playlistsPromise.then(({ data: rows }) => {
+    if (!(rows ?? []).some((row) => row.playlist_key === playlistKey)) return { data: null, error: null };
+    return cachedQuery(
+      async () => {
+        let q = svc
+          .from("playlist_daily_stats")
+          .select("date")
+          .eq("playlist_key", playlistKey);
+        if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
+        return await q
+          .order("date", { ascending: false })
+          .range(1, 1)
+          .maybeSingle();
+      },
+      `playlist-prev-v2-${playlistKey}-ov${overrideBuster}-rb${rollbackDate ?? "live"}`,
+      3600,
+    );
+  });
 
-  const historyPromise = cachedQuery(
-    async () => {
-      let q = svc
-        .from("playlist_daily_stats")
-        .select(
-          "date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net,missing_streams_track_count",
-        )
-        .eq("playlist_key", playlistKey);
-      if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
-      return await q
-        .order("date", { ascending: false })
-        .limit(rangeDays);
-    },
-    `playlist-history-v2-${playlistKey}-${rangeDays}-ov${overrideBuster}-rb${rollbackDate ?? "live"}`,
-    3600,
-  );
+  const historyPromise = playlistsPromise.then(({ data: rows }) => {
+    if (!(rows ?? []).some((row) => row.playlist_key === playlistKey)) return { data: null, error: null };
+    return cachedQuery(
+      async () => {
+        let q = svc
+          .from("playlist_daily_stats")
+          .select(
+            "date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net,missing_streams_track_count",
+          )
+          .eq("playlist_key", playlistKey);
+        if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
+        return await q
+          .order("date", { ascending: false })
+          .limit(rangeDays);
+      },
+      `playlist-history-v2-${playlistKey}-${rangeDays}-ov${overrideBuster}-rb${rollbackDate ?? "live"}`,
+      3600,
+    );
+  });
 
   function parseRpcBigint(v: unknown): number | null {
     if (v == null) return null;

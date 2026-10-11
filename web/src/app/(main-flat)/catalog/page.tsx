@@ -254,32 +254,6 @@ async function CatalogPageContent({
     }
 
     const isrc = requestedIsrc || null;
-    const selectedTrackPromise = isrc
-      ? cachedQuery(
-          async () => await svc.from("tracks")
-            .select("name,spotify_album_image_url,spotify_track_id,spotify_artist_names,spotify_artist_ids,release_date")
-            .eq("isrc", isrc).maybeSingle(),
-          `track-selected-${isrc}`,
-          CACHE_TTL_1H,
-        )
-      : Promise.resolve({ data: null, error: null });
-    void selectedTrackPromise.catch(() => {});
-
-    // Track list for this artist (cached for 1 hour)
-    const artistTracksPromise = cachedQuery(
-      async () =>
-        await svc
-          .from("tracks")
-          .select("isrc,name,spotify_artist_ids,spotify_artist_names,spotify_album_image_url,release_date")
-          .contains("spotify_artist_ids", [artistId])
-          .order("last_seen", { ascending: false })
-          .limit(800),
-      // Bump cache version when selected columns change (release_date added).
-      `artist-tracks-v3-${artistId}`,
-      CACHE_TTL_1H,
-    );
-    void artistTracksPromise.catch(() => {});
-
     // We don't have an artists table; the distinct-artist dropdown is computed in
     // Postgres (catalog_artist_options) instead of paging thousands of track rows
     // to the web server and deriving it in JS.
@@ -341,11 +315,20 @@ async function CatalogPageContent({
       }
     }
 
-  const selectedAndSomeArtistIds = Array.from(
-    new Set([artistId, ...artists.slice(0, CATALOG_ARTIST_THUMBNAILS_MAX).map((a) => a.id)].filter(Boolean)),
+  // Track list for this artist (cached for 1 hour)
+  const artistTracksPromise = cachedQuery(
+    async () =>
+      await svc
+        .from("tracks")
+        .select("isrc,name,spotify_artist_ids,spotify_artist_names,spotify_album_image_url,release_date")
+        .contains("spotify_artist_ids", [artistId])
+        .order("last_seen", { ascending: false })
+        .limit(800),
+    // Bump cache version when selected columns change (release_date added).
+    `artist-tracks-v3-${artistId}`,
+    CACHE_TTL_1H,
   );
-  const artistDataPromise = getArtistsCached(svc, selectedAndSomeArtistIds, { maxAgeDays: 31 });
-  void artistDataPromise.catch(() => {});
+  void artistTracksPromise.catch(() => {});
 
   const { data: tracks, error: tracksError } = await artistTracksPromise;
 
@@ -458,6 +441,23 @@ async function CatalogPageContent({
     overrideBuster,
   });
   void artistOverrideAnnotationsPromise.catch(() => {});
+
+  const selectedAndSomeArtistIds = Array.from(
+    new Set([artistId, ...artists.slice(0, CATALOG_ARTIST_THUMBNAILS_MAX).map((a) => a.id)].filter(Boolean)),
+  );
+  const artistDataPromise = getArtistsCached(svc, selectedAndSomeArtistIds, { maxAgeDays: 31 });
+  void artistDataPromise.catch(() => {});
+
+  const selectedTrackPromise = isrc
+    ? cachedQuery(
+        async () => await svc.from("tracks")
+          .select("name,spotify_album_image_url,spotify_track_id,spotify_artist_names,spotify_artist_ids,release_date")
+          .eq("isrc", isrc).maybeSingle(),
+        `track-selected-${isrc}`,
+        CACHE_TTL_1H,
+      )
+    : Promise.resolve({ data: null, error: null });
+  void selectedTrackPromise.catch(() => {});
 
   // Artist series + top tracks are computed in Postgres (scales to large tables).
   // The selected track series and image metadata do not depend on those aggregates.
