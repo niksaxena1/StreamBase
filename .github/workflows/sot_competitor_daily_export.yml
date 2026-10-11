@@ -1,3 +1,4 @@
+# Manual only; daily runs use sot_competitor_daily_pipeline.yml (started by the Supabase scheduler).
 name: SOT Competitor Daily Export
 
 permissions:
@@ -5,12 +6,6 @@ permissions:
   contents: read
 
 on:
-  workflow_run:
-    workflows: ["SOT Competitor Daily Dashboard Sync"]
-    types: [completed]
-  schedule:
-    # Fallback after the 08:53 UTC sync window; the gate blocks early exports.
-    - cron: "29 11 * * *"
   workflow_dispatch:
     inputs:
       run_date:
@@ -29,7 +24,7 @@ on:
         default: false
 
 concurrency:
-  group: sot-competitor-export
+  group: sot-competitor-pipeline
   cancel-in-progress: false
 
 jobs:

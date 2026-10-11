@@ -166,8 +166,10 @@ def test_export_today_dispatch(export_date, dispatch):
     bash = shutil.which("bash")
     if not bash:
         pytest.skip("Bash is needed to exercise the GitHub Actions shell step")
-    workflow = Path(".github/workflows/sot_daily_export.yml").read_text(encoding="utf-8")
-    step = workflow.split("      - name: Start stale-track fix", 1)[1]
+    workflow = Path(".github/workflows/sot_own_daily_pipeline.yml").read_text(encoding="utf-8")
+    step = workflow.split("      - name: Start stale-track fix", 1)[1].split("\n      - ", 1)[0]
+    assert "if: success() && steps.ingest.outcome == 'success' && steps.ingest.outputs.ingested == 'true'" in step
+    assert 'echo "ingested=true" >> "$GITHUB_OUTPUT"' in workflow
     script = step.split("        run: ", 1)[1]
     if script.startswith("|"):
         script = textwrap.dedent(script.split("\n", 1)[1])

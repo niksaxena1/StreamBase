@@ -45,23 +45,22 @@ Competitor data lives in the `competitor` schema. It must never be written into 
 
 The three SpotOnTrack workflows regenerate `config/competitor_playlists.csv` from `competitor.labels` / `competitor.playlists` immediately before reading it. DB configuration is the source of truth; the committed CSV is a generated snapshot and outage fallback. The exporter requests exact counts for both tables, checks every Content-Range, and follows server-capped pages by the actual number of rows received. It rejects incomplete reads. Missing playlist rows and absent/inactive labels keep committed CSV rows with warnings; a committed row is removed only when its received playlist explicitly has `is_active = false`. If the DB returns fewer playlists than the snapshot, the entire snapshot is retained. Any DB/read/render/write failure preserves the snapshot, and the regeneration step cannot fail the job. The Spotify competitor enrichment workflow also refreshes missing `competitor.playlists.spotify_playlist_image_url` values before track enrichment.
 
-The SpotOnTrack workflows now chain on success: Playlist Refresh → Dashboard
-Sync (after a 10-minute processing wait) → Export. One external
-`repository_dispatch` event of type `daily-pipeline` starts both the own-catalog
-and competitor refresh heads, with independent concurrency groups and schemas.
-Fallback crons remain at 05:23 UTC / 09:23 Dubai (refresh), 08:53 UTC / 12:53
-Dubai (sync), and 11:29 UTC / 15:29 Dubai (export); sync/export prechecks prevent
-repeat daily work. The competitor ingestion watchdog runs at 14:29 UTC / 18:29
-Dubai. Dashboard sync restores competitor state, saves
-partial progress, and runs a full sync on Sundays UTC or with manual `full_sync`.
-See [Daily pipeline](DAILY-PIPELINE.md) for external scheduler setup, manual-run
-behavior, run-date semantics, and failure recovery.
+The competitor SpotOnTrack pipeline is one workflow, `sot_competitor_daily_pipeline.yml`,
+started by the Supabase scheduler (`ops.pipeline_tick`, pg_cron) with
+`repository_dispatch` type `competitor-pipeline`: refresh at 05:23 UTC (09:23 Dubai),
+then dashboard sync + export 10 minutes after the refresh reports success. It has its
+own concurrency group (`sot-competitor-pipeline`) and writes only to the `competitor`
+schema. If today's competitor data is not ingested by 08:30 UTC the scheduler emails an
+alert; a 09:30 UTC GitHub cron runs the full pipeline as a fallback. The old
+refresh/sync/export/watchdog workflows are manual-only. Dashboard sync restores
+competitor state, saves partial progress, and runs a full sync on Sundays UTC or with
+manual `full_sync`. See [Daily pipeline](DAILY-PIPELINE.md) for setup, manual runs and recovery.
 
 ## First-run checklist
 
-1. Start the daily chain with `repository_dispatch: daily-pipeline` (which starts both universes) or wait for the refresh fallback cron. Manual refresh/sync runs do not chain: run refresh, dashboard sync, and export manually in that order.
+1. Run **SOT Competitor Daily Pipeline** manually with `stage=full`, or wait for the scheduler's 05:23 UTC start.
 2. Monitor the competitor dashboard sync workflow as it populates the SpotOnTrack dashboard.
-3. Verify the chained competitor export workflow succeeds.
+3. Verify the pipeline's sync + export job succeeds.
 4. Run the Spotify competitor enrichment workflow to fill track metadata and playlist thumbnails.
 5. Run `cd web && npm run extract-competitor-accents` for new labels with blank accents after thumbnails are available; use `--force` to re-extract existing/custom accents or changed artwork. Accents are harmonized in `web/src/lib/competitorLabelAccents.ts` (extract script + every label load) so charts, cards, and `--sb-accent` share one resolved hex per label.
 6. Switch Settings → Dataset → Competitor Mode.

@@ -1,115 +1,92 @@
 # Daily data pipeline
 
-The daily SpotOnTrack pipeline follows successful workflow completions instead of
-waiting for staggered GitHub schedules. Own-catalog and competitor workflows,
-concurrency groups, configs, and Supabase schemas remain separate.
+The daily SpotOnTrack pipeline is started and supervised by the Supabase database
+(pg_cron), not by GitHub schedules. GitHub starts cron jobs on this repo 5-7 hours
+late (Oct 2026: a 05:07 UTC cron started at 11:06-12:12 UTC), so data used to land
+between 14:30 and 18:00 UTC. A `repository_dispatch` request starts a workflow
+within seconds. Own-catalog and competitor pipelines stay separate: separate
+workflows, concurrency groups, configs, dispatch event types and Supabase schemas.
 
 ```mermaid
 flowchart LR
-  Head[repository_dispatch: daily-pipeline] --> OwnRefresh[SOT Daily Playlist Refresh]
-  Head --> CompetitorRefresh[SOT Competitor Daily Playlist Refresh]
-  OwnRefresh -->|success + 10 minute wait| OwnSync[SOT Daily Dashboard Sync]
-  OwnSync -->|success| OwnExport[SOT Daily Export]
-  OwnExport -->|ingested: gh workflow run| Fix[RapidAPI Stale Track Fix]
-  Fix -->|always: gh workflow run| Artist[Artist Tools Daily]
-  CompetitorRefresh -->|success + 10 minute wait| CompetitorSync[SOT Competitor Daily Dashboard Sync]
-  CompetitorSync -->|success| CompetitorExport[SOT Competitor Daily Export]
+  Tick[pg_cron every 5 min, 04:00-12:55 UTC<br/>ops.pipeline_tick] -->|05:07 own / 05:23 competitor| R[repository_dispatch stage=refresh]
+  R --> WF[SOT Own / Competitor Daily Pipeline]
+  WF -->|pipeline_record_stage| Stages[(ops.pipeline_stage_runs)]
+  Stages -->|refresh success + 10 min| S[repository_dispatch stage=sync_export]
+  S --> WF
+  WF -->|ingested| Ingest[(public / competitor ingestion_runs)]
+  WF -->|own only: gh workflow run| Fix[RapidAPI Stale Track Fix]
+  Fix -->|gh workflow run| Artist[Artist Tools Daily]
+  Tick -->|08:30 UTC deadline, not ingested| Alert[(ops.pipeline_alerts)] --> Mail[Edge Function pipeline-alert<br/>Gmail SMTP 465]
 ```
 
-Sync and export listen for `workflow_run` with `types: [completed]` and require
-upstream `success`. GitHub stops `workflow_run` chains after three levels, so the
-last two hand-offs are explicit dispatches (`gh workflow run` with `GITHUB_TOKEN`,
-which GitHub allows): the export starts the RapidAPI stale fix after a real ingest,
-and the stale fix always starts Artist Tools Daily, even when RapidAPI failed or
-ran out of quota.
-Dashboard sync first
-waits 600 seconds on chained runs so SpotOnTrack can process playlist refreshes.
-Manual and cron syncs do not wait.
+## How a day runs
 
-GitHub requires the `workflow_run` and `repository_dispatch` workflow definitions
-to exist on the default branch (`main`); merge these changes before enabling the
-external scheduler. Chained runs check out the default branch. See [GitHub workflow events](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows).
-
-## External head trigger
-
-Configure an external scheduler to make one request daily, for example at 05:07
-UTC (09:07 Dubai). It starts both playlist-refresh workflows independently:
-
-```http
-POST https://api.github.com/repos/niksaxena1/StreamBase/dispatches
-Authorization: Bearer <fine-grained-PAT>
-Accept: application/vnd.github+json
-Content-Type: application/json
-
-{"event_type":"daily-pipeline"}
-```
-
-Create a fine-grained personal access token restricted to `niksaxena1/StreamBase`
-with **Contents: read & write**. Store it as a secret in the external scheduler.
-A successful dispatch returns HTTP 204; monitor Actions to confirm both heads ran.
-See [GitHub repository dispatch API](https://docs.github.com/en/rest/repos/repos#create-a-repository-dispatch-event).
-
-Example for a scheduler with a Bash environment and a secret `STREAMBASE_PAT`:
-
-```bash
-curl --fail-with-body --silent --show-error \
-  -X POST https://api.github.com/repos/niksaxena1/StreamBase/dispatches \
-  -H "Authorization: Bearer $STREAMBASE_PAT" \
-  -H "Accept: application/vnd.github+json" \
-  -H "Content-Type: application/json" \
-  -d '{"event_type":"daily-pipeline"}'
-```
-
-Repository dispatch avoids the delayed GitHub cron head, but runner queuing and
-SpotOnTrack processing can still delay completion. The external scheduler is
-configured separately; committing these workflows does not create that schedule.
-
-## Fallback schedules and run dates
-
-All existing manual triggers remain available. The SpotOnTrack refresh, sync, and
-export workflows keep these daily crons as fallbacks; GitHub may start them late.
-The external `daily-pipeline` dispatch starts both refresh heads. A successful
-refresh starts its dashboard sync, and a successful sync starts its export when
-the prior run completes.
-
-| Workflow | Cron (UTC) | Dubai (UTC+4) |
+| Step | Own catalog | Competitor |
 | --- | --- | --- |
-| SOT Daily Playlist Refresh | `7 5 * * *` | 09:07 |
-| SOT Daily Dashboard Sync | `11 6 * * *` | 10:11 |
-| SOT Daily Export | `43 7 * * *` | 11:43 |
-| RapidAPI Stale Track Fix | `41 9 * * *` | 13:41 |
-| Artist Tools Daily | `17 13 * * *` | 17:17 |
-| SOT Competitor Daily Playlist Refresh | `23 5 * * *` | 09:23 |
-| SOT Competitor Daily Dashboard Sync | `53 8 * * *` | 12:53 |
-| SOT Competitor Daily Export | `29 11 * * *` | 15:29 |
+| Refresh dispatched | 05:07 UTC (09:07 Dubai) | 05:23 UTC (09:23 Dubai) |
+| Sync + export dispatched | 10 min after refresh reports success | same |
+| Deadline alert | 08:30 UTC (12:30 Dubai) | 08:30 UTC |
+| GitHub fallback (`stage=full`) | 09:00 UTC cron | 09:30 UTC cron |
 
-Sync fallback prechecks skip work if that universe has already synced successfully
-today. Export prechecks skip dates already successfully ingested into their own
-schema. Both exports still require a successful same-day dashboard sync on `main`,
-regardless of its event type, so `workflow_run` syncs satisfy the gate. Own export
-fails if the gate cannot be verified; competitor export skips the attempt. A later
-successful sync triggers a fresh export even if its fallback cron already ran.
+The two universes share one SpotOnTrack login, so their starts stay 16 minutes apart.
 
-Exports compute `RUN_DATE` as UTC today when the job runs, or the explicit
-`run_date` supplied to a manual export. Refresh and sync have no run-date input;
-inputs from an upstream manual run are not forwarded to downstream workflows.
-Runs crossing UTC midnight retain these existing date semantics. The stale-fix
-script uses UTC today and requires today's own-catalog stale-ingestion warning;
-its cron behavior is unchanged. A chained stale fix follows a successful own
-export, including an export that skipped because today's ingestion already exists.
+- **Workflows:** `sot_own_daily_pipeline.yml` and `sot_competitor_daily_pipeline.yml`.
+  Each listens for `repository_dispatch` (`own-pipeline` / `competitor-pipeline`) with
+  `client_payload: {stage: refresh|sync_export, run_date}`, plus `workflow_dispatch`
+  (stage `full|refresh|sync_export`) and a late fallback cron that runs `full`.
+  Shared setup lives in `.github/actions/sot-setup`.
+- **Waiting:** the scheduler waits for SpotOnTrack to process the refresh, so no runner
+  sleeps. Only `stage=full` (manual or fallback) sleeps 600 s before syncing.
+- **Progress:** each job calls `scripts/pipeline_record_stage.sh`, which posts
+  `started|success|failure|skipped` to the service-role RPC `pipeline_record_stage`.
+  It never fails a job. Dry runs record nothing.
+- **Idempotent:** a precheck skips the run when that universe's `ingestion_runs` already
+  has a success for the run date (unless `force_reingest`).
+- **Retries (scheduler):** refresh is re-dispatched once after a failure or after 45 min
+  without success; sync/export once after a failure (15 min later), after 60 min without
+  a start, or after 150 min stuck in `started` (killed runner).
+- **Alerts:** one email per problem per day: data not ingested by the deadline,
+  GitHub rejecting a dispatch (expired/missing token), or a missing token. Workflow
+  steps still email their own failures via `.github/actions/notify-email`.
 
-Manual (`workflow_dispatch`) refresh/sync runs do NOT start their downstream chain,
-so a dry run or limited test sync cannot trigger an export. Successful own exports
-dated UTC today, including manual exports, dispatch the stale fixer; historical
-exports do not. RapidAPI completion dispatches artist.tools. After a manual sync,
-run the export manually (or let its fallback cron pick it up).
+Configuration lives in `ops.pipeline_config` (enable flag, times, wait, deadline,
+attempt limits). Orchestration state is in `ops.pipeline_stage_runs`,
+`ops.pipeline_dispatches` and `ops.pipeline_alerts`. The `ops` schema is not exposed
+to the Data API. Migration: `supabase/migrations/20261011020521_add_db_orchestrated_pipeline.sql`.
+
+## Setup (owner, once)
+
+1. Create a fine-grained GitHub token for `niksaxena1/StreamBase` with
+   **Contents: read & write** and **Actions: read & write**, then in the Supabase SQL
+   editor: `select vault.create_secret('<token>', 'github_dispatch_pat', 'StreamBase pipeline dispatch');`
+   To rotate: `select vault.update_secret((select id from vault.secrets where name = 'github_dispatch_pat'), '<new token>');`
+2. Supabase dashboard → Edge Functions → Secrets: `NOTIFY_SMTP_PASSWORD` (Gmail app password).
+3. Deploy the alert function: `supabase functions deploy pipeline-alert --no-verify-jwt`.
+   It takes no input and only sends rows already queued in `ops.pipeline_alerts`.
+4. After the new workflows are on `main` (`repository_dispatch` only fires there):
+   `update ops.pipeline_config set enabled = true;`
+
+## Manual runs and recovery
+
+- Re-run a day: Actions → SOT Own/Competitor Daily Pipeline → Run workflow, `stage=full`
+  (or `sync_export` if the refresh already happened), optional `run_date`, and
+  `force_reingest` to overwrite an existing ingestion.
+- Check scheduler state: `select * from ops.pipeline_stage_runs where run_date = current_date order by created_at;`
+  and `select * from ops.pipeline_dispatches where run_date = current_date;`
+- Pause automation: `update ops.pipeline_config set enabled = false;` (the GitHub fallback crons still run).
+- The old per-stage workflows (`sot_daily_playlist_refresh.yml`, `sot_daily_dashboard_sync.yml`,
+  `sot_daily_export.yml` and the competitor equivalents) are manual-only and share the new
+  pipelines' concurrency groups. The old export's sync gate looks for runs of the old
+  dashboard-sync workflow, so run the old ones in order or use the new pipeline instead.
+  The old ingestion watchdog workflows are manual-only; the database deadline check replaces them.
 
 ## artist.tools second source and stale fallback
 
 The own-export dispatch starts the stale fixer only for an export dated UTC today.
 Successful historical manual re-ingestions do not dispatch today's repair jobs.
 
-Artist Tools Daily is dispatched by `RapidAPI Stale Track Fix` on any completion
+Artist Tools Daily is dispatched by `RapidAPI Stale Track Fix` on any completion (the stale fix is started by the own pipeline after a real ingest)
 and also has a daily 13:17 UTC (17:17 Dubai) cron fallback. It records own-catalog
 cumulative counts even
 for tracks RapidAPI fixed, then repairs remaining stale tracks without replacing

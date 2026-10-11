@@ -1,12 +1,10 @@
+# Manual only; daily runs use sot_competitor_daily_pipeline.yml (started by the Supabase scheduler).
 name: SOT Competitor Ingestion Watchdog
 
 permissions:
   contents: read
 
 on:
-  schedule:
-    # 18:29 Dubai (GST, UTC+4) == 14:29 UTC, after the Competitor export fallback.
-    - cron: "29 14 * * *"
   workflow_dispatch:
     inputs:
       run_date:
@@ -15,7 +13,7 @@ on:
         type: string
 
 concurrency:
-  group: sot-competitor-ingestion-watchdog
+  group: sot-competitor-pipeline
   cancel-in-progress: false
 
 jobs:
