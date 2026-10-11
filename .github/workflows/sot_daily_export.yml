@@ -245,11 +245,13 @@ jobs:
           STALE_TRACKS_COUNT="0"
           STALE_TRACKS_SEVERITY=""
           ZEROED_COUNT="0"
+          CATCHUP_REVIEW="0"
           if [ -f ".artifacts/ingestion_summary.json" ]; then
             STALE=$(python3 -c "import json; d=json.load(open('.artifacts/ingestion_summary.json')); print('true' if d.get('stale_data_detected') else 'false')" 2>/dev/null || echo "false")
             STALE_TRACKS_COUNT=$(python3 -c "import json; d=json.load(open('.artifacts/ingestion_summary.json')); print(d.get('individual_tracks_stale_count', 0))" 2>/dev/null || echo "0")
             STALE_TRACKS_SEVERITY=$(python3 -c "import json; d=json.load(open('.artifacts/ingestion_summary.json')); print(d.get('individual_tracks_stale_severity') or '')" 2>/dev/null || echo "")
             ZEROED_COUNT=$(python3 -c "import json; d=json.load(open('.artifacts/ingestion_summary.json')); print(d.get('excluded_tracks_zeroed_count', 0))" 2>/dev/null || echo "0")
+            CATCHUP_REVIEW=$(python3 -c "import json; d=json.load(open('.artifacts/ingestion_summary.json')); print(d.get('catchup_needs_review_count', 0))" 2>/dev/null || echo "0")
             if [ "$STALE" = "true" ]; then
               SHOULD_NOTIFY="true"
               SUBJECT="${SUBJECT:-[StreamBase] Daily Export: stale source data detected}"
@@ -257,6 +259,10 @@ jobs:
             if [ "$STALE_TRACKS_SEVERITY" = "critical" ]; then
               SHOULD_NOTIFY="true"
               SUBJECT="${SUBJECT:-[StreamBase] Daily Export: ${STALE_TRACKS_COUNT} track(s) with stale streams (CRITICAL)}"
+            fi
+            if [ "$CATCHUP_REVIEW" != "0" ]; then
+              SHOULD_NOTIFY="true"
+              SUBJECT="${SUBJECT:-[StreamBase] Daily Export: catch-up smoothing needs review}"
             fi
             if [ "$ZEROED_COUNT" != "0" ]; then
               SHOULD_NOTIFY="true"
@@ -275,6 +281,7 @@ jobs:
             echo "  Stale source data: ${STALE}"
             echo "  Stale tracks (per-track): ${STALE_TRACKS_COUNT}"
             echo "  Excluded tracks zeroed: ${ZEROED_COUNT}"
+            echo "  Catch-up smoothing needs review: ${CATCHUP_REVIEW}"
             echo ""
             if [ "$STALE" = "true" ]; then
               echo "Spotify likely did not update stream counts. Data was ingested as-is."
@@ -293,6 +300,11 @@ jobs:
               echo "${ZEROED_COUNT} excluded (taken-down) track(s) had their total streams"
               echo "drop to zero. This likely indicates a data-source glitch. Check the"
               echo "Health page for the excluded_track_streams_zeroed warning for details."
+              echo ""
+            fi
+            if [ "$CATCHUP_REVIEW" != "0" ]; then
+              echo "Catch-up smoothing was NOT applied (too many tracks would change)."
+              echo "See the catchup_needs_review warning on the Health page and fix manually."
               echo ""
             fi
             echo "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"

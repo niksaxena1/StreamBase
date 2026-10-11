@@ -224,4 +224,12 @@ event and now handled automatically each ingestion:
 `competitor.spotibase_reconcile_auto_overrides` additionally deletes
 auto-interp overrides that upstream corrections have made obsolete (raw now
 above the frozen estimate). Order in the nightly normalize step:
-reconcile → interpolate → re-base → recompute cascade.
+reconcile → interpolate → re-base → catch-up smoothing → recompute cascade.
+
+`competitor.spotibase_smooth_catchups` (own catalog: `public.spotibase_smooth_catchups`)
+smooths SpotOnTrack lag: 1-3 days far below a track's baseline followed by a
+catch-up day get an even split (`auto-catchup:v1` overrides; manual notes always
+win). It only acts when >= 20% of eligible tracks show the pattern on the same
+date and refuses (ingestion warning `catchup_needs_review`) when more than 50% of
+the catalog would change. Dry run by default; reconcile also drops obsolete
+auto-catchup rows.
