@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/shell/RouteLink";
 import { Search, X } from "lucide-react";
 
 import { GlassTable, TableCell, TableRow } from "@/components/ui/GlassTable";

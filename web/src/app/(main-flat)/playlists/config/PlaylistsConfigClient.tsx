@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useNavigationRouter as useRouter } from "@/components/shell/useNavigationRouter";
 import { ArrowLeft, Download, Settings } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 

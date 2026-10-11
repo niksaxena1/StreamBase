@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidateTag } from "next/cache";
+import { revalidatePath, revalidateTag, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { cacheTagForKey } from "@/lib/supabase/cache";
@@ -9,6 +9,9 @@ import { supabaseService } from "@/lib/supabase/service";
 import { recomputeActiveWarningSnapshot } from "@/lib/health/activeWarnings";
 
 function revalidatePlaylistCaches() {
+  // Config edits also change dashboard defaults, cards, and catalog memberships.
+  updateTag("supabase");
+  revalidatePath("/", "layout");
   revalidateTag(cacheTagForKey("playlists-settings"), "max");
   revalidateTag(cacheTagForKey("playlists-config"), "max");
   revalidateTag(cacheTagForKey("playlists-config-stats"), "max");

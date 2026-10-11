@@ -12,7 +12,8 @@ import {
 import type { ForwardRefExoticComponent, RefAttributes } from "react";
 import dynamic from "next/dynamic";
 import type { ForceGraphMethods, ForceGraphProps } from "react-force-graph-2d";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
+import { useNavigationRouter as useRouter } from "@/components/shell/useNavigationRouter";
 import { UserRound } from "lucide-react";
 import { fetchApiJson } from "@/lib/api";
 import { dispatchCompetitorLabelChange } from "@/lib/competitorAccentEvents";
@@ -1092,12 +1093,11 @@ export function NetworkGraphClient({
           },
         );
         dispatchCompetitorLabelChange({ labelKey, accentHex: null });
-        router.refresh();
       } catch (e) {
         console.error("switch competitor label failed:", e);
       }
     },
-    [router],
+    [],
   );
 
   const openArtistDistroModal = useCallback(async (artistId: string, fallbackName: string) => {

@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/shell/RouteLink";
 
 export function ArtistLinks(props: {
   artistNames: string[] | null | undefined;

@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useRef } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { useNavigationRouter as useRouter } from "@/components/shell/useNavigationRouter";
 import { GranularitySelect, RangeSelect, handleGranularityWithRangeRestore } from "@/components/ui/GranularitySelect";
 import type { Granularity } from "@/components/ui/GranularitySelect";
 import { useSharedGranularity } from "@/lib/useSharedGranularity";

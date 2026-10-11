@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/shell/RouteLink";
 import { ArrowRight } from "lucide-react";
 
 import { latestOwnRunDate, loadDistroMovementCached } from "@/lib/collectors/distroMovement";

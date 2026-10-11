@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/shell/RouteLink";
 import { useEffect, useMemo, useState, useDeferredValue } from "react";
 import { Search, Settings, X } from "lucide-react";
 

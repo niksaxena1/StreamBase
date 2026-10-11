@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/shell/RouteLink";
 import { useCallback, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useNavigationRouter as useRouter } from "@/components/shell/useNavigationRouter";
 import { Music } from "lucide-react";
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { PlaylistReportDownload } from "@/components/dashboard/PlaylistReportDownload";

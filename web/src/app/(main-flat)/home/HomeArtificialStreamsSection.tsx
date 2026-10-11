@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from "react";
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
-import Link from "next/link";
+import Link from "@/components/shell/RouteLink";
 import {
   Area,
   AreaChart,

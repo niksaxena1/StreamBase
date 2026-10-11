@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
+import Link from "@/components/shell/RouteLink";
 import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/GlassTable";
 import { formatInt, formatUsd } from "@/lib/format";
 import { useStoredBoolState } from "@/lib/useStoredBoolState";

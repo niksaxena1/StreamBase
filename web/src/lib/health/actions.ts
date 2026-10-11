@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidateTag } from "next/cache";
+import { updateTag } from "next/cache";
 
 import { requireUser } from "@/lib/api/server";
 import { supabaseServer } from "@/lib/supabase/server";
@@ -16,5 +16,5 @@ export async function refreshHealthData() {
   const auth = await requireUser(sb);
   if (!auth.ok) return;
   await recomputeActiveWarningSnapshot();
-  revalidateTag("health", "max");
+  updateTag("health");
 }

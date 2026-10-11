@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import Link from "next/link";
+import Link from "@/components/shell/RouteLink";
 import type { Metadata } from "next";
 
 import { formatDateISO } from "@/lib/format";

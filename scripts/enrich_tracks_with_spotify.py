@@ -173,12 +173,14 @@ def enrich_single(pg: Postgrest, sp: Spotify, isrc: str):
     print(f"Re-enriched: {sp_artists} – {sp_name} (track {hit.get('spotify_track_id')})")
 
 
-def enrich_batch(pg: Postgrest, sp: Spotify, limit: int):
-    """Bulk-enrich tracks, prioritising unenriched rows."""
+def enrich_batch(pg: Postgrest, sp: Spotify, limit: int, only_missing: bool = False):
+    """Bulk-enrich tracks, prioritising unenriched rows (only those with only_missing)."""
     filters = [
         "order=spotify_artist_ids.nullsfirst,last_seen.desc",
         f"limit={int(limit)}",
     ]
+    if only_missing:
+        filters.insert(0, "spotify_artist_ids=is.null")
 
     candidates = pg.select("tracks", "isrc,name,spotify_artist_ids,spotify_last_fetched_at", "&".join(filters))
     if not candidates:
@@ -218,7 +220,7 @@ def main():
     ap.add_argument(
         "--only-missing",
         action="store_true",
-        help="Only enrich tracks missing spotify_artist_ids (default: true)",
+        help="Only enrich tracks missing spotify_artist_ids (used after daily ingestion)",
     )
     ap.add_argument(
         "--isrc",
@@ -239,7 +241,7 @@ def main():
     if args.isrc:
         enrich_single(pg, sp, args.isrc)
     else:
-        enrich_batch(pg, sp, args.limit)
+        enrich_batch(pg, sp, args.limit, only_missing=args.only_missing)
 
 
 if __name__ == "__main__":

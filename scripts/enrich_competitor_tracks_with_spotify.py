@@ -21,11 +21,14 @@ def norm_isrc_for_lookup(value: str) -> str:
     return re.sub(r"[^A-Z0-9]", "", raw) if raw else ""
 
 
-def candidate_filters(limit: int) -> List[str]:
-    return [
+def candidate_filters(limit: int, only_missing: bool = False) -> List[str]:
+    filters = [
         "order=spotify_artist_ids.nullsfirst,last_seen.desc",
         f"limit={int(limit)}",
     ]
+    if only_missing:
+        filters.insert(0, "spotify_artist_ids=is.null")
+    return filters
 
 
 class Postgrest:
@@ -201,11 +204,11 @@ def enrich_single(pg: Postgrest, pg_public: Postgrest, sp: Spotify, isrc: str):
     print(f"Re-enriched competitor track {isrc}")
 
 
-def enrich_batch(pg: Postgrest, pg_public: Postgrest, sp: Spotify, limit: int):
+def enrich_batch(pg: Postgrest, pg_public: Postgrest, sp: Spotify, limit: int, only_missing: bool = False):
     candidates = pg.select(
         "tracks",
         "isrc,name,spotify_artist_ids",
-        "&".join(candidate_filters(limit)),
+        "&".join(candidate_filters(limit, only_missing)),
     )
     if not candidates:
         print("No competitor tracks to enrich.")
@@ -245,6 +248,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=5000, help="Max competitor tracks to enrich per run")
     parser.add_argument("--isrc", type=str, default=None, help="Re-enrich one competitor track by ISRC")
+    parser.add_argument("--only-missing", action="store_true", help="Only enrich tracks missing spotify_artist_ids (used after daily ingestion)")
     args = parser.parse_args()
 
     supabase_url = require_env("SUPABASE_URL")
@@ -256,7 +260,7 @@ def main():
     if args.isrc:
         enrich_single(pg, pg_public, sp, args.isrc)
     else:
-        enrich_batch(pg, pg_public, sp, args.limit)
+        enrich_batch(pg, pg_public, sp, args.limit, only_missing=args.only_missing)
 
 
 if __name__ == "__main__":

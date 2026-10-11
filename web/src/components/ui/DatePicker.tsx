@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useNavigationRouter as useRouter } from "@/components/shell/useNavigationRouter";
 import { Calendar, ChevronLeft, ChevronRight } from "lucide-react";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { DayPicker, type Matcher } from "react-day-picker";

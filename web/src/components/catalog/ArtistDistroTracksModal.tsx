@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useMemo, useState } from "react";
-import Link from "next/link";
+import Link from "@/components/shell/RouteLink";
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { ExternalLink, ChevronDown, ChevronUp } from "lucide-react";
 

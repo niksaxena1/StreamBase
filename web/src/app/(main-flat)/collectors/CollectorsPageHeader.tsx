@@ -1,6 +1,7 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { useNavigationRouter as useRouter } from "@/components/shell/useNavigationRouter";
 import { useCallback, useEffect, useRef } from "react";
 import { PageHeader } from "@/components/shell/PageHeader";
 import { DateRangePicker, type DateRangePickerHandle } from "@/components/ui/DateRangePicker";

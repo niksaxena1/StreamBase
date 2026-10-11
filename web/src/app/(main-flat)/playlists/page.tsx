@@ -1,7 +1,8 @@
+import { defaultPlaylistKey } from "@/components/shell/navigationDefaults";
 import PlaylistsLoading from "./loading";
 import { perfServerStep } from "@/lib/perfTiming.server";
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
-import Link from "next/link";
+import Link from "@/components/shell/RouteLink";
 import type { Metadata } from "next";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { Suspense } from "react";
@@ -186,7 +187,7 @@ async function PlaylistsPageContent({
     }
     const { data: competitorPlaylists } = await competitorPlaylistsQuery;
     const competitorOptions = (competitorPlaylists ?? []) as PlaylistRow[];
-    const effectivePlaylistKey = playlistKey || competitorOptions[0]?.playlist_key || "";
+    const effectivePlaylistKey = playlistKey || defaultPlaylistKey({ datasetMode, playlistKeys: competitorOptions.map((p) => p.playlist_key) });
     if (!playlistKey && effectivePlaylistKey) {
       // Client-side param fill (same as own catalog) rather than a server
       // redirect: it renders a loading card immediately instead of a blank
@@ -448,7 +449,7 @@ async function PlaylistsPageContent({
         param="playlist_key"
         storageKey={lastPlaylistKeyStorageKey("own")}
         legacyStorageKey="sb:last_playlist_key"
-        defaultValue="all_catalog"
+        defaultValue={defaultPlaylistKey({ datasetMode: "own" })}
         loadingTitle="Opening your last playlist…"
         loadingSubtitle="If this is your first time, we’ll start with All Catalog."
       />

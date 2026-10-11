@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/shell/RouteLink";
 
 import { cachedMissingCatalogTracks } from "@/lib/health/cachedHealthQueries";
 import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";

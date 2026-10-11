@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/shell/RouteLink";
 import dynamic from "next/dynamic";
 import type { Dispatch, SetStateAction } from "react";
 import { Activity } from "lucide-react";
