@@ -14,6 +14,28 @@ type Metric = {
 const queue: Metric[] = [];
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
+// Start of the current navigation on the performance timeline. 0 for the
+// initial document load; reset on in-app link clicks and back/forward so
+// client-side route timings measure click -> ready, not time since page load.
+let navigationStart = 0;
+let navigationKind: "initial" | "client" = "initial";
+
+function markClientNavigation() {
+  navigationStart = performance.now();
+  navigationKind = "client";
+}
+
+function onDocumentClick(event: MouseEvent) {
+  if (event.defaultPrevented || event.button !== 0) return;
+  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  const anchor = (event.target as Element | null)?.closest?.("a[href]");
+  if (!(anchor instanceof HTMLAnchorElement) || anchor.target === "_blank") return;
+  const url = new URL(anchor.href, window.location.href);
+  if (url.origin !== window.location.origin) return;
+  if (url.pathname === window.location.pathname && url.search === window.location.search) return;
+  markClientNavigation();
+}
+
 function flush() {
   flushTimer = null;
   if (!queue.length) return;
@@ -76,11 +98,21 @@ export function PerformanceMonitor() {
       | PerformanceNavigationTiming
       | undefined;
     if (navigation)
-      publish("route-ready", performance.now(), {
+      publish("route-ready", performance.now() - navigationStart, {
         pathname,
-        ttfb: navigation.responseStart,
+        navigation: navigationKind,
+        ttfb: navigationKind === "initial" ? navigation.responseStart : null,
       });
   }, [pathname]);
+
+  useEffect(() => {
+    document.addEventListener("click", onDocumentClick, true);
+    window.addEventListener("popstate", markClientNavigation);
+    return () => {
+      document.removeEventListener("click", onDocumentClick, true);
+      window.removeEventListener("popstate", markClientNavigation);
+    };
+  }, []);
 
   useEffect(() => {
     if (!("PerformanceObserver" in window)) return;
@@ -132,10 +164,12 @@ export function SectionPerformance({
     const navigation = performance.getEntriesByType("navigation")[0] as
       | PerformanceNavigationTiming
       | undefined;
+    const start =
+      navigationKind === "client" ? navigationStart : (navigation?.responseStart ?? 0);
     publish(
       "section-ready",
-      Math.max(0, performance.now() - (navigation?.responseStart ?? 0)),
-      { section: name.slice(0, 120) },
+      Math.max(0, performance.now() - start),
+      { section: name.slice(0, 120), navigation: navigationKind },
     );
     return () => performance.clearMarks(ready);
   }, [name]);
