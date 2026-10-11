@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import { fetchApiJson } from "@/lib/api";
 import { TrackListItem } from "@/components/health/TrackListItem";
 import type { PrevNonzeroTrack, StaleTrack, TrackBase } from "@/lib/health/types";
@@ -96,7 +95,6 @@ export function StaleTrackResolver({
   runDate: string;
   mode?: ResolverMode;
 }) {
-  const router = useRouter();
   const [phase, setPhase] = useState<Phase>("idle");
   const [fetchProgress, setFetchProgress] = useState(0);
   const [fetchStartedAt, setFetchStartedAt] = useState<number | null>(null);
@@ -377,12 +375,12 @@ export function StaleTrackResolver({
 
       setAppliedCount(overrides.length);
       setPhase("done");
-      setTimeout(() => router.refresh(), 1200);
+      // Successful saves invalidate the router through the shell mutation listener.
     } catch (e) {
       setApplyError(e instanceof Error ? e.message : "Apply failed");
       setPhase("review");
     }
-  }, [copy.notePrefix, selected, results, runDate, router]);
+  }, [copy.notePrefix, selected, results, runDate]);
 
   const selectableCount = tracks.filter((t) => {
     const r = results.get(t.isrc.trim().toUpperCase());

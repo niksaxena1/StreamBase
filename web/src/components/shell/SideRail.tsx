@@ -1,6 +1,8 @@
 "use client";
 
-import Link from "next/link";
+import { NavigationLink as Link } from "./NavigationLink";
+import { useNavigationEntries } from "./useNavigationEntries";
+import type { NavigationDefaults } from "./navigationDefaults";
 import { usePathname } from "next/navigation";
 import React from "react";
 import type { DatasetMode } from "@/lib/datasetMode";
@@ -54,14 +56,17 @@ function SideRailContent({
   healthInfoOnly = false,
   datasetMode = "own",
   appAccess,
+  navigationDefaults,
 }: {
   healthBadgeCount?: number;
   healthHasCritical?: boolean;
   healthInfoOnly?: boolean;
   datasetMode?: DatasetMode;
   appAccess?: AppAccess;
+  navigationDefaults?: NavigationDefaults;
 }) {
   const pathname = usePathname();
+  const entryHref = useNavigationEntries(navigationDefaults ?? { datasetMode });
   const visibleNavItems = navItemsForMode(datasetMode, navItems, appAccess);
   const showStreamBaseUtilityNav = appAccess ? hasStreamBaseAccess(appAccess) : false;
 
@@ -78,7 +83,7 @@ function SideRailContent({
         return (
           <Link
             key={it.href}
-            href={it.href}
+            href={entryHref(it.href)}
             aria-current={active ? "page" : undefined}
             className={[
               "group relative grid h-9 w-9 place-items-center rounded-full transition",
@@ -193,16 +198,18 @@ export function SideRail({
   healthInfoOnly = false,
   datasetMode = "own",
   appAccess,
+  navigationDefaults,
 }: {
   healthBadgeCount?: number;
   healthHasCritical?: boolean;
   healthInfoOnly?: boolean;
   datasetMode?: DatasetMode;
   appAccess?: AppAccess;
+  navigationDefaults?: NavigationDefaults;
 }) {
   return (
     <aside className="hidden w-[60px] shrink-0 sm:block">
-      <SideRailContent healthBadgeCount={healthBadgeCount} healthHasCritical={healthHasCritical} healthInfoOnly={healthInfoOnly} datasetMode={datasetMode} appAccess={appAccess} />
+      <SideRailContent healthBadgeCount={healthBadgeCount} healthHasCritical={healthHasCritical} healthInfoOnly={healthInfoOnly} datasetMode={datasetMode} navigationDefaults={navigationDefaults} appAccess={appAccess} />
     </aside>
   );
 }

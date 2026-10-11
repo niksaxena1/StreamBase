@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/shell/RouteLink";
 import { Disc3 } from "lucide-react";
 
 import { ArtistLinks } from "@/components/ui/ArtistLinks";

@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import Link from "next/link";
+import Link from "@/components/shell/RouteLink";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { GlassTable, TableCell, TableRow } from "@/components/ui/GlassTable";

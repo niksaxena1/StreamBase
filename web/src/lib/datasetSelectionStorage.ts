@@ -5,8 +5,8 @@ export function lastPlaylistKeyStorageKey(mode: DatasetMode): string {
   return `sb:last_playlist_key:${mode}`;
 }
 
-export function lastArtistIdStorageKey(mode: DatasetMode): string {
-  return `sb:last_artist_id:${mode}`;
+export function lastArtistIdStorageKey(mode: DatasetMode, competitorLabelKey?: string | null): string {
+  return `sb:last_artist_id:${mode === "own" ? "own" : `competitor:${competitorLabelKey?.trim() || "__all__"}`}`;
 }
 
 export function lastIsrcByArtistStorageKey(mode: DatasetMode, artistId: string): string {

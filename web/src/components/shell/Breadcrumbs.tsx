@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/shell/RouteLink";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { logWarn } from "@/lib/logger";

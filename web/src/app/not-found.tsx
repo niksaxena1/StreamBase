@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/shell/RouteLink";
 import { Button } from "@/components/ui/Button";
 
 export default function NotFoundPage() {

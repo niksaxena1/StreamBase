@@ -2,7 +2,8 @@
 
 import dynamic from "next/dynamic";
 import { useMemo } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { useNavigationRouter as useRouter } from "@/components/shell/useNavigationRouter";
 import {
   Activity,
   ArrowRightLeft,

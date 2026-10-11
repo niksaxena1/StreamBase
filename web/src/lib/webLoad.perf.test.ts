@@ -119,6 +119,7 @@ import { loadHomeDashboardData, loadHomeDiagnosticsDataForUser, loadHomeScatterD
 import { resolveHomeDataset } from "@/lib/home/homeDataset.server";
 import { normalizeHomeDiagnosticsApiPayload } from "@/lib/home/homeDiagnosticsApi";
 import HomePage from "@/app/(main-flat)/page";
+import { getNavigationDefaults } from "@/components/shell/navigationDefaults.server";
 import PlaylistsPage from "@/app/(main-flat)/playlists/page";
 
 // Resolve async server boundaries, preserving client props for equality checks.
@@ -388,4 +389,64 @@ describe("request identity gate", () => {
     expect(queries).not.toContain("playlist_removed_tracks");
   });
 
+});
+
+
+describe("Catalog navigation default rendering", () => {
+  function clientProps(value: unknown): Record<string, unknown> | null {
+    if (Array.isArray(value)) {
+      for (const child of value) { const found = clientProps(child); if (found) return found; }
+      return null;
+    }
+    if (!value || typeof value !== "object" || !("props" in value)) return null;
+    const element = value as { type: string; props: Record<string, unknown> };
+    return element.type === "CatalogPageClient" ? element.props : clientProps(element.props.children);
+  }
+  for (const mode of ["own", "competitor"] as const) {
+    it(`renders bare and artist-only ${mode} entries identically to their resolved deep link`, async () => {
+      fixture.setMode(mode);
+      fixture.configure("label");
+      const explicit = clientProps(await resolveServer(CatalogPage({ searchParams: Promise.resolve({ artist_id: "artist", isrc: "ISRC" }) })));
+      expect(explicit).not.toBeNull();
+      for (const search of [{}, { artist_id: "artist" }]) {
+        fixture.queries.length = 0;
+        const resolved = clientProps(await resolveServer(CatalogPage({ searchParams: Promise.resolve(search) })));
+        expect(resolved).toEqual(explicit);
+        const queries = fixture.queries.map((query) => JSON.parse(query) as [string, string]);
+        if (mode === "competitor") {
+          expect(queries.some(([schema, table]) => schema === "public" && ["tracks", "playlist_daily_stats", "playlist_memberships"].includes(table))).toBe(false);
+        } else {
+          expect(queries.some(([schema]) => schema === "competitor")).toBe(false);
+        }
+      }
+    });
+  }
+});
+
+
+describe("server navigation defaults", () => {
+  it("resolves own entry points without extra own-catalog hot-path reads", async () => {
+    fixture.queries.length = 0;
+    expect(await getNavigationDefaults("own")).toEqual({ datasetMode: "own" });
+    expect(fixture.queries).toEqual([]);
+  });
+  for (const label of ["label", "__all__"]) {
+    it(`scopes ordered competitor playlist defaults to ${label}`, async () => {
+      fixture.setMode("competitor");
+      fixture.configure(label);
+      fixture.queries.length = 0;
+      try {
+        expect(await getNavigationDefaults("competitor")).toEqual({ datasetMode: "competitor", competitorLabelKey: label, playlistKeys: ["all_catalog"] });
+        const queries = fixture.queries.map((query) => JSON.parse(query) as [string, string, unknown, unknown[]]);
+        const playlistQuery = queries.find(([schema, table]) => schema === "competitor" && table === "playlists");
+        expect(playlistQuery).toBeDefined();
+        expect(playlistQuery?.[3]).toContainEqual(["eq", "is_active", true]);
+        expect(playlistQuery?.[3]).toContainEqual(["order", "display_order", { ascending: true, nullsFirst: false }]);
+        expect(playlistQuery?.[3]).toContainEqual(["order", "display_name", { ascending: true }]);
+        if (label === "label") expect(playlistQuery?.[3]).toContainEqual(["eq", "label_key", label]);
+        else expect(playlistQuery?.[3]).not.toContainEqual(["eq", "label_key", "__all__"]);
+        expect(queries.some(([schema, table]) => schema === "public" && ["tracks", "playlists", "playlist_daily_stats"].includes(table))).toBe(false);
+      } finally { fixture.configure(); }
+    });
+  }
 });

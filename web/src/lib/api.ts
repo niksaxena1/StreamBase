@@ -1,6 +1,7 @@
 /**
  * Typed API utilities for consistent error handling and response parsing.
  */
+import { notifyPageMutation } from "@/components/shell/pageMutationEvents";
 
 /**
  * Standard API response shape for internal endpoints.
@@ -68,7 +69,9 @@ export async function fetchApiJson<T>(url: string, init?: RequestInit): Promise<
     throw new Error(`HTTP ${res.status}`);
   }
   try {
-    return parseApiJsonEnvelope<T>(raw);
+    const data = parseApiJsonEnvelope<T>(raw);
+    if (res.ok) notifyPageMutation(url, init?.method);
+    return data;
   } catch (e) {
     if (e instanceof Error) throw e;
     throw new Error(`HTTP ${res.status}`);

@@ -1,7 +1,7 @@
 "use client";
 
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
-import Link from "next/link";
+import Link from "@/components/shell/RouteLink";
 import { useMemo, useState } from "react";
 
 import { useCurrencyDisplay } from "@/components/currency/CurrencyDisplayContext";

@@ -6,7 +6,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { cachedQuery } from "@/lib/supabase/cache";
 import { getArtistsCached } from "@/lib/spotify";
-import { RememberParamRedirect } from "@/components/dashboard/RememberParamRedirect";
+import { defaultCatalogArtistId, defaultCatalogIsrc } from "./catalogDefaults";
+import { RememberedCatalogEmptyEntry } from "./RememberedCatalogEmptyEntry";
 import { CatalogPageClient } from "./CatalogPageClient";
 import { computeDailyRollingAvg7 } from "@/components/charts/chartUtils";
 import { dataDateFromRunDate } from "@/lib/sotDates";
@@ -15,7 +16,6 @@ import { Alert } from "@/components/ui/Alert";
 import { CACHE_TTL_1H, API_LOOKUP_DROPDOWN_MAX, API_LOOKUP_THUMBNAILS_MAX, API_LOOKUP_TRACK_MAX } from "@/lib/constants";
 import { logError, logWarn } from "@/lib/logger";
 import { normalizeDatasetMode } from "@/lib/datasetMode";
-import { lastArtistIdStorageKey } from "@/lib/datasetSelectionStorage";
 import { getRequestAppContext } from "@/lib/requestAppContext.server";
 import { timedServerStep } from "@/lib/serverTiming";
 import { resolveCatalogTrackSelection } from "@/lib/catalogSelection";
@@ -177,7 +177,7 @@ async function CatalogPageContent({
       return overrideBuster;
     })();
 
-    const artistId = (sp.artist_id ?? "").trim();
+    let artistId = (sp.artist_id ?? "").trim();
     const requestedIsrc = (sp.isrc ?? "").trim();
 
     // If a track is specified without an artist, prefer the track's primary (first) artist.
@@ -236,24 +236,10 @@ async function CatalogPageContent({
         CACHE_TTL_1H,
       );
 
-      const recentTyped = recent as { spotify_artist_ids?: string[] | null } | null;
-      const defaultArtistId = Array.isArray(recentTyped?.spotify_artist_ids)
-        ? String(recentTyped.spotify_artist_ids?.[0] ?? "").trim()
-        : "";
-
-      return (
-        <RememberParamRedirect
-          param="artist_id"
-          storageKey={lastArtistIdStorageKey("own")}
-          legacyStorageKey="sb:last_artist_id"
-          defaultValue={defaultArtistId || null}
-          loadingTitle="Opening your last artist…"
-          loadingSubtitle="If this is your first time, we'll pick the first artist we find."
-        />
-      );
+      artistId = defaultCatalogArtistId(recent as { spotify_artist_ids?: string[] | null } | null);
+      if (!artistId) return <RememberedCatalogEmptyEntry />;
     }
 
-    const isrc = requestedIsrc || null;
     // We don't have an artists table; the distinct-artist dropdown is computed in
     // Postgres (catalog_artist_options) instead of paging thousands of track rows
     // to the web server and deriving it in JS.
@@ -406,22 +392,7 @@ async function CatalogPageContent({
   const maPaddedStartRunDate =
     latestRunDate && startRunDate ? addDays(startRunDate, -MA7_LOOKBACK_DAYS) : null;
 
-  // Auto-select first track alphabetically if no track is selected and tracks are available
-  if (!isrc && artistTracks.length > 0) {
-    const sortedTracks = [...artistTracks]
-      .map((t) => ({ isrc: t.isrc, name: t.name ?? t.isrc }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-
-    if (sortedTracks.length > 0) {
-      const firstTrackIsrc = sortedTracks[0].isrc;
-      // Redirect to include the first track in the URL
-      const params = new URLSearchParams();
-      params.set("artist_id", artistId);
-      params.set("isrc", firstTrackIsrc);
-      if (sp.range) params.set("range", String(rangeDays));
-      redirect(`/catalog?${params.toString()}`);
-    }
-  }
+  const isrc = defaultCatalogIsrc(requestedIsrc || null, artistTracks, "own");
 
   // Selected track playlist memberships (active as-of latestRunDate)
   const selectedTrackPlaylistMembershipsPromise = fetchSelectedTrackPlaylistMemberships(svc, { isrc, latestRunDate });

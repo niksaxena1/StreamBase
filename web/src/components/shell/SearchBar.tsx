@@ -3,7 +3,7 @@
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, X, Music, User, ListMusic } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useNavigationRouter as useRouter } from "@/components/shell/useNavigationRouter";
 
 import { Modal } from "@/components/ui/Modal";
 import { useMetric } from "@/components/metrics/MetricContext";

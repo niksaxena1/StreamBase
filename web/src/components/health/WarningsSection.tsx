@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/shell/RouteLink";
 import { cachedDisplayedWarnings } from "@/lib/health/cachedHealthQueries";
 import type { WarningAuditView } from "@/lib/health/fetchWarningDetails";
 import type { PlaylistMeta } from "@/lib/health/types";

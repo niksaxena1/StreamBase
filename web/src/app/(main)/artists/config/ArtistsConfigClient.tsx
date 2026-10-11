@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
+import Link from "@/components/shell/RouteLink";
 import { ArrowLeft } from "lucide-react";
 
 import { SearchBox } from "./SearchBox";

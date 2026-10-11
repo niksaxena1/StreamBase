@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/shell/RouteLink";
 import { User } from "lucide-react";
 
 import { Modal } from "@/components/ui/Modal";

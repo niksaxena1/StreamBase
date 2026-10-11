@@ -87,7 +87,10 @@ describe("POST /api/competitors/onboard", () => {
     });
     expect(mocks.from).not.toHaveBeenCalled();
     expect(mocks.path).toHaveBeenCalledWith("/competitors");
-    expect(mocks.tag).toHaveBeenCalledExactlyOnceWith(cacheTagForKey("competitor-shell-labels-v2"), { expire: 0 });
+    // Only competitor shell/navigation entries expire, never the generic Supabase tag used by own-catalog analytics.
+    expect(mocks.tag).toHaveBeenCalledWith(cacheTagForKey("competitor-shell-labels-v2"), { expire: 0 });
+    expect(mocks.tag).toHaveBeenCalledWith(cacheTagForKey("navigation-competitor-labels-v1"), { expire: 0 });
+    expect(mocks.tag.mock.calls.every((call: unknown[]) => String(call[0]).includes("competitor"))).toBe(true);
   });
 
   it("adds to an existing label without requesting label creation", async () => {

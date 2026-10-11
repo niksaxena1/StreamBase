@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useNavigationRouter as useRouter } from "@/components/shell/useNavigationRouter";
 import { createPortal } from "react-dom";
 import { Check, Loader2, Swords } from "lucide-react";
 
@@ -11,6 +11,7 @@ import {
   ALL_COMPETITORS_KEY,
   isAllCompetitorsKey,
 } from "@/lib/competitorContext";
+import { broadcastUniverseChange, sameUniverse } from "./universeSyncEvents";
 import { pathAfterDatasetModeSwitch } from "@/lib/datasetModeNavigation";
 import { competitorAccentCssVars } from "@/lib/competitorAccent";
 import {
@@ -93,6 +94,7 @@ export function CompetitorModeButton({
     setLabelOverride(null);
     setDatasetModeOverride(null);
     setSaving(false);
+    delete document.documentElement.dataset.sbDatasetTransition;
     triggerRouteLoadingBarDone();
   }, [activeLabelKey, datasetMode]);
 
@@ -182,6 +184,7 @@ export function CompetitorModeButton({
   async function switchTo(mode: "own" | "competitor", labelKey?: string) {
     const targetLabelKey =
       mode === "competitor" ? labelKey ?? ALL_COMPETITORS_KEY : null;
+    if (saving || sameUniverse({ datasetMode: effectiveDatasetMode, competitorLabelKey: effectiveLabelKey }, { datasetMode: mode, competitorLabelKey: targetLabelKey })) return;
     const targetIsSpecificCompetitor =
       mode === "competitor" && targetLabelKey != null && !isAllCompetitorsKey(targetLabelKey);
     const targetAccentHex = targetIsSpecificCompetitor
@@ -227,15 +230,16 @@ export function CompetitorModeButton({
             ? cleanUrl
             : window.location.pathname + window.location.search;
 
+        broadcastUniverseChange();
+
         // Capture the optimistic accent in the outgoing view-transition snapshot.
         // Navigation stays immediate; the flourish never delays data loading.
         document.documentElement.dataset.sbDatasetTransition = "true";
-        // Soft navigation: keep the client bundle/JS state alive and re-render
-        // server components only (a full window.location.assign() reload re-parsed
-        // and re-executed the entire app on every mode switch).
+        // Update this route's selection URL without consuming a prefetched RSC
+        // payload from the previous universe. Refresh fetches the new context once.
         const current = window.location.pathname + window.location.search;
         if (destination !== current) {
-          router.push(destination);
+          window.history.pushState(null, "", destination);
         }
         router.refresh();
         // The success-path cleanup (clearing saving + finishing the loading bar) runs
@@ -253,6 +257,7 @@ export function CompetitorModeButton({
           accentHex: previousAccentHex,
           labelKey: previousLabelKey,
         });
+        delete document.documentElement.dataset.sbDatasetTransition;
         triggerRouteLoadingBarDone();
       }
     }

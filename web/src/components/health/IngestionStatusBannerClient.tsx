@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
+import Link from "@/components/shell/RouteLink";
 
 import { fetchApiJson } from "@/lib/api";
 import { dataDateFromRunDate } from "@/lib/sotDates";
