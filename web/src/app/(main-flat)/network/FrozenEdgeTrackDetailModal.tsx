@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
-import { useRouter } from "next/navigation";
+import { useNavigationRouter as useRouter } from "@/components/shell/useNavigationRouter";
 import { useEffect, useState } from "react";
 import { Disc3, ExternalLink, Loader2, Music, UserRound } from "lucide-react";
 import { fetchApiJson } from "@/lib/api";

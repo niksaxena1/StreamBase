@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useNavigationRouter as useRouter } from "@/components/shell/useNavigationRouter";
 import { createPortal } from "react-dom";
 import { Check, Loader2, Swords } from "lucide-react";
 
@@ -11,6 +11,7 @@ import {
   ALL_COMPETITORS_KEY,
   isAllCompetitorsKey,
 } from "@/lib/competitorContext";
+import { lastArtistIdStorageKey, readDatasetSelectionStorage } from "@/lib/datasetSelectionStorage";
 import { pathAfterDatasetModeSwitch } from "@/lib/datasetModeNavigation";
 import { competitorAccentCssVars } from "@/lib/competitorAccent";
 import {
@@ -93,6 +94,7 @@ export function CompetitorModeButton({
     setLabelOverride(null);
     setDatasetModeOverride(null);
     setSaving(false);
+    delete document.documentElement.dataset.sbDatasetTransition;
     triggerRouteLoadingBarDone();
   }, [activeLabelKey, datasetMode]);
 
@@ -222,20 +224,34 @@ export function CompetitorModeButton({
           window.location.pathname,
           window.location.search,
         );
-        const destination =
+        let destination =
           cleanUrl && cleanUrl !== window.location.pathname + window.location.search
             ? cleanUrl
             : window.location.pathname + window.location.search;
 
+        // Preserve the remembered artist that the former bare entry redirect used.
+        if (window.location.pathname === "/catalog") {
+          let artist: string | null = null;
+          try {
+            artist = mode === "own"
+              ? readDatasetSelectionStorage(lastArtistIdStorageKey(mode), "sb:last_artist_id")
+              : localStorage.getItem(lastArtistIdStorageKey(mode));
+          } catch { /* Storage may be unavailable. */ }
+          if (artist?.trim()) {
+            const url = new URL(destination, window.location.origin);
+            url.searchParams.set("artist_id", artist.trim());
+            destination = url.pathname + url.search;
+          }
+        }
+
         // Capture the optimistic accent in the outgoing view-transition snapshot.
         // Navigation stays immediate; the flourish never delays data loading.
         document.documentElement.dataset.sbDatasetTransition = "true";
-        // Soft navigation: keep the client bundle/JS state alive and re-render
-        // server components only (a full window.location.assign() reload re-parsed
-        // and re-executed the entire app on every mode switch).
+        // Update this route's selection URL without consuming a prefetched RSC
+        // payload from the previous universe. Refresh fetches the new context once.
         const current = window.location.pathname + window.location.search;
         if (destination !== current) {
-          router.push(destination);
+          window.history.pushState(null, "", destination);
         }
         router.refresh();
         // The success-path cleanup (clearing saving + finishing the loading bar) runs
@@ -253,6 +269,7 @@ export function CompetitorModeButton({
           accentHex: previousAccentHex,
           labelKey: previousLabelKey,
         });
+        delete document.documentElement.dataset.sbDatasetTransition;
         triggerRouteLoadingBarDone();
       }
     }

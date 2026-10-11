@@ -1,6 +1,8 @@
 "use client";
 
-import Link from "next/link";
+import { NavigationLink as Link } from "./NavigationLink";
+import { useNavigationEntries } from "./useNavigationEntries";
+import type { NavigationDefaults } from "./navigationDefaults";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { navItems } from "./SideRail";
@@ -22,14 +24,17 @@ export function MobileNav({
   healthInfoOnly = false,
   datasetMode = "own",
   appAccess,
+  navigationDefaults,
 }: {
   healthBadgeCount?: number;
   healthHasCritical?: boolean;
   healthInfoOnly?: boolean;
   datasetMode?: DatasetMode;
   appAccess?: AppAccess;
+  navigationDefaults?: NavigationDefaults;
 }) {
   const pathname = usePathname();
+  const entryHref = useNavigationEntries(navigationDefaults ?? { datasetMode });
   const [hasScrolled, setHasScrolled] = useState(false);
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
   const scrollTimerRef = useRef<number | null>(null);
@@ -188,7 +193,7 @@ export function MobileNav({
           return (
             <Link
               key={item.href}
-              href={item.href}
+              href={entryHref(item.href)}
               onClick={handleNavClick}
               aria-current={active ? "page" : undefined}
               className={[

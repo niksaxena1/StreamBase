@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useNavigationRouter as useRouter } from "@/components/shell/useNavigationRouter";
 import { useCallback, useEffect, useRef, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { NETWORK_LONG_PRESS_MS, NETWORK_LONG_PRESS_MOVE_PX } from "./networkGraphConstants";
 

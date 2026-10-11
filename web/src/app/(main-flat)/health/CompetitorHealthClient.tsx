@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { useNavigationRouter as useRouter } from "@/components/shell/useNavigationRouter";
 import { useCallback, useMemo } from "react";
 
 import { RefreshButton } from "@/components/health/RefreshButton";

@@ -7,7 +7,6 @@ import { TableCell, TableRow } from "@/components/ui/GlassTable";
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { TrackListItem } from "@/components/health/TrackListItem";
 import { StaleTrackResolver } from "@/components/health/StaleTrackResolver";
-import { useRouter } from "next/navigation";
 import { fetchApiJson } from "@/lib/api";
 import type {
   PlaylistMeta,
@@ -34,7 +33,6 @@ function QuickOverrideButton({
   isrc: string;
   date: string;
 }) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [streams, setStreams] = useState("");
   const [note, setNote] = useState("Quick override from Health page");
@@ -69,12 +67,11 @@ function QuickOverrideButton({
       });
       setState("done");
       setOpen(false);
-      router.refresh();
     } catch (e) {
       setState("error");
       setErrMsg(e instanceof Error ? e.message : "Failed");
     }
-  }, [isrc, date, streams, note, router]);
+  }, [isrc, date, streams, note]);
 
   if (state === "done")
     return <span className="text-[10px] text-green-700 dark:text-green-500">Overridden</span>;

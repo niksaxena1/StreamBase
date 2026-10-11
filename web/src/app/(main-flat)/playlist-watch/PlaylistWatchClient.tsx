@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useNavigationRouter as useRouter } from "@/components/shell/useNavigationRouter";
 import { Archive, ArchiveRestore, Bell, BellRing, ChevronDown, ChevronUp, Copy, ExternalLink, Heart, Mail, Plus, Search, Trash2, User, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -456,6 +456,7 @@ export function PlaylistWatchClient({
       });
       const json = await res.json();
       if (!res.ok || !json.success) throw new Error(json.error ?? "Failed to save alert");
+      router.refresh();
       await loadAlertRules();
       setAlertEditor(emptyAlertEditor);
       showToast("Alert settings saved", "success");
@@ -473,6 +474,7 @@ export function PlaylistWatchClient({
       const res = await fetch(`/api/playlist-watch/alerts/${ruleId}`, { method: "DELETE" });
       const json = await res.json();
       if (!res.ok || !json.success) throw new Error(json.error ?? "Failed to delete alert");
+      router.refresh();
       await loadAlertRules();
       showToast("Alert deleted", "success");
     } catch (error) {

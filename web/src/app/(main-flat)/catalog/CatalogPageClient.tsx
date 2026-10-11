@@ -1,11 +1,13 @@
 "use client";
 
+import { useSyncCatalogSelection } from "./useSyncCatalogSelection";
 import type { ReactNode } from "react";
 import { Fragment } from "react";
 import { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { useNavigationRouter as useRouter } from "@/components/shell/useNavigationRouter";
 import { ExternalLink, Download, List, ChevronRight, User, Loader2 } from "lucide-react";
 import { formatDateISO, formatDateOrdinalDMonYYYY, formatInt, formatUsd } from "@/lib/format";
 import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/GlassTable";
@@ -99,6 +101,7 @@ export function CatalogPageClient(props: {
   track30d: number;
   selectedTrackPlaylistMemberships: TrackPlaylistMembership[];
 }) {
+  useSyncCatalogSelection(props.artistId, props.isrc);
   const mode = props.mode ?? "own";
   const isCompetitorMode = mode === "competitor";
   const { metric } = useMetric();

@@ -6,12 +6,11 @@ const nextConfig: NextConfig = {
     "/docs": ["../supabase/migrations/*.sql"],
   },
   experimental: {
-    // User-specific dataset/access/settings routes must never remain in the
-    // client router cache after a mutation. Daily analytics are cached at the
-    // query layer with explicit dataset/snapshot keys instead.
+    // Keep revisits warm; successful mutations refresh or revalidate the router.
     staleTimes: {
-      dynamic: 0,
-      static: 86400,
+      dynamic: 180,
+      // Full Link prefetches use the static TTL even for dynamic pages.
+      static: 180,
     },
     // Tree-shake large icon and chart libraries so only used exports are bundled.
     optimizePackageImports: ["recharts", "lucide-react"],

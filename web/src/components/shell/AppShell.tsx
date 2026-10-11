@@ -20,6 +20,7 @@ import { BrandLink } from "@/components/shell/BrandLink";
 import { APP_SHORT_NAME } from "@/lib/pageTitle";
 import { PerformanceMonitor } from "@/components/performance/PerformanceMonitor";
 import { ShellScrollState } from "@/components/shell/ShellScrollState";
+import { MutationRefresh } from "@/components/shell/MutationRefresh";
 
 type MainSurface = "glass" | "plain";
 
@@ -53,6 +54,7 @@ export function AppShell(props: {
     <>
       <PerformanceMonitor />
       <ShellScrollState />
+      <MutationRefresh />
       <CompetitorAccentStyle accentHex={props.competitorAccentHex ?? null} />
       <CompetitorTitleEffect
         datasetMode={datasetMode}

@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
+import { useNavigationRouter as useRouter } from "@/components/shell/useNavigationRouter";
 
 import { LoadingState } from "@/components/ui/Skeleton";
 import { readDatasetSelectionStorage } from "@/lib/datasetSelectionStorage";

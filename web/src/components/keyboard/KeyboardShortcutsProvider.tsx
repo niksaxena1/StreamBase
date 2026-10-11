@@ -1,7 +1,8 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState, useCallback, ReactNode } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import { usePathname } from "next/navigation";
+import { useNavigationRouter as useRouter } from "@/components/shell/useNavigationRouter";
 
 import { hasStreamBaseAccess, type AppAccess } from "@/lib/appAccess";
 import type { DatasetMode } from "@/lib/datasetMode";

@@ -3,7 +3,8 @@
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { useNavigationRouter as useRouter } from "@/components/shell/useNavigationRouter";
 import { Activity } from "lucide-react";
 
 import { ChartSkeleton } from "@/components/ui/Skeleton";
@@ -480,6 +481,8 @@ export function CompetitorsClient(props: {
             accentHex:
               labels.find((l) => l.label_key === props.selectedCompetitorLabelKey)?.accent_hex ?? null,
           });
+        } else {
+          router.refresh();
         }
       } catch {
         setActiveLabelKey(props.selectedCompetitorLabelKey);
@@ -487,7 +490,7 @@ export function CompetitorsClient(props: {
         selectLabelInFlight.current = false;
       }
     },
-    [activeLabelKey, labels, props.selectedCompetitorLabelKey],
+    [activeLabelKey, labels, props.selectedCompetitorLabelKey, router],
   );
 
   return (

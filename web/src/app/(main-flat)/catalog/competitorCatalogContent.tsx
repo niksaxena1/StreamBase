@@ -2,14 +2,13 @@ import { redirect } from "next/navigation";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { cachedQuery } from "@/lib/supabase/cache";
-import { RememberParamRedirect } from "@/components/dashboard/RememberParamRedirect";
+import { defaultCatalogIsrc } from "./catalogDefaults";
 import { computeDailyRollingAvg7 } from "@/components/charts/chartUtils";
 import { dataDateFromRunDate } from "@/lib/sotDates";
 import { getRollbackDate, rollbackDataDateToRunDate } from "@/lib/rollback";
 import { Alert } from "@/components/ui/Alert";
 import { CACHE_TTL_1H } from "@/lib/constants";
 import { logError } from "@/lib/logger";
-import { lastArtistIdStorageKey } from "@/lib/datasetSelectionStorage";
 import { ALL_COMPETITORS_KEY, resolveCompetitorLabelKey } from "@/lib/competitorContext";
 import type { RequestAppContext } from "@/lib/requestAppContext.server";
 import { resolveCatalogTrackSelection } from "@/lib/catalogSelection";
@@ -259,22 +258,6 @@ export async function renderCompetitorCatalogContent({
 
   const artists = deriveArtists(competitorTracks);
   const effectiveArtistId = artistId || artists[0]?.id || "";
-  if (!artistId && effectiveArtistId) {
-    // Client-side param fill (same as own catalog) rather than a server
-    // redirect: renders a loading card immediately instead of a blank screen
-    // while a second full server render runs, and honours the last artist
-    // opened in Competitor Mode. Existing params (range/isrc) are preserved
-    // by the component; a stale isrc self-corrects on the next render.
-    return (
-      <RememberParamRedirect
-        param="artist_id"
-        storageKey={lastArtistIdStorageKey("competitor")}
-        defaultValue={effectiveArtistId}
-        loadingTitle="Opening your last artist…"
-        loadingSubtitle="If this is your first time, we’ll pick the first artist we find."
-      />
-    );
-  }
   if (
     artistId &&
     !artists.some((artist) => artist.id === artistId)
@@ -288,7 +271,7 @@ export async function renderCompetitorCatalogContent({
     );
   }
   const artistTracks = competitorTracks.filter((t) => (t.spotify_artist_ids ?? []).includes(effectiveArtistId));
-  const selectedIsrc = requestedIsrc || artistTracks[0]?.isrc || null;
+  const selectedIsrc = defaultCatalogIsrc(requestedIsrc || null, artistTracks, "competitor");
   const startRunDate = latestRunDate ? addDays(latestRunDate, -rangeDays) : null;
   const maPaddedStartRunDate = startRunDate ? addDays(startRunDate, -MA7_LOOKBACK_DAYS) : null;
   const artistIsrcs = artistTracks.map((t) => t.isrc);
