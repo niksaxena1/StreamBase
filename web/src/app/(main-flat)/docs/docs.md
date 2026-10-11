@@ -418,7 +418,7 @@ Vercel runs the web functions in Mumbai (`bom1`).
 
 This part describes how the system is built, protected, and operated.
 
-## Daily automation schedule (GitHub Actions)
+## Daily automation schedule
 
 Times are **UTC** with Dubai time (UTC+4). The Supabase database scheduler starts the own-catalog pipeline at 05:07 UTC and the competitor pipeline at 05:23 UTC. It can retry a failed or stalled stage once and emails an alert when ingestion has not succeeded by 08:30 UTC. GitHub Actions runs the dispatched work; its scheduled fallback runs may start late.
 
