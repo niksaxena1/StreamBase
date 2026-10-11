@@ -148,6 +148,58 @@ playlist summaries through the latest observed date and revalidate app caches.
 Verify the narrow effective view includes the filled date, not merely that
 the override table contains rows.
 
+## Home diagnostic snapshots
+
+`supabase/migrations/20261011023115_add_home_diagnostic_snapshots.sql` adds private,
+RLS-enabled snapshot tables in each analytics schema. Only `service_role` can
+SELECT them or execute their refresh functions; table writes occur through the
+SECURITY DEFINER refresh functions. This migration must be applied by the owner
+before snapshots can be populated. Missing tables or failed refreshes retain
+the existing live RPC behavior and never fail ingestion.
+
+Both ingestion scripts refresh their own schema after recording success and
+before web revalidation. Own catalog refreshes once. Competitor refreshes NULL
+(`__all` storage key), then each active label, with exact-count label pagination
+and independent warning-and-continue failures. Each call has a 150-second SQL
+timeout and uses the shared PostgREST client. A refresh is atomic across its
+kinds, so errors cannot publish a partially refreshed scope.
+
+The post-ingestion own-catalog override writers (`rapidapi_stale_fix.py`,
+`artist_tools_daily.py`, and manual `artist_tools_stale_repair.py apply`) also
+refresh own snapshots after their cascade recompute. Snapshot failures warn
+and continue; existing job status and summaries remain intact. Competitor
+ingestion completes reconciliation, interpolation and rebasing before its
+snapshot refresh; no later competitor job currently writes overrides.
+
+The follow-up `20261011024435_prune_home_diagnostic_snapshots.sql` replaces both
+refresh functions to prune rows with `run_date < p_run_date - 30` after a
+successful refresh. The boundary day is retained. Competitor pruning covers
+all labels in its own table; grants and schema isolation remain unchanged.
+
+Kinds: negative daily streams (no window), artist and track weekend dips
+(`p_min_weekday_avg=0`; own anchor `run_date-2`, competitor anchor `run_date`),
+and artificial spikes (ratio 1.25, minimum baseline 50, grace 14 days,
+threshold-crossing maximum 1500, weekends false, inclusive window
+`run_date-29` through `run_date`). Effective non-default health/user settings
+and other date windows stay live. Competitor also stores per-label scatter for
+`run_date` and `prev_date=run_date-1`; all-label Home scatter still fans out by
+active label, since NULL is not an all-label scatter RPC.
+
+Readers keep existing one-hour cache wrappers and keys. They require matching
+run date, kind, default params key, label and schema-specific override version,
+and a computation timestamp at least as recent as the latest successful
+ingestion's `finished_at`. This also invalidates old full-history negative
+stream payloads after backfills or same-date reruns. Missing/unverifiable rows,
+read errors and malformed payloads fall back to unchanged live RPC arguments.
+Combined Home override cache keys are preserved; comparison extracts the raw
+version stored by that schema's `spotibase_override_version()`.
+
+Unpaged diagnostics and workspace scatter leave payloads above 1,000 rows live
+to preserve existing Data API row-cap behavior. Home's paged scatter uses the
+snapshot with the same 10,000-row cap and ISRC deduplication. The standalone
+`/api/artificial-stream-spikes` remains live because its default date window
+is unbounded, unlike Home. Own scatter remains live and unchanged.
+
 ## Intentional omissions
 
 Competitor Mode does not currently include collectors or distributor/entity health logic. Those concepts are specific to the own-catalog universe and should not be half-reused.

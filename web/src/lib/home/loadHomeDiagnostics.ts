@@ -12,6 +12,8 @@ import { getRollbackDate, rollbackDataDateToRunDate } from "@/lib/rollback";
 import { SOT_DATA_LAG_DAYS, addDaysISO, dataDateFromRunDate } from "@/lib/sotDates";
 import { aggregateCompetitorPlaylistHistory } from "@/lib/competitorAnalytics";
 import { resolveHomeDataset } from "@/lib/home/homeDataset.server";
+import { diagnosticSnapshotVersion, readHomeDiagnosticSnapshot, snapshotOrLive, usesDefaultSpikeParameters } from "@/lib/home/homeDiagnosticSnapshots";
+import type { SupabaseQueryResult } from "@/lib/supabase/cache";
 
 export async function loadHomeDiagnosticsDataForUser(args: {
   sb: SupabaseClient;
@@ -158,13 +160,30 @@ export async function loadHomeDiagnostics(args: DiagnosticsArgs): Promise<HomeDi
       ? competitorLabelKey
       : null;
   const weekendAnchorDate = datasetMode === "competitor" ? latestRunDate : latestDataDate;
+  const queryDiagnostic = <T>(kind: string, eligible: boolean, live: () => PromiseLike<SupabaseQueryResult<T>>) =>
+    snapshotOrLive({
+      eligible: eligible && !!latestRunDate,
+      overrideVersion: diagnosticSnapshotVersion(overrideBuster, datasetMode),
+      read: () => readHomeDiagnosticSnapshot({ svc, dataset: datasetMode, runDate: latestRunDate,
+        labelKey: competitorRpcLabelKey, kind }),
+      live,
+      maxSnapshotRows: 1000,
+    });
+  // Every caller derives own latestDataDate as latestRunDate - SOT_DATA_LAG_DAYS,
+  // matching the refresh RPC's anchor; competitor uses latestRunDate directly.
+  // queryDiagnostic already excludes missing run dates.
+  const defaultWeekendAnchor = true;
+  const defaultSpikes = usesDefaultSpikeParameters({ runDate: latestRunDate,
+    ratio: artificialSpikeRatio, baseline: artificialMinBaseline, graceDays: artificialGraceDays,
+    crossingMax: artificialThresholdCrossing, includeWeekends: artificialIncludeWeekends,
+    start: spikeFilterRunStart, end: spikeFilterRunEnd });
 
   const artificialSpikesCacheKey = `home-artificial-stream-spikes-v6-${datasetMode}-${competitorRpcLabelKey ?? "none"}-${artificialSpikeRatio}-${artificialMinBaseline}-${artificialGraceDays}-${artificialThresholdCrossing}-${artificialIncludeWeekends ? "wknd1" : "wknd0"}-${spikeFilterRunStart ?? "none"}-${spikeFilterRunEnd ?? "none"}-ov${overrideBuster}`;
 
   const diagnosticsResults = await timedServerStep("home.diagnostics", () =>
       Promise.all([
         cachedQuery(
-          async () => {
+          () => queryDiagnostic("artist_weekend_dips", defaultWeekendAnchor, async () => {
             if (datasetMode === "competitor") {
               return await svc.schema("competitor").rpc("home_artist_weekend_dips", {
                 p_min_weekday_avg: 0,
@@ -176,12 +195,12 @@ export async function loadHomeDiagnostics(args: DiagnosticsArgs): Promise<HomeDi
               p_min_weekday_avg: 0,
               p_anchor_data_date: latestDataDate ?? null,
             });
-          },
+          }),
           `home-artist-weekend-dips-v4-${datasetMode}-${competitorRpcLabelKey ?? "none"}-${playlistKey}-${weekendAnchorDate ?? "none"}-ov${overrideBuster}`,
           CACHE_TTL_1H,
         ),
         cachedQuery(
-          async () => {
+          () => queryDiagnostic("track_weekend_dips", defaultWeekendAnchor, async () => {
             if (datasetMode === "competitor") {
               return await svc.schema("competitor").rpc("home_track_weekend_dips", {
                 p_min_weekday_avg: 0,
@@ -193,24 +212,24 @@ export async function loadHomeDiagnostics(args: DiagnosticsArgs): Promise<HomeDi
               p_min_weekday_avg: 0,
               p_anchor_data_date: latestDataDate ?? null,
             });
-          },
+          }),
           `home-track-weekend-dips-v4-${datasetMode}-${competitorRpcLabelKey ?? "none"}-${playlistKey}-${weekendAnchorDate ?? "none"}-ov${overrideBuster}`,
           CACHE_TTL_1H,
         ),
         cachedQuery(
-          async () => {
+          () => queryDiagnostic("negative_daily_streams", true, async () => {
             if (datasetMode === "competitor") {
               return await svc.schema("competitor").rpc("home_negative_daily_streams", {
                 p_label_key: competitorRpcLabelKey,
               });
             }
             return await svc.rpc("home_negative_daily_streams");
-          },
+          }),
           `home-negative-daily-v5-${datasetMode}-${competitorRpcLabelKey ?? "none"}-ov${overrideBuster}`,
           CACHE_TTL_1H,
         ),
         cachedQuery(
-          async () => {
+          () => queryDiagnostic("artificial_stream_spikes", defaultSpikes, async () => {
             if (datasetMode === "competitor") {
               return await svc.schema("competitor").rpc("home_artificial_stream_spikes", {
                 p_spike_ratio: artificialSpikeRatio,
@@ -233,7 +252,7 @@ export async function loadHomeDiagnostics(args: DiagnosticsArgs): Promise<HomeDi
               p_end_date: spikeFilterRunEnd ?? undefined,
             });
             return { data, error };
-          },
+          }),
           artificialSpikesCacheKey,
           CACHE_TTL_1H,
         ),

@@ -56,6 +56,8 @@ export async function GET(request: NextRequest) {
     startDateRaw && endDateRaw ? addDaysISO(endDateRaw, SOT_DATA_LAG_DAYS) : null;
 
   const svc = supabaseService();
+  // This endpoint's default is an unbounded date window (unlike Home's
+  // 30-day window), so it deliberately retains the exact live RPC arguments.
   const { data, error } = await svc.rpc("home_artificial_stream_spikes", {
     p_spike_ratio: spikeRatio,
     p_min_baseline: minBaseline,

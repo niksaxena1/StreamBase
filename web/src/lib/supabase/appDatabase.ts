@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import type { Database as GeneratedDatabase } from "./database.types";
+import type { Database as GeneratedDatabase, Json } from "./database.types";
 
 export type { Json } from "./database.types";
 
@@ -21,7 +21,16 @@ type LooseSchema = {
 
 export type AppDatabase = {
   __InternalSupabase: GeneratedDatabase["__InternalSupabase"];
-  public: GeneratedDatabase["public"];
+  public: Omit<GeneratedDatabase["public"], "Tables"> & {
+    Tables: GeneratedDatabase["public"]["Tables"] & {
+      home_diag_snapshots: {
+        Row: { run_date: string; kind: string; params_key: string; override_version: string | null; payload: Json; computed_at: string };
+        Insert: { run_date: string; kind: string; params_key?: string; override_version?: string | null; payload: Json; computed_at?: string };
+        Update: Partial<AppDatabase["public"]["Tables"]["home_diag_snapshots"]["Insert"]>;
+        Relationships: [];
+      };
+    };
+  };
   competitor: LooseSchema;
   playlist_watch: LooseSchema;
 };

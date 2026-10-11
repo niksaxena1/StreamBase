@@ -17,6 +17,7 @@ import { CACHE_TTL_1H } from "@/lib/constants";
 import { cachedQuery } from "@/lib/supabase/cache";
 import { supabaseService } from "@/lib/supabase/service";
 import { addDaysISO, dataDateFromRunDate } from "@/lib/sotDates";
+import { readHomeDiagnosticSnapshot, snapshotOrLive } from "@/lib/home/homeDiagnosticSnapshots";
 
 type PlaylistIdentity = {
   playlist_key: string;
@@ -220,15 +221,24 @@ async function loadMovementInsights(args: {
 async function loadCatalogInsights(args: {
   runDate: string;
   labels: LabelIdentity[];
+  overrideVersion: string | null;
 }): Promise<{ data: CompetitorCatalogInsights | null; error: { message: string } | null }> {
-  const comp = supabaseService().schema("competitor");
+  const svc = supabaseService();
+  const comp = svc.schema("competitor");
   const results = await Promise.all(
     args.labels.map(async (label) => ({
       label,
-      result: await comp.rpc("home_track_scatter_points_for_label", {
-        label_key: label.label_key,
-        run_date: args.runDate,
-        prev_date: addDaysISO(args.runDate, -1),
+      result: await snapshotOrLive<ScatterRow[]>({
+        eligible: true,
+        overrideVersion: args.overrideVersion,
+        read: () => readHomeDiagnosticSnapshot({ svc, dataset: "competitor", runDate: args.runDate,
+          labelKey: label.label_key, kind: "track_scatter_points_for_label" }),
+        maxSnapshotRows: 1000,
+        live: () => comp.rpc("home_track_scatter_points_for_label", {
+          label_key: label.label_key,
+          run_date: args.runDate,
+          prev_date: addDaysISO(args.runDate, -1),
+        }),
       }),
     })),
   );
@@ -277,10 +287,12 @@ export async function loadWorkspaceInsightsCached(args: {
   const playlists = (playlistsRaw ?? []) as PlaylistIdentity[];
   const labels = (labelsRaw ?? []) as LabelIdentity[];
   let overrideVersion = "0";
+  let snapshotOverrideVersion: string | null = null;
   if (scope === "catalog") {
     const versionResult = await comp.rpc("spotibase_override_version");
     if (!versionResult.error && typeof versionResult.data === "string") {
       overrideVersion = versionResult.data;
+      snapshotOverrideVersion = versionResult.data;
     }
   }
   const cacheKey = `competitor-workspace-insights-v1-${scope}-${runDate}-ov${overrideVersion}`;
@@ -288,7 +300,7 @@ export async function loadWorkspaceInsightsCached(args: {
     async () =>
       scope === "movement"
         ? await loadMovementInsights({ runDate, playlists, labels })
-        : await loadCatalogInsights({ runDate, labels }),
+        : await loadCatalogInsights({ runDate, labels, overrideVersion: snapshotOverrideVersion }),
     cacheKey,
     CACHE_TTL_1H,
   );

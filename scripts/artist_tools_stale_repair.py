@@ -27,48 +27,44 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from datetime import date
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlencode
 
-import requests
+from streambase_postgrest import Postgrest as SharedPostgrest
+from streambase_home_snapshots import refresh_own_home_snapshots
 
 
-class Postgrest:
-    def __init__(self, supabase_url: str, service_role_key: str):
-        self.rest_base = supabase_url.rstrip("/") + "/rest/v1"
-        self.rpc_base = supabase_url.rstrip("/") + "/rest/v1/rpc"
-        self.headers = {
-            "Authorization": f"Bearer {service_role_key}",
-            "apikey": service_role_key,
-            "Content-Type": "application/json",
-        }
-
+class Postgrest(SharedPostgrest):
+    """Preserve the manual tool's parameter/response API on shared retry transport."""
     def select(self, table: str, params: dict[str, str]) -> list[dict[str, Any]]:
-        r = requests.get(f"{self.rest_base}/{table}", headers=self.headers, params=params, timeout=60)
-        r.raise_for_status()
-        return r.json()
+        filters = urlencode({key: value for key, value in params.items() if key != "select"})
+        return super().select(table, params.get("select", "*"), filters)
 
     def upsert(self, table: str, rows: list[dict[str, Any]], on_conflict: str) -> list[dict[str, Any]]:
-        headers = dict(self.headers)
+        if not rows:
+            return []
+        headers = dict(self.h)
         headers["Prefer"] = "resolution=merge-duplicates,return=representation"
-        r = requests.post(
-            f"{self.rest_base}/{table}",
-            headers=headers,
-            params={"on_conflict": on_conflict},
+        r = self._request(
+            "POST", f"{self.base}/{table}?{urlencode({'on_conflict': on_conflict})}",
+            headers,
             data=json.dumps(rows),
-            timeout=60,
+            idempotent=True,
         )
-        r.raise_for_status()
+        if r.status_code not in (200, 201):
+            raise RuntimeError(f"Upsert {table} failed: {r.status_code} {r.text[:500]}")
         return r.json()
 
     def rpc(self, name: str, payload: dict[str, Any]) -> Any:
-        r = requests.post(
-            f"{self.rpc_base}/{name}",
-            headers=self.headers,
+        r = self._request(
+            "POST", f"{self.base}/rpc/{name}", self.h,
             data=json.dumps(payload),
-            timeout=60,
+            idempotent=True,
         )
-        r.raise_for_status()
+        if r.status_code not in (200, 204):
+            raise RuntimeError(f"RPC {name} failed: {r.status_code} {r.text[:500]}")
         return r.text
 
 
@@ -210,6 +206,7 @@ def apply(args: argparse.Namespace) -> None:
         "spotibase_recompute_playlist_daily_stats_cascade",
         {"p_start_date": target_date},
     )
+    refresh_own_home_snapshots(pg, date.fromisoformat(target_date))
     print(json.dumps({"applied": len(inserted), "recompute_response": recompute_response}, indent=2))
 
 

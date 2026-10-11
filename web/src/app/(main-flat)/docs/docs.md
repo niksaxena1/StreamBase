@@ -1501,6 +1501,21 @@ If you want SAI to be reliable, enforce answer structure.
 - 2026-01-31: Added `/docs` page + initial architecture docs.
 
 
+## Home diagnostics performance
+
+After ingestion, StreamBase precomputes negative daily stream corrections,
+artist and track weekend dips, and artificial spikes in separate own-catalog
+and competitor snapshot tables. Competitor label scatter is also precomputed.
+The displayed calculations stay the same. Default spike settings are ratio
+1.25, baseline 50, grace 14 days, crossing cap 1500, weekends excluded and a
+30-day inclusive window ending on the selected latest run date. Changed
+settings or windows use the existing live calculations. Missing snapshots,
+new stream overrides or a newer successful ingestion also use live results.
+Own-catalog stale-track repair jobs refresh diagnostics after writing stream
+overrides. Successful refreshes retain snapshots from the run date back through
+30 days earlier; older selections continue to use live calculations.
+See `docs/COMPETITOR-MODE-OPERATIONS.md` for migration and refresh details.
+
 ## Daily Spotify takedown watch
 
 The independent `spotify_takedown_watch.yml` workflow runs daily at **04:37 UTC / 08:37 Dubai**, ahead of the usual SpotOnTrack data lag. It watches only the own catalog; competitor tables and pipelines are unaffected.
