@@ -22,6 +22,12 @@ type LooseSchema = {
 export type AppDatabase = {
   __InternalSupabase: GeneratedDatabase["__InternalSupabase"];
   public: Omit<GeneratedDatabase["public"], "Tables"> & {
+    Functions: GeneratedDatabase["public"]["Functions"] & {
+      health_daily_stream_totals: {
+        Args: { p_start: string; p_end: string };
+        Returns: Array<{ date: string; daily_streams: number; tracks_counted: number; tracks_expected: number }>;
+      };
+    };
     Tables: GeneratedDatabase["public"]["Tables"] & {
       home_diag_snapshots: {
         Row: { run_date: string; kind: string; params_key: string; override_version: string | null; payload: Json; computed_at: string };
