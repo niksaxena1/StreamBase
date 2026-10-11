@@ -12,6 +12,7 @@ from typing import Dict, Iterable, List, Optional, Set, Tuple
 import requests
 
 from streambase_revalidate import notify_web_revalidate
+from streambase_catchup import smooth_own_catalog
 from streambase_postgrest import Postgrest
 from streambase_home_snapshots import refresh_own_home_snapshots
 from streambase_rate import load_stream_payout_usd
@@ -1552,6 +1553,11 @@ def main():
         except Exception as _artist_stats_err:
             print(f"  WARN Could not refresh artist_daily_stats: {_artist_stats_err}")
 
+        # Automatic catch-up smoothing (SpotOnTrack lag then a catch-up day). Warn-and-
+        # continue; runs after today's stats exist so the cascade covers the run date.
+        catchup = smooth_own_catalog(pg, run_date, run_id=run_id)
+        catchup_needs_review_count = len(catchup["review_rows"])
+
         pg.patch("ingestion_runs", {"status": "success", "finished_at": datetime.now(timezone.utc).isoformat()}, f"id=eq.{run_id}")
         print(f"✅ Ingestion complete for {run_date} (run_id={run_id})")
 
@@ -1572,6 +1578,7 @@ def main():
             "individual_tracks_stale_count": individual_tracks_stale_count,
             "individual_tracks_stale_severity": individual_tracks_stale_severity,
             "excluded_tracks_zeroed_count": excluded_tracks_zeroed_count,
+            "catchup_needs_review_count": catchup_needs_review_count,
         }
         summary_path = Path(".artifacts") / "ingestion_summary.json"
         summary_path.parent.mkdir(parents=True, exist_ok=True)

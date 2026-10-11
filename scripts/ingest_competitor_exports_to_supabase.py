@@ -12,6 +12,7 @@ from typing import Dict, Iterable, List, Optional, Set, Tuple
 import requests
 
 from streambase_revalidate import notify_web_revalidate
+from streambase_catchup import run_catchup_smoothing
 from streambase_postgrest import Postgrest
 from streambase_home_snapshots import refresh_competitor_home_snapshots
 from streambase_rate import load_stream_payout_usd
@@ -125,7 +126,7 @@ def date_batches(start: date, end: date, batch_days: int) -> List[Tuple[date, da
     return batches
 
 
-def normalize_competitor_analytics(pg: Postgrest, run_date: date) -> dict:
+def normalize_competitor_analytics(pg: Postgrest, run_date: date, run_id: Optional[int] = None) -> dict:
     """Repair bounded stale runs and rebuild derived stats from effective snapshots.
 
     Raw stream snapshots are never updated here. The interpolation RPC writes only
@@ -190,7 +191,15 @@ def normalize_competitor_analytics(pg: Postgrest, run_date: date) -> dict:
     except Exception as rebase_err:
         print(f"WARN Could not re-base downward revisions: {rebase_err}")
 
+    # Catch-up smoothing (SpotOnTrack lag then a catch-up day) runs last so it sees the
+    # series after reconcile / interpolation / rebase. Warn-and-continue; a mass-change
+    # refusal is surfaced as a 'catchup_needs_review' ingestion warning.
+    catchup = run_catchup_smoothing(pg, run_date, run_id=run_id, universe="competitor")
+    catchup_start = catchup["earliest"]
+
     recompute_start = interpolation_start if (overrides_written or rebased or reconciled) else run_date
+    if catchup_start is not None and catchup_start < recompute_start:
+        recompute_start = catchup_start
     recomputed = pg.rpc(
         "spotibase_recompute_playlist_daily_stats_cascade",
         {
@@ -225,6 +234,8 @@ def normalize_competitor_analytics(pg: Postgrest, run_date: date) -> dict:
         "overrides_written": overrides_written,
         "tracks_affected": tracks_affected,
         "recompute_start": recompute_start.isoformat(),
+        "catchup_tracks_smoothed": sum(int(r.get("tracks_smoothed") or 0) for r in catchup["applied_rows"]),
+        "catchup_needs_review": len(catchup["review_rows"]),
         "recomputed_days": int(recomputed or 0),
         "artist_rows_refreshed": artist_rows_refreshed,
     }
@@ -509,7 +520,7 @@ def main():
     expected_playlist_keys = {playlist.playlist_key for playlist in configured_playlists}
     current_playlist_keys = {str(row["playlist_key"]) for row in current_stats}
     if expected_playlist_keys.issubset(current_playlist_keys):
-        normalize_competitor_analytics(pg, run_date)
+        normalize_competitor_analytics(pg, run_date, run_id=run_id)
     else:
         missing_keys = sorted(expected_playlist_keys - current_playlist_keys)
         print(
