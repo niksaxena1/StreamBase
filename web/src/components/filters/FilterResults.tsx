@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
+import Link from "@/components/shell/RouteLink";
 import { ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, User, Disc3, ListMusic, CalendarDays } from "lucide-react";
 import { GlassTable, TableRow, TableCell, EmptyState } from "@/components/ui/GlassTable";
 import { Button } from "@/components/ui/Button";

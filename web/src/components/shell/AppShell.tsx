@@ -1,5 +1,5 @@
 import { ReactNode } from "react";
-import Link from "next/link";
+import Link from "@/components/shell/RouteLink";
 
 import { LogoMark } from "@/components/LogoMark";
 import { SideRailWithBadge } from "@/components/shell/SideRailWithBadge";
@@ -20,6 +20,7 @@ import { BrandLink } from "@/components/shell/BrandLink";
 import { APP_SHORT_NAME } from "@/lib/pageTitle";
 import { PerformanceMonitor } from "@/components/performance/PerformanceMonitor";
 import { ShellScrollState } from "@/components/shell/ShellScrollState";
+import { UniverseSync } from "@/components/shell/UniverseSync";
 import { MutationRefresh } from "@/components/shell/MutationRefresh";
 
 type MainSurface = "glass" | "plain";
@@ -55,6 +56,7 @@ export function AppShell(props: {
       <PerformanceMonitor />
       <ShellScrollState />
       <MutationRefresh />
+      <UniverseSync datasetMode={datasetMode} competitorLabelKey={props.competitorLabelKey} />
       <CompetitorAccentStyle accentHex={props.competitorAccentHex ?? null} />
       <CompetitorTitleEffect
         datasetMode={datasetMode}

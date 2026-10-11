@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/shell/RouteLink";
 import { ArrowLeft } from "lucide-react";
 import type { Metadata } from "next";
 

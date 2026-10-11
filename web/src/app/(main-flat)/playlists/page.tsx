@@ -2,7 +2,7 @@ import { defaultPlaylistKey } from "@/components/shell/navigationDefaults";
 import PlaylistsLoading from "./loading";
 import { perfServerStep } from "@/lib/perfTiming.server";
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
-import Link from "next/link";
+import Link from "@/components/shell/RouteLink";
 import type { Metadata } from "next";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { Suspense } from "react";

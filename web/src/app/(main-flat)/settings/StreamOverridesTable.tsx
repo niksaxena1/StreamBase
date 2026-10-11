@@ -3,7 +3,7 @@
 import { Fragment, useState, useMemo } from "react";
 import { ChevronLeft, ChevronRight, Download } from "lucide-react";
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
-import Link from "next/link";
+import Link from "@/components/shell/RouteLink";
 import { Input } from "@/components/ui/Input";
 import { MenuSelect } from "@/components/ui/MenuSelect";
 import { IconButton } from "@/components/ui/Button";

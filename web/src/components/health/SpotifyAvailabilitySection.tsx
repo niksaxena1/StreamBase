@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/shell/RouteLink";
 
 import { cachedSpotifyAvailability, describeUnavailableReason } from "@/lib/health/spotifyAvailability";
 import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";

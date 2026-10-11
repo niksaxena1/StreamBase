@@ -55,25 +55,14 @@ export function TopRouteLoadingBar() {
         }, reducedMotion ? 0 : 150);
       }, Math.max(0, 180 - (performance.now() - shownAt)));
     };
-    const click = (event: MouseEvent) => {
-      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-      const anchor = event.target instanceof Element ? event.target.closest("a") : null;
-      if (!anchor || anchor.hasAttribute("download") || (anchor.target && anchor.target !== "_self") || anchor.dataset.sbNoTopLoader === "true") return;
-      const href = anchor.getAttribute("href");
-      if (!href || href.startsWith("#")) return;
-      const target = new URL(href, window.location.href);
-      if (target.origin === window.location.origin && target.pathname + target.search !== window.location.pathname + window.location.search) triggerRouteLoadingBarStart(href);
-    };
     const pop = () => {
       if (window.location.pathname + window.location.search !== currentRoute) triggerRouteLoadingBarStart();
     };
-    document.addEventListener("click", click, true);
     window.addEventListener("popstate", pop);
     window.addEventListener(SB_ROUTE_LOADING_BAR_START_EVENT, start);
     window.addEventListener(SB_ROUTE_LOADING_BAR_DONE_EVENT, done);
     return () => {
       clear();
-      document.removeEventListener("click", click, true);
       window.removeEventListener("popstate", pop);
       window.removeEventListener(SB_ROUTE_LOADING_BAR_START_EVENT, start);
       window.removeEventListener(SB_ROUTE_LOADING_BAR_DONE_EVENT, done);

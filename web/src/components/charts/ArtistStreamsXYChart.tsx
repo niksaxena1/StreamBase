@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/shell/RouteLink";
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent, MouseEvent } from "react";

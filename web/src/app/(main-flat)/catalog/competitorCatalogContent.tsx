@@ -400,6 +400,7 @@ export async function renderCompetitorCatalogContent({
     <div className="space-y-4">
       <CatalogPageClient
         mode="competitor"
+        competitorLabelKey={competitorLabelKey}
         hasOnlyOneSnapshot={hasOnlyOneSnapshot}
         latestCum={cumSeriesAscRun.at(-1)?.value ?? 0}
         latestDate={latestRunDate}

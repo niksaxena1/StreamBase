@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/shell/RouteLink";
 import { useSearchParams } from "next/navigation";
 import { useNavigationRouter as useRouter } from "@/components/shell/useNavigationRouter";
 import { useEffect } from "react";
@@ -22,6 +22,7 @@ const RANGE_CHOICES = [30, 90, 365] as const;
 
 export function ArtistDashboardControls(props: {
   datasetMode?: DatasetMode;
+  competitorLabelKey?: string | null;
   artists: ArtistOption[];
   artistId: string;
   tracks: TrackOption[];
@@ -31,7 +32,7 @@ export function ArtistDashboardControls(props: {
   const router = useRouter();
   const sp = useSearchParams();
   const datasetMode = props.datasetMode ?? "own";
-  const artistStorageKey = lastArtistIdStorageKey(datasetMode);
+  const artistStorageKey = lastArtistIdStorageKey(datasetMode, props.competitorLabelKey);
 
   useEffect(() => {
     writeDatasetSelectionStorage(artistStorageKey, props.artistId);

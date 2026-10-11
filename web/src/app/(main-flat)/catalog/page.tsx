@@ -7,8 +7,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { cachedQuery } from "@/lib/supabase/cache";
 import { getArtistsCached } from "@/lib/spotify";
 import { defaultCatalogArtistId, defaultCatalogIsrc } from "./catalogDefaults";
-import { RememberParamRedirect } from "@/components/dashboard/RememberParamRedirect";
-import { lastArtistIdStorageKey } from "@/lib/datasetSelectionStorage";
+import { RememberedCatalogEmptyEntry } from "./RememberedCatalogEmptyEntry";
 import { CatalogPageClient } from "./CatalogPageClient";
 import { computeDailyRollingAvg7 } from "@/components/charts/chartUtils";
 import { dataDateFromRunDate } from "@/lib/sotDates";
@@ -238,16 +237,7 @@ async function CatalogPageContent({
       );
 
       artistId = defaultCatalogArtistId(recent as { spotify_artist_ids?: string[] | null } | null);
-      if (!artistId) return (
-        <RememberParamRedirect
-          param="artist_id"
-          storageKey={lastArtistIdStorageKey("own")}
-          legacyStorageKey="sb:last_artist_id"
-          defaultValue={null}
-          loadingTitle="Opening your last artist…"
-          loadingSubtitle="If this is your first time, we'll pick the first artist we find."
-        />
-      );
+      if (!artistId) return <RememberedCatalogEmptyEntry />;
     }
 
     // We don't have an artists table; the distinct-artist dropdown is computed in

@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/shell/RouteLink";
 import { useSearchParams } from "next/navigation";
 import { useNavigationRouter as useRouter } from "@/components/shell/useNavigationRouter";
 import { useEffect } from "react";

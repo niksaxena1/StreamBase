@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
+import Link from "@/components/shell/RouteLink";
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { X } from "lucide-react";
 import { useMetric } from "@/components/metrics/MetricContext";

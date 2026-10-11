@@ -1,3 +1,5 @@
+import { broadcastUniverseChange } from "./universeSyncEvents";
+
 export const ROUTER_MUTATION_EVENT = "sb:router-mutation";
 
 /** POST lookup endpoints are reads; invalidate only saves that affect page content. */
@@ -16,6 +18,7 @@ export function mutationNeedsRouterRefresh(url: string, method = "GET"): boolean
 
 export function notifyPageMutation(url: string, method?: string) {
   if (typeof window !== "undefined" && mutationNeedsRouterRefresh(url, method)) {
+    if (["/api/user-settings/dataset-context", "/api/user-settings/dataset-mode", "/api/user-settings/competitor-label"].includes(url.split("?")[0])) broadcastUniverseChange();
     window.dispatchEvent(new Event(ROUTER_MUTATION_EVENT));
   }
 }

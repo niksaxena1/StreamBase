@@ -39,3 +39,27 @@ describe("route feedback signals", () => {
     expect(done).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("feedback safety completion", () => {
+  it("finishes redirects to the current URL or canceled navigation without a route commit after eight seconds", () => {
+    vi.useFakeTimers();
+    try {
+      const { done } = browser();
+      triggerRouteLoadingBarStart("/catalog");
+      vi.advanceTimersByTime(7999);
+      expect(done).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(done).toHaveBeenCalledOnce();
+    } finally { triggerRouteLoadingBarDone(); vi.useRealTimers(); }
+  });
+  it("cancels the safety timer when the transition completes", () => {
+    vi.useFakeTimers();
+    try {
+      const { done } = browser();
+      const id = triggerRouteLoadingBarStart("/catalog");
+      triggerRouteLoadingBarDone(id);
+      vi.advanceTimersByTime(8000);
+      expect(done).toHaveBeenCalledOnce();
+    } finally { triggerRouteLoadingBarDone(); vi.useRealTimers(); }
+  });
+});

@@ -11,7 +11,7 @@ import {
   ALL_COMPETITORS_KEY,
   isAllCompetitorsKey,
 } from "@/lib/competitorContext";
-import { lastArtistIdStorageKey, readDatasetSelectionStorage } from "@/lib/datasetSelectionStorage";
+import { broadcastUniverseChange, sameUniverse } from "./universeSyncEvents";
 import { pathAfterDatasetModeSwitch } from "@/lib/datasetModeNavigation";
 import { competitorAccentCssVars } from "@/lib/competitorAccent";
 import {
@@ -184,6 +184,7 @@ export function CompetitorModeButton({
   async function switchTo(mode: "own" | "competitor", labelKey?: string) {
     const targetLabelKey =
       mode === "competitor" ? labelKey ?? ALL_COMPETITORS_KEY : null;
+    if (saving || sameUniverse({ datasetMode: effectiveDatasetMode, competitorLabelKey: effectiveLabelKey }, { datasetMode: mode, competitorLabelKey: targetLabelKey })) return;
     const targetIsSpecificCompetitor =
       mode === "competitor" && targetLabelKey != null && !isAllCompetitorsKey(targetLabelKey);
     const targetAccentHex = targetIsSpecificCompetitor
@@ -224,25 +225,12 @@ export function CompetitorModeButton({
           window.location.pathname,
           window.location.search,
         );
-        let destination =
+        const destination =
           cleanUrl && cleanUrl !== window.location.pathname + window.location.search
             ? cleanUrl
             : window.location.pathname + window.location.search;
 
-        // Preserve the remembered artist that the former bare entry redirect used.
-        if (window.location.pathname === "/catalog") {
-          let artist: string | null = null;
-          try {
-            artist = mode === "own"
-              ? readDatasetSelectionStorage(lastArtistIdStorageKey(mode), "sb:last_artist_id")
-              : localStorage.getItem(lastArtistIdStorageKey(mode));
-          } catch { /* Storage may be unavailable. */ }
-          if (artist?.trim()) {
-            const url = new URL(destination, window.location.origin);
-            url.searchParams.set("artist_id", artist.trim());
-            destination = url.pathname + url.search;
-          }
-        }
+        broadcastUniverseChange();
 
         // Capture the optimistic accent in the outgoing view-transition snapshot.
         // Navigation stays immediate; the flourish never delays data loading.

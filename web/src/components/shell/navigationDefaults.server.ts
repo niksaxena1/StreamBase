@@ -1,4 +1,6 @@
 import "server-only";
+import { cachedQuery } from "@/lib/supabase/cache";
+import { CACHE_TTL_1H } from "@/lib/constants";
 import { cache } from "react";
 import { getRequestAppContext } from "@/lib/requestAppContext.server";
 import { ALL_COMPETITORS_KEY, resolveCompetitorLabelKey } from "@/lib/competitorContext";
@@ -13,16 +15,18 @@ export const getNavigationDefaults = cache(async (datasetMode: DatasetMode): Pro
     const { svc, user, isAdmin, settings } = await getRequestAppContext();
     if (!user || !isAdmin) return { datasetMode, playlistKeys: [] };
     const comp = svc.schema("competitor");
-    const { data: labels, error: labelError } = await comp.from("labels")
-      .select("label_key,display_name").eq("is_active", true).order("display_name", { ascending: true });
+    const { data: labels, error: labelError } = await cachedQuery(async () => await comp.from("labels")
+      .select("label_key,display_name").eq("is_active", true).order("display_name", { ascending: true }), "navigation-competitor-labels-v1", CACHE_TTL_1H);
     if (labelError) throw new Error(labelError.message);
     const competitorLabelKey = resolveCompetitorLabelKey(settings?.competitor_label_key, labels ?? []);
-    let query = comp.from("playlists").select("playlist_key")
-      .eq("is_active", true)
-      .order("display_order", { ascending: true, nullsFirst: false })
-      .order("display_name", { ascending: true });
-    if (competitorLabelKey !== ALL_COMPETITORS_KEY) query = query.eq("label_key", competitorLabelKey);
-    const { data: playlists, error } = await query;
+    const { data: playlists, error } = await cachedQuery(async () => {
+      let query = comp.from("playlists").select("playlist_key")
+        .eq("is_active", true)
+        .order("display_order", { ascending: true, nullsFirst: false })
+        .order("display_name", { ascending: true });
+      if (competitorLabelKey !== ALL_COMPETITORS_KEY) query = query.eq("label_key", competitorLabelKey);
+      return await query;
+    }, `navigation-competitor-playlists-v1-${competitorLabelKey ?? "none"}`, CACHE_TTL_1H);
     if (error) throw new Error(error.message);
     return { datasetMode, competitorLabelKey, playlistKeys: (playlists ?? []).map((p) => p.playlist_key) };
   } catch (error) {
