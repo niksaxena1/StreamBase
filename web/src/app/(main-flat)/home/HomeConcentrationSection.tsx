@@ -19,6 +19,7 @@ import { useMetric } from "@/components/metrics/MetricContext";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/GlassTable";
 import { fetchApiJson } from "@/lib/api";
+import type { HomeSectionFetch } from "@/lib/home/homeSectionPrefetch";
 import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
 import { readStoredBool, readStoredNumber, readStoredString, writeStoredBool, writeStoredNumber, writeStoredString } from "@/lib/storage";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
@@ -141,12 +142,14 @@ export function HomeConcentrationSection(props: {
   trackScatterPoints: TrackStreamsXYPoint[];
   trackScatterLoading?: boolean;
   onRequestScatterData?: () => void;
+  fetchSectionJson?: HomeSectionFetch;
   latestRunDate: string | null;
   datasetMode?: "own" | "competitor";
   competitorLabelKey?: string | null;
   competitorPlaylists?: HomeConcentrationPlaylistOption[];
 }) {
   const { onRequestScatterData } = props;
+  const fetchSectionJson = props.fetchSectionJson ?? fetchApiJson;
   const { metric } = useMetric();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
   const colors = useThemeColors();
@@ -205,24 +208,26 @@ export function HomeConcentrationSection(props: {
 
   // Fetch playlist list once on mount (own catalog), or use server-provided competitor playlists
   useEffect(() => {
+    let cancelled = false;
     if (props.datasetMode === "competitor") {
       if (isSpecificCompetitor) {
         setPlaylists(competitorPlaylistOptions);
         return;
       }
-      void fetchApiJson<{ playlists?: PlaylistOption[] }>("/api/competitors/playlists/options")
+      void fetchSectionJson<{ playlists?: PlaylistOption[] }>("/api/competitors/playlists/options")
         .then((body) => {
-          if (body.playlists) setPlaylists(body.playlists);
+          if (!cancelled && body.playlists) setPlaylists(body.playlists);
         })
         .catch(() => { /* ignore */ });
-      return;
+      return () => { cancelled = true; };
     }
-    void fetchApiJson<{ playlists?: PlaylistOption[] }>("/api/playlists/options")
+    void fetchSectionJson<{ playlists?: PlaylistOption[] }>("/api/playlists/options")
       .then((body) => {
-        if (body.playlists) setPlaylists(body.playlists);
+        if (!cancelled && body.playlists) setPlaylists(body.playlists);
       })
       .catch(() => { /* ignore */ });
-  }, [competitorPlaylistOptions, isSpecificCompetitor, props.datasetMode]);
+    return () => { cancelled = true; };
+  }, [competitorPlaylistOptions, isSpecificCompetitor, props.datasetMode, fetchSectionJson]);
 
   // Fetch ISRCs for selected playlist
   useEffect(() => {

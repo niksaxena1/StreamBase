@@ -163,6 +163,7 @@ export function PlaylistMetricsClient(props: {
           </div>
           <div className="mt-2 min-h-[200px]">
             <DailyStreamsWithMAChart
+              rangeStorageKey={props.metric === "streams" ? "sb:chart-range:playlist-daily-streams" : undefined}
               data={dailyWithMaDesc}
               valueLabel={dailyLabel}
               valueFormat={valueFormat}

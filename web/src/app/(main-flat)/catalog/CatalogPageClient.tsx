@@ -996,6 +996,7 @@ export function CatalogPageClient(props: {
               </div>
               <div className="mt-2 min-h-[180px]">
                 <DailyStreamsWithMAChart
+                  rangeStorageKey={metric !== "revenue" ? "sb:chart-range:catalog-track-daily-streams" : undefined}
                   data={trackChartData.dailySeries}
                   valueLabel={trackChartData.dailyLabel}
                   valueFormat={trackChartData.valueFormat}

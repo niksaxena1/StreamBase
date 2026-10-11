@@ -181,6 +181,7 @@ export function CatalogMetricsClient(props: {
           </div>
           <div className="mt-2 min-h-[200px]">
             <DailyStreamsWithMAChart
+              rangeStorageKey={metric === "streams" ? "sb:chart-range:catalog-artist-daily-streams" : undefined}
               data={dailyWithMaDesc}
               valueLabel={dailyLabel}
               valueFormat={valueFormat}

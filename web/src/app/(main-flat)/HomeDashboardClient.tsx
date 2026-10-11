@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { fetchUserSettingsBundle, invalidateUserSettingsBundle } from "@/lib/userSettingsBundleFetch";
 import { fetchApiJson } from "@/lib/api";
+import { createHomeRequestCache, homePrefetchKey, scheduleVisibleHomePrefetch } from "@/lib/home/homeSectionPrefetch";
 import {
   buildHomeScatterApiUrl,
   buildHomeScatterScopeKey,
@@ -93,6 +94,12 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
   const { streamPayoutPerStreamUsd } = usePayoutRate();
   const [selectedChart, setSelectedChart] = useState<"daily" | "total">("daily");
   const [granularity] = useSharedGranularity("sb:home:granularity");
+  const [primaryContentReady, setPrimaryContentReady] = useState(false);
+  const markPrimaryContentReady = useCallback(() => setPrimaryContentReady(true), []);
+  const requestCache = useMemo(() => createHomeRequestCache(), [props.datasetMode, props.competitorLabelKey, props.latestRunDate, props.sp]);
+  const fetchSectionJson = useCallback(<T,>(url: string): Promise<T> =>
+    requestCache.get(homePrefetchKey(props.datasetMode, props.competitorLabelKey, props.latestRunDate ?? "", url), () => fetchApiJson<T>(url)),
+  [requestCache, props.datasetMode, props.competitorLabelKey, props.latestRunDate]);
 
   // User setting: show/hide Filters section on Home
   const [homeFiltersEnabled, setHomeFiltersEnabled] = useState(true);
@@ -104,20 +111,24 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
     () => buildHomeScatterScopeKey(props.datasetMode, props.competitorLabelKey),
     [props.datasetMode, props.competitorLabelKey],
   );
+  const scatterRequestKey = `${scatterScopeKey}:${props.latestRunDate ?? ""}:${scatterFetchUrl}`;
   const diagnosticsFetchUrl = useMemo(() => buildHomeDiagnosticsApiUrl(props.sp), [props.sp]);
   const diagnosticsRequestKey = useMemo(
     () => `${buildHomeDiagnosticsScopeKey(props.datasetMode, props.competitorLabelKey)}:${diagnosticsFetchUrl}`,
     [props.datasetMode, props.competitorLabelKey, diagnosticsFetchUrl],
   );
-  const [scatterRequested, setScatterRequested] = useState(
-    () => !props.trackScatterDeferred || props.trackScatterPoints.length > 0,
+  const [scatterRequestedKey, setScatterRequestedKey] = useState<string | null>(
+    () => !props.trackScatterDeferred || props.trackScatterPoints.length > 0 ? scatterRequestKey : null,
   );
+  const scatterRequested = scatterRequestedKey === scatterRequestKey;
   const [scatterState, setScatterState] = useState<{
+    requestKey: string;
     points: TrackStreamsXYPoint[];
     errorMessage: string | null;
     dataDate: string | null;
     loading: boolean;
   }>(() => ({
+    requestKey: scatterRequestKey,
     points: props.trackScatterPoints,
     errorMessage: props.trackScatterErrorMessage ?? null,
     dataDate: props.trackScatterDataDate,
@@ -131,46 +142,38 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
     errorMessage: props.homeDiagnosticsErrorMessage ?? null,
     loading: Boolean(props.homeDiagnosticsDeferred),
   }));
-  const prevScatterScopeKeyRef = useRef<string | null>(null);
   const prevDiagnosticsRequestKeyRef = useRef<string | null>(null);
 
   const requestScatterData = useCallback(() => {
     if (!props.trackScatterDeferred) return;
-    setScatterRequested(true);
-    setScatterState((current) =>
-      current.points.length || current.loading
-        ? current
-        : {
-            ...current,
-            errorMessage: null,
-            loading: true,
-          },
-    );
-  }, [props.trackScatterDeferred]);
+    setScatterRequestedKey(scatterRequestKey);
+  }, [props.trackScatterDeferred, scatterRequestKey]);
+
+  useEffect(() => {
+    if (!primaryContentReady || !props.trackScatterDeferred || scatterRequested) return;
+    return scheduleVisibleHomePrefetch([requestScatterData]);
+  }, [primaryContentReady, props.trackScatterDeferred, scatterRequested, requestScatterData]);
 
   useEffect(() => {
     if (!props.trackScatterDeferred) return;
     if (!scatterRequested) return;
 
-    const scopeChanged =
-      prevScatterScopeKeyRef.current !== null && prevScatterScopeKeyRef.current !== scatterScopeKey;
-    prevScatterScopeKeyRef.current = scatterScopeKey;
+    setScatterState((current) => ({
+      requestKey: scatterRequestKey,
+      points: current.requestKey === scatterRequestKey ? current.points : [],
+      errorMessage: null,
+      dataDate: props.trackScatterDataDate,
+      loading: true,
+    }));
 
-    if (scopeChanged) {
-      setScatterState({
-        points: [],
-        errorMessage: null,
-        dataDate: props.trackScatterDataDate,
-        loading: true,
-      });
-    }
-
-    const controller = new AbortController();
-    fetchApiJson<unknown>(scatterFetchUrl, { signal: controller.signal })
+    // Do not abort the shared request when one consumer unmounts/opens mid-prefetch.
+    let cancelled = false;
+    fetchSectionJson<unknown>(scatterFetchUrl)
       .then((raw) => {
-        if (controller.signal.aborted) return;
+        if (cancelled) return;
         const payload = normalizeHomeScatterApiPayload(raw);
         setScatterState({
+          requestKey: scatterRequestKey,
           points: payload.points,
           errorMessage: payload.errorMessage,
           dataDate: payload.dataDate ?? props.trackScatterDataDate,
@@ -178,8 +181,9 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
         });
       })
       .catch((error) => {
-        if (controller.signal.aborted) return;
+        if (cancelled) return;
         setScatterState({
+          requestKey: scatterRequestKey,
           points: [],
           errorMessage: error instanceof Error ? error.message : "Failed to load Home scatter data",
           dataDate: props.trackScatterDataDate,
@@ -187,15 +191,16 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
         });
       });
 
-    return () => controller.abort();
+    return () => { cancelled = true; };
   }, [
     props.trackScatterDataDate,
     props.trackScatterDeferred,
     scatterRequested,
     scatterFetchUrl,
-    scatterScopeKey,
+    scatterRequestKey,
+    fetchSectionJson,
   ]);
-  const effectiveScatterState = props.trackScatterDeferred
+  const effectiveScatterState = props.trackScatterDeferred && scatterState.requestKey === scatterRequestKey
     ? scatterState
     : {
         points: props.trackScatterPoints,
@@ -531,6 +536,8 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
       ) : null}
 
       <LazyInteractiveChartSection
+        onPrimaryContentReady={markPrimaryContentReady}
+        dailyRangeStorageKey="sb:chart-range:home-daily-streams"
         dailyStreamsData={chartDataDaily}
         totalStreamsData={chartDataTotal}
         dailyStreamsValue={series.dailyValue}
@@ -579,6 +586,7 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
       ) : null}
 
       <HomeConcentrationSection
+        fetchSectionJson={fetchSectionJson}
         trackScatterPoints={effectiveScatterState.points}
         trackScatterLoading={effectiveScatterState.loading}
         onRequestScatterData={requestScatterData}
@@ -651,6 +659,10 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
 
       {(props.datasetMode === "competitor" || (homeFiltersConfigured && homeFiltersEnabled)) ? (
         <HomeFilterBuilderSection
+          key={scatterRequestKey}
+          primaryContentReady={primaryContentReady}
+          fetchSectionJson={fetchSectionJson}
+          competitorLabelKey={props.competitorLabelKey}
           trackScatterPoints={effectiveScatterState.points}
           trackScatterDataDate={effectiveScatterState.dataDate}
           trackScatterLoading={effectiveScatterState.loading}

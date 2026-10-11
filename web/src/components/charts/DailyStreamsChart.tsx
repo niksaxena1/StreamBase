@@ -13,6 +13,8 @@ import {
   YAxis,
 } from "recharts";
 import { memo, useId } from "react";
+import { clipDailyValue, typicalDailyDomain } from "./dailyRange";
+import { CappedDailyPoint, DailyRangeToggle, useDailyRange } from "./DailyRangeControls";
 import { formatCompactMoney, formatInt, formatUsd } from "@/lib/format";
 import {
   computePaddedDomain,
@@ -72,6 +74,7 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
   showMA7 = false,
   isCumulative = false,
   annotations,
+  rangeStorageKey,
   ghost = false,
 }: {
   data: DataPoint[];
@@ -84,10 +87,14 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
   showMA7?: boolean;
   isCumulative?: boolean;
   annotations?: ManualOverrideAnnotation[];
+  /** Opt in only for daily streams on Home, Playlists, and Catalog. */
+  rangeStorageKey?: string;
   /** Faded backdrop layer (no tooltip, hidden axis labels). */
   ghost?: boolean;
 }) {
   const gid = useId();
+  const { typical: storedTypical, setRange } = useDailyRange(rangeStorageKey);
+  const typical = storedTypical && !isCumulative && !ghost;
   const themeColors = useThemeColors();
   const { containerProps, setTooltipValues, copyModal } = useChartCopyToClipboard({ valueLabel });
   const { weekHighlightDayUtc } = useWeekHighlight();
@@ -117,7 +124,7 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
   // Compute weekend dip % when enabled (daily charts, not Tracks)
   const weekendDipMap = enableWeekendDip ? computeWeekendDipMap(filteredData) : null;
 
-  const chartData = [...filteredData].reverse().map((d) => ({
+  const rawChartData = [...filteredData].reverse().map((d) => ({
     ...d,
     _overrideItems: (annItemsByDate.get(d.date) ?? null)?.map((a) => ({
       note: a.note,
@@ -126,7 +133,12 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
     })) ?? null,
     _weekendDipPct: weekendDipMap?.get(d.date) ?? null,
   }));
-  const hasMA7 = showMA7 && chartData.some((d) => d.ma7 !== null && d.ma7 !== undefined);
+  const hasMA7 = showMA7 && rawChartData.some((d) => d.ma7 !== null && d.ma7 !== undefined);
+  const typicalDomain = typical ? typicalDailyDomain(rawChartData.map((d) => d.value), hasMA7 ? rawChartData.map((d) => d.ma7) : []) : undefined;
+  const chartData = rawChartData.map((d) => {
+    const clipped = typicalDomain ? clipDailyValue(d.value, typicalDomain) : { value: d.value, clipped: null };
+    return { ...d, _rangeValue: clipped.value, _rangeEdge: clipped.clipped };
+  });
   const chartDates = new Set(chartData.map((d) => d.date));
   const annotationDates = [...annItemsByDate.keys()].filter((d) => chartDates.has(d));
   const highlightDates = chartData.filter((d) => isHighlightDayDateUtc(d.date, weekHighlightDayUtc)).map((d) => d.date);
@@ -146,6 +158,7 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
   const allNonNegativeDaily = !isCumulative && !hasNegatives;
 
   const yAxisDomain = (() => {
+    if (typicalDomain) return typicalDomain;
     if (chartData.length === 0) return undefined;
     if (isCumulative) {
       const values = v.filter((x): x is number => typeof x === "number" && Number.isFinite(x));
@@ -160,7 +173,7 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
     });
   })();
 
-  const finiteValues = [...v, ...ma].filter((x): x is number => typeof x === "number" && Number.isFinite(x));
+  const finiteValues = [...(typical ? chartData.map((d) => d._rangeValue) : v), ...ma].filter((x): x is number => typeof x === "number" && Number.isFinite(x));
   const dataMax = finiteValues.length ? Math.max(...finiteValues) : 0;
   const dataMin = finiteValues.length ? Math.min(...finiteValues) : 0;
   const domainIncludesZero =
@@ -194,6 +207,10 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const dot = (props: any) => {
     const val = (props?.payload as Record<string, unknown>)?.value;
+    const edge = props?.payload?._rangeEdge;
+    if (typical && typeof val === "number" && (edge === "low" || edge === "high")) {
+      return <CappedDailyPoint cx={Number(props.cx)} cy={Number(props.cy)} value={val} edge={edge} color={val < 0 ? "#ef4444" : effectiveColor} index={Number(props.index)} count={chartData.length} />;
+    }
     if (typeof val === "number" && val < 0) {
       const x = Number(props?.cx), y = Number(props?.cy);
       if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
@@ -204,6 +221,10 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const activeDot = (props: any) => {
     const val = (props?.payload as Record<string, unknown>)?.value;
+    const edge = props?.payload?._rangeEdge;
+    if (typical && typeof val === "number" && (edge === "low" || edge === "high")) {
+      return <CappedDailyPoint cx={Number(props.cx)} cy={Number(props.cy)} value={val} edge={edge} color={val < 0 ? "#ef4444" : effectiveColor} index={Number(props.index)} count={chartData.length} />;
+    }
     if (typeof val === "number" && val < 0) {
       const x = Number(props?.cx), y = Number(props?.cy);
       if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
@@ -215,9 +236,10 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
   return (
     <SectionPerformance name={`daily-series:${valueLabel}`}>
     <div
-      className="w-full overflow-visible outline-none"
+      className="relative w-full overflow-visible outline-none"
       {...(ghost ? {} : containerProps)}
     >
+      {rangeStorageKey && !isCumulative && !ghost ? <DailyRangeToggle typical={typical} setRange={setRange} /> : null}
       <ResponsiveContainer width="100%" height={heightPx} minWidth={0} style={{ overflow: "visible" }}>
         <ChartComponent
           data={chartData}
@@ -273,6 +295,7 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
             axisLine={false}
             tickFormatter={ghost ? () => "" : (value) => fmtYTick(Number(value ?? 0))}
             domain={yAxisDomain}
+            allowDataOverflow={typical}
           />
           {!ghost ? (
             <Tooltip
@@ -282,7 +305,8 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
                 <DailySeriesTooltip
                   active={active}
                   label={label as string}
-                  payload={payload as TooltipPayload[]}
+                  payload={payload?.map((entry) => entry.dataKey === "_rangeValue"
+                    ? { ...entry, dataKey: "value", value: entry.payload?.value } : entry) as TooltipPayload[]}
                   valueLabel={valueLabel}
                   fmtValue={fmtValue}
                   isDark={themeColors.isDark}
@@ -352,8 +376,9 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
             />
           )}
           <Area
-            type="monotone"
-            dataKey="value"
+            type={typical ? "linear" : "monotone"}
+            dataKey={typical ? "_rangeValue" : "value"}
+            name="value"
             stroke={strokeZeroOffset ? `url(#${gid}-stroke)` : effectiveColor}
             strokeWidth={ghost ? 1.6 : 2}
             fillOpacity={1}

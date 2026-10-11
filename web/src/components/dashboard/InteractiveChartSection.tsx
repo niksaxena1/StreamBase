@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Activity } from "lucide-react";
 import { StatCard } from "@/components/StatCard";
 import { SpotlightCard } from "@/components/ui/SpotlightCard";
@@ -53,6 +53,8 @@ type InteractiveChartSectionProps = {
    * Merged into the download rows; the rendered chart is unaffected.
    */
   csvExtraByDate?: Record<string, Record<string, number | null>>;
+  onPrimaryContentReady?: () => void;
+  dailyRangeStorageKey?: string;
 };
 
 type ChartType = "daily" | "total";
@@ -76,7 +78,10 @@ export function InteractiveChartSection({
   selectedChart: selectedChartProp,
   onSelectChart,
   csvExtraByDate,
+  onPrimaryContentReady,
+  dailyRangeStorageKey,
 }: InteractiveChartSectionProps) {
+  useEffect(() => { onPrimaryContentReady?.(); }, [onPrimaryContentReady]);
   const [selectedChartState, setSelectedChartState] =
     useState<ChartType>("daily");
   const selectedChart = selectedChartProp ?? selectedChartState;
@@ -192,6 +197,7 @@ export function InteractiveChartSection({
 
         <div className="mt-2">
           <DailyStreamsChart
+            rangeStorageKey={chartMetric === "streams" && selectedChart === "daily" ? dailyRangeStorageKey : undefined}
             data={currentChart.data}
             valueLabel={currentChart.valueLabel}
             valueFormat={valueFormat}
