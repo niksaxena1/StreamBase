@@ -359,7 +359,7 @@ export function DailyStreamsWithMAChart({
             />
           )}
           <Area
-            type={typical ? "linear" : "monotone"}
+            type="monotone"
             dataKey={typical ? "_rangeValue" : "daily"}
             name="daily"
             stroke={strokeZeroOffset ? `url(#${gid}-stroke)` : effectiveDailyColor}
@@ -371,7 +371,7 @@ export function DailyStreamsWithMAChart({
           />
           {hasMa7Data && (
             <Line
-              type={typical ? "linear" : "monotone"}
+              type="monotone"
               dataKey={typical ? "_rangeMa7" : "ma7"}
               stroke={effectiveMaColor}
               strokeWidth={3}
