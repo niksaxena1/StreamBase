@@ -59,7 +59,7 @@ type QuotaState = {
 };
 
 const memoryUsage = globalThis as typeof globalThis & {
-  __spotibaseStreamLookupUsage?: Record<string, Partial<Record<StreamLookupProvider, number>>>;
+  __streambaseStreamLookupUsage?: Record<string, Partial<Record<StreamLookupProvider, number>>>;
 };
 
 export async function GET(request: NextRequest) {
@@ -520,7 +520,7 @@ async function loadQuotaState(): Promise<QuotaState> {
     }
   } catch (e) {
     configured = !isSchemaMissing(e);
-    const fallback = memoryUsage.__spotibaseStreamLookupUsage?.[date] ?? {};
+    const fallback = memoryUsage.__streambaseStreamLookupUsage?.[date] ?? {};
     used.music_analytics = Number(fallback.music_analytics ?? 0);
     used.checkleakedcc = Number(fallback.checkleakedcc ?? 0);
     used.beat_analytics = Number(fallback.beat_analytics ?? 0);
@@ -558,10 +558,10 @@ async function recordProviderCall(provider: StreamLookupProvider) {
     );
     if (error) throw error;
   } catch {
-    memoryUsage.__spotibaseStreamLookupUsage ??= {};
-    memoryUsage.__spotibaseStreamLookupUsage[date] ??= {};
-    memoryUsage.__spotibaseStreamLookupUsage[date][provider] =
-      Number(memoryUsage.__spotibaseStreamLookupUsage[date][provider] ?? 0) + 1;
+    memoryUsage.__streambaseStreamLookupUsage ??= {};
+    memoryUsage.__streambaseStreamLookupUsage[date] ??= {};
+    memoryUsage.__streambaseStreamLookupUsage[date][provider] =
+      Number(memoryUsage.__streambaseStreamLookupUsage[date][provider] ?? 0) + 1;
   }
 }
 

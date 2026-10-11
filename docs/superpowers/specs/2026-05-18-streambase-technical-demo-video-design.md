@@ -1,10 +1,10 @@
-# SpotiBase Technical Demo Video Design
+# StreamBase Technical Demo Video Design
 
 Date: 2026-05-18
 
 ## Goal
 Create a silent, 60-second autoplay demo video for technical evaluators that demonstrates:
-1. what SpotiBase does,
+1. what StreamBase does,
 2. how the user-facing product behaves,
 3. how the backend and data model are structured,
 4. and how multiple tools can be combined into a polished production workflow.
@@ -22,7 +22,7 @@ Tone: precise, modern, confident, not salesy.
 Format: 16:9, 1920x1080, 60 seconds, silent autoplay with music, captions, and motion only.
 
 ## Core message
-SpotiBase turns daily Spotify-related exports into a durable analytics system: live product surfaces on top, disciplined data pipelines and schema isolation underneath.
+StreamBase turns daily Spotify-related exports into a durable analytics system: live product surfaces on top, disciplined data pipelines and schema isolation underneath.
 
 ## Narrative structure
 ### 0-08s — Problem and promise
@@ -54,7 +54,7 @@ SpotiBase turns daily Spotify-related exports into a durable analytics system: l
   - "historical analytics"
   - "operational visibility"
   - "isolated competitor mode"
-- End card: "SpotiBase — analytics with memory"
+- End card: "StreamBase — analytics with memory"
 
 ## Visual system
 - Use the real product UI as the dominant source material.

@@ -21,7 +21,7 @@ deletes or removes folder entries.
    command that loads these from `web/.env.local` is:
 
    ```powershell
-   powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\SpotiBase-wt\artist-tools\scripts\windows\artist_tools_fallback.ps1" -Authorize
+   powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\StreamBase\scripts\windows\artist_tools_fallback.ps1" -Authorize
    ```
 
 3. Sign into artist.tools and approve in the browser within five minutes. Discovery,

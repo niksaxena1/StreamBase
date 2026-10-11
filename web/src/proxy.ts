@@ -33,7 +33,7 @@ export async function proxy(request: NextRequest) {
   }
 
   const requestHeaders = new Headers(request.headers);
-  requestHeaders.set("x-spotibase-pathname", pathname);
+  requestHeaders.set("x-streambase-pathname", pathname);
 
   return NextResponse.next({
     request: {

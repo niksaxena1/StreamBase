@@ -30,7 +30,7 @@
 **Files:**
 - No code changes expected unless workflow defects surface
 
-- [ ] Apply the seed migration to the live SpotiBase database
+- [ ] Apply the seed migration to the live StreamBase database
 - [ ] Trigger competitor playlist refresh
 - [ ] Trigger competitor dashboard sync
 - [ ] Trigger competitor export/ingest

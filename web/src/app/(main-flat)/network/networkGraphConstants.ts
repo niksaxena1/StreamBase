@@ -14,7 +14,7 @@ export function readNetworkShowGridFromStorage(): boolean {
 }
 
 /** Production site for Excel export links (catalog URLs, Summary page URL) — not the dev server origin. */
-export const SPOTIBASE_PUBLIC_ORIGIN = "https://spotibase.vercel.app";
+export const STREAMBASE_PUBLIC_ORIGIN = "https://streambase1.vercel.app";
 
 /** Max selected artist ids serialized in URL (`sel`). */
 export const MAX_SEL_URL = 80;
