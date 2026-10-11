@@ -112,10 +112,10 @@ If you applied the migration that partitions `track_daily_streams` by month:
   Home now sends the core dashboard first and loads the heavy scatter/filter/milestone source points through `/api/home/scatter`.
 
 - **Catalog summaries**
-  `supabase/migrations/20260526183038_add_home_catalog_playlist_fast_paths.sql` adds `public.artist_daily_stats` and `competitor.artist_daily_stats`. The app calls `catalog_artist_series_fast`; if the migration is missing it falls back to the existing `catalog_artist_series` RPC. If the summary table is empty, the SQL function falls back to raw `track_daily_streams`.
+  `supabase/migrations/20260526183038_add_home_catalog_playlist_fast_paths.sql` added `public.artist_daily_stats` and `competitor.artist_daily_stats`; `supabase/migrations/20261011141439_compute_artist_series_on_demand.sql` retires them. `catalog_artist_series_fast` now computes the artist series on demand from `track_daily_streams` + overrides and never reads the summary tables (the tables can be dropped by the owner; the DROP statements are commented out in that migration).
 
 - **Refresh after ingestion**
-  Own-catalog and competitor ingestion scripts now refresh `artist_daily_stats` automatically for the ingested `run_date`. If you backfill or repair historical data outside those scripts, run `select public.refresh_artist_daily_stats(<start_date>, <end_date>);` or `select competitor.refresh_artist_daily_stats(<start_date>, <end_date>);` for the affected window. Calling either function with both dates omitted performs a full rebuild and is heavier.
+  Own-catalog and competitor ingestion scripts still call `refresh_artist_daily_stats`, but it is now a no-op that returns 0 (artist series are computed on demand), so no manual refresh is needed after backfills or repairs.
 
 - **Playlists summary**
   The same migration adds `public.playlist_dashboard_summary`, combining latest snapshot context, distinct artist count, and capped removed-track count. The page falls back to the older individual RPCs if the summary function is not present.

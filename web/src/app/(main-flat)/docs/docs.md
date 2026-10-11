@@ -312,7 +312,7 @@ So the pattern in `(main-flat)` pages is:
 ### Raw analytics tables vs public integration views
 
 Raw own-catalog analytics tables are not a public API surface. Tables such as
-`track_daily_streams`, its monthly partitions, `artist_daily_stats`,
+`track_daily_streams`, its monthly partitions,
 `track_daily_stream_overrides`, `isrc_aliases`, and health exclusion tables have
 RLS enabled and no direct `anon` access.
 
@@ -838,7 +838,7 @@ Key RPC sets:
   - `supabase/migrations/20260209020325_add_health_distro_overlap_rpc.sql` (`health_distro_overlap_tracks`)
   - `supabase/migrations/20260130225816_add_health_unplayable_candidates_rpc.sql` (`health_unplayable_candidates`)
 - Search hover stats: `supabase/migrations/20260130200846_add_search_stats_aggregate_rpcs.sql`
-- Stream override cascade: `spotibase_recompute_playlist_daily_stats_cascade`, `spotibase_remove_stream_override`; manual overrides feed `track_daily_streams_effective_public`, `playlist_daily_stats`, and `artist_daily_stats` (see `supabase/migrations/20260207214055_fix_data_integrity_constraints.sql` and `supabase/migrations/20260709132451_adopt_effective_artist_daily_stats.sql`)
+- Stream override cascade: `spotibase_recompute_playlist_daily_stats_cascade`, `spotibase_remove_stream_override`; manual overrides feed `track_daily_streams_effective_public`, and `playlist_daily_stats`; the Catalog artist series is computed on demand from the effective stream value (see `supabase/migrations/20260207214055_fix_data_integrity_constraints.sql` and `supabase/migrations/20261011141439_compute_artist_series_on_demand.sql`)
 - Playlists batch counts: `playlists_latest_track_counts`
 - Artist collaboration graph: `supabase/migrations/20260209124432_add_artist_collaboration_graph_rpc.sql` (`artist_collaboration_graph`)
 - System stats (Docs): `supabase/migrations/20260130225822_add_spotibase_system_stats_rpc.sql`
