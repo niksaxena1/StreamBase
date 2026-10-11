@@ -12,6 +12,8 @@ import {
   YAxis,
 } from "recharts";
 import { useId } from "react";
+import { clipDailySeries, typicalDailyDomain } from "./dailyRange";
+import { CappedDailyPoint } from "./DailyRangeControls";
 
 import { formatCompactMoney, formatInt, formatUsd } from "@/lib/format";
 import {
@@ -65,6 +67,7 @@ export function DailyStreamsWithMAChart({
   maColor,
   heightPx = 220,
   annotations,
+  typicalRange = false,
 }: {
   data: DataPoint[];
   valueLabel?: string;
@@ -74,8 +77,11 @@ export function DailyStreamsWithMAChart({
   maColor?: string;
   heightPx?: number;
   annotations?: ManualOverrideAnnotation[];
+  /** Opt in only for daily streams on Home, Playlists, and Catalog. */
+  typicalRange?: boolean;
 }) {
   const gid = useId();
+  const typical = typicalRange;
   const themeColors = useThemeColors();
   const { containerProps, setTooltipValues, copyModal } = useChartCopyToClipboard({ valueLabel });
   const { weekHighlightDayUtc } = useWeekHighlight();
@@ -105,7 +111,7 @@ export function DailyStreamsWithMAChart({
   // Compute weekend dip % when enabled
   const weekendDipMap = enableWeekendDip ? computeWeekendDipMap(filteredData) : null;
 
-  const chartData = [...filteredData].reverse().map((d) => ({
+  const rawChartData = [...filteredData].reverse().map((d) => ({
     ...d,
     _overrideItems: (annItemsByDate.get(d.date) ?? null)?.map((a) => ({
       note: a.note,
@@ -114,6 +120,19 @@ export function DailyStreamsWithMAChart({
     })) ?? null,
     _weekendDipPct: weekendDipMap?.get(d.date) ?? null,
   }));
+  const hasMa7Data = rawChartData.some((d) => d.ma7 != null && !isNaN(Number(d.ma7)));
+  const typicalDomain = typical ? typicalDailyDomain(rawChartData.map((d) => d.daily)) : undefined;
+  const dailyClips = typicalDomain ? clipDailySeries(rawChartData.map((d) => d.daily), typicalDomain) : null;
+  const maClips = typicalDomain ? clipDailySeries(rawChartData.map((d) => d.ma7), typicalDomain) : null;
+  const chartData = rawChartData.map((d, index) => ({
+    ...d,
+    _rangeValue: dailyClips ? dailyClips[index].value : d.daily,
+    _rangeEdge: dailyClips?.[index].clipped ?? null,
+    _rangeLabel: dailyClips?.[index].showLabel ?? false,
+    _rangeMa7: maClips ? maClips[index].value : d.ma7,
+    _rangeMaEdge: maClips?.[index].clipped ?? null,
+    _rangeMaLabel: maClips?.[index].showLabel ?? false,
+  }));
   const chartDates = new Set(chartData.map((d) => d.date));
   const annotationDates = [...annItemsByDate.keys()].filter((d) => chartDates.has(d));
   const highlightDates = chartData.filter((d) => isHighlightDayDateUtc(d.date, weekHighlightDayUtc)).map((d) => d.date);
@@ -121,7 +140,7 @@ export function DailyStreamsWithMAChart({
     ? chartData[chartData.length - 1].date
     : null;
   
-  const hasMa7Data = chartData.some((d) => d.ma7 != null && !isNaN(Number(d.ma7)));
+
 
   const fmtValue = (n: number) =>
     valueFormat === "usd" ? formatUsd(n) : formatInt(n);
@@ -140,15 +159,15 @@ export function DailyStreamsWithMAChart({
     (x) => typeof x === "number" && Number.isFinite(x) && (x as number) < 0,
   );
 
-  const yAxisDomain = (zoomDailyYAxis || hasNegatives)
+  const yAxisDomain = typicalDomain ?? ((zoomDailyYAxis || hasNegatives)
     ? computePaddedDomain(allDailyValues, { clampMinToZero: false, padRatio: 0.10, minAbsPad: 1 })
-    : undefined;
+    : undefined);
 
   // Gradient split offsets for stroke/fill when negatives exist.
   // Stroke BB spans actual data extremes; fill BB spans from spline-max to chart baseline.
   // The fill uses yAxisDomain bounds (which include padding above any spline overshoot)
   // so the red-to-green transition lands at or just below zero, never above.
-  const finiteValues = allDailyValues.filter((x): x is number => typeof x === "number" && Number.isFinite(x));
+  const finiteValues = (typical ? [...chartData.map((d) => d._rangeValue), ...chartData.map((d) => d._rangeMa7)] : allDailyValues).filter((x): x is number => typeof x === "number" && Number.isFinite(x));
   const dataMax = finiteValues.length ? Math.max(...finiteValues) : 0;
   const dataMin = finiteValues.length ? Math.min(...finiteValues) : 0;
   const strokeZeroOffset = hasNegatives && dataMax > 0 && dataMin < 0
@@ -169,6 +188,10 @@ export function DailyStreamsWithMAChart({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const dot = (props: any) => {
     const val = (props?.payload as Record<string, unknown>)?.daily;
+    const edge = props?.payload?._rangeEdge;
+    if (typical && typeof val === "number" && (edge === "low" || edge === "high")) {
+      return <CappedDailyPoint cx={Number(props.cx)} cy={Number(props.cy)} formattedValue={fmtYTick(val)} showLabel={Boolean(props.payload._rangeLabel)} edge={edge} color={val < 0 ? "#ef4444" : effectiveDailyColor} index={Number(props.index)} count={chartData.length} />;
+    }
     if (typeof val === "number" && val < 0) {
       const x = Number(props?.cx), y = Number(props?.cy);
       if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
@@ -179,12 +202,23 @@ export function DailyStreamsWithMAChart({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const activeDot = (props: any) => {
     const val = (props?.payload as Record<string, unknown>)?.daily;
+    const edge = props?.payload?._rangeEdge;
+    if (typical && typeof val === "number" && (edge === "low" || edge === "high")) {
+      return <CappedDailyPoint cx={Number(props.cx)} cy={Number(props.cy)} formattedValue={fmtYTick(val)} showLabel={Boolean(props.payload._rangeLabel)} edge={edge} color={val < 0 ? "#ef4444" : effectiveDailyColor} index={Number(props.index)} count={chartData.length} />;
+    }
     if (typeof val === "number" && val < 0) {
       const x = Number(props?.cx), y = Number(props?.cy);
       if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
       return <circle cx={x} cy={y} r={4} fill="#ef4444" stroke="var(--sb-bg)" strokeWidth={1.5} />;
     }
     return baseActiveDot(props);
+  };
+
+  const maDot = (props: { cx?: number; cy?: number; index?: number; payload?: { ma7?: number | null; _rangeMaEdge?: "low" | "high" | null; _rangeMaLabel?: boolean } }) => {
+    const val = props.payload?.ma7;
+    const edge = props.payload?._rangeMaEdge;
+    if (!typical || typeof val !== "number" || !edge) return <g />;
+    return <CappedDailyPoint cx={Number(props.cx)} cy={Number(props.cy)} formattedValue={fmtYTick(val)} showLabel={Boolean(props.payload?._rangeMaLabel)} edge={edge} color={effectiveMaColor} index={Number(props.index)} count={chartData.length} />;
   };
 
   return (
@@ -246,6 +280,7 @@ export function DailyStreamsWithMAChart({
             axisLine={false}
             tickFormatter={(value) => fmtYTick(Number(value ?? 0))}
             domain={yAxisDomain}
+            allowDataOverflow={typical}
           />
           <Tooltip
             allowEscapeViewBox={{ x: true, y: true }}
@@ -254,7 +289,9 @@ export function DailyStreamsWithMAChart({
               <DailySeriesTooltip
                 active={active}
                 label={label as string}
-                payload={payload as TooltipPayload[]}
+                payload={payload?.map((entry) => entry.dataKey === "_rangeValue"
+                    ? { ...entry, dataKey: "daily", value: entry.payload?.daily }
+                    : entry.dataKey === "_rangeMa7" ? { ...entry, dataKey: "ma7", value: entry.payload?.ma7 } : entry) as TooltipPayload[]}
                 valueLabel={valueLabel}
                 fmtValue={fmtValue}
                 isDark={themeColors.isDark}
@@ -322,8 +359,9 @@ export function DailyStreamsWithMAChart({
             />
           )}
           <Area
-            type="monotone"
-            dataKey="daily"
+            type={typical ? "linear" : "monotone"}
+            dataKey={typical ? "_rangeValue" : "daily"}
+            name="daily"
             stroke={strokeZeroOffset ? `url(#${gid}-stroke)` : effectiveDailyColor}
             strokeWidth={2}
             fillOpacity={1}
@@ -333,11 +371,12 @@ export function DailyStreamsWithMAChart({
           />
           {hasMa7Data && (
             <Line
-              type="monotone"
-              dataKey="ma7"
+              type={typical ? "linear" : "monotone"}
+              dataKey={typical ? "_rangeMa7" : "ma7"}
               stroke={effectiveMaColor}
               strokeWidth={3}
-              dot={false}
+              dot={typical ? maDot : false}
+              activeDot={typical ? maDot : undefined}
               isAnimationActive={false}
               strokeDasharray="6 4"
               connectNulls={false}

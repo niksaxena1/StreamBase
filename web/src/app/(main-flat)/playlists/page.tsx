@@ -8,6 +8,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { Suspense } from "react";
 import { List, ExternalLink, Music } from "lucide-react";
 import { redirect } from "next/navigation";
+import { LatestDataDate } from "@/components/ui/LatestDataDate";
 
 import { cachedQuery } from "@/lib/supabase/cache";
 import { formatDateISO } from "@/lib/format";
@@ -320,7 +321,7 @@ async function PlaylistsPageContent({
         <DocumentTitle title={title} />
         <PageHeader
           title={title}
-          subtitle={latestDate ? <>Latest data date: <span className="font-mono">{formatDateISO(dataDateFromRunDate(latestDate))}</span></> : "No stats found for this playlist yet."}
+          subtitle={latestDate ? <LatestDataDate date={formatDateISO(dataDateFromRunDate(latestDate))} datasetMode="competitor" /> : "No stats found for this playlist yet."}
           icon={
             playlistImageUrl ? (
               <PreviewableArtwork
@@ -799,10 +800,7 @@ async function PlaylistsPageContent({
         }
         subtitle={
           latestDate ? (
-            <>
-              Latest data date:{" "}
-              <span className="font-mono">{formatDateISO(dataDateFromRunDate(latestDate))}</span>
-            </>
+            <LatestDataDate date={formatDateISO(dataDateFromRunDate(latestDate))} datasetMode="own" />
           ) : (
             "No stats found for this playlist yet."
           )
