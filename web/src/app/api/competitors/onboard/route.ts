@@ -91,6 +91,11 @@ async function onboard(
   // generic Supabase cache tag used by own-catalog analytics.
   revalidatePath("/competitors");
   revalidateTag(cacheTagForKey("competitor-shell-labels-v2"), { expire: 0 });
+  // Side-rail navigation defaults (navigationDefaults.server.ts) cache labels and
+  // per-label playlists; expire them so the new label/playlist is linked at once.
+  revalidateTag(cacheTagForKey("navigation-competitor-labels-v1"), { expire: 0 });
+  revalidateTag(cacheTagForKey(`navigation-competitor-playlists-v1-${data.label_key}`), { expire: 0 });
+  revalidateTag(cacheTagForKey("navigation-competitor-playlists-v1-none"), { expire: 0 });
 
   return apiJsonOk(data, { status: data.already_exists ? 200 : 201 });
 }

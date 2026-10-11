@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { fetchApiJson } from "@/lib/api";
 import { pathAfterDatasetModeSwitch } from "@/lib/datasetModeNavigation";
 import { invalidateUserSettingsBundle } from "@/lib/userSettingsBundleFetch";
-import { settingsRequireUniverseRefresh, UNIVERSE_CHANNEL, UNIVERSE_STORAGE_KEY, type Universe } from "./universeSyncEvents";
+import { isForeignUniverseMessage, settingsRequireUniverseRefresh, UNIVERSE_CHANNEL, UNIVERSE_STORAGE_KEY, type Universe } from "./universeSyncEvents";
 
 export function UniverseSync(props: Universe) {
   const router = useRouter();
@@ -34,7 +34,7 @@ export function UniverseSync(props: Universe) {
     try {
       if (typeof BroadcastChannel !== "undefined") {
         channel = new BroadcastChannel(UNIVERSE_CHANNEL);
-        channel.onmessage = (event) => { if (event.data?.type === UNIVERSE_CHANNEL) refresh(); };
+        channel.onmessage = (event) => { if (isForeignUniverseMessage(event.data)) refresh(); };
       }
     } catch { /* Storage events still work when channels are blocked. */ }
     window.addEventListener("storage", storage);

@@ -3,6 +3,13 @@ import type { DatasetMode } from "@/lib/datasetMode";
 
 export const UNIVERSE_CHANNEL = "sb:universe-change";
 export const UNIVERSE_STORAGE_KEY = "sb:universe-change";
+/** Identifies this tab so it ignores its own broadcasts (a fresh BroadcastChannel also delivers to this tab's listener). */
+export const UNIVERSE_TAB_ID = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}:${Math.random()}`;
+
+export function isForeignUniverseMessage(data: unknown): boolean {
+  const msg = data as { type?: unknown; source?: unknown } | null;
+  return !!msg && msg.type === UNIVERSE_CHANNEL && msg.source !== UNIVERSE_TAB_ID;
+}
 export type Universe = { datasetMode: DatasetMode; competitorLabelKey?: string | null };
 
 export function sameUniverse(a: Universe, b: Universe): boolean {
@@ -26,7 +33,7 @@ export function broadcastUniverseChange() {
   try {
     if (typeof BroadcastChannel !== "undefined") {
       const channel = new BroadcastChannel(UNIVERSE_CHANNEL);
-      channel.postMessage({ type: UNIVERSE_CHANNEL });
+      channel.postMessage({ type: UNIVERSE_CHANNEL, source: UNIVERSE_TAB_ID });
       channel.close();
       return;
     }

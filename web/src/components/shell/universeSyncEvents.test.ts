@@ -29,7 +29,7 @@ describe("universe synchronization", () => {
     vi.stubGlobal("window", {});
     vi.stubGlobal("BroadcastChannel", class { constructor(name: string) { expect(name).toBe(UNIVERSE_CHANNEL); } postMessage = postMessage; close = close; });
     broadcastUniverseChange();
-    expect(postMessage).toHaveBeenCalledExactlyOnceWith({ type: UNIVERSE_CHANNEL });
+    expect(postMessage).toHaveBeenCalledExactlyOnceWith({ type: UNIVERSE_CHANNEL, source: expect.any(String) });
     expect(close).toHaveBeenCalledOnce();
   });
   it("falls back to storage events when channels are unavailable or blocked", () => {
@@ -43,5 +43,14 @@ describe("universe synchronization", () => {
     expect(setItem).toHaveBeenCalledTimes(2);
     expect(setItem.mock.calls.every(([key]) => key === UNIVERSE_STORAGE_KEY)).toBe(true);
     expect(setItem.mock.calls[0][1]).not.toBe(setItem.mock.calls[1][1]);
+  });
+});
+
+describe("isForeignUniverseMessage", () => {
+  it("ignores this tab's own broadcasts and accepts other tabs'", async () => {
+    const m = await import("./universeSyncEvents");
+    expect(m.isForeignUniverseMessage({ type: m.UNIVERSE_CHANNEL, source: m.UNIVERSE_TAB_ID })).toBe(false);
+    expect(m.isForeignUniverseMessage({ type: m.UNIVERSE_CHANNEL, source: "other-tab" })).toBe(true);
+    expect(m.isForeignUniverseMessage({ type: "something-else", source: "other-tab" })).toBe(false);
   });
 });
