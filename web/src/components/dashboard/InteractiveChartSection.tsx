@@ -5,6 +5,7 @@ import { Activity } from "lucide-react";
 import { StatCard } from "@/components/StatCard";
 import { SpotlightCard } from "@/components/ui/SpotlightCard";
 import { DailyStreamsChart } from "@/components/charts/DailyStreamsChart";
+import { DailyRangeToggle, useDailyRange } from "@/components/charts/DailyRangeControls";
 import { AnimatedCounter } from "@/components/ui/AnimatedCounter";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
 import { slugifyForFilename, todayIsoDate } from "@/lib/csv";
@@ -91,6 +92,7 @@ export function InteractiveChartSection({
   // Use theme-aware chart color if none specified
   const themeColors = useThemeColors();
   const chartMetric = inferChartMetricFromLabels(valueFormat, dailyValueLabel);
+  const dailyRange = useDailyRange(dailyRangeStorageKey);
   const effectiveColor =
     color ?? (statAccentColor && chartMetric === "streams" ? statAccentColor : getChartColor(chartMetric, themeColors));
   const statRingColor = statAccentColor ?? accentColor;
@@ -179,25 +181,28 @@ export function InteractiveChartSection({
 
       {/* Chart */}
       <SpotlightCard className="relative p-3 overflow-visible">
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <Activity className="h-3.5 w-3.5 opacity-60" />
             <div className="text-xs font-medium uppercase tracking-wide opacity-70">
               {currentChart.title}
             </div>
           </div>
-          <ChartCsvDownloadButton
-            rows={(currentChart.data as Array<Record<string, unknown>>).map((r) =>
-              csvExtraByDate ? { ...r, ...(csvExtraByDate[String(r.date)] ?? {}) } : r,
-            )}
-            filename={`home-${slugifyForFilename(currentChart.title)}-${rangeDays}d-${todayIsoDate()}.csv`}
-            title="Download CSV"
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            {dailyRangeStorageKey && chartMetric === "streams" && selectedChart === "daily" ? <DailyRangeToggle {...dailyRange} /> : null}
+            <ChartCsvDownloadButton
+              rows={(currentChart.data as Array<Record<string, unknown>>).map((r) =>
+                csvExtraByDate ? { ...r, ...(csvExtraByDate[String(r.date)] ?? {}) } : r,
+              )}
+              filename={`home-${slugifyForFilename(currentChart.title)}-${rangeDays}d-${todayIsoDate()}.csv`}
+              title="Download CSV"
+            />
+          </div>
         </div>
 
         <div className="mt-2">
           <DailyStreamsChart
-            rangeStorageKey={chartMetric === "streams" && selectedChart === "daily" ? dailyRangeStorageKey : undefined}
+            typicalRange={chartMetric === "streams" && selectedChart === "daily" && dailyRange.typical}
             data={currentChart.data}
             valueLabel={currentChart.valueLabel}
             valueFormat={valueFormat}

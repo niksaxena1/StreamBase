@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { formatClippedDailyValue } from "./dailyRange";
 
 type Range = "full" | "typical";
 
@@ -26,7 +25,7 @@ export function DailyRangeToggle({ typical, setRange }: { typical: boolean; setR
     <div
       role="group"
       aria-label="Daily streams chart range"
-      className="absolute right-0 top-0 z-10 flex rounded-md border text-[10px]"
+      className="flex shrink-0 rounded-md border text-xs"
       style={{ borderColor: "var(--sb-border)", background: "var(--sb-surface)" }}
       onMouseDown={(event) => event.stopPropagation()}
       onPointerDown={(event) => event.stopPropagation()}
@@ -38,7 +37,7 @@ export function DailyRangeToggle({ typical, setRange }: { typical: boolean; setR
           type="button"
           aria-pressed={typical === (range === "typical")}
           onClick={() => setRange(range)}
-          className="rounded-md px-1.5 py-0.5 focus-visible:outline focus-visible:outline-1"
+          className="min-h-8 rounded-md px-2 py-1 focus-visible:outline focus-visible:outline-1"
           style={{ color: "var(--sb-text)", opacity: typical === (range === "typical") ? 1 : 0.55 }}
         >
           {range === "full" ? "Full range" : "Typical range"}
@@ -48,21 +47,21 @@ export function DailyRangeToggle({ typical, setRange }: { typical: boolean; setR
   );
 }
 
-export function CappedDailyPoint({ cx, cy, value, edge, color, index, count }: {
-  cx: number; cy: number; value: number; edge: "low" | "high"; color: string; index: number; count: number;
+export function CappedDailyPoint({ cx, cy, formattedValue, edge, color, index, count, showLabel }: {
+  cx: number; cy: number; formattedValue: string; edge: "low" | "high"; color: string; index: number; count: number; showLabel: boolean;
 }) {
   if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
   return (
-    <g role="img" aria-label={`Clipped daily streams: ${value}`}>
-      <title>{`Actual daily streams: ${value}`}</title>
+    <g role="img" aria-label={`Clipped value: ${formattedValue}`}>
+      <title>{`Actual value: ${formattedValue}`}</title>
       <path d={`M${cx - 4},${cy}H${cx + 4}M${cx},${cy}v${edge === "high" ? 5 : -5}`} stroke={color} strokeWidth={2} />
-      <text
+      {showLabel ? <text
         x={cx} y={cy + (edge === "high" ? 14 : -9)}
         textAnchor={index === 0 ? "start" : index === count - 1 ? "end" : "middle"}
         fontSize={9} fill={color} stroke="var(--sb-surface)" strokeWidth={3} paintOrder="stroke"
       >
-        {formatClippedDailyValue(value)}
-      </text>
+        {formattedValue}
+      </text> : null}
     </g>
   );
 }

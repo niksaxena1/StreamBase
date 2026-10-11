@@ -121,6 +121,8 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
     () => !props.trackScatterDeferred || props.trackScatterPoints.length > 0 ? scatterRequestKey : null,
   );
   const scatterRequested = scatterRequestedKey === scatterRequestKey;
+  const [scatterAttempt, setScatterAttempt] = useState(0);
+  const failedScatterRequestRef = useRef<string | null>(null);
   const [scatterState, setScatterState] = useState<{
     requestKey: string;
     points: TrackStreamsXYPoint[];
@@ -146,6 +148,10 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
 
   const requestScatterData = useCallback(() => {
     if (!props.trackScatterDeferred) return;
+    if (failedScatterRequestRef.current === scatterRequestKey) {
+      failedScatterRequestRef.current = null;
+      setScatterAttempt((attempt) => attempt + 1);
+    }
     setScatterRequestedKey(scatterRequestKey);
   }, [props.trackScatterDeferred, scatterRequestKey]);
 
@@ -172,6 +178,7 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
       .then((raw) => {
         if (cancelled) return;
         const payload = normalizeHomeScatterApiPayload(raw);
+        failedScatterRequestRef.current = null;
         setScatterState({
           requestKey: scatterRequestKey,
           points: payload.points,
@@ -182,6 +189,7 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
       })
       .catch((error) => {
         if (cancelled) return;
+        failedScatterRequestRef.current = scatterRequestKey;
         setScatterState({
           requestKey: scatterRequestKey,
           points: [],
@@ -196,6 +204,7 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
     props.trackScatterDataDate,
     props.trackScatterDeferred,
     scatterRequested,
+    scatterAttempt,
     scatterFetchUrl,
     scatterRequestKey,
     fetchSectionJson,
@@ -586,7 +595,6 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
       ) : null}
 
       <HomeConcentrationSection
-        fetchSectionJson={fetchSectionJson}
         trackScatterPoints={effectiveScatterState.points}
         trackScatterLoading={effectiveScatterState.loading}
         onRequestScatterData={requestScatterData}
@@ -659,10 +667,6 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
 
       {(props.datasetMode === "competitor" || (homeFiltersConfigured && homeFiltersEnabled)) ? (
         <HomeFilterBuilderSection
-          key={scatterRequestKey}
-          primaryContentReady={primaryContentReady}
-          fetchSectionJson={fetchSectionJson}
-          competitorLabelKey={props.competitorLabelKey}
           trackScatterPoints={effectiveScatterState.points}
           trackScatterDataDate={effectiveScatterState.dataDate}
           trackScatterLoading={effectiveScatterState.loading}

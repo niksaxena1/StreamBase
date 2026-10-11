@@ -1,5 +1,3 @@
-export type HomeSectionFetch = <T>(url: string) => Promise<T>;
-
 export function homePrefetchKey(mode: "own" | "competitor", label: string | null, revision: string, url: string) {
   return JSON.stringify([mode, label, revision, url]);
 }
@@ -11,7 +9,12 @@ export function createHomeRequestCache() {
     get<T>(key: string, load: () => Promise<T>): Promise<T> {
       const cached = requests.get(key);
       if (cached) return cached as Promise<T>;
-      const request = Promise.resolve().then(load);
+      const request = Promise.resolve().then(load).then((value) => {
+        if (value && typeof value === "object" && "errorMessage" in value && value.errorMessage != null) {
+          throw new Error(String(value.errorMessage));
+        }
+        return value;
+      });
       requests.set(key, request);
       // A failed warm-up must not prevent a later user-triggered retry.
       void request.catch(() => { if (requests.get(key) === request) requests.delete(key); });
@@ -63,7 +66,7 @@ export function scheduleVisibleHomePrefetch(tasks: Array<() => void>, initialDel
     isVisible: () => document.visibilityState === "visible",
     idle: (callback) => {
       if (typeof window.requestIdleCallback === "function") {
-        const id = window.requestIdleCallback(callback);
+        const id = window.requestIdleCallback(callback, { timeout: 3000 });
         return () => window.cancelIdleCallback(id);
       }
       const id = window.setTimeout(callback, 50);

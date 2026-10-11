@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { DailyStreamsChart } from "@/components/charts/DailyStreamsChart";
 import { DailyStreamsWithMAChart } from "@/components/charts/DailyStreamsWithMAChart";
+import { DailyRangeToggle, useDailyRange } from "@/components/charts/DailyRangeControls";
 import { SpotlightCard } from "@/components/ui/SpotlightCard";
 import { AnimatedCounter } from "@/components/ui/AnimatedCounter";
 import { Activity } from "lucide-react";
@@ -39,6 +40,7 @@ export function PlaylistMetricsClient(props: {
   datasetMode: "own" | "competitor";
 }) {
   const { streamPayoutPerStreamUsd } = usePayoutRate();
+  const dailyRange = useDailyRange("sb:chart-range:playlist-daily-streams");
 
   const cumulativeSeriesRaw = useMemo(() => props.history.map((r) => {
     if (props.metric === "revenue") {
@@ -146,7 +148,7 @@ export function PlaylistMetricsClient(props: {
         </SpotlightCard>
 
         <SpotlightCard className="lg:col-span-6 p-3 overflow-visible">
-          <div className="flex items-start justify-between gap-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
                 {dailyLabel}
@@ -155,15 +157,18 @@ export function PlaylistMetricsClient(props: {
                 <AnimatedCounter value={latestDaily} format={valueFormat} />
               </div>
             </div>
-            <ChartCsvDownloadButton
-              rows={dailyWithMaDesc as unknown as Array<Record<string, unknown>>}
-              filename={`playlist-${slugifyForFilename(dailyLabel)}-${props.rangeDays}d-${todayIsoDate()}.csv`}
-              title="Download CSV"
-            />
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {props.metric === "streams" ? <DailyRangeToggle {...dailyRange} /> : null}
+              <ChartCsvDownloadButton
+                rows={dailyWithMaDesc as unknown as Array<Record<string, unknown>>}
+                filename={`playlist-${slugifyForFilename(dailyLabel)}-${props.rangeDays}d-${todayIsoDate()}.csv`}
+                title="Download CSV"
+              />
+            </div>
           </div>
           <div className="mt-2 min-h-[200px]">
             <DailyStreamsWithMAChart
-              rangeStorageKey={props.metric === "streams" ? "sb:chart-range:playlist-daily-streams" : undefined}
+              typicalRange={props.metric === "streams" && dailyRange.typical}
               data={dailyWithMaDesc}
               valueLabel={dailyLabel}
               valueFormat={valueFormat}

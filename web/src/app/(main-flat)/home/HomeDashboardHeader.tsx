@@ -9,7 +9,6 @@ import { PlaylistReportDownload } from "@/components/dashboard/PlaylistReportDow
 import { competitorLabelThumbObjectPosition } from "@/lib/competitorLabelThumbFit";
 import { cx } from "@/lib/cx";
 import { formatInt } from "@/lib/format";
-import { LatestDataDate } from "@/components/ui/LatestDataDate";
 import { hrefWithPatchedSearchParams } from "@/lib/searchParams";
 import { useSharedGranularity } from "@/lib/useSharedGranularity";
 import { GranularitySelect, RangeSelect, handleGranularityWithRangeRestore, type Granularity } from "@/components/ui/GranularitySelect";
@@ -120,7 +119,6 @@ export function HomeDashboardHeader(props: HomeHeaderProps) {
             {props.datasetMode === "competitor"
               ? "Overview of the selected competitor across its tracked playlists."
               : "Overview of your catalog performance across all playlists."}
-            {props.latestDataDate ? <> · <LatestDataDate date={props.latestDataDate} datasetMode={props.datasetMode} /></> : null}
           </p>
         </div>
 

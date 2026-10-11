@@ -1,4 +1,5 @@
 "use client";
+import { DailyRangeToggle, useDailyRange } from "@/components/charts/DailyRangeControls";
 
 import type { ReactNode } from "react";
 import { Fragment } from "react";
@@ -102,6 +103,7 @@ export function CatalogPageClient(props: {
   const mode = props.mode ?? "own";
   const isCompetitorMode = mode === "competitor";
   const { metric } = useMetric();
+  const trackDailyRange = useDailyRange("sb:chart-range:catalog-track-daily-streams");
   const [isArtistExpanded, setIsArtistExpanded] = useState(true);
   const [configPending, setConfigPending] = useState(false);
   const router = useRouter();
@@ -975,7 +977,7 @@ export function CatalogPageClient(props: {
             </SpotlightCard>
 
             <SpotlightCard className="lg:col-span-6 p-3 overflow-visible">
-              <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
                     {trackChartData.dailyTitle}
@@ -988,15 +990,18 @@ export function CatalogPageClient(props: {
                     )}
                   </div>
                 </div>
-                <ChartCsvDownloadButton
-                  rows={trackChartData.dailySeries as unknown as Array<Record<string, unknown>>}
-                  filename={`catalog-track-${slugifyForFilename(trackChartData.dailyTitle)}-${props.rangeDays}d-${todayIsoDate()}.csv`}
-                  title="Download CSV"
-                />
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  {metric !== "revenue" ? <DailyRangeToggle {...trackDailyRange} /> : null}
+                  <ChartCsvDownloadButton
+                    rows={trackChartData.dailySeries as unknown as Array<Record<string, unknown>>}
+                    filename={`catalog-track-${slugifyForFilename(trackChartData.dailyTitle)}-${props.rangeDays}d-${todayIsoDate()}.csv`}
+                    title="Download CSV"
+                  />
+                </div>
               </div>
               <div className="mt-2 min-h-[180px]">
                 <DailyStreamsWithMAChart
-                  rangeStorageKey={metric !== "revenue" ? "sb:chart-range:catalog-track-daily-streams" : undefined}
+                  typicalRange={metric !== "revenue" && trackDailyRange.typical}
                   data={trackChartData.dailySeries}
                   valueLabel={trackChartData.dailyLabel}
                   valueFormat={trackChartData.valueFormat}

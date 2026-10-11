@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createHomeRequestCache, homePrefetchKey, scheduleHomePrefetch } from "./homeSectionPrefetch";
+import { createHomeRequestCache, homePrefetchKey, scheduleHomePrefetch, scheduleVisibleHomePrefetch } from "./homeSectionPrefetch";
 
 function environment(visibleInitially = true) {
   let visible = visibleInitially;
@@ -27,7 +27,7 @@ function environment(visibleInitially = true) {
   };
 }
 
-afterEach(() => vi.useRealTimers());
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe("scheduleHomePrefetch", () => {
   it("waits for the primary-content grace period, then idles and staggers", () => {
@@ -117,6 +117,19 @@ describe("scheduleHomePrefetch", () => {
 });
 
 describe("home request cache scoping", () => {
+  it("treats errorMessage responses as failures, evicts them, and retries", async () => {
+    const cache = createHomeRequestCache();
+    const load = vi.fn()
+      .mockResolvedValueOnce({ points: [], errorMessage: "RPC failed" })
+      .mockResolvedValueOnce({ points: ["ready"], errorMessage: null });
+    const warm = cache.get("scatter", load);
+    expect(cache.get("scatter", load)).toBe(warm);
+    await expect(warm).rejects.toThrow("RPC failed");
+    const ready = cache.get("scatter", load);
+    await expect(ready).resolves.toEqual({ points: ["ready"], errorMessage: null });
+    expect(cache.get("scatter", load)).toBe(ready);
+    expect(load).toHaveBeenCalledTimes(2);
+  });
   it("separates mode, label, snapshot and URL", async () => {
     const cache = createHomeRequestCache();
     const load = vi.fn(async () => "data");
@@ -138,5 +151,21 @@ describe("home request cache scoping", () => {
     await expect(cache.get("key", load)).rejects.toThrow("offline");
     await expect(cache.get("key", load)).resolves.toBe("retried");
     expect(load).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("browser idle prefetch", () => {
+  it("uses a 3000ms native idle timeout", () => {
+    vi.useFakeTimers();
+    const requestIdleCallback = vi.fn((callback: () => void) => setTimeout(callback, 10));
+    vi.stubGlobal("window", { requestIdleCallback, cancelIdleCallback: clearTimeout, setTimeout, clearTimeout });
+    vi.stubGlobal("document", { visibilityState: "visible", addEventListener: vi.fn(), removeEventListener: vi.fn() });
+    const task = vi.fn();
+    const cancel = scheduleVisibleHomePrefetch([task]);
+    vi.advanceTimersByTime(1800);
+    expect(requestIdleCallback).toHaveBeenCalledWith(expect.any(Function), { timeout: 3000 });
+    vi.advanceTimersByTime(10);
+    expect(task).toHaveBeenCalledOnce();
+    cancel();
   });
 });

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { type TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChart";
 import { FilterBuilder, type TrackDataPoint, type PlaylistDataPoint, type DateDataPoint } from "@/components/filters";
-import { scheduleVisibleHomePrefetch, type HomeSectionFetch } from "@/lib/home/homeSectionPrefetch";
+import { fetchApiJson } from "@/lib/api";
 import { addDaysISO, dataDateFromRunDate, SOT_DATA_LAG_DAYS } from "@/lib/sotDates";
 
 const TRACK_ARTIST_STATUS_OPTIONS = [
@@ -18,18 +18,12 @@ export function HomeFilterBuilderSection({
   trackScatterLoading = false,
   onRequestScatterData,
   datasetMode = "own",
-  competitorLabelKey,
-  primaryContentReady,
-  fetchSectionJson,
 }: {
   trackScatterPoints: TrackStreamsXYPoint[];
   trackScatterDataDate: string | null;
   trackScatterLoading?: boolean;
   onRequestScatterData?: () => void;
   datasetMode?: "own" | "competitor";
-  competitorLabelKey: string | null;
-  primaryContentReady: boolean;
-  fetchSectionJson: HomeSectionFetch;
 }) {
   const [filterDataRequested, setFilterDataRequested] = useState(false);
   const [playlistOptions, setPlaylistOptions] = useState<
@@ -44,12 +38,6 @@ export function HomeFilterBuilderSection({
   const [competitorOptions, setCompetitorOptions] = useState<
     Array<{ value: string; label: string; imageUrl?: string | null }>
   >([]);
-
-  useEffect(() => {
-    if (!primaryContentReady || filterDataRequested) return;
-    // After scatter warm-up; preserves FilterBuilder's stored open state.
-    return scheduleVisibleHomePrefetch([() => setFilterDataRequested(true)], 2050);
-  }, [primaryContentReady, filterDataRequested]);
 
   const handleFilterOpenChange = useCallback(
     (open: boolean) => {
@@ -69,7 +57,7 @@ export function HomeFilterBuilderSection({
         return;
       }
       try {
-        const obj = await fetchSectionJson<{ playlists?: unknown[] }>("/api/playlists/options");
+        const obj = await fetchApiJson<{ playlists?: unknown[] }>("/api/playlists/options");
         const rows = Array.isArray(obj.playlists) ? obj.playlists : [];
         if (!cancelled) {
           setPlaylistOptions(
@@ -91,7 +79,7 @@ export function HomeFilterBuilderSection({
     }
     void load();
     return () => { cancelled = true; };
-  }, [datasetMode, competitorLabelKey, filterDataRequested, fetchSectionJson]);
+  }, [datasetMode, filterDataRequested]);
 
   useEffect(() => {
     if (!filterDataRequested) return;
@@ -102,7 +90,7 @@ export function HomeFilterBuilderSection({
         return;
       }
       try {
-        const obj = await fetchSectionJson<{
+        const obj = await fetchApiJson<{
           labels?: Array<{ value: string; label: string; imageUrl?: string | null }>;
         }>("/api/competitors/labels/options");
         if (!cancelled) {
@@ -122,7 +110,7 @@ export function HomeFilterBuilderSection({
     return () => {
       cancelled = true;
     };
-  }, [datasetMode, competitorLabelKey, filterDataRequested, fetchSectionJson]);
+  }, [datasetMode, filterDataRequested]);
 
   useEffect(() => {
     if (!filterDataRequested) return;
@@ -133,7 +121,7 @@ export function HomeFilterBuilderSection({
         return;
       }
       try {
-        const obj = await fetchSectionJson<{ playlists?: unknown[] }>("/api/playlists/with-stats");
+        const obj = await fetchApiJson<{ playlists?: unknown[] }>("/api/playlists/with-stats");
         const rows = Array.isArray(obj.playlists) ? obj.playlists : [];
         if (!cancelled) {
           setPlaylistData(
@@ -159,7 +147,7 @@ export function HomeFilterBuilderSection({
     }
     void load();
     return () => { cancelled = true; };
-  }, [datasetMode, competitorLabelKey, filterDataRequested, fetchSectionJson]);
+  }, [datasetMode, filterDataRequested]);
 
   useEffect(() => {
     if (!filterDataRequested) return;
@@ -173,7 +161,7 @@ export function HomeFilterBuilderSection({
         const url = dateScopePlaylistKey && dateScopePlaylistKey !== "all_catalog"
           ? `/api/dates/catalog-stats?playlist_key=${encodeURIComponent(dateScopePlaylistKey)}`
           : "/api/dates/catalog-stats";
-        const obj = await fetchSectionJson<{ rows?: unknown[] }>(url);
+        const obj = await fetchApiJson<{ rows?: unknown[] }>(url);
         const rows = Array.isArray(obj.rows) ? obj.rows : [];
         if (!cancelled) {
           // First pass: basic fields (convert run dates to data dates)
@@ -235,7 +223,7 @@ export function HomeFilterBuilderSection({
     }
     void load();
     return () => { cancelled = true; };
-  }, [dateScopePlaylistKey, datasetMode, competitorLabelKey, filterDataRequested, fetchSectionJson]);
+  }, [dateScopePlaylistKey, datasetMode, filterDataRequested]);
 
   useEffect(() => {
     if (!filterDataRequested) return;
@@ -246,7 +234,7 @@ export function HomeFilterBuilderSection({
         return;
       }
       try {
-        const obj = await fetchSectionJson<{ rows?: unknown[] }>("/api/tracks/dates");
+        const obj = await fetchApiJson<{ rows?: unknown[] }>("/api/tracks/dates");
         const rows = Array.isArray(obj.rows) ? obj.rows : [];
         const map = new Map<string, { first_seen: string | null; last_seen: string | null }>();
         for (const r of rows) {
@@ -265,7 +253,7 @@ export function HomeFilterBuilderSection({
     }
     void load();
     return () => { cancelled = true; };
-  }, [datasetMode, competitorLabelKey, filterDataRequested, fetchSectionJson]);
+  }, [datasetMode, filterDataRequested]);
 
   useEffect(() => {
     if (!filterDataRequested) return;
@@ -279,7 +267,7 @@ export function HomeFilterBuilderSection({
         return;
       }
       try {
-        const obj = await fetchSectionJson<{ artists?: unknown[] }>("/api/artists/options");
+        const obj = await fetchApiJson<{ artists?: unknown[] }>("/api/artists/options");
         const rows = Array.isArray(obj.artists) ? obj.artists : [];
         const map = new Map<string, string | null>();
         const inHouse = new Set<string>();
@@ -300,7 +288,7 @@ export function HomeFilterBuilderSection({
     }
     void load();
     return () => { cancelled = true; };
-  }, [datasetMode, competitorLabelKey, filterDataRequested, fetchSectionJson]);
+  }, [datasetMode, filterDataRequested]);
 
   // Transform trackScatterPoints to TrackDataPoint format for FilterBuilder
   const trackData: TrackDataPoint[] = useMemo(() => {
