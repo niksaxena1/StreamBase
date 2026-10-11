@@ -40,7 +40,7 @@ import os
 import smtplib
 import time
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from email.message import EmailMessage
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -352,6 +352,57 @@ def is_suspicious_mass_takedown(new_takedowns: int, checked: int, min_count: int
     return checked > 0 and new_takedowns >= min_count and new_takedowns / checked > max_share
 
 
+def already_dead_takedowns(pg: Postgrest, events: List[dict], tracks_by_isrc: Dict[str, dict]) -> Dict[str, str]:
+    """Classify new takedowns using one batch read of effective daily streams."""
+    candidates = [e for e in events if e["event"] == "taken_down"]
+    if not candidates:
+        return {}
+
+    dated = {
+        e["isrc"]: date.fromisoformat(str(tracks_by_isrc[e["isrc"]]["last_catalog_date"])[:10])
+        for e in candidates
+        if tracks_by_isrc.get(e["isrc"], {}).get("last_catalog_date")
+    }
+    if not dated:
+        return {e["isrc"]: "already_zero_total" for e in candidates}
+
+    start = min(dated.values()) - timedelta(days=14)
+    end = max(dated.values())
+    isrc_filter = ",".join(quote(e["isrc"], safe="") for e in candidates)
+    rows = pg.select_all(
+        "track_daily_streams_effective",
+        "date,isrc,streams_cumulative",
+        f"isrc=in.({isrc_filter})&date=gte.{start.isoformat()}&date=lte.{end.isoformat()}",
+        order="date.asc,isrc.asc",
+    )
+    rows_by_isrc: Dict[str, List[dict]] = {}
+    for row in rows:
+        rows_by_isrc.setdefault(row["isrc"], []).append(row)
+
+    suppressed: Dict[str, str] = {}
+    for event in candidates:
+        isrc = event["isrc"]
+        catalog_date = dated.get(isrc)
+        if catalog_date is None:
+            suppressed[isrc] = "already_zero_total"
+            continue
+        values = [
+            row for row in rows_by_isrc.get(isrc, [])
+            if date.fromisoformat(str(row["date"])[:10]) <= catalog_date
+        ]
+        latest = max(values, key=lambda row: str(row["date"])) if values else None
+        total = latest.get("streams_cumulative") if latest else None
+        if total is None or total == 0:
+            suppressed[isrc] = "already_zero_total"
+            continue
+        last_seven = values[-7:]
+        if len(last_seven) == 7:
+            streams = [row["streams_cumulative"] for row in last_seven if row.get("streams_cumulative") is not None]
+            if streams and max(streams) - min(streams) == 0:
+                suppressed[isrc] = "no_daily_streams_7d"
+    return suppressed
+
+
 def _fmt_int(n: Any) -> str:
     try:
         return f"{int(n):,}"
@@ -536,6 +587,7 @@ def run(pg: Postgrest, sp: Spotify, args: argparse.Namespace, markets: Sequence[
         f"- Checked: {len(checkable)} (markets {', '.join(markets)}); skipped without Spotify id: {missing_ids}",
         f"- Available: {counts[AVAILABLE]} · Unavailable: {counts[UNAVAILABLE]} · Unknown: {counts[UNKNOWN]}",
         f"- New takedowns: {new_takedowns} · Restored: {len(new_events) - new_takedowns}",
+        "- Already dead in StreamBase (not emailed): 0",
     ]
 
     if checkable and counts[UNKNOWN] / len(checkable) > 0.5:
@@ -577,6 +629,13 @@ def run(pg: Postgrest, sp: Spotify, args: argparse.Namespace, markets: Sequence[
         latest_event = {r["isrc"]: r["event"] for r in recent}
         new_events = [e for e in new_events if latest_event.get(e["isrc"]) != e["event"]]
         if new_events:
+            suppressed = already_dead_takedowns(pg, new_events, tracks_by_isrc)
+            summary[4] = f"- Already dead in StreamBase (not emailed): {len(suppressed)}"
+            for event in new_events:
+                reason = suppressed.get(event["isrc"])
+                if reason:
+                    event["notified_at"] = now_iso
+                    event["suppressed_reason"] = reason
             pg.insert("spotify_track_availability_events", new_events)
     for start in range(0, len(upserts), 500):
         pg.upsert("spotify_track_availability", upserts[start : start + 500], on_conflict="isrc")

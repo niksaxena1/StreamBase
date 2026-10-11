@@ -1,3 +1,7 @@
+from datetime import date, timedelta
+
+import pytest
+
 import check_spotify_track_availability as m
 from check_spotify_track_availability import AVAILABLE, UNAVAILABLE, UNKNOWN, Verdict
 
@@ -187,14 +191,22 @@ def test_parse_markets():
 
 
 class FakePg:
-    def __init__(self, candidates, states=(), events=()):
+    def __init__(self, candidates, states=(), events=(), daily_streams=None):
         self.candidates = candidates
+        if daily_streams is None:
+            daily_streams = [
+                {"isrc": c["isrc"], "date": c["last_catalog_date"],
+                 "streams_cumulative": c.get("streams_cumulative")}
+                for c in candidates if c.get("spotify_track_id")
+            ]
         self.tables = {
             "spotify_track_availability": list(states),
             "spotify_track_availability_events": list(events),
             "tracks": [],
+            "track_daily_streams_effective": list(daily_streams),
         }
         self.next_id = 1 + len(events)
+        self.effective_queries = []
 
     def rpc(self, name, params):
         assert name == "spotify_availability_candidates"
@@ -205,6 +217,10 @@ class FakePg:
         return self.rpc(name, params)
 
     def select_all(self, table, select, filters, order=None, page_size=1000):
+        if table == "track_daily_streams_effective":
+            self.effective_queries.append((select, filters, order))
+            requested_isrcs = set(filters.split("isrc=in.(", 1)[1].split(")", 1)[0].split(","))
+            return [dict(r) for r in self.tables[table] if r["isrc"] in requested_isrcs]
         rows = self.tables[table]
         if filters == "notified_at=is.null":
             rows = [r for r in rows if r.get("notified_at") is None]
@@ -212,7 +228,9 @@ class FakePg:
 
     def insert(self, table, rows):
         for r in rows:
-            r = dict(r, id=self.next_id, detected_at=NOW, notified_at=None)
+            r = dict(r, id=self.next_id)
+            r.setdefault("detected_at", NOW)
+            r.setdefault("notified_at", None)
             self.next_id += 1
             self.tables[table].append(r)
         return rows
@@ -314,3 +332,72 @@ def test_run_dry_run_writes_nothing(monkeypatch):
     pg = FakePg(_cands(3))
     assert m.run(pg, RoutedSpotify({"id0"}), _args(dry_run=True), ("US",)) == 0
     assert pg.tables["spotify_track_availability"] == []
+
+
+def _daily_rows(isrc, values):
+    end = date.fromisoformat("2026-09-22")
+    dates = [end - timedelta(days=len(values) - i - 1) for i in range(len(values))]
+    return [{"isrc": isrc, "date": d.isoformat(), "streams_cumulative": value}
+            for d, value in zip(dates, values)]
+
+
+@pytest.mark.parametrize(
+    ("values", "expected_reason", "should_email"),
+    [
+        ([0], "already_zero_total", False),
+        ([None], "already_zero_total", False),
+        ([20] * 7, "no_daily_streams_7d", False),
+        ([14, 15, 16, 17, 18, 19, 20], None, True),
+        ([15] * 6, None, True),
+    ],
+    ids=["already-zero", "already-null", "flat-seven-days", "growing", "fewer-than-seven-dates"],
+)
+def test_run_suppresses_only_already_dead_takedowns(monkeypatch, values, expected_reason, should_email):
+    sent = []
+    monkeypatch.setattr(m, "send_email", lambda *args: sent.append(args))
+    candidates = _cands(1)
+    daily_rows = _daily_rows(candidates[0]["isrc"], values)
+    pg = FakePg(candidates, daily_streams=daily_rows)
+
+    assert m.run(pg, RoutedSpotify({"id0"}), _args(), ("US",)) == 0
+
+    event = pg.tables["spotify_track_availability_events"][0]
+    if expected_reason:
+        assert event["notified_at"]
+        assert event["suppressed_reason"] == expected_reason
+        assert sent == []
+    else:
+        assert event.get("notified_at")
+        assert "suppressed_reason" not in event
+        assert len(sent) == 1
+    assert len(pg.effective_queries) == 1
+    assert "isrc=in.(QZ0000000000)" in pg.effective_queries[0][1]
+
+
+def test_run_restoration_is_always_emailed(monkeypatch):
+    sent = []
+    monkeypatch.setattr(m, "send_email", lambda *args: sent.append(args))
+    candidates = _cands(1)
+    previous = [{"isrc": candidates[0]["isrc"], "status": UNAVAILABLE}]
+    flat_rows = _daily_rows(candidates[0]["isrc"], [20] * 7)
+    pg = FakePg(candidates, states=previous, daily_streams=flat_rows)
+
+    assert m.run(pg, RoutedSpotify(set()), _args(), ("US",)) == 0
+
+    event = pg.tables["spotify_track_availability_events"][0]
+    assert event["event"] == "restored"
+    assert event.get("notified_at")
+    assert "suppressed_reason" not in event
+    assert len(sent) == 1 and "1 restored" in sent[0][1]
+    assert pg.effective_queries == []
+
+
+def test_safety_valve_counts_suppressed_takedowns(monkeypatch):
+    monkeypatch.setattr(m, "send_email", lambda *args: (_ for _ in ()).throw(AssertionError("no email")))
+    candidates = _cands(100)
+    flat = [row for c in candidates for row in _daily_rows(c["isrc"], [20] * 7)]
+    pg = FakePg(candidates, daily_streams=flat)
+
+    assert m.run(pg, RoutedSpotify({f"id{i}" for i in range(40)}), _args(), ("US",)) == 2
+    assert pg.tables["spotify_track_availability_events"] == []
+    assert pg.effective_queries == []
