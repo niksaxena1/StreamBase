@@ -23,13 +23,13 @@ export function streamCursorFilter(cursor: StreamCursor): string {
   const isrc = `"${cursor.isrc.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
   return `date.gt.${cursor.date},and(date.eq.${cursor.date},isrc.gt.${isrc})`;
 }
-/** Fold pages in date order, retaining only two days of counters, rather than the whole window. */
+/** Legacy fold retained for regression coverage; Events loaders use SQL daily totals. */
 export async function effectiveDailyTotals(
   query: (cursor?: StreamCursor) => PageQuery,
   window: EventWindow,
   inScope: (isrc: string, date: string) => boolean = () => true,
-): Promise<DailyTotal[]> {
-  const totals: DailyTotal[] = [];
+): Promise<Array<Pick<DailyTotal, "date" | "streams">>> {
+  const totals: Array<Pick<DailyTotal, "date" | "streams">> = [];
   let previous = new Map<string, number>();
   let current = new Map<string, number>();
   let date = "";

@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { useStoredBoolState } from "@/lib/useStoredBoolState";
 
 /**
@@ -26,11 +26,13 @@ export function CollapsibleSection({
   children: ReactNode;
 }) {
   const [open, setOpen] = useStoredBoolState(storageKey ?? "sb:collapsible:ephemeral", defaultOpen);
+  // Persisted state can change during hydration without a native toggle event.
+  useEffect(() => { onOpenChange?.(open); }, [open, onOpenChange]);
 
   return (
     <details
       open={open}
-      onToggle={(ev) => { setOpen(ev.currentTarget.open); onOpenChange?.(ev.currentTarget.open); }}
+      onToggle={(ev) => setOpen(ev.currentTarget.open)}
       className="rounded-xl border sb-panel p-3"
       style={{ borderColor: "var(--sb-border)" }}
     >

@@ -1,7 +1,8 @@
 import { buildCatalogDeepLinkPathFromResolved } from "@/lib/catalogDeepLink";
-import { addDaysISO } from "@/lib/sotDates";
+import { addDaysISO, dataDateFromRunDate, runDateFromDataDate } from "@/lib/sotDates";
+import { formatDateISO } from "@/lib/format";
 
-export const EVENT_TYPES = ["takedown", "restoration", "new_track", "playlist_add", "playlist_remove", "override", "ingestion", "movement"] as const;
+export const EVENT_TYPES = ["takedown", "restoration", "new_track", "playlist_add", "playlist_remove", "override", "ingestion", "movement", "partial_data"] as const;
 export type HealthEventType = (typeof EVENT_TYPES)[number];
 export type EventTrack = { isrc: string; name: string | null; spotify_artist_ids?: string[] | null };
 export type MembershipEventRow = { id: number; playlist_key: string; isrc: string; valid_from: string; valid_to: string | null; tracks: EventTrack | null };
@@ -21,27 +22,60 @@ export function eventWindow(days: 7 | 30 | 90, today = new Date().toISOString().
   return { start, end: today, until: addDaysISO(today, 1), streamsStart: addDaysISO(start, -8) };
 }
 
+/** Windows are visible data dates; snapshot/membership predicates use run dates. */
+export function eventSnapshotWindow(window: EventWindow): EventWindow {
+  return Object.fromEntries(Object.entries(window).map(([key, date]) => [key, runDateFromDataDate(date)])) as EventWindow;
+}
+
+export function eventDataDate(event: Pick<HealthEvent, "date" | "type">): string {
+  const date = event.date.slice(0, 10);
+  // Spotify availability is observed in real time, not a lagged SOT snapshot.
+  return event.type === "takedown" || event.type === "restoration" || event.type === "ingestion"
+    ? date : dataDateFromRunDate(date);
+}
+
+export function eventDateLabel(event: Pick<HealthEvent, "date" | "type">): string {
+  return `${event.type === "ingestion" ? "run " : ""}${formatDateISO(eventDataDate(event))}`;
+}
+
 export function overrideNotePrefix(note: string | null): string {
   const value = note?.trim() || "manual override";
   if (value.startsWith("stale-fix:")) return value.split(":").slice(0, 2).join(":").trim().replace(/\s+auto$/, "");
   return value.split(":")[0].trim();
 }
 
-export type DailyTotal = { date: string; streams: number | null };
-/** Require seven consecutive, finite prior days. Missing data is never zero-filled. */
+export type DailyTotal = { date: string; streams: number | null; tracks_counted: number; tracks_expected: number };
+export type HealthDailyTotalRow = { date: string; daily_streams: number | string | null; tracks_counted: number; tracks_expected: number };
+export function dailyTotalsFromRpc(rows: HealthDailyTotalRow[]): DailyTotal[] {
+  return rows.map((row) => ({ date: row.date, streams: row.daily_streams == null ? null : Number(row.daily_streams),
+    tracks_counted: Number(row.tracks_counted), tracks_expected: Number(row.tracks_expected) }));
+}
+
+/** Incomplete days are events, never movement alerts or median observations. */
 export function detectLargeMovements(totals: DailyTotal[], start: string, end: string): HealthEvent[] {
-  const byDate = new Map(totals.map((row) => [row.date, row.streams]));
-  return [...byDate].sort(([a], [b]) => a.localeCompare(b)).flatMap(([date, streams]) => {
-    if (date < start || date > end || streams == null || !Number.isFinite(streams)) return [];
-    const trailing = Array.from({ length: 7 }, (_, i) => byDate.get(addDaysISO(date, -i - 1)));
-    if (trailing.some((n) => n == null || !Number.isFinite(n))) return [];
-    const median = (trailing as number[]).sort((a, b) => a - b)[3];
-    if (median <= 0) return [];
-    const change = (streams - median) / median;
-    if (Math.abs(change) <= 0.35) return [];
-    return [{ id: `movement:${date}`, date, type: "movement" as const, count: 1,
-      description: `Daily streams ${change > 0 ? "+" : ""}${(change * 100).toFixed(1)}% vs trailing 7-day median (${streams.toLocaleString("en-US")} vs ${median.toLocaleString("en-US")})` }];
-  });
+  const byDate = new Map(totals.map((row) => [row.date, row]));
+  const complete: number[] = [];
+  const events: HealthEvent[] = [];
+  for (const [date, row] of [...byDate].sort(([a], [b]) => a.localeCompare(b))) {
+    if (date > end) break;
+    const { streams, tracks_counted: counted, tracks_expected: expected } = row;
+    if (expected <= 0 || !Number.isFinite(expected) || !Number.isFinite(counted)) continue;
+    if (counted < expected * 0.9) {
+      if (date >= start) events.push({ id: `partial:${date}`, date, type: "partial_data", count: counted,
+        description: `Partial data: ${counted.toLocaleString("en-US")} of ${expected.toLocaleString("en-US")} expected tracks have paired snapshots (${(100 * counted / expected).toFixed(1)}%)` });
+      continue;
+    }
+    if (streams == null || !Number.isFinite(streams)) continue;
+    if (date >= start && complete.length === 7) {
+      const median = [...complete].sort((a, b) => a - b)[3];
+      const change = median > 0 ? (streams - median) / median : 0;
+      if (Math.abs(change) > 0.35) events.push({ id: `movement:${date}`, date, type: "movement", count: 1,
+        description: `Daily streams ${change > 0 ? "+" : ""}${(change * 100).toFixed(1)}% vs trailing 7 complete-day median (${streams.toLocaleString("en-US")} vs ${median.toLocaleString("en-US")})` });
+    }
+    complete.push(streams);
+    if (complete.length > 7) complete.shift();
+  }
+  return events;
 }
 
 export function assembleHealthEvents(input: {
@@ -66,15 +100,16 @@ export function assembleHealthEvents(input: {
       description: `${track.name || row.isrc} ${restored ? "restored on" : "taken down from"} Spotify${row.suppressed_reason ? " · already dead in StreamBase" : ""}`, href: link(track) });
   }
   for (const track of input.newTracks) {
-    if (!track.first_seen || !inside(track.first_seen)) continue;
+    if (!track.first_seen || !inside(eventDataDate({ type: "new_track", date: track.first_seen }))) continue;
     events.push({ id: `new:${track.isrc}`, date: track.first_seen, type: "new_track", description: `${track.name || track.isrc} first appeared`, count: 1, href: link(track) });
   }
   const playlistNames = new Map(input.playlists.map((p) => [p.playlist_key, p.display_name]));
   for (const [type, rows, column] of [["playlist_add", input.additions, "valid_from"], ["playlist_remove", input.removals, "valid_to"]] as const) {
     const groups = new Map<string, HealthEvent>();
     for (const row of rows) {
-      const date = row[column]?.slice(0, 10);
-      if (!date || !inside(date)) continue;
+      const lastActive = row[column]?.slice(0, 10);
+      const date = lastActive && (type === "playlist_remove" ? addDaysISO(lastActive, 1) : lastActive);
+      if (!date || !inside(eventDataDate({ type, date }))) continue;
       const key = JSON.stringify([type, date, row.playlist_key]);
       let group = groups.get(key);
       if (!group) {
@@ -90,7 +125,7 @@ export function assembleHealthEvents(input: {
   }
   const overrideGroups = new Map<string, HealthEvent>();
   for (const row of input.overrides) {
-    if (!inside(row.date)) continue;
+    if (!inside(eventDataDate({ type: "override", date: row.date }))) continue;
     const prefix = overrideNotePrefix(row.note);
     const key = JSON.stringify(["override", row.date, prefix]);
     const group = overrideGroups.get(key) ?? { id: key, date: row.date, type: "override", description: `Stream overrides: ${prefix}`, count: 0 };
@@ -102,6 +137,6 @@ export function assembleHealthEvents(input: {
     if (!inside(run.run_date)) continue;
     events.push({ id: `run:${run.id}`, date: run.run_date, type: "ingestion", count: 1, description: `Ingestion run: ${run.status}`, failed: run.status === "failed", href: run.logs_url || undefined });
   }
-  events.push(...detectLargeMovements(input.dailyTotals, input.window.start, input.window.end));
-  return events.sort((a, b) => b.date.slice(0, 10).localeCompare(a.date.slice(0, 10)) || b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
+  events.push(...detectLargeMovements(input.dailyTotals, runDateFromDataDate(input.window.start), runDateFromDataDate(input.window.end)));
+  return events.sort((a, b) => eventDataDate(b).localeCompare(eventDataDate(a)) || b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
 }

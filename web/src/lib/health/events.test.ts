@@ -37,7 +37,7 @@ describe("Health event assembly", () => {
         { id: 1, isrc: "A", event: "taken_down", detected_at: "2026-10-10T18:00:00Z", suppressed_reason: "streambase_dead", tracks: track },
         { id: 2, isrc: "A", event: "restored", detected_at: "2026-10-11T01:00:00Z", suppressed_reason: null, tracks: track },
       ],
-      newTracks: [{ ...track, first_seen: "2026-09-12" }, { ...track, isrc: "OLD", first_seen: "2026-09-11" }, { ...track, isrc: "FUTURE", first_seen: "2026-10-12" }],
+      newTracks: [{ ...track, first_seen: "2026-09-14" }, { ...track, isrc: "OLD", first_seen: "2026-09-13" }, { ...track, isrc: "FUTURE", first_seen: "2026-10-14" }],
       runs: [{ id: 4, run_date: "2026-10-11", status: "failed", logs_url: "https://example.com/logs" }],
     });
     expect(events.map((e) => e.type)).toEqual(["restoration", "ingestion", "takedown", "new_track"]);
@@ -69,7 +69,7 @@ describe("Health event assembly", () => {
 });
 
 describe("large daily movement detector", () => {
-  const days = (values: Array<number | null>): DailyTotal[] => values.map((streams, i) => ({ date: addDaysISO("2026-10-01", i), streams }));
+  const days = (values: Array<number | null>): DailyTotal[] => values.map((streams, i) => ({ date: addDaysISO("2026-10-01", i), streams, tracks_counted: 100, tracks_expected: 100 }));
   it("detects rises and falls against the median, excluding the current day", () => {
     const totals = days([100, 100, 100, 100, 100, 100, 100, 136, 64]);
     const events = detectLargeMovements([...totals].reverse(), "2026-10-08", "2026-10-09");
@@ -81,7 +81,7 @@ describe("large daily movement detector", () => {
     for (const value of [135, 65, 100, NaN, Infinity, null]) expect(detectLargeMovements(days([100, 100, 100, 100, 100, 100, 100, value]), "2026-10-08", "2026-10-08")).toEqual([]);
     for (const base of [0, -100]) expect(detectLargeMovements(days([base, base, base, base, base, base, base, 500]), "2026-10-08", "2026-10-08")).toEqual([]);
   });
-  it("requires all seven calendar days and respects the output window", () => {
+  it("requires seven complete observations and respects the output window", () => {
     const totals = days([100, 100, 100, 100, 100, 100, 100, 200]);
     expect(detectLargeMovements(totals.filter((_, i) => i !== 2), "2026-10-08", "2026-10-08")).toEqual([]);
     expect(detectLargeMovements(days([100, 100, null, 100, 100, 100, 100, 200]), "2026-10-08", "2026-10-08")).toEqual([]);

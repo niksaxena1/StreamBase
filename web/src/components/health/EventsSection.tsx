@@ -1,26 +1,26 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Activity, ArrowDown, ArrowUp, ListMinus, ListPlus, Play, Plus, Wrench } from "lucide-react";
+import { Activity, AlertTriangle, ArrowDown, ArrowUp, ListMinus, ListPlus, Play, Plus, Wrench } from "lucide-react";
 import Link from "@/components/shell/RouteLink";
 import { CollapsibleSection } from "@/components/ui/CollapsibleSection";
 import { GlassTable, TableRow, TableCell, EmptyState } from "@/components/ui/GlassTable";
 import { Alert } from "@/components/ui/Alert";
 import { fetchApiJson } from "@/lib/api";
-import { EVENT_TYPES, type HealthEvent, type HealthEventType } from "@/lib/health/events";
-import { formatDateISO, formatInt } from "@/lib/format";
+import { EVENT_TYPES, eventDateLabel, type HealthEvent, type HealthEventType } from "@/lib/health/events";
+import { formatInt } from "@/lib/format";
 
 const LABELS: Record<HealthEventType, string> = {
   takedown: "Takedown", restoration: "Restoration", new_track: "New track", playlist_add: "Playlist additions",
-  playlist_remove: "Playlist removals", override: "Stream overrides", ingestion: "Ingestion", movement: "Large movement",
+  playlist_remove: "Playlist removals", override: "Stream overrides", ingestion: "Ingestion", movement: "Large movement", partial_data: "Partial data",
 };
-const ICONS = { takedown: ArrowDown, restoration: ArrowUp, new_track: Plus, playlist_add: ListPlus, playlist_remove: ListMinus, override: Wrench, ingestion: Play, movement: Activity };
+const ICONS = { takedown: ArrowDown, restoration: ArrowUp, new_track: Plus, playlist_add: ListPlus, playlist_remove: ListMinus, override: Wrench, ingestion: Play, movement: Activity, partial_data: AlertTriangle };
 
 export function EventsSection({ mode, labelKey }: { mode: "own" | "competitor"; labelKey?: string | null }) {
   const [expanded, setExpanded] = useState(false);
   const scope = `${mode}:${labelKey ?? "all"}`;
   return (
-    <CollapsibleSection title="Events" subtitle="Chronological activity for this dataset" storageKey={`sb:health:events:${scope}`} onOpenChange={setExpanded}>
+    <CollapsibleSection title="Events" subtitle="Streams lag SpotOnTrack by ~2 days, so the newest 1–2 days have no movement data yet." storageKey={`sb:health:events:${scope}`} onOpenChange={setExpanded}>
       {expanded ? <EventsList key={scope} mode={mode} labelKey={labelKey} /> : null}
     </CollapsibleSection>
   );
@@ -61,11 +61,11 @@ function EventsList({ mode, labelKey }: { mode: "own" | "competitor"; labelKey?:
       {error ? <Alert variant="error" title="Events could not load">{error} <button type="button" className="underline" onClick={() => { setError(null); setRetry((n) => n + 1); }}>Retry</button></Alert> : null}
       {!events && !error ? <p role="status" className="px-4 py-3 text-xs opacity-60">Loading events…</p> : null}
       {events ? (
-        <GlassTable headers={["Date (UTC)", "Type", "Description", { label: "Count", align: "right" }]} maxBodyHeightClassName="max-h-[520px]">
+        <GlassTable headers={["Data date / run (UTC)", "Type", "Description", { label: "Count", align: "right" }]} maxBodyHeightClassName="max-h-[520px]">
           {visible.map((event) => {
             const Icon = ICONS[event.type];
             return <TableRow key={event.id}>
-              <TableCell mono className="whitespace-nowrap text-xs">{formatDateISO(event.date.slice(0, 10))}</TableCell>
+              <TableCell mono className="whitespace-nowrap text-xs">{eventDateLabel(event)}</TableCell>
               <TableCell><span className={`inline-flex items-center gap-1.5 whitespace-nowrap text-xs ${event.failed ? "text-red-700 dark:text-red-300" : ""}`}><Icon aria-hidden size={14} />{LABELS[event.type]}</span></TableCell>
               <TableCell>
                 <div className={event.failed ? "text-red-700 dark:text-red-300" : ""}>

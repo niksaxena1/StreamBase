@@ -70,6 +70,8 @@ Competitor Mode is a parallel analytics universe, not a merge into your own cata
 - **Competitors** — competitive-intelligence cockpit: label comparison chart/table, cross-label movers, catalog churn, overlap matrix (pipeline health is on `/health`)
 - **Health** — competitor ingestion checks (stale playlists, row mismatches, warnings, missing totals)
 
+On Health, expand **Events** below warning history for a newest-first timeline of discoveries, playlist changes, stream repairs, ingestion runs, and large daily movements. Choose 7, 30, or 90 days and filter by type. Own-catalog Events also include Spotify takedowns/restorations, including suppressed alerts marked “already dead in StreamBase.” Removals occur the day after the last active membership day. Snapshot events show data dates; ingestion dates are marked `run`. Streams lag SpotOnTrack by about two days. Movement comparisons use seven prior complete days and require at least 90% paired-track coverage; less complete days show **Partial data** instead of a movement alert.
+
 The selected competitor is global. One competitor may own multiple playlists, and changing the selector changes supported competitor-aware surfaces across the app.
 
 Adding a competitor (admin): `/competitors`, then **Add competitor** writes `competitor.labels` / `competitor.playlists`, the pipeline config source of truth. Each competitor workflow regenerates `config/competitor_playlists.csv` before reading it, so the next pipeline run picks up the playlist. Manual refresh/sync runs require manually starting the next stage. Blank accents use the canonical palette until an administrator runs artwork accent extraction after Spotify thumbnail enrichment (see `docs/COMPETITOR-MODE-OPERATIONS.md`).
