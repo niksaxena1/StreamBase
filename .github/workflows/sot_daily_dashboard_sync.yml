@@ -1,3 +1,4 @@
+# Manual only; daily runs use sot_own_daily_pipeline.yml (started by the Supabase scheduler).
 name: SOT Daily Dashboard Sync
 
 permissions:
@@ -5,12 +6,6 @@ permissions:
   contents: read
 
 on:
-  workflow_run:
-    workflows: ["SOT Daily Playlist Refresh"]
-    types: [completed]
-  schedule:
-    # Fallback if the refresh chain is missed; skip if already synced today.
-    - cron: "11 6 * * *"
   workflow_dispatch:
     inputs:
       full_sync:

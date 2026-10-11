@@ -1,3 +1,4 @@
+# Manual only; daily runs use sot_own_daily_pipeline.yml (started by the Supabase scheduler).
 name: SOT Daily Export
 
 permissions:
@@ -5,12 +6,6 @@ permissions:
   contents: read
 
 on:
-  workflow_run:
-    workflows: ["SOT Daily Dashboard Sync"]
-    types: [completed]
-  schedule:
-    # Fallback; the sync gate and Supabase pre-check keep it idempotent.
-    - cron: "43 7 * * *" # 11:43 Dubai / 07:43 UTC daily
   workflow_dispatch:
     inputs:
       run_date:

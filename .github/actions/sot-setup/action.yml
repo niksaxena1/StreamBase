@@ -1,0 +1,56 @@
+name: SOT setup
+description: Set up Python, cached Playwright Chromium, and SpotOnTrack storage state
+inputs:
+  storage_state_b64:
+    description: Base64-encoded SpotOnTrack storage state (empty permits login fallback)
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v7
+      with:
+        python-version: "3.12"
+        cache: "pip"
+
+    - name: Cache Playwright browsers
+      id: playwright_cache
+      uses: actions/cache@v6
+      with:
+        path: ~/.cache/ms-playwright
+        key: playwright-chromium-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
+    - name: Install dependencies
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        # Playwright's OS-dependency install shells out to apt, which can hang
+        # indefinitely on a slow Ubuntu mirror (2026-08-19: 59 min stall on
+        # archive.ubuntu.com consumed the whole job budget and lost a full
+        # ingestion day). Bound each attempt and retry rather than stalling.
+        install_browser() {
+          if [ "${{ steps.playwright_cache.outputs.cache-hit }}" = "true" ]; then
+            timeout 240 python -m playwright install-deps chromium
+          else
+            timeout 480 python -m playwright install --with-deps chromium
+          fi
+        }
+        for attempt in 1 2 3; do
+          if install_browser; then exit 0; fi
+          echo "Playwright dependency install attempt $attempt failed or timed out; retrying..."
+          sudo rm -rf /var/lib/apt/lists/* || true
+          sleep 15
+        done
+        echo "Playwright dependency install failed after 3 attempts." >&2
+        exit 1
+
+    - name: Write storage state from secret
+      env:
+        SOT_STORAGE_STATE_B64: ${{ inputs.storage_state_b64 }}
+      shell: bash
+      run: |
+        if [ -z "$SOT_STORAGE_STATE_B64" ]; then
+          echo "SOT_STORAGE_STATE_B64 not set (ok). Will rely on login fallback if configured."
+          exit 0
+        fi
+        echo "$SOT_STORAGE_STATE_B64" | base64 --decode > sot_state.json

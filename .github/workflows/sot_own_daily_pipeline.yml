@@ -1,0 +1,493 @@
+name: SOT Own Daily Pipeline
+
+permissions:
+  actions: write
+  contents: read
+
+on:
+  repository_dispatch:
+    types: [own-pipeline]
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: "Pipeline stage"
+        required: true
+        type: choice
+        options: [full, refresh, sync_export]
+        default: full
+      run_date:
+        description: "Override run date (YYYY-MM-DD). Default: UTC today"
+        required: false
+        type: string
+      full_sync:
+        description: "Force full dashboard sync (also automatic on Sundays UTC)"
+        required: false
+        type: boolean
+        default: false
+      force_reingest:
+        description: "Run even if ingestion already succeeded for this date"
+        required: false
+        type: boolean
+        default: false
+      dry_run:
+        description: "Preview refresh/sync only; skip export and ingestion"
+        required: false
+        type: boolean
+        default: false
+  schedule:
+    # Late fallback; the Supabase scheduler normally dispatches each stage.
+    - cron: "0 9 * * *"
+
+concurrency:
+  group: sot-own-pipeline
+  cancel-in-progress: false
+
+env:
+  SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+  SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+jobs:
+  precheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      stage: ${{ steps.resolve.outputs.stage }}
+      run_date: ${{ steps.resolve.outputs.run_date }}
+      skip: ${{ steps.precheck.outputs.skip }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Resolve stage and run date once (UTC)
+        id: resolve
+        shell: bash
+        env:
+          REQUESTED_STAGE: ${{ github.event.client_payload.stage || inputs.stage || 'full' }}
+          REQUESTED_RUN_DATE: ${{ github.event.client_payload.run_date || inputs.run_date || '' }}
+        run: |
+          STAGE="$REQUESTED_STAGE"
+          RUN_DATE="$REQUESTED_RUN_DATE"
+          if [ -z "$RUN_DATE" ]; then RUN_DATE=$(date -u +'%Y-%m-%d'); fi
+          case "$STAGE" in
+            full|refresh|sync_export) ;;
+            *) echo "::error::Invalid pipeline stage."; exit 1 ;;
+          esac
+          if [[ ! "$RUN_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || \
+             [ "$(date -u -d "$RUN_DATE" +%F)" != "$RUN_DATE" ]; then
+            echo "::error::run_date must be a valid YYYY-MM-DD date."
+            exit 1
+          fi
+          echo "stage=$STAGE" >> "$GITHUB_OUTPUT"
+          echo "run_date=$RUN_DATE" >> "$GITHUB_OUTPUT"
+
+      - name: "Pre-check: skip if already ingested"
+        id: precheck
+        shell: bash
+        env:
+          STAGE: ${{ steps.resolve.outputs.stage }}
+          RUN_DATE: ${{ steps.resolve.outputs.run_date }}
+          FORCE: ${{ inputs.force_reingest }}
+        run: |
+          SKIP="false"
+          if [ "$FORCE" = "true" ]; then
+            echo "Force re-ingest enabled. Skipping idempotency pre-check for $RUN_DATE."
+          elif [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "Supabase secrets not set; cannot pre-check. Proceeding."
+          else
+            URL="$SUPABASE_URL/rest/v1/ingestion_runs?select=status&run_date=eq.$RUN_DATE&status=eq.success&limit=1"
+            HIT=$(curl -sS -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" "$URL" || true)
+            if echo "$HIT" | grep -q "\"status\":\"success\""; then
+              echo "Already ingested for $RUN_DATE. Skipping."
+              SKIP="true"
+              bash scripts/pipeline_record_stage.sh own "$RUN_DATE" sync_export skipped "Already ingested"
+              if [ "$STAGE" = "full" ] || [ "$STAGE" = "refresh" ]; then
+                bash scripts/pipeline_record_stage.sh own "$RUN_DATE" refresh skipped "Already ingested"
+              fi
+            else
+              echo "No successful ingestion found for $RUN_DATE. Proceeding."
+            fi
+          fi
+          echo "skip=$SKIP" >> "$GITHUB_OUTPUT"
+
+      - name: Send precheck failure email
+        if: failure()
+        uses: ./.github/actions/notify-email
+        with:
+          password: ${{ secrets.NOTIFY_SMTP_PASSWORD }}
+          subject: "[StreamBase] Own Pipeline: Precheck FAILED"
+          body: |
+            Pipeline input resolution or ingestion precheck failed.
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+  refresh:
+    needs: precheck
+    if: needs.precheck.outputs.skip != 'true' && (needs.precheck.outputs.stage == 'full' || needs.precheck.outputs.stage == 'refresh')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      RUN_DATE: ${{ needs.precheck.outputs.run_date }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Record refresh started
+        run: bash scripts/pipeline_record_stage.sh own "$RUN_DATE" refresh started
+
+      - uses: ./.github/actions/sot-setup
+        timeout-minutes: 12
+        with:
+          storage_state_b64: ${{ secrets.SOT_STORAGE_STATE_B64 }}
+
+      - name: Refresh SpotOnTrack playlists
+        env:
+          SOT_EMAIL: ${{ secrets.SOT_EMAIL }}
+          SOT_PASSWORD: ${{ secrets.SOT_PASSWORD }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          LIMIT: ${{ github.event.client_payload.limit || '' }}
+        run: |
+          ARGS="--headless"
+          if [ "$DRY_RUN" = "true" ]; then ARGS="$ARGS --dry-run"; fi
+          if [ -n "$LIMIT" ]; then ARGS="$ARGS --limit $LIMIT"; fi
+          python scripts/sot_refresh_playlists.py --config config/playlists.csv --storage-state sot_state.json $ARGS
+
+      - name: Upload refresh logs artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: sot-playlist-refresh-${{ github.run_id }}
+          path: .artifacts/
+          if-no-files-found: warn
+
+      - name: Send refresh failure email
+        if: failure()
+        uses: ./.github/actions/notify-email
+        with:
+          password: ${{ secrets.NOTIFY_SMTP_PASSWORD }}
+          subject: "[StreamBase] Own Pipeline: Playlist Refresh FAILED"
+          body: |
+            Playlist refresh failed for ${{ needs.precheck.outputs.run_date }}.
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+      - name: Record refresh result
+        if: always()
+        env:
+          STAGE_STATUS: ${{ job.status == 'success' && 'success' || 'failure' }}
+          DETAIL: ${{ inputs.dry_run && 'Dry run (preview only)' || '' }}
+        run: bash scripts/pipeline_record_stage.sh own "$RUN_DATE" refresh "$STAGE_STATUS" "$DETAIL"
+
+  sync_export:
+    needs: [precheck, refresh]
+    # always() allows sync_export dispatches whose refresh job is intentionally skipped.
+    if: >-
+      always() && !cancelled() && needs.precheck.result == 'success' &&
+      needs.precheck.outputs.skip != 'true' &&
+      (needs.precheck.outputs.stage == 'full' || needs.precheck.outputs.stage == 'sync_export') &&
+      (needs.refresh.result == 'success' || (needs.precheck.outputs.stage == 'sync_export' && needs.refresh.result == 'skipped'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    env:
+      RUN_DATE: ${{ needs.precheck.outputs.run_date }}
+    steps:
+      - name: Wait for SpotOnTrack to process playlist refresh
+        if: needs.precheck.outputs.stage == 'full'
+        run: sleep 600
+
+      - uses: actions/checkout@v7
+
+      - name: Record sync/export started
+        run: bash scripts/pipeline_record_stage.sh own "$RUN_DATE" sync_export started
+
+      - uses: ./.github/actions/sot-setup
+        timeout-minutes: 12
+        with:
+          storage_state_b64: ${{ secrets.SOT_STORAGE_STATE_B64 }}
+
+      - name: Restore dashboard sync state
+        uses: actions/cache/restore@v6
+        with:
+          path: .sync-state/own.json
+          key: sot-sync-state-own-${{ github.run_id }}
+          restore-keys: sot-sync-state-own-
+
+      - name: Sync dashboards to playlists
+        id: sync_dashboards
+        env:
+          FULL_SYNC: ${{ inputs.full_sync }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          ADD_ONLY: ${{ github.event.client_payload.add_only || false }}
+          LIMIT: ${{ github.event.client_payload.limit || '' }}
+          SOT_EMAIL: ${{ secrets.SOT_EMAIL }}
+          SOT_PASSWORD: ${{ secrets.SOT_PASSWORD }}
+          SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
+          SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          ARGS="--headless"
+          if [ "$(date -u +%u)" = "7" ] || [ "$FULL_SYNC" = "true" ]; then ARGS="$ARGS --full"; fi
+          if [ "$DRY_RUN" = "true" ]; then ARGS="$ARGS --dry-run"; fi
+          if [ "$ADD_ONLY" = "true" ]; then ARGS="$ARGS --no-sync"; fi
+          if [ -n "$LIMIT" ]; then ARGS="$ARGS --limit $LIMIT"; fi
+          python scripts/sot_sync_dashboards.py --config config/playlists.csv --storage-state sot_state.json --state-file .sync-state/own.json $ARGS
+
+      - name: Save dashboard sync state (including partial progress)
+        if: always()
+        uses: actions/cache/save@v6
+        with:
+          path: .sync-state/own.json
+          key: sot-sync-state-own-${{ github.run_id }}
+
+      - name: Upload sync log artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: sot-dashboard-sync-${{ github.run_id }}
+          path: .artifacts/
+          if-no-files-found: warn
+
+      - name: Check sync results for notification
+        id: sync_notify_check
+        if: always()
+        shell: bash
+        run: |
+          SHOULD_NOTIFY="false"
+          SUBJECT="[StreamBase] Dashboard Sync: unknown issue"
+          SKIPPED="?"
+          ERRORS="?"
+          TOTAL="?"
+          ADDED="?"
+          REMOVED="?"
+
+          if [ -f ".artifacts/sync_summary.json" ]; then
+            SUMMARY=$(cat .artifacts/sync_summary.json)
+            SKIPPED=$(echo "$SUMMARY" | python3 -c "import sys,json; print(json.load(sys.stdin).get('total_skipped',0))")
+            ERRORS=$(echo "$SUMMARY" | python3 -c "import sys,json; print(json.load(sys.stdin).get('total_errors',0))")
+            TOTAL=$(echo "$SUMMARY" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tasks_total',0))")
+            ADDED=$(echo "$SUMMARY" | python3 -c "import sys,json; print(json.load(sys.stdin).get('total_added',0))")
+            REMOVED=$(echo "$SUMMARY" | python3 -c "import sys,json; print(json.load(sys.stdin).get('total_removed',0))")
+
+            if [ "$SKIPPED" -gt 0 ] || [ "$ERRORS" -gt 0 ]; then
+              SHOULD_NOTIFY="true"
+              SUBJECT="[StreamBase] Dashboard Sync: ${SKIPPED} skipped, ${ERRORS} errors"
+            fi
+          fi
+
+          # Always notify on hard failure (even without summary).
+          if [ "${{ job.status }}" = "failure" ]; then
+            SHOULD_NOTIFY="true"
+            SUBJECT="[StreamBase] Dashboard Sync FAILED"
+          fi
+
+          echo "should_notify=$SHOULD_NOTIFY" >> "$GITHUB_OUTPUT"
+          echo "subject=$SUBJECT" >> "$GITHUB_OUTPUT"
+          {
+            echo 'body<<ENDOFBODY'
+            if [ -f ".artifacts/sync_summary.json" ]; then
+              echo "Dashboard Sync results:"
+              echo "  Tasks: ${TOTAL}"
+              echo "  Skipped: ${SKIPPED} (0-track scans or safety blocks)"
+              echo "  Errors: ${ERRORS}"
+              echo "  Added: ${ADDED}"
+              echo "  Removed: ${REMOVED}"
+            else
+              echo "No sync summary available (script may not have completed)."
+            fi
+            echo ""
+            echo "Skipped tasks may have debug screenshots in the workflow artifacts."
+            echo ""
+            echo "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo 'ENDOFBODY'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Export dashboards
+        id: export_dashboards
+        if: inputs.dry_run != true
+        env:
+          SOT_EMAIL: ${{ secrets.SOT_EMAIL }}
+          SOT_PASSWORD: ${{ secrets.SOT_PASSWORD }}
+        run: |
+          python scripts/sot_export_dashboards.py --config config/playlists.csv --storage-state sot_state.json --headless --fail-on-empty --auth-debug
+
+      - name: Upload exports artifact
+        if: inputs.dry_run != true
+        uses: actions/upload-artifact@v7
+        with:
+          name: sot-exports-${{ github.run_id }}
+          path: exports/
+          if-no-files-found: error
+
+      - name: Upload exports to Supabase Storage (optional)
+        if: inputs.dry_run != true
+        continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_STORAGE_BUCKET: ${{ secrets.SUPABASE_STORAGE_BUCKET }}
+          SUPABASE_STORAGE_PREFIX: ${{ secrets.SUPABASE_STORAGE_PREFIX }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "Supabase secrets not set (ok). Skipping Storage upload."
+            exit 0
+          fi
+          python scripts/supabase_upload_exports.py --exports-dir exports
+
+      - name: Ingest exports into Supabase Postgres (optional)
+        id: ingest
+        if: inputs.dry_run != true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_STORAGE_BUCKET: ${{ secrets.SUPABASE_STORAGE_BUCKET }}
+          SUPABASE_STORAGE_PREFIX: ${{ secrets.SUPABASE_STORAGE_PREFIX }}
+          # Optional: refresh the web app's cached analytics after ingestion.
+          STREAMBASE_REVALIDATE_URL: ${{ secrets.STREAMBASE_REVALIDATE_URL }}
+          REVALIDATE_SECRET: ${{ secrets.REVALIDATE_SECRET }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "Supabase secrets not set (ok). Skipping DB ingestion."
+            exit 0
+          fi
+          RUN_DATE="${{ needs.precheck.outputs.run_date }}"
+          python scripts/ingest_exports_to_supabase.py --config config/playlists.csv --exports-dir exports --run-date "$RUN_DATE"
+          echo "ingested=true" >> "$GITHUB_OUTPUT"
+
+      - name: Check export results for notification
+        id: export_notify_check
+        if: always()
+        shell: bash
+        run: |
+          SHOULD_NOTIFY="false"
+          SUBJECT=""
+          STALE="false"
+
+          EXPORT_OUTCOME="${{ steps.export_dashboards.outcome }}"
+          INGEST_OUTCOME="${{ steps.ingest.outcome }}"
+
+          # Preserve export/ingestion alerts; the final email also includes sync issues.
+          if [ "$EXPORT_OUTCOME" = "failure" ]; then
+            SHOULD_NOTIFY="true"
+            SUBJECT="[StreamBase] Daily Export FAILED (export step)"
+          fi
+
+          if [ "$INGEST_OUTCOME" = "failure" ]; then
+            SHOULD_NOTIFY="true"
+            SUBJECT="[StreamBase] Daily Export FAILED (ingestion step)"
+          fi
+
+          # Check for stale source data (ingestion succeeded but Spotify didn't update).
+          STALE_TRACKS_COUNT="0"
+          STALE_TRACKS_SEVERITY=""
+          ZEROED_COUNT="0"
+          if [ -f ".artifacts/ingestion_summary.json" ]; then
+            STALE=$(python3 -c "import json; d=json.load(open('.artifacts/ingestion_summary.json')); print('true' if d.get('stale_data_detected') else 'false')" 2>/dev/null || echo "false")
+            STALE_TRACKS_COUNT=$(python3 -c "import json; d=json.load(open('.artifacts/ingestion_summary.json')); print(d.get('individual_tracks_stale_count', 0))" 2>/dev/null || echo "0")
+            STALE_TRACKS_SEVERITY=$(python3 -c "import json; d=json.load(open('.artifacts/ingestion_summary.json')); print(d.get('individual_tracks_stale_severity') or '')" 2>/dev/null || echo "")
+            ZEROED_COUNT=$(python3 -c "import json; d=json.load(open('.artifacts/ingestion_summary.json')); print(d.get('excluded_tracks_zeroed_count', 0))" 2>/dev/null || echo "0")
+            if [ "$STALE" = "true" ]; then
+              SHOULD_NOTIFY="true"
+              SUBJECT="${SUBJECT:-[StreamBase] Daily Export: stale source data detected}"
+            fi
+            if [ "$STALE_TRACKS_SEVERITY" = "critical" ]; then
+              SHOULD_NOTIFY="true"
+              SUBJECT="${SUBJECT:-[StreamBase] Daily Export: ${STALE_TRACKS_COUNT} track(s) with stale streams (CRITICAL)}"
+            fi
+            if [ "$ZEROED_COUNT" != "0" ]; then
+              SHOULD_NOTIFY="true"
+              SUBJECT="${SUBJECT:-[StreamBase] Daily Export: ${ZEROED_COUNT} excluded track(s) streams zeroed}"
+            fi
+          fi
+
+          echo "should_notify=$SHOULD_NOTIFY" >> "$GITHUB_OUTPUT"
+          echo "subject=${SUBJECT:-[StreamBase] Daily Export: issue}" >> "$GITHUB_OUTPUT"
+          {
+            echo 'body<<ENDOFBODY'
+            echo "SOT Daily Export results for ${{ needs.precheck.outputs.run_date }}:"
+            echo ""
+            echo "  Export step: ${EXPORT_OUTCOME:-skipped}"
+            echo "  Ingest step: ${INGEST_OUTCOME:-skipped}"
+            echo "  Stale source data: ${STALE}"
+            echo "  Stale tracks (per-track): ${STALE_TRACKS_COUNT}"
+            echo "  Excluded tracks zeroed: ${ZEROED_COUNT}"
+            echo ""
+            if [ "$STALE" = "true" ]; then
+              echo "Spotify likely did not update stream counts. Data was ingested as-is."
+              echo "Check the Health page for the stale_source_data warning and use"
+              echo "manual overrides if correction is needed."
+              echo ""
+            fi
+            if [ "$STALE_TRACKS_COUNT" != "0" ]; then
+              echo "${STALE_TRACKS_COUNT} track(s) had zero daily stream growth despite"
+              echo "having significant total streams (severity: ${STALE_TRACKS_SEVERITY:-warn})."
+              echo "The RapidAPI auto-fix is scheduled to run at 09:15 UTC and will"
+              echo "attempt to correct up to 20 tracks automatically."
+              echo ""
+            fi
+            if [ "$ZEROED_COUNT" != "0" ]; then
+              echo "${ZEROED_COUNT} excluded (taken-down) track(s) had their total streams"
+              echo "drop to zero. This likely indicates a data-source glitch. Check the"
+              echo "Health page for the excluded_track_streams_zeroed warning for details."
+              echo ""
+            fi
+            echo "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo 'ENDOFBODY'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Start stale-track fix
+        if: success() && steps.ingest.outcome == 'success' && steps.ingest.outputs.ingested == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPORT_RUN_DATE: ${{ needs.precheck.outputs.run_date }}
+        run: |
+          if [ "$EXPORT_RUN_DATE" != "$(date -u +%F)" ]; then
+            echo "Skipping stale-track fix: export date is not UTC today."
+            exit 0
+          fi
+          gh workflow run rapidapi_stale_fix.yml --repo "$GITHUB_REPOSITORY" --ref "${{ github.ref_name }}"
+
+      - name: Prepare one pipeline notification
+        id: notification
+        if: always()
+        shell: bash
+        env:
+          JOB_STATUS: ${{ job.status }}
+          SYNC_NOTIFY: ${{ steps.sync_notify_check.outputs.should_notify }}
+          SYNC_SUBJECT: ${{ steps.sync_notify_check.outputs.subject }}
+          SYNC_BODY: ${{ steps.sync_notify_check.outputs.body }}
+          EXPORT_NOTIFY: ${{ steps.export_notify_check.outputs.should_notify }}
+          EXPORT_SUBJECT: ${{ steps.export_notify_check.outputs.subject }}
+          EXPORT_BODY: ${{ steps.export_notify_check.outputs.body }}
+          EXPORT_OUTCOME: ${{ steps.export_dashboards.outcome }}
+          INGEST_OUTCOME: ${{ steps.ingest.outcome }}
+        run: |
+          SHOULD_NOTIFY="false"
+          SUBJECT="[StreamBase] Own Pipeline: Sync/Export issue"
+          if [ "$SYNC_NOTIFY" = "true" ]; then SHOULD_NOTIFY="true"; SUBJECT="$SYNC_SUBJECT"; fi
+          if [ "$EXPORT_NOTIFY" = "true" ]; then SHOULD_NOTIFY="true"; SUBJECT="$EXPORT_SUBJECT"; fi
+          if [ "$JOB_STATUS" = "failure" ]; then
+            SHOULD_NOTIFY="true"
+            SUBJECT="[StreamBase] Own Pipeline: Sync/Export FAILED"
+            if [ "$SYNC_SUBJECT" = "[StreamBase] Dashboard Sync FAILED" ]; then SUBJECT="$SYNC_SUBJECT"; fi
+            if [ "$EXPORT_OUTCOME" = "failure" ] || [ "$INGEST_OUTCOME" = "failure" ]; then SUBJECT="$EXPORT_SUBJECT"; fi
+          fi
+          echo "should_notify=$SHOULD_NOTIFY" >> "$GITHUB_OUTPUT"
+          echo "subject=$SUBJECT" >> "$GITHUB_OUTPUT"
+          {
+            echo 'body<<ENDOFBODY'
+            printf '%s\n\n%s\n\n' "$SYNC_BODY" "$EXPORT_BODY"
+            echo "Job status: $JOB_STATUS"
+            echo "Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo 'ENDOFBODY'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Send pipeline notification email
+        if: always() && steps.notification.outputs.should_notify == 'true'
+        uses: ./.github/actions/notify-email
+        with:
+          password: ${{ secrets.NOTIFY_SMTP_PASSWORD }}
+          subject: ${{ steps.notification.outputs.subject }}
+          body: ${{ steps.notification.outputs.body }}
+
+      - name: Record sync/export result
+        if: always()
+        env:
+          STAGE_STATUS: ${{ job.status == 'success' && 'success' || 'failure' }}
+          DETAIL: ${{ inputs.dry_run && 'Dry run (export and ingestion skipped)' || '' }}
+        run: bash scripts/pipeline_record_stage.sh own "$RUN_DATE" sync_export "$STAGE_STATUS" "$DETAIL"
