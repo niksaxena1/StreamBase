@@ -1,3 +1,4 @@
+# Manual only; daily runs use sot_competitor_daily_pipeline.yml (started by the Supabase scheduler).
 name: SOT Competitor Daily Dashboard Sync
 
 permissions:
@@ -5,12 +6,6 @@ permissions:
   contents: read
 
 on:
-  workflow_run:
-    workflows: ["SOT Competitor Daily Playlist Refresh"]
-    types: [completed]
-  schedule:
-    # Fallback if the refresh chain is missed; skip if already synced today.
-    - cron: "53 8 * * *"
   workflow_dispatch:
     inputs:
       full_sync:
@@ -38,7 +33,7 @@ on:
         type: string
 
 concurrency:
-  group: sot-competitor-dashboard-sync
+  group: sot-competitor-pipeline
   cancel-in-progress: false
 
 jobs:
