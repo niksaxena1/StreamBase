@@ -13,6 +13,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional
 
+CATCHUP_MAX_SHARE = 0.90
 CATCHUP_LOOKBACK_DAYS = 7
 NEEDS_REVIEW_CODE = "catchup_needs_review"
 
@@ -50,6 +51,9 @@ def run_catchup_smoothing(
                 "p_end_date": run_date.isoformat(),
                 "p_lookback_days": CATCHUP_LOOKBACK_DAYS,
                 "p_dry_run": False,
+                # Real SpotOnTrack lag events touch ~55-60% of tracks; normal days <= ~1%.
+                # Above 90% is held for review (catchup_needs_review) instead of applied.
+                "p_max_share": CATCHUP_MAX_SHARE,
             },
         )
     except Exception as err:  # warn-and-continue: smoothing is an enhancement, not a gate

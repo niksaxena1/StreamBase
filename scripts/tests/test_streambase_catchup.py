@@ -59,7 +59,7 @@ def test_calls_smoothing_for_run_date_non_dry_run_and_prints_summary(capsys):
     pg = FakePG({SMOOTH: [applied_row()]})
     result = run_catchup_smoothing(pg, RUN, universe="competitor")
 
-    assert pg.calls == [(SMOOTH, {"p_end_date": "2026-10-11", "p_lookback_days": 7, "p_dry_run": False})]
+    assert pg.calls == [(SMOOTH, {"p_end_date": "2026-10-11", "p_lookback_days": 7, "p_dry_run": False, "p_max_share": 0.90})]
     assert result["earliest"] == date(2026, 10, 8)
     out = capsys.readouterr().out
     assert "competitor catch-up smoothing 2026-10-10" in out

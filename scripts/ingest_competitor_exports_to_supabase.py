@@ -499,7 +499,7 @@ def main():
                         "run_id": run_id,
                         "run_date": run_date.isoformat(),
                         "playlist_key": None,
-                        "severity": "warning",
+                        "severity": "warn",
                         "code": "competitor_tracks_stale",
                         "message": (
                             f"{stale_raw} of {snapshot_tracks} competitor tracks have an unchanged "
