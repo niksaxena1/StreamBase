@@ -11,6 +11,7 @@ import { foldForSearch } from "@/lib/searchFold";
 import { useMetric } from "@/components/metrics/MetricContext";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { formatInt, formatUsd2 } from "@/lib/format";
+import { SpotifyNotFoundBadge } from "@/components/ui/SpotifyNotFoundBadge";
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 
 /** Number of rows to render initially before requiring "Show more". */
@@ -24,6 +25,7 @@ type Track = {
   release_date: string | null;
   last_seen: string | null;
   albumImageUrl: string | null;
+  spotifyNotFoundSince?: string | null;
   artistNames: string[] | null;
   artistIds: string[] | null;
   externalUrl: string | null;
@@ -152,6 +154,7 @@ export function TracksList({ tracks, searchQuery, sortBy = "name", sortAsc = tru
               >
                 {track.name ?? track.isrc}
               </Link>
+              <SpotifyNotFoundBadge since={track.spotifyNotFoundSince} imageUrl={track.albumImageUrl} />
               {track.artistNames?.length ? (
                 <div className="mt-0.5 text-xs opacity-60">
                   <ArtistLinks

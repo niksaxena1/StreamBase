@@ -12,7 +12,7 @@ export type DailyDataPoint = {
 };
 
 export type ArtistOption = { id: string; name: string; imageUrl?: string | null };
-export type TrackOption = { isrc: string; name: string; albumImageUrl?: string | null };
+export type TrackOption = { isrc: string; name: string; albumImageUrl?: string | null; spotifyNotFoundSince?: string | null };
 
 export type TopTrack = {
   isrc: string;
@@ -20,6 +20,7 @@ export type TopTrack = {
   total: number | null;
   daily: number | null;
   albumImageUrl: string | null;
+  spotifyNotFoundSince?: string | null;
   artistNames?: string[] | null;
   artistIds?: string[] | null;
   releaseDate?: string | null;
@@ -33,6 +34,7 @@ export type TrackDailyPoint = { date: string; daily: number | null; ma7?: number
 export type SelectedTrack = {
   name: string | null;
   albumImageUrl: string | null;
+  spotifyNotFoundSince?: string | null;
   spotifyTrackId: string | null;
   artistNames: string[] | null;
   artistIds: string[] | null;

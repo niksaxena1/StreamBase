@@ -1,3 +1,4 @@
+import { SpotifyNotFoundBadge } from "@/components/ui/SpotifyNotFoundBadge";
 import Link from "@/components/shell/RouteLink";
 import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
@@ -72,6 +73,7 @@ export function TrackListItem({
       )}
 
       <div className="flex-1 min-w-0">
+        <SpotifyNotFoundBadge since={track.spotify_not_found_since} imageUrl={imageUrl} />
         {dense ? (
           <div className="flex min-w-0 items-center gap-2">
             <div className="min-w-0 flex-1">

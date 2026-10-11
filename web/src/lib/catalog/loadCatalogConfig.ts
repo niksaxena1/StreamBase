@@ -14,6 +14,7 @@ export type CatalogConfigTrackRpcRow = {
   release_date: string | null;
   last_seen: string | null;
   spotify_album_image_url: string | null;
+  spotify_not_found_since?: string | null;
   spotify_artist_names: string[] | null;
   spotify_artist_ids: string[] | null;
   spotify_track_id: string | null;
@@ -44,6 +45,19 @@ async function fetchTrackRows(svc: ReturnType<typeof supabaseService>) {
     });
     if (error) throw error;
     const batch = (data ?? []) as CatalogConfigTrackRpcRow[];
+    // The existing RPC predates lookup tracking. Only hydrate rows whose
+    // artwork is missing, keeping the query out of normal catalog hot paths.
+    const missingArtworkIsrcs = batch.filter((row) => !row.spotify_album_image_url).map((row) => row.isrc);
+    for (let start = 0; start < missingArtworkIsrcs.length; start += 200) {
+      const { data: tracking, error: trackingError } = await svc.from("tracks")
+        .select("isrc,spotify_not_found_since")
+        .in("isrc", missingArtworkIsrcs.slice(start, start + 200));
+      if (trackingError) throw trackingError;
+      const sinceByIsrc = new Map((tracking ?? []).map((row) => [row.isrc, row.spotify_not_found_since]));
+      for (const row of batch) {
+        if (sinceByIsrc.has(row.isrc)) row.spotify_not_found_since = sinceByIsrc.get(row.isrc) ?? null;
+      }
+    }
     rows.push(...batch);
     if (batch.length < CATALOG_CONFIG_INITIAL_LIMIT) break;
   }

@@ -1966,6 +1966,8 @@ export type Database = {
           spotify_artist_ids: string[] | null
           spotify_artist_names: string[] | null
           spotify_last_fetched_at: string | null
+          spotify_lookup_misses: number
+          spotify_not_found_since: string | null
           spotify_track_id: string | null
         }
         Insert: {
@@ -1981,6 +1983,8 @@ export type Database = {
           spotify_artist_ids?: string[] | null
           spotify_artist_names?: string[] | null
           spotify_last_fetched_at?: string | null
+          spotify_lookup_misses?: number
+          spotify_not_found_since?: string | null
           spotify_track_id?: string | null
         }
         Update: {
@@ -1996,6 +2000,8 @@ export type Database = {
           spotify_artist_ids?: string[] | null
           spotify_artist_names?: string[] | null
           spotify_last_fetched_at?: string | null
+          spotify_lookup_misses?: number
+          spotify_not_found_since?: string | null
           spotify_track_id?: string | null
         }
         Relationships: []

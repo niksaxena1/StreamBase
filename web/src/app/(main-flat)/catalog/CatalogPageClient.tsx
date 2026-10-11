@@ -30,6 +30,7 @@ import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { useMetric } from "@/components/metrics/MetricContext";
 import { SectionHeader } from "@/components/ui/SectionHeader";
 import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
+import { SpotifyNotFoundBadge } from "@/components/ui/SpotifyNotFoundBadge";
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { RememberTrackSelection } from "@/components/dashboard/RememberTrackSelection";
 import { lastCatalogTrackIsrcStorageKey, writeDatasetSelectionStorage } from "@/lib/datasetSelectionStorage";
@@ -267,7 +268,7 @@ export function CatalogPageClient(props: {
     [props.artists],
   );
   const trackComboboxOptions = useMemo(
-    () => props.tracks.map((t) => ({ value: t.isrc, label: t.name, imageUrl: t.albumImageUrl })),
+    () => props.tracks.map((t) => ({ value: t.isrc, label: t.name, imageUrl: t.albumImageUrl, spotifyNotFoundSince: t.spotifyNotFoundSince })),
     [props.tracks],
   );
 
@@ -616,6 +617,7 @@ export function CatalogPageClient(props: {
                             >
                               {t.name ?? t.isrc}
                             </Link>
+                            <SpotifyNotFoundBadge since={t.spotifyNotFoundSince} imageUrl={t.albumImageUrl} />
                             {t.artistNames?.length ? (
                               <div className="mt-0.5 truncate text-xs" style={{ color: "var(--sb-muted)" }}>
                                 <ArtistLinks
@@ -802,6 +804,7 @@ export function CatalogPageClient(props: {
                             >
                               {t.name ?? t.isrc}
                             </Link>
+                            <SpotifyNotFoundBadge since={t.spotifyNotFoundSince} imageUrl={t.albumImageUrl} />
                             {t.artistNames?.length ? (
                               <div className="mt-0.5 truncate text-xs" style={{ color: "var(--sb-muted)" }}>
                                 <ArtistLinks
@@ -894,6 +897,7 @@ export function CatalogPageClient(props: {
                 <h1 className="font-display text-2xl font-semibold tracking-tight">
                   {props.selectedTrack.name ?? props.isrc}
                 </h1>
+                <SpotifyNotFoundBadge since={props.selectedTrack.spotifyNotFoundSince} imageUrl={props.selectedTrack.albumImageUrl} />
                 {props.selectedTrack.spotifyTrackId && (
                   <Link
                     href={`https://open.spotify.com/track/${props.selectedTrack.spotifyTrackId}`}

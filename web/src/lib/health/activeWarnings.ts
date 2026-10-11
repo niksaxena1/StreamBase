@@ -248,11 +248,13 @@ async function computeActiveWarnings(
               (isrc) => !isExcludedEnrichment(w.playlist_key!, isrc),
             );
           if (filtered.length === 0) return; // all excluded → suppress
-          const { data: rows } = await svc
+          const { data: rows, error } = await svc
             .from("tracks")
             .select("isrc")
             .in("isrc", filtered)
-            .is("spotify_artist_ids", null);
+            .is("spotify_artist_ids", null)
+            .is("spotify_not_found_since", null);
+          if (error) throw error;
           const stillMissing = ((rows ?? []) as Array<Record<string, unknown>>).filter(
             (r) =>
               !isExcludedEnrichment(

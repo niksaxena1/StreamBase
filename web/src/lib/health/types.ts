@@ -29,6 +29,7 @@ export type TrackBase = {
   artist_names?: string[] | null;
   artist_ids?: string[] | null;
   album_image_url?: string | null;
+  spotify_not_found_since?: string | null;
 };
 
 export type StaleTrack = TrackBase & {
@@ -79,6 +80,7 @@ export type MissingCatalogTrack = {
   name: string | null;
   artist_names: string[] | null;
   artist_ids: string[] | null;
+  spotify_not_found_since?: string | null;
   album_image_url: string | null;
   playlists: string[];
 };
