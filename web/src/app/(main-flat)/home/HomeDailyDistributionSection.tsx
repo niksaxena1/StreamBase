@@ -249,7 +249,7 @@ export function HomeDailyDistributionSection(props: {
           </div>
         </summary>
 
-        <div className="mt-2">
+        {openDailyDistribution && <div className="mt-2">
           {hasTrackScatterPoints ? (
             <DailyStreamsDistributionChart
               tracks={props.trackScatterPoints.map((p) => ({ isrc: p.isrc, daily_streams: p.daily_streams_delta, artist_ids: p.artist_ids ?? null }))}
@@ -273,7 +273,7 @@ export function HomeDailyDistributionSection(props: {
               {props.trackScatterLoading ? "Loading daily distribution data..." : "Open this section to load daily distribution data."}
             </div>
           )}
-        </div>
+        </div>}
       </details>
 
       {/* Daily Buckets Settings Modal */}
