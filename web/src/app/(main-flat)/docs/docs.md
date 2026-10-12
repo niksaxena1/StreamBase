@@ -454,7 +454,7 @@ Times are **UTC** with Dubai time (UTC+4). The Supabase database scheduler start
 
 | Workflow | Trigger / time (UTC) | Dubai (UTC+4) | What it does |
 |---|---|---:|---|
-| Spotify Takedown Watch (`spotify_takedown_watch.yml`) | Daily cron 04:37 | 08:37 | Checks own-catalog tracks for Spotify availability changes |
+| Spotify Takedown Watch (`spotify_takedown_watch.yml`) | Daily 20:00 (database scheduler) | 00:00 | Checks own-catalog tracks for Spotify availability changes |
 | Own daily pipeline (`sot_own_daily_pipeline.yml`) | Database scheduler dispatch at 05:07; sync + export after refresh succeeds; GitHub fallback cron 09:00 | 09:07 | Refreshes SpotOnTrack playlists, syncs dashboards with `config/playlists.csv`, exports and ingests into Supabase (idempotent) |
 | RapidAPI stale-track fix (`rapidapi_stale_fix.yml`) | Dispatched after a successful, current-UTC-date own-catalog export is ingested; daily fallback cron 09:41 | 13:41 | Attempts own-catalog stale-track corrections |
 | Spotify enrichment (`spotify_enrich.yml`) | 10:29 UTC on odd days of the month | 14:29 | Refreshes own playlist thumbnails, then enriches missing track metadata via Spotify |
@@ -1580,7 +1580,7 @@ See `docs/COMPETITOR-MODE-OPERATIONS.md` for migration and refresh details.
 
 ## Daily Spotify takedown watch
 
-The independent `spotify_takedown_watch.yml` workflow runs daily at **04:37 UTC / 08:37 Dubai**, ahead of the usual SpotOnTrack data lag. It watches only the own catalog; competitor tables and pipelines are unaffected.
+The independent `spotify_takedown_watch.yml` workflow runs daily at **20:00 UTC / 00:00 Dubai**, started by the database scheduler (`ops.dispatch_workflow`). It watches only the own catalog; competitor tables and pipelines are unaffected.
 
 **Apply `supabase/migrations/20261010203810_add_spotify_track_availability_watch.sql` before the workflow's first run.** It creates two backend-only tables with RLS enabled and explicit service-role SELECT/INSERT/UPDATE grants, plus the service-role-only `spotify_availability_candidates()` RPC. The admin-gated own-catalog `/health` page uses the service client to read the **Spotify availability** panel. The panel hides before the migration or first successful check.
 

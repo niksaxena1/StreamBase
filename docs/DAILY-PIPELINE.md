@@ -138,7 +138,7 @@ GitHub's own `schedule:` triggers ran 6–8 hours late, so these workflows are s
 
 | Job | pg_cron name | When |
 |---|---|---|
-| `spotify_takedown_watch.yml` | `streambase-takedown-watch` | 04:37 daily |
+| `spotify_takedown_watch.yml` | `streambase-takedown-watch` | 20:00 daily (00:00 Dubai) |
 | `artist_tools_daily.yml` | `streambase-artist-tools-daily` | 13:17 daily |
 | `spotify_playlist_watch_daily.yml` | `streambase-playlist-watch` | 15:11 daily |
 | `spotify_artist_image_refresh.yml` | `streambase-artist-image-refresh` | 15:00 on the first Friday of the month |
