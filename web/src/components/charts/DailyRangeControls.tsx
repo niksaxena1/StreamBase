@@ -1,20 +1,28 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePhoneChart } from "./usePhoneChart";
 
 type Range = "full" | "typical";
+const sessionChoices = new Map<string | undefined, Range>();
+
+export function resolveDailyRange(stored: string | null | undefined, phone: boolean, session?: Range): Range {
+  return session ?? (stored === "full" || stored === "typical" ? stored : phone ? "typical" : "full");
+}
 
 export function useDailyRange(storageKey?: string) {
-  const [choice, setChoice] = useState<{ key?: string; range: Range }>({ range: "full" });
+  const phone = usePhoneChart();
+  const [choice, setChoice] = useState<{ key?: string; range?: Range }>({});
   useEffect(() => {
-    let range: Range = "full";
-    try { if (storageKey && localStorage.getItem(storageKey) === "typical") range = "typical"; } catch { /* Storage may be blocked. */ }
-    setChoice({ key: storageKey, range });
+    let stored: string | null | undefined = sessionChoices.get(storageKey);
+    try { if (storageKey) stored = localStorage.getItem(storageKey) ?? stored; } catch { /* Storage may be blocked. */ }
+    setChoice({ key: storageKey, range: stored === "full" || stored === "typical" ? stored : undefined });
   }, [storageKey]);
   return {
-    typical: Boolean(storageKey && choice.key === storageKey && choice.range === "typical"),
+    typical: resolveDailyRange(choice.key === storageKey ? choice.range : undefined, phone, sessionChoices.get(storageKey)) === "typical",
     setRange(range: Range) {
       setChoice({ key: storageKey, range });
+      sessionChoices.set(storageKey, range);
       try { if (storageKey) localStorage.setItem(storageKey, range); } catch { /* Keep the choice in memory. */ }
     },
   };
