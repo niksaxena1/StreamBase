@@ -1,11 +1,10 @@
 """Archive old months of stream history to Cloudflare R2 and health-check the archive tier.
 
 Files are gzip CSV (the Supabase Wrappers S3 foreign data wrapper cannot read Parquet from R2: ranged reads fail with
-"service error", and its CSV reader only supports text columns, so the views cast). One streams file and one
-overrides file per universe per month:
-  <prefix>/<own|competitor>/streams_<YYYY-MM>.csv.gz     d,isrc,streams
-  <prefix>/<own|competitor>/overrides_<YYYY-MM>.csv.gz   id,date,isrc,streams_cumulative_override,note,created_by,created_at,base_missing
-NULL is written as the two characters backslash-N; base_missing is t/f.
+"service error", and its CSV reader only supports text columns, so the views cast). One file per universe per month:
+  <prefix>/<own|competitor>/archive_<YYYY-MM>.csv.gz   header kind,d,isrc,v,oid,note,created_by,created_at
+  kind s = stream row (v = cumulative streams); kind o = override row (d = date, v = override value, oid/note/... = metadata).
+NULL is written as the two characters backslash-N.
 
 Modes
   smoke     connectivity probe (kept for debugging).
@@ -120,23 +119,27 @@ def override_rows(pg: Postgrest, universe: str, month: date) -> List[dict]:
     return out
 
 
-def build_files(pg: Postgrest, universe: str, month: date) -> Tuple[bytes, bytes, int, int]:
+def build_file(pg: Postgrest, universe: str, month: date) -> Tuple[bytes, int, int]:
+    """One gzip CSV per universe per month: kind s = stream row, kind o = override row."""
     streams = stream_rows(pg, universe, month)
-    have = {(d, i) for d, i, _ in streams}
     overrides = override_rows(pg, universe, month)
-    s_bytes = gz_csv(["d", "isrc", "streams"], ([d, i, s] for d, i, s in streams))
-    o_bytes = gz_csv(
-        ["id", "date", "isrc", "streams_cumulative_override", "note", "created_by", "created_at", "base_missing"],
-        (
-            [
-                r["id"], str(r["date"])[:10], r["isrc"], r["streams_cumulative_override"],
+
+    def rows():
+        for d, i, s_ in streams:
+            yield ["s", d, i, s_, NULL, NULL, NULL, NULL]
+        for r in overrides:
+            yield [
+                "o", str(r["date"])[:10], r["isrc"], r["streams_cumulative_override"], r["id"],
                 cell(r.get("note")), cell(r.get("created_by")), format_ts(r.get("created_at")),
-                "f" if (str(r["date"])[:10], r["isrc"]) in have else "t",
             ]
-            for r in overrides
-        ),
-    )
-    return s_bytes, o_bytes, len(streams), len(overrides)
+
+    body = gz_csv(["kind", "d", "isrc", "v", "oid", "note", "created_by", "created_at"], rows())
+    return body, len(streams), len(overrides)
+
+
+def archive_key(prefix: str, universe: str, month: date, selftest: bool = False) -> str:
+    base = f"{prefix}/_selftest/{universe}" if selftest else f"{prefix}/{universe}"
+    return f"{base}/archive_{month.strftime('%Y-%m')}.csv.gz"
 
 
 def upload(s3, bucket: str, key: str, body: bytes) -> None:
@@ -189,16 +192,14 @@ def run_selftest() -> int:
         t0 = time.time()
         try:
             month = parse_date(pg.rpc("stream_archive_selftest_prepare", {"p_universe": universe}))
-            s_bytes, o_bytes, n_s, n_o = build_files(pg, universe, month)
+            body, n_s, n_o = build_file(pg, universe, month)
             t_export = time.time() - t0
-            base = f"{prefix}/_selftest/{universe}"
-            upload(s3, bucket, f"{base}/streams_{month.strftime('%Y-%m')}.csv.gz", s_bytes)
-            upload(s3, bucket, f"{base}/overrides_{month.strftime('%Y-%m')}.csv.gz", o_bytes)
+            upload(s3, bucket, archive_key(prefix, universe, month, selftest=True), body)
             t_up = time.time() - t0 - t_export
             res = run_job(pg, "selftest_verify", universe, None)
             t_verify = time.time() - t0 - t_export - t_up
             print(f"[{universe}] month {month}: exported {n_s} stream rows + {n_o} overrides "
-                  f"({len(s_bytes) // 1024} KiB + {len(o_bytes) // 1024} KiB gz); export {t_export:.1f}s, upload {t_up:.1f}s, verify {t_verify:.1f}s")
+                  f"({len(body) // 1024} KiB gz); export {t_export:.1f}s, upload {t_up:.1f}s, verify {t_verify:.1f}s")
             print(json.dumps(res, indent=1, default=str))
             if not res.get("ok"):
                 failed = True
@@ -224,10 +225,8 @@ def run_archive() -> int:
         print(f"[{universe}] due months: {[d.isoformat() for d in due] or 'none'}")
         for month in due:
             try:
-                s_bytes, o_bytes, n_s, n_o = build_files(pg, universe, month)
-                base = f"{prefix}/{universe}"
-                upload(s3, bucket, f"{base}/streams_{month.strftime('%Y-%m')}.csv.gz", s_bytes)
-                upload(s3, bucket, f"{base}/overrides_{month.strftime('%Y-%m')}.csv.gz", o_bytes)
+                body, n_s, n_o = build_file(pg, universe, month)
+                upload(s3, bucket, archive_key(prefix, universe, month), body)
                 res = run_job(pg, "attach", universe, month)
                 print(f"[{universe}] {month}: attached ({n_s} stream rows, {n_o} overrides) {json.dumps(res, default=str)}")
                 try:

@@ -51,21 +51,22 @@ begin
           and (v_res ->> 'streams_file_rows')::bigint = (v_res ->> 'streams_db_rows')::bigint
           and (v_res ->> 'streams_file_rows')::bigint > 0
           and (v_res ->> 'overrides_only_in_file')::bigint = 0
-          and (v_res ->> 'overrides_base_flag_mismatches')::bigint = 0) then
+          and (v_res ->> 'unknown_kind_rows')::bigint = 0) then
     raise exception 'finalize verification failed: %', v_res::text;
   end if;
 
   execute format(
     'delete from %1$I.track_daily_stream_overrides o
        using stream_archive.%2$I a
-      where o.id = a.id::bigint
-        and o.date = ops.iso_date(a.date)
+      where a.kind = ''o''
+        and o.id = a.oid::bigint
+        and o.date = ops.iso_date(a.d)
         and o.isrc = a.isrc
-        and o.streams_cumulative_override = a.streams_cumulative_override::bigint
+        and o.streams_cumulative_override = a.v::bigint
         and o.note is not distinct from nullif(a.note, ''\N'')
         and o.created_by is not distinct from nullif(a.created_by, ''\N'')::uuid
         and o.created_at = a.created_at::timestamptz',
-    v_schema, p_universe || '_overrides_' || to_char(p_month, 'YYYYMM'));
+    v_schema, p_universe || '_rows_' || to_char(p_month, 'YYYYMM'));
   get diagnostics v_ov_removed = row_count;
 
   execute format('delete from %I.track_streams_monthly where month = $1', v_schema) using p_month;
