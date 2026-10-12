@@ -265,7 +265,12 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("mode", choices=["smoke", "selftest", "archive"])
     args = ap.parse_args()
-    return {"smoke": run_smoke, "selftest": run_selftest, "archive": run_archive}[args.mode]()
+    rc = {"smoke": run_smoke, "selftest": run_selftest, "archive": run_archive}[args.mode]()
+    try:
+        pg_client().rpc("stream_archive_cleanup_jobs", {})
+    except Exception as e:  # housekeeping only
+        print(f"  cleanup of finished cron one-shots failed: {e}")
+    return rc
 
 
 if __name__ == "__main__":

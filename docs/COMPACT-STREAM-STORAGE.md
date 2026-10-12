@@ -172,3 +172,38 @@ up to current month minus 4 (both schemas), raises `ops.pipeline_alerts` rows `p
 Bulk reads of the whole effective view are about 2x the old table scan (full scan 1.16 s vs 0.52 s), month-wide all-track
 ranges through `*_effective_public` about 5x (390 ms vs 75 ms), ISRC-list + range 450 ms vs 175 ms. Point lookups are
 8-10 ms vs 2-3 ms. Ledgenta-style queries (single ISRC, ISRC list) stay in the same order of magnitude.
+
+## Phase 3: R2 archive tier (Oct 12 2026)
+
+Three tiers behind the same views, so every page, SQL function, chart and Ledgenta keep working with identical output:
+
+| Tier | Dates | Storage |
+|---|---|---|
+| daily | `>= stream_history_hot_from()` | partitioned `track_daily_streams` |
+| compact | `stream_compact_from()` .. daily | `track_streams_monthly` |
+| archive | `< stream_compact_from()` | one gzip CSV per universe per month in Cloudflare R2, read through the Supabase Wrappers S3 foreign data wrapper |
+
+`stream_compact_from()` = the earliest month still in `track_streams_monthly` (SECURITY DEFINER, like `stream_history_hot_from()`; invoker versions broke anon reads once). Policy: `ops.stream_archive_config.packed_months_keep` = 12 packed months stay in compact; older months become due. Nothing is due yet (first due month: about Sep 2027), so the archive is empty in production; the tier is fully built and proven by the self-test.
+
+### Files
+`<prefix>/<own|competitor>/archive_<YYYY-MM>.csv.gz`, header `kind,d,isrc,v,oid,note,created_by,created_at`; `kind s` = stream row (`v` = cumulative streams), `kind o` = override row (`d` = date, `v` = override value, `oid/note/created_by/created_at` = override metadata). NULL = `\N`. One file holds both so the archive tier is one grouped scan (stream value, override value and override metadata per (date, isrc)); DB overrides always win over archived ones. Measured: own 2026-01 = 21,429 stream rows + 1 override = 117 KiB gz; competitor 2026-05 = 109,701 + 1,103 overrides = 618 KiB gz. (Compact copies of the same months are about 1 and 4 MB.)
+
+### Why CSV.gz and not Parquet
+Parquet was tried first and cannot be read from R2 by this FDW: every Parquet file (uncompressed, snappy, gzip, zstd) failed with `read parquet failed: Parquet error: External: service error`, while a CSV in the same bucket with the same server and credentials read fine, so credentials, endpoint and region (`auto`) are right and the failure is in the FDW's Parquet reader against R2 (it issues ranged/streamed reads; the root cause was not isolated). It is not known whether the documented load-whole-file behaviour is the reason. The FDW's CSV reader returns correct values only for text columns (typed date/bigint columns came back as garbage), so the foreign tables are all text and the views cast; hence the `ops.iso_date()` wrapper (IMMUTABLE, so the planner can use it in CHECK windows).
+
+### How a read is kept off R2
+Each archived month is an inheritance child (foreign table) of an empty parent (`stream_archive.<u>_rows`) with `CHECK (ops.iso_date(d) in the month)`. Constraint exclusion removes children outside the query's date range at plan time, so recent-range queries never open a foreign scan (proven by the self-test with EXPLAIN ANALYZE: `Actual Loops` of every Foreign Scan is 0 or the node is absent). Unbounded readers are bounded: SQL with `stream_compact_from()`, web with `recentStreamFloor()`. A query that does touch archived months loads those months' whole files (no pushdown, no cache): about 1-3 s per month file normally, but R2 calls from Supabase are bimodal and have taken 10-40 s when a connection stalls. Archive is cold storage.
+
+### Workflow (`.github/workflows/stream_archive.yml`, `scripts/archive_stream_months.py`)
+- `archive` (day 4, 03:10 UTC): for each due month export from Postgres (RPCs `stream_month_export` / `stream_overrides_export`), upload to R2, `attach` (create the child foreign table + verify: stream rows vs the compact month and override rows vs the DB overrides, counts + EXCEPT ALL both ways), then `finalize` (owner paste `supabase/manual/2026-10-12_stream_archive_finalize.sql`: re-verifies, removes only DB override rows identical to archived ones and the month's compact row set, oldest month first). If finalize is not installed the month stays in compact and one alert is raised.
+- `selftest` (day 5 03:10 UTC, and manual): archives a COPY of the earliest compact month of each universe under `<prefix>/_selftest/`, serves it through the `archive_selftest.*` views (same view text as the live ones, generated from `scripts/gen_stream_archive_sql.py`), compares with the live views across the archive/compact boundary and around an override, proves the pruning, removes nothing from real data.
+- The heavy steps run as one-shot pg_cron jobs (`streambase-archive-job-<id>`, kinds `selftest_verify`/`attach`/`finalize`, table `ops.stream_archive_jobs`) because the API statement timeout is 8 s; the workflow enqueues and polls. Jobs have a 15 minute limit and cannot loop.
+- Emails (`ops.pipeline_alerts`) on failure only; scheduled runs email, manual `workflow_dispatch` runs do not unless `notify=true`.
+
+### Limits
+- An archived override cannot be removed with `spotibase_remove_stream_override`; to change an archived value add a DB override for the same (date, isrc) (it wins).
+- Raw ingestion writes to archived dates are skipped with a warning (`upsert_daily_streams`); overrides on archived dates still work.
+- Settings "earliest data date" and per-track history charts show the last 365 days (identical today).
+
+### If R2 is unreachable
+Recent and compact data keep working (archive branches are never executed). A query whose date range includes an archived month fails with a foreign-table error (`HV000 ... request failed` / `read ... failed`). Check, in order: the vault secrets `r2_*` and the R2 token (Object Read & Write on the bucket), `select * from ops.stream_archive_config`, then run the `Stream Archive (R2)` workflow in `selftest` mode (manual, no email). Files are plain gzip CSV in the bucket, so they can also be read or restored without the FDW.
