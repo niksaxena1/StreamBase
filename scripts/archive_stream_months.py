@@ -169,6 +169,11 @@ def run_smoke() -> int:
     upload(s3, bucket, "v1/_selftest/smoke.csv", ("d,isrc,streams" + NL + "2026-01-01,USAAA0000001,1" + NL + "2026-01-02,USAAA0000002,2" + NL).encode())
     upload(s3, bucket, "v1/_selftest/smoke.jsonl", ('{"d":"2026-01-01","isrc":"A","streams":1}' + NL + '{"d":"2026-01-02","isrc":"B","streams":2}' + NL).encode())
     print("uploaded smoke.csv and smoke.jsonl")
+    for comp in ("none", "snappy", "gzip"):
+        buf = io.BytesIO()
+        pq.write_table(t, buf, compression=comp, use_dictionary=False, data_page_version="1.0")
+        upload(s3, bucket, f"v1/_selftest/smoke_{comp}.parquet", buf.getvalue())
+    print("uploaded parquet variants")
     out = pg.rpc("stream_archive_smoke", {"p_key": key})
     print(json.dumps(out, indent=1, default=str))
     return 0
