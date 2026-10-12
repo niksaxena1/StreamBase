@@ -5,12 +5,24 @@ export function datasetSchemaForMode(mode: DatasetMode) {
   return mode === "competitor" ? "competitor" : "public";
 }
 
-export function navItemsForMode<T extends { href: string }>(mode: DatasetMode, items: T[], access?: AppAccess) {
+/** Admin-only, own-catalog-only page (label catalog). */
+export const LIBRARY_HREF = "/library";
+
+export function navItemsForMode<T extends { href: string }>(
+  mode: DatasetMode,
+  items: T[],
+  access?: AppAccess,
+  opts?: { isAdmin?: boolean },
+) {
   if (access && isPlaylistWatchOnlyAccess(access)) {
     return items.filter((item) => item.href === "/playlist-watch");
   }
 
-  const areaItems = items.filter((item) => item.href !== "/playlist-watch");
+  // Fails closed: Library only appears when the caller says the user is an admin.
+  const showLibrary = mode === "own" && opts?.isAdmin === true;
+  const areaItems = items.filter(
+    (item) => item.href !== "/playlist-watch" && (item.href !== LIBRARY_HREF || showLibrary),
+  );
   const modeItems = mode === "competitor"
     ? areaItems.filter((item) => item.href !== "/collectors")
     : areaItems.filter((item) => item.href !== "/competitors");

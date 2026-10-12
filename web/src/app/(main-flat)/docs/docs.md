@@ -259,6 +259,26 @@ Files:
 
 - `web/src/app/(main-flat)/playlists/config/settings/page.tsx`
 
+### Library (`/library`)
+
+- Purpose: the label's release catalog (one row per release), read from a separate Supabase project (schema `catalog`). It is not part of the streaming analytics.
+- Access: admins only, for viewing and editing. It only appears in the side nav in own-catalog mode. If `CATALOG_SUPABASE_URL` and `CATALOG_SUPABASE_SECRET_KEY` are not set, the page shows "Library isn't connected".
+- What you can do:
+  - Search by artist, title, catalog ID, ISRC, UPC, comments or cover original artist
+  - Filter by entity, year, distributor, label / genre, originality, exclusivity, upcoming / released, has master, missing ISRC / UPC, on drive, splice samples and length; sort by release date, artist, title, length or catalog ID
+  - Share a view: the filters and the open release are kept in the URL (`?id=TG-00123` opens a release)
+  - Export the filtered list to CSV
+  - Open a release to see its details, ISRCs / UPCs, files (with Dropbox links and the drive folder path) and change history
+  - **Edit** a release. Only the fields you changed are sent. Every edit and every new release is written to the catalog's change log with your email.
+  - **Add release** creates a new release (artist, title, entity, optional date and distributor); it gets its catalog ID from the database
+
+Files:
+
+- `web/src/app/(main-flat)/library/page.tsx`
+- `web/src/app/(main-flat)/library/library.actions.ts`
+- `web/src/lib/library/` (loaders and pure helpers)
+- `web/src/lib/supabase/catalogService.ts`
+
 ---
 
 ## Quick “How do I…?” (user cookbook)
@@ -1413,6 +1433,7 @@ Changing what “whole catalog” means requires updating ingestion logic + any 
 | `/playlists` | `playlist_key`, `range` | choose playlist and range window |
 | `/collectors` | `collector`, `range`, `start`, `end` | choose collector and time window (custom date range supported) |
 | `/health` | `severity`, `playlist`, `date` | filter warnings and select data date |
+| `/library` | `id`, `q`, `entity`, `year`, `distro`, `genre`, `sort`, … | open a release; search, filter and sort the list (admin only) |
 | `/login` | `next` | redirect destination after login |
 
 ---

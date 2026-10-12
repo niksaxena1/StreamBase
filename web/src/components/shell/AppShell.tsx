@@ -37,6 +37,8 @@ export function AppShell(props: {
   mainSurface?: MainSurface;
   datasetMode?: "own" | "competitor";
   appAccess?: AppAccess;
+  /** Admin-only nav items (Library) are hidden unless this is true. */
+  isAdmin?: boolean;
   userEmail?: string | null;
   suppressDatasetModeChrome?: boolean;
   competitorLabels?: CompetitorLabelProp[];
@@ -63,7 +65,7 @@ export function AppShell(props: {
         competitorDisplayName={props.competitorDisplayName ?? null}
       />
 
-      <MobileNavWithBadge datasetMode={navDatasetMode} appAccess={appAccess} />
+      <MobileNavWithBadge datasetMode={navDatasetMode} appAccess={appAccess} isAdmin={props.isAdmin === true} />
       {playlistWatchOnly ? null : <LazyAIWidget />}
 
       <div className="sb-app-shell min-h-dvh" data-mode={datasetMode}>
@@ -86,7 +88,7 @@ export function AppShell(props: {
         </div>
 
         <div className="mx-auto flex w-full max-w-[1600px] gap-3 px-3 py-3 pb-[calc(72px+env(safe-area-inset-bottom,0px)+24px)] sm:pb-3">
-          <SideRailWithBadge datasetMode={navDatasetMode} appAccess={appAccess} />
+          <SideRailWithBadge datasetMode={navDatasetMode} appAccess={appAccess} isAdmin={props.isAdmin === true} />
 
           <div className="flex min-w-0 flex-1 flex-col gap-3">
             <header className="sb-app-header sb-glass relative z-20 px-3 py-2">

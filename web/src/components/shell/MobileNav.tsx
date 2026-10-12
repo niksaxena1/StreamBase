@@ -24,6 +24,7 @@ export function MobileNav({
   healthInfoOnly = false,
   datasetMode = "own",
   appAccess,
+  isAdmin = false,
   navigationDefaults,
 }: {
   healthBadgeCount?: number;
@@ -31,6 +32,7 @@ export function MobileNav({
   healthInfoOnly?: boolean;
   datasetMode?: DatasetMode;
   appAccess?: AppAccess;
+  isAdmin?: boolean;
   navigationDefaults?: NavigationDefaults;
 }) {
   const pathname = usePathname();
@@ -40,7 +42,7 @@ export function MobileNav({
   const scrollTimerRef = useRef<number | null>(null);
   const prevBadgeCount = useRef(healthBadgeCount);
   const [badgeAnimating, setBadgeAnimating] = useState(false);
-  const visibleNavItems = navItemsForMode(datasetMode, navItems, appAccess);
+  const visibleNavItems = navItemsForMode(datasetMode, navItems, appAccess, { isAdmin });
   const navRef = useRef<HTMLElement>(null);
   const rafRef = useRef<number | null>(null);
 

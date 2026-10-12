@@ -25,7 +25,7 @@ export async function AuthedAppLayout({
   appShellProps?: Omit<React.ComponentProps<typeof AppShell>, "children">;
 }) {
   const context = await getRequestAppContext();
-  const { user, appAccess, shellContext } = context;
+  const { user, appAccess, shellContext, isAdmin } = context;
 
   if (!user) {
     // Middleware should already redirect, but keep a hard server-side guard.
@@ -54,6 +54,7 @@ export async function AuthedAppLayout({
                           {...appShellProps}
                           datasetMode={shellContext.datasetMode}
                           appAccess={appAccess}
+                          isAdmin={isAdmin}
                           userEmail={user.email ?? null}
                           suppressDatasetModeChrome={isPlaylistWatchPath}
                           competitorLabels={shellContext.competitorLabels}

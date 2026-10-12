@@ -57,6 +57,54 @@ describe("dataset helpers", () => {
     ).toEqual([{ href: "/playlist-watch", label: "Playlist Watch" }]);
   });
 
+  describe("library nav item", () => {
+    const items = [
+      { href: "/", label: "Home" },
+      { href: "/catalog", label: "Catalog" },
+      { href: "/library", label: "Library" },
+      { href: "/collectors", label: "Collectors" },
+      { href: "/competitors", label: "Competitors" },
+    ];
+    const fullAccess = { ownCatalog: true, competitor: true, playlistWatch: true, playlistWatchAdmin: true };
+    const hasLibrary = (list: Array<{ href: string }>) => list.some((i) => i.href === "/library");
+
+    it("shows library to admins in own mode", () => {
+      expect(hasLibrary(navItemsForMode("own", items, fullAccess, { isAdmin: true }))).toBe(true);
+    });
+
+    it("hides library from non-admins, even with every access flag", () => {
+      expect(hasLibrary(navItemsForMode("own", items, fullAccess, { isAdmin: false }))).toBe(false);
+      expect(hasLibrary(navItemsForMode("own", items, fullAccess))).toBe(false);
+      expect(hasLibrary(navItemsForMode("own", items))).toBe(false);
+    });
+
+    it("hides library in competitor mode, even for admins", () => {
+      expect(hasLibrary(navItemsForMode("competitor", items, fullAccess, { isAdmin: true }))).toBe(false);
+    });
+
+    it("leaves the other items alone", () => {
+      expect(navItemsForMode("own", items, fullAccess, { isAdmin: true }).map((i) => i.href)).toEqual([
+        "/",
+        "/catalog",
+        "/library",
+        "/collectors",
+      ]);
+    });
+
+    it("never shows library to playlist-watch-only users", () => {
+      const watchOnly = { ownCatalog: false, competitor: false, playlistWatch: true, playlistWatchAdmin: false };
+      const withWatch = [...items, { href: "/playlist-watch", label: "Watch" }];
+      expect(navItemsForMode("own", withWatch, watchOnly, { isAdmin: true })).toEqual([
+        { href: "/playlist-watch", label: "Watch" },
+      ]);
+    });
+
+    it("has no keyboard shortcut", () => {
+      expect(navShortcutItemsForMode("own").some((s) => s.href === "/library")).toBe(false);
+      expect(navShortcutItemsForMode("competitor").some((s) => s.href === "/library")).toBe(false);
+    });
+  });
+
   it("keeps playlist watch out of the main mode nav for full users", () => {
     const items = [
       { href: "/", label: "Home" },

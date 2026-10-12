@@ -4,6 +4,7 @@ import { NavigationLink as Link } from "./NavigationLink";
 import { useNavigationEntries } from "./useNavigationEntries";
 import type { NavigationDefaults } from "./navigationDefaults";
 import { usePathname } from "next/navigation";
+import { Library } from "lucide-react";
 import React from "react";
 import type { DatasetMode } from "@/lib/datasetMode";
 import { navItemsForMode, navShortcutKeyForHref } from "@/lib/datasets";
@@ -43,6 +44,12 @@ export const navItems: Item[] = [
     icon: (a) => <IconUser active={a} />,
   },
   {
+    // Admin-only; navItemsForMode hides it for everyone else and in competitor mode.
+    href: "/library",
+    label: "Library",
+    icon: () => <Library size={18} strokeWidth={1.8} />,
+  },
+  {
     href: "/playlist-watch",
     label: "Watch",
     icon: (a) => <IconEye active={a} />,
@@ -56,6 +63,7 @@ function SideRailContent({
   healthInfoOnly = false,
   datasetMode = "own",
   appAccess,
+  isAdmin = false,
   navigationDefaults,
 }: {
   healthBadgeCount?: number;
@@ -63,11 +71,12 @@ function SideRailContent({
   healthInfoOnly?: boolean;
   datasetMode?: DatasetMode;
   appAccess?: AppAccess;
+  isAdmin?: boolean;
   navigationDefaults?: NavigationDefaults;
 }) {
   const pathname = usePathname();
   const entryHref = useNavigationEntries(navigationDefaults ?? { datasetMode });
-  const visibleNavItems = navItemsForMode(datasetMode, navItems, appAccess);
+  const visibleNavItems = navItemsForMode(datasetMode, navItems, appAccess, { isAdmin });
   const showStreamBaseUtilityNav = appAccess ? hasStreamBaseAccess(appAccess) : false;
 
   return (
@@ -198,6 +207,7 @@ export function SideRail({
   healthInfoOnly = false,
   datasetMode = "own",
   appAccess,
+  isAdmin = false,
   navigationDefaults,
 }: {
   healthBadgeCount?: number;
@@ -205,11 +215,12 @@ export function SideRail({
   healthInfoOnly?: boolean;
   datasetMode?: DatasetMode;
   appAccess?: AppAccess;
+  isAdmin?: boolean;
   navigationDefaults?: NavigationDefaults;
 }) {
   return (
     <aside className="hidden w-[60px] shrink-0 sm:block">
-      <SideRailContent healthBadgeCount={healthBadgeCount} healthHasCritical={healthHasCritical} healthInfoOnly={healthInfoOnly} datasetMode={datasetMode} navigationDefaults={navigationDefaults} appAccess={appAccess} />
+      <SideRailContent healthBadgeCount={healthBadgeCount} healthHasCritical={healthHasCritical} healthInfoOnly={healthInfoOnly} datasetMode={datasetMode} navigationDefaults={navigationDefaults} appAccess={appAccess} isAdmin={isAdmin} />
     </aside>
   );
 }

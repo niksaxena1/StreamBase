@@ -4,7 +4,7 @@ import { SideRail } from "./SideRail";
 import { logError } from "@/lib/logger";
 import type { AppAccess } from "@/lib/appAccess";
 
-export async function SideRailWithBadge({ datasetMode = "own", appAccess }: { datasetMode?: "own" | "competitor"; appAccess?: AppAccess }) {
+export async function SideRailWithBadge({ datasetMode = "own", appAccess, isAdmin = false }: { datasetMode?: "own" | "competitor"; appAccess?: AppAccess; isAdmin?: boolean }) {
   const navigationDefaults = await getNavigationDefaults(datasetMode);
   let badgeCount = 0;
   let hasCritical = false;
@@ -20,5 +20,5 @@ export async function SideRailWithBadge({ datasetMode = "own", appAccess }: { da
     logError("[Health Badge] Failed to fetch health badge counts", error);
   }
 
-  return <SideRail healthBadgeCount={badgeCount} healthHasCritical={hasCritical} healthInfoOnly={infoOnly} datasetMode={datasetMode} navigationDefaults={navigationDefaults} appAccess={appAccess} />;
+  return <SideRail healthBadgeCount={badgeCount} healthHasCritical={hasCritical} healthInfoOnly={infoOnly} datasetMode={datasetMode} navigationDefaults={navigationDefaults} appAccess={appAccess} isAdmin={isAdmin} />;
 }
