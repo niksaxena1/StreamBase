@@ -133,6 +133,72 @@ def views_sql(U, N):
     return "\n".join(out)
 
 
+def eff_split_sql(U, N):
+    """Effective view split by tier so the archive-tier join (the only one that can open a foreign scan) is a branch of its own:
+    (a) hot + compact base rows joined to DB overrides only, (b) archive base rows joined to DB + archived overrides,
+    (c) override-only rows. A recent-range query makes branch (b)'s base side empty, so its override join never reads R2."""
+    run_t = U["run_t"]
+    cols_out = """         t.source_run_id,
+         t.base_created_at,
+         (o.id is not null) as is_manual_override,
+         o.id as override_id,
+         o.note as manual_note,
+         o.created_at as manual_created_at,
+         o.created_by as manual_created_by"""
+    return f"""create or replace view {N['eff']} as
+  select t.date,
+         t.isrc,
+         coalesce(o.streams_cumulative_override, t.streams_cumulative) as streams_cumulative,
+{cols_out}
+  from (
+    select d.date, d.isrc, d.streams_cumulative, d.source_run_id, d.created_at as base_created_at
+    from {N['daily']} d
+    where d.date >= {N['hot_from']}
+    union all
+    select c.d as date, m.isrc, m.vals[extract(day from c.d)::int] as streams_cumulative,
+           null::{run_t} as source_run_id, null::timestamptz as base_created_at
+    from (select date '2025-01-01' + g.i as d from generate_series(0, 4017) as g(i)
+          where date '2025-01-01' + g.i < {N['hot_from']}) c
+    join {N['compact']} m on m.month = date_trunc('month', c.d)::date
+    where m.vals[extract(day from c.d)::int] is not null
+  ) t
+  left join {N['ovr']} o on o.date = t.date and o.isrc = t.isrc
+  union all
+  select a.date,
+         a.isrc,
+         coalesce(o.streams_cumulative_override, a.streams_cumulative) as streams_cumulative,
+         null::{run_t} as source_run_id,
+         null::timestamptz as base_created_at,
+         (o.id is not null) as is_manual_override,
+         o.id as override_id,
+         o.note as manual_note,
+         o.created_at as manual_created_at,
+         o.created_by as manual_created_by
+  from {N['arch']} a
+  left join {N['ovr_all']} o on o.date = a.date and o.isrc = a.isrc
+  where a.date < {N['compact_from']}
+  union all
+  select o.date,
+         o.isrc,
+         o.streams_cumulative_override as streams_cumulative,
+         null::{run_t} as source_run_id,
+         null::timestamptz as base_created_at,
+         true as is_manual_override,
+         o.id as override_id,
+         o.note as manual_note,
+         o.created_at as manual_created_at,
+         o.created_by as manual_created_by
+  from {N['ovr_all']} o
+  where (o.date >= {N['compact_from']} or o.base_missing)
+    and not exists (select 1 from {N['daily']} t
+                    where t.date = o.date and t.isrc = o.isrc and t.date >= {N['hot_from']})
+    and not exists (select 1 from {N['compact']} m
+                    where m.isrc = o.isrc and m.month = date_trunc('month', o.date)::date
+                      and m.month < {N['hot_from']}
+                      and m.vals[extract(day from o.date)::int] is not null);
+"""
+
+
 def range_sql(U):
     s = U["s"]
     comp = U["comp"]
@@ -335,7 +401,165 @@ grant select on archive_selftest.{u}_compact, archive_selftest.{u}_archive, arch
     return "\n".join(parts)
 
 
+NUL = chr(39) + chr(92) + "N" + chr(39)  # the SQL literal '\N' (backslash N): NULL sentinel in the archive CSV files
+
+
+def fam(U, test):
+    fs = "archive_selftest" if test else "stream_archive"
+    return f"{fs}.{U['u']}_rows"
+
+
+def parents_sql():
+    out = []
+    for fs in ("stream_archive", "archive_selftest"):
+        for U in UNIVERSES:
+            out.append(f"""create table if not exists {fs}.{U['u']}_rows (
+  kind text, d text, isrc text, v text, oid text, note text, created_by text, created_at text);
+alter table {fs}.{U['u']}_rows enable row level security;
+revoke all on {fs}.{U['u']}_rows from public, anon, authenticated;
+grant select on {fs}.{U['u']}_rows to service_role;""")
+    return chr(10).join(out)
+
+
+def archive_views_sql(U, test):
+    """Archive-tier views over the single per-month file family (kind s = stream row, kind o = override row)."""
+    N = names(U, test)
+    f = fam(U, test)
+    return f"""create or replace view {N['arch']} as
+  select ops.iso_date(r.d) as date, r.isrc as isrc, r.v::bigint as streams_cumulative
+  from {f} r
+  where r.kind = 's';
+
+create or replace view {N['arch_ovr']} as
+  select r.oid::bigint as id, ops.iso_date(r.d) as date, r.isrc as isrc,
+         r.v::bigint as streams_cumulative_override,
+         nullif(r.note, {NUL}) as note, nullif(r.created_by, {NUL})::uuid as created_by,
+         r.created_at::timestamptz as created_at, null::boolean as base_missing
+  from {f} r
+  where r.kind = 'o';
+
+create or replace view {N['ovr_all']} as
+  select o.id, o.date, o.isrc, o.streams_cumulative_override, o.note, o.created_by, o.created_at,
+         null::boolean as base_missing
+  from {N['ovr']} o
+  union all
+  select a.id, a.date, a.isrc, a.streams_cumulative_override, a.note, a.created_by, a.created_at, null::boolean
+  from {N['arch_ovr']} a
+  where a.date < {N['compact_from']}
+    and not exists (select 1 from {N['ovr']} d where d.date = a.date and d.isrc = a.isrc);
+"""
+
+
+def eff_v3_sql(U, test):
+    N = names(U, test)
+    f = fam(U, test)
+    run_t = U["run_t"]
+    return f"""create or replace view {N['eff']} as
+  select t.date,
+         t.isrc,
+         coalesce(o.streams_cumulative_override, t.streams_cumulative) as streams_cumulative,
+         t.source_run_id,
+         t.base_created_at,
+         (o.id is not null) as is_manual_override,
+         o.id as override_id,
+         o.note as manual_note,
+         o.created_at as manual_created_at,
+         o.created_by as manual_created_by
+  from (
+    select d.date, d.isrc, d.streams_cumulative, d.source_run_id, d.created_at as base_created_at
+    from {N['daily']} d
+    where d.date >= {N['hot_from']}
+    union all
+    select c.d as date, m.isrc, m.vals[extract(day from c.d)::int] as streams_cumulative,
+           null::{run_t} as source_run_id, null::timestamptz as base_created_at
+    from (select date '2025-01-01' + g.i as d from generate_series(0, 4017) as g(i)
+          where date '2025-01-01' + g.i < {N['hot_from']}) c
+    join {N['compact']} m on m.month = date_trunc('month', c.d)::date
+    where m.vals[extract(day from c.d)::int] is not null
+  ) t
+  left join {N['ovr']} o on o.date = t.date and o.isrc = t.isrc
+  union all
+  -- archive tier: one grouped scan of the month files (stream + override rows together); DB overrides win
+  select g.date,
+         g.isrc,
+         case when db.id is not null then db.streams_cumulative_override else coalesce(g.o_v, g.s_v) end as streams_cumulative,
+         null::{run_t} as source_run_id,
+         null::timestamptz as base_created_at,
+         (db.id is not null or g.oid is not null) as is_manual_override,
+         case when db.id is not null then db.id else g.oid end as override_id,
+         case when db.id is not null then db.note else g.note end as manual_note,
+         case when db.id is not null then db.created_at else g.created_at end as manual_created_at,
+         case when db.id is not null then db.created_by else g.created_by end as manual_created_by
+  from (
+    select ops.iso_date(r.d) as date, r.isrc as isrc,
+           max(r.v::bigint) filter (where r.kind = 's') as s_v,
+           max(r.v::bigint) filter (where r.kind = 'o') as o_v,
+           max(r.oid::bigint) filter (where r.kind = 'o') as oid,
+           max(nullif(r.note, {NUL})) filter (where r.kind = 'o') as note,
+           max(r.created_at::timestamptz) filter (where r.kind = 'o') as created_at,
+           (max(nullif(r.created_by, {NUL})) filter (where r.kind = 'o'))::uuid as created_by
+    from {f} r
+    group by ops.iso_date(r.d), r.isrc
+  ) g
+  left join {N['ovr']} db on db.date = g.date and db.isrc = g.isrc
+  where g.date < {N['compact_from']}
+  union all
+  -- override-only rows on hot/compact dates (no base row)
+  select o.date,
+         o.isrc,
+         o.streams_cumulative_override as streams_cumulative,
+         null::{run_t} as source_run_id,
+         null::timestamptz as base_created_at,
+         true as is_manual_override,
+         o.id as override_id,
+         o.note as manual_note,
+         o.created_at as manual_created_at,
+         o.created_by as manual_created_by
+  from {N['ovr']} o
+  where o.date >= {N['compact_from']}
+    and not exists (select 1 from {N['daily']} t
+                    where t.date = o.date and t.isrc = o.isrc and t.date >= {N['hot_from']})
+    and not exists (select 1 from {N['compact']} m
+                    where m.isrc = o.isrc and m.month = date_trunc('month', o.date)::date
+                      and m.month < {N['hot_from']}
+                      and m.vals[extract(day from o.date)::int] is not null)
+  union all
+  -- DB overrides on archived dates with no archived row at all (hashed key lookup; evaluated only if such rows exist)
+  select o.date,
+         o.isrc,
+         o.streams_cumulative_override as streams_cumulative,
+         null::{run_t} as source_run_id,
+         null::timestamptz as base_created_at,
+         true as is_manual_override,
+         o.id as override_id,
+         o.note as manual_note,
+         o.created_at as manual_created_at,
+         o.created_by as manual_created_by
+  from {N['ovr']} o
+  where o.date < {N['compact_from']}
+    and (o.date, o.isrc) not in (select ops.iso_date(r.d), r.isrc from {f} r);
+"""
+
+
+def v3_migration():
+    parts = ["""-- GENERATED by scripts/gen_stream_archive_sql.py (v3) - do not edit by hand.
+-- Phase 3 follow-up: ONE gzip-CSV file per universe per month holds both the stream rows (kind s) and the override rows
+-- (kind o). With separate stream/override files the effective view had to join archived overrides to archived streams;
+-- the planner has no estimates for foreign tables, chose nested loops that re-read the override file per outer row
+-- (a 29k-row month took 100 s) and could not window-prune the override side. With one family the archive tier is a
+-- single grouped scan of exactly the months inside the query's date range.
+-- Column lists/types/order of the effective views are unchanged.
+""", parents_sql()]
+    for test in (False, True):
+        for U in UNIVERSES:
+            parts.append(archive_views_sql(U, test))
+    for test in (False, True):
+        for U in UNIVERSES:
+            parts.append(eff_v3_sql(U, test))
+    return chr(10).join(parts)
+
+
 if __name__ == "__main__":
-    (MIG / "20261012220000_stream_archive_tier_core.sql").write_text(core_sql(), encoding="utf-8")
-    (MIG / "20261012221000_stream_archive_selftest_objects.sql").write_text(selftest_sql(), encoding="utf-8")
+    # 20261012220500/221000/225000 were produced by earlier revisions of this template and are frozen (already applied).
+    (MIG / "20261012227000_stream_archive_single_family.sql").write_text(v3_migration(), encoding="utf-8")
     print("written")

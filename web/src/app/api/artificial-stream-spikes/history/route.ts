@@ -1,3 +1,4 @@
+import { recentStreamFloor } from "@/lib/streamHistoryBounds";
 import { NextRequest } from "next/server";
 
 import { supabaseServer } from "@/lib/supabase/server";
@@ -34,6 +35,7 @@ export async function GET(request: NextRequest) {
     .from("track_daily_streams_effective_public")
     .select("date,streams_cumulative")
     .eq("isrc", isrc)
+    .gte("date", recentStreamFloor())
     .order("date", { ascending: true })
     .limit(MAX_POINTS);
 

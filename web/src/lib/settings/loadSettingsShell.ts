@@ -1,3 +1,4 @@
+import { recentStreamFloor } from "@/lib/streamHistoryBounds";
 import { CACHE_TTL_1H } from "@/lib/constants";
 import { dataDateFromRunDate } from "@/lib/sotDates";
 import { cachedQuery } from "@/lib/supabase/cache";
@@ -34,12 +35,14 @@ export async function loadSettingsShell(): Promise<SettingsShellData> {
           svc
             .from("track_daily_streams_effective_public")
             .select("date")
+            .gte("date", recentStreamFloor())
             .order("date", { ascending: true })
             .limit(1)
             .maybeSingle(),
           svc
             .from("track_daily_streams_effective_public")
             .select("date")
+            .gte("date", recentStreamFloor())
             .order("date", { ascending: false })
             .limit(1)
             .maybeSingle(),

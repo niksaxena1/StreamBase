@@ -5,8 +5,9 @@ from streambase_postgrest import upsert_daily_streams
 
 
 class FakePg:
-    def __init__(self, hot_from="2026-07-01", fail_upsert=False, fail_hot=False):
+    def __init__(self, hot_from="2026-07-01", fail_upsert=False, fail_hot=False, compact_from=None):
         self.hot_from = hot_from
+        self.compact_from = compact_from
         self.fail_upsert = fail_upsert
         self.fail_hot = fail_hot
         self.upserts = []
@@ -18,6 +19,8 @@ class FakePg:
             if self.fail_hot:
                 raise RuntimeError("down")
             return self.hot_from
+        if name == "stream_compact_from":
+            return self.compact_from
         return None
 
     def upsert(self, table, rows, on_conflict):
@@ -32,7 +35,7 @@ class UpsertDailyStreamsTests(unittest.TestCase):
         logs = []
         self.assertTrue(upsert_daily_streams(pg, [{"isrc": "A"}], date(2026, 10, 11), log=logs.append))
         self.assertEqual(len(pg.upserts), 1)
-        self.assertEqual([c[0] for c in pg.rpcs], ["stream_history_hot_from"])
+        self.assertEqual([c[0] for c in pg.rpcs], ["stream_history_hot_from", "stream_compact_from"])
         self.assertEqual(logs, [])
 
     def test_packed_date_repacks_after_successful_write(self):
@@ -56,6 +59,18 @@ class UpsertDailyStreamsTests(unittest.TestCase):
 
     def test_cutoff_lookup_failure_does_not_block_ingestion(self):
         pg = FakePg(fail_hot=True)
+        self.assertTrue(upsert_daily_streams(pg, [{"isrc": "A"}], date(2026, 10, 11), log=lambda m: None))
+
+    def test_archived_date_is_skipped_without_any_write(self):
+        pg = FakePg(compact_from="2026-01-01")
+        logs = []
+        self.assertFalse(upsert_daily_streams(pg, [{"isrc": "A"}], date(2025, 12, 15), log=logs.append))
+        self.assertEqual(pg.upserts, [])
+        self.assertNotIn("pack_stream_month", [c[0] for c in pg.rpcs])
+        self.assertTrue(any("R2 archive" in m for m in logs))
+
+    def test_date_after_compact_from_still_writes(self):
+        pg = FakePg(compact_from="2026-01-01")
         self.assertTrue(upsert_daily_streams(pg, [{"isrc": "A"}], date(2026, 10, 11), log=lambda m: None))
 
 

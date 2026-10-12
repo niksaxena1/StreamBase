@@ -263,7 +263,7 @@ def upsert_daily_streams(pg, rows: List[dict], run_date: date, *, table: str = "
 
     Months older than ``stream_history_hot_from()`` live in the compact monthly table (and, once the owner
     removes the old partitions, no daily partition exists for them). A write to such a date:
-      * is warned about loudly;
+      * is warned about loudly (dates inside the R2 archive, i.e. before stream_compact_from(), are skipped outright);
       * if the daily upsert succeeds (partition still present), the month is re-packed so readers see the row;
       * if the daily upsert fails (partition gone), it is skipped with a warning instead of failing ingestion.
     Returns True when the daily upsert happened.
@@ -275,6 +275,17 @@ def upsert_daily_streams(pg, rows: List[dict], run_date: date, *, table: str = "
             hot_from = date.fromisoformat(str(raw)[:10])
     except Exception as e:  # best effort: never block ingestion on the cutoff lookup
         log(f"  warning: could not read stream_history_hot_from ({e}); assuming recent date")
+    compact_from = None
+    try:
+        raw = pg.rpc("stream_compact_from", {})
+        if raw:
+            compact_from = date.fromisoformat(str(raw)[:10])
+    except Exception as e:  # best effort, like hot_from
+        log(f"  warning: could not read stream_compact_from ({e}); assuming not archived")
+    if compact_from is not None and run_date < compact_from:
+        log(f"  WARNING: {table} write for {run_date} is inside the R2 archive (before {compact_from}); raw write skipped "
+            f"(manual/auto overrides on archived dates still work)")
+        return False
     packed = hot_from is not None and run_date < hot_from
     try:
         pg.upsert(table, rows, on_conflict="date,isrc")

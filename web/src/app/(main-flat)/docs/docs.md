@@ -460,7 +460,7 @@ Times are **UTC** with Dubai time (UTC+4). The Supabase database scheduler start
 
 | Workflow | Trigger / time (UTC) | Dubai (UTC+4) | What it does |
 |---|---|---:|---|
-| Spotify Takedown Watch (`spotify_takedown_watch.yml`) | Daily cron 04:37 | 08:37 | Checks own-catalog tracks for Spotify availability changes |
+| Spotify Takedown Watch (`spotify_takedown_watch.yml`) | Daily 20:00 (database scheduler) | 00:00 | Checks own-catalog tracks for Spotify availability changes |
 | Own daily pipeline (`sot_own_daily_pipeline.yml`) | Database scheduler dispatch at 05:07; sync + export after refresh succeeds; GitHub fallback cron 09:00 | 09:07 | Refreshes SpotOnTrack playlists, syncs dashboards with `config/playlists.csv`, exports and ingests into Supabase (idempotent) |
 | RapidAPI stale-track fix (`rapidapi_stale_fix.yml`) | Dispatched after a successful, current-UTC-date own-catalog export is ingested; daily fallback cron 09:41 | 13:41 | Attempts own-catalog stale-track corrections |
 | Spotify enrichment (`spotify_enrich.yml`) | 10:29 UTC on odd days of the month | 14:29 | Refreshes own playlist thumbnails, then enriches missing track metadata via Spotify |
@@ -661,6 +661,20 @@ Used by `scripts/ingest_exports_to_supabase.py`:
   - Resolves `track_daily_streams` + manual overrides into a single effective snapshot
 - `track_daily_streams_effective_public` (view)
   - Public-safe subset of the effective view (date, isrc, streams_cumulative only)
+
+**Stream history tiers (storage).** Stream history lives in three tiers; every reader goes through the same views, so output does not depend on the tier:
+
+| Tier | Dates | Storage |
+|---|---|---|
+| daily | `>= stream_history_hot_from()` (current month + 1 previous month) | partitioned `track_daily_streams` |
+| compact | `stream_compact_from()` .. daily | `track_streams_monthly` (one row per ISRC per month, `bigint[]` of daily values) |
+| archive | `< stream_compact_from()` | one gzip CSV per universe per month in Cloudflare R2 (`<prefix>/<own|competitor>/archive_YYYY-MM.csv.gz`), read through the Supabase Wrappers S3 foreign data wrapper |
+
+Policy: the compact tier keeps 12 packed months (`ops.stream_archive_config.packed_months_keep`); older months become due for the archive (first month due: about Sep 2027). The monthly workflow `.github/workflows/stream_archive.yml` exports a due month, uploads it, attaches and verifies it through the FDW (counts + EXCEPT ALL both ways, streams and overrides) and then finalizes (owner-installed `ops.archive_finalize_month` removes the compact rows). Manual `workflow_dispatch` runs never email; scheduled runs email through `ops.pipeline_alerts` on failure only.
+
+Rules that keep recent pages off R2: archived months are inheritance children of an empty parent table with a CHECK window (`ops.iso_date(d)` range), so the planner skips files outside the query's date range; app code floors "latest date" and full-history reads with `recentStreamFloor()` (`web/src/lib/streamHistoryBounds.ts`); SQL readers that used to scan all history are bounded to `stream_compact_from()`. A query that does touch archived months loads those months' whole files (no pushdown): expect a few seconds per month.
+
+If R2 is unreachable: everything dated inside the daily and compact tiers keeps working (the archive branches are never executed); a query whose date range includes an archived month fails with a clear foreign-table error (`HV000 request failed` / `read ... failed`). Recovery: check the R2 token/bucket (`ops.stream_archive_config`, vault secrets `r2_*`), run the `Stream Archive (R2)` workflow in `selftest` mode, and see `docs/COMPACT-STREAM-STORAGE.md`.
 
 ---
 
@@ -1586,7 +1600,7 @@ See `docs/COMPETITOR-MODE-OPERATIONS.md` for migration and refresh details.
 
 ## Daily Spotify takedown watch
 
-The independent `spotify_takedown_watch.yml` workflow runs daily at **04:37 UTC / 08:37 Dubai**, ahead of the usual SpotOnTrack data lag. It watches only the own catalog; competitor tables and pipelines are unaffected.
+The independent `spotify_takedown_watch.yml` workflow runs daily at **20:00 UTC / 00:00 Dubai**, started by the database scheduler (`ops.dispatch_workflow`). It watches only the own catalog; competitor tables and pipelines are unaffected.
 
 **Apply `supabase/migrations/20261010203810_add_spotify_track_availability_watch.sql` before the workflow's first run.** It creates two backend-only tables with RLS enabled and explicit service-role SELECT/INSERT/UPDATE grants, plus the service-role-only `spotify_availability_candidates()` RPC. The admin-gated own-catalog `/health` page uses the service client to read the **Spotify availability** panel. The panel hides before the migration or first successful check.
 
