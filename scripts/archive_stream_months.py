@@ -1,53 +1,44 @@
-"""Archive old months of stream history to Cloudflare R2 (Parquet) and health-check the archive tier.
+"""Archive old months of stream history to Cloudflare R2 and health-check the archive tier.
+
+Files are gzip CSV (the Supabase Wrappers S3 foreign data wrapper cannot read Parquet from R2: ranged reads fail with
+"service error", and its CSV reader only supports text columns, so the views cast). One streams file and one
+overrides file per universe per month:
+  <prefix>/<own|competitor>/streams_<YYYY-MM>.csv.gz     d,isrc,streams
+  <prefix>/<own|competitor>/overrides_<YYYY-MM>.csv.gz   id,date,isrc,streams_cumulative_override,note,created_by,created_at,base_missing
+NULL is written as the two characters backslash-N; base_missing is t/f.
 
 Modes
-  smoke     upload a tiny Parquet file with every column type used by the archive and read it back through the
-            Postgres S3 foreign data wrapper (connectivity / type-mapping check).
-  selftest  archive a COPY of the earliest compact month of each universe under <prefix>/_selftest/, attach it in
-            the archive_selftest schema and verify it against compact through the FDW. Removes nothing from the
-            real data. Alerts (email) on failure only.
-  archive   archive every month that is due (older than the packed-months policy) for both universes, verify the
-            FDW read against compact, then finalize (remove the compact rows and archived override rows).
-            Alerts on failure only.
+  smoke     connectivity probe (kept for debugging).
+  selftest  archive a COPY of the earliest compact month of each universe under <prefix>/_selftest/, serve it through
+            the archive_selftest views (same view text as the live views), compare with the live views, prove that a
+            recent-window query executes no foreign scan. Removes nothing from the real data. Alerts on failure only.
+  archive   for every month that is due (older than the packed-months policy): export, upload, attach+verify through
+            the FDW, then finalize (owner-installed RPC; if it is not installed yet the month stays in compact and one
+            alert is raised). Alerts on failure only.
 
-Secrets come from the environment (never printed): SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, R2_ACCOUNT_ID,
+Secrets come from the environment and are never printed: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, R2_ACCOUNT_ID,
 R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET.
 """
 
 import argparse
+import csv
+import gzip
 import io
 import json
 import os
 import sys
 import time
 import traceback
-from datetime import date, datetime, timezone
-from typing import Callable, Dict, List, Optional, Tuple
-
-import pyarrow as pa
-import pyarrow.parquet as pq
-import requests
+from datetime import date, datetime, timedelta, timezone
+from typing import List, Tuple
 
 from streambase_postgrest import Postgrest
 
-PAGE = 20000
 NL = chr(10)
+NULL = chr(92) + "N"
 UNIVERSES = ("own", "competitor")
-
-STREAM_SCHEMA = pa.schema([
-    ("date", pa.date32()),
-    ("isrc", pa.string()),
-    ("streams_cumulative", pa.int64()),
-])
-OVERRIDE_SCHEMA = pa.schema([
-    ("id", pa.int64()),
-    ("date", pa.date32()),
-    ("isrc", pa.string()),
-    ("streams_cumulative_override", pa.int64()),
-    ("note", pa.string()),
-    ("created_by", pa.string()),
-    ("created_at", pa.timestamp("us", tz="UTC")),
-])
+ISRC_PAGE = 1000
+OVERRIDE_PAGE = 1000
 
 
 def env(name: str) -> str:
@@ -75,125 +66,180 @@ def pg_client() -> Postgrest:
     return Postgrest(env("SUPABASE_URL"), env("SUPABASE_SERVICE_ROLE_KEY"))
 
 
-def to_parquet_bytes(table: pa.Table) -> bytes:
-    buf = io.BytesIO()
-    pq.write_table(table, buf, compression="zstd", use_dictionary=True)
-    return buf.getvalue()
-
-
 def parse_date(v) -> date:
     return date.fromisoformat(str(v)[:10])
 
 
-def parse_ts(v) -> Optional[datetime]:
+def format_ts(v) -> str:
     if v is None:
-        return None
-    s = str(v).replace("Z", "+00:00")
-    d = datetime.fromisoformat(s)
+        return NULL
+    d = datetime.fromisoformat(str(v).replace("Z", "+00:00"))
     if d.tzinfo is None:
         d = d.replace(tzinfo=timezone.utc)
-    return d.astimezone(timezone.utc)
+    return d.astimezone(timezone.utc).isoformat()
 
 
-def month_key(prefix: str, universe: str, kind: str, month: date) -> str:
-    return f"{prefix}/{universe}/{kind}_{month.strftime('%Y-%m')}.parquet"
+def cell(v) -> str:
+    return NULL if v is None else str(v)
 
 
-def fetch_month_streams(pg: Postgrest, universe: str, month: date) -> pa.Table:
-    dates: List[date] = []
-    isrcs: List[str] = []
-    streams: List[int] = []
+def gz_csv(header: List[str], rows) -> bytes:
+    sio = io.StringIO()
+    w = csv.writer(sio, lineterminator=NL)
+    w.writerow(header)
+    for r in rows:
+        w.writerow(r)
+    return gzip.compress(sio.getvalue().encode("utf-8"), compresslevel=6, mtime=0)
+
+
+def stream_rows(pg: Postgrest, universe: str, month: date) -> List[Tuple[str, str, int]]:
+    """(date, isrc, streams) for every non-null day of the compact month, ordered by isrc then date."""
+    out: List[Tuple[str, str, int]] = []
     after = ""
     while True:
-        rows = pg.rpc("stream_month_export", {"p_universe": universe, "p_month": month.isoformat(), "p_after_isrc": after, "p_limit": PAGE}) or []
-        if not rows:
+        page = pg.rpc("stream_month_export", {"p_universe": universe, "p_month": month.isoformat(), "p_after_isrc": after, "p_limit": ISRC_PAGE}) or []
+        if not page:
             break
-        for r in rows:
-            dates.append(parse_date(r["date"]))
-            isrcs.append(r["isrc"])
-            streams.append(int(r["streams_cumulative"]))
-        after = rows[-1]["isrc"]
-        if len(rows) < PAGE and False:
-            break
-    return pa.table({"date": pa.array(dates, pa.date32()), "isrc": pa.array(isrcs, pa.string()),
-                     "streams_cumulative": pa.array(streams, pa.int64())}, schema=STREAM_SCHEMA)
+        for r in page:
+            for i, v in enumerate(r["vals"] or []):
+                if v is not None:
+                    out.append(((month + timedelta(days=i)).isoformat(), r["isrc"], int(v)))
+        after = page[-1]["isrc"]
+    return out
 
 
-def fetch_month_overrides(pg: Postgrest, universe: str, month: date) -> pa.Table:
-    rows = pg.rpc("stream_overrides_export", {"p_universe": universe, "p_month": month.isoformat()}) or []
-    cols: Dict[str, list] = {f.name: [] for f in OVERRIDE_SCHEMA}
-    for r in rows:
-        cols["id"].append(int(r["id"]))
-        cols["date"].append(parse_date(r["date"]))
-        cols["isrc"].append(r["isrc"])
-        cols["streams_cumulative_override"].append(int(r["streams_cumulative_override"]))
-        cols["note"].append(r.get("note"))
-        cols["created_by"].append(r.get("created_by"))
-        cols["created_at"].append(parse_ts(r.get("created_at")))
-    arrays = [pa.array(cols[f.name], f.type) for f in OVERRIDE_SCHEMA]
-    return pa.Table.from_arrays(arrays, schema=OVERRIDE_SCHEMA)
+def override_rows(pg: Postgrest, universe: str, month: date) -> List[dict]:
+    out: List[dict] = []
+    after = 0
+    while True:
+        page = pg.rpc("stream_overrides_export", {"p_universe": universe, "p_month": month.isoformat(), "p_after_id": after, "p_limit": OVERRIDE_PAGE}) or []
+        if not page:
+            break
+        out.extend(page)
+        after = int(page[-1]["id"])
+    return out
+
+
+def build_files(pg: Postgrest, universe: str, month: date) -> Tuple[bytes, bytes, int, int]:
+    streams = stream_rows(pg, universe, month)
+    have = {(d, i) for d, i, _ in streams}
+    overrides = override_rows(pg, universe, month)
+    s_bytes = gz_csv(["d", "isrc", "streams"], ([d, i, s] for d, i, s in streams))
+    o_bytes = gz_csv(
+        ["id", "date", "isrc", "streams_cumulative_override", "note", "created_by", "created_at", "base_missing"],
+        (
+            [
+                r["id"], str(r["date"])[:10], r["isrc"], r["streams_cumulative_override"],
+                cell(r.get("note")), cell(r.get("created_by")), format_ts(r.get("created_at")),
+                "f" if (str(r["date"])[:10], r["isrc"]) in have else "t",
+            ]
+            for r in overrides
+        ),
+    )
+    return s_bytes, o_bytes, len(streams), len(overrides)
 
 
 def upload(s3, bucket: str, key: str, body: bytes) -> None:
-    s3.put_object(Bucket=bucket, Key=key, Body=body, ContentType="application/octet-stream")
+    s3.put_object(Bucket=bucket, Key=key, Body=body, ContentType="application/gzip")
 
 
 def alert(pg: Postgrest, universe: str, kind: str, subject: str, body: str) -> None:
     try:
-        pg.rpc("stream_archive_alert", {"p_universe": universe, "p_kind": kind, "p_subject": subject, "p_body": body[:4000]})
+        pg.rpc("stream_archive_alert", {"p_universe": universe, "p_kind": kind, "p_subject": subject, "p_body": body[:3500]})
     except Exception as e:  # never mask the original failure
         print(f"  could not queue alert: {e}")
 
 
+def config(pg: Postgrest, key: str) -> str:
+    return (pg.rpc("stream_archive_config_get", {"p_key": key}) or "").strip()
+
+
 # ---------------------------------------------------------------------------------------------------------
+def run_selftest() -> int:
+    pg = pg_client()
+    s3 = r2_client()
+    bucket = env("R2_BUCKET")
+    prefix = config(pg, "key_prefix")
+    if config(pg, "bucket") != bucket:
+        msg = "R2_BUCKET secret does not match ops.stream_archive_config bucket"
+        alert(pg, "own", "stream_archive_selftest_failed", "[StreamBase] R2 archive self-test failed", msg)
+        print(msg)
+        return 1
+    failed = False
+    for universe in UNIVERSES:
+        t0 = time.time()
+        try:
+            month = parse_date(pg.rpc("stream_archive_selftest_prepare", {"p_universe": universe}))
+            s_bytes, o_bytes, n_s, n_o = build_files(pg, universe, month)
+            t_export = time.time() - t0
+            base = f"{prefix}/_selftest/{universe}"
+            upload(s3, bucket, f"{base}/streams_{month.strftime('%Y-%m')}.csv.gz", s_bytes)
+            upload(s3, bucket, f"{base}/overrides_{month.strftime('%Y-%m')}.csv.gz", o_bytes)
+            t_up = time.time() - t0 - t_export
+            res = pg.rpc("stream_archive_selftest_verify", {"p_universe": universe})
+            t_verify = time.time() - t0 - t_export - t_up
+            print(f"[{universe}] month {month}: exported {n_s} stream rows + {n_o} overrides "
+                  f"({len(s_bytes) // 1024} KiB + {len(o_bytes) // 1024} KiB gz); export {t_export:.1f}s, upload {t_up:.1f}s, verify {t_verify:.1f}s")
+            print(json.dumps(res, indent=1, default=str))
+            if not res.get("ok"):
+                failed = True
+                alert(pg, universe, "stream_archive_selftest_failed",
+                      f"[StreamBase] R2 archive self-test failed ({universe} {month})", json.dumps(res, default=str))
+        except Exception as e:
+            failed = True
+            print(f"[{universe}] self-test error: {e}")
+            traceback.print_exc()
+            alert(pg, universe, "stream_archive_selftest_failed",
+                  f"[StreamBase] R2 archive self-test failed ({universe})", f"{type(e).__name__}: {e}")
+    return 1 if failed else 0
+
+
+def run_archive() -> int:
+    pg = pg_client()
+    s3 = r2_client()
+    bucket = env("R2_BUCKET")
+    prefix = config(pg, "key_prefix")
+    failed = False
+    for universe in UNIVERSES:
+        due = [parse_date(r["month"]) for r in (pg.rpc("stream_archive_due", {"p_universe": universe}) or [])]
+        print(f"[{universe}] due months: {[d.isoformat() for d in due] or 'none'}")
+        for month in due:
+            try:
+                s_bytes, o_bytes, n_s, n_o = build_files(pg, universe, month)
+                base = f"{prefix}/{universe}"
+                upload(s3, bucket, f"{base}/streams_{month.strftime('%Y-%m')}.csv.gz", s_bytes)
+                upload(s3, bucket, f"{base}/overrides_{month.strftime('%Y-%m')}.csv.gz", o_bytes)
+                res = pg.rpc("stream_archive_attach", {"p_universe": universe, "p_month": month.isoformat()})
+                print(f"[{universe}] {month}: attached ({n_s} stream rows, {n_o} overrides) {json.dumps(res, default=str)}")
+                try:
+                    fin = pg.rpc("stream_archive_finalize", {"p_universe": universe, "p_month": month.isoformat()})
+                    print(f"[{universe}] {month}: finalized {json.dumps(fin, default=str)}")
+                except RuntimeError as e:
+                    if "PGRST202" in str(e) or "Could not find the function" in str(e):
+                        print(f"[{universe}] {month}: finalize RPC not installed (owner paste pending); month stays in compact")
+                        alert(pg, universe, f"stream_archive_finalize_missing_{month.strftime('%Y_%m')}",
+                              f"[StreamBase] Archive finalize step not installed ({universe} {month})",
+                              "The month was archived and verified in R2 but ops.archive_finalize_month is not installed, "
+                              "so the compact copy was kept. Run supabase/manual/2026-10-12_stream_archive_finalize.sql once.")
+                    else:
+                        raise
+            except Exception as e:
+                failed = True
+                print(f"[{universe}] {month}: ERROR {e}")
+                traceback.print_exc()
+                alert(pg, universe, f"stream_archive_failed_{month.strftime('%Y_%m')}",
+                      f"[StreamBase] R2 archiving failed ({universe} {month})", f"{type(e).__name__}: {e}")
+    return 1 if failed else 0
+
+
 def run_smoke() -> int:
     pg = pg_client()
     s3 = r2_client()
     bucket = env("R2_BUCKET")
-    cfg_bucket = (pg.rpc("stream_archive_config_get", {"p_key": "bucket"}) or "").strip()
-    print(f"bucket secret == configured bucket: {cfg_bucket == bucket}")
-    now = datetime(2026, 1, 2, 3, 4, 5, 678901, tzinfo=timezone.utc)
-    t = pa.table({
-        "d": pa.array([date(2026, 1, 1), date(2026, 12, 31), None], pa.date32()),
-        "isrc": pa.array(["USAAA0000001", "USAAA0000002", None], pa.string()),
-        "streams": pa.array([1, 9223372036854775000, None], pa.int64()),
-        "id": pa.array([1, 2, 3], pa.int64()),
-        "note": pa.array(["a", None, "ünï"], pa.string()),
-        "created_at": pa.array([now, now, None], pa.timestamp("us", tz="UTC")),
-        "created_by": pa.array(["123e4567-e89b-12d3-a456-426614174000", None, None], pa.string()),
-        "flag": pa.array([True, False, None], pa.bool_()),
-    })
-    key = "v1/_selftest/smoke.parquet"
-    upload(s3, bucket, key, to_parquet_bytes(t))
-    print(f"uploaded {key}")
-    upload(s3, bucket, "v1/_selftest/smoke.csv", ("d,isrc,streams" + NL + "2026-01-01,USAAA0000001,1" + NL + "2026-01-02,USAAA0000002,2" + NL).encode())
-    upload(s3, bucket, "v1/_selftest/smoke.jsonl", ('{"d":"2026-01-01","isrc":"A","streams":1}' + NL + '{"d":"2026-01-02","isrc":"B","streams":2}' + NL).encode())
-    print("uploaded smoke.csv and smoke.jsonl")
-    for comp in ("none", "snappy", "gzip"):
-        buf = io.BytesIO()
-        pq.write_table(t, buf, compression=comp, use_dictionary=False, data_page_version="1.0")
-        upload(s3, bucket, f"v1/_selftest/smoke_{comp}.parquet", buf.getvalue())
-    print("uploaded parquet variants")
-    import csv as _csv
-    import gzip as _gzip
-    sio = io.StringIO()
-    w = _csv.writer(sio, lineterminator=NL)
-    w.writerow(["d", "isrc", "streams", "id", "note", "created_at", "created_by", "flag"])
-    w.writerow(["2026-01-01", "USAAA0000001", "1", "1", "a, \"quoted\"", "2026-01-02T03:04:05.678901+00:00", "123e4567-e89b-12d3-a456-426614174000", "true"])
-    w.writerow(["2026-12-31", "USAAA0000002", "9223372036854775000", "2", "", "2026-01-02T03:04:05.678901+00:00", "", "false"])
-    w.writerow(["", "", "", "3", "uünï", "", "", ""])
-    upload(s3, bucket, "v1/_selftest/smoke_gz.csv.gz", _gzip.compress(sio.getvalue().encode("utf-8")))
-    upload(s3, bucket, "v1/_selftest/smoke_plain.csv", sio.getvalue().encode("utf-8"))
-    rows = [
-        {"d": "2026-01-01", "isrc": "USAAA0000001", "streams": 1, "id": 1, "note": "a", "created_at": "2026-01-02T03:04:05.678901+00:00", "created_by": "123e4567-e89b-12d3-a456-426614174000", "flag": True},
-        {"d": "2026-12-31", "isrc": "USAAA0000002", "streams": 9223372036854775000, "id": 2, "note": None, "created_at": "2026-01-02T03:04:05.678901+00:00", "created_by": None, "flag": False},
-        {"d": None, "isrc": None, "streams": None, "id": 3, "note": "uünï", "created_at": None, "created_by": None, "flag": None},
-    ]
-    jl = (NL.join(json.dumps(r) for r in rows) + NL).encode("utf-8")
-    upload(s3, bucket, "v1/_selftest/smoke_gz.jsonl.gz", _gzip.compress(jl))
-    print("uploaded gz csv/jsonl variants")
-    out = pg.rpc("stream_archive_smoke", {"p_key": key})
-    print(json.dumps(out, indent=1, default=str))
+    key = f"{config(pg, 'key_prefix')}/_selftest/smoke_gz.csv.gz"
+    body = gz_csv(["d", "isrc", "streams"], [["2026-01-01", "USAAA0000001", 1]])
+    upload(s3, bucket, key, body)
+    print(f"uploaded {key} ({len(body)} bytes)")
     return 0
 
 
@@ -201,9 +247,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("mode", choices=["smoke", "selftest", "archive"])
     args = ap.parse_args()
-    if args.mode == "smoke":
-        return run_smoke()
-    raise SystemExit("not implemented yet")
+    return {"smoke": run_smoke, "selftest": run_selftest, "archive": run_archive}[args.mode]()
 
 
 if __name__ == "__main__":

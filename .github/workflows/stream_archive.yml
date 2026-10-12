@@ -39,7 +39,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install --no-input pyarrow boto3 requests
+        run: pip install --no-input boto3 requests
 
       - name: Pick mode
         id: mode
