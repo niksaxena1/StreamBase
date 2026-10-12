@@ -21,7 +21,7 @@ const noopSubscribe = () => () => {};
 
 function DetailRow({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="grid grid-cols-[8.5rem_1fr] gap-3 py-1.5 text-xs">
+    <div className="grid grid-cols-[7.5rem_1fr] gap-3 py-0.5 text-xs">
       <dt style={{ color: "var(--sb-muted)" }}>{label}</dt>
       <dd className="min-w-0 whitespace-pre-wrap break-words">{children}</dd>
     </div>
@@ -41,7 +41,7 @@ function Value({ v, mono }: { v: string | null; mono?: boolean }) {
 
 function DetailsView({ row, entityName }: { row: LibraryRow; entityName: string }) {
   return (
-    <dl className="divide-y" style={{ borderColor: "var(--sb-border)" }}>
+    <dl className="space-y-1">
       <DetailRow label="Entity">
         <Value v={entityName} />
       </DetailRow>
@@ -204,9 +204,9 @@ export function LibraryDetailPanel({
     >
       <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" onClick={onClose} aria-hidden="true" />
       <aside ref={panelRef} className="sb-glass relative flex h-full w-full flex-col overflow-hidden rounded-none shadow-2xl sm:max-w-[560px] sm:rounded-l-2xl animate-[modal-fade-in_180ms_ease-out]">
-        <header className="flex flex-none items-start gap-3 border-b px-4 py-3" style={{ borderColor: "var(--sb-border)" }}>
-          {row ? <LibraryCover url={row.album_image_url} size={64} /> : null}
-          <div className="min-w-0 flex-1 space-y-1.5">
+        <header className="flex flex-none items-start gap-3 px-4 pb-1 pt-3">
+          {row ? <LibraryCover url={row.album_image_url} size={48} /> : null}
+          <div className="min-w-0 flex-1 space-y-1">
             {row ? (
               <>
                 <h2 className="font-display text-base font-semibold leading-snug tracking-tight">
@@ -234,7 +234,7 @@ export function LibraryDetailPanel({
           </IconButton>
         </header>
 
-        <div className="flex-1 space-y-6 overflow-y-auto px-4 py-4">
+        <div className="flex-1 space-y-8 overflow-y-auto px-4 pb-6 pt-3">
           {!row ? (
             <Alert variant="warning" title="Release not found">
               {catalogId} isn&apos;t in the library.
