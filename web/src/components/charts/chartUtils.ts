@@ -285,6 +285,33 @@ export function formatKmbTick(n: number): string {
   return new Intl.NumberFormat("en-US").format(Math.round(n));
 }
 
+/** One unit for the entire axis, with at most three significant digits. */
+export function createAxisTickFormatter(ticks: readonly number[], scale = 1): (value: number) => string {
+  const largest = ticks.reduce((max, value) => Number.isFinite(value) ? Math.max(max, Math.abs(value * scale)) : max, 0);
+  const [divisor, unit] = largest >= 1e9 ? [1e9, "B"] : largest >= 1e6 ? [1e6, "M"] : largest >= 1e3 ? [1e3, "k"] : [1, ""];
+  return (value) => {
+    if (!Number.isFinite(value)) return "";
+    const scaled = value * scale / Number(divisor);
+    const decimals = Math.abs(scaled) >= 100 ? 0 : Math.abs(scaled) >= 10 ? 1 : unit ? 1 : 2;
+    const rounded = Number(scaled.toFixed(decimals));
+    return `${Object.is(rounded, -0) ? 0 : rounded}${unit}`;
+  };
+}
+
+export type ChartLabel = { id: string; x: number; y: number; text: string; priority: number };
+
+/** Greedy placement by magnitude: a smaller change never displaces a larger one. */
+export function placeChartLabels<T extends ChartLabel>(labels: readonly T[], limit = Infinity): T[] {
+  const placed: T[] = [];
+  for (const label of [...labels].sort((a, b) => Math.abs(b.priority) - Math.abs(a.priority))) {
+    if (placed.length >= limit) break;
+    const overlaps = placed.some(other => Math.abs(label.y - other.y) < 14 &&
+      Math.abs(label.x - other.x) < (label.text.length + other.text.length) * 3 + 6);
+    if (!overlaps) placed.push(label);
+  }
+  return placed;
+}
+
 export function showCopiedToast(message: string) {
   try {
     const existing = document.getElementById("sb-copied-toast");
@@ -627,6 +654,29 @@ function mixRgb(a: RGBA, b: RGBA, t: number): RGBA {
     b: a.b + (b.b - a.b) * tt,
     a: 1,
   };
+}
+
+/** Darken only failing light series colors, retaining the hue of custom accents. */
+export function readableLightChartColor(color: string, background: string, minimum = 3): string {
+  const resolved = color.startsWith("var(") && typeof document !== "undefined"
+    ? getComputedStyle(document.documentElement).getPropertyValue(color.slice(4, -1)).trim() : color;
+  const base = parseCssColor(resolved);
+  const bg = parseCssColor(background);
+  if (!base || !bg) return color;
+  const luminance = (c: RGBA) => [c.r, c.g, c.b].map(v => v / 255)
+    .map(v => v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)
+    .reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
+  const contrast = (c: RGBA) => {
+    const composited = mixRgb(bg, c, c.a);
+    const a = luminance(composited), b = luminance(bg);
+    return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+  };
+  if (contrast(base) >= minimum) return color;
+  for (let step = 1; step <= 100; step++) {
+    const darker = mixRgb(base, { r: 0, g: 0, b: 0, a: 1 }, step / 100);
+    if (contrast(darker) >= minimum + 0.05) return rgbaToCss(darker);
+  }
+  return "#000000";
 }
 
 /**

@@ -37,14 +37,19 @@
   --sb-accent-stroke: #a8d62e;
   /* Positive values (daily streams, revenue) */
   --sb-positive: #4d7c0f; /* lime-700 equivalent - readable on light bg */
-  --sb-positive-muted: #65a30d; /* lime-600 for hover states */
+  --sb-positive-muted: #5b910b;
 
   /* Semantic colors - use these for consistent data visualization */
-  --sb-revenue: #10b981; /* emerald-500 - financial/revenue data */
+  --sb-revenue: #087f5b;
   --sb-tracks: #3b82f6; /* blue-500 - track count/catalog data */
-  --sb-warning: #f59e0b; /* amber-500 - warnings/overrides */
-  --sb-error: #ef4444; /* red-500 - errors/negative trends */
+  --sb-warning: #965000;
+  --sb-error: #c62828;
   --sb-info: #6366f1; /* indigo-500 - informational */
+  /* Chart-only information colors; chrome borders retain their softer token. */
+  --sb-chart-grid: #858585;
+  --sb-chart-weekend: #858585;
+  --sb-chart-label: #595959;
+  --sb-chart-ma: #000000;
 
   /* Subtle surface overlays (zebra striping, hover, panels) */
   --sb-row-odd: rgba(0, 0, 0, 0.035);

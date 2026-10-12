@@ -2,6 +2,7 @@
 
 import {
   Area,
+  getNiceTickValues,
   AreaChart,
   CartesianGrid,
   ComposedChart,
@@ -12,9 +13,12 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { memo, useId } from "react";
+import { memo, useId, useMemo } from "react";
 import { clipDailySeries, typicalDailyDomain } from "./dailyRange";
 import { CappedDailyPoint } from "./DailyRangeControls";
+import { DailyChartLabels, UniformYAxisTick } from "./DailyChartLabels";
+import { usePhoneChart } from "./usePhoneChart";
+import { TouchChartPoint, useTouchChartTooltip } from "./useTouchChartTooltip";
 import { formatCompactMoney, formatInt, formatUsd } from "@/lib/format";
 import {
   computePaddedDomain,
@@ -23,6 +27,7 @@ import {
   getSundayAccentColor,
   isHighlightDayDateUtc,
   formatKmbTick,
+  readableLightChartColor,
   formatXAxisTick,
 } from "@/components/charts/chartUtils";
 import { useChartCopyToClipboard } from "@/components/charts/useChartCopyToClipboard";
@@ -95,18 +100,25 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
   const gid = useId();
   const typical = typicalRange && !isCumulative && !ghost;
   const themeColors = useThemeColors();
+  const phone = usePhoneChart();
+  const negativeColor = themeColors.isDark ? "#ef4444" : themeColors.error;
+  const labelColor = themeColors.isDark ? "var(--sb-muted)" : "var(--sb-chart-label)";
   const { containerProps, setTooltipValues, copyModal } = useChartCopyToClipboard({ valueLabel });
   const { weekHighlightDayUtc } = useWeekHighlight();
   const { chartStartDateIso } = useChartStartDate();
   const { zoomDailyYAxis } = useChartAxisZoom();
   const { showWeekendDip } = useWeekendDip();
+  const touchKey = useMemo(() => ({ data, typical, chartStartDateIso }), [data, typical, chartStartDateIso]);
+  const { setContainer: touchContainerRef, pinned, touch, onPointerDownCapture, onPointerUpCapture, onPointerCancelCapture, onPointerMoveCapture } = useTouchChartTooltip(touchKey);
 
   // Weekend dip applies to daily (non-cumulative) charts, except Tracks
   const enableWeekendDip = showWeekendDip && !isCumulative && valueLabel !== "Tracks";
 
   // Use theme-aware colors from CSS variables
-  const effectiveColor = color ?? getChartColor("streams", themeColors);
-  const effectiveMaColor = maColor ?? (themeColors.isDark ? "#ffffff" : "#000000");
+  const requestedColor = color ?? getChartColor("streams", themeColors);
+  const effectiveColor = themeColors.isDark ? requestedColor : readableLightChartColor(requestedColor, themeColors.bg);
+  const requestedMaColor = maColor ?? (themeColors.isDark ? "#ffffff" : "var(--sb-chart-ma)");
+  const effectiveMaColor = themeColors.isDark ? requestedMaColor : readableLightChartColor(requestedMaColor, themeColors.bg);
   const sundayColor = getSundayAccentColor(effectiveColor, { isDark: themeColors.isDark, bgColor: themeColors.bg });
 
   const annItemsByDate = new Map<string, ManualOverrideAnnotation[]>();
@@ -182,6 +194,10 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
   const finiteValues = [...(typical ? chartData.map((d) => d._rangeValue) : v), ...(typical ? chartData.map((d) => d._rangeMa7) : ma)].filter((x): x is number => typeof x === "number" && Number.isFinite(x));
   const dataMax = finiteValues.length ? Math.max(...finiteValues) : 0;
   const dataMin = finiteValues.length ? Math.min(...finiteValues) : 0;
+  // Match Recharts' default nice domain, then supply numeric bounds so label
+  // placement and every tick use exactly the same scale.
+  const fallbackTicks = yAxisDomain ? [] : getNiceTickValues([0, Math.max(1, dataMax)], 5);
+  const resolvedYAxisDomain: [number, number] = yAxisDomain ?? [fallbackTicks[0], fallbackTicks[fallbackTicks.length - 1]];
   const domainIncludesZero =
     !isCumulative &&
     (hasNegatives ||
@@ -207,34 +223,37 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
     baseColor: effectiveColor,
     highlightColor: sundayColor,
     highlightWeekdayUtc: weekHighlightDayUtc,
-    showWeekendDipLabels: enableWeekendDip,
+    showWeekendDipLabels: false,
+    isDark: themeColors.isDark,
   });
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const dot = (props: any) => {
+  const renderDot = (props: any) => {
     const val = (props?.payload as Record<string, unknown>)?.value;
     const edge = props?.payload?._rangeEdge;
     if (typical && typeof val === "number" && (edge === "low" || edge === "high")) {
-      return <CappedDailyPoint cx={Number(props.cx)} cy={Number(props.cy)} formattedValue={fmtYTick(val)} showLabel={Boolean(props.payload._rangeLabel)} edge={edge} color={val < 0 ? "#ef4444" : effectiveColor} index={Number(props.index)} count={chartData.length} />;
+      return <CappedDailyPoint cx={Number(props.cx)} cy={Number(props.cy)} formattedValue={fmtYTick(val)} showLabel={false} edge={edge} color={val < 0 ? negativeColor : effectiveColor} index={Number(props.index)} count={chartData.length} />;
     }
     if (typeof val === "number" && val < 0) {
       const x = Number(props?.cx), y = Number(props?.cy);
       if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-      return <circle cx={x} cy={y} r={3} fill="#ef4444" stroke="var(--sb-bg)" strokeWidth={1.5} />;
+      return <circle cx={x} cy={y} r={3} fill={negativeColor} stroke="var(--sb-bg)" strokeWidth={1.5} />;
     }
     return baseDot(props);
   };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const dot = (props: any) => <TouchChartPoint cx={Number(props.cx)} cy={Number(props.cy)} index={Number(props.index)}>{renderDot(props)}</TouchChartPoint>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const activeDot = (props: any) => {
     const val = (props?.payload as Record<string, unknown>)?.value;
     const edge = props?.payload?._rangeEdge;
     if (typical && typeof val === "number" && (edge === "low" || edge === "high")) {
-      return <CappedDailyPoint cx={Number(props.cx)} cy={Number(props.cy)} formattedValue={fmtYTick(val)} showLabel={Boolean(props.payload._rangeLabel)} edge={edge} color={val < 0 ? "#ef4444" : effectiveColor} index={Number(props.index)} count={chartData.length} />;
+      return <CappedDailyPoint cx={Number(props.cx)} cy={Number(props.cy)} formattedValue={fmtYTick(val)} showLabel={false} edge={edge} color={val < 0 ? negativeColor : effectiveColor} index={Number(props.index)} count={chartData.length} />;
     }
     if (typeof val === "number" && val < 0) {
       const x = Number(props?.cx), y = Number(props?.cy);
       if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-      return <circle cx={x} cy={y} r={4} fill="#ef4444" stroke="var(--sb-bg)" strokeWidth={1.5} />;
+      return <circle cx={x} cy={y} r={4} fill={negativeColor} stroke="var(--sb-bg)" strokeWidth={1.5} />;
     }
     return baseActiveDot(props);
   };
@@ -242,14 +261,21 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
   const maDot = (props: { cx?: number; cy?: number; index?: number; payload?: { ma7?: number | null; _rangeMaEdge?: "low" | "high" | null; _rangeMaLabel?: boolean } }) => {
     const val = props.payload?.ma7;
     const edge = props.payload?._rangeMaEdge;
-    if (!typical || typeof val !== "number" || !edge) return <g />;
-    return <CappedDailyPoint cx={Number(props.cx)} cy={Number(props.cy)} formattedValue={fmtYTick(val)} showLabel={Boolean(props.payload?._rangeMaLabel)} edge={edge} color={effectiveMaColor} index={Number(props.index)} count={chartData.length} />;
+    if (typeof val !== "number") return <g />;
+    return <TouchChartPoint cx={Number(props.cx)} cy={Number(props.cy)} index={Number(props.index)}>{!typical || !edge ? <circle cx={props.cx} cy={props.cy} r={3} fill="transparent" pointerEvents="none" /> : <CappedDailyPoint cx={Number(props.cx)} cy={Number(props.cy)} formattedValue={fmtYTick(val)} showLabel={false} edge={edge} color={effectiveMaColor} index={Number(props.index)} count={chartData.length} />}</TouchChartPoint>;
   };
+
+  const pinnedPoint = pinned ? chartData[pinned.index] : undefined;
 
   return (
     <SectionPerformance name={`daily-series:${valueLabel}`}>
     <div
-      className="w-full overflow-visible outline-none"
+      className="relative w-full overflow-visible outline-none"
+      ref={touchContainerRef}
+      onPointerDownCapture={onPointerDownCapture}
+      onPointerUpCapture={(event) => { containerProps.onPointerUp(); onPointerUpCapture(event); }}
+      onPointerCancelCapture={() => { containerProps.onPointerCancel(); onPointerCancelCapture(); }}
+      onPointerMoveCapture={onPointerMoveCapture}
       {...(ghost ? {} : containerProps)}
     >
       <ResponsiveContainer width="100%" height={heightPx} minWidth={0} style={{ overflow: "visible" }}>
@@ -264,8 +290,8 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
                 <>
                   <stop offset="0%" stopColor={effectiveColor} stopOpacity={0.3} />
                   <stop offset={fillZeroOffset} stopColor={effectiveColor} stopOpacity={0.05} />
-                  <stop offset={fillZeroOffset} stopColor="#ef4444" stopOpacity={0.15} />
-                  <stop offset="100%" stopColor="#ef4444" stopOpacity={0.4} />
+                  <stop offset={fillZeroOffset} stopColor={negativeColor} stopOpacity={0.15} />
+                  <stop offset="100%" stopColor={negativeColor} stopOpacity={0.4} />
                 </>
               ) : (
                 <>
@@ -278,8 +304,8 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
               <linearGradient id={`${gid}-stroke`} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={effectiveColor} stopOpacity={1} />
                 <stop offset={strokeZeroOffset} stopColor={effectiveColor} stopOpacity={1} />
-                <stop offset={strokeZeroOffset} stopColor="#ef4444" stopOpacity={1} />
-                <stop offset="100%" stopColor="#ef4444" stopOpacity={1} />
+                <stop offset={strokeZeroOffset} stopColor={negativeColor} stopOpacity={1} />
+                <stop offset="100%" stopColor={negativeColor} stopOpacity={1} />
               </linearGradient>
             )}
           </defs>
@@ -287,13 +313,13 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
             <CartesianGrid
               strokeDasharray="3 3"
               vertical={false}
-              stroke="var(--sb-border)"
+              stroke={themeColors.isDark ? "var(--sb-border)" : "var(--sb-chart-grid)"}
             />
           ) : null}
           <XAxis
             dataKey="date"
             tickFormatter={formatXAxisTick}
-            stroke="var(--sb-muted)"
+            stroke={labelColor}
             fontSize={10}
             tickLine={false}
             axisLine={false}
@@ -301,16 +327,18 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
             hide={ghost}
           />
           <YAxis
-            stroke="var(--sb-muted)"
+            stroke={labelColor}
             fontSize={10}
             tickLine={false}
             axisLine={false}
-            tickFormatter={ghost ? () => "" : (value) => fmtYTick(Number(value ?? 0))}
-            domain={yAxisDomain}
+            tick={ghost ? false : <UniformYAxisTick money={yTickFormat === "usd_compact"} isDark={themeColors.isDark} />}
+            width={phone ? 40 : 60}
+            domain={resolvedYAxisDomain}
             allowDataOverflow={typical}
           />
           {!ghost ? (
             <Tooltip
+              active={touch ? false : undefined}
               allowEscapeViewBox={{ x: true, y: true }}
               wrapperStyle={{ zIndex: 10000 }}
               content={({ active, label, payload }) => (
@@ -343,8 +371,8 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
             <ReferenceLine
               key={`highlight-${d}`}
               x={d}
-              stroke={sundayColor}
-              strokeOpacity={themeColors.isDark ? 0.10 : 0.07}
+              stroke={themeColors.isDark ? sundayColor : "var(--sb-chart-weekend)"}
+              strokeOpacity={themeColors.isDark ? 0.10 : 1}
               strokeWidth={10}
               strokeDasharray="0"
               ifOverflow="hidden"
@@ -355,7 +383,7 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
               key={`override-${d}`}
               x={d}
               stroke={themeColors.warning}
-              strokeOpacity={0.35}
+              strokeOpacity={themeColors.isDark ? 0.35 : 1}
               strokeWidth={2}
               strokeDasharray="4 4"
               ifOverflow="hidden"
@@ -364,25 +392,18 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
           {partialDate && (
             <ReferenceLine
               x={partialDate}
-              stroke="var(--sb-muted)"
-              strokeOpacity={0.5}
+              stroke={labelColor}
+              strokeOpacity={themeColors.isDark ? 0.5 : 1}
               strokeWidth={1.5}
               strokeDasharray="3 3"
               ifOverflow="hidden"
-              label={{
-                value: "partial",
-                position: "insideTopRight",
-                fontSize: 9,
-                fill: "var(--sb-muted)",
-                opacity: 0.7,
-              }}
             />
           )}
           {domainIncludesZero && (
             <ReferenceLine
               y={0}
-              stroke={hasNegatives ? "#ef4444" : "var(--sb-muted)"}
-              strokeOpacity={hasNegatives ? 0.45 : 0.5}
+              stroke={hasNegatives ? negativeColor : "var(--sb-muted)"}
+              strokeOpacity={themeColors.isDark ? (hasNegatives ? 0.45 : 0.5) : 1}
               strokeWidth={hasNegatives ? 1 : 1.25}
               strokeDasharray="4 4"
               ifOverflow="hidden"
@@ -406,7 +427,7 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
               dataKey={typical ? "_rangeMa7" : "ma7"}
               stroke={effectiveMaColor}
               strokeWidth={3}
-              dot={typical ? maDot : false}
+              dot={maDot}
               activeDot={typical ? maDot : undefined}
               isAnimationActive={false}
               strokeDasharray="6 4"
@@ -414,8 +435,27 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
               name="ma7"
             />
           )}
+          {!ghost && <DailyChartLabels phone={phone} showDips={enableWeekendDip} isDark={themeColors.isDark}
+            points={chartData.map(d => ({ date: d.date, value: d._rangeValue, ma7: d._rangeMa7, dip: d._weekendDipPct,
+              edge: d._rangeEdge, maEdge: d._rangeMaEdge, partial: d.date === partialDate,
+              capColor: (d.value ?? 0) < 0 ? negativeColor : effectiveColor, maCapColor: effectiveMaColor,
+              capLabel: typical && d._rangeLabel && d.value != null ? fmtYTick(d.value) : undefined,
+              maCapLabel: hasMA7 && typical && d._rangeMaLabel && d.ma7 != null ? fmtYTick(d.ma7) : undefined,
+            }))} />}
         </ChartComponent>
       </ResponsiveContainer>
+      {pinnedPoint && pinned && !ghost ? (
+        <div data-sb-pinned-tooltip style={{ position: "absolute", left: pinned.x + 12,
+          top: Math.max(0, Math.min(heightPx - 100, pinned.y)), zIndex: 10000 }}>
+          <DailySeriesTooltip active label={pinnedPoint.date}
+            payload={[
+              ...(pinnedPoint.value != null ? [{ dataKey: "value", value: pinnedPoint.value, payload: pinnedPoint }] : []),
+              ...(pinnedPoint.ma7 != null && hasMA7 ? [{ dataKey: "ma7", value: pinnedPoint.ma7, payload: pinnedPoint }] : []),
+            ]}
+            valueLabel={valueLabel} fmtValue={fmtValue} isDark={themeColors.isDark}
+            chartColor={effectiveColor} onValuesFormatted={setTooltipValues} isCumulative={isCumulative} />
+        </div>
+      ) : null}
       {ghost ? null : copyModal}
     </div>
     </SectionPerformance>
