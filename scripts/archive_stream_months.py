@@ -144,6 +144,10 @@ def upload(s3, bucket: str, key: str, body: bytes) -> None:
 
 
 def alert(pg: Postgrest, universe: str, kind: str, subject: str, body: str) -> None:
+    """Failure email via ops.pipeline_alerts. Manual (workflow_dispatch) runs only print unless STREAM_ARCHIVE_NOTIFY=true."""
+    if os.environ.get("STREAM_ARCHIVE_NOTIFY", "").strip().lower() != "true":
+        print(f"  (alert suppressed for this run: {subject})")
+        return
     try:
         pg.rpc("stream_archive_alert", {"p_universe": universe, "p_kind": kind, "p_subject": subject, "p_body": body[:3500]})
     except Exception as e:  # never mask the original failure
