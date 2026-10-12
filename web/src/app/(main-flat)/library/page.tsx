@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 
 import { SectionErrorState } from "@/components/ui/DataStates";
 import { loadLibrary } from "@/lib/library/loadLibrary";
-import { loadLibraryStreams } from "@/lib/library/loadLibraryStreams";
+import { loadLibraryStreamsWithin } from "@/lib/library/loadLibraryStreams";
 import { getRequestAppContext } from "@/lib/requestAppContext.server";
 
 import { LibraryNotConnected } from "./LibraryNotConnected";
@@ -21,8 +21,8 @@ export default async function LibraryPage() {
   if (!user) redirect("/login");
   if (!isAdmin) redirect("/");
 
-  // Streams are cached separately and never fail the page: without them the columns show "—".
-  const [data, streams] = await Promise.all([loadLibrary(), loadLibraryStreams()]);
+  // Streams have a 3 s deadline and never fail the page: without them the columns show "—".
+  const [data, { streams }] = await Promise.all([loadLibrary(), loadLibraryStreamsWithin()]);
 
   if (data.status === "not_configured") return <LibraryNotConnected envVars={data.envVars} />;
   if (data.status === "error") {

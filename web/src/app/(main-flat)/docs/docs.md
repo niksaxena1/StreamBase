@@ -281,7 +281,7 @@ Files:
 
 - `web/src/app/(main-flat)/library/page.tsx`
 - `web/src/app/(main-flat)/library/library.actions.ts`
-- `supabase/migrations/20261012153950_catalog_streams_attention_bulk_edit.sql` (`catalog.track_streams`, `track_stream_series`, `bulk_update_tracks`, `has_signed_contract` on the overview)
+- `supabase/migrations/20261012180100_catalog_streams_attention_bulk_edit.sql` (`catalog.track_streams`, `track_stream_series`, `bulk_update_tracks`, `has_signed_contract` on the overview)
 - `web/src/lib/library/` (loaders and pure helpers)
 - `web/src/lib/supabase/catalogService.ts`
 

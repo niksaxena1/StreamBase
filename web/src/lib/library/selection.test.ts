@@ -9,7 +9,7 @@ describe("toggleInSelection", () => {
   it("selects and deselects one row and remembers the anchor", () => {
     const one = toggleInSelection(empty, ids, 1, false);
     expect([...one.selected]).toEqual(["b"]);
-    expect(one.anchor).toBe(1);
+    expect(one.anchor).toBe("b");
     const none = toggleInSelection(one, ids, 1, false);
     expect(none.selected.size).toBe(0);
   });
@@ -22,8 +22,21 @@ describe("toggleInSelection", () => {
 
   it("shift-click on a selected row deselects the range", () => {
     const all = toggleAllInSelection(empty, ids);
-    const next = toggleInSelection({ ...all, anchor: 0 }, ids, 2, true);
+    const next = toggleInSelection({ ...all, anchor: "a" }, ids, 2, true);
     expect([...next.selected].sort()).toEqual(["d", "e"]);
+  });
+
+  it("anchors by catalog id, so a re-sorted list uses the current order", () => {
+    const first = toggleInSelection(empty, ["A", "B", "C"], 0, false);
+    const reversed = ["C", "B", "A"];
+    const next = toggleInSelection(first, reversed, 1, true);
+    expect([...next.selected].sort()).toEqual(["A", "B"]);
+  });
+
+  it("treats a shift-click as plain when the anchor is no longer visible", () => {
+    const first = toggleInSelection(empty, ["A", "B", "C"], 0, false);
+    const next = toggleInSelection({ selected: new Set(), anchor: first.anchor }, ["C", "D", "E"], 2, true);
+    expect([...next.selected]).toEqual(["E"]);
   });
 
   it("shift-click with no anchor acts like a plain click", () => {

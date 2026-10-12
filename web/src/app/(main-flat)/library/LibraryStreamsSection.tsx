@@ -138,7 +138,14 @@ export function LibraryStreamsSection({ row, asOf }: { row: LibraryRow; asOf: st
                 No stream data for this range.
               </p>
             ) : (
-              <DailyStreamsChart data={daily} valueLabel="Streams" heightPx={180} />
+              <>
+                <DailyStreamsChart data={daily} valueLabel="Streams" heightPx={180} />
+                {daily.some((p) => p.estimated) ? (
+                  <p className="text-[11px]" style={{ color: "var(--sb-muted)" }}>
+                    Some days have no data; the increase between the days either side is spread evenly across them.
+                  </p>
+                ) : null}
+              </>
             )}
           </div>
         ) : null}

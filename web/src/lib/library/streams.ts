@@ -29,13 +29,16 @@ export function normalizeStreamPoint(raw: Raw): LibraryStreamPoint | null {
   return date && value !== null ? { date, streams_cumulative: value } : null;
 }
 
-/** Puts stream figures on each row by catalog ID. Rows with no stream data keep their fields unset. */
+/**
+ * Puts stream figures on each row by catalog ID, but only when the stream row's ISRC is the row's
+ * current ISRC (an ISRC edit must not keep the old track's figures). Other rows keep their fields unset.
+ */
 export function mergeStreams(rows: LibraryRow[], streams: LibraryStream[]): LibraryRow[] {
   if (streams.length === 0) return rows;
   const byId = new Map(streams.map((s) => [s.catalog_id, s]));
   return rows.map((row) => {
     const s = byId.get(row.catalog_id);
-    if (!s) return row;
+    if (!s || !s.isrc || s.isrc !== row.isrc) return row;
     return {
       ...row,
       total_streams: s.total_streams,
@@ -80,14 +83,34 @@ export function formatExactStreams(n: number | null | undefined): string {
   return n === null || n === undefined || !Number.isFinite(n) ? "" : Math.round(n).toLocaleString("en-US");
 }
 
+const DAY_MS = 86_400_000;
+const MAX_SPREAD_DAYS = 400;
+const dayMs = (iso: string) => Date.parse(`${iso.slice(0, 10)}T00:00:00Z`);
+const isoDay = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+
+export type DailyStreamsPoint = { date: string; value: number; estimated?: boolean };
+
 /**
  * Daily streams from a cumulative series (ascending by date): each day is the difference to the
  * previous value, negatives clamped to 0, and the first point is skipped (it has no previous value).
+ * When consecutive points are more than a day apart, the increase is spread evenly over the missing
+ * days, and those days are marked `estimated`.
  */
-export function dailyFromCumulative(points: LibraryStreamPoint[]): Array<{ date: string; value: number }> {
-  const out: Array<{ date: string; value: number }> = [];
+export function dailyFromCumulative(points: LibraryStreamPoint[]): DailyStreamsPoint[] {
+  const out: DailyStreamsPoint[] = [];
   for (let i = 1; i < points.length; i++) {
-    out.push({ date: points[i].date, value: Math.max(points[i].streams_cumulative - points[i - 1].streams_cumulative, 0) });
+    const prev = points[i - 1];
+    const cur = points[i];
+    const increase = Math.max(cur.streams_cumulative - prev.streams_cumulative, 0);
+    const gap = Math.round((dayMs(cur.date) - dayMs(prev.date)) / DAY_MS);
+    if (!Number.isFinite(gap) || gap <= 1 || gap > MAX_SPREAD_DAYS) {
+      out.push({ date: cur.date, value: increase });
+      continue;
+    }
+    const each = increase / gap;
+    for (let d = 1; d <= gap; d++) {
+      out.push({ date: d === gap ? cur.date : isoDay(dayMs(prev.date) + d * DAY_MS), value: each, estimated: true });
+    }
   }
   return out;
 }

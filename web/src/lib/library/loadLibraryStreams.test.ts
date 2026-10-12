@@ -5,6 +5,8 @@ const state = vi.hoisted(() => ({
   rpcResult: { data: null as unknown, error: null as null | { message: string; code?: string } },
   rpcCalls: [] as Array<{ name: string; args: unknown }>,
   cache: [] as Array<{ key: string; ttl: unknown; tags: unknown }>,
+  ranges: [] as Array<[number, number]>,
+  hang: false,
 }));
 
 vi.mock("@/lib/logger", () => ({ logError: vi.fn(), logWarn: vi.fn(), logDebug: vi.fn() }));
@@ -25,21 +27,33 @@ vi.mock("@/lib/supabase/catalogService", () => ({
   catalogConfigured: () => state.configured,
   catalogService: () => ({
     schema: () => ({
-      rpc: async (name: string, args?: unknown) => {
+      rpc: (name: string, args?: unknown) => {
         state.rpcCalls.push({ name, args });
-        return state.rpcResult;
+        // Like PostgREST: awaiting gives everything; .order().range() gives one page.
+        const builder = {
+          order: () => builder,
+          range: (from: number, to: number) => {
+            state.ranges.push([from, to]);
+            const rows = Array.isArray(state.rpcResult.data) ? (state.rpcResult.data as unknown[]).slice(from, to + 1) : state.rpcResult.data;
+            return Promise.resolve({ data: rows, error: state.rpcResult.error });
+          },
+          then: (resolve: (v: unknown) => void) => resolve(state.rpcResult),
+        };
+        return builder;
       },
     }),
   }),
 }));
 
-import { loadLibraryStreamSeries, loadLibraryStreams } from "./loadLibraryStreams";
+import { loadLibraryStreamSeries, loadLibraryStreams, loadLibraryStreamsWithin } from "./loadLibraryStreams";
 
 beforeEach(() => {
   state.configured = true;
   state.rpcResult = { data: null, error: null };
   state.rpcCalls = [];
   state.cache = [];
+  state.ranges = [];
+  state.hang = false;
 });
 
 describe("loadLibraryStreams", () => {
@@ -56,6 +70,17 @@ describe("loadLibraryStreams", () => {
     expect(streams[0]).toMatchObject({ catalog_id: "TG-1", total_streams: 1500, streams_7d: 20, spotify_track_id: "t1" });
     expect(state.rpcCalls[0].name).toBe("track_streams");
     expect(state.cache[0]).toEqual({ key: "library-streams", ttl: 3600, tags: ["catalog-streams"] });
+  });
+
+  it("reads every page, not just the first 1,000 rows", async () => {
+    state.rpcResult = {
+      data: Array.from({ length: 2350 }, (_, i) => ({ catalog_id: `TG-${String(i).padStart(5, "0")}`, total_streams: i })),
+      error: null,
+    };
+    const streams = await loadLibraryStreams();
+    expect(streams).toHaveLength(2350);
+    expect(streams[2349].total_streams).toBe(2349);
+    expect(state.ranges).toEqual([[0, 999], [1000, 1999], [2000, 2999]]);
   });
 
   it("returns an empty list when the call fails", async () => {
@@ -91,5 +116,33 @@ describe("loadLibraryStreamSeries", () => {
   it("throws on a database error", async () => {
     state.rpcResult = { data: null, error: { message: "nope" } };
     await expect(loadLibraryStreamSeries("TG-1", 30)).rejects.toThrow("nope");
+  });
+});
+
+describe("loadLibraryStreamsWithin", () => {
+  it("returns streams that arrive in time", async () => {
+    state.rpcResult = { data: [{ catalog_id: "TG-1", total_streams: 5 }], error: null };
+    const res = await loadLibraryStreamsWithin(1000);
+    expect(res.unavailable).toBe(false);
+    expect(res.streams).toHaveLength(1);
+  });
+
+  it("gives up after the deadline and reports streams as unavailable", async () => {
+    vi.useFakeTimers();
+    try {
+      state.rpcResult = { data: [], error: null };
+      const never = new Promise<never>(() => {});
+      state.hang = true;
+      const p = loadLibraryStreamsWithin(50, () => never);
+      await vi.advanceTimersByTimeAsync(60);
+      await expect(p).resolves.toEqual({ streams: [], unavailable: true });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reports unavailable when the load fails", async () => {
+    state.rpcResult = { data: null, error: { message: "boom" } };
+    await expect(loadLibraryStreamsWithin(1000)).resolves.toEqual({ streams: [], unavailable: true });
   });
 });

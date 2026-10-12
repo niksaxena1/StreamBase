@@ -4,7 +4,7 @@ import { revalidateTag, updateTag } from "next/cache";
 
 import { cleanBulkIds, runBulkUpdate, validateBulkChanges, type BulkChanges } from "@/lib/library/bulk";
 import { buildNewReleaseFields, validateChanges, validateNewRelease } from "@/lib/library/edits";
-import { LIBRARY_CACHE_TAG } from "@/lib/library/cache";
+import { LIBRARY_CACHE_TAG, LIBRARY_STREAMS_CACHE_TAG } from "@/lib/library/cache";
 import { loadLibraryStreamSeries } from "@/lib/library/loadLibraryStreams";
 import { loadLibraryOverviewRow, loadLibraryTrackDetail } from "@/lib/library/loadLibraryTrack";
 import { isStreamRange } from "@/lib/library/streams";
@@ -66,6 +66,11 @@ export async function saveLibraryTrack(catalogId: string, changes: unknown): Pro
   }
 
   expireLibraryCache();
+  // Streams are keyed by ISRC, so a changed ISRC means the cached figures belong to a different track.
+  if ("isrc" in checked.changes) {
+    updateTag(LIBRARY_STREAMS_CACHE_TAG);
+    revalidateTag(LIBRARY_STREAMS_CACHE_TAG, "max");
+  }
 
   // The edit is saved; a failed re-read must not look like a failed save.
   try {

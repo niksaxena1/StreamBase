@@ -1,8 +1,9 @@
-export type SelectionState = { selected: Set<string>; anchor: number | null };
+export type SelectionState = { selected: Set<string>; anchor: string | null };
 
 /**
- * One checkbox click. A plain click flips that row and remembers it as the anchor. A shift-click
- * sets every row between the anchor and the clicked row to the state the clicked row is moving to.
+ * One checkbox click. A plain click flips that row and remembers it (by catalog ID) as the anchor.
+ * A shift-click sets every row between the anchor and the clicked row, in the CURRENT visible order,
+ * to the state the clicked row is moving to. If the anchor isn't visible any more it is a plain click.
  * `ids` is the visible order (the filtered, sorted list).
  */
 export function toggleInSelection(state: SelectionState, ids: string[], index: number, shift: boolean): SelectionState {
@@ -10,8 +11,9 @@ export function toggleInSelection(state: SelectionState, ids: string[], index: n
   if (id === undefined) return state;
   const checked = !state.selected.has(id);
   const next = new Set(state.selected);
-  if (shift && state.anchor !== null && state.anchor < ids.length) {
-    const [from, to] = state.anchor <= index ? [state.anchor, index] : [index, state.anchor];
+  const anchorIndex = shift && state.anchor !== null ? ids.indexOf(state.anchor) : -1;
+  if (anchorIndex >= 0) {
+    const [from, to] = anchorIndex <= index ? [anchorIndex, index] : [index, anchorIndex];
     for (let i = from; i <= to; i++) {
       if (checked) next.add(ids[i]);
       else next.delete(ids[i]);
@@ -21,7 +23,7 @@ export function toggleInSelection(state: SelectionState, ids: string[], index: n
   } else {
     next.delete(id);
   }
-  return { selected: next, anchor: index };
+  return { selected: next, anchor: id };
 }
 
 /** Header checkbox: select every visible row, or clear them when all are already selected. */
