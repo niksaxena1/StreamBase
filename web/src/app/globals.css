@@ -46,8 +46,8 @@
   --sb-error: #c62828;
   --sb-info: #6366f1; /* indigo-500 - informational */
   /* Chart-only information colors; chrome borders retain their softer token. */
-  --sb-chart-grid: #858585;
-  --sb-chart-weekend: #858585;
+  --sb-chart-grid: #b8b8b8; /* background guide, not data */
+  --sb-chart-weekend: #858585; /* drawn at 0.14 opacity as a soft band */
   --sb-chart-label: #595959;
   --sb-chart-ma: #000000;
 

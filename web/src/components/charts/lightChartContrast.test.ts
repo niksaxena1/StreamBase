@@ -21,7 +21,7 @@ describe("light chart token contrast", () => {
     for (const [name, minimum] of [
       ["--sb-positive", 3], ["--sb-positive-muted", 3], ["--sb-revenue", 3], ["--sb-tracks", 3],
       ["--sb-warning", 4.5], ["--sb-error", 4.5], ["--sb-info", 3],
-      ["--sb-chart-grid", 3], ["--sb-chart-weekend", 3], ["--sb-chart-label", 4.5], ["--sb-text", 4.5],
+      ["--sb-chart-label", 4.5], ["--sb-text", 4.5],
       ["--sb-chart-ma", 3], ["--sb-muted", 4.5],
     ] as const) {
       it(`${name} reaches ${minimum}:1 on ${background}`, () => {

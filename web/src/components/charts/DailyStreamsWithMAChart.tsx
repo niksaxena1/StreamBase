@@ -342,7 +342,7 @@ export function DailyStreamsWithMAChart({
               key={`highlight-${d}`}
               x={d}
               stroke={themeColors.isDark ? sundayColor : "var(--sb-chart-weekend)"}
-              strokeOpacity={themeColors.isDark ? 0.10 : 1}
+              strokeOpacity={themeColors.isDark ? 0.10 : 0.14}
               strokeWidth={10}
               strokeDasharray="0"
               ifOverflow="hidden"
