@@ -111,6 +111,7 @@ export function LibraryDetailPanel({
 }) {
   const mounted = useSyncExternalStore(noopSubscribe, () => true, () => false);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
   const [editing, setEditing] = useState(false);
   const [loaded, setLoaded] = useState<{ id: string; result: LibraryDetailResult } | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -148,6 +149,26 @@ export function LibraryDetailPanel({
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Tab" && panelRef.current) {
+        // Keep keyboard focus inside the open panel.
+        const focusables = Array.from(
+          panelRef.current.querySelectorAll<HTMLElement>(
+            'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])',
+          ),
+        );
+        if (focusables.length === 0) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        const active = document.activeElement;
+        if (e.shiftKey && (active === first || !panelRef.current.contains(active))) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && (active === last || !panelRef.current.contains(active))) {
+          e.preventDefault();
+          first.focus();
+        }
+        return;
+      }
       if (e.key !== "Escape") return;
       if (editing) setEditing(false);
       else onClose();
@@ -177,7 +198,7 @@ export function LibraryDetailPanel({
       aria-label={row ? `${row.sheet_artist ?? ""} ${row.sheet_title ?? ""}`.trim() || catalogId : catalogId}
     >
       <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" onClick={onClose} aria-hidden="true" />
-      <aside className="sb-glass relative flex h-full w-full flex-col overflow-hidden rounded-none shadow-2xl sm:max-w-[560px] sm:rounded-l-2xl animate-[modal-fade-in_180ms_ease-out]">
+      <aside ref={panelRef} className="sb-glass relative flex h-full w-full flex-col overflow-hidden rounded-none shadow-2xl sm:max-w-[560px] sm:rounded-l-2xl animate-[modal-fade-in_180ms_ease-out]">
         <header className="flex flex-none items-start gap-3 border-b px-4 py-3" style={{ borderColor: "var(--sb-border)" }}>
           <div className="min-w-0 flex-1 space-y-1.5">
             {row ? (

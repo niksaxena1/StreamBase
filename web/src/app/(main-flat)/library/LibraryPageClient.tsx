@@ -38,7 +38,10 @@ import { LibraryDetailPanel } from "./LibraryDetailPanel";
 import { LibraryFilterBar, type FilterOptionLists } from "./LibraryFilters";
 import { LibraryTable } from "./LibraryTable";
 
-const formatCount = (n: number) => n.toLocaleString("en-US");
+/** Chip order; any other entity code follows in the order the database gave. */
+const ENTITY_ORDER = ["tg", "p", "n", "legacy", "unassigned"];
+
+const formatCount =(n: number) => n.toLocaleString("en-US");
 
 /** Writes the filter state into the address bar without a server round trip. */
 function writeFiltersToUrl(filters: LibraryFilters) {
@@ -111,10 +114,16 @@ export function LibraryPageClient({
   const entityChips = useMemo(() => {
     const known = new Set(entities.map((e) => e.code));
     const extra = [...new Set(rows.map((r) => r.entity).filter((c): c is string => Boolean(c) && !known.has(c as string)))];
+    const rank = (code: string) => {
+      const i = ENTITY_ORDER.indexOf(code);
+      return i < 0 ? ENTITY_ORDER.length : i;
+    };
     return [
       ...entities.map((e) => ({ code: e.code, name: e.name, active: e.active })),
       ...extra.map((code) => ({ code, name: code.toUpperCase(), active: false })),
-    ].filter((e) => e.active || (counts.get(e.code) ?? 0) > 0 || filters.entities.includes(e.code));
+    ]
+      .filter((e) => e.active || (counts.get(e.code) ?? 0) > 0 || filters.entities.includes(e.code))
+      .sort((a, b) => rank(a.code) - rank(b.code));
   }, [entities, rows, counts, filters.entities]);
 
   const activeCount = activeFilterCount(filters);
