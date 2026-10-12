@@ -174,6 +174,24 @@ def run_smoke() -> int:
         pq.write_table(t, buf, compression=comp, use_dictionary=False, data_page_version="1.0")
         upload(s3, bucket, f"v1/_selftest/smoke_{comp}.parquet", buf.getvalue())
     print("uploaded parquet variants")
+    import csv as _csv
+    import gzip as _gzip
+    sio = io.StringIO()
+    w = _csv.writer(sio, lineterminator=NL)
+    w.writerow(["d", "isrc", "streams", "id", "note", "created_at", "created_by", "flag"])
+    w.writerow(["2026-01-01", "USAAA0000001", "1", "1", "a, \"quoted\"", "2026-01-02T03:04:05.678901+00:00", "123e4567-e89b-12d3-a456-426614174000", "true"])
+    w.writerow(["2026-12-31", "USAAA0000002", "9223372036854775000", "2", "", "2026-01-02T03:04:05.678901+00:00", "", "false"])
+    w.writerow(["", "", "", "3", "uünï", "", "", ""])
+    upload(s3, bucket, "v1/_selftest/smoke_gz.csv.gz", _gzip.compress(sio.getvalue().encode("utf-8")))
+    upload(s3, bucket, "v1/_selftest/smoke_plain.csv", sio.getvalue().encode("utf-8"))
+    rows = [
+        {"d": "2026-01-01", "isrc": "USAAA0000001", "streams": 1, "id": 1, "note": "a", "created_at": "2026-01-02T03:04:05.678901+00:00", "created_by": "123e4567-e89b-12d3-a456-426614174000", "flag": True},
+        {"d": "2026-12-31", "isrc": "USAAA0000002", "streams": 9223372036854775000, "id": 2, "note": None, "created_at": "2026-01-02T03:04:05.678901+00:00", "created_by": None, "flag": False},
+        {"d": None, "isrc": None, "streams": None, "id": 3, "note": "uünï", "created_at": None, "created_by": None, "flag": None},
+    ]
+    jl = (NL.join(json.dumps(r) for r in rows) + NL).encode("utf-8")
+    upload(s3, bucket, "v1/_selftest/smoke_gz.jsonl.gz", _gzip.compress(jl))
+    print("uploaded gz csv/jsonl variants")
     out = pg.rpc("stream_archive_smoke", {"p_key": key})
     print(json.dumps(out, indent=1, default=str))
     return 0
