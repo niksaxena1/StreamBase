@@ -271,11 +271,17 @@ Files:
   - Open a release to see its details, ISRCs / UPCs, files (with Dropbox links and the drive folder path) and change history
   - **Edit** a release. Only the fields you changed are sent. Every edit and every new release is written to the catalog's change log with your email.
   - **Add release** creates a new release (artist, title, entity, optional date and distributor); it gets its catalog ID from the database
+  - **Views**: the chips above the filters set the filters in one click: All, Upcoming, Upcoming TG, Released this month, Missing codes (released TG or P release with no ISRC or no UPC) and Unassigned. With nothing in the URL the page shows TG and P releases only, newest first; **All** shows everything. **Save view…** stores the current filters under a name in this browser only (local storage); the × removes it.
+  - **List | Schedule**: Schedule groups the filtered releases by release week (Monday to Sunday, named by that week's Friday), from the current week forward. **Show past weeks** adds earlier ones. Each week shows its release count, a count per entity and a load bar scaled to the busiest week shown; weeks with no releases between two dated ones say "No releases", and weeks above 14 releases are marked "Busy". Releases with no date are listed last. Search and filters apply here too (`?view=schedule`).
+  - **Streams**: the list has a cover thumbnail, total streams and last-7-day streams (both sortable). Open a release for larger cover art, the figures, an Open in Spotify link, a link to the track's analytics page and a daily-streams chart for 30, 90 or 365 days. Streams come from the primary ISRC and are cached for an hour; if they can't be loaded the columns show "—". The CSV export adds `total_streams`, `streams_7d` and `album_image_url`.
+  - **Needs attention**: a collapsible panel (open or closed state is remembered in this browser) counting releases that need work: released without an M master, released without an ISRC or UPC (TG and P), TG with no signed contract on the drive, upcoming TG with no drive folder, and no entity assigned. Rules with no matches are hidden. Clicking one filters the list to exactly those releases (`?attention=…`) and can be combined with search.
+  - **Bulk edit**: tick rows in the List (shift-click selects a range; the header box selects everything currently shown). A bar offers Entity, Distributor, Label / Genre, Originality or Exclusivity; the change is confirmed first, then applied to every selected release in batches of 500, each release getting its own change-log entry with your email. ISRC and UPC can't be bulk edited. Selection only keeps rows that are still shown.
 
 Files:
 
 - `web/src/app/(main-flat)/library/page.tsx`
 - `web/src/app/(main-flat)/library/library.actions.ts`
+- `supabase/migrations/20261012153950_catalog_streams_attention_bulk_edit.sql` (`catalog.track_streams`, `track_stream_series`, `bulk_update_tracks`, `has_signed_contract` on the overview)
 - `web/src/lib/library/` (loaders and pure helpers)
 - `web/src/lib/supabase/catalogService.ts`
 

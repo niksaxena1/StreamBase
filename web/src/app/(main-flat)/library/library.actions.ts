@@ -2,10 +2,13 @@
 
 import { revalidateTag, updateTag } from "next/cache";
 
+import { cleanBulkIds, runBulkUpdate, validateBulkChanges, type BulkChanges } from "@/lib/library/bulk";
 import { buildNewReleaseFields, validateChanges, validateNewRelease } from "@/lib/library/edits";
 import { LIBRARY_CACHE_TAG } from "@/lib/library/cache";
+import { loadLibraryStreamSeries } from "@/lib/library/loadLibraryStreams";
 import { loadLibraryOverviewRow, loadLibraryTrackDetail } from "@/lib/library/loadLibraryTrack";
-import type { LibraryRow, LibraryTrackDetail } from "@/lib/library/types";
+import { isStreamRange } from "@/lib/library/streams";
+import type { LibraryRow, LibraryStreamPoint, LibraryTrackDetail } from "@/lib/library/types";
 import { logError } from "@/lib/logger";
 import { requireLibraryAdmin } from "@/lib/library/adminGate.server";
 import { catalogService } from "@/lib/supabase/catalogService";
@@ -17,6 +20,8 @@ export type LibraryDetailResult = { ok: true; detail: LibraryTrackDetail } | Lib
 export type LibrarySaveResult =
   | { ok: true; row: LibraryRow | null; detail: LibraryTrackDetail | null }
   | LibraryActionError;
+export type LibraryStreamSeriesResult = { ok: true; points: LibraryStreamPoint[] } | LibraryActionError;
+export type LibraryBulkResult = { ok: true; updated: number; total: number } | (LibraryActionError & { updated: number });
 export type LibraryCreateResult = { ok: true; catalogId: string; row: LibraryRow | null } | LibraryActionError;
 
 const CATALOG_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
@@ -114,3 +119,61 @@ export async function createLibraryTrack(input: unknown): Promise<LibraryCreateR
     return { ok: true, catalogId, row: null };
   }
 }
+
+/** Daily cumulative streams for one release (loaded when the panel's chart asks for a range). */
+export async function fetchLibraryStreamSeries(catalogId: string, days: number): Promise<LibraryStreamSeriesResult> {
+  const gate = await requireLibraryAdmin();
+  if (!gate.ok) return gate;
+  if (!CATALOG_ID_RE.test(catalogId)) return { ok: false, error: "Unknown catalog ID" };
+  if (!isStreamRange(days)) return { ok: false, error: "Unsupported range" };
+  try {
+    return { ok: true, points: await loadLibraryStreamSeries(catalogId, days) };
+  } catch (error) {
+    logError("Library stream series load failed", error);
+    return { ok: false, error: queryErrorMessage(error) };
+  }
+}
+
+/**
+ * Applies one change to many releases through `catalog.bulk_update_tracks`, in chunks of 500, one
+ * change_log entry per release. If a chunk fails, the ones before it are already saved, so the
+ * result says how many releases were updated.
+ */
+export async function bulkUpdateLibraryTracks(catalogIds: unknown, changes: unknown): Promise<LibraryBulkResult> {
+  const gate = await requireLibraryAdmin();
+  if (!gate.ok) return { ...gate, updated: 0 };
+
+  const ids = cleanBulkIds(catalogIds, CATALOG_ID_RE);
+  if (!ids) return { ok: false, error: "Pick between 1 and 3,000 releases", updated: 0 };
+  const checked = validateBulkChanges(changes);
+  if (!checked.ok) return { ...checked, updated: 0 };
+
+  const run = await runBulkUpdate(ids, (chunk) => callBulkUpdate(chunk, checked.changes, gate.actor));
+  // Some chunks may have gone through even when a later one failed.
+  if (run.updated > 0 || run.error === null) expireLibraryCache();
+  if (run.error !== null) {
+    return {
+      ok: false,
+      error: run.processed > 0 ? `Updated ${run.updated} of ${ids.length}. ${run.error}` : run.error,
+      updated: run.updated,
+    };
+  }
+  return { ok: true, updated: run.updated, total: ids.length };
+}
+
+async function callBulkUpdate(chunk: string[], changes: BulkChanges, actor: string) {
+  try {
+    const { data, error } = await catalogService().schema("catalog").rpc("bulk_update_tracks", {
+      p_catalog_ids: chunk,
+      p_changes: changes,
+      p_actor: actor,
+    });
+    if (error) return { error: error.message };
+    const changed = typeof data === "number" ? data : Number(data);
+    return { changed: Number.isFinite(changed) ? changed : 0 };
+  } catch (error) {
+    logError("Library bulk update failed", error);
+    return { error: queryErrorMessage(error) };
+  }
+}
+

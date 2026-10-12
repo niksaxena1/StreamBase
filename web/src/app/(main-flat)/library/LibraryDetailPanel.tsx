@@ -12,6 +12,8 @@ import type { LibraryEntity, LibraryRow, LibraryTrackDetail } from "@/lib/librar
 
 import { CodesSection, DriveFolder, FilesSection, HistorySection, Section } from "./LibraryDetailSections";
 import { LibraryEditForm } from "./LibraryEditForm";
+import { LibraryCover } from "./LibraryCover";
+import { LibraryStreamsSection } from "./LibraryStreamsSection";
 import { EntityBadge } from "./LibraryTable";
 import { fetchLibraryTrackDetail, type LibraryDetailResult, type LibrarySaveResult } from "./library.actions";
 
@@ -98,6 +100,7 @@ export function LibraryDetailPanel({
   row,
   entities,
   distributors,
+  streamsAsOf,
   onClose,
   onSaved,
 }: {
@@ -105,6 +108,8 @@ export function LibraryDetailPanel({
   row: LibraryRow | null;
   entities: LibraryEntity[];
   distributors: string[];
+  /** Date the stream figures are for, or null when streams didn't load. */
+  streamsAsOf: string | null;
   onClose: () => void;
   /** Called with the saved row so the table updates straight away. */
   onSaved: (row: LibraryRow | null) => void;
@@ -200,6 +205,7 @@ export function LibraryDetailPanel({
       <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" onClick={onClose} aria-hidden="true" />
       <aside ref={panelRef} className="sb-glass relative flex h-full w-full flex-col overflow-hidden rounded-none shadow-2xl sm:max-w-[560px] sm:rounded-l-2xl animate-[modal-fade-in_180ms_ease-out]">
         <header className="flex flex-none items-start gap-3 border-b px-4 py-3" style={{ borderColor: "var(--sb-border)" }}>
+          {row ? <LibraryCover url={row.album_image_url} size={64} /> : null}
           <div className="min-w-0 flex-1 space-y-1.5">
             {row ? (
               <>
@@ -235,6 +241,8 @@ export function LibraryDetailPanel({
             </Alert>
           ) : (
             <>
+              <LibraryStreamsSection row={row} asOf={streamsAsOf} />
+
               <Section
                 title="Details"
                 aside={

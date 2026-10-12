@@ -29,6 +29,7 @@ export function makeRow(overrides: Partial<LibraryRow> = {}): LibraryRow {
     genre: null,
     file_count: 0,
     updated_at: null,
+    has_signed_contract: false,
     ...overrides,
   };
 }

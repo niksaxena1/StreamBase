@@ -48,6 +48,7 @@ export function normalizeOverviewRow(raw: Raw): LibraryRow {
     genre: str(raw.genre),
     file_count: num(raw.file_count) ?? 0,
     updated_at: str(raw.updated_at),
+    has_signed_contract: raw.has_signed_contract === true,
   };
 }
 
