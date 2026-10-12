@@ -656,6 +656,20 @@ Used by `scripts/ingest_exports_to_supabase.py`:
 - `track_daily_streams_effective_public` (view)
   - Public-safe subset of the effective view (date, isrc, streams_cumulative only)
 
+**Stream history tiers (storage).** Stream history lives in three tiers; every reader goes through the same views, so output does not depend on the tier:
+
+| Tier | Dates | Storage |
+|---|---|---|
+| daily | `>= stream_history_hot_from()` (current month + 1 previous month) | partitioned `track_daily_streams` |
+| compact | `stream_compact_from()` .. daily | `track_streams_monthly` (one row per ISRC per month, `bigint[]` of daily values) |
+| archive | `< stream_compact_from()` | one gzip CSV per universe per month in Cloudflare R2 (`<prefix>/<own|competitor>/archive_YYYY-MM.csv.gz`), read through the Supabase Wrappers S3 foreign data wrapper |
+
+Policy: the compact tier keeps 12 packed months (`ops.stream_archive_config.packed_months_keep`); older months become due for the archive (first month due: about Sep 2027). The monthly workflow `.github/workflows/stream_archive.yml` exports a due month, uploads it, attaches and verifies it through the FDW (counts + EXCEPT ALL both ways, streams and overrides) and then finalizes (owner-installed `ops.archive_finalize_month` removes the compact rows). Manual `workflow_dispatch` runs never email; scheduled runs email through `ops.pipeline_alerts` on failure only.
+
+Rules that keep recent pages off R2: archived months are inheritance children of an empty parent table with a CHECK window (`ops.iso_date(d)` range), so the planner skips files outside the query's date range; app code floors "latest date" and full-history reads with `recentStreamFloor()` (`web/src/lib/streamHistoryBounds.ts`); SQL readers that used to scan all history are bounded to `stream_compact_from()`. A query that does touch archived months loads those months' whole files (no pushdown): expect a few seconds per month.
+
+If R2 is unreachable: everything dated inside the daily and compact tiers keeps working (the archive branches are never executed); a query whose date range includes an archived month fails with a clear foreign-table error (`HV000 request failed` / `read ... failed`). Recovery: check the R2 token/bucket (`ops.stream_archive_config`, vault secrets `r2_*`), run the `Stream Archive (R2)` workflow in `selftest` mode, and see `docs/COMPACT-STREAM-STORAGE.md`.
+
 ---
 
 ## Data dictionary (fields used by the app)

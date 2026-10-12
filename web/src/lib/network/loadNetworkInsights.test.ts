@@ -46,6 +46,7 @@ function fixtureClient(failSnapshots = false, tableOverrides?: Record<string, Ro
           in: (key: string, values: unknown[]) => { rows = rows.filter((row) => values.includes(row[key])); return query; },
           overlaps: (key: string, values: unknown[]) => { rows = rows.filter((row) => (row[key] as unknown[]).some((value) => values.includes(value))); return query; },
           lte: (key: string, value: string) => { rows = rows.filter((row) => String(row[key]) <= value); return query; },
+          gte: (key: string, value: string) => { rows = rows.filter((row) => String(row[key]) >= value); return query; },
           lt: (key: string, value: string) => { rows = rows.filter((row) => String(row[key]) < value); return query; },
           or: () => { rows = rows.filter((row) => row.valid_to == null); return query; },
           order: (key: string, options?: {

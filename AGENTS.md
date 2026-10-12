@@ -18,6 +18,7 @@ Do not blur them. Competitor work should be additive and schema-scoped; own-cata
 - In Competitor Mode, labels may own multiple playlists.
 - Per-competitor accent color is stored in `competitor.labels.accent_hex` and resolved through `web/src/lib/competitorLabelAccents.ts` (`applyResolvedLabelAccents`) on every label load and in `extract-competitor-accents`. The resolved hex drives `--sb-accent` (chrome) and per-label UI (comparison chart, cards, badges). Stream charts in competitor mode use `getStreamSeriesColor()` → `colors.accent`; revenue/tracks keep semantic colors via `getChartColor()`.
 - Competitor history is multi-day; daily/trend views are reliable once ingestion has run across multiple snapshot dates.
+- Stream history has three tiers (daily partitions, compact monthly arrays, R2 archive) behind the same views (`*_effective`, `*_effective_public`, `track_daily_streams_all`, `track_daily_streams_range*`). Never read `track_daily_streams` directly for dates older than `stream_history_hot_from()`; never add an unbounded (no lower date bound) read of those views to a page or hot RPC (bound with `stream_compact_from()` in SQL or `recentStreamFloor()` in web). Details: `docs/COMPACT-STREAM-STORAGE.md`.
 
 ## Pipeline shared modules
 

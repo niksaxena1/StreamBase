@@ -1,3 +1,4 @@
+import { recentStreamFloor } from "@/lib/streamHistoryBounds";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { apiJsonErr, apiJsonOk, readJsonBody, requireAdmin } from "@/lib/api/server";
@@ -42,6 +43,7 @@ async function getLatestTwoStreamDatesOwn(
     const { data, error } = await svc
       .from("track_daily_streams_effective_public")
       .select("date")
+      .gte("date", recentStreamFloor())
       .order("date", { ascending: false })
       .range(offset, offset + pageSize - 1);
 

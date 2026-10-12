@@ -1,3 +1,4 @@
+import { recentStreamFloor } from "@/lib/streamHistoryBounds";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CollaborationGraph, NetworkPlaylistOption } from "@/app/(main-flat)/network/networkTypes";
 import type { NetworkScopeState } from "@/app/(main-flat)/network/networkScope";
@@ -63,12 +64,12 @@ export async function loadNetworkInsights(
   async function readSnapshotDates(): Promise<[string, string] | null> {
     try {
       const latestResult = await query(() => db.from("track_daily_streams_effective_public")
-        .select("date").order("date", { ascending: false }).limit(1));
+        .select("date").gte("date", recentStreamFloor()).order("date", { ascending: false }).limit(1));
       if (latestResult.error) throw latestResult.error;
       const latest = latestResult.data?.[0]?.date as string | undefined;
       if (!latest) return null;
       const previousResult = await query(() => db.from("track_daily_streams_effective_public")
-        .select("date").lt("date", latest).order("date", { ascending: false }).limit(1));
+        .select("date").gte("date", recentStreamFloor()).lt("date", latest).order("date", { ascending: false }).limit(1));
       if (previousResult.error) throw previousResult.error;
       const previous = previousResult.data?.[0]?.date as string | undefined;
       return previous ? [latest, previous] : null;

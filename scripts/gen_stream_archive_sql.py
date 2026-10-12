@@ -560,6 +560,6 @@ def v3_migration():
 
 
 if __name__ == "__main__":
-    # 20261012220000/221000/225000 were produced by earlier revisions of this template and are frozen (already applied).
+    # 20261012220500/221000/225000 were produced by earlier revisions of this template and are frozen (already applied).
     (MIG / "20261012227000_stream_archive_single_family.sql").write_text(v3_migration(), encoding="utf-8")
     print("written")
