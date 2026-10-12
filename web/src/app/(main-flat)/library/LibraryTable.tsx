@@ -170,8 +170,9 @@ export function LibraryTable({
                 onClick={() => selection.onToggleAll()}
               />
             </div>
-            <div role="columnheader" className="sr-only">
-              Cover
+            {/* Occupies its grid column (an sr-only cell would collapse and shift every header after it). */}
+            <div role="columnheader">
+              <span className="sr-only">Cover</span>
             </div>
             {HEADERS.map((h) => {
               const alignClass = h.align === "right" ? "text-right" : h.align === "center" ? "text-center" : "text-left";

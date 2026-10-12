@@ -76,6 +76,7 @@ export function LibraryStreamsSection({ row, asOf }: { row: LibraryRow; asOf: st
 
   const current = loaded?.key === key ? loaded : null;
   const daily = useMemo(() => (current?.points ? dailyFromCumulative(current.points) : []), [current]);
+  const dailyNewestFirst = useMemo(() => [...daily].reverse(), [daily]);
 
   const spotifyId = row.spotify_track_id && SPOTIFY_ID.test(row.spotify_track_id) ? row.spotify_track_id : null;
 
@@ -139,7 +140,8 @@ export function LibraryStreamsSection({ row, asOf }: { row: LibraryRow; asOf: st
               </p>
             ) : (
               <>
-                <DailyStreamsChart data={daily} valueLabel="Streams" heightPx={180} />
+                {/* DailyStreamsChart expects newest-first data (like every other caller) and reverses it. */}
+                <DailyStreamsChart data={dailyNewestFirst} valueLabel="Streams" heightPx={180} />
                 {daily.some((p) => p.estimated) ? (
                   <p className="text-[11px]" style={{ color: "var(--sb-muted)" }}>
                     Some days have no data; the increase between the days either side is spread evenly across them.

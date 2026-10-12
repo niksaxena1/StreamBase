@@ -69,7 +69,7 @@ async function loadOverviewRows(): Promise<LibraryRow[]> {
         if (encodedOverviewBytes(encoded) > MAX_CACHED_OVERVIEW_BYTES) throw new Error(OVERSIZE_MESSAGE);
         return { data: encoded, error: null };
       },
-      "library-overview",
+      `library-overview:${OVERVIEW_COLUMNS}`,
       LIBRARY_CACHE_TTL_S,
       [LIBRARY_CACHE_TAG],
     );
