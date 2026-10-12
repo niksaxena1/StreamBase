@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "@/components/shell/RouteLink";
 import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/GlassTable";
 import { formatInt, formatUsd } from "@/lib/format";
@@ -18,10 +18,14 @@ type SortKey = "date" | "daily_streams_delta" | "total_streams_cumulative";
 
 export function HomeNegativeStreamsSection(props: {
   negativeDailyStreams: NegativeDailyStreamsRow[];
+  loading?: boolean;
+  onRequestData?: () => void;
 }) {
   const { metric } = useMetric();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
   const [open, setOpen] = useStoredBoolState(STORAGE_KEY_OPEN);
+  const { onRequestData } = props;
+  useEffect(() => { if (open) onRequestData?.(); }, [open, onRequestData]);
   const [sortKey, setSortKey] = useState<SortKey>("date");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
@@ -75,7 +79,10 @@ export function HomeNegativeStreamsSection(props: {
   return (
     <details
       open={open}
-      onToggle={(ev) => setOpen(ev.currentTarget.open)}
+      onToggle={(ev) => {
+        setOpen(ev.currentTarget.open);
+        if (ev.currentTarget.open) onRequestData?.();
+      }}
       className="rounded-xl border sb-panel p-3"
       style={{ borderColor: "var(--sb-border)" }}
     >
@@ -123,7 +130,7 @@ export function HomeNegativeStreamsSection(props: {
         </div>
       </summary>
 
-      <div className="mt-3">
+      {open && <div className="mt-3">
         <GlassTable
           headers={[
             "TRACK",
@@ -165,7 +172,7 @@ export function HomeNegativeStreamsSection(props: {
           maxBodyHeightClassName="max-h-[600px]"
         >
           {sorted.length === 0 ? (
-            <EmptyState colSpan={4} message="No negative stream occurrences found" />
+            <EmptyState colSpan={4} message={props.loading ? "Loading negative streams…" : "No negative stream occurrences found"} />
           ) : (
             sorted.map((row, idx) => (
               <TableRow key={`${row.isrc}-${row.date}-${idx}`}>
@@ -231,7 +238,7 @@ export function HomeNegativeStreamsSection(props: {
             ))
           )}
         </GlassTable>
-      </div>
+      </div>}
     </details>
   );
 }

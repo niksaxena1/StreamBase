@@ -56,7 +56,7 @@ export function HomeHistorySection(props: {
         </div>
       </summary>
 
-      <div className="mt-3">
+      {openHistory && <div className="mt-3">
         <GlassTable
           headers={[
             { label: "Date" },
@@ -96,7 +96,7 @@ export function HomeHistorySection(props: {
           })}
           {!props.history?.length && <EmptyState colSpan={5} message="No stats found yet" />}
         </GlassTable>
-      </div>
+      </div>}
     </details>
   );
 }

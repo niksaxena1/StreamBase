@@ -39,12 +39,15 @@ export function HomeWeekendDipsSection(props: {
   artistWeekendDips: ArtistWeekendDipRow[];
   trackWeekendDips: TrackWeekendDipRow[];
   hasEnoughHistory?: boolean;
+  onRequestData?: () => void;
 }) {
   const { metric } = useMetric();
   const { showWeekendDip } = useWeekendDip();
   const { streamPayoutPerStreamUsd } = usePayoutRate();
   const [minWeekdayAvg, setMinWeekdayAvg] = useState(0);
   const [open, setOpen] = useState(false);
+  const { onRequestData } = props;
+  useEffect(() => { if (open) onRequestData?.(); }, [open, onRequestData]);
   const [viewMode, setViewMode] = useState<ViewMode>("artists");
   const [sortKey, setSortKey] = useState<SortKey>("avg_dip_pct");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");

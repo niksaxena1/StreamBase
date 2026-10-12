@@ -1,4 +1,4 @@
-import { ReactNode, ComponentProps } from "react";
+import { ReactNode, ComponentProps, type Ref } from "react";
 import { Music } from "lucide-react";
 
 type HeaderCell =
@@ -19,6 +19,8 @@ interface GlassTableProps {
   emptyMessage?: string;
   emptyIcon?: ReactNode;
   tableLayout?: "auto" | "fixed";
+  tableClassName?: string;
+  scrollRef?: Ref<HTMLDivElement>;
 }
 
 function headerAlignClass(align?: "left" | "right" | "center") {
@@ -34,17 +36,20 @@ export function GlassTable({
   bodyClassName,
   maxBodyHeightClassName,
   tableLayout = "auto",
+  tableClassName,
+  scrollRef,
 }: GlassTableProps) {
   return (
     <div className={["sb-card relative overflow-hidden", className].filter(Boolean).join(" ")}>
       <div
+        ref={scrollRef}
         className={[
           maxBodyHeightClassName ?? "max-h-[440px]",
           "overflow-auto",
           bodyClassName ?? "",
         ].filter(Boolean).join(" ")}
       >
-        <table className={["min-w-full text-xs", tableLayout === "fixed" ? "table-fixed" : "table-auto"].join(" ")}>
+        <table className={[tableClassName ? "text-xs" : "min-w-full text-xs", tableLayout === "fixed" ? "table-fixed" : "table-auto", tableClassName].filter(Boolean).join(" ")}>
           <thead
             className="sticky top-0 z-10 text-left text-[11px] uppercase tracking-wider backdrop-blur-xl"
             style={{ 

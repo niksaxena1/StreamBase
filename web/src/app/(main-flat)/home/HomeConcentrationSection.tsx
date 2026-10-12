@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import Link from "@/components/shell/RouteLink";
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { Share2 } from "lucide-react";
@@ -17,7 +18,7 @@ import {
 } from "recharts";
 import { useMetric } from "@/components/metrics/MetricContext";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
-import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/GlassTable";
+import { GlassTable, TableCell, EmptyState } from "@/components/ui/GlassTable";
 import { fetchApiJson } from "@/lib/api";
 import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
 import { readStoredBool, readStoredNumber, readStoredString, writeStoredBool, writeStoredNumber, writeStoredString } from "@/lib/storage";
@@ -34,10 +35,13 @@ import { ConcentrationFilterPicker, type PlaylistOption } from "./ConcentrationF
 import type { HomeConcentrationPlaylistOption } from "./homeTypes";
 import { IconButton } from "@/components/ui/Button";
 import type { ConcentrationShareSnapshotV1 } from "@/lib/share/concentrationSnapshot";
+import { createHomeRequestCache, scheduleVisibleHomePrefetch } from "@/lib/home/homeSectionPrefetch";
+import { buildConcentrationTableRows, CONCENTRATION_TRACK_HEIGHT, CONCENTRATION_DIVIDER_HEIGHT, CONCENTRATION_HEADER_HEIGHT } from "./concentrationTableRows";
 
 const STORAGE_KEY_OPEN = "sb:home-concentration-open";
 const STORAGE_KEY_MODE = "sb:home-concentration-mode";
 const STORAGE_KEY_THRESHOLD = "sb:home-concentration-threshold";
+const EMPTY_PLAYLIST_OPTIONS: HomeConcentrationPlaylistOption[] = [];
 
 type ViewMode = "total" | "daily";
 type FilterMode = "all" | "artist" | "collector" | "playlist";
@@ -145,6 +149,7 @@ export function HomeConcentrationSection(props: {
   datasetMode?: "own" | "competitor";
   competitorLabelKey?: string | null;
   competitorPlaylists?: HomeConcentrationPlaylistOption[];
+  primaryContentReady?: boolean;
 }) {
   const { onRequestScatterData } = props;
   const { metric } = useMetric();
@@ -201,28 +206,29 @@ export function HomeConcentrationSection(props: {
     props.competitorLabelKey &&
     props.competitorLabelKey !== ALL_COMPETITORS_KEY;
 
-  const competitorPlaylistOptions = props.competitorPlaylists ?? [];
+  const competitorPlaylistOptions = props.competitorPlaylists ?? EMPTY_PLAYLIST_OPTIONS;
+  const playlistOptionsCache = useMemo(() => createHomeRequestCache(), [props.datasetMode, props.competitorLabelKey]);
 
-  // Fetch playlist list once on mount (own catalog), or use server-provided competitor playlists
+  // Warm filter options at the same low priority as tracks; opening bypasses the wait.
   useEffect(() => {
-    if (props.datasetMode === "competitor") {
-      if (isSpecificCompetitor) {
-        setPlaylists(competitorPlaylistOptions);
-        return;
-      }
-      void fetchApiJson<{ playlists?: PlaylistOption[] }>("/api/competitors/playlists/options")
-        .then((body) => {
-          if (body.playlists) setPlaylists(body.playlists);
-        })
-        .catch(() => { /* ignore */ });
+    if (isSpecificCompetitor) {
+      setPlaylists(competitorPlaylistOptions);
       return;
     }
-    void fetchApiJson<{ playlists?: PlaylistOption[] }>("/api/playlists/options")
-      .then((body) => {
-        if (body.playlists) setPlaylists(body.playlists);
-      })
-      .catch(() => { /* ignore */ });
-  }, [competitorPlaylistOptions, isSpecificCompetitor, props.datasetMode]);
+    if (!open && !props.primaryContentReady) return;
+    let cancelled = false;
+    const load = () => {
+      const url = props.datasetMode === "competitor"
+        ? "/api/competitors/playlists/options" : "/api/playlists/options";
+      void playlistOptionsCache.get(url, () => fetchApiJson<{ playlists?: PlaylistOption[] }>(url))
+        .then((body) => {
+          if (!cancelled && body.playlists) setPlaylists(body.playlists);
+        })
+        .catch(() => { /* ignore */ });
+    };
+    const cancel = open ? (load(), undefined) : scheduleVisibleHomePrefetch([load], 1450);
+    return () => { cancelled = true; cancel?.(); };
+  }, [competitorPlaylistOptions, isSpecificCompetitor, props.datasetMode, props.primaryContentReady, open, playlistOptionsCache]);
 
   // Fetch ISRCs for selected playlist
   useEffect(() => {
@@ -344,6 +350,56 @@ export function HomeConcentrationSection(props: {
   }, [filteredPoints, getValue, threshold]);
 
   const tracksAboveThreshold = thresholdIdx >= 0 ? thresholdIdx + 1 : sorted.length;
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const savedScrollOffset = useRef(0);
+  const attachScrollElement = useCallback((element: HTMLDivElement | null) => {
+    scrollRef.current = element;
+    if (element) element.scrollTop = savedScrollOffset.current;
+  }, []);
+  const [desktopColumns, setDesktopColumns] = useState(false);
+  useEffect(() => {
+    const media = window.matchMedia("(min-width: 640px)");
+    const update = () => setDesktopColumns(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+  // Hidden release/distro cells do not occupy columns on mobile. Spacers must
+  // match the visible count or fixed-layout tables create two phantom columns.
+  const tableColumnCount = desktopColumns ? 7 : 5;
+  const [headerHeight, setHeaderHeight] = useState(CONCENTRATION_HEADER_HEIGHT);
+  useEffect(() => {
+    const header = scrollRef.current?.querySelector("thead");
+    if (!open || !header) return;
+    const measure = () => setHeaderHeight(header.getBoundingClientRect().height);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(header);
+    return () => observer.disconnect();
+  }, [open]);
+  const tableRows = useMemo(() => buildConcentrationTableRows(sorted.length, thresholdIdx), [sorted.length, thresholdIdx]);
+  const rowKey = useCallback((index: number) => {
+    const trackIndex = tableRows[index];
+    return trackIndex === null ? "threshold-divider" : sorted[trackIndex].isrc;
+  }, [sorted, tableRows]);
+  const rowVirtualizer = useVirtualizer({
+    count: tableRows.length,
+    getScrollElement: () => scrollRef.current,
+    getItemKey: rowKey,
+    estimateSize: (index) => tableRows[index] === null ? CONCENTRATION_DIVIDER_HEIGHT : CONCENTRATION_TRACK_HEIGHT,
+    paddingStart: headerHeight,
+    initialRect: { width: 0, height: 600 },
+    initialOffset: () => savedScrollOffset.current,
+    onChange: (instance) => {
+      if (open && instance.scrollOffset !== null) savedScrollOffset.current = instance.scrollOffset;
+    },
+    overscan: 8,
+    enabled: open,
+  });
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const paddingTop = (virtualRows[0]?.start ?? headerHeight) - headerHeight;
+  const paddingBottom = Math.max(0, rowVirtualizer.getTotalSize() - (virtualRows.at(-1)?.end ?? headerHeight));
 
   // Lorenz curve data
   const lorenzData = useMemo(
@@ -621,7 +677,7 @@ export function HomeConcentrationSection(props: {
           </div>
         </summary>
 
-        <div
+        {open && <div
           className="mt-3 space-y-3 rounded-xl p-2"
           style={useAccentChrome ? { background: chromeTint(8) } : undefined}
         >
@@ -669,9 +725,9 @@ export function HomeConcentrationSection(props: {
 
           <GlassTable
             headers={[
-              "",
+              { label: "", className: "w-[52px]" },
               "TRACK",
-              { label: "RELEASE", className: "hidden sm:table-cell" },
+              { label: "RELEASE", className: "hidden sm:table-cell w-[112px]" },
               {
                 label: (
                   <button
@@ -690,30 +746,53 @@ export function HomeConcentrationSection(props: {
                     <span className="opacity-50 text-[9px]">⇄</span>
                   </button>
                 ),
-                className: "hidden sm:table-cell",
+                className: "hidden sm:table-cell w-[180px]",
               },
-              { label: isRevenue ? (viewMode === "daily" ? "DAILY REV" : "TOTAL REV") : (viewMode === "daily" ? "DAILY" : "TOTAL"), align: "right" as const },
-              { label: "SHARE", align: "right" as const },
-              { label: "CUM %", align: "right" as const },
+              { label: isRevenue ? (viewMode === "daily" ? "DAILY REV" : "TOTAL REV") : (viewMode === "daily" ? "DAILY" : "TOTAL"), align: "right" as const, className: "w-[96px] sm:w-[128px] whitespace-nowrap" },
+              { label: "SHARE", align: "right" as const, className: "w-[64px]" },
+              { label: "CUM %", align: "right" as const, className: "w-[68px] whitespace-nowrap" },
             ]}
             maxBodyHeightClassName="max-h-[600px]"
+            scrollRef={attachScrollElement}
+            tableLayout="fixed"
+            tableClassName="w-full min-w-[408px] sm:min-w-[760px]"
           >
+            {paddingTop > 0 && <tr aria-hidden><td colSpan={tableColumnCount} style={{ height: paddingTop, padding: 0 }} /></tr>}
             {sorted.length === 0 ? (
               <EmptyState
-                colSpan={7}
+                colSpan={tableColumnCount}
                 message={props.trackScatterLoading ? "Loading tracks…" : "No tracks found"}
               />
             ) : (
-              sorted.map((p, i) => {
+              virtualRows.map((virtualRow) => {
+                const i = tableRows[virtualRow.index];
+                if (i === null) {
+                  return (
+                    <tr key={virtualRow.key} aria-hidden style={{ height: CONCENTRATION_DIVIDER_HEIGHT }}>
+                      <td colSpan={tableColumnCount} className="px-2 py-0">
+                        <div className="flex h-4 items-center gap-2">
+                          <div className="flex-1 border-t" style={{ borderColor: chromeColor, opacity: 0.4 }} />
+                          <span className="text-[10px] font-medium whitespace-nowrap" style={{ color: chromeColor, opacity: 0.7 }}>
+                            {threshold}% of {viewMode === "daily" ? "daily" : "total"} streams above
+                          </span>
+                          <div className="flex-1 border-t" style={{ borderColor: chromeColor, opacity: 0.4 }} />
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }
+                const p = sorted[i];
                 const val = Math.max(0, getValue(p));
                 const sharePct = grandTotal > 0 ? (val / grandTotal) * 100 : 0;
                 const cumPct = cumPcts[i] ?? 0;
-                const isThresholdRow = i === thresholdIdx;
                 const isAboveThreshold = thresholdIdx >= 0 && i <= thresholdIdx && tracksAboveThreshold < sorted.length;
 
                 return (
-                  <React.Fragment key={p.isrc}>
-                    <TableRow style={isAboveThreshold ? { backgroundColor: chromeTint(6) } : undefined}>
+                    <tr
+                      key={virtualRow.key}
+                      className={["sb-table-row group transition-colors sb-row-hover", virtualRow.index % 2 === 0 ? "bg-[var(--sb-row-odd)]" : ""].join(" ")}
+                      style={{ height: CONCENTRATION_TRACK_HEIGHT, backgroundColor: isAboveThreshold ? chromeTint(6) : undefined }}
+                    >
                       <TableCell>
                         {p.album_image_url ? (
                           <PreviewableArtwork
@@ -728,7 +807,7 @@ export function HomeConcentrationSection(props: {
                         )}
                       </TableCell>
                       <TableCell>
-                        <div className="min-w-0">
+                        <div className="min-w-0 h-8 flex flex-col justify-center">
                           <Link
                             href={`/catalog?isrc=${encodeURIComponent(p.isrc)}`}
                             className="font-medium transition-colors sb-link-hover block truncate"
@@ -780,26 +859,13 @@ export function HomeConcentrationSection(props: {
                       <TableCell numeric className="text-xs font-mono" style={{ color: "var(--sb-muted)" }}>
                         {cumPct.toFixed(1)}%
                       </TableCell>
-                    </TableRow>
-                    {isThresholdRow && tracksAboveThreshold < sorted.length && (
-                      <tr aria-hidden>
-                        <td colSpan={7} className="px-2 py-0">
-                          <div className="flex items-center gap-2">
-                            <div className="flex-1 border-t" style={{ borderColor: chromeColor, opacity: 0.4 }} />
-                            <span className="text-[10px] font-medium" style={{ color: chromeColor, opacity: 0.7 }}>
-                              {threshold}% of {viewMode === "daily" ? "daily" : "total"} streams above
-                            </span>
-                            <div className="flex-1 border-t" style={{ borderColor: chromeColor, opacity: 0.4 }} />
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </React.Fragment>
+                    </tr>
                 );
               })
             )}
+            {paddingBottom > 0 && <tr aria-hidden><td colSpan={tableColumnCount} style={{ height: paddingBottom, padding: 0 }} /></tr>}
           </GlassTable>
-        </div>
+        </div>}
       </details>
 
       {/* Lorenz / concentration curve modal */}

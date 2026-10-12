@@ -476,8 +476,12 @@ export function HomeArtificialStreamsSection(props: {
   artificialSpikeDateStart: string | null;
   artificialSpikeDateEnd: string | null;
   datasetMode?: "own" | "competitor";
+  dataLoading?: boolean;
+  onRequestData?: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const { onRequestData } = props;
+  useEffect(() => { if (open) onRequestData?.(); }, [open, onRequestData]);
   const [spikeRatio, setSpikeRatio] = useState(props.artificialStreamSpikeRatio);
   const [includeWeekends, setIncludeWeekends] = useState(props.artificialIncludeWeekends);
   const [rows, setRows] = useState(props.artificialStreamSpikes);
@@ -677,7 +681,7 @@ export function HomeArtificialStreamsSection(props: {
                         : ""}
                       {count > 0 ? ` · ${count} spike day${count !== 1 ? "s" : ""}` : ""}
                     </div>
-                    {loading ? <div>Updating…</div> : null}
+                    {loading || props.dataLoading ? <div>Updating…</div> : null}
                     {fetchErr ? (
                       <div className="text-amber-700 dark:text-amber-300">{fetchErr}</div>
                     ) : null}
@@ -716,7 +720,7 @@ export function HomeArtificialStreamsSection(props: {
           </div>
         </summary>
 
-        <div className="mt-3 space-y-3">
+        {open && <div className="mt-3 space-y-3">
           <div className="flex flex-wrap items-center gap-4 text-xs">
             <label className="flex items-center gap-2 min-w-0">
               <span className="opacity-70 whitespace-nowrap">Spike threshold</span>
@@ -744,7 +748,7 @@ export function HomeArtificialStreamsSection(props: {
 
           <GlassTable headers={["TRACK", "MAX ×", "DAYS", ""]} maxBodyHeightClassName="max-h-[600px]">
             {groups.length === 0 ? (
-              <EmptyState colSpan={4} message="No same-weekday spikes at this threshold" />
+              <EmptyState colSpan={4} message={props.dataLoading ? "Loading stream spikes…" : "No same-weekday spikes at this threshold"} />
             ) : (
               groups.map((group) => (
                 <TableRow key={group.isrc}>
@@ -798,7 +802,7 @@ export function HomeArtificialStreamsSection(props: {
               ))
             )}
           </GlassTable>
-        </div>
+        </div>}
       </details>
 
       <SpikeTrackModal

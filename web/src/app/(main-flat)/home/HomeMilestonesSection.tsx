@@ -405,7 +405,7 @@ export function HomeMilestonesSection(props: {
           </div>
         </summary>
 
-        <div className="mt-2">
+        {openMilestones && <div className="mt-2">
           {hasTrackScatterPoints ? (
             <TracksPerMilestoneChart
               tracks={props.trackScatterPoints.map((p) => ({
@@ -433,7 +433,7 @@ export function HomeMilestonesSection(props: {
               {props.trackScatterLoading ? "Loading milestone data..." : "Open this section to load milestone data."}
             </div>
           )}
-        </div>
+        </div>}
       </details>
 
       {/* Milestone Settings Modal */}

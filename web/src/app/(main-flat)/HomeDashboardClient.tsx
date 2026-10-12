@@ -137,6 +137,7 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
     loading: false,
   }));
   const [diagnosticsState, setDiagnosticsState] = useState(() => ({
+    requestKey: diagnosticsRequestKey,
     artistWeekendDips: props.artistWeekendDips,
     trackWeekendDips: props.trackWeekendDips,
     negativeDailyStreams: props.negativeDailyStreams,
@@ -144,6 +145,10 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
     errorMessage: props.homeDiagnosticsErrorMessage ?? null,
     loading: Boolean(props.homeDiagnosticsDeferred),
   }));
+  const [diagnosticsRequestedKey, setDiagnosticsRequestedKey] = useState<string | null>(null);
+  const requestDiagnosticsData = useCallback(() => {
+    setDiagnosticsRequestedKey(diagnosticsRequestKey);
+  }, [diagnosticsRequestKey]);
   const prevDiagnosticsRequestKeyRef = useRef<string | null>(null);
 
   const requestScatterData = useCallback(() => {
@@ -157,7 +162,8 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
 
   useEffect(() => {
     if (!primaryContentReady || !props.trackScatterDeferred || scatterRequested) return;
-    return scheduleVisibleHomePrefetch([requestScatterData]);
+    // The browser fallback adds 50ms: leave roughly 1.5s for Home to paint first.
+    return scheduleVisibleHomePrefetch([requestScatterData], 1450);
   }, [primaryContentReady, props.trackScatterDeferred, scatterRequested, requestScatterData]);
 
   useEffect(() => {
@@ -219,7 +225,13 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
       };
 
   useEffect(() => {
+    if (!primaryContentReady || !props.homeDiagnosticsDeferred || diagnosticsRequestedKey === diagnosticsRequestKey) return;
+    return scheduleVisibleHomePrefetch([requestDiagnosticsData], 1450);
+  }, [primaryContentReady, props.homeDiagnosticsDeferred, diagnosticsRequestedKey, diagnosticsRequestKey, requestDiagnosticsData]);
+
+  useEffect(() => {
     if (!props.homeDiagnosticsDeferred) return;
+    if (diagnosticsRequestedKey !== diagnosticsRequestKey) return;
 
     const requestChanged =
       prevDiagnosticsRequestKeyRef.current !== null &&
@@ -228,6 +240,7 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
 
     if (requestChanged) {
       setDiagnosticsState({
+        requestKey: diagnosticsRequestKey,
         artistWeekendDips: [],
         trackWeekendDips: [],
         negativeDailyStreams: [],
@@ -243,6 +256,7 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
         if (controller.signal.aborted) return;
         const payload = normalizeHomeDiagnosticsApiPayload(raw);
         setDiagnosticsState({
+          requestKey: diagnosticsRequestKey,
           artistWeekendDips: payload.artistWeekendDips,
           trackWeekendDips: payload.trackWeekendDips,
           negativeDailyStreams: payload.negativeDailyStreams,
@@ -254,6 +268,7 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
       .catch((error) => {
         if (controller.signal.aborted) return;
         setDiagnosticsState({
+          requestKey: diagnosticsRequestKey,
           artistWeekendDips: [],
           trackWeekendDips: [],
           negativeDailyStreams: [],
@@ -267,10 +282,11 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
   }, [
     diagnosticsFetchUrl,
     diagnosticsRequestKey,
+    diagnosticsRequestedKey,
     props.homeDiagnosticsDeferred,
   ]);
 
-  const effectiveDiagnosticsState = props.homeDiagnosticsDeferred
+  const effectiveDiagnosticsState = props.homeDiagnosticsDeferred && diagnosticsState.requestKey === diagnosticsRequestKey
     ? diagnosticsState
     : {
         artistWeekendDips: props.artistWeekendDips,
@@ -278,7 +294,7 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
         negativeDailyStreams: props.negativeDailyStreams,
         artificialStreamSpikes: props.artificialStreamSpikes,
         errorMessage: props.homeDiagnosticsErrorMessage ?? null,
-        loading: false,
+        loading: Boolean(props.homeDiagnosticsDeferred),
       };
 
   // Fetch Home Filters + spikes section visibility (shares request with other context providers).
@@ -602,6 +618,7 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
         datasetMode={props.datasetMode}
         competitorLabelKey={props.competitorLabelKey}
         competitorPlaylists={props.competitorPlaylists}
+        primaryContentReady={primaryContentReady}
       />
 
       <HomeScatterSection
@@ -635,12 +652,15 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
         </Alert>
       ) : null}
 
-      {!effectiveDiagnosticsState.loading && (props.datasetMode === "own" || props.datasetMode === "competitor") ? (
-        <HomeNegativeStreamsSection negativeDailyStreams={effectiveDiagnosticsState.negativeDailyStreams} />
+      {props.datasetMode === "own" || props.datasetMode === "competitor" ? (
+        <HomeNegativeStreamsSection
+          negativeDailyStreams={effectiveDiagnosticsState.negativeDailyStreams}
+          loading={effectiveDiagnosticsState.loading}
+          onRequestData={requestDiagnosticsData}
+        />
       ) : null}
 
-      {!effectiveDiagnosticsState.loading &&
-      (props.datasetMode === "own" || props.datasetMode === "competitor") &&
+      {(props.datasetMode === "own" || props.datasetMode === "competitor") &&
       homeSpikesSectionConfigured &&
       homeSpikesSectionEnabled ? (
           <HomeArtificialStreamsSection
@@ -651,15 +671,17 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
             artificialSpikeDateStart={props.artificialSpikeDateStart}
             artificialSpikeDateEnd={props.artificialSpikeDateEnd}
             datasetMode={props.datasetMode}
+            dataLoading={effectiveDiagnosticsState.loading}
+            onRequestData={requestDiagnosticsData}
           />
         ) : null}
 
-      {!effectiveDiagnosticsState.loading &&
-      (props.datasetMode === "own" || (props.datasetMode === "competitor" && hasTrendHistory)) ? (
+      {props.datasetMode === "own" || (props.datasetMode === "competitor" && hasTrendHistory) ? (
           <HomeWeekendDipsSection
             artistWeekendDips={effectiveDiagnosticsState.artistWeekendDips}
             trackWeekendDips={effectiveDiagnosticsState.trackWeekendDips}
             hasEnoughHistory={hasTrendHistory}
+            onRequestData={requestDiagnosticsData}
           />
         ) : null}
 

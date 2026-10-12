@@ -315,7 +315,7 @@ export function HomeScatterSection(props: {
         </div>
       </summary>
 
-      <div className="mt-3">
+      {openScatter && <div className="mt-3">
         {props.trackScatterErrorMessage ? (
           <Alert variant="error" title="Track scatter query error">
             {props.trackScatterErrorMessage}
@@ -532,7 +532,7 @@ export function HomeScatterSection(props: {
             </div>
           )
         ) : null}
-      </div>
+      </div>}
     </details>
   );
 }
