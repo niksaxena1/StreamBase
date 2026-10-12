@@ -23,10 +23,8 @@ on:
         description: "Record a mass takedown anyway (only after confirming it is real)"
         required: false
         default: "false"
-  schedule:
-    # 08:37 Dubai / 04:37 UTC daily: before the SpotOnTrack jobs, so the alert
-    # is in the inbox at the start of the day.
-    - cron: "37 4 * * *"
+  # Scheduled by the database (pg_cron -> ops.dispatch_workflow, migration 20261012220000):
+  # GitHub's own cron started this 6-8 hours late. Dispatch failures email via ops.check_workflow_dispatches.
 
 concurrency:
   group: spotify-takedown-watch

@@ -130,3 +130,20 @@ and sends the 08:30 UTC deadline email when a successful run is missing. The
 manual workflows remain available for diagnosis. They normalize list, object,
 empty, malformed, and error responses before reporting ingestion status; unknown
 stale counts are informational.
+
+## Other scheduled jobs (database-dispatched, since 2026-10-12)
+
+GitHub's own `schedule:` triggers ran 6–8 hours late, so these workflows are started by pg_cron through
+`ops.dispatch_workflow(<file>)` (GitHub `workflow_dispatch`, same vault token as the pipeline). Times are UTC.
+
+| Job | pg_cron name | When |
+|---|---|---|
+| `spotify_takedown_watch.yml` | `streambase-takedown-watch` | 04:37 daily |
+| `artist_tools_daily.yml` | `streambase-artist-tools-daily` | 13:17 daily |
+| `spotify_playlist_watch_daily.yml` | `streambase-playlist-watch` | 15:11 daily |
+| `spotify_artist_image_refresh.yml` | `streambase-artist-image-refresh` | 15:00 on the first Friday of the month |
+
+`ops.check_workflow_dispatches()` (every 15 min) records GitHub's reply in `ops.workflow_dispatches` and emails
+once per workflow per day if GitHub did not answer 204. `ops.check_db_size()` (04:00 daily) emails at most
+weekly while the database is above 450 MB (Free plan limit 500 MB). Manual runs: GitHub Actions → Run workflow,
+or `select ops.dispatch_workflow('<file>.yml', '{"input":"value"}');`.
