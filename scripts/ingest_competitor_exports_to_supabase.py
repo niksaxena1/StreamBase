@@ -13,7 +13,7 @@ import requests
 
 from streambase_revalidate import notify_web_revalidate
 from streambase_catchup import run_catchup_smoothing
-from streambase_postgrest import Postgrest
+from streambase_postgrest import Postgrest, upsert_daily_streams
 from streambase_home_snapshots import refresh_competitor_home_snapshots
 from streambase_rate import load_stream_payout_usd
 
@@ -411,8 +411,8 @@ def main():
             streams_by_isrc[isrc] = streams
 
         pg.upsert("tracks", list(all_track_rows.values()), on_conflict="isrc")
-        pg.upsert(
-            "track_daily_streams",
+        upsert_daily_streams(
+            pg,
             [
                 {
                     "date": run_date.isoformat(),
@@ -423,7 +423,7 @@ def main():
                 }
                 for isrc, streams in streams_by_isrc.items()
             ],
-            on_conflict="date,isrc",
+            run_date,
         )
 
         previous = pg.select(

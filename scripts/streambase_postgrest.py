@@ -18,6 +18,7 @@ import json
 import random
 import re
 import time
+from datetime import date
 from typing import List, Optional
 from urllib.parse import urlencode
 
@@ -255,3 +256,38 @@ class Postgrest:
                 return out
             out.extend(batch)
             offset += len(batch)
+
+
+def upsert_daily_streams(pg, rows: List[dict], run_date: date, *, table: str = "track_daily_streams", log=print) -> bool:
+    """Upsert one day of ``track_daily_streams`` rows with packed-history awareness.
+
+    Months older than ``stream_history_hot_from()`` live in the compact monthly table (and, once the owner
+    removes the old partitions, no daily partition exists for them). A write to such a date:
+      * is warned about loudly;
+      * if the daily upsert succeeds (partition still present), the month is re-packed so readers see the row;
+      * if the daily upsert fails (partition gone), it is skipped with a warning instead of failing ingestion.
+    Returns True when the daily upsert happened.
+    """
+    hot_from = None
+    try:
+        raw = pg.rpc("stream_history_hot_from", {})
+        if raw:
+            hot_from = date.fromisoformat(str(raw)[:10])
+    except Exception as e:  # best effort: never block ingestion on the cutoff lookup
+        log(f"  warning: could not read stream_history_hot_from ({e}); assuming recent date")
+    packed = hot_from is not None and run_date < hot_from
+    try:
+        pg.upsert(table, rows, on_conflict="date,isrc")
+    except Exception as e:
+        if not packed:
+            raise
+        log(f"  WARNING: {table} write for {run_date} is inside packed history (before {hot_from}) and failed ({e}); skipped")
+        return False
+    if packed:
+        month = run_date.replace(day=1).isoformat()
+        log(f"  WARNING: {table} write for {run_date} is inside packed history (before {hot_from}); re-packing {month}")
+        try:
+            pg.rpc("pack_stream_month", {"p_month": month})
+        except Exception as e:
+            log(f"  WARNING: re-pack of {month} failed ({e}); compact history may be stale until pack_stream_month is re-run")
+    return True

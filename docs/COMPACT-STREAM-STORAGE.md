@@ -1,7 +1,7 @@
 # Compact stream storage (hybrid daily + monthly arrays)
 
-Status: tables, functions and views created and populated (Oct 12 2026). Nothing existing was altered or removed.
-Old daily partitions are still in place; readers have not been repointed yet.
+Status (Oct 12 2026): tables, functions and views created and populated; PHASE 2 SWITCHOVER DONE (see the last section).
+The old daily partitions are still in place; the owner removes them with `supabase/manual/2026-10-12_remove_packed_partitions.sql`.
 
 ## Design
 
@@ -126,3 +126,49 @@ For recent windows keep reading the daily table directly (zero change); the rang
 - Date-only lookups on old dates through the view cost about 100 ms.
 - The ~25 history-capable functions must be repointed one by one; each needs an output diff.
 - Space is only reclaimed after the owner removes the partitions.
+
+
+## Phase 2 switchover (done, Oct 12 2026)
+
+Nothing reads packed months from the daily partitions any more. Every repointed function was hashed before/after
+(row count + md5 of sorted rows) on arguments that span packed months; all identical.
+
+### Views (column lists unchanged; Ledgenta's `public.track_daily_streams_effective_public` untouched, grants identical)
+- `<schema>.track_daily_streams_base_all`: daily rows from `stream_history_hot_from()` + packed months expanded through a
+  calendar join (date, isrc and date-range predicates prune to the needed months). `source_run_id` / `base_created_at`
+  are NULL for packed months (nothing reads them for old data).
+- `<schema>.track_daily_streams_all` and `<schema>.track_daily_streams_effective` read from it.
+  `competitor.track_daily_streams_effective_public` was reading the table directly and now reads it too.
+- `<schema>.track_daily_streams_effective_hot`: effective rows for the hot window only, used by "latest and previous
+  snapshot" readers.
+
+### Functions
+- Through `*_all`: `catalog_artist_series_fast` (range_isrcs), `collector_artists_stats_paged`,
+  `health_missing_catalog_tracks_detailed`, `playlist_top_tracks`, `health_daily_stream_totals`, `effective_streams_for_date`
+  (range), competitor `home_artificial_stream_spikes`, `home_negative_daily_streams`, `home_track_scatter_points_for_label`,
+  `home_artist_weekend_dips`, `home_track_weekend_dips`.
+- Rewritten for speed (same output): public `home_negative_daily_streams` (one lag pass), `health_negative_daily_streams`
+  (two days only), the four public weekend-dip functions (`_latest_data_sunday`, `track_daily_streams_effective_range`),
+  `network_selection_scoped_track_totals` (both schemas), `catalog_config_*`, `network_export_artist_stream_stats`
+  (hot views + `effective_latest_date()` / `effective_previous_date()`).
+- Everything else already read through `*_effective` and follows the views.
+- Deliberately still on the daily table (windows are always inside the hot window): `_catchup_plan`,
+  `spotibase_interpolate_stale_streams`, `spotibase_rebase_downward_revisions`, `spotibase_reconcile_auto_overrides`,
+  `spotibase_stale_summary`, `spotify_availability_candidates`, `spotibase_system_stats` (row estimate; shrinks after removal),
+  the max/min bounds in the competitor weekend-dip functions, the packers and the hot halves of the views.
+
+### App / scripts
+- `web`: `api/competitors/date-breakdown` and `lib/health/fetchWarningDetails` read `track_daily_streams_all`.
+  Latest-date reads (`playlists/page`, `isrc-batch-details`, `search-stats`, `loadHomeDashboard`) stay on the daily table.
+- Ingest scripts: `streambase_postgrest.upsert_daily_streams` warns when a write lands before the cutoff, re-packs that
+  month if the write succeeded, and skips with a warning if the partition no longer exists.
+
+### Monthly job
+`ops.pack_aged_stream_months()` via pg_cron `streambase-pack-stream-month` (`40 3 1-3 * *` UTC): packs every unpacked month
+up to current month minus 4 (both schemas), raises `ops.pipeline_alerts` rows `pack_stream_month_failed` on errors and
+`partition_ready_to_remove_YYYY_MM` after each pack (the removal itself stays an owner paste).
+
+### Measured cost of the history-aware path (warm)
+Bulk reads of the whole effective view are about 2x the old table scan (full scan 1.16 s vs 0.52 s), month-wide all-track
+ranges through `*_effective_public` about 5x (390 ms vs 75 ms), ISRC-list + range 450 ms vs 175 ms. Point lookups are
+8-10 ms vs 2-3 ms. Ledgenta-style queries (single ISRC, ISRC list) stay in the same order of magnitude.

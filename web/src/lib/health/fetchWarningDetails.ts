@@ -223,7 +223,7 @@ async function addPreviousStreamBaselines(
   if (isrcs.length === 0) return;
 
   const { data } = await svc
-    .from("track_daily_streams")
+    .from("track_daily_streams_all")
     .select("isrc,streams_cumulative")
     .eq("date", prevDate)
     .in("isrc", isrcs);

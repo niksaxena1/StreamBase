@@ -2528,6 +2528,14 @@ export type Database = {
         }
         Relationships: []
       }
+      track_daily_streams_all: {
+        Row: {
+          date: string | null
+          isrc: string | null
+          streams_cumulative: number | null
+        }
+        Relationships: []
+      }
       track_daily_streams_effective: {
         Row: {
           base_created_at: string | null

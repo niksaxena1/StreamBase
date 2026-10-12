@@ -13,7 +13,7 @@ import requests
 
 from streambase_revalidate import notify_web_revalidate
 from streambase_catchup import smooth_own_catalog
-from streambase_postgrest import Postgrest
+from streambase_postgrest import Postgrest, upsert_daily_streams
 from streambase_home_snapshots import refresh_own_home_snapshots
 from streambase_rate import load_stream_payout_usd
 
@@ -1086,10 +1086,10 @@ def main():
 
         # tracks + daily snapshots
         pg.upsert("tracks", list(track_meta.values()), on_conflict="isrc")
-        pg.upsert(
-            "track_daily_streams",
+        upsert_daily_streams(
+            pg,
             [{"date": run_date.isoformat(), "isrc": isrc, "streams_cumulative": v, "source_run_id": run_id} for isrc, v in catalog_streams_today.items()],
-            on_conflict="date,isrc",
+            run_date,
         )
 
         # memberships (skip derived)

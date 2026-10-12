@@ -245,7 +245,7 @@ export async function POST(req: NextRequest) {
     for (let i = 0; i < isrcList.length; i += 200) {
       const chunk = isrcList.slice(i, i + 200);
       const { data: streamsRaw, error: streamsError } = await comp
-        .from("track_daily_streams")
+        .from("track_daily_streams_all")
         .select("isrc,streams_cumulative")
         .eq("date", runDate)
         .in("isrc", chunk);
