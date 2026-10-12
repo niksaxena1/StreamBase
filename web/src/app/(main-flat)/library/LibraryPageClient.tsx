@@ -10,16 +10,16 @@ import { SectionEmptyState } from "@/components/ui/DataStates";
 import { downloadCsv } from "@/lib/csv";
 import { libraryCsvFilename, libraryCsvRows } from "@/lib/library/exportCsv";
 import {
-  LIBRARY_FILTER_PARAMS,
   activeFilterCount,
+  applyFiltersToSearch,
   buildSearchIndex,
   clearLibraryFilters,
   distinctValues,
   entityCounts,
   filterRows,
+  filtersAfterNavigation,
   parseLibraryFilters,
   releaseYears,
-  serializeLibraryFilters,
   sortRows,
   toggleEntity,
   type LibraryFilters,
@@ -41,15 +41,14 @@ import { LibraryTable } from "./LibraryTable";
 /** Chip order; any other entity code follows in the order the database gave. */
 const ENTITY_ORDER = ["tg", "p", "n", "legacy", "unassigned"];
 
-const formatCount =(n: number) => n.toLocaleString("en-US");
+const formatCount = (n: number) => n.toLocaleString("en-US");
 
 /** Writes the filter state into the address bar without a server round trip. */
 function writeFiltersToUrl(filters: LibraryFilters) {
-  const url = new URL(window.location.href);
-  for (const key of LIBRARY_FILTER_PARAMS) url.searchParams.delete(key);
-  for (const [key, value] of serializeLibraryFilters(filters)) url.searchParams.set(key, value);
-  const next = `${url.pathname}${url.search}`;
-  if (next !== `${window.location.pathname}${window.location.search}`) window.history.replaceState(null, "", next);
+  const search = applyFiltersToSearch(window.location.search, filters);
+  if (search !== window.location.search) {
+    window.history.replaceState(null, "", `${window.location.pathname}${search}`);
+  }
 }
 
 function writeIdToUrl(id: string | null, mode: "push" | "replace") {
@@ -85,6 +84,16 @@ export function LibraryPageClient({
     const t = window.setTimeout(() => writeFiltersToUrl(filters), 250);
     return () => window.clearTimeout(t);
   }, [filters]);
+
+  // Back / Forward change the URL without going through our state, so read it back.
+  // Our own pushState / replaceState calls don't fire popstate, so this can't loop.
+  useEffect(() => {
+    function onPopState() {
+      setFilters((current) => filtersAfterNavigation(current, window.location.search));
+    }
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
 
   const patchFilters = useCallback((patch: Partial<LibraryFilters>) => setFilters((f) => ({ ...f, ...patch })), []);
 

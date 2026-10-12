@@ -3,11 +3,14 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_LIBRARY_FILTERS,
   activeFilterCount,
+  applyFiltersToSearch,
   buildSearchIndex,
   buildSearchText,
   clearLibraryFilters,
   entityCounts,
   filterRows,
+  filtersAfterNavigation,
+  libraryFiltersKey,
   matchesDuration,
   matchesQuery,
   matchesTiming,
@@ -305,5 +308,104 @@ describe("URL <-> filter state", () => {
   it("ignores junk and unrelated params", () => {
     const parsed = parseLibraryFilters(new URLSearchParams("id=TG-00001&sort=nope&year=abc&dmin=zz&upcoming=yes&entity=,tg,"));
     expect(parsed).toEqual({ ...DEFAULT_LIBRARY_FILTERS, entities: ["tg"] });
+  });
+});
+
+describe("URL sync: Back / Forward", () => {
+  /** Minimal model of the browser history: a stack of query strings and a position. */
+  function history(initial: string) {
+    const stack = [initial];
+    let at = 0;
+    return {
+      get search() {
+        return stack[at];
+      },
+      push(search: string) {
+        stack.splice(at + 1);
+        stack.push(search);
+        at++;
+      },
+      replace(search: string) {
+        stack[at] = search;
+      },
+      back() {
+        at--;
+      },
+      forward() {
+        at++;
+      },
+    };
+  }
+  const withId = (search: string, id: string | null) => {
+    const p = new URLSearchParams(search);
+    if (id) p.set("id", id);
+    else p.delete("id");
+    const s = p.toString();
+    return s ? `?${s}` : "";
+  };
+
+  it("writes filters into the query string and keeps other params", () => {
+    expect(applyFiltersToSearch("?id=TG-00001", f({ entities: ["p"], year: "2026" }))).toBe(
+      "?id=TG-00001&entity=p&year=2026",
+    );
+    expect(applyFiltersToSearch("?entity=tg&year=2025&id=X", f())).toBe("?id=X");
+    expect(applyFiltersToSearch("", f())).toBe("");
+  });
+
+  it("writing the URL is idempotent, so state -> URL -> state cannot loop", () => {
+    const filters = f({ q: "kyden", entities: ["tg", "p"], minDuration: 185, sort: "artist", dir: "desc" });
+    const once = applyFiltersToSearch("?id=TG-00001", filters);
+    expect(applyFiltersToSearch(once, filters)).toBe(once);
+    const reparsed = filtersAfterNavigation(filters, once);
+    expect(reparsed).toBe(filters); // same view: the very same object, so React skips the render
+  });
+
+  it("returns the parsed filters when the URL describes a different view", () => {
+    const next = filtersAfterNavigation(f({ entities: ["p"] }), "?entity=tg&year=2026");
+    expect(next).toEqual(f({ entities: ["tg"], year: "2026" }));
+    expect(libraryFiltersKey(next)).toBe("entity=tg&year=2026");
+  });
+
+  it("ignores changes that only touch the open release", () => {
+    const current = f({ entities: ["tg"] });
+    expect(filtersAfterNavigation(current, "?entity=tg&id=TG-00007")).toBe(current);
+  });
+
+  it("restores the filters on Back: entity A, open a release, close it, entity B, Back", () => {
+    const A = f({ entities: ["tg"] });
+    const B = f({ entities: ["p"] });
+    const h = history("");
+
+    let filters = A;
+    h.replace(applyFiltersToSearch(h.search, filters)); // URL sync for A
+    h.push(withId(h.search, "TG-00123")); // open a release (pushes history)
+    h.replace(withId(h.search, null)); // close it
+    filters = B;
+    h.replace(applyFiltersToSearch(h.search, filters)); // URL sync for B
+    expect(h.search).toBe("?entity=p");
+
+    h.back(); // browser pops to the entry before the push
+    expect(h.search).toBe("?entity=tg");
+    filters = filtersAfterNavigation(filters, h.search);
+    expect(filters).toEqual(A);
+
+    // The sync effect that runs next leaves the URL alone.
+    expect(applyFiltersToSearch(h.search, filters)).toBe(h.search);
+
+    h.forward();
+    filters = filtersAfterNavigation(filters, h.search);
+    expect(filters).toEqual(B);
+  });
+
+  it("restores the filters when Back lands on the opened release", () => {
+    const A = f({ entities: ["tg"], hasMaster: true });
+    const h = history("");
+    h.replace(applyFiltersToSearch(h.search, A));
+    h.push(withId(h.search, "TG-00123"));
+    h.push(applyFiltersToSearch(h.search, f({ entities: ["p"] }))); // changed a filter with the panel open
+    h.back();
+    const filters = filtersAfterNavigation(f({ entities: ["p"] }), h.search);
+    expect(filters).toEqual(A);
+    expect(new URLSearchParams(h.search).get("id")).toBe("TG-00123");
   });
 });

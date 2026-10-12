@@ -144,6 +144,33 @@ export function serializeLibraryFilters(f: LibraryFilters): URLSearchParams {
   return p;
 }
 
+/** Stable text form of the filters, for telling whether two states are the same view. */
+export function libraryFiltersKey(f: LibraryFilters): string {
+  return serializeLibraryFilters(f).toString();
+}
+
+/**
+ * A query string (`?a=b`, or "" when empty) with the filter params replaced by
+ * `f` and every other param (e.g. `id`) left alone. Applying it twice gives the
+ * same result, so writing the URL from state can't trigger a state change.
+ */
+export function applyFiltersToSearch(search: string, f: LibraryFilters): string {
+  const params = new URLSearchParams(search);
+  for (const key of LIBRARY_FILTER_PARAMS) params.delete(key);
+  for (const [key, value] of serializeLibraryFilters(f)) params.set(key, value);
+  const text = params.toString();
+  return text ? `?${text}` : "";
+}
+
+/**
+ * Filters to show after Back / Forward put `search` in the address bar.
+ * Returns `current` itself when the URL describes the same view, so React skips the update.
+ */
+export function filtersAfterNavigation(current: LibraryFilters, search: string): LibraryFilters {
+  const next = parseLibraryFilters(new URLSearchParams(search));
+  return libraryFiltersKey(next) === libraryFiltersKey(current) ? current : next;
+}
+
 /** Reset every filter but keep the current sort. */
 export function clearLibraryFilters(f: LibraryFilters): LibraryFilters {
   return { ...DEFAULT_LIBRARY_FILTERS, sort: f.sort, dir: f.dir };

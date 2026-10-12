@@ -33,7 +33,7 @@ const MIN_WIDTH_CLASS = "min-w-[1240px]";
 function Dash() {
   return (
     <span className="opacity-40" style={{ color: "var(--sb-muted)" }}>
-      â€”
+      —
     </span>
   );
 }

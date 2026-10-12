@@ -5,8 +5,15 @@ import { queryErrorMessage } from "@/lib/supabase/rpcErrors";
 
 import { LIBRARY_CACHE_TAG, LIBRARY_CACHE_TTL_S } from "./cache";
 import { normalizeDistributor, normalizeEntity, normalizeOverviewRow } from "./normalize";
-import { fetchAllPages, POSTGREST_PAGE_SIZE } from "./paging";
-import type { LibraryDistributor, LibraryEntity, LibraryRow } from "./types";
+import {
+  MAX_CACHED_OVERVIEW_BYTES,
+  decodeOverview,
+  encodeOverview,
+  encodedOverviewBytes,
+  type EncodedOverview,
+} from "./overviewCodec";
+import { fetchAllByKeyset } from "./paging";
+import { LIBRARY_COLUMNS, type LibraryDistributor, type LibraryEntity, type LibraryRow } from "./types";
 
 export type LibraryLoadResult =
   | { status: "not_configured"; envVars: readonly string[] }
@@ -20,28 +27,24 @@ export type LibraryLoadResult =
 
 type RawRow = Record<string, unknown>;
 
-/**
- * One cached request per PostgREST page, so each cache entry stays well under
- * Next's 2 MB data-cache item limit. All entries share the `catalog` tag.
- */
-async function loadOverviewRows(): Promise<LibraryRow[]> {
-  const raw = await fetchAllPages<RawRow>(async (from, to) => {
-    const res = await cachedQuery<RawRow[]>(
-      async () => {
-        const { data, error } = await catalogService()
-          .from("track_overview")
-          .select("*")
-          .order("catalog_id", { ascending: true })
-          .range(from, to);
-        return { data: (data as RawRow[] | null) ?? null, error: error ? { message: error.message, code: error.code } : null };
-      },
-      `library-overview-${from / POSTGREST_PAGE_SIZE}`,
-      LIBRARY_CACHE_TTL_S,
-      [LIBRARY_CACHE_TAG],
-    );
-    return res;
-  });
-  // A page boundary can shift between cache entries; keep the first copy of each ID.
+const OVERVIEW_COLUMNS = LIBRARY_COLUMNS.join(",");
+const OVERSIZE_MESSAGE = "library overview too large to cache";
+
+/** Set once the overview outgrows the cache limit, so later requests skip the wasted attempt. */
+let overviewCacheDisabled = false;
+
+/** One uncached read of the whole overview, paged by catalog_id so pages can't gap or overlap. */
+async function readOverviewRows(): Promise<LibraryRow[]> {
+  const db = catalogService();
+  const raw = await fetchAllByKeyset<RawRow>(
+    async (after, limit) => {
+      let query = db.from("track_overview").select(OVERVIEW_COLUMNS).order("catalog_id", { ascending: true });
+      if (after !== null) query = query.gt("catalog_id", after);
+      const { data, error } = await query.limit(limit);
+      return { data: (data as unknown as RawRow[] | null) ?? null, error };
+    },
+    (row) => String(row.catalog_id ?? ""),
+  );
   const seen = new Set<string>();
   const rows: LibraryRow[] = [];
   for (const r of raw) {
@@ -51,6 +54,30 @@ async function loadOverviewRows(): Promise<LibraryRow[]> {
     rows.push(row);
   }
   return rows;
+}
+
+/**
+ * The overview comes from one consistent read. It is cached as a single compact
+ * entry (so every row is the same age); if that would exceed Next's 2 MB
+ * data-cache limit it is simply not cached. It is admin-only and small.
+ */
+async function loadOverviewRows(): Promise<LibraryRow[]> {
+  if (!overviewCacheDisabled) {
+    const cached = await cachedQuery<EncodedOverview>(
+      async () => {
+        const encoded = encodeOverview(await readOverviewRows());
+        if (encodedOverviewBytes(encoded) > MAX_CACHED_OVERVIEW_BYTES) throw new Error(OVERSIZE_MESSAGE);
+        return { data: encoded, error: null };
+      },
+      "library-overview",
+      LIBRARY_CACHE_TTL_S,
+      [LIBRARY_CACHE_TAG],
+    );
+    if (!cached.error) return decodeOverview(cached.data ?? []);
+    if (cached.error.message !== OVERSIZE_MESSAGE) throw new Error(cached.error.message);
+    overviewCacheDisabled = true;
+  }
+  return readOverviewRows();
 }
 
 async function loadSmallTable(table: "entities" | "distributor_accounts", columns: string, order: string) {
