@@ -491,7 +491,7 @@ def eff_v3_sql(U, test):
          case when db.id is not null then db.created_at else g.created_at end as manual_created_at,
          case when db.id is not null then db.created_by else g.created_by end as manual_created_by
   from (
-    select ops.iso_date(r.d) as date, r.isrc as isrc,
+    select ops.iso_date(r.d) as date, (r.isrc || '') as isrc,
            max(r.v::bigint) filter (where r.kind = 's') as s_v,
            max(r.v::bigint) filter (where r.kind = 'o') as o_v,
            max(r.oid::bigint) filter (where r.kind = 'o') as oid,
@@ -499,7 +499,7 @@ def eff_v3_sql(U, test):
            max(r.created_at::timestamptz) filter (where r.kind = 'o') as created_at,
            (max(nullif(r.created_by, {NUL})) filter (where r.kind = 'o'))::uuid as created_by
     from {f} r
-    group by ops.iso_date(r.d), r.isrc
+    group by ops.iso_date(r.d), (r.isrc || '')
   ) g
   left join {N['ovr']} db on db.date = g.date and db.isrc = g.isrc
   where g.date < {N['compact_from']}
@@ -560,6 +560,7 @@ def v3_migration():
 
 
 if __name__ == "__main__":
-    # 20261012220500/221000/225000 were produced by earlier revisions of this template and are frozen (already applied).
-    (MIG / "20261012227000_stream_archive_single_family.sql").write_text(v3_migration(), encoding="utf-8")
-    print("written")
+    # The applied migrations (220500/221000/225000/227000/230000) were produced by earlier revisions of this template (or
+    # patched in place) and are frozen. This template is the source of truth for the CURRENT view text; to change a view,
+    # edit it here and add a new migration that applies the change.
+    print(eff_v3_sql(UNIVERSES[0], False))
