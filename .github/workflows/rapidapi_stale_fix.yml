@@ -172,14 +172,15 @@ jobs:
           STATUS=$(python3 -c "import json; d=json.load(open('.artifacts/stale_fix_summary.json')); print(d.get('status', 'completed'))" 2>/dev/null || echo "completed")
           AFFECTED=$(python3 -c "import json; d=json.load(open('.artifacts/stale_fix_summary.json')); print(d.get('affected', 0))" 2>/dev/null || echo "0")
           RUN_DATE=$(python3 -c "import json; d=json.load(open('.artifacts/stale_fix_summary.json')); print(d.get('run_date', '?'))" 2>/dev/null || echo "?")
+          ATTEMPTED=$(python3 -c "import json; d=json.load(open('.artifacts/stale_fix_summary.json')); print(d.get('attempted', 0))" 2>/dev/null || echo "0")
 
-          if [ "$FIXED" != "0" ]; then
+          # Failures-only email policy: a run that fixed every stale track sends nothing.
+          if [ "$STATUS" = "partial_runtime_limit" ]; then
             SHOULD_NOTIFY="true"
-            if [ "$STATUS" = "partial_runtime_limit" ]; then
-              SUBJECT="[StreamBase] Auto-fix partial: ${FIXED} stale track(s) corrected before runtime limit"
-            else
-              SUBJECT="[StreamBase] Auto-fix: ${FIXED} stale track(s) corrected via RapidAPI"
-            fi
+            SUBJECT="[StreamBase] Auto-fix partial: ${FIXED} stale track(s) corrected before runtime limit"
+          elif [ "$STATUS" = "completed" ] && [ "$ATTEMPTED" -gt "$FIXED" ] 2>/dev/null; then
+            SHOULD_NOTIFY="true"
+            SUBJECT="[StreamBase] Auto-fix incomplete: $((ATTEMPTED - FIXED)) of ${ATTEMPTED} stale track(s) not corrected"
           elif [ "$STATUS" = "skipped_too_many" ]; then
             SHOULD_NOTIFY="true"
             SUBJECT="[StreamBase] Auto-fix skipped: ${AFFECTED} stale track(s) exceeded safety threshold"

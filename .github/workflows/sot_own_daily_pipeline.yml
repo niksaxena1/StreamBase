@@ -410,7 +410,13 @@ jobs:
               SHOULD_NOTIFY="true"
               SUBJECT="${SUBJECT:-[StreamBase] Daily Export: stale source data detected}"
             fi
-            if [ "$STALE_TRACKS_SEVERITY" = "critical" ]; then
+            # Failures-only email policy: when today's ingest succeeded, the RapidAPI auto-fix is dispatched below
+            # and emails only if it cannot fix everything, so the stale-track count alone is not an alert.
+            AUTO_FIX_WILL_RUN="false"
+            if [ "$INGEST_OUTCOME" = "success" ] && [ "${{ steps.ingest.outputs.ingested }}" = "true" ] && [ "${{ needs.precheck.outputs.run_date }}" = "$(date -u +%F)" ]; then
+              AUTO_FIX_WILL_RUN="true"
+            fi
+            if [ "$STALE_TRACKS_SEVERITY" = "critical" ] && [ "$AUTO_FIX_WILL_RUN" != "true" ]; then
               SHOULD_NOTIFY="true"
               SUBJECT="${SUBJECT:-[StreamBase] Daily Export: ${STALE_TRACKS_COUNT} track(s) with stale streams (CRITICAL)}"
             fi
