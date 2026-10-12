@@ -150,6 +150,21 @@ def alert(pg: Postgrest, universe: str, kind: str, subject: str, body: str) -> N
         print(f"  could not queue alert: {e}")
 
 
+def run_job(pg: Postgrest, kind: str, universe: str, month, timeout_s: int = 1500) -> dict:
+    """Heavy steps (FDW reads of whole files) exceed the 8 s API statement timeout, so they run as one-shot pg_cron jobs
+    (started at the next minute boundary) and are polled here."""
+    jid = pg.rpc("stream_archive_enqueue", {"p_kind": kind, "p_universe": universe, "p_month": month.isoformat() if month else None})
+    t0 = time.time()
+    while time.time() - t0 < timeout_s:
+        time.sleep(5)
+        st = pg.rpc("stream_archive_job_status", {"p_id": jid}) or {}
+        if st.get("status") == "done":
+            return st.get("result") or {}
+        if st.get("status") == "failed":
+            raise RuntimeError(st.get("error") or "job failed")
+    raise RuntimeError(f"job {jid} ({kind} {universe} {month}) did not finish within {timeout_s}s")
+
+
 def config(pg: Postgrest, key: str) -> str:
     return (pg.rpc("stream_archive_config_get", {"p_key": key}) or "").strip()
 
@@ -176,7 +191,7 @@ def run_selftest() -> int:
             upload(s3, bucket, f"{base}/streams_{month.strftime('%Y-%m')}.csv.gz", s_bytes)
             upload(s3, bucket, f"{base}/overrides_{month.strftime('%Y-%m')}.csv.gz", o_bytes)
             t_up = time.time() - t0 - t_export
-            res = pg.rpc("stream_archive_selftest_verify", {"p_universe": universe})
+            res = run_job(pg, "selftest_verify", universe, None)
             t_verify = time.time() - t0 - t_export - t_up
             print(f"[{universe}] month {month}: exported {n_s} stream rows + {n_o} overrides "
                   f"({len(s_bytes) // 1024} KiB + {len(o_bytes) // 1024} KiB gz); export {t_export:.1f}s, upload {t_up:.1f}s, verify {t_verify:.1f}s")
@@ -209,13 +224,13 @@ def run_archive() -> int:
                 base = f"{prefix}/{universe}"
                 upload(s3, bucket, f"{base}/streams_{month.strftime('%Y-%m')}.csv.gz", s_bytes)
                 upload(s3, bucket, f"{base}/overrides_{month.strftime('%Y-%m')}.csv.gz", o_bytes)
-                res = pg.rpc("stream_archive_attach", {"p_universe": universe, "p_month": month.isoformat()})
+                res = run_job(pg, "attach", universe, month)
                 print(f"[{universe}] {month}: attached ({n_s} stream rows, {n_o} overrides) {json.dumps(res, default=str)}")
                 try:
-                    fin = pg.rpc("stream_archive_finalize", {"p_universe": universe, "p_month": month.isoformat()})
+                    fin = run_job(pg, "finalize", universe, month)
                     print(f"[{universe}] {month}: finalized {json.dumps(fin, default=str)}")
                 except RuntimeError as e:
-                    if "PGRST202" in str(e) or "Could not find the function" in str(e):
+                    if "finalize not installed" in str(e):
                         print(f"[{universe}] {month}: finalize RPC not installed (owner paste pending); month stays in compact")
                         alert(pg, universe, f"stream_archive_finalize_missing_{month.strftime('%Y_%m')}",
                               f"[StreamBase] Archive finalize step not installed ({universe} {month})",
