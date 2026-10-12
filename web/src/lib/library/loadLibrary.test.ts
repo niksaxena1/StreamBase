@@ -22,7 +22,7 @@ vi.mock("@/lib/supabase/cache", () => ({
 }));
 
 vi.mock("@/lib/supabase/catalogService", () => ({
-  CATALOG_ENV_VARS: ["CATALOG_SUPABASE_URL", "CATALOG_SUPABASE_SECRET_KEY"],
+  CATALOG_ENV_VARS: ["NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"],
   catalogConfigured: () => state.configured,
   catalogService: () => ({
     from(name: string) {

@@ -261,8 +261,8 @@ Files:
 
 ### Library (`/library`)
 
-- Purpose: the label's release catalog (one row per release), read from a separate Supabase project (schema `catalog`). It is not part of the streaming analytics.
-- Access: admins only, for viewing and editing. It only appears in the side nav in own-catalog mode. If `CATALOG_SUPABASE_URL` and `CATALOG_SUPABASE_SECRET_KEY` are not set, the page shows "Library isn't connected".
+- Purpose: the label's release catalog (one row per release), stored in this project's `catalog` schema, which only the server can read. It is not part of the streaming analytics.
+- Access: admins only, for viewing and editing. It only appears in the side nav in own-catalog mode.
 - What you can do:
   - Search by artist, title, catalog ID, ISRC, UPC, comments or cover original artist
   - Filter by entity, year, distributor, label / genre, originality, exclusivity, upcoming / released, has master, missing ISRC / UPC, on drive, splice samples and length; sort by release date, artist, title, length or catalog ID
