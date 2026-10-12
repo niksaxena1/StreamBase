@@ -1,3 +1,5 @@
+-- Applied live as version 20261012153950; numbered here after 20261012171500_effective_latest_date_helpers,
+-- which creates effective_latest_date() used below, so a chronological replay works.
 -- Library additions: streams per release (via the primary ISRC), a per-release stream series,
 -- a signed-contract flag for the "needs attention" panel, and bulk edits that log per track.
 
