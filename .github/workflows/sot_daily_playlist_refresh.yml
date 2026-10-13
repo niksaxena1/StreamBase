@@ -88,5 +88,6 @@ jobs:
         with:
           name: sot-playlist-refresh-${{ github.run_id }}
           path: .artifacts/
+          include-hidden-files: true
           if-no-files-found: warn
 

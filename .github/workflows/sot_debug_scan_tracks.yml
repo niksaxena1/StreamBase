@@ -97,5 +97,6 @@ jobs:
         with:
           name: sot-debug-scan-${{ inputs.playlist_key }}-${{ github.run_id }}
           path: .artifacts/debug_scan/
+          include-hidden-files: true
           if-no-files-found: warn
 

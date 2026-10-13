@@ -43,11 +43,12 @@ jobs:
         run: |
           args=(run --runner github --skip-if-done --max-adds "${INPUT_MAX_ADDS:-240}")
           if [ -n "$INPUT_DATE" ]; then args+=(--date "$INPUT_DATE"); fi
-          python scripts/artist_tools_daily.py "${args[@]}"
+          python -u scripts/artist_tools_daily.py "${args[@]}"
       - name: Upload summary
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: artist-tools-summary
           path: .artifacts/artist_tools_summary.json
+          include-hidden-files: true
           if-no-files-found: warn
