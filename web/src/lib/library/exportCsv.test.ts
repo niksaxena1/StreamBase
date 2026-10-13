@@ -4,12 +4,22 @@ import { toCsv } from "@/lib/csv";
 
 import { libraryCsvFilename, libraryCsvRows } from "./exportCsv";
 import { makeRow } from "./testRows";
-import { LIBRARY_COLUMNS } from "./types";
+import { LIBRARY_COLUMNS, LIBRARY_CSV_STREAM_COLUMNS } from "./types";
 
 describe("library CSV export", () => {
-  it("emits every overview column in order", () => {
+  it("emits every overview column in order, then the stream columns", () => {
     const csv = toCsv(libraryCsvRows([makeRow()]), { sortForExport: false });
-    expect(csv.split("\r\n")[0]).toBe(LIBRARY_COLUMNS.join(","));
+    expect(csv.split("\r\n")[0]).toBe([...LIBRARY_COLUMNS, ...LIBRARY_CSV_STREAM_COLUMNS].join(","));
+  });
+
+  it("writes stream figures and the cover URL", () => {
+    const row = makeRow({ total_streams: 1234567, streams_7d: 890, album_image_url: "https://i.scdn.co/image/abc" });
+    const lines = toCsv(libraryCsvRows([row]), { sortForExport: false }).split("\r\n");
+    const header = lines[0].split(",");
+    const values = lines[1].split(",");
+    expect(values[header.indexOf("total_streams")]).toBe("1234567");
+    expect(values[header.indexOf("streams_7d")]).toBe("890");
+    expect(values[header.indexOf("album_image_url")]).toBe("https://i.scdn.co/image/abc");
   });
 
   it("escapes commas, quotes and line breaks", () => {

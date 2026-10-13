@@ -19,7 +19,7 @@ import type { LibraryCode, LibraryFile, LibraryHistoryEntry } from "@/lib/librar
 
 export function Section({ title, children, aside }: { title: string; children: ReactNode; aside?: ReactNode }) {
   return (
-    <section className="space-y-2">
+    <section className="space-y-3">
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--sb-muted)" }}>
           {title}
@@ -143,7 +143,7 @@ function FileGroup({ title, files, meta }: { title: string; files: LibraryFile[]
   return (
     <div>
       <div className="text-xs font-medium">{title}</div>
-      <ul className="divide-y" style={{ borderColor: "var(--sb-border)" }}>
+      <ul className="space-y-0.5">
         {files.map((f) => (
           <FileLine key={f.id} file={f} meta={meta(f)} />
         ))}
@@ -161,7 +161,7 @@ function CollapsedGroup({ title, files, meta }: { title: string; files: LibraryF
         {title} ({files.length}
         {size ? `, ${size}` : ""})
       </summary>
-      <ul className="mt-1 divide-y" style={{ borderColor: "var(--sb-border)" }}>
+      <ul className="mt-1 space-y-0.5">
         {files.map((f) => (
           <FileLine key={f.id} file={f} meta={meta(f)} />
         ))}
@@ -252,7 +252,7 @@ export function HistorySection({ history }: { history: LibraryHistoryEntry[] }) 
           {history.map((entry) => {
             const changes = diffChangeLog(entry.before, entry.after);
             return (
-              <li key={entry.id} className="space-y-1 border-l-2 pl-3" style={{ borderColor: "var(--sb-border-2)" }}>
+              <li key={entry.id} className="space-y-1 border-l pl-3" style={{ borderColor: "color-mix(in srgb, var(--sb-border) 45%, transparent)" }}>
                 <div className="flex flex-wrap items-center gap-x-2 text-[11px]" style={{ color: "var(--sb-muted)" }}>
                   <time dateTime={entry.at} title={formatExactTime(entry.at)}>
                     {formatRelativeTime(entry.at)}

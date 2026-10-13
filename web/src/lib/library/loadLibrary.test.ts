@@ -80,7 +80,9 @@ describe("loadLibrary", () => {
   it("caches the overview as one entry, so every row is the same age", async () => {
     const res = await loadLibrary();
     expect(res.status).toBe("ok");
-    expect(state.cacheKeys.filter((k) => k.startsWith("library-overview"))).toEqual(["library-overview"]);
+    // One entry, keyed by the column list so a schema change never serves an old shape.
+    expect(state.cacheKeys.filter((k) => k.startsWith("library-overview"))).toHaveLength(1);
+    expect(state.cacheKeys.find((k) => k.startsWith("library-overview"))).toMatch(/^library-overview:catalog_id,/);
   });
 
   it("returns every row once even if a row is inserted between pages", async () => {

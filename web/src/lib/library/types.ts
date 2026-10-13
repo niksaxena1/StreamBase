@@ -26,7 +26,28 @@ export type LibraryRow = {
   genre: string | null;
   file_count: number;
   updated_at: string | null;
+  /** True when the drive holds a signed contract for this release. */
+  has_signed_contract: boolean;
+  /** Streams, merged in on the client from `track_streams()`; absent until then. */
+  total_streams?: number | null;
+  streams_7d?: number | null;
+  album_image_url?: string | null;
+  spotify_track_id?: string | null;
 };
+
+/** One row of `catalog.track_streams()`. */
+export type LibraryStream = {
+  catalog_id: string;
+  isrc: string | null;
+  total_streams: number | null;
+  streams_7d: number | null;
+  as_of: string | null;
+  album_image_url: string | null;
+  spotify_track_id: string | null;
+};
+
+/** One point of a release's daily cumulative stream series. */
+export type LibraryStreamPoint = { date: string; streams_cumulative: number };
 
 export type LibraryEntity = {
   code: string;
@@ -104,7 +125,13 @@ export const LIBRARY_COLUMNS = [
   "genre",
   "file_count",
   "updated_at",
+  "has_signed_contract",
 ] as const satisfies ReadonlyArray<keyof LibraryRow>;
+
+/** Columns added to the CSV export after the overview columns. */
+export const LIBRARY_CSV_STREAM_COLUMNS = ["total_streams", "streams_7d", "album_image_url"] as const satisfies ReadonlyArray<
+  keyof LibraryRow
+>;
 
 export const LIBRARY_ORIGINALITY_OPTIONS = ["Original", "Cover"] as const;
 export const LIBRARY_EXCLUSIVITY_OPTIONS = ["Exclusive", "Non-Exclusive"] as const;

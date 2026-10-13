@@ -1,9 +1,11 @@
 import { foldForSearch } from "@/lib/searchFold";
 
+import { matchesAttention, parseAttention, type LibraryAttention } from "./attention";
 import { formatDuration, parseDuration } from "./format";
 import type { LibraryRow } from "./types";
 
-export type LibrarySortKey = "release" | "artist" | "title" | "duration" | "catalog";
+export type LibrarySortKey = "release" | "artist" | "title" | "duration" | "catalog" | "streams" | "streams7d";
+export type LibraryViewMode = "list" | "schedule";
 export type LibrarySortDir = "asc" | "desc";
 
 export type LibraryFilters = {
@@ -22,13 +24,21 @@ export type LibraryFilters = {
   missingUpc: boolean;
   onDrive: boolean;
   splice: boolean;
+  /** Released, and missing the ISRC or the UPC (either one). */
+  missingCode: boolean;
+  /** Release month, YYYY-MM, or "". */
+  month: string;
+  /** One of the "needs attention" rules, or "". */
+  attention: LibraryAttention | "";
   minDuration: number | null;
   maxDuration: number | null;
   sort: LibrarySortKey;
   dir: LibrarySortDir;
+  /** List table or release-week schedule. */
+  view: LibraryViewMode;
 };
 
-export const LIBRARY_SORT_KEYS: LibrarySortKey[] = ["release", "artist", "title", "duration", "catalog"];
+export const LIBRARY_SORT_KEYS: LibrarySortKey[] = ["release", "artist", "title", "duration", "catalog", "streams", "streams7d"];
 
 export const LIBRARY_SORT_LABELS: Record<LibrarySortKey, string> = {
   release: "Release date",
@@ -36,10 +46,12 @@ export const LIBRARY_SORT_LABELS: Record<LibrarySortKey, string> = {
   title: "Title",
   duration: "Length",
   catalog: "Catalog ID",
+  streams: "Streams",
+  streams7d: "Streams (7 days)",
 };
 
 export function defaultSortDir(sort: LibrarySortKey): LibrarySortDir {
-  return sort === "release" ? "desc" : "asc";
+  return sort === "release" || sort === "streams" || sort === "streams7d" ? "desc" : "asc";
 }
 
 export const DEFAULT_LIBRARY_FILTERS: LibraryFilters = {
@@ -57,10 +69,14 @@ export const DEFAULT_LIBRARY_FILTERS: LibraryFilters = {
   missingUpc: false,
   onDrive: false,
   splice: false,
+  missingCode: false,
+  month: "",
+  attention: "",
   minDuration: null,
   maxDuration: null,
   sort: "release",
   dir: "desc",
+  view: "list",
 };
 
 /** Query-string keys owned by the filters (everything else, e.g. `id`, is left alone). */
@@ -79,10 +95,14 @@ export const LIBRARY_FILTER_PARAMS = [
   "noupc",
   "drive",
   "splice",
+  "nocode",
+  "month",
+  "attention",
   "dmin",
   "dmax",
   "sort",
   "dir",
+  "view",
 ] as const;
 
 type ParamsLike = { get(name: string): string | null };
@@ -113,10 +133,14 @@ export function parseLibraryFilters(params: ParamsLike): LibraryFilters {
     missingUpc: flag("noupc"),
     onDrive: flag("drive"),
     splice: flag("splice"),
+    missingCode: flag("nocode"),
+    month: /^\d{4}-(0[1-9]|1[0-2])$/.test(params.get("month") ?? "") ? (params.get("month") as string) : "",
+    attention: parseAttention(params.get("attention")),
     minDuration: parseDuration(params.get("dmin")),
     maxDuration: parseDuration(params.get("dmax")),
     sort,
     dir,
+    view: params.get("view") === "schedule" ? "schedule" : "list",
   };
 }
 
@@ -137,10 +161,14 @@ export function serializeLibraryFilters(f: LibraryFilters): URLSearchParams {
   if (f.missingUpc) p.set("noupc", "1");
   if (f.onDrive) p.set("drive", "1");
   if (f.splice) p.set("splice", "1");
+  if (f.missingCode) p.set("nocode", "1");
+  if (f.month) p.set("month", f.month);
+  if (f.attention) p.set("attention", f.attention);
   if (f.minDuration !== null) p.set("dmin", formatDuration(f.minDuration));
   if (f.maxDuration !== null) p.set("dmax", formatDuration(f.maxDuration));
   if (f.sort !== DEFAULT_LIBRARY_FILTERS.sort) p.set("sort", f.sort);
   if (f.dir !== defaultSortDir(f.sort)) p.set("dir", f.dir);
+  if (f.view === "schedule") p.set("view", "schedule");
   return p;
 }
 
@@ -171,9 +199,9 @@ export function filtersAfterNavigation(current: LibraryFilters, search: string):
   return libraryFiltersKey(next) === libraryFiltersKey(current) ? current : next;
 }
 
-/** Reset every filter but keep the current sort. */
+/** Reset every filter but keep the current sort and view. */
 export function clearLibraryFilters(f: LibraryFilters): LibraryFilters {
-  return { ...DEFAULT_LIBRARY_FILTERS, sort: f.sort, dir: f.dir };
+  return { ...DEFAULT_LIBRARY_FILTERS, sort: f.sort, dir: f.dir, view: f.view };
 }
 
 /** Number of filters currently narrowing the list (sort is not a filter). */
@@ -182,7 +210,9 @@ export function activeFilterCount(f: LibraryFilters): number {
   if (f.q.trim()) n++;
   if (f.entities.length) n++;
   for (const v of [f.year, f.distributor, f.labelGenre, f.originality, f.exclusivity]) if (v) n++;
-  for (const v of [f.upcoming, f.released, f.hasMaster, f.missingIsrc, f.missingUpc, f.onDrive, f.splice]) if (v) n++;
+  for (const v of [f.upcoming, f.released, f.hasMaster, f.missingIsrc, f.missingUpc, f.onDrive, f.splice, f.missingCode]) if (v) n++;
+  if (f.month) n++;
+  if (f.attention) n++;
   if (f.minDuration !== null || f.maxDuration !== null) n++;
   return n;
 }
@@ -255,6 +285,17 @@ export function matchesDuration(row: LibraryRow, min: number | null, max: number
 
 const blank = (v: string | null) => !v || !v.trim();
 
+export function releaseMonth(row: LibraryRow): string {
+  return row.release_date ? row.release_date.slice(0, 7) : "";
+}
+
+/** Released, TG or P, and missing the ISRC or the UPC. */
+export function matchesMissingCode(row: LibraryRow, today: string): boolean {
+  if (!row.release_date || row.release_date > today) return false;
+  if (row.entity !== "tg" && row.entity !== "p") return false;
+  return blank(row.isrc) || blank(row.upc);
+}
+
 export type FilterOptions = {
   /** Skip the entity filter (used for the entity chip counts). */
   skipEntities?: boolean;
@@ -279,6 +320,9 @@ export function rowMatches(row: LibraryRow, f: LibraryFilters, today: string, op
   if (f.missingUpc && !blank(row.upc)) return false;
   if (f.onDrive && blank(row.source_folder)) return false;
   if (f.splice && !row.non_exclusive_samples) return false;
+  if (f.missingCode && !matchesMissingCode(row, today)) return false;
+  if (f.month && releaseMonth(row) !== f.month) return false;
+  if (f.attention && !matchesAttention(row, f.attention, today)) return false;
   if (!matchesDuration(row, f.minDuration, f.maxDuration)) return false;
   return true;
 }
@@ -314,6 +358,12 @@ export function sortRows(rows: LibraryRow[], sort: LibrarySortKey, dir: LibraryS
       aMissing = !a.release_date;
       bMissing = !b.release_date;
       if (!aMissing && !bMissing) cmp = a.release_date! < b.release_date! ? -1 : a.release_date! > b.release_date! ? 1 : 0;
+    } else if (sort === "streams" || sort === "streams7d") {
+      const va = sort === "streams" ? a.total_streams : a.streams_7d;
+      const vb = sort === "streams" ? b.total_streams : b.streams_7d;
+      aMissing = va === null || va === undefined;
+      bMissing = vb === null || vb === undefined;
+      if (!aMissing && !bMissing) cmp = va! - vb!;
     } else if (sort === "duration") {
       aMissing = a.master_duration_s === null;
       bMissing = b.master_duration_s === null;

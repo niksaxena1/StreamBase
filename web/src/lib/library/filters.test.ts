@@ -281,11 +281,15 @@ describe("URL <-> filter state", () => {
       missingIsrc: true,
       missingUpc: true,
       onDrive: true,
+      missingCode: true,
+      month: "2026-03",
+      attention: "no_master",
       splice: true,
       minDuration: 150,
       maxDuration: 245,
       sort: "duration",
       dir: "desc",
+      view: "schedule",
     };
     const qs = serializeLibraryFilters(full).toString();
     expect(parseLibraryFilters(new URLSearchParams(qs))).toEqual(full);
