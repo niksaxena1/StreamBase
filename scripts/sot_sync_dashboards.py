@@ -827,16 +827,6 @@ def run_sync(
                 checkpoint(successful=True)
                 continue
 
-            # allow_empty playlists whose empty-state marker could not be confirmed (SOT page wording drift):
-            # both sides still read 0 after every retry, so there is nothing to add and nothing a sync could
-            # remove. Treat it as the expected empty state instead of a safety skip, so it does not email daily.
-            if task.allow_empty and not dashboard_set and not playlist_set:
-                print("Already synced: empty (allow_empty=true; both scans 0 after retries, empty marker not confirmed).")
-                log_row(log_path, task, -1, playlist_url, "ok", "already synced: expected empty (unconfirmed marker)")
-                total_expected_empty += 1
-                checkpoint()
-                continue
-
             # SAFETY: never mirror to/from empty
             if len(playlist_set) == 0:
                 print("🛑 Safety: playlist scan returned 0 after retries. Skipping.")
