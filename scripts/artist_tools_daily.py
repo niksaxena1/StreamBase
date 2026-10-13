@@ -1,16 +1,67 @@
 """Record artist.tools own-catalog counts and repair stale tracks after RapidAPI."""
 import argparse
 from collections import Counter, defaultdict
+from contextlib import contextmanager
 from datetime import date, timedelta
 import json
 from pathlib import Path
+import time
 
-from artist_tools_mcp import (ArtistToolsError, DailyLimit, LeaseBusy, MCPClient,
+from artist_tools_mcp import (ArtistToolsError, DailyLimit, LeaseBusy, LongRateLimit, MCPClient, RunBudgetExceeded,
                               TokenManager, database_from_env, utcnow)
 from streambase_home_snapshots import refresh_own_home_snapshots
 
 MAX_AUTO_FIX_TRACKS = 500  # Same exclusive ceiling as rapidapi_stale_fix.py
 SUMMARY_PATH = Path(".artifacts/artist_tools_summary.json")
+RUN_BUDGET_SECONDS = 75 * 60
+
+
+class RunBudget:
+    def __init__(self):
+        self.deadline = time.monotonic() + RUN_BUDGET_SECONDS
+
+    def check(self, seconds=0):
+        if time.monotonic() + seconds >= self.deadline:
+            raise RunBudgetExceeded()
+
+    @contextmanager
+    def database(self, pg):
+        # Guard every PostgREST page/write without changing other pipelines.
+        # Keep bounded DB retries, but reserve time for finalization/release.
+        original = pg._request
+        timeout = getattr(pg, "timeout_s", None)
+        if timeout is not None:
+            pg.timeout_s = min(timeout, 30)
+
+        def request(*args, **kwargs):
+            self.check()
+            return original(*args, **kwargs)
+
+        pg._request = request
+        try:
+            yield
+        finally:
+            pg._request = original
+            if timeout is not None:
+                pg.timeout_s = timeout
+
+
+@contextmanager
+def phase(summary, name):
+    def log(event):
+        print(f"[artist.tools] phase={name} event={event} added={summary['added']} "
+              f"observed={summary['observed']} fixed={summary['fixed']} "
+              f"budget_exhausted={str(summary['budget_exhausted']).lower()}", flush=True)
+    log("start")
+    try:
+        yield
+    finally:
+        log("end")
+
+
+def record_long_limit(summary, phase_name, exc):
+    summary.update(rate_limited=True, retry_after_seconds=exc.seconds)
+    summary[f"{phase_name}_rate_limited"] = True
 
 
 def isrc_of(row):
@@ -42,8 +93,9 @@ def priority_tracks(tracks, stale, warnings, saved):
     return output
 
 
-def folder_pages(client):
+def folder_pages(client, check_budget=lambda: None):
     for page in range(1, 101):
+        check_budget()
         payload = client.call_tool("list_dashboard_entities", {
             "entity_type": "track", "folder_name": "My Tracks", "limit": 100, "page": page,
         })
@@ -76,13 +128,14 @@ def override_rows(run_date, stale, observations, previous, existing):
     return rows
 
 
-def write_overrides(pg, rows):
+def write_overrides(pg, rows, check_budget=lambda: None, summary=None):
     if not rows:
         return []
     # Refresh each candidate immediately before the write; the warning is an
     # earlier snapshot and SOT may have re-ingested a larger value since then.
     written = []
     for row in rows:
+        check_budget()
         current = pg.select("track_daily_streams_effective_public", "isrc,streams_cumulative",
                             f"date=eq.{row['date']}&isrc=eq.{row['isrc']}&limit=1")
         value = next((item.get("streams_cumulative") for item in current if isrc_of(item) == row["isrc"]), None)
@@ -98,6 +151,8 @@ def write_overrides(pg, rows):
         if response.status_code not in (200, 201):
             raise ArtistToolsError("Could not write artist.tools overrides.")
         written.extend(response.json())
+        if summary is not None:
+            summary["fixed"] = len(written)
     return written
 
 
@@ -105,7 +160,8 @@ def is_done(pg, run_date):
     return bool(pg.select("artist_tools_runs", "run_date", f"run_date=eq.{run_date}&status=eq.success&limit=1"))
 
 
-def execute(pg, client, run_date, max_adds, summary):
+def execute(pg, client, run_date, max_adds, summary, budget):
+    budget.check()
     today = pg.select("ingestion_warnings", "run_date,details_json",
                       f"code=eq.individual_tracks_stale&run_date=eq.{run_date}&order=id.desc&limit=1")
     stale = affected(today[0]) if today else []
@@ -134,96 +190,124 @@ def execute(pg, client, run_date, max_adds, summary):
     summary["auto_fix_disabled"] = bool(pg.select("user_settings", "rapidapi_auto_fix_enabled",
                                                 "rapidapi_auto_fix_enabled=eq.false&limit=1"))
 
-    # Bootstrap the ledger from the owner's existing folder before any adds.
-    if not saved and max_adds > 0:
+    with phase(summary, "adds"):
         try:
-            for items in folder_pages(client):
-                rows = [{"spotify_track_id": item["spotifyId"], "isrc": by_spotify.get(item["spotifyId"])}
-                        for item in items]
-                pg.upsert("artist_tools_saved_tracks", rows, "spotify_track_id")
-                saved.update(row["spotify_track_id"] for row in rows)
-        except DailyLimit:
-            summary.update(reconcile_daily_limited=True, observation_incomplete=True,
-                           remaining_unsaved=len(priority_tracks(tracks, stale, history, saved)))
-            return  # Cannot reconcile safely or list observations with this quota exhausted.
-        summary["reconciled"] = len(saved)
+            # Bootstrap the ledger from the owner's existing folder before any adds.
+            if not saved and max_adds > 0:
+                try:
+                    for items in folder_pages(client, budget.check):
+                        rows = [{"spotify_track_id": item["spotifyId"], "isrc": by_spotify.get(item["spotifyId"])}
+                                for item in items]
+                        pg.upsert("artist_tools_saved_tracks", rows, "spotify_track_id")
+                        saved.update(row["spotify_track_id"] for row in rows)
+                except DailyLimit:
+                    summary.update(reconcile_daily_limited=True, observation_incomplete=True,
+                                   remaining_unsaved=len(priority_tracks(tracks, stale, history, saved)))
+                    return  # Preserve bootstrap behavior: the listing quota is exhausted.
+                except LongRateLimit as exc:
+                    record_long_limit(summary, "reconcile", exc)
+                    summary.update(observation_incomplete=True,
+                                   remaining_unsaved=len(priority_tracks(tracks, stale, history, saved)))
+                    return  # Observation uses the same rate-limited listing tool.
+                summary["reconciled"] = len(saved)
 
-    for track in priority_tracks(tracks, stale, history, saved)[:max_adds]:
-        try:
-            payload = client.call_tool("add_entity_to_folder", {
-                "entity_type": "track", "folder_name": "My Tracks",
-                "spotify_id": track["spotify_track_id"], "name": track.get("name") or isrc_of(track),
-            })
-        except DailyLimit:
-            summary["add_daily_limited"] = True
-            break
-        result = payload.get("result", payload)
-        if result.get("added") is not True:
-            raise ArtistToolsError("artist.tools did not confirm the folder add.")
-        pg.upsert("artist_tools_saved_tracks", [{"spotify_track_id": track["spotify_track_id"],
-                                                "isrc": by_spotify[track["spotify_track_id"]]}], "spotify_track_id")
-        saved.add(track["spotify_track_id"])
-        summary["added"] += 1
+            for track in priority_tracks(tracks, stale, history, saved)[:max_adds]:
+                budget.check()
+                try:
+                    payload = client.call_tool("add_entity_to_folder", {
+                        "entity_type": "track", "folder_name": "My Tracks",
+                        "spotify_id": track["spotify_track_id"], "name": track.get("name") or isrc_of(track),
+                    })
+                except LongRateLimit as exc:
+                    record_long_limit(summary, "add", exc)
+                    break
+                except DailyLimit:
+                    summary["add_daily_limited"] = True
+                    break
+                result = payload.get("result", payload)
+                if result.get("added") is not True:
+                    raise ArtistToolsError("artist.tools did not confirm the folder add.")
+                pg.upsert("artist_tools_saved_tracks", [{"spotify_track_id": track["spotify_track_id"],
+                                                        "isrc": by_spotify[track["spotify_track_id"]]}], "spotify_track_id")
+                saved.add(track["spotify_track_id"])
+                summary["added"] += 1
+
+        except RunBudgetExceeded:
+            summary.update(budget_exhausted=True, adds_incomplete=True)
     summary["remaining_unsaved"] = len(priority_tracks(tracks, stale, history, saved))
 
-    try:
-        for items in folder_pages(client):
-            if utcnow().date().isoformat() != run_date:
-                raise ArtistToolsError("UTC date changed during observation; rerun for the current date.")
-            rows = []
-            for item in items:
-                spotify_id = item.get("spotifyId")
-                value = item.get("streams")
-                if spotify_id not in by_spotify or value is None:
+    with phase(summary, "observation"):
+        try:
+            try:
+                for items in folder_pages(client, budget.check):
+                    if utcnow().date().isoformat() != run_date:
+                        raise ArtistToolsError("UTC date changed during observation; rerun for the current date.")
+                    rows = []
+                    for item in items:
+                        spotify_id = item.get("spotifyId")
+                        value = item.get("streams")
+                        if spotify_id not in by_spotify or value is None:
+                            continue
+                        # Never coerce fractional/boolean counts into a valid observation.
+                        if isinstance(value, bool) or not str(value).isdigit():
+                            raise ArtistToolsError("artist.tools returned an invalid stream count.")
+                        rows.append({"date": run_date, "spotify_track_id": item["spotifyId"],
+                                     "isrc": by_spotify[spotify_id], "streams": int(value), "observed_at": utcnow().isoformat()})
+                    pg.upsert("artist_tools_track_streams", rows, "date,spotify_track_id")
+                    summary["observed"] += len(rows)
+            except DailyLimit:
+                # Quota exhaustion is recorded, not an authentication/job failure.
+                summary["observe_daily_limited"] = True
+                summary["observation_incomplete"] = True
+
+            except LongRateLimit as exc:
+                record_long_limit(summary, "observe", exc)
+                summary["observation_incomplete"] = True
+        except RunBudgetExceeded:
+            summary.update(budget_exhausted=True, observation_incomplete=True)
+    with phase(summary, "repair"):
+        try:
+            budget.check()
+            if summary["auto_fix_disabled"]:
+                return
+
+            # Read persisted observations so retries can recover earlier partial pages.
+            observed = pg.select_all("artist_tools_track_streams", "spotify_track_id,isrc,streams",
+                                     f"date=eq.{run_date}", order="spotify_track_id.asc")
+            observations = {}
+            for row in observed:
+                if row["spotify_track_id"] in ambiguous:
+                    continue  # Includes observations persisted before this mapping became ambiguous.
+                isrc = isrc_of(row)
+                if not isrc:
                     continue
-                # Never coerce fractional/boolean counts into a valid observation.
-                if isinstance(value, bool) or not str(value).isdigit():
-                    raise ArtistToolsError("artist.tools returned an invalid stream count.")
-                rows.append({"date": run_date, "spotify_track_id": item["spotifyId"],
-                             "isrc": by_spotify[spotify_id], "streams": int(value), "observed_at": utcnow().isoformat()})
-            pg.upsert("artist_tools_track_streams", rows, "date,spotify_track_id")
-            summary["observed"] += len(rows)
-    except DailyLimit:
-        # Quota exhaustion is recorded, not an authentication/job failure.
-        summary["observe_daily_limited"] = True
-        summary["observation_incomplete"] = True
-
-    if summary["auto_fix_disabled"]:
-        return
-
-    # Read persisted observations so retries can recover earlier partial pages.
-    observed = pg.select_all("artist_tools_track_streams", "spotify_track_id,isrc,streams",
-                             f"date=eq.{run_date}", order="spotify_track_id.asc")
-    observations = {}
-    for row in observed:
-        if row["spotify_track_id"] in ambiguous:
-            continue  # Includes observations persisted before this mapping became ambiguous.
-        isrc = isrc_of(row)
-        if not isrc:
-            continue
-        # Multiple Spotify versions sharing an ISRC: avoid selecting the highest
-        # version's unrelated count; repair from the catalog's mapped ID only.
-        if isrc not in observations:
-            observations[isrc] = int(row["streams"])
-        elif observations[isrc] != int(row["streams"]):
-            observations[isrc] = -1  # ambiguous versions fail the sanity rules
-    previous_date = (date.fromisoformat(run_date) - timedelta(days=1)).isoformat()
-    previous = {}
-    eligible_isrcs = sorted({isrc_of(row) for row in stale if isrc_of(row)})
-    for offset in range(0, len(eligible_isrcs), 100):
-        ids = ",".join(eligible_isrcs[offset:offset + 100])
-        previous.update({isrc_of(row): row["streams_cumulative"] for row in pg.select_all(
-            "track_daily_streams_effective_public", "isrc,streams_cumulative",
-            f"date=eq.{previous_date}&isrc=in.({ids})", order="isrc.asc")})
-    existing = pg.select_all("track_daily_stream_overrides", "isrc,note", f"date=eq.{run_date}", order="isrc.asc")
-    rows = override_rows(run_date, stale, observations, previous, {isrc_of(row) for row in existing})
-    written = write_overrides(pg, rows)
-    summary["fixed"] = len(written)
-    # Re-run an interrupted cascade from a previous attempt, too. This RPC is
-    # idempotent; one invocation per run, regardless of override count.
-    if written or any(row.get("note") == "stale-fix: artist.tools auto" for row in existing):
-        pg.rpc("spotibase_recompute_playlist_daily_stats_cascade", {"p_start_date": run_date})
-        return True  # Refresh diagnostics once the provider lease is released.
+                # Multiple Spotify versions sharing an ISRC: avoid selecting the highest
+                # version's unrelated count; repair from the catalog's mapped ID only.
+                if isrc not in observations:
+                    observations[isrc] = int(row["streams"])
+                elif observations[isrc] != int(row["streams"]):
+                    observations[isrc] = -1  # ambiguous versions fail the sanity rules
+            previous_date = (date.fromisoformat(run_date) - timedelta(days=1)).isoformat()
+            previous = {}
+            eligible_isrcs = sorted({isrc_of(row) for row in stale if isrc_of(row)})
+            for offset in range(0, len(eligible_isrcs), 100):
+                budget.check()
+                ids = ",".join(eligible_isrcs[offset:offset + 100])
+                previous.update({isrc_of(row): row["streams_cumulative"] for row in pg.select_all(
+                    "track_daily_streams_effective_public", "isrc,streams_cumulative",
+                    f"date=eq.{previous_date}&isrc=in.({ids})", order="isrc.asc")})
+            existing = pg.select_all("track_daily_stream_overrides", "isrc,note", f"date=eq.{run_date}", order="isrc.asc")
+            rows = override_rows(run_date, stale, observations, previous, {isrc_of(row) for row in existing})
+            written = write_overrides(pg, rows, budget.check, summary)
+            summary["fixed"] = len(written)
+            # Re-run an interrupted cascade from a previous attempt, too. This RPC is
+            # idempotent; one invocation per run, regardless of override count.
+            if written or any(row.get("note") == "stale-fix: artist.tools auto" for row in existing):
+                budget.check()
+                pg.rpc("spotibase_recompute_playlist_daily_stats_cascade", {"p_start_date": run_date})
+                return True  # Refresh diagnostics once the provider lease is released.
+        except RunBudgetExceeded:
+            summary.update(budget_exhausted=True, repair_incomplete=True)
 
 
 def write_summary(summary):
@@ -236,7 +320,14 @@ def run(pg, run_date, runner="manual", max_adds=240, skip_if_done=False,
     summary = {"run_date": run_date, "runner": runner, "status": "running", "added": 0,
                "observed": 0, "fixed": 0, "remaining_unsaved": None, "rate_limited": False,
                "daily_limited": False, "add_daily_limited": False, "observe_daily_limited": False,
-               "reconcile_daily_limited": False, "observation_incomplete": False, "error": None}
+               "reconcile_daily_limited": False, "observation_incomplete": False, "error": None,
+               "add_rate_limited": False, "observe_rate_limited": False, "reconcile_rate_limited": False,
+               "retry_after_seconds": None, "budget_exhausted": False, "adds_incomplete": False,
+               "repair_incomplete": False}
+    budget = RunBudget()
+    original_timeout = getattr(pg, "timeout_s", None)
+    if original_timeout is not None:
+        pg.timeout_s = min(original_timeout, 30)
     started = utcnow().isoformat()
     client = None
     refresh_snapshots = False
@@ -256,14 +347,23 @@ def run(pg, run_date, runner="manual", max_adds=240, skip_if_done=False,
                                             "details": {}}], "run_date")
             client = client_factory(tokens)
             try:
-                tokens.access_token()  # Broken authorization fails even with an empty catalog.
-                refresh_snapshots = bool(execute(pg, client, run_date, max_adds, summary))
+                client.check_budget = budget.check
+                tokens.check_budget = budget.check
+                with budget.database(pg):
+                    budget.check()
+                    tokens.access_token()  # Broken authorization fails even with an empty catalog.
+                    refresh_snapshots = bool(execute(pg, client, run_date, max_adds, summary, budget))
                 summary["status"] = "success"
+            except RunBudgetExceeded:
+                summary.update(status="success", budget_exhausted=True, adds_incomplete=True,
+                               observation_incomplete=True, repair_incomplete=True)
             except Exception as exc:
                 summary["status"] = "failed"
                 summary["error"] = str(exc) if isinstance(exc, ArtistToolsError) else f"Job failed ({type(exc).__name__}); provider/database details withheld."
             finally:
-                summary["rate_limited"] = client.rate_limited
+                tokens.check_budget = None  # Finalization/release use the reserved cleanup time.
+                client.check_budget = None
+                summary["rate_limited"] = summary["rate_limited"] or client.rate_limited
                 summary["daily_limited"] = client.daily_limited
                 tokens.heartbeat()  # Never overwrite a successor's run row after losing the lease.
                 pg.upsert("artist_tools_runs", [{"run_date": run_date, "runner": runner,
@@ -272,8 +372,13 @@ def run(pg, run_date, runner="manual", max_adds=240, skip_if_done=False,
                     "fixed_count": summary["fixed"], "details": dict(summary)}], "run_date")
         # Database retries can exceed the OAuth lease duration; snapshots are
         # best effort and must not make a completed provider job lose its lease.
-        if refresh_snapshots and summary["status"] == "success":
-            refresh_own_home_snapshots(pg, date.fromisoformat(run_date))
+        if refresh_snapshots and summary["status"] == "success" and not summary["budget_exhausted"]:
+            try:
+                with budget.database(pg):
+                    budget.check()
+                    refresh_own_home_snapshots(pg, date.fromisoformat(run_date))
+            except RunBudgetExceeded:
+                pass  # The provider run is already finalized; diagnostics are best effort.
         return 0 if summary["status"] == "success" else 1
     except LeaseBusy as exc:
         # Do not clobber the active runner's run row or credentials.
@@ -287,8 +392,10 @@ def run(pg, run_date, runner="manual", max_adds=240, skip_if_done=False,
                        if summary["error"] else error)
         return 1
     finally:
+        if original_timeout is not None:
+            pg.timeout_s = original_timeout
         write_summary(summary)
-        print(json.dumps(summary))
+        print(json.dumps(summary), flush=True)
 
 
 def main(argv=None):

@@ -67,9 +67,27 @@ required. OAuth and Postgres cannot make the remote rotation atomic.
   exits successfully before any additions. An observation daily limit records partial coverage and available pages; quota
   exhaustion alone is not a hard failure. `observation_incomplete` flags this in
   the summary. Counts beyond the 100-page bound are a hard error.
+- A server retry delay above `MAX_RETRY_WAIT_SECONDS = 300` raises a distinct
+  `LongRateLimit` without sleeping. During adds this sets `add_rate_limited` and
+  `retry_after_seconds`, then observation and repair continue. During observation
+  it sets `observe_rate_limited` and `observation_incomplete`; repair still uses
+  persisted pages. During bootstrap it exits before additions or another listing
+  attempt. Existing `DailyLimit` behavior is unchanged.
+- `RUN_BUDGET_SECONDS = 75 * 60` bounds phase work, MCP waits/retries, and new
+  database requests. Budget exhaustion finalizes the run as success with
+  `budget_exhausted` and the relevant incomplete flags. In-flight requests may
+  finish after the deadline; this job caps database request timeouts at 30 seconds
+  while retaining bounded retries, leaving time before GitHub's 90-minute timeout
+  for the final run-row write and lease release. Optional diagnostics are skipped
+  when the budget is exhausted. Retry a partial success without `--skip-if-done`.
+- Rate-limit decisions and phase starts/ends print flushed, sanitized stdout
+  lines with tool/attempt/wait/HTTP status or phase counts. Tokens, authorization
+  headers, and provider response bodies are never included in these lines.
 
 Run `python scripts/artist_tools_daily.py run --runner manual --max-adds 240`.
 `--skip-if-done` skips a successful UTC-date run, checked again inside the lease.
+A stale `running` row does not trigger this skip: after acquiring the lease, a
+retry replaces that date's row and finalizes it with the new attempt's outcome.
 `--date YYYY-MM-DD` must be UTC today: current counts cannot be dated backwards.
 Retry without `--skip-if-done` if an intentionally limited/partial successful run
 needs another observation pass; interactive calls share the same daily quotas.

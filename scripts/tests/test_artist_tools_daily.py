@@ -310,3 +310,116 @@ def test_midnight_rollover_never_mislabels_observation(monkeypatch):
     assert run(pg, Client([folder(("B", 120))]), max_adds=0) == 1
     assert not pg.tables["artist_tools_track_streams"]
     assert "UTC date changed" in json.loads(daily.SUMMARY_PATH.read_text())["error"]
+
+
+@pytest.mark.parametrize("source", ["header", "payload"])
+def test_long_retry_stops_adds_without_sleep_and_still_observes(source, capsys):
+    import artist_tools_mcp as mcp
+    from test_artist_tools_mcp import Response, StubTokens
+
+    pg = PG()
+    pg.tables["artist_tools_saved_tracks"] = [{"spotify_track_id": "spotify-A"}]
+    limited = (Response({"secret": "private-body"}, 429, {"Retry-After": "5400"})
+               if source == "header" else Response({"error": {"code": "rate_limit_exceeded",
+                   "retryable": True, "retryAfterSeconds": 5400, "message": "private-body"}}))
+    replies = [Response({"result": {"added": True}}), limited,
+               Response({"result": folder(("A", 110), ("B", 120))})]
+    tokens = StubTokens()
+    tokens.heartbeat = lambda: None
+    tokens.access_token = lambda **_: "private-access-token"
+    client = mcp.MCPClient(tokens, SimpleNamespace(post=lambda *a, **k: replies.pop(0)),
+                           monotonic=lambda: tokens.clock)
+    client.initialized = True
+    assert daily.run(pg, D, token_factory=lambda _: nullcontext(tokens), client_factory=lambda _: client) == 0
+    summary = json.loads(daily.SUMMARY_PATH.read_text())
+    assert summary["add_rate_limited"] and summary["retry_after_seconds"] == 5400
+    assert summary["added"] == 1 and summary["observed"] == 2 and summary["fixed"] == 1
+    assert summary["rate_limited"] and not summary["daily_limited"]
+    assert max(tokens.waits) < 13
+    assert limited.closed and not replies
+    log = next(line for line in capsys.readouterr().out.splitlines() if "rate_limit" in line and "attempt=" in line)
+    assert "tool=add_entity_to_folder" in log and "attempt=1" in log
+    assert "wait_seconds=5400" in log and f"http_status={limited.status_code}" in log
+    assert "private-body" not in log and "private-access-token" not in log
+    assert "Authorization" not in log
+
+
+def test_long_observation_wait_repairs_partial_pages():
+    import artist_tools_mcp as mcp
+
+    pg = PG()
+    first = {"result": {"totalCount": 101, "items": [{"spotifyId": "spotify-B", "streams": 120}]}}
+    client = Client([first, mcp.LongRateLimit("list_dashboard_entities", 3600)])
+    assert run(pg, client, max_adds=0) == 0
+    summary = json.loads(daily.SUMMARY_PATH.read_text())
+    assert summary["observation_incomplete"] and summary["observe_rate_limited"]
+    assert summary["retry_after_seconds"] == 3600
+    assert summary["fixed"] == 1 and len(pg.rpcs) == 1
+
+
+@pytest.mark.parametrize("phase", ["adds", "observation", "observation_complete", "repair"])
+def test_run_budget_finalizes_row(phase, monkeypatch, capsys):
+    clock = [0.0]
+    monkeypatch.setattr(daily.time, "monotonic", lambda: clock[0])
+    pg = PG()
+    pg.tables["artist_tools_saved_tracks"] = [{"spotify_track_id": "spotify-A"}]
+
+    original_upsert = pg.upsert
+
+    def slow_upsert(table, *args, **kwargs):
+        result = original_upsert(table, *args, **kwargs)
+        # Model a completed persistence request crossing the deadline, so the
+        # next unit of work must stop while retaining the committed rows.
+        if (phase == "adds" and table == "artist_tools_saved_tracks"
+                or phase.startswith("observation") and table == "artist_tools_track_streams"):
+            clock[0] = daily.RUN_BUDGET_SECONDS + 1
+        return result
+
+    original_select = pg.select
+
+    def slow_select(table, *args, **kwargs):
+        result = original_select(table, *args, **kwargs)
+        if phase == "repair" and table == "artist_tools_track_streams":
+            clock[0] = daily.RUN_BUDGET_SECONDS + 1
+        return result
+
+    pg.select = slow_select
+    pg.upsert = slow_upsert
+    page = folder(("B", 120))
+    if phase == "observation":
+        page["result"]["totalCount"] = 101  # Another page is still outstanding.
+    client = Client(([{"result": {"added": True}}] if phase == "adds" else []) + [page])
+    assert run(pg, client, max_adds=2 if phase == "adds" else 0) == 0
+    row = pg.tables["artist_tools_runs"][0]
+    assert row["status"] == "success" and row["finished_at"]
+    assert row["details"]["budget_exhausted"] and row["details"]["repair_incomplete"]
+    assert row["details"]["observation_incomplete"] == (phase in ("adds", "observation"))
+    if phase == "adds":
+        assert row["added_count"] == 1 and len(client.calls) == 1
+    else:
+        assert row["observed_count"] == 1
+    output = capsys.readouterr().out
+    for name in ("adds", "observation", "repair"):
+        assert f"phase={name} event=start" in output
+        assert f"phase={name} event=end" in output
+
+
+def test_retry_replaces_stale_running_row_after_lease():
+    pg = PG()
+    pg.tables["artist_tools_runs"] = [{"run_date": D, "status": "running", "started_at": "old"}]
+    assert run(pg, Client([folder(("B", 120))]), max_adds=0, skip_if_done=True) == 0
+    assert len(pg.tables["artist_tools_runs"]) == 1
+    row = pg.tables["artist_tools_runs"][0]
+    assert row["status"] == "success" and row["started_at"] != "old" and row["finished_at"]
+
+
+def test_bootstrap_long_retry_does_not_repeat_limited_listing_tool():
+    import artist_tools_mcp as mcp
+
+    pg = PG()
+    client = Client([mcp.LongRateLimit("list_dashboard_entities", 3600)])
+    assert run(pg, client) == 0
+    summary = json.loads(daily.SUMMARY_PATH.read_text())
+    assert summary["reconcile_rate_limited"] and summary["observation_incomplete"]
+    assert summary["remaining_unsaved"] == 3
+    assert [name for name, _ in client.calls] == ["list_dashboard_entities"]

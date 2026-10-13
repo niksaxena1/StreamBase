@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
+import math
 import os
 from pathlib import Path
 import random
@@ -24,6 +25,7 @@ from streambase_postgrest import Postgrest
 
 MCP_URL = "https://app.artist.tools/mcp"
 PROTOCOL_VERSION = "2025-03-26"
+MAX_RETRY_WAIT_SECONDS = 300
 
 
 class ArtistToolsError(RuntimeError):
@@ -36,6 +38,17 @@ class LeaseBusy(ArtistToolsError):
 
 class DailyLimit(ArtistToolsError):
     pass
+
+
+class LongRateLimit(ArtistToolsError):
+    def __init__(self, tool, seconds):
+        self.tool, self.seconds = tool, seconds
+        super().__init__(f"artist.tools retry delay exceeds {MAX_RETRY_WAIT_SECONDS} seconds.")
+
+
+class RunBudgetExceeded(ArtistToolsError):
+    def __init__(self):
+        super().__init__("artist.tools run budget exhausted; remaining work deferred.")
 
 
 def utcnow():
@@ -223,8 +236,10 @@ class TokenManager:
             self.renew_at = now + timedelta(minutes=2)
 
     def wait(self, seconds):
-        # Keep the lease alive even for retryAfter values longer than ten minutes.
+        # MCP server retry delays are bounded by MCPClient before reaching here.
         while seconds > 0:
+            if getattr(self, "check_budget", None):
+                self.check_budget(seconds)
             self.heartbeat()
             part = min(seconds, 30)
             self.sleep(part)
@@ -362,10 +377,16 @@ class MCPClient:
         self.rate_limited = False
         self.daily_limited = False
         self.initialized = False
+        self.check_budget = None
+
+    def _wait(self, seconds):
+        if self.check_budget:
+            self.check_budget(seconds)
+        self.tokens.wait(seconds)
 
     def _pace(self, tool):
         due = max(self.next_global, self.next_tool.get(tool, 0))
-        self.tokens.wait(max(0, due - self.monotonic()))
+        self._wait(max(0, due - self.monotonic()))
         now = self.monotonic()
         self.next_global = now + 2.1  # <30/min, concurrency always one
         interval = {"add_entity_to_folder": 60 / 7 + .2, "list_dashboard_entities": 12.2}.get(tool, 0)
@@ -382,6 +403,8 @@ class MCPClient:
             message["params"] = params
         refreshed = False
         for attempt in range(6):
+            if self.check_budget:
+                self.check_budget()
             headers = {"Authorization": f"Bearer {self.tokens.access_token()}",
                        "Accept": "application/json, text/event-stream",
                        "MCP-Protocol-Version": self.protocol_version}
@@ -426,10 +449,26 @@ class MCPClient:
                 retryable = response.status_code == 429 or bool((error or {}).get("retryable"))
                 if retryable:
                     self.rate_limited = True
+                    delay = (error or {}).get("retryAfterSeconds", response.headers.get("Retry-After", 0))
+                    try:
+                        delay = float(delay or 0)
+                    except (TypeError, ValueError):
+                        raise ArtistToolsError("MCP returned an invalid retry delay.") from None
+                    if not math.isfinite(delay):
+                        raise ArtistToolsError("MCP returned an invalid retry delay.")
+                    # Log only fixed labels and numbers, never response content.
+                    label = tool if tool in ("add_entity_to_folder", "list_dashboard_entities", "who_am_i") else (
+                        method if method in ("initialize", "notifications/initialized") else "other")
+                    wait = min(MAX_RETRY_WAIT_SECONDS, max(delay, 2 ** attempt) + random.uniform(0, 1))
+                    print(f"[artist.tools] rate_limit tool={label} attempt={attempt + 1} "
+                          f"wait_seconds={delay if delay > MAX_RETRY_WAIT_SECONDS else wait:g} "
+                          f"http_status={response.status_code} "
+                          f"action={'stop' if delay > MAX_RETRY_WAIT_SECONDS else 'retry'}", flush=True)
+                    if delay > MAX_RETRY_WAIT_SECONDS:
+                        raise LongRateLimit(tool, delay)
                     if attempt == 5:
                         raise ArtistToolsError("MCP retry limit reached.")
-                    delay = (error or {}).get("retryAfterSeconds", response.headers.get("Retry-After", 0))
-                    self.tokens.wait(max(float(delay or 0), 2 ** attempt) + random.uniform(0, 1))
+                    self._wait(wait)
                     continue
                 if not response.ok or error or body.get("result", {}).get("isError"):
                     raise ArtistToolsError(f"MCP call failed (HTTP {response.status_code}); provider details withheld.")
