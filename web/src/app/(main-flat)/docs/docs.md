@@ -60,7 +60,8 @@ Files:
 Data:
 
 - `playlist_daily_stats` (cached, live/default)
-- `legacy_catalog_daily_stats` (cached, only when Archived history is enabled)
+- `legacy_catalog_daily_stats` (in-database table, service-role only, cached, only when Archived history is enabled). Holds the recovered 2023-07-08..2025-12-22 catalog daily totals (863 days). Days with partial or low track coverage have no daily net; counter resets are excluded from the daily net.
+- Per-track history for 2023-07..2025-12 now lives in the stream tiers (compact `track_streams_monthly`, then the R2 archive) behind the same `*_effective` views, so track charts can go back to 2023. Between 22 Dec 2025 and 24 Jan 2026 there is no data (no snapshots exist for it), so cumulative lines show a step across that gap and there is no daily delta for it.
 
 File:
 
@@ -1576,6 +1577,7 @@ If you want SAI to be reliable, enforce answer structure.
 
 ## Changelog
 
+- 2026-10-14: Archived history now reads the in-database `legacy_catalog_daily_stats` table, and the recovered 2023-2025 per-track history is loaded into the stream tiers (compact, then R2). Health/Home event lists ignore anything before 2026.
 - 2026-08-20: Added opt-in Archived history for the ISRC-normalized 2023–2025 legacy Grafana dataset. Legacy rows remain provenance-separated from live snapshots and exclude counter resets from archived daily totals.
 - 2026-02-09: Major docs refresh: expanded Settings page (8 features), added config pages (`/catalog/config`, `/playlists/config`, `/playlists/config/settings`), updated performance section (partitioning is now implemented), added SAI/CRON env vars, expanded data dictionary (6 new tables/views), added 10+ missing RPCs, updated `playlists` table fields (`entity_playlist_key`, `playlist_type` semantics), route layout (`(main-flat)` primary), expanded API routes list, new health warning codes (`entity_distro_drift`, `distro_overlap`), GitHub Actions schedule/notes, and fixed SAI docs indexing path.
 - 2026-02-01: Added ingestion health warnings for missing/invalid SpotOnTrack stream totals (`catalog_streams_missing_prev_nonzero`, `catalog_missing_stream_snapshots`) and a critical check for day-over-day decreases in playlist total streams (`total_streams_decreased`).
