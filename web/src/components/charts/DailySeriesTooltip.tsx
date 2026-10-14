@@ -8,6 +8,13 @@ import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import type { TooltipCopyValues } from "@/components/charts/useChartCopyToClipboard";
 import { formatInt } from "@/lib/format";
 
+/** Weekly/monthly averages are fractional; show whole streams, but keep currency (revenue) precision. */
+export function formatBucketValue(value: number, isAverage: boolean, fmt: (n: number) => string): string {
+  if (!isAverage) return fmt(value);
+  const precise = fmt(value);
+  return /[$€£]/.test(precise) ? precise : fmt(Math.round(value));
+}
+
 function formatFollowerDeltaDisplay(value: number, isBaseline?: boolean) {
   if (isBaseline) return "0";
   const sign = value > 0 ? "+" : "";
@@ -103,7 +110,7 @@ export function DailySeriesTooltip({
 
   const mainValue = sorted[0];
   const mainValueNum = mainValue ? toNum(mainValue.value) : null;
-  const mainValueFormatted = mainValueNum == null ? null : fmtValue(mainValueNum);
+  const mainValueFormatted = mainValueNum == null ? null : formatBucketValue(mainValueNum, Boolean((mainValue?.payload as Record<string, unknown> | undefined)?._isAverage), fmtValue);
   const maEntry = sorted.find((e) => String(e?.dataKey ?? "") === "ma7");
   const ma7Num = maEntry ? toNum(maEntry.value) : null;
   const ma7ValueFormatted = ma7Num == null ? null : fmtValue(Math.round(ma7Num));
@@ -238,7 +245,7 @@ export function DailySeriesTooltip({
                 : fmtValue(Math.round(raw))
               : raw == null
                 ? "—"
-                : fmtValue(raw);
+                : formatBucketValue(raw, Boolean(entry?.payload?._isAverage), fmtValue);
 
             const valueColor = isDark ? chartColor : "var(--sb-text)";
 
