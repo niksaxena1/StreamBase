@@ -96,6 +96,33 @@ class ExpectedEmptySyncTests(unittest.TestCase):
             tracks.count.return_value = 1
             self.assertFalse(confirmed_empty_page(page, page.url, dashboard=False))
 
+    def test_empty_playlist_accepts_checked_header_without_refresh_button(self):
+        # SOT layout from Oct 2026: no "Refresh now" button, header says "Checked N minutes ago", no table.
+        page = Mock()
+        page.url = "https://example.com/playlist"
+        page.locator.return_value.count.return_value = 0
+        heading, button = Mock(), Mock()
+        heading.is_visible.return_value = True
+        button.is_visible.return_value = False
+        page.get_by_role.side_effect = lambda role, **kw: heading if role == "heading" else button
+        checked, updated, loading = Mock(), Mock(), Mock()
+        checked.first.is_visible.return_value = True
+        updated.first.is_visible.return_value = True
+        loading.first.is_visible.return_value = False
+
+        def matching_text(pattern):
+            if pattern.search("Loading tracks"):
+                return loading
+            if pattern.search("Checked 23 minutes ago"):
+                return checked
+            return updated
+
+        page.get_by_text.side_effect = matching_text
+        with patch("scripts.sot_sync_dashboards.page_looks_blocked", return_value=False):
+            self.assertTrue(confirmed_empty_page(page, page.url, dashboard=False))
+            checked.first.is_visible.return_value = False
+            self.assertFalse(confirmed_empty_page(page, page.url, dashboard=False))
+
     def test_config_only_allows_explicit_non_catalog_zero_minimum(self):
         with tempfile.TemporaryDirectory() as td:
             config = Path(td) / "playlists.csv"

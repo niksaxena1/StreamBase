@@ -160,7 +160,12 @@ def confirmed_empty_page(page, url: str, *, dashboard: bool) -> bool:
     # Require the page controls too; absent rows on a loading/error page are not proof.
     return (
         page.get_by_role("heading", name=re.compile(r"Tracks$", re.I)).is_visible()
-        and page.get_by_role("button", name="Refresh now", exact=True).is_visible()
+        # Page controls: older SOT layouts show a "Refresh now" button; since Oct 2026 the header shows
+        # "Checked N minutes ago" instead (empty playlists also keep a spinner in the Tracks card).
+        and (
+            page.get_by_role("button", name="Refresh now", exact=True).is_visible()
+            or page.get_by_text(re.compile(r"^Checked\s")).first.is_visible()
+        )
         and (
             page.locator("table").count() == 0
             or page.locator("table").get_by_text(
