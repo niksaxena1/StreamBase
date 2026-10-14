@@ -87,8 +87,8 @@ def views_sql(U, N):
   union all
   select c.d as date, m.isrc, m.vals[extract(day from c.d)::int] as streams_cumulative{est_col_compact},
          null::{run_t} as source_run_id, null::timestamptz as base_created_at
-  from (select date '2025-01-01' + g.i as d from generate_series(0, 4017) as g(i)
-        where date '2025-01-01' + g.i < {N['hot_from']}) c
+  from (select date '2023-01-01' + g.i as d from generate_series(0, 5000) as g(i)
+        where date '2023-01-01' + g.i < {N['hot_from']}) c
   join {N['compact']} m on m.month = date_trunc('month', c.d)::date
   where m.vals[extract(day from c.d)::int] is not null
   union all
@@ -157,8 +157,8 @@ def eff_split_sql(U, N):
     union all
     select c.d as date, m.isrc, m.vals[extract(day from c.d)::int] as streams_cumulative,
            null::{run_t} as source_run_id, null::timestamptz as base_created_at
-    from (select date '2025-01-01' + g.i as d from generate_series(0, 4017) as g(i)
-          where date '2025-01-01' + g.i < {N['hot_from']}) c
+    from (select date '2023-01-01' + g.i as d from generate_series(0, 5000) as g(i)
+          where date '2023-01-01' + g.i < {N['hot_from']}) c
     join {N['compact']} m on m.month = date_trunc('month', c.d)::date
     where m.vals[extract(day from c.d)::int] is not null
   ) t
@@ -472,8 +472,8 @@ def eff_v3_sql(U, test):
     union all
     select c.d as date, m.isrc, m.vals[extract(day from c.d)::int] as streams_cumulative,
            null::{run_t} as source_run_id, null::timestamptz as base_created_at
-    from (select date '2025-01-01' + g.i as d from generate_series(0, 4017) as g(i)
-          where date '2025-01-01' + g.i < {N['hot_from']}) c
+    from (select date '2023-01-01' + g.i as d from generate_series(0, 5000) as g(i)
+          where date '2023-01-01' + g.i < {N['hot_from']}) c
     join {N['compact']} m on m.month = date_trunc('month', c.d)::date
     where m.vals[extract(day from c.d)::int] is not null
   ) t
