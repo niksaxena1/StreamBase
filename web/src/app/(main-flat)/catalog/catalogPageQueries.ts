@@ -84,9 +84,11 @@ export async function fetchCatalogArtistSeries(
         end_date: args.endDate,
       })
     : null;
+  // The compact/daily readers must start at compact_from: older dates would make them read the R2 archive overrides.
+  const baseStart = needsCold && compactFrom ? compactFrom : args.startDate;
   const fast = await sb.rpc("catalog_artist_series_fast", {
     artist_id: args.artistId,
-    start_date: args.startDate,
+    start_date: baseStart,
     end_date: args.endDate,
   });
   const base =
@@ -94,7 +96,7 @@ export async function fetchCatalogArtistSeries(
       ? fast
       : await sb.rpc("catalog_artist_series", {
           artist_id: args.artistId,
-          start_date: args.startDate,
+          start_date: baseStart,
           end_date: args.endDate,
         });
   if (!coldPromise || base.error) return base;
