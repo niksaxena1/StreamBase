@@ -51,7 +51,7 @@ export function AdaptiveChartToolbar({
   bounds: ViewWindow | null;
   phone: boolean;
   rootLabel?: string;
-  onNeedMoreData?: (dateIso: string) => void;
+  onNeedMoreData?: (dateIso: string) => boolean | void;
 }) {
   const hint = granularityHint(granularity, isCumulative, forcedDaily);
   const zoomed = view.stack.length > 0;
@@ -97,14 +97,24 @@ export function AdaptiveChartToolbar({
           aria-label="Go to date"
           min={EARLIEST_HISTORY_DATE_ISO}
           max={maxDate}
+          aria-describedby={view.notice ? "chart-goto-notice" : undefined}
           onChange={(event) => {
             const value = event.target.value;
-            if (/^\d{4}-\d{2}-\d{2}$/.test(value)) view.goTo(value, bounds, onNeedMoreData);
+            if (!value) {
+              view.clearNotice();
+              return;
+            }
+            // Browsers fire change while the year is still being typed ("0002-07-19"); wait for a plausible year.
+            if (/^\d{4}-\d{2}-\d{2}$/.test(value) && Number(value.slice(0, 4)) >= 1000) view.goTo(value, bounds, onNeedMoreData);
           }}
           className="min-h-8 rounded-md border px-1.5 py-1 text-xs"
           style={controlStyle}
         />
       </label>
+
+      {view.notice ? (
+        <span id="chart-goto-notice" role="status" style={{ color: "var(--sb-muted)" }}>{view.notice}</span>
+      ) : null}
 
       {zoomed ? (
         <nav aria-label="Chart zoom" className="flex min-w-0 flex-wrap items-center gap-1.5">

@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useNavigationRouter } from "@/components/shell/useNavigationRouter";
 import { hrefWithPatchedSearchParams } from "@/lib/searchParams";
 import { rangeDaysNeededFor } from "@/components/charts/aggregateSeries";
+import { chartClipOverrideIso } from "@/components/charts/chartClip";
+import { ChartStartDateOverride } from "@/components/charts/ChartStartDateContext";
 import { fetchUserSettingsBundle, invalidateUserSettingsBundle } from "@/lib/userSettingsBundleFetch";
 import { fetchApiJson } from "@/lib/api";
 import { createHomeRequestCache, homePrefetchKey, scheduleVisibleHomePrefetch } from "@/lib/home/homeSectionPrefetch";
@@ -102,12 +104,21 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
   const router = useNavigationRouter();
   // "Go to date" older than the loaded history: widen the URL range so the server loads it.
   const handleNeedMoreHistory = useCallback(
-    (dateIso: string) => {
-      if (!props.latestDataDate) return;
+    (dateIso: string): boolean => {
+      if (!props.latestDataDate) return false;
       const range = rangeDaysNeededFor(props.latestDataDate, dateIso, 1200);
-      router.push(hrefWithPatchedSearchParams(window.location.search, { range: String(range), start: null, end: null }, { prefix: "/?" }));
+      // Already showing the archived history at (or beyond) the range this date needs: nothing more to load.
+      if (props.legacyHistoryEnabled && props.rangeDays >= range) return false;
+      router.push(
+        hrefWithPatchedSearchParams(
+          window.location.search,
+          { legacy: "1", range: String(range), start: null, end: null },
+          { prefix: "/?" },
+        ),
+      );
+      return true;
     },
-    [props.latestDataDate, router],
+    [props.latestDataDate, props.legacyHistoryEnabled, props.rangeDays, router],
   );
   const requestCache = useMemo(() => createHomeRequestCache(), [props.datasetMode, props.competitorLabelKey, props.latestRunDate, props.sp]);
   const fetchSectionJson = useCallback(<T,>(url: string): Promise<T> =>
@@ -539,6 +550,9 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
   // ============================================================================
 
   return (
+    <ChartStartDateOverride
+      iso={chartClipOverrideIso({ rangeDays: props.rangeDays, archivedHistory: props.legacyHistoryEnabled })}
+    >
     <div className="space-y-4">
       {/* Suppressed while history is too short to be a 7-day average — the
           short-history notice below explains the state instead. */}
@@ -723,6 +737,7 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
         />
       ) : null}
     </div>
+    </ChartStartDateOverride>
   );
 }
 

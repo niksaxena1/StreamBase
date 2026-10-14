@@ -47,6 +47,7 @@ import { buildDailyExportRows, rangeDaysNeededFor, type ViewWindow } from "@/com
 import { useChartViewport } from "@/components/charts/useChartViewport";
 import type { OlderArtistHistoryTarget } from "./useOlderArtistHistory";
 import { ChartStartDateOverride } from "@/components/charts/ChartStartDateContext";
+import { chartClipOverrideIso } from "@/components/charts/chartClip";
 import { FreshnessLabel } from "@/components/ui/DataStates";
 
 const DailyStreamsChart = dynamic(
@@ -137,11 +138,15 @@ export function CatalogPageClient(props: {
   // "Go to date" before the loaded data: widen the URL range so the server loads it (always past 365 days so the
   // global chart start date no longer clips it).
   const handleNeedMoreData = useCallback(
-    (dateIso: string) => {
-      if (!props.latestDataDate) return;
-      pushRange(Math.max(366, rangeDaysNeededFor(props.latestDataDate, dateIso, CATALOG_ALL_HISTORY_DAYS)));
+    (dateIso: string): boolean => {
+      if (!props.latestDataDate) return false;
+      const range = Math.max(366, rangeDaysNeededFor(props.latestDataDate, dateIso, CATALOG_ALL_HISTORY_DAYS));
+      // Already loaded this far back (the chart simply has no earlier data): nothing more to request.
+      if (props.rangeDays >= range) return false;
+      pushRange(range);
+      return true;
     },
-    [props.latestDataDate, pushRange],
+    [props.latestDataDate, props.rangeDays, pushRange],
   );
   const handleGranularityChange = useCallback(
     (g: Granularity) =>
@@ -365,7 +370,7 @@ export function CatalogPageClient(props: {
   }
 
   return (
-    <ChartStartDateOverride iso={mode === "own" && props.rangeDays > 365 ? "2000-01-01" : null}>
+    <ChartStartDateOverride iso={mode === "own" ? chartClipOverrideIso({ rangeDays: props.rangeDays }) : null}>
       <DocumentTitle title={pageTitle} />
       <RememberTrackSelection datasetMode={mode} artistId={props.artistId} hasTrack={!!props.isrc} />
       <PageHeader

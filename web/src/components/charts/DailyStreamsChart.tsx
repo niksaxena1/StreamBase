@@ -112,7 +112,7 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
   /** First day of live snapshots; earlier days are shaded and tagged as archived. */
   firstLiveDateIso?: string | null;
   /** Go-to-date asked for data older than what is loaded: update the URL range so the server loads it. */
-  onNeedMoreData?: (dateIso: string) => void;
+  onNeedMoreData?: (dateIso: string) => boolean | void;
   adaptiveRootLabel?: string;
 }) {
   const gid = useId();

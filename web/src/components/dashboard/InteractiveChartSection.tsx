@@ -62,7 +62,7 @@ type InteractiveChartSectionProps = {
   adaptiveHistory?: boolean;
   /** First live day (data-date basis); earlier days are archived. */
   firstLiveDateIso?: string | null;
-  onNeedMoreData?: (dateIso: string) => void;
+  onNeedMoreData?: (dateIso: string) => boolean | void;
 };
 
 type ChartType = "daily" | "total";
