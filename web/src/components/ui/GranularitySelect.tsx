@@ -275,6 +275,7 @@ export function RangeSelect({
   customStart,
   customEnd,
   archiveRangeDays,
+  archiveRangeLabel,
 }: {
   value: number;
   onChange: (range: number) => void;
@@ -288,6 +289,8 @@ export function RangeSelect({
   customEnd?: string | null;
   /** Optional long-range choice for opt-in archived datasets. */
   archiveRangeDays?: number;
+  /** Label for the long-range choice (default "<n>d"). */
+  archiveRangeLabel?: string;
 }) {
   const customLabel = customActive && customStart && customEnd
     ? formatDateRangeShort(customStart, customEnd)
@@ -301,7 +304,7 @@ export function RangeSelect({
     ? `Chart display range · ${dayCount} day${dayCount === 1 ? "" : "s"}`
     : "Chart display range";
   const options: readonly ChipDropdownOption<number>[] = archiveRangeDays
-    ? [...RANGES, { value: archiveRangeDays, label: `${archiveRangeDays}d` }]
+    ? [...RANGES, { value: archiveRangeDays, label: archiveRangeLabel ?? `${archiveRangeDays}d` }]
     : RANGES;
 
   return (

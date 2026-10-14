@@ -59,6 +59,8 @@ def main():
     ap.add_argument("--duckdb", required=True)
     ap.add_argument("--verify", action="store_true")
     ap.add_argument("--skip-catalog", action="store_true")
+    ap.add_argument("--cold", action="store_true",
+                    help="load months < 2025-09-01 into public.track_streams_monthly_cold (serving copy of archived months)")
     ap.add_argument("--batch", type=int, default=1500)
     a = ap.parse_args()
     load_env()
@@ -66,6 +68,14 @@ def main():
     con = duckdb.connect(a.duckdb, read_only=True)
     rows = source_rows(con)
     months = build_months(rows)
+    table = "track_streams_monthly"
+    ceiling = LIVE_FLOOR
+    if a.cold:
+        table = "track_streams_monthly_cold"
+        ceiling = date(2025, 9, 1)
+        months = {k: v for k, v in months.items() if k[1] < ceiling}
+        a.skip_catalog = True
+        rows = [r for r in rows if r[0] < ceiling]
     print(f"source rows={len(rows)} isrcs={len({r[1] for r in rows})} isrc-months={len(months)}")
 
     if not a.verify:
@@ -87,7 +97,7 @@ def main():
         items = [{"isrc": k[0], "month": k[1].isoformat(), "vals": v} for k, v in months.items()]
         items.sort(key=lambda r: (r["month"], r["isrc"]))
         for i in range(0, len(items), a.batch):
-            pg.upsert("track_streams_monthly", items[i:i + a.batch], "isrc,month")
+            pg.upsert(table, items[i:i + a.batch], "isrc,month")
             print(f"  upserted {min(i + a.batch, len(items))}/{len(items)}")
 
     # verify: pull everything legacy-range back and compare exactly both ways
@@ -97,7 +107,7 @@ def main():
         import requests
         h = dict(pg.h)
         r = requests.get(
-            f"{pg.base}/track_streams_monthly?select=isrc,month,vals&month=lt.2026-01-01&order=month,isrc"
+            f"{pg.base}/{table}?select=isrc,month,vals&month=lt.{ceiling.isoformat()}&order=month,isrc"
             f"&limit=2000&offset={off}", headers=h, timeout=120)
         r.raise_for_status()
         b = r.json()

@@ -1,7 +1,7 @@
 // Row types + pure helpers for the server-rendered catalog page (`page.tsx`).
 
 /** Extra days to load before the chart range so MA7 matches home (window uses days before the first visible day). */
-export const MA7_LOOKBACK_DAYS = 6;
+export const MA7_LOOKBACK_DAYS = 7;
 
 export type TrackRow = {
   isrc: string;
@@ -69,9 +69,12 @@ export function sumLastNDays(desc: Array<{ date: string; daily: number | null }>
   return desc.slice(0, days).reduce((acc, r) => acc + Number(r.daily ?? 0), 0);
 }
 
+/** Own-catalog Catalog "All history" (stream history is loaded back to 2023-07; archived months are served from the cold copy). */
+export const CATALOG_ALL_HISTORY_DAYS = 1300;
+
 export function clampRangeDays(x: unknown) {
   const n = Number(x ?? "30") || 30;
-  return Math.max(7, Math.min(365, n));
+  return Math.max(7, Math.min(CATALOG_ALL_HISTORY_DAYS, n));
 }
 
 export function chunk<T>(arr: T[], size: number): T[][] {

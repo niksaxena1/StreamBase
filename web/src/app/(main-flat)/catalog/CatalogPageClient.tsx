@@ -42,6 +42,7 @@ import { useSharedGranularity } from "@/lib/useSharedGranularity";
 import { useLongPress } from "@/components/charts/useLongPress";
 import type { TrackSeriesPoint, TrackDailyPoint, SelectedTrack, TrackPlaylistMembership, TopTrack, ChartDataPoint, DailyDataPoint, ArtistOption, TrackOption } from "./catalogTypes";
 import { sortTopTracks, toggleSort, type SortState, type TopSortKey } from "./catalogUtils";
+import { CATALOG_ALL_HISTORY_DAYS } from "./catalogPageUtils";
 import { FreshnessLabel } from "@/components/ui/DataStates";
 
 const DailyStreamsChart = dynamic(
@@ -353,8 +354,9 @@ export function CatalogPageClient(props: {
                   customActive={hasCustomRange}
                   customStart={sp?.get("start") ?? null}
                   customEnd={sp?.get("end") ?? null}
+                  {...(mode === "own" ? { archiveRangeDays: CATALOG_ALL_HISTORY_DAYS, archiveRangeLabel: "All history" } : {})}
                 />
-                <DateRangePicker ref={datePickerRef} latestDate={props.latestDataDate ?? null} currentRangeDays={props.rangeDays} headless />
+                <DateRangePicker ref={datePickerRef} latestDate={props.latestDataDate ?? null} currentRangeDays={props.rangeDays} headless maxRangeDays={mode === "own" ? CATALOG_ALL_HISTORY_DAYS : 365} />
               </>
             )}
             <GranularitySelect value={granularity} onChange={handleGranularityChange} />

@@ -234,6 +234,10 @@ def run_archive() -> int:
                 upload(s3, bucket, archive_key(prefix, universe, month), body)
                 res = run_job(pg, "attach", universe, month)
                 print(f"[{universe}] {month}: attached ({n_s} stream rows, {n_o} overrides) {json.dumps(res, default=str)}")
+                if universe == "own":
+                    # Keep a small serving copy so charts can still read this month (R2 reads take ~8 s per file).
+                    n_cold = pg.rpc("stream_cold_copy_month", {"p_month": month.isoformat()})
+                    print(f"[{universe}] {month}: cold serving copy rows={n_cold}")
                 try:
                     fin = run_job(pg, "finalize", universe, month)
                     print(f"[{universe}] {month}: finalized {json.dumps(fin, default=str)}")

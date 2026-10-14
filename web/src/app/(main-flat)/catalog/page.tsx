@@ -9,7 +9,7 @@ import { getArtistsCached } from "@/lib/spotify";
 import { defaultCatalogArtistId, defaultCatalogIsrc } from "./catalogDefaults";
 import { RememberedCatalogEmptyEntry } from "./RememberedCatalogEmptyEntry";
 import { CatalogPageClient } from "./CatalogPageClient";
-import { computeDailyRollingAvg7 } from "@/components/charts/chartUtils";
+import { computeDailyRollingAvg7, dailyFromCumulativeAsc } from "@/components/charts/chartUtils";
 import { dataDateFromRunDate } from "@/lib/sotDates";
 import { getRollbackDate, rollbackDataDateToRunDate } from "@/lib/rollback";
 import { Alert } from "@/components/ui/Alert";
@@ -34,6 +34,7 @@ import {
   artistNameFor,
   catalogSelectionHref,
   clampRangeDays,
+  CATALOG_ALL_HISTORY_DAYS,
   sumLastNDays,
   type CatalogArtistSeriesRow,
   type CatalogSearchParams,
@@ -115,7 +116,7 @@ async function CatalogPageContent({
       const start = new Date(`${sp.start}T00:00:00Z`);
       const end = new Date(`${sp.end}T00:00:00Z`);
       const calculatedDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-      rangeDays = Math.max(1, Math.min(365, calculatedDays));
+      rangeDays = Math.max(1, Math.min(CATALOG_ALL_HISTORY_DAYS, calculatedDays));
     }
     const { sb, svc, user, isAdmin, settings: datasetSettings } = await getRequestAppContext();
     if (!user) redirect("/login");
@@ -129,7 +130,7 @@ async function CatalogPageContent({
     const datasetMode = normalizeDatasetMode(datasetSettings?.dataset_mode);
 
     if (datasetMode === "competitor") {
-      return await renderCompetitorCatalogContent({ sp, rangeDays, svc, datasetSettings });
+      return await renderCompetitorCatalogContent({ sp, rangeDays: Math.min(365, rangeDays), svc, datasetSettings });
     }
 
     // Settings come from the request context (already fetched once per request).
@@ -517,11 +518,7 @@ async function CatalogPageContent({
 
   const latestCum = cumSeriesAscRun.length ? cumSeriesAscRun[cumSeriesAscRun.length - 1].value : 0;
 
-  const dailyArtistAscRunFull = cumSeriesAscRunFull.map((p, idx) => {
-    if (idx === 0) return { date: p.date, daily: null };
-    const prev = cumSeriesAscRunFull[idx - 1].value;
-    return { date: p.date, daily: p.value - prev };
-  });
+  const dailyArtistAscRunFull = dailyFromCumulativeAsc(cumSeriesAscRunFull);
   const dailyArtistDescFull = [...dailyArtistAscRunFull].reverse();
   const dailyArtistDesc = startRunDate
     ? computeDailyRollingAvg7(dailyArtistDescFull).filter((p) => p.date >= startRunDate)
@@ -637,11 +634,7 @@ async function CatalogPageContent({
     value: Number(r.streams_cumulative ?? 0),
   }));
   const trackCumAscRun = [...trackCumDescRun].reverse();
-  const trackDailyAsc = trackCumAscRun.map((p, idx) => {
-    if (idx === 0) return { date: p.date, daily: null };
-    const prev = trackCumAscRun[idx - 1].value;
-    return { date: p.date, daily: p.value - prev };
-  });
+  const trackDailyAsc = dailyFromCumulativeAsc(trackCumAscRun);
   const trackDailyDescFull = [...trackDailyAsc].reverse().map((p) => ({ ...p }));
   const trackDailyWithMaDesc = startRunDate
     ? computeDailyRollingAvg7(trackDailyDescFull).filter((p) => p.date >= startRunDate)

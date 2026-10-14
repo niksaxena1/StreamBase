@@ -14,9 +14,9 @@ function utcMsFromYmd(ymd: string): number {
   return Date.UTC(y, (m ?? 1) - 1, d ?? 1);
 }
 
-function clampDaysInclusive(startYmd: string, endYmd: string): number {
+function clampDaysInclusive(startYmd: string, endYmd: string, maxDays = 365): number {
   const days = Math.round((utcMsFromYmd(endYmd) - utcMsFromYmd(startYmd)) / 86400000) + 1;
-  return Math.max(1, Math.min(365, days));
+  return Math.max(1, Math.min(maxDays, days));
 }
 
 /**
@@ -65,9 +65,11 @@ export const DateRangePicker = forwardRef<DateRangePickerHandle, {
   currentRangeDays: number;
   tone?: "default" | "opaque";
   headless?: boolean;
-}>(function DateRangePicker({ latestDate, currentRangeDays, tone = "default", headless = false }, ref) {
+  /** Longest selectable window in days (default 365). */
+  maxRangeDays?: number;
+}>(function DateRangePicker({ latestDate, currentRangeDays, tone = "default", headless = false, maxRangeDays = 365 }, ref) {
   if (!latestDate) return null;
-  return <DateRangePickerInner ref={ref} latestDate={latestDate} currentRangeDays={currentRangeDays} tone={tone} headless={headless} />;
+  return <DateRangePickerInner ref={ref} latestDate={latestDate} currentRangeDays={currentRangeDays} tone={tone} headless={headless} maxRangeDays={maxRangeDays} />;
 });
 
 const DateRangePickerInner = forwardRef<DateRangePickerHandle, {
@@ -75,11 +77,13 @@ const DateRangePickerInner = forwardRef<DateRangePickerHandle, {
   currentRangeDays: number;
   tone: "default" | "opaque";
   headless: boolean;
+  maxRangeDays: number;
 }>(function DateRangePickerInner({
   latestDate,
   currentRangeDays,
   tone,
   headless,
+  maxRangeDays,
 }, ref) {
   const router = useRouter();
   const sp = useSearchParams();
@@ -128,7 +132,7 @@ const DateRangePickerInner = forwardRef<DateRangePickerHandle, {
       }
     }
 
-    params.set("range", String(clampDaysInclusive(startYmd, endYmd)));
+    params.set("range", String(clampDaysInclusive(startYmd, endYmd, maxRangeDays)));
     params.set("start", startYmd);
     params.set("end", endYmd);
     router.push(`?${params.toString()}`);
@@ -148,7 +152,7 @@ const DateRangePickerInner = forwardRef<DateRangePickerHandle, {
       const r = getPresetRange(name);
       const startYmd = formatYmd(r.from);
       const endYmd = formatYmd(r.to);
-      params.set("range", String(clampDaysInclusive(startYmd, endYmd)));
+      params.set("range", String(clampDaysInclusive(startYmd, endYmd, maxRangeDays)));
       params.set("start", startYmd);
       params.set("end", endYmd);
     }
@@ -170,9 +174,9 @@ const DateRangePickerInner = forwardRef<DateRangePickerHandle, {
 
   const minDate = useMemo(() => {
     const d = parseYmd(latestDate);
-    d.setDate(d.getDate() - 365);
+    d.setDate(d.getDate() - maxRangeDays);
     return d;
-  }, [latestDate]);
+  }, [latestDate, maxRangeDays]);
   const maxDate = useMemo(() => parseYmd(latestDate), [latestDate]);
 
   useImperativeHandle(ref, () => ({

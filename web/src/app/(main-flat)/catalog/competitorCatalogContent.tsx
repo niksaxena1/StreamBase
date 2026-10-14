@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { cachedQuery } from "@/lib/supabase/cache";
 import { defaultCatalogIsrc } from "./catalogDefaults";
-import { computeDailyRollingAvg7 } from "@/components/charts/chartUtils";
+import { computeDailyRollingAvg7, dailyFromCumulativeAsc } from "@/components/charts/chartUtils";
 import { dataDateFromRunDate } from "@/lib/sotDates";
 import { getRollbackDate, rollbackDataDateToRunDate } from "@/lib/rollback";
 import { Alert } from "@/components/ui/Alert";
@@ -350,10 +350,7 @@ export async function renderCompetitorCatalogContent({
     .map((r) => ({ date: r.date, value: Number(r.streams_cumulative ?? 0) }))
     .sort((a, b) => a.date.localeCompare(b.date));
   const cumSeriesAscRun = startRunDate ? cumSeriesAscRunFull.filter((p) => p.date >= startRunDate) : cumSeriesAscRunFull;
-  const dailyArtistAscRunFull = cumSeriesAscRunFull.map((p, idx) => ({
-    date: p.date,
-    daily: idx === 0 ? null : p.value - cumSeriesAscRunFull[idx - 1].value,
-  }));
+  const dailyArtistAscRunFull = dailyFromCumulativeAsc(cumSeriesAscRunFull);
   const dailyArtistDesc = computeDailyRollingAvg7([...dailyArtistAscRunFull].reverse());
   const trackSeries =
     selectedIsrc && latestRunDate && maPaddedStartRunDate
@@ -373,10 +370,7 @@ export async function renderCompetitorCatalogContent({
         ).data ?? [])
       : [];
   const trackCumDesc = (trackSeries ?? []).map((r) => ({ date: r.date, value: Number(r.streams_cumulative ?? 0) }));
-  const trackDailyAsc = [...trackCumDesc].reverse().map((p, idx, arr) => ({
-    date: p.date,
-    daily: idx === 0 ? null : p.value - arr[idx - 1].value,
-  }));
+  const trackDailyAsc = dailyFromCumulativeAsc([...trackCumDesc].reverse());
   const trackDailyWithMaDesc = computeDailyRollingAvg7([...trackDailyAsc].reverse());
   const artistName = artists.find((a) => a.id === effectiveArtistId)?.name ?? effectiveArtistId;
   const selectedTrackRow = artistTracks.find((t) => t.isrc === selectedIsrc) ?? null;

@@ -13,10 +13,20 @@
 
 /** Minimal row shape; both Home and Playlists row types satisfy it structurally. */
 export type DailyStreamSourceRow = {
+  date?: string;
   total_streams_cumulative: number | null;
   daily_streams_net?: number | null;
   history_source?: "live" | "archive";
 };
+
+/** True when both rows carry dates and are more than one calendar day apart (the diff would be several days of streams). */
+function spansGap(row: DailyStreamSourceRow, previous: DailyStreamSourceRow | undefined): boolean {
+  if (!row.date || !previous?.date) return false;
+  const a = Date.parse(`${row.date.slice(0, 10)}T00:00:00Z`);
+  const b = Date.parse(`${previous.date.slice(0, 10)}T00:00:00Z`);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
+  return Math.round((a - b) / 86_400_000) > 1;
+}
 
 function safeNum(value: unknown): number {
   const parsed = Number(value ?? 0);
@@ -38,6 +48,7 @@ export function dailyStreamValuesForDataset(
 
   return rowsDesc.map((row, index) => {
     if (index >= rowsDesc.length - 1) return null;
+    if (spansGap(row, rowsDesc[index + 1])) return null;
     return safeNum(row.total_streams_cumulative) - safeNum(rowsDesc[index + 1]?.total_streams_cumulative);
   });
 }
@@ -55,6 +66,7 @@ export function dailyStreamValuesForMixedOwnHistory(
     if (row.history_source === "archive") return row.daily_streams_net ?? null;
     const previous = index < rowsDesc.length - 1 ? rowsDesc[index + 1] : null;
     if (previous?.history_source === "live") {
+      if (spansGap(row, previous)) return null;
       return safeNum(row.total_streams_cumulative) - safeNum(previous.total_streams_cumulative);
     }
     return row.daily_streams_net ?? null;

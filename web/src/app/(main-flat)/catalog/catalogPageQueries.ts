@@ -21,11 +21,25 @@ import {
 
 type CatalogServiceClient = RequestAppContext["svc"];
 
+/**
+ * First date still served by the compact/daily tiers (`stream_compact_from()`). Older dates were archived to R2, which
+ * is far too slow to read interactively (about 8 s per monthly file), so they are read from the small cold serving copy
+ * (`track_streams_monthly_cold`) with the service role. Returns null when it cannot be determined.
+ */
+async function fetchCompactFrom(sb: SupabaseClient): Promise<string | null> {
+  const { data } = await cachedQuery(
+    async () => await sb.rpc("stream_compact_from"),
+    "stream-compact-from-v1",
+    CACHE_TTL_1H,
+  );
+  return typeof data === "string" ? data.slice(0, 10) : null;
+}
+
 export async function fetchAllTrackSeries(
   sb: SupabaseClient,
   args: { isrc: string; startDate: string; endDate: string; maxRows?: number },
 ) {
-  return fetchOrderedPages<{ date: string; streams_cumulative: number | null }>({
+  const recent = await fetchOrderedPages<{ date: string; streams_cumulative: number | null }>({
     pageSize: API_LOOKUP_PAGE_SIZE,
     maxRows: args.maxRows ?? API_LOOKUP_TRACK_MAX,
     fetchPage: (from, withCount) => {
@@ -40,23 +54,56 @@ export async function fetchAllTrackSeries(
       return withCount ? query.setHeader("Prefer", "count=exact") : query;
     },
   });
+  const compactFrom = await fetchCompactFrom(sb);
+  if (!compactFrom || args.startDate >= compactFrom) return recent;
+  const cold = await sb.rpc("stream_cold_range", {
+    p_start: args.startDate,
+    p_end: args.endDate,
+    p_isrcs: [args.isrc],
+  });
+  if (cold.error) {
+    logWarn("catalog.track_series.cold_failed", { message: cold.error.message });
+    return recent;
+  }
+  const older = ((cold.data ?? []) as Array<{ date: string; streams_cumulative: number | null }>)
+    .map((r) => ({ date: r.date, streams_cumulative: r.streams_cumulative }))
+    .sort((a, b) => b.date.localeCompare(a.date));
+  return [...recent, ...older];
 }
 
 export async function fetchCatalogArtistSeries(
   sb: SupabaseClient,
   args: { artistId: string; startDate: string; endDate: string },
 ) {
+  const compactFrom = await fetchCompactFrom(sb);
+  const needsCold = !!compactFrom && args.startDate < compactFrom;
+  const coldPromise = needsCold
+    ? sb.rpc("catalog_artist_series_cold", {
+        artist_id: args.artistId,
+        start_date: args.startDate,
+        end_date: args.endDate,
+      })
+    : null;
   const fast = await sb.rpc("catalog_artist_series_fast", {
     artist_id: args.artistId,
     start_date: args.startDate,
     end_date: args.endDate,
   });
-  if (!fast.error || !isMissingPostgresFunctionError(fast.error)) return fast;
-  return await sb.rpc("catalog_artist_series", {
-    artist_id: args.artistId,
-    start_date: args.startDate,
-    end_date: args.endDate,
-  });
+  const base =
+    !fast.error || !isMissingPostgresFunctionError(fast.error)
+      ? fast
+      : await sb.rpc("catalog_artist_series", {
+          artist_id: args.artistId,
+          start_date: args.startDate,
+          end_date: args.endDate,
+        });
+  if (!coldPromise || base.error) return base;
+  const cold = await coldPromise;
+  if (cold.error) {
+    logWarn("catalog.artist_series.cold_failed", { message: cold.error.message });
+    return base;
+  }
+  return { ...base, data: [...((cold.data ?? []) as unknown[]), ...((base.data ?? []) as unknown[])] };
 }
 
 /** Batch-fetch the distro playlist (playlist_type = 'Distro') for every top-track ISRC. */

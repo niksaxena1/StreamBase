@@ -555,3 +555,21 @@ describe("getSundayAccentColor", () => {
     expect(result).toMatch(/^rgba\(/);
   });
 });
+
+describe("dailyFromCumulativeAsc", () => {
+  it("returns null for the first point and for points after a gap of more than one day", async () => {
+    const { dailyFromCumulativeAsc } = await import("./chartUtils");
+    const out = dailyFromCumulativeAsc([
+      { date: "2025-12-21", value: 100 },
+      { date: "2025-12-22", value: 110 },
+      { date: "2026-01-24", value: 300 },
+      { date: "2026-01-25", value: 312 },
+    ]);
+    expect(out).toEqual([
+      { date: "2025-12-21", daily: null },
+      { date: "2025-12-22", daily: 10 },
+      { date: "2026-01-24", daily: null },
+      { date: "2026-01-25", daily: 12 },
+    ]);
+  });
+});

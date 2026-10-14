@@ -524,6 +524,27 @@ export function computeRollingAvg7<T extends { date: string; value: number | nul
   return outAsc.reverse();
 }
 
+function isoDayNumber(iso: string): number {
+  return Math.round(Date.parse(`${iso.slice(0, 10)}T00:00:00Z`) / 86_400_000);
+}
+
+/**
+ * Daily value from consecutive cumulative points (ascending by date).
+ * The first point has no predecessor, and a predecessor more than one calendar day earlier means the points span
+ * missing data (e.g. the 22 Dec 2025 .. 24 Jan 2026 gap): that difference is several days of streams, so it is
+ * returned as null (a gap) instead of being drawn as one day.
+ */
+export function dailyFromCumulativeAsc(
+  asc: Array<{ date: string; value: number }>,
+): Array<{ date: string; daily: number | null }> {
+  return asc.map((p, idx) => {
+    if (idx === 0) return { date: p.date, daily: null };
+    const prev = asc[idx - 1];
+    if (isoDayNumber(p.date) - isoDayNumber(prev.date) !== 1) return { date: p.date, daily: null };
+    return { date: p.date, daily: p.value - prev.value };
+  });
+}
+
 /**
  * Compute 7-day rolling average for daily data (using 'daily' field).
  * Input: array in descending order (newest first) with { date, daily }.
@@ -540,7 +561,9 @@ export function computeDailyRollingAvg7<T extends { date: string; daily: number 
     let sum = 0;
     let count = 0;
     for (let j = windowStart; j <= i; j++) {
-      const v = Number((asc[j] as any).daily);
+      const raw = (asc[j] as any).daily;
+      if (raw == null) continue; // gaps / first point: not a zero-stream day
+      const v = Number(raw);
       if (!Number.isFinite(v)) continue;
       sum += v;
       count += 1;
