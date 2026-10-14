@@ -220,10 +220,15 @@ def run_archive() -> int:
     bucket = env("R2_BUCKET")
     prefix = config(pg, "key_prefix")
     failed = False
+    budget_s = float(os.environ.get("STREAM_ARCHIVE_BUDGET_MIN", "35")) * 60
+    t_start = time.time()
     for universe in UNIVERSES:
         due = [parse_date(r["month"]) for r in (pg.rpc("stream_archive_due", {"p_universe": universe}) or [])]
         print(f"[{universe}] due months: {[d.isoformat() for d in due] or 'none'}")
         for month in due:
+            if time.time() - t_start > budget_s:
+                print(f"[{universe}] time budget reached; remaining months are picked up by the next run")
+                break
             try:
                 body, n_s, n_o = build_file(pg, universe, month)
                 upload(s3, bucket, archive_key(prefix, universe, month), body)
