@@ -512,7 +512,12 @@ export function computeRollingAvg7<T extends { date: string; value: number | nul
     let sum = 0;
     let count = 0;
     for (let j = windowStart; j <= i; j++) {
-      const v = Number((asc[j] as any).value);
+      // Rows are one per day; if days are missing the window would reach further back than a week, so a window that
+      // spans a gap is skipped rather than averaged across it.
+      if (isIsoDateString(asc[i].date) && isIsoDateString(asc[j].date) && isoDayNumber(asc[i].date) - isoDayNumber(asc[j].date) > 6) continue;
+      const raw = (asc[j] as any).value;
+      if (raw == null) continue; // gaps are not zero-stream days (Number(null) would be 0)
+      const v = Number(raw);
       if (!Number.isFinite(v)) continue;
       sum += v;
       count += 1;

@@ -341,6 +341,29 @@ export function goToDateWindow(dateIso: string, bounds: ViewWindow | null): View
   return bounds ? clampWindow(window, bounds) : window;
 }
 
+/** What "Go to date" should do for a typed date, given the loaded data extent. Pure so it is unit tested. */
+export type GoToPlan =
+  | { action: "reject"; message: string }
+  | { action: "load"; target: string }
+  | { action: "apply"; target: string; message: string | null };
+
+export function planGoTo(
+  dateIso: string,
+  bounds: ViewWindow | null,
+  canLoadMore: boolean,
+  earliestIso: string = EARLIEST_HISTORY_DATE_ISO,
+): GoToPlan {
+  const day = (iso: string) => formatWindowLabel({ start: iso, end: iso });
+  if (dateIso < earliestIso) return { action: "reject", message: `No data before ${day(earliestIso)}` };
+  if (!bounds) return { action: "apply", target: dateIso, message: null };
+  if (dateIso > bounds.end) return { action: "reject", message: `No data after ${day(bounds.end)}` };
+  if (dateIso < bounds.start) {
+    if (canLoadMore) return { action: "load", target: dateIso };
+    return { action: "apply", target: dateIso, message: `Earliest data here is ${day(bounds.start)}` };
+  }
+  return { action: "apply", target: dateIso, message: null };
+}
+
 /** Smallest range (in days back from `latestIso`) that includes `targetIso` minus the go-to radius, capped at maxDays. */
 export function rangeDaysNeededFor(latestIso: string, targetIso: string, maxDays: number): number {
   const needed = dayNumber(latestIso) - dayNumber(addDaysIso(targetIso, -GO_TO_DATE_RADIUS_DAYS));

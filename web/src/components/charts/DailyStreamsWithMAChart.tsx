@@ -95,7 +95,7 @@ export function DailyStreamsWithMAChart({
   /** Opt-in zoom / granularity / archived-boundary behaviour (see `useChartViewport`). */
   adaptiveView?: ChartViewport;
   firstLiveDateIso?: string | null;
-  onNeedMoreData?: (dateIso: string) => void;
+  onNeedMoreData?: (dateIso: string) => boolean | void;
   adaptiveRootLabel?: string;
 }) {
   const gid = useId();

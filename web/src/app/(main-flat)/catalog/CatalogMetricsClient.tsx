@@ -46,7 +46,7 @@ export function CatalogMetricsClient(props: {
   granularity: Granularity;
   /** Own-catalog only: zoom, adaptive granularity and the archived boundary. Competitor mode leaves this off. */
   adaptive?: boolean;
-  onNeedMoreData?: (dateIso: string) => void;
+  onNeedMoreData?: (dateIso: string) => boolean | void;
   /** Recent-first loading: older history for the artist series arrives after first render. */
   olderArtistHistory?: OlderArtistHistoryTarget | null;
 }) {

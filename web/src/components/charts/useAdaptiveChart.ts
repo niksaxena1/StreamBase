@@ -36,7 +36,7 @@ export function useAdaptiveChart<R extends { date: string }>(args: {
   phone: boolean;
   /** Last pointer was touch/pen: drag selection is disabled so it never fights scrolling. */
   touch: boolean;
-  onNeedMoreData?: (dateIso: string) => void;
+  onNeedMoreData?: (dateIso: string) => boolean | void;
 }) {
   const { view, rows, valueKey, isCumulative, phone, touch } = args;
   const firstLiveIso = args.firstLiveDateIso || FIRST_LIVE_SNAPSHOT_DATE_ISO;

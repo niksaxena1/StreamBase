@@ -28,6 +28,13 @@ function spansGap(row: DailyStreamSourceRow, previous: DailyStreamSourceRow | un
   return Math.round((a - b) / 86_400_000) > 1;
 }
 
+/** A stored delta equal to the cumulative total is the first snapshot of a series (nothing to subtract). */
+function isFirstSnapshotDelta(row: DailyStreamSourceRow): boolean {
+  const net = row.daily_streams_net;
+  const total = row.total_streams_cumulative;
+  return net != null && total != null && Number(net) === Number(total) && Number(total) > 0;
+}
+
 function safeNum(value: unknown): number {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -63,12 +70,17 @@ export function dailyStreamValuesForMixedOwnHistory(
   rowsDesc: DailyStreamSourceRow[],
 ): Array<number | null> {
   return rowsDesc.map((row, index) => {
-    if (row.history_source === "archive") return row.daily_streams_net ?? null;
     const previous = index < rowsDesc.length - 1 ? rowsDesc[index + 1] : null;
+    // A stored delta is only valid against the day before it. Across a gap of more than one day (e.g. the missing
+    // 23 Dec 2025 .. 23 Jan 2026) it would be several days of streams, so it is a gap, never a point.
+    if (spansGap(row, previous ?? undefined)) return null;
+    if (row.history_source === "archive") return row.daily_streams_net ?? null;
     if (previous?.history_source === "live") {
-      if (spansGap(row, previous)) return null;
       return safeNum(row.total_streams_cumulative) - safeNum(previous.total_streams_cumulative);
     }
+    // First live row after the archive: its stored "delta" has no predecessor, so ingestion stored the whole
+    // catalog total (about 2.1 billion) as that day's streams. That is not a daily value.
+    if (isFirstSnapshotDelta(row)) return null;
     return row.daily_streams_net ?? null;
   });
 }

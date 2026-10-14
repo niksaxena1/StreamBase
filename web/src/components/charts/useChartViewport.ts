@@ -3,10 +3,10 @@
 import { useCallback, useMemo, useState } from "react";
 
 import {
-  EARLIEST_HISTORY_DATE_ISO,
   clampWindow,
   goToDateWindow,
   formatWindowLabel,
+  planGoTo,
   type ChartGranularity,
   type GranularityMode,
   type ViewWindow,
@@ -15,7 +15,13 @@ import {
 export type ZoomEntry = { label: string; window: ViewWindow; granularity?: ChartGranularity };
 
 /** A go-to-date that needs older data than is loaded survives the URL change (and any remount it causes). */
-const pendingGoTo = new Map<string, string>();
+const pendingGoTo = new Map<string, { date: string; fromStart: string | null; fromEnd: string | null }>();
+
+/**
+ * Asks the host to load older data (usually by changing the URL range). Return `false` when nothing more can be
+ * loaded (already at the maximum range), so the viewport falls back to the earliest loaded data with a message.
+ */
+export type NeedMoreData = (dateIso: string) => boolean | void;
 
 export type ChartViewport = {
   /** Identifies this chart for the pending go-to-date store. */
@@ -27,6 +33,9 @@ export type ChartViewport = {
   window: ViewWindow | null;
   /** Day highlighted after "Go to date". */
   gotoDate: string | null;
+  /** Short inline message about the last "Go to date" (no data, loading, clamped), or null. */
+  notice: string | null;
+  clearNotice: () => void;
   zoomTo: (window: ViewWindow, label?: string, granularity?: ChartGranularity) => void;
   back: () => void;
   reset: () => void;
@@ -34,7 +43,7 @@ export type ChartViewport = {
    * Zoom to a date. When the date is older than the loaded data and `onNeedMoreData` is given, the request is
    * remembered and `onNeedMoreData(date)` should update the URL range so the server loads it.
    */
-  goTo: (dateIso: string, bounds: ViewWindow | null, onNeedMoreData?: (dateIso: string) => void) => void;
+  goTo: (dateIso: string, bounds: ViewWindow | null, onNeedMoreData?: NeedMoreData) => void;
   /** Complete a remembered go-to-date once enough data has loaded. */
   applyPending: (bounds: ViewWindow | null) => void;
 };
@@ -44,48 +53,66 @@ export function useChartViewport(id: string): ChartViewport {
   const [mode, setMode] = useState<GranularityMode>("auto");
   const [stack, setStack] = useState<ZoomEntry[]>([]);
   const [gotoDate, setGotoDate] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
+  const clearNotice = useCallback(() => setNotice(null), []);
   const zoomTo = useCallback((window: ViewWindow, label?: string, granularity?: ChartGranularity) => {
     setGotoDate(null);
+    setNotice(null);
     setStack((prev) => [...prev, { label: label ?? formatWindowLabel(window, granularity), window, granularity }]);
   }, []);
   const back = useCallback(() => {
     setGotoDate(null);
+    setNotice(null);
     setStack((prev) => prev.slice(0, -1));
   }, []);
   const reset = useCallback(() => {
     setGotoDate(null);
+    setNotice(null);
     setStack([]);
   }, []);
 
-  const applyGoTo = useCallback((dateIso: string, bounds: ViewWindow | null) => {
+  const applyGoTo = useCallback((dateIso: string, bounds: ViewWindow | null, message: string | null) => {
     const window = goToDateWindow(dateIso, bounds);
     const shown = bounds ? clampWindow({ start: dateIso, end: dateIso }, bounds).start : dateIso;
     setStack([{ label: formatWindowLabel({ start: shown, end: shown }), window }]);
     setGotoDate(shown);
+    setNotice(message);
     setMode((current) => (current === "weekly" || current === "monthly" ? "auto" : current));
   }, []);
 
   const goTo = useCallback(
-    (dateIso: string, bounds: ViewWindow | null, onNeedMoreData?: (dateIso: string) => void) => {
-      const target = dateIso < EARLIEST_HISTORY_DATE_ISO ? EARLIEST_HISTORY_DATE_ISO : dateIso;
-      if (bounds && onNeedMoreData && target < bounds.start) {
-        pendingGoTo.set(id, target);
-        onNeedMoreData(target);
+    (dateIso: string, bounds: ViewWindow | null, onNeedMoreData?: NeedMoreData) => {
+      pendingGoTo.delete(id);
+      const plan = planGoTo(dateIso, bounds, Boolean(onNeedMoreData));
+      if (plan.action === "reject") {
+        setNotice(plan.message);
         return;
       }
-      pendingGoTo.delete(id);
-      applyGoTo(target, bounds);
+      if (plan.action === "load" && onNeedMoreData && bounds) {
+        pendingGoTo.set(id, { date: plan.target, fromStart: bounds.start, fromEnd: bounds.end });
+        setNotice("Loading earlier history…");
+        if (onNeedMoreData(plan.target) === false) {
+          pendingGoTo.delete(id);
+          applyGoTo(plan.target, bounds, `Earliest data here is ${formatWindowLabel({ start: bounds.start, end: bounds.start })}`);
+        }
+        return;
+      }
+      applyGoTo(plan.target, bounds, plan.action === "apply" ? plan.message : null);
     },
     [applyGoTo, id],
   );
 
   const applyPending = useCallback(
     (bounds: ViewWindow | null) => {
-      const date = pendingGoTo.get(id);
-      if (!date || !bounds || date < bounds.start) return;
+      const pending = pendingGoTo.get(id);
+      if (!pending || !bounds) return;
+      // Wait until the loaded extent actually changed (the server delivered the wider range).
+      if (bounds.start === pending.fromStart && bounds.end === pending.fromEnd) return;
       pendingGoTo.delete(id);
-      applyGoTo(date, bounds);
+      const plan = planGoTo(pending.date, bounds, false);
+      if (plan.action === "reject") setNotice(plan.message);
+      else applyGoTo(plan.target, bounds, plan.action === "apply" ? plan.message : null);
     },
     [applyGoTo, id],
   );
@@ -93,7 +120,7 @@ export function useChartViewport(id: string): ChartViewport {
   const window = stack.length ? stack[stack.length - 1].window : null;
 
   return useMemo(
-    () => ({ id, mode, setMode, stack, window, gotoDate, zoomTo, back, reset, goTo, applyPending }),
-    [id, mode, stack, window, gotoDate, zoomTo, back, reset, goTo, applyPending],
+    () => ({ id, mode, setMode, stack, window, gotoDate, notice, clearNotice, zoomTo, back, reset, goTo, applyPending }),
+    [id, mode, stack, window, gotoDate, notice, clearNotice, zoomTo, back, reset, goTo, applyPending],
   );
 }
