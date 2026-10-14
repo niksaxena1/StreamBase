@@ -84,3 +84,16 @@ export function useChartStartDate() {
   return ctx;
 }
 
+
+/**
+ * Replace the user's "chart start date" for a subtree. Used when the page's own range control deliberately asks for
+ * older history (Catalog "All history"), which the global clip would otherwise hide.
+ */
+export function ChartStartDateOverride({ iso, children }: { iso: string | null; children: ReactNode }) {
+  const parent = useChartStartDate();
+  const value = useMemo<ChartStartDateState>(
+    () => (iso ? { ...parent, chartStartDateIso: iso } : parent),
+    [parent, iso],
+  );
+  return <ChartStartDateContext.Provider value={value}>{children}</ChartStartDateContext.Provider>;
+}

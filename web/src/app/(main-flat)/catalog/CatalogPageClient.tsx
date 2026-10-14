@@ -43,6 +43,7 @@ import { useLongPress } from "@/components/charts/useLongPress";
 import type { TrackSeriesPoint, TrackDailyPoint, SelectedTrack, TrackPlaylistMembership, TopTrack, ChartDataPoint, DailyDataPoint, ArtistOption, TrackOption } from "./catalogTypes";
 import { sortTopTracks, toggleSort, type SortState, type TopSortKey } from "./catalogUtils";
 import { CATALOG_ALL_HISTORY_DAYS } from "./catalogPageUtils";
+import { ChartStartDateOverride } from "@/components/charts/ChartStartDateContext";
 import { FreshnessLabel } from "@/components/ui/DataStates";
 
 const DailyStreamsChart = dynamic(
@@ -331,7 +332,7 @@ export function CatalogPageClient(props: {
   }
 
   return (
-    <>
+    <ChartStartDateOverride iso={mode === "own" && props.rangeDays > 365 ? "2000-01-01" : null}>
       <DocumentTitle title={pageTitle} />
       <RememberTrackSelection datasetMode={mode} artistId={props.artistId} hasTrack={!!props.isrc} />
       <PageHeader
@@ -1122,6 +1123,6 @@ export function CatalogPageClient(props: {
           {!props.isrc ? <EmptyState colSpan={6} message="Select a track to see memberships." /> : null}
         </GlassTable>
       </div>
-    </>
+    </ChartStartDateOverride>
   );
 }
