@@ -71,7 +71,8 @@ class PG:
         self.reads.append((table, columns, filters))
         rows = self.tables[table]
         if table == "artist_tools_runs":
-            return [row for row in rows if row["status"] == "success"]
+            return [row for row in rows if row.get("run_date") == D
+                    and ("status=eq.success" not in filters or row["status"] == "success")]
         return rows
 
     def select_all(self, table, columns, filters, **kwargs):
@@ -423,3 +424,118 @@ def test_bootstrap_long_retry_does_not_repeat_limited_listing_tool():
     assert summary["reconcile_rate_limited"] and summary["observation_incomplete"]
     assert summary["remaining_unsaved"] == 3
     assert [name for name, _ in client.calls] == ["list_dashboard_entities"]
+
+
+@pytest.mark.parametrize("signal", [
+    {"alreadyInFolder": True}, {"alreadyPresent": True}, {"duplicate": True},
+    {"exists": True}, {"code": "TRACK_ALREADY_EXISTS"}, {"status": "duplicate"},
+    {"error": {"code": "ALREADY_IN_FOLDER"}},
+])
+def test_already_present_add_continues(signal):
+    pg = PG()
+    pg.tables["artist_tools_saved_tracks"] = [{"spotify_track_id": "spotify-A"}]
+    client = Client([{"result": {"added": False, **signal}}, {"result": {"added": True}},
+                     folder(("B", 120), ("C", 125))])
+    assert run(pg, client) == 0
+    summary = json.loads(daily.SUMMARY_PATH.read_text())
+    assert summary["status"] == "success" and summary["added"] == 1
+    assert summary["observed"] == 2 and summary["fixed"] == 2
+    assert summary["remaining_unsaved"] == 0
+    assert {row["spotify_track_id"] for row in pg.tables["artist_tools_saved_tracks"]} == {
+        "spotify-A", "spotify-B", "spotify-C"}
+    assert [name for name, _ in client.calls] == ["add_entity_to_folder", "add_entity_to_folder",
+                                                "list_dashboard_entities"]
+
+
+@pytest.mark.parametrize("signal", [
+    {"code": "FOLDER_LIMIT"}, {"code": "DAILY_CAP_REACHED"}, {"code": "QUOTA_EXCEEDED"},
+    {"folderFull": True}, {"limitReached": True}, {"quotaExceeded": True},
+    {"error": {"code": "FOLDER_CAPACITY_REACHED"}},
+])
+def test_limit_shaped_add_stops_adds_and_observes(signal):
+    pg = PG()
+    pg.tables["artist_tools_saved_tracks"] = [{"spotify_track_id": "spotify-A"}]
+    client = Client([{"result": {"added": False, **signal}}, folder(("B", 120))])
+    assert run(pg, client) == 0
+    summary = json.loads(daily.SUMMARY_PATH.read_text())
+    assert summary["status"] == "success" and summary["error"] is None
+    assert summary["add_limit_reached"] and summary["added"] == 0
+    assert summary["observed"] == 1 and summary["fixed"] == 1
+    assert summary["remaining_unsaved"] == 2
+    assert [name for name, _ in client.calls] == ["add_entity_to_folder", "list_dashboard_entities"]
+
+
+@pytest.mark.parametrize("result", [
+    {"added": False}, {"added": False, "alreadyInFolder": False, "quotaExceeded": False},
+    {"status": "PENDING"}, {"message": "already in folder"}, None, [], "unexpected",
+])
+def test_unknown_add_shape_stops_adds_and_observes_successfully(result):
+    pg = PG()
+    pg.tables["artist_tools_saved_tracks"] = [{"spotify_track_id": "spotify-A"}]
+    client = Client([{"result": result}, folder(("B", 120))])
+    assert run(pg, client) == 0
+    row = pg.tables["artist_tools_runs"][0]
+    assert row["status"] == "success" and row["details"]["error"] is None
+    assert row["details"]["adds_incomplete"] and row["details"]["add_unconfirmed"]
+    assert row["observed_count"] == 1 and row["fixed_count"] == 1
+    assert row["details"]["remaining_unsaved"] == 2
+    assert len(pg.tables["artist_tools_saved_tracks"]) == 1
+    assert [name for name, _ in client.calls] == ["add_entity_to_folder", "list_dashboard_entities"]
+
+
+def test_add_unconfirmed_diagnostic_contains_only_sanitized_shape(capsys):
+    pg = PG()
+    pg.tables["artist_tools_saved_tracks"] = [{"spotify_track_id": "spotify-A"}]
+    response = {"added": False, "code": "FOLDER_LIMIT", "spotifyId": "private-spotify-id",
+                "name": "Private Track Name", "token": "private-token", "count": 987654321,
+                "message": "private free text " * 4,
+                "metadata": {"ownerId": "private-owner-id", "name": "Short Name", "ok": False},
+                "reason": "TOO_LONG_" * 8}
+    assert run(pg, Client([{"result": response}, folder(("B", 120))])) == 0
+    output = capsys.readouterr().out
+    lines = [line for line in output.splitlines() if "event=add_unconfirmed" in line]
+    assert len(lines) == 1
+    shape = json.loads(lines[0].split("shape=", 1)[1])
+    assert shape == json.loads(daily.SUMMARY_PATH.read_text())["add_unconfirmed_shape"]
+    assert shape["added"] == {"type": "bool", "value": False}
+    assert shape["code"] == {"type": "str", "value": "FOLDER_LIMIT"}
+    assert shape["spotifyId"] == {"type": "str"}
+    assert shape["name"] == {"type": "str"}
+    for value in ("private-spotify-id", "Private Track Name", "private-token", "987654321",
+                  "private free text", "private-owner-id", "Short Name", "TOO_LONG_"):
+        assert value not in output and value not in daily.SUMMARY_PATH.read_text()
+
+
+@pytest.mark.parametrize("status", ["success", "failed", "running"])
+def test_retry_merge_keeps_max_counts_and_earlier_details(status):
+    pg = PG()
+    earlier = {"run_date": D, "status": status, "started_at": "earlier", "added_count": 176,
+               "observed_count": 10, "fixed_count": 0,
+               "details": {"added": 176, "error": "earlier failure", "morning": True}}
+    pg.tables["artist_tools_runs"] = [earlier]
+    assert run(pg, Client([folder(("B", 120))]), max_adds=0) == 0
+    initial = next(rows[0] for table, rows, _ in pg.writes if table == "artist_tools_runs")
+    assert initial["added_count"] == 176 and initial["observed_count"] == 10
+    assert initial["details"]["morning"]
+    row = pg.tables["artist_tools_runs"][0]
+    assert row["added_count"] == 176 and row["observed_count"] == 10 and row["fixed_count"] == 1
+    assert row["status"] == "success" and row["details"]["morning"]
+    assert row["details"]["added"] == 176 and row["details"]["error"] == "earlier failure"
+    retry = row["details"]["retries"][-1]
+    assert retry["added"] == 0 and retry["observed"] == 1 and retry["fixed"] == 1
+    assert retry["status"] == "success" and retry["error"] is None
+
+
+def test_retry_details_keep_last_five_and_preserve_counts_after_failure():
+    pg = PG()
+    pg.tables["artist_tools_runs"] = [{"run_date": D, "status": "success", "added_count": 176,
+        "observed_count": 10, "fixed_count": 4,
+        "details": {"morning": True, "retries": [{"attempt": i} for i in range(5)]}}]
+    assert run(pg, Client([RuntimeError("private-network-error")]), max_adds=0) == 1
+    row = pg.tables["artist_tools_runs"][0]
+    assert row["status"] == "failed"
+    assert (row["added_count"], row["observed_count"], row["fixed_count"]) == (176, 10, 4)
+    assert row["details"]["morning"]
+    retries = row["details"]["retries"]
+    assert len(retries) == 5 and retries[0] == {"attempt": 1}
+    assert retries[-1]["status"] == "failed" and retries[-1]["added"] == 0

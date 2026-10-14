@@ -5,6 +5,7 @@ from contextlib import contextmanager
 from datetime import date, timedelta
 import json
 from pathlib import Path
+import re
 import time
 
 from artist_tools_mcp import (ArtistToolsError, DailyLimit, LeaseBusy, LongRateLimit, MCPClient, RunBudgetExceeded,
@@ -62,6 +63,70 @@ def phase(summary, name):
 def record_long_limit(summary, phase_name, exc):
     summary.update(rate_limited=True, retry_after_seconds=exc.seconds)
     summary[f"{phase_name}_rate_limited"] = True
+
+
+def add_response_shape(result, depth=0):
+    """Retain field types, booleans and short enum codes, never entity values."""
+    if not isinstance(result, dict):
+        return {"type": type(result).__name__}
+    shape = {}
+    for index, (key, value) in enumerate(result.items()):
+        safe_key = key if isinstance(key, str) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,39}", key) else f"redacted_key_{index}"
+        field = {"type": type(value).__name__}
+        normalized = re.sub(r"[^a-z]", "", safe_key.lower())
+        sensitive = any(part in normalized for part in ("id", "name", "token", "secret", "authorization"))
+        if not sensitive and isinstance(value, bool):
+            field["value"] = value
+        elif (normalized in ("code", "errorcode", "status", "reason", "type")
+              and isinstance(value, str) and re.fullmatch(r"[A-Za-z][A-Za-z_-]{0,39}", value)):
+            field["value"] = value
+        elif isinstance(value, dict) and not sensitive and depth < 3:
+            field["fields"] = add_response_shape(value, depth + 1)
+        shape[safe_key] = field
+    return shape
+
+
+def add_response_outcome(shape):
+    """Only explicit positive boolean/code signals establish presence or a cap."""
+    signals = set()
+    for key, field in shape.items():
+        if not isinstance(field, dict):
+            continue
+        if "fields" in field:
+            signals.add(add_response_outcome(field["fields"]))
+        value = field.get("value")
+        signal = key if value is True else value if isinstance(value, str) else ""
+        words = re.sub(r"([a-z])([A-Z])", r"\1_\2", signal).lower().replace("-", "_").split("_")
+        if any(word in ("no", "not", "missing") for word in words):
+            continue
+        normalized = "".join(words)
+        if ("duplicate" in words or "exists" in words
+                or "already" in words and any(word in words for word in ("present", "folder", "saved", "added", "existing"))
+                or normalized in ("infolder", "ispresent", "isduplicate", "alreadyexists")):
+            signals.add("present")
+        if (any(word in words for word in ("limit", "limited", "cap", "capped", "quota"))
+                or normalized in ("folderfull", "atcapacity", "capacityreached", "capacityexceeded")
+                or "capacity" in words and any(word in words for word in ("reached", "exceeded", "full"))):
+            signals.add("limit")
+    # A cap takes precedence over conflicting presence hints: do not keep adding.
+    return "limit" if "limit" in signals else "present" if "present" in signals else "unknown"
+
+
+def merge_run_record(previous, current, retry=False):
+    """Called under the account lease; retain evidence from earlier attempts."""
+    if previous is None:
+        return current
+    merged = dict(current)
+    for count in ("added_count", "observed_count", "fixed_count"):
+        merged[count] = max(previous.get(count) or 0, current[count])
+    details = dict(previous.get("details") or {})
+    if retry:
+        retries = list(details.get("retries") or [])
+        retries.append({**current["details"], "started_at": current["started_at"],
+                        "finished_at": current["finished_at"]})
+        details["retries"] = retries[-5:]
+    merged["details"] = details
+    return merged
 
 
 def isrc_of(row):
@@ -224,13 +289,24 @@ def execute(pg, client, run_date, max_adds, summary, budget):
                 except DailyLimit:
                     summary["add_daily_limited"] = True
                     break
-                result = payload.get("result", payload)
-                if result.get("added") is not True:
-                    raise ArtistToolsError("artist.tools did not confirm the folder add.")
+                result = payload.get("result", payload) if isinstance(payload, dict) else payload
+                confirmed = isinstance(result, dict) and result.get("added") is True
+                if not confirmed:
+                    shape = add_response_shape(result)
+                    summary["add_unconfirmed_shape"] = shape
+                    print(f"[artist.tools] event=add_unconfirmed shape={json.dumps(shape)}", flush=True)
+                    outcome = add_response_outcome(shape)
+                    if outcome == "limit":
+                        summary["add_limit_reached"] = True
+                        break
+                    if outcome != "present":
+                        summary.update(adds_incomplete=True, add_unconfirmed=True)
+                        break
                 pg.upsert("artist_tools_saved_tracks", [{"spotify_track_id": track["spotify_track_id"],
                                                         "isrc": by_spotify[track["spotify_track_id"]]}], "spotify_track_id")
                 saved.add(track["spotify_track_id"])
-                summary["added"] += 1
+                if confirmed:
+                    summary["added"] += 1
 
         except RunBudgetExceeded:
             summary.update(budget_exhausted=True, adds_incomplete=True)
@@ -323,7 +399,7 @@ def run(pg, run_date, runner="manual", max_adds=240, skip_if_done=False,
                "reconcile_daily_limited": False, "observation_incomplete": False, "error": None,
                "add_rate_limited": False, "observe_rate_limited": False, "reconcile_rate_limited": False,
                "retry_after_seconds": None, "budget_exhausted": False, "adds_incomplete": False,
-               "repair_incomplete": False}
+               "repair_incomplete": False, "add_limit_reached": False, "add_unconfirmed": False}
     budget = RunBudget()
     original_timeout = getattr(pg, "timeout_s", None)
     if original_timeout is not None:
@@ -341,10 +417,13 @@ def run(pg, run_date, runner="manual", max_adds=240, skip_if_done=False,
             if skip_if_done and is_done(pg, run_date):
                 summary.update(status="success", skipped=True)
                 return 0
-            pg.upsert("artist_tools_runs", [{"run_date": run_date, "runner": runner, "status": "running",
+            previous_rows = pg.select("artist_tools_runs", "added_count,observed_count,fixed_count,details",
+                                      f"run_date=eq.{run_date}&limit=1")
+            previous = dict(previous_rows[0]) if previous_rows else None
+            pg.upsert("artist_tools_runs", [merge_run_record(previous, {"run_date": run_date, "runner": runner, "status": "running",
                                             "started_at": started, "finished_at": None,
                                             "added_count": 0, "observed_count": 0, "fixed_count": 0,
-                                            "details": {}}], "run_date")
+                                            "details": {}})], "run_date")
             client = client_factory(tokens)
             try:
                 client.check_budget = budget.check
@@ -366,10 +445,10 @@ def run(pg, run_date, runner="manual", max_adds=240, skip_if_done=False,
                 summary["rate_limited"] = summary["rate_limited"] or client.rate_limited
                 summary["daily_limited"] = client.daily_limited
                 tokens.heartbeat()  # Never overwrite a successor's run row after losing the lease.
-                pg.upsert("artist_tools_runs", [{"run_date": run_date, "runner": runner,
+                pg.upsert("artist_tools_runs", [merge_run_record(previous, {"run_date": run_date, "runner": runner,
                     "status": summary["status"], "started_at": started, "finished_at": utcnow().isoformat(),
                     "added_count": summary["added"], "observed_count": summary["observed"],
-                    "fixed_count": summary["fixed"], "details": dict(summary)}], "run_date")
+                    "fixed_count": summary["fixed"], "details": dict(summary)}, retry=True)], "run_date")
         # Database retries can exceed the OAuth lease duration; snapshots are
         # best effort and must not make a completed provider job lose its lease.
         if refresh_snapshots and summary["status"] == "success" and not summary["budget_exhausted"]:

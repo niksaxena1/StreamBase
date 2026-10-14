@@ -67,6 +67,14 @@ required. OAuth and Postgres cannot make the remote rotation atomic.
   exits successfully before any additions. An observation daily limit records partial coverage and available pages; quota
   exhaustion alone is not a hard failure. `observation_incomplete` flags this in
   the summary. Counts beyond the 100-page bound are a hard error.
+- An unconfirmed add logs one sanitized shape line (field names/types, booleans,
+  short codes) and saves it in `add_unconfirmed_shape`; entity names/IDs, tokens
+  and free-text values are withheld. Explicit already-present/duplicate signals
+  save the track in the ledger and continue adding, without inflating `added`.
+  Limit/cap/quota signals stop adds with `add_limit_reached`; unknown shapes stop
+  adds with `adds_incomplete` and `add_unconfirmed`. Observation and repair still
+  run, and these partial outcomes are success. Auth, network and DB errors still
+  fail the run.
 - A server retry delay above `MAX_RETRY_WAIT_SECONDS = 300` raises a distinct
   `LongRateLimit` without sleeping. During adds this sets `add_rate_limited` and
   `retry_after_seconds`, then observation and repair continue. During observation
@@ -87,7 +95,11 @@ required. OAuth and Postgres cannot make the remote rotation atomic.
 Run `python scripts/artist_tools_daily.py run --runner manual --max-adds 240`.
 `--skip-if-done` skips a successful UTC-date run, checked again inside the lease.
 A stale `running` row does not trigger this skip: after acquiring the lease, a
-retry replaces that date's row and finalizes it with the new attempt's outcome.
+retry finalizes that date's row with the new attempt's status and timestamps.
+Both the initial running write and final write preserve the maximum of each
+added/observed/fixed count across attempts. Earlier details are retained, with
+the latest five retry summaries and timestamps under `details.retries`.
+The summary artifact reports the current attempt's counts and flags.
 `--date YYYY-MM-DD` must be UTC today: current counts cannot be dated backwards.
 Retry without `--skip-if-done` if an intentionally limited/partial successful run
 needs another observation pass; interactive calls share the same daily quotas.
