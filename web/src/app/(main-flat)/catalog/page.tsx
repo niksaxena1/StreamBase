@@ -475,7 +475,7 @@ async function CatalogPageContent({
               startDate: maPaddedStartRunDate,
               endDate: latestRunDate,
             }),
-          `catalog-artist-series-fast-v2-${artistId}-${maPaddedStartRunDate}-${latestRunDate}-ov${overrideBuster}`,
+          `catalog-artist-series-fast-v3-${artistId}-${maPaddedStartRunDate}-${latestRunDate}-ov${overrideBuster}`,
           CACHE_TTL_1H,
         )
       : Promise.resolve({ data: [] as CatalogArtistSeriesRow[], error: null }),
