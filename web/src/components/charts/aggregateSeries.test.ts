@@ -64,8 +64,10 @@ describe("selectGranularity", () => {
     expect(selectGranularity(1)).toBe("daily");
     expect(selectGranularity(30)).toBe("daily");
     expect(selectGranularity(186)).toBe("daily");
-    expect(selectGranularity(187)).toBe("weekly");
-    expect(selectGranularity(366)).toBe("weekly");
+    expect(selectGranularity(365)).toBe("daily");
+    expect(selectGranularity(400)).toBe("daily");
+    expect(selectGranularity(401)).toBe("weekly");
+    expect(selectGranularity(500)).toBe("weekly");
     expect(selectGranularity(730)).toBe("weekly");
     expect(selectGranularity(731)).toBe("monthly");
     expect(selectGranularity(1300)).toBe("monthly");
@@ -195,7 +197,7 @@ describe("buildAdaptiveSeries", () => {
   });
 
   it("switches to weekly averages for a long span and keeps newest-first order", () => {
-    const rows = desc(days("2024-01-01", 300, () => 100));
+    const rows = desc(days("2024-01-01", 500, () => 100));
     const result = buildAdaptiveSeries({
       rowsDesc: rows,
       valueKey: "value",
@@ -227,11 +229,11 @@ describe("buildAdaptiveSeries", () => {
   });
 
   it("flags a forced daily view over the daily limit", () => {
-    const rows = desc(days("2024-01-01", 400, () => 1));
+    const rows = desc(days("2024-01-01", 500, () => 1));
     const forced = buildAdaptiveSeries({ rowsDesc: rows, valueKey: "value", isCumulative: false, window: null, mode: "daily" });
     expect(forced.granularity).toBe("daily");
     expect(forced.forcedDaily).toBe(true);
-    expect(forced.rowsDesc).toHaveLength(400);
+    expect(forced.rowsDesc).toHaveLength(500);
     const short = buildAdaptiveSeries({
       rowsDesc: rows,
       valueKey: "value",

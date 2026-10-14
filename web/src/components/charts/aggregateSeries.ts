@@ -17,7 +17,7 @@ export const FIRST_LIVE_SNAPSHOT_DATE_ISO = dataDateFromRunDate(FIRST_LIVE_RUN_D
 export const EARLIEST_HISTORY_DATE_ISO = "2023-07-08";
 
 /** Up to this many visible days Auto stays daily (about six months). */
-export const DAILY_MAX_SPAN_DAYS = 186;
+export const DAILY_MAX_SPAN_DAYS = 400; // keeps existing 30/90/365-day views daily (owner preference)
 /** Up to this many visible days Auto uses weekly buckets (two years); beyond it, monthly. */
 export const WEEKLY_MAX_SPAN_DAYS = 730;
 /** Axis labels carry the year once the span exceeds about ten months. */
