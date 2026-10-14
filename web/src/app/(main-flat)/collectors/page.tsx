@@ -218,6 +218,8 @@ export default async function CollectorsPage({
   const rangeEnd = sp.end && sp.start ? addDaysISO(sp.end, SOT_DATA_LAG_DAYS) : latestRunDate;
   // Seed strict trailing MA7 lines with the six points before the visible range.
   const comparisonRangeStart = rangeStart ? addDaysIso(rangeStart, -6) : rangeStart;
+  // Daily charts need the day before the range (first delta) plus six more for a full trailing MA7 from day one.
+  const seriesWarmStart = rangeStart ? addDaysIso(rangeStart, -7) : rangeStart;
 
   const results = await cachedQueries(
     {
@@ -260,7 +262,7 @@ export default async function CollectorsPage({
             "date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net",
           )
           .eq("collector", selectedCollector)
-          .gte("date", rangeStart!)
+          .gte("date", seriesWarmStart!)
           .lte("date", rangeEnd!)
           .order("date", { ascending: false }),
 
@@ -380,10 +382,13 @@ export default async function CollectorsPage({
   });
 
   const seriesDescRun = (results.series.data ?? []) as CollectorSeriesPoint[];
-  const seriesDesc = seriesDescRun.map((p) => ({
+  const seriesDescWithWarmup = seriesDescRun.map((p) => ({
     ...p,
     date: dataDateFromRunDate(p.date),
   }));
+  const visibleStartDate = rangeStart ? dataDateFromRunDate(rangeStart) : null;
+  const seriesDesc = visibleStartDate ? seriesDescWithWarmup.filter((p) => p.date >= visibleStartDate) : seriesDescWithWarmup;
+  const seriesWarmupDesc = visibleStartDate ? seriesDescWithWarmup.filter((p) => p.date < visibleStartDate) : [];
 
   // All-time series for monthly chart (not affected by date range)
   const seriesAllTimeRun = (results.seriesAllTime.data ?? []) as CollectorSeriesPoint[];
@@ -484,6 +489,7 @@ export default async function CollectorsPage({
       overlapArtistCells={overlapArtistCells}
       summary={summary}
       seriesDesc={seriesDesc as CollectorSeriesPoint[]}
+      seriesWarmupDesc={seriesWarmupDesc as CollectorSeriesPoint[]}
       seriesAllTime={seriesAllTime as CollectorSeriesPoint[]}
       topPlaylists={normalizedTopPlaylists}
       selectedPlaylistsMeta={selectedPlaylists.map((p) => ({

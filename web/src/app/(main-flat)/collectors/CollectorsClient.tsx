@@ -56,6 +56,7 @@ import {
   aggregateByGranularity,
   aggregateMonthlyDelta,
   buildCollectorMetricSeries,
+  trimSeriesToVisible,
   buildCollectorSparklines,
   computeTopTrackCards,
   filterSortCollectorTracks,
@@ -98,6 +99,8 @@ export function CollectorsClient(props: {
   granularity?: Granularity;
   summary: CollectorSummaryRow[];
   seriesDesc: CollectorSeriesPoint[];
+  /** Rows just before the visible range: seed the first daily delta and MA7, never displayed. */
+  seriesWarmupDesc?: CollectorSeriesPoint[];
   seriesAllTime: CollectorSeriesPoint[];
   topPlaylists: TopPlaylistRow[];
   selectedPlaylistsMeta: Array<{
@@ -335,8 +338,11 @@ export function CollectorsClient(props: {
   const latest = props.seriesDesc[0] ?? null;
 
   const series = useMemo(
-    () => buildCollectorMetricSeries(props.seriesDesc, streamPayoutPerStreamUsd),
-    [props.seriesDesc, streamPayoutPerStreamUsd],
+    () => trimSeriesToVisible(
+      buildCollectorMetricSeries([...props.seriesDesc, ...(props.seriesWarmupDesc ?? [])], streamPayoutPerStreamUsd),
+      props.seriesDesc,
+    ),
+    [props.seriesDesc, props.seriesWarmupDesc, streamPayoutPerStreamUsd],
   );
 
   const monthlyData = useMemo(() => {

@@ -23,6 +23,7 @@ export function CollectorsPageWrapper(props: {
   overlapArtistCells: CollectorOverlapArtistCell[];
   summary: CollectorSummaryRow[];
   seriesDesc: CollectorSeriesPoint[];
+  seriesWarmupDesc?: CollectorSeriesPoint[];
   seriesAllTime: CollectorSeriesPoint[];
   topPlaylists: TopPlaylistRow[];
   selectedPlaylistsMeta: Array<{
@@ -55,6 +56,7 @@ export function CollectorsPageWrapper(props: {
         granularity={granularity}
         summary={props.summary}
         seriesDesc={props.seriesDesc}
+        seriesWarmupDesc={props.seriesWarmupDesc}
         seriesAllTime={props.seriesAllTime}
         topPlaylists={props.topPlaylists}
         selectedPlaylistsMeta={props.selectedPlaylistsMeta}

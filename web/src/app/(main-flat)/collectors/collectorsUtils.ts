@@ -432,6 +432,27 @@ export function buildCollectorMetricSeries(seriesDesc: CollectorSeriesPoint[], s
   };
 }
 
+/**
+ * Keep only rows in the visible range after computing deltas and trailing MA7 over visible + warm-up rows,
+ * so the first visible day has its daily value and the MA line starts at the left edge (like Home/Catalog).
+ */
+export function trimSeriesToVisible<T extends Record<string, { cumulative: Array<{ date: string }>; daily: Array<{ date: string }> }>>(
+  series: T,
+  visibleDesc: Array<{ date: string }>,
+): T {
+  const visible = new Set(visibleDesc.map((p) => p.date));
+  const out = {} as T;
+  for (const key of Object.keys(series) as Array<keyof T>) {
+    const s = series[key];
+    out[key] = {
+      ...s,
+      cumulative: s.cumulative.filter((p) => visible.has(p.date)),
+      daily: s.daily.filter((p) => visible.has(p.date)),
+    } as T[keyof T];
+  }
+  return out;
+}
+
 /** Drilldown modal rows: parse, filter by query, and sort by the effective metric. */
 export function filterSortDrillItems(
   drillItems: unknown[],
