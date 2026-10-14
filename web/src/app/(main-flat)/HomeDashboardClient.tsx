@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { useNavigationRouter } from "@/components/shell/useNavigationRouter";
+import { hrefWithPatchedSearchParams } from "@/lib/searchParams";
+import { rangeDaysNeededFor } from "@/components/charts/aggregateSeries";
 import { fetchUserSettingsBundle, invalidateUserSettingsBundle } from "@/lib/userSettingsBundleFetch";
 import { fetchApiJson } from "@/lib/api";
 import { createHomeRequestCache, homePrefetchKey, scheduleVisibleHomePrefetch } from "@/lib/home/homeSectionPrefetch";
@@ -96,6 +99,16 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
   const [granularity] = useSharedGranularity("sb:home:granularity");
   const [primaryContentReady, setPrimaryContentReady] = useState(false);
   const markPrimaryContentReady = useCallback(() => setPrimaryContentReady(true), []);
+  const router = useNavigationRouter();
+  // "Go to date" older than the loaded history: widen the URL range so the server loads it.
+  const handleNeedMoreHistory = useCallback(
+    (dateIso: string) => {
+      if (!props.latestDataDate) return;
+      const range = rangeDaysNeededFor(props.latestDataDate, dateIso, 1200);
+      router.push(hrefWithPatchedSearchParams(window.location.search, { range: String(range), start: null, end: null }, { prefix: "/?" }));
+    },
+    [props.latestDataDate, router],
+  );
   const requestCache = useMemo(() => createHomeRequestCache(), [props.datasetMode, props.competitorLabelKey, props.latestRunDate, props.sp]);
   const fetchSectionJson = useCallback(<T,>(url: string): Promise<T> =>
     requestCache.get(homePrefetchKey(props.datasetMode, props.competitorLabelKey, props.latestRunDate ?? "", url), () => fetchApiJson<T>(url)),
@@ -441,6 +454,16 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
     streamPayoutPerStreamUsd,
   ]);
 
+  // Archived boundary from row provenance: the earliest live snapshot in the loaded history (data-date basis).
+  const firstLiveDataDate = useMemo(() => {
+    if (!props.legacyHistoryEnabled) return null;
+    let first: string | null = null;
+    for (const r of props.history ?? []) {
+      if (r.history_source === "live" && (first === null || r.date < first)) first = r.date;
+    }
+    return first ? dataDateFromRunDate(first) : null;
+  }, [props.legacyHistoryEnabled, props.history]);
+
   // Entity-playlist (TG Total / P Total) values per chart date, appended as extra
   // columns to the hero chart's CSV export. Keyed by data date to match chart rows.
   const heroCsvExtraByDate = useMemo(() => {
@@ -561,6 +584,9 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
       ) : null}
 
       <LazyInteractiveChartSection
+        adaptiveHistory={props.legacyHistoryEnabled}
+        onNeedMoreData={handleNeedMoreHistory}
+        firstLiveDateIso={firstLiveDataDate}
         onPrimaryContentReady={markPrimaryContentReady}
         dailyRangeStorageKey="sb:chart-range:home-daily-streams"
         dailyStreamsData={chartDataDaily}

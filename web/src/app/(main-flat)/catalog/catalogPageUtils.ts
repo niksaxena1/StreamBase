@@ -72,6 +72,9 @@ export function sumLastNDays(desc: Array<{ date: string; daily: number | null }>
 /** Own-catalog Catalog "All history" (stream history is loaded back to 2023-07; archived months are served from the cold copy). */
 export const CATALOG_ALL_HISTORY_DAYS = 1300;
 
+/** Artist All-history ranges load this many recent days first; older history streams in afterwards. */
+export const ARTIST_RECENT_FIRST_DAYS = 365;
+
 export function clampRangeDays(x: unknown) {
   const n = Number(x ?? "30") || 30;
   return Math.max(7, Math.min(CATALOG_ALL_HISTORY_DAYS, n));

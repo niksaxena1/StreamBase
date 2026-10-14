@@ -8,6 +8,10 @@ import { SpotlightCard } from "@/components/ui/SpotlightCard";
 import { AnimatedCounter } from "@/components/ui/AnimatedCounter";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
 import { computeDailyRollingAvg7 } from "@/components/charts/chartUtils";
+import { buildDailyExportRows, type ViewWindow } from "@/components/charts/aggregateSeries";
+import { useChartViewport } from "@/components/charts/useChartViewport";
+import { mergeOlderArtistSeries, useOlderArtistHistory, type OlderArtistHistoryTarget } from "./useOlderArtistHistory";
+import { Loader2 } from "lucide-react";
 import { slugifyForFilename, todayIsoDate } from "@/lib/csv";
 import { dataDateFromRunDate } from "@/lib/sotDates";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
@@ -40,29 +44,51 @@ export function CatalogMetricsClient(props: {
   trackCount: number;
   overrideAnnotations: Array<{ date: string; note: string; title?: string; imageUrl?: string | null }>;
   granularity: Granularity;
+  /** Own-catalog only: zoom, adaptive granularity and the archived boundary. Competitor mode leaves this off. */
+  adaptive?: boolean;
+  onNeedMoreData?: (dateIso: string) => void;
+  /** Recent-first loading: older history for the artist series arrives after first render. */
+  olderArtistHistory?: OlderArtistHistoryTarget | null;
 }) {
+  const older = useOlderArtistHistory(props.olderArtistHistory);
+  const { cumAsc: cumSeriesAsc, dailyDesc: dailyArtistDesc } = useMemo(
+    () =>
+      props.olderArtistHistory
+        ? mergeOlderArtistSeries({
+            recentCumAsc: props.cumSeriesAsc,
+            recentDailyDesc: props.dailyArtistDesc,
+            olderRows: older.rows,
+            startRunDate: props.olderArtistHistory.startRunDate,
+          })
+        : { cumAsc: props.cumSeriesAsc, dailyDesc: props.dailyArtistDesc },
+    [props.olderArtistHistory, props.cumSeriesAsc, props.dailyArtistDesc, older.rows],
+  );
+  const adaptive = props.adaptive ?? false;
+  const cumView = useChartViewport("catalog-artist-total");
+  const dailyView = useChartViewport("catalog-artist-daily");
+  const rootLabel = props.rangeDays > 365 ? "All time" : "Loaded range";
   const { streamPayoutPerStreamUsd } = usePayoutRate();
   const { metric } = useMetric();
   const dailyRange = useDailyRange("sb:chart-range:catalog-artist-daily-streams");
 
   const cumulativeSeriesRaw = useMemo(() => {
     if (metric === "revenue") {
-      return props.cumSeriesAsc.map((p) => ({
+      return cumSeriesAsc.map((p) => ({
         date: dataDateFromRunDate(p.date),
         value: p.value * streamPayoutPerStreamUsd,
       }));
     } else if (metric === "tracks") {
-      return props.cumSeriesAsc.map((p) => ({
+      return cumSeriesAsc.map((p) => ({
         date: dataDateFromRunDate(p.date),
         value: props.trackCount,
       }));
     } else {
-      return props.cumSeriesAsc.map((p) => ({
+      return cumSeriesAsc.map((p) => ({
         date: dataDateFromRunDate(p.date),
         value: p.value,
       }));
     }
-  }, [metric, props.cumSeriesAsc, props.trackCount, streamPayoutPerStreamUsd]);
+  }, [metric, cumSeriesAsc, props.trackCount, streamPayoutPerStreamUsd]);
 
   const cumulativeSeries = useMemo(
     () => aggregateCumulativeSeries(cumulativeSeriesRaw, props.granularity),
@@ -71,22 +97,22 @@ export function CatalogMetricsClient(props: {
 
   const dailyDescRaw = useMemo(() => {
     if (metric === "revenue") {
-      return props.dailyArtistDesc.map((p) => ({
+      return dailyArtistDesc.map((p) => ({
         date: dataDateFromRunDate(p.date),
         daily: p.daily == null ? null : p.daily * streamPayoutPerStreamUsd,
       }));
     } else if (metric === "tracks") {
-      return props.dailyArtistDesc.map((p) => ({
+      return dailyArtistDesc.map((p) => ({
         date: dataDateFromRunDate(p.date),
         daily: 0,
       }));
     } else {
-      return props.dailyArtistDesc.map((p) => ({
+      return dailyArtistDesc.map((p) => ({
         date: dataDateFromRunDate(p.date),
         daily: p.daily,
       }));
     }
-  }, [metric, props.dailyArtistDesc, streamPayoutPerStreamUsd]);
+  }, [metric, dailyArtistDesc, streamPayoutPerStreamUsd]);
 
   const dailyWithMaDesc = useMemo(() => {
     if (props.granularity !== "daily") {
@@ -98,7 +124,7 @@ export function CatalogMetricsClient(props: {
       return computeDailyRollingAvg7(dailyDescRaw);
     }
     const rev = streamPayoutPerStreamUsd;
-    return props.dailyArtistDesc.map((p) => ({
+    return dailyArtistDesc.map((p) => ({
       date: dataDateFromRunDate(p.date),
       daily: p.daily == null ? null : p.daily * (metric === "revenue" ? rev : 1),
       ma7:
@@ -106,7 +132,19 @@ export function CatalogMetricsClient(props: {
           ? null
           : p.ma7 * (metric === "revenue" ? rev : 1),
     }));
-  }, [dailyDescRaw, props.granularity, props.dailyArtistDesc, metric, streamPayoutPerStreamUsd]);
+  }, [dailyDescRaw, props.granularity, dailyArtistDesc, metric, streamPayoutPerStreamUsd]);
+
+  const cumulativeChartData = useMemo(() => [...cumulativeSeries].reverse(), [cumulativeSeries]);
+
+  // CSV exports the visible range at daily resolution (date, total, daily, archived) whatever the chart granularity.
+  const exportRows = (window: ViewWindow | null) =>
+    buildDailyExportRows({
+      dailyRows: dailyDescRaw,
+      dailyKey: "daily",
+      totalRows: cumulativeSeriesRaw,
+      totalKey: "value",
+      window,
+    });
 
   const gl = granularityLabel(props.granularity).toLowerCase();
   const cumulativeLabel = metric === "revenue" ? "Est. revenue (total)" : metric === "streams" ? "Total streams" : "Track count";
@@ -134,6 +172,16 @@ export function CatalogMetricsClient(props: {
 
   return (
     <div className="space-y-4">
+      {props.olderArtistHistory && (older.loading || older.failed) ? (
+        <div
+          role="status"
+          className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs"
+          style={{ borderColor: "var(--sb-border)", background: "var(--sb-surface)", color: "var(--sb-muted)" }}
+        >
+          {older.loading ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+          {older.loading ? "Loading older history…" : "Older history could not be loaded"}
+        </div>
+      ) : null}
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
         <SpotlightCard className="lg:col-span-6 p-3 overflow-visible">
           <div className="flex items-center justify-between gap-3">
@@ -146,14 +194,14 @@ export function CatalogMetricsClient(props: {
               </div>
             </div>
             <ChartCsvDownloadButton
-              rows={cumulativeSeries as unknown as Array<Record<string, unknown>>}
+              rows={(adaptive ? exportRows(cumView.window) : cumulativeSeries) as unknown as Array<Record<string, unknown>>}
               filename={`catalog-artist-${slugifyForFilename(cumulativeLabel)}-${props.rangeDays}d-${todayIsoDate()}.csv`}
               title="Download CSV"
             />
           </div>
           <div className="mt-2 min-h-[200px]">
             <DailyStreamsChart
-              data={[...cumulativeSeries].reverse()}
+              data={cumulativeChartData}
               valueLabel={cumulativeLabel}
               valueFormat={valueFormat}
               yTickFormat={yTickFormat}
@@ -161,6 +209,9 @@ export function CatalogMetricsClient(props: {
               isCumulative={true}
               color={chartColor}
               annotations={chartAnnotations}
+              adaptiveView={adaptive ? cumView : undefined}
+              adaptiveRootLabel={rootLabel}
+              onNeedMoreData={props.onNeedMoreData}
             />
           </div>
         </SpotlightCard>
@@ -178,7 +229,7 @@ export function CatalogMetricsClient(props: {
             <div className="flex flex-wrap items-center justify-end gap-2">
               {metric === "streams" ? <DailyRangeToggle {...dailyRange} /> : null}
               <ChartCsvDownloadButton
-                rows={dailyWithMaDesc as unknown as Array<Record<string, unknown>>}
+                rows={(adaptive ? exportRows(dailyView.window) : dailyWithMaDesc) as unknown as Array<Record<string, unknown>>}
                 filename={`catalog-artist-${slugifyForFilename(dailyLabel)}-${props.rangeDays}d-${todayIsoDate()}.csv`}
                 title="Download CSV"
               />
@@ -194,6 +245,9 @@ export function CatalogMetricsClient(props: {
               heightPx={220}
               dailyColor={chartColor}
               annotations={chartAnnotations}
+              adaptiveView={adaptive ? dailyView : undefined}
+              adaptiveRootLabel={rootLabel}
+              onNeedMoreData={props.onNeedMoreData}
             />
           </div>
         </SpotlightCard>

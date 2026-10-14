@@ -30,6 +30,7 @@ import {
 } from "./catalogPageQueries";
 import {
   MA7_LOOKBACK_DAYS,
+  ARTIST_RECENT_FIRST_DAYS,
   addDays,
   artistNameFor,
   catalogSelectionHref,
@@ -396,6 +397,18 @@ async function CatalogPageContent({
   const maPaddedStartRunDate =
     latestRunDate && startRunDate ? addDays(startRunDate, -MA7_LOOKBACK_DAYS) : null;
 
+  // Artist "All history": the cold artist aggregate takes seconds for large artists (measured ~26 s for the biggest),
+  // so the page renders the recent year first and the client fills the older part from /api/catalog/artist-history.
+  // Tracks stay single-shot (about 0.15 s even cold). Both parts are cachedQuery'd for an hour.
+  const artistRecentFirst = !!latestRunDate && !!startRunDate && rangeDays > ARTIST_RECENT_FIRST_DAYS;
+  const artistStartRunDate = artistRecentFirst && latestRunDate ? addDays(latestRunDate, -ARTIST_RECENT_FIRST_DAYS) : startRunDate;
+  const artistMaPaddedStartRunDate =
+    artistStartRunDate ? addDays(artistStartRunDate, -MA7_LOOKBACK_DAYS) : null;
+  const olderArtistHistory =
+    artistRecentFirst && startRunDate && artistStartRunDate
+      ? { artistId: artistId, startRunDate, endRunDate: addDays(artistStartRunDate, -1) }
+      : null;
+
   const isrc = defaultCatalogIsrc(requestedIsrc || null, artistTracks, "own");
 
   // Selected track playlist memberships (active as-of latestRunDate)
@@ -467,15 +480,15 @@ async function CatalogPageContent({
   void trackSeriesPromise.catch(() => {});
   void trackOverridesPromise.catch(() => {});
   const [{ data: seriesRows }, { data: topTotalRows }, { data: topDailyRows }] = await Promise.all([
-    latestRunDate && startRunDate && maPaddedStartRunDate
+    latestRunDate && startRunDate && artistMaPaddedStartRunDate
       ? cachedQuery(
           async () =>
             await fetchCatalogArtistSeries(svc, {
               artistId,
-              startDate: maPaddedStartRunDate,
+              startDate: artistMaPaddedStartRunDate,
               endDate: latestRunDate,
             }),
-          `catalog-artist-series-fast-v3-${artistId}-${maPaddedStartRunDate}-${latestRunDate}-ov${overrideBuster}`,
+          `catalog-artist-series-fast-v3-${artistId}-${artistMaPaddedStartRunDate}-${latestRunDate}-ov${overrideBuster}`,
           CACHE_TTL_1H,
         )
       : Promise.resolve({ data: [] as CatalogArtistSeriesRow[], error: null }),
@@ -509,8 +522,8 @@ async function CatalogPageContent({
     .map((r) => ({ date: r.date, value: Number(r.streams_cumulative ?? 0) }))
     .sort((a, b) => a.date.localeCompare(b.date));
 
-  const cumSeriesAscRun = startRunDate
-    ? cumSeriesAscRunFull.filter((p) => p.date >= startRunDate)
+  const cumSeriesAscRun = artistStartRunDate
+    ? cumSeriesAscRunFull.filter((p) => p.date >= artistStartRunDate)
     : cumSeriesAscRunFull;
 
   // Keep dates as RUN dates in server payload; UI shifts to "data date" for display.
@@ -520,8 +533,8 @@ async function CatalogPageContent({
 
   const dailyArtistAscRunFull = dailyFromCumulativeAsc(cumSeriesAscRunFull);
   const dailyArtistDescFull = [...dailyArtistAscRunFull].reverse();
-  const dailyArtistDesc = startRunDate
-    ? computeDailyRollingAvg7(dailyArtistDescFull).filter((p) => p.date >= startRunDate)
+  const dailyArtistDesc = artistStartRunDate
+    ? computeDailyRollingAvg7(dailyArtistDescFull).filter((p) => p.date >= artistStartRunDate)
     : computeDailyRollingAvg7(dailyArtistDescFull);
 
   const artist24h = dailyArtistDesc[0]?.daily ?? 0;
@@ -708,6 +721,7 @@ async function CatalogPageContent({
         latestDataDate={latestRunDate ? dataDateFromRunDate(latestRunDate) : null}
         rangeDays={rangeDays}
         cumSeriesAsc={cumSeriesAsc}
+        olderArtistHistory={olderArtistHistory}
         dailyArtistDesc={dailyArtistDesc}
         artist24h={artist24h}
         artist7d={artist7d}

@@ -7,17 +7,21 @@ import {
   CartesianGrid,
   ComposedChart,
   Line,
+  ReferenceArea,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
-import { memo, useId, useMemo } from "react";
+import { memo, useId, useMemo, type ReactElement } from "react";
 import { clipDailySeries, typicalDailyDomain } from "./dailyRange";
 import { CappedDailyPoint } from "./DailyRangeControls";
 import { DailyChartLabels, UniformYAxisTick } from "./DailyChartLabels";
 import { usePhoneChart } from "./usePhoneChart";
+import { AdaptiveChartToolbar } from "./AdaptiveChartToolbar";
+import { useAdaptiveChart } from "./useAdaptiveChart";
+import type { ChartViewport } from "./useChartViewport";
 import { TouchChartPoint, useTouchChartTooltip } from "./useTouchChartTooltip";
 import { formatCompactMoney, formatInt, formatUsd } from "@/lib/format";
 import {
@@ -81,6 +85,10 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
   annotations,
   typicalRange = false,
   ghost = false,
+  adaptiveView,
+  firstLiveDateIso,
+  onNeedMoreData,
+  adaptiveRootLabel,
 }: {
   data: DataPoint[];
   valueLabel?: string;
@@ -96,6 +104,16 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
   typicalRange?: boolean;
   /** Faded backdrop layer (no tooltip, hidden axis labels). */
   ghost?: boolean;
+  /**
+   * Opt-in zoom / granularity / archived-boundary behaviour. Create it with `useChartViewport` in the host.
+   * Ignored when the data is already bucketed by the page-level granularity control.
+   */
+  adaptiveView?: ChartViewport;
+  /** First day of live snapshots; earlier days are shaded and tagged as archived. */
+  firstLiveDateIso?: string | null;
+  /** Go-to-date asked for data older than what is loaded: update the URL range so the server loads it. */
+  onNeedMoreData?: (dateIso: string) => void;
+  adaptiveRootLabel?: string;
 }) {
   const gid = useId();
   const typical = typicalRange && !isCumulative && !ghost;
@@ -108,11 +126,32 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
   const { chartStartDateIso } = useChartStartDate();
   const { zoomDailyYAxis } = useChartAxisZoom();
   const { showWeekendDip } = useWeekendDip();
-  const touchKey = useMemo(() => ({ data, typical, chartStartDateIso }), [data, typical, chartStartDateIso]);
+  const view = ghost ? undefined : adaptiveView;
+  const viewMode = view?.mode;
+  const viewWindow = view?.window;
+  const touchKey = useMemo(
+    () => ({ data, typical, chartStartDateIso, viewMode, viewWindow }),
+    [data, typical, chartStartDateIso, viewMode, viewWindow],
+  );
   const { setContainer: touchContainerRef, pinned, touch, onPointerDownCapture, onPointerUpCapture, onPointerCancelCapture, onPointerMoveCapture } = useTouchChartTooltip(touchKey);
 
-  // Weekend dip applies to daily (non-cumulative) charts, except Tracks
-  const enableWeekendDip = showWeekendDip && !isCumulative && valueLabel !== "Tracks";
+  const filteredData = useMemo(
+    () => filterDailySeriesFromIsoDate(data ?? [], chartStartDateIso),
+    [data, chartStartDateIso],
+  );
+  const adaptive = useAdaptiveChart({
+    view,
+    rows: filteredData,
+    valueKey: "value",
+    isCumulative,
+    firstLiveDateIso,
+    phone,
+    touch,
+    onNeedMoreData,
+  });
+
+  // Weekend dip applies to daily (non-cumulative) charts, except Tracks. Adaptive views only keep it for short daily spans.
+  const enableWeekendDip = showWeekendDip && !isCumulative && valueLabel !== "Tracks" && adaptive.dailyDetail;
 
   // Use theme-aware colors from CSS variables
   const requestedColor = color ?? getChartColor("streams", themeColors);
@@ -129,37 +168,45 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
     annItemsByDate.set(a.date, arr);
   }
 
-  const filteredData = filterDailySeriesFromIsoDate(data ?? [], chartStartDateIso);
-
-  // Reverse data if it's in descending order (newest first) -> charts usually need ascending
-  // Compute weekend dip % when enabled (daily charts, not Tracks)
-  const weekendDipMap = enableWeekendDip ? computeWeekendDipMap(filteredData) : null;
-
-  const rawChartData = [...filteredData].reverse().map((d) => ({
-    ...d,
-    _overrideItems: (annItemsByDate.get(d.date) ?? null)?.map((a) => ({
-      note: a.note,
-      title: a.title,
-      imageUrl: a.imageUrl ?? null,
-    })) ?? null,
-    _weekendDipPct: weekendDipMap?.get(d.date) ?? null,
-  }));
+  // Memoized: at 1,000+ points this chain must not rerun on unrelated state changes (drag selection, pinned tooltip).
+  const { chartData, rawChartData, typicalDomain } = useMemo(() => {
+    const sourceRows = adaptive.rowsDesc;
+    // Reverse data if it's in descending order (newest first) -> charts usually need ascending
+    // Compute weekend dip % when enabled (daily charts, not Tracks)
+    const weekendDipMap = enableWeekendDip ? computeWeekendDipMap(sourceRows) : null;
+    const raw = [...sourceRows].reverse().map((d) => ({
+      ...d,
+      _overrideItems: (annItemsByDate.get(d.date) ?? null)?.map((a) => ({
+        note: a.note,
+        title: a.title,
+        imageUrl: a.imageUrl ?? null,
+      })) ?? null,
+      _weekendDipPct: weekendDipMap?.get(d.date) ?? null,
+    }));
+    const domain = typical ? typicalDailyDomain(raw.map((d) => d.value)) : undefined;
+    const dailyClips = domain ? clipDailySeries(raw.map((d) => d.value), domain) : null;
+    const maClips = domain ? clipDailySeries(raw.map((d) => d.ma7), domain) : null;
+    const rows = raw.map((d, index) => ({
+      ...d,
+      _rangeValue: dailyClips ? dailyClips[index].value : d.value,
+      _rangeEdge: dailyClips?.[index].clipped ?? null,
+      _rangeLabel: dailyClips?.[index].showLabel ?? false,
+      _rangeMa7: maClips ? maClips[index].value : d.ma7,
+      _rangeMaEdge: maClips?.[index].clipped ?? null,
+      _rangeMaLabel: maClips?.[index].showLabel ?? false,
+    }));
+    return { chartData: rows, rawChartData: raw, typicalDomain: domain };
+    // annItemsByDate is derived from `annotations` below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adaptive.rowsDesc, annotations, enableWeekendDip, typical]);
   const hasMA7 = showMA7 && rawChartData.some((d) => d.ma7 !== null && d.ma7 !== undefined);
-  const typicalDomain = typical ? typicalDailyDomain(rawChartData.map((d) => d.value)) : undefined;
-  const dailyClips = typicalDomain ? clipDailySeries(rawChartData.map((d) => d.value), typicalDomain) : null;
-  const maClips = typicalDomain ? clipDailySeries(rawChartData.map((d) => d.ma7), typicalDomain) : null;
-  const chartData = rawChartData.map((d, index) => ({
-    ...d,
-    _rangeValue: dailyClips ? dailyClips[index].value : d.value,
-    _rangeEdge: dailyClips?.[index].clipped ?? null,
-    _rangeLabel: dailyClips?.[index].showLabel ?? false,
-    _rangeMa7: maClips ? maClips[index].value : d.ma7,
-    _rangeMaEdge: maClips?.[index].clipped ?? null,
-    _rangeMaLabel: maClips?.[index].showLabel ?? false,
-  }));
+  // Zoomed out past the daily limit with an explicit "Daily": the 7-day average is the bold line, daily values faint dots.
+  const faintDaily = adaptive.forcedDaily && hasMA7;
   const chartDates = new Set(chartData.map((d) => d.date));
   const annotationDates = [...annItemsByDate.keys()].filter((d) => chartDates.has(d));
-  const highlightDates = chartData.filter((d) => isHighlightDayDateUtc(d.date, weekHighlightDayUtc)).map((d) => d.date);
+  const highlightDates = adaptive.dailyDetail
+    ? chartData.filter((d) => isHighlightDayDateUtc(d.date, weekHighlightDayUtc)).map((d) => d.date)
+    : [];
   const partialDate = chartData.length > 0 && chartData[chartData.length - 1]._isPartial
     ? chartData[chartData.length - 1].date
     : null;
@@ -224,13 +271,33 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
     highlightColor: sundayColor,
     highlightWeekdayUtc: weekHighlightDayUtc,
     showWeekendDipLabels: false,
+    enabled: adaptive.dailyDetail,
     isDark: themeColors.isDark,
   });
+
+  // Hollow point = partial bucket (gaps, unfinished week/month); faint dot = daily value behind a bold 7-day line.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const adaptiveDot = (props: any, radius: number): ReactElement | null => {
+    const payload = props?.payload as Record<string, unknown> | undefined;
+    const x = Number(props?.cx), y = Number(props?.cy);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    if (payload?._partialBucket && typeof payload.value === "number") {
+      return <circle cx={x} cy={y} r={radius + 0.5} fill="var(--sb-bg)" stroke={effectiveColor} strokeWidth={2} strokeDasharray="2 2" />;
+    }
+    if (faintDaily && typeof payload?.value === "number" && payload.value >= 0) {
+      return <circle cx={x} cy={y} r={radius - 1.5} fill={effectiveColor} fillOpacity={0.35} />;
+    }
+    return null;
+  };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const renderDot = (props: any) => {
     const val = (props?.payload as Record<string, unknown>)?.value;
     const edge = props?.payload?._rangeEdge;
+    if (adaptive.active) {
+      const special = adaptiveDot(props, 3);
+      if (special) return special;
+    }
     if (typical && typeof val === "number" && (edge === "low" || edge === "high")) {
       return <CappedDailyPoint cx={Number(props.cx)} cy={Number(props.cy)} formattedValue={fmtYTick(val)} showLabel={false} edge={edge} color={val < 0 ? negativeColor : effectiveColor} index={Number(props.index)} count={chartData.length} />;
     }
@@ -247,6 +314,9 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
   const activeDot = (props: any) => {
     const val = (props?.payload as Record<string, unknown>)?.value;
     const edge = props?.payload?._rangeEdge;
+    if (adaptive.active && props?.payload?._partialBucket && typeof val === "number") {
+      return adaptiveDot(props, 4.5);
+    }
     if (typical && typeof val === "number" && (edge === "low" || edge === "high")) {
       return <CappedDailyPoint cx={Number(props.cx)} cy={Number(props.cy)} formattedValue={fmtYTick(val)} showLabel={false} edge={edge} color={val < 0 ? negativeColor : effectiveColor} index={Number(props.index)} count={chartData.length} />;
     }
@@ -269,6 +339,18 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
 
   return (
     <SectionPerformance name={`daily-series:${valueLabel}`}>
+    {adaptive.active && view ? (
+      <AdaptiveChartToolbar
+        view={view}
+        granularity={adaptive.granularity}
+        forcedDaily={faintDaily}
+        isCumulative={isCumulative}
+        bounds={adaptive.bounds}
+        phone={phone}
+        rootLabel={adaptiveRootLabel}
+        onNeedMoreData={onNeedMoreData}
+      />
+    ) : null}
     <div
       className="relative w-full overflow-visible outline-none"
       ref={touchContainerRef}
@@ -276,13 +358,14 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
       onPointerUpCapture={(event) => { containerProps.onPointerUp(); onPointerUpCapture(event); }}
       onPointerCancelCapture={() => { containerProps.onPointerCancel(); onPointerCancelCapture(); }}
       onPointerMoveCapture={onPointerMoveCapture}
-      {...(ghost ? {} : containerProps)}
+      {...(ghost ? {} : { ...containerProps, onClick: adaptive.guardCopyClick(containerProps.onClick) })}
     >
       <ResponsiveContainer width="100%" height={heightPx} minWidth={0} style={{ overflow: "visible" }}>
         <ChartComponent
           data={chartData}
           margin={{ top: 6, right: 6, left: 0, bottom: 0 }}
           style={{ outline: "none" }}
+          {...adaptive.chartHandlers}
         >
           <defs>
             <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
@@ -318,7 +401,7 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
           ) : null}
           <XAxis
             dataKey="date"
-            tickFormatter={formatXAxisTick}
+            tickFormatter={adaptive.active ? adaptive.tickFormatter : formatXAxisTick}
             stroke={labelColor}
             fontSize={10}
             tickLine={false}
@@ -353,6 +436,7 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
                   isDark={themeColors.isDark}
                   chartColor={effectiveColor}
                   isCumulative={isCumulative}
+                  formatDate={adaptive.active ? adaptive.formatDate : undefined}
                   onValuesFormatted={(v) => {
                     setTooltipValues(v);
                   }}
@@ -364,6 +448,38 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
                 strokeDasharray: "5 5",
                 opacity: 0.8
               }}
+            />
+          ) : null}
+          {/* Archived history (before the first live snapshot): subtle shading with a label */}
+          {adaptive.active && adaptive.archiveShade ? (
+            <ReferenceArea
+              x1={adaptive.archiveShade.x1}
+              x2={adaptive.archiveShade.x2}
+              fill={themeColors.isDark ? "#ffffff" : "#000000"}
+              fillOpacity={themeColors.isDark ? 0.045 : 0.05}
+              stroke="none"
+              ifOverflow="hidden"
+              label={{ value: "Archived history", position: "insideTopLeft", fontSize: 10, fill: labelColor }}
+            />
+          ) : null}
+          {adaptive.dragArea ? (
+            <ReferenceArea
+              x1={adaptive.dragArea.x1}
+              x2={adaptive.dragArea.x2}
+              fill={effectiveColor}
+              fillOpacity={0.15}
+              stroke={effectiveColor}
+              strokeOpacity={0.45}
+              ifOverflow="visible"
+            />
+          ) : null}
+          {adaptive.gotoDate ? (
+            <ReferenceLine
+              x={adaptive.gotoDate}
+              stroke={effectiveColor}
+              strokeWidth={2}
+              strokeDasharray="2 3"
+              ifOverflow="visible"
             />
           ) : null}
           {/* Subtle highlight-day indicator (daily charts) */}
@@ -413,10 +529,11 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
             type="monotone"
             dataKey={typical ? "_rangeValue" : "value"}
             name="value"
-            stroke={strokeZeroOffset ? `url(#${gid}-stroke)` : effectiveColor}
+            stroke={faintDaily ? "transparent" : strokeZeroOffset ? `url(#${gid}-stroke)` : effectiveColor}
             strokeWidth={ghost ? 1.6 : 2}
-            fillOpacity={1}
+            fillOpacity={faintDaily ? 0.5 : 1}
             fill={`url(#${gid})`}
+            connectNulls={false}
             dot={ghost ? false : dot}
             activeDot={ghost ? false : activeDot}
             isAnimationActive={!ghost}
@@ -425,12 +542,12 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
             <Line
               type="monotone"
               dataKey={typical ? "_rangeMa7" : "ma7"}
-              stroke={effectiveMaColor}
-              strokeWidth={3}
+              stroke={faintDaily ? effectiveColor : effectiveMaColor}
+              strokeWidth={faintDaily ? 2.5 : 3}
               dot={maDot}
               activeDot={typical ? maDot : undefined}
               isAnimationActive={false}
-              strokeDasharray="6 4"
+              strokeDasharray={faintDaily ? undefined : "6 4"}
               connectNulls={false}
               name="ma7"
             />
@@ -453,7 +570,9 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
               ...(pinnedPoint.ma7 != null && hasMA7 ? [{ dataKey: "ma7", value: pinnedPoint.ma7, payload: pinnedPoint }] : []),
             ]}
             valueLabel={valueLabel} fmtValue={fmtValue} isDark={themeColors.isDark}
-            chartColor={effectiveColor} onValuesFormatted={setTooltipValues} isCumulative={isCumulative} />
+            chartColor={effectiveColor} onValuesFormatted={setTooltipValues} isCumulative={isCumulative}
+            formatDate={adaptive.active ? adaptive.formatDate : undefined}
+            onZoomHere={adaptive.active && adaptive.granularity !== "daily" ? () => adaptive.drillInto(pinnedPoint.date) : undefined} />
         </div>
       ) : null}
       {ghost ? null : copyModal}

@@ -14,6 +14,10 @@ export function hitTestChartPoint(points: readonly ChartPoint[], x: number, y: n
   return closest;
 }
 
+function isInsidePinnedTooltip(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest("[data-sb-pinned-tooltip]") !== null;
+}
+
 /** Coordinates come from the rendered dots, including clipped points and MA. */
 export function TouchChartPoint({ cx, cy, index, children }: {
   cx?: number; cy?: number; index?: number; children: ReactNode;
@@ -46,6 +50,8 @@ export function useTouchChartTooltip(dataKey: unknown) {
   return {
     setContainer, pinned, touch,
     onPointerDownCapture(event: PointerEvent<HTMLDivElement>) {
+      // Buttons inside the pinned tooltip ("Zoom here") must receive their own pointer events and click.
+      if (isInsidePinnedTooltip(event.target)) { start.current = null; return; }
       const isTouch = event.pointerType === "touch" || event.pointerType === "pen";
       setTouch(isTouch);
       if (!isTouch) setSelection(null);
@@ -58,6 +64,7 @@ export function useTouchChartTooltip(dataKey: unknown) {
       if (event.pointerType === "mouse" && touch) { setTouch(false); setSelection(null); }
     },
     onPointerUpCapture(event: PointerEvent<HTMLDivElement>) {
+      if (isInsidePinnedTooltip(event.target)) { start.current = null; return; }
       const down = start.current;
       start.current = null;
       if (!down || Math.hypot(event.clientX - down.x, event.clientY - down.y) > 10 || event.timeStamp - down.time > 500) return;

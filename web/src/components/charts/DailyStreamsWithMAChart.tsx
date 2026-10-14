@@ -6,17 +6,21 @@ import {
   CartesianGrid,
   ComposedChart,
   Line,
+  ReferenceArea,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
-import { useId, useMemo } from "react";
+import { useId, useMemo, type ReactElement } from "react";
 import { clipDailySeries, typicalDailyDomain } from "./dailyRange";
 import { CappedDailyPoint } from "./DailyRangeControls";
 import { DailyChartLabels, UniformYAxisTick } from "./DailyChartLabels";
 import { usePhoneChart } from "./usePhoneChart";
+import { AdaptiveChartToolbar } from "./AdaptiveChartToolbar";
+import { useAdaptiveChart } from "./useAdaptiveChart";
+import type { ChartViewport } from "./useChartViewport";
 import { TouchChartPoint, useTouchChartTooltip } from "./useTouchChartTooltip";
 
 import { formatCompactMoney, formatInt, formatUsd } from "@/lib/format";
@@ -73,6 +77,10 @@ export function DailyStreamsWithMAChart({
   heightPx = 220,
   annotations,
   typicalRange = false,
+  adaptiveView,
+  firstLiveDateIso,
+  onNeedMoreData,
+  adaptiveRootLabel,
 }: {
   data: DataPoint[];
   valueLabel?: string;
@@ -84,6 +92,11 @@ export function DailyStreamsWithMAChart({
   annotations?: ManualOverrideAnnotation[];
   /** Opt in only for daily streams on Home, Playlists, and Catalog. */
   typicalRange?: boolean;
+  /** Opt-in zoom / granularity / archived-boundary behaviour (see `useChartViewport`). */
+  adaptiveView?: ChartViewport;
+  firstLiveDateIso?: string | null;
+  onNeedMoreData?: (dateIso: string) => void;
+  adaptiveRootLabel?: string;
 }) {
   const gid = useId();
   const typical = typicalRange;
@@ -96,11 +109,32 @@ export function DailyStreamsWithMAChart({
   const { chartStartDateIso } = useChartStartDate();
   const { zoomDailyYAxis } = useChartAxisZoom();
   const { showWeekendDip } = useWeekendDip();
-  const touchKey = useMemo(() => ({ data, typical, chartStartDateIso }), [data, typical, chartStartDateIso]);
+  const view = adaptiveView;
+  const viewMode = view?.mode;
+  const viewWindow = view?.window;
+  const touchKey = useMemo(
+    () => ({ data, typical, chartStartDateIso, viewMode, viewWindow }),
+    [data, typical, chartStartDateIso, viewMode, viewWindow],
+  );
   const { setContainer: touchContainerRef, pinned, touch, onPointerDownCapture, onPointerUpCapture, onPointerCancelCapture, onPointerMoveCapture } = useTouchChartTooltip(touchKey);
 
-  // Weekend dip: always a daily chart, skip for Tracks metric
-  const enableWeekendDip = showWeekendDip && valueLabel !== "Tracks";
+  const filteredData = useMemo(
+    () => filterDailySeriesFromIsoDate(data ?? [], chartStartDateIso),
+    [data, chartStartDateIso],
+  );
+  const adaptive = useAdaptiveChart({
+    view,
+    rows: filteredData,
+    valueKey: "daily",
+    isCumulative: false,
+    firstLiveDateIso,
+    phone,
+    touch,
+    onNeedMoreData,
+  });
+
+  // Weekend dip: always a daily chart, skip for Tracks metric. Adaptive views only keep it for short daily spans.
+  const enableWeekendDip = showWeekendDip && valueLabel !== "Tracks" && adaptive.dailyDetail;
 
   // Use theme-aware colors from CSS variables
   const requestedColor = dailyColor ?? getChartColor("streams", themeColors);
@@ -118,36 +152,44 @@ export function DailyStreamsWithMAChart({
     annItemsByDate.set(a.date, arr);
   }
 
-  const filteredData = filterDailySeriesFromIsoDate(data ?? [], chartStartDateIso);
-
-  // Compute weekend dip % when enabled
-  const weekendDipMap = enableWeekendDip ? computeWeekendDipMap(filteredData) : null;
-
-  const rawChartData = [...filteredData].reverse().map((d) => ({
-    ...d,
-    _overrideItems: (annItemsByDate.get(d.date) ?? null)?.map((a) => ({
-      note: a.note,
-      title: a.title,
-      imageUrl: a.imageUrl ?? null,
-    })) ?? null,
-    _weekendDipPct: weekendDipMap?.get(d.date) ?? null,
-  }));
+  // Memoized: at 1,000+ points this chain must not rerun on unrelated state changes (drag selection, pinned tooltip).
+  const { chartData, rawChartData, typicalDomain } = useMemo(() => {
+    const sourceRows = adaptive.rowsDesc;
+    // Compute weekend dip % when enabled
+    const weekendDipMap = enableWeekendDip ? computeWeekendDipMap(sourceRows) : null;
+    const raw = [...sourceRows].reverse().map((d) => ({
+      ...d,
+      _overrideItems: (annItemsByDate.get(d.date) ?? null)?.map((a) => ({
+        note: a.note,
+        title: a.title,
+        imageUrl: a.imageUrl ?? null,
+      })) ?? null,
+      _weekendDipPct: weekendDipMap?.get(d.date) ?? null,
+    }));
+    const domain = typical ? typicalDailyDomain(raw.map((d) => d.daily)) : undefined;
+    const dailyClips = domain ? clipDailySeries(raw.map((d) => d.daily), domain) : null;
+    const maClips = domain ? clipDailySeries(raw.map((d) => d.ma7), domain) : null;
+    const rows = raw.map((d, index) => ({
+      ...d,
+      _rangeValue: dailyClips ? dailyClips[index].value : d.daily,
+      _rangeEdge: dailyClips?.[index].clipped ?? null,
+      _rangeLabel: dailyClips?.[index].showLabel ?? false,
+      _rangeMa7: maClips ? maClips[index].value : d.ma7,
+      _rangeMaEdge: maClips?.[index].clipped ?? null,
+      _rangeMaLabel: maClips?.[index].showLabel ?? false,
+    }));
+    return { chartData: rows, rawChartData: raw, typicalDomain: domain };
+    // annItemsByDate is derived from `annotations` below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adaptive.rowsDesc, annotations, enableWeekendDip, typical]);
   const hasMa7Data = rawChartData.some((d) => d.ma7 != null && !isNaN(Number(d.ma7)));
-  const typicalDomain = typical ? typicalDailyDomain(rawChartData.map((d) => d.daily)) : undefined;
-  const dailyClips = typicalDomain ? clipDailySeries(rawChartData.map((d) => d.daily), typicalDomain) : null;
-  const maClips = typicalDomain ? clipDailySeries(rawChartData.map((d) => d.ma7), typicalDomain) : null;
-  const chartData = rawChartData.map((d, index) => ({
-    ...d,
-    _rangeValue: dailyClips ? dailyClips[index].value : d.daily,
-    _rangeEdge: dailyClips?.[index].clipped ?? null,
-    _rangeLabel: dailyClips?.[index].showLabel ?? false,
-    _rangeMa7: maClips ? maClips[index].value : d.ma7,
-    _rangeMaEdge: maClips?.[index].clipped ?? null,
-    _rangeMaLabel: maClips?.[index].showLabel ?? false,
-  }));
+  // Zoomed out past the daily limit with an explicit "Daily": the 7-day average is the bold line, daily values faint dots.
+  const faintDaily = adaptive.forcedDaily && hasMa7Data;
   const chartDates = new Set(chartData.map((d) => d.date));
   const annotationDates = [...annItemsByDate.keys()].filter((d) => chartDates.has(d));
-  const highlightDates = chartData.filter((d) => isHighlightDayDateUtc(d.date, weekHighlightDayUtc)).map((d) => d.date);
+  const highlightDates = adaptive.dailyDetail
+    ? chartData.filter((d) => isHighlightDayDateUtc(d.date, weekHighlightDayUtc)).map((d) => d.date)
+    : [];
   const partialDate = chartData.length > 0 && chartData[chartData.length - 1]._isPartial
     ? chartData[chartData.length - 1].date
     : null;
@@ -199,13 +241,33 @@ export function DailyStreamsWithMAChart({
     highlightColor: sundayColor,
     highlightWeekdayUtc: weekHighlightDayUtc,
     showWeekendDipLabels: false,
+    enabled: adaptive.dailyDetail,
     isDark: themeColors.isDark,
   });
+
+  // Hollow point = partial bucket (gaps, unfinished week/month); faint dot = daily value behind a bold 7-day line.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const adaptiveDot = (props: any, radius: number): ReactElement | null => {
+    const payload = props?.payload as Record<string, unknown> | undefined;
+    const x = Number(props?.cx), y = Number(props?.cy);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    if (payload?._partialBucket && typeof payload.daily === "number") {
+      return <circle cx={x} cy={y} r={radius + 0.5} fill="var(--sb-bg)" stroke={effectiveDailyColor} strokeWidth={2} strokeDasharray="2 2" />;
+    }
+    if (faintDaily && typeof payload?.daily === "number" && payload.daily >= 0) {
+      return <circle cx={x} cy={y} r={radius - 1.5} fill={effectiveDailyColor} fillOpacity={0.35} />;
+    }
+    return null;
+  };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const renderDot = (props: any) => {
     const val = (props?.payload as Record<string, unknown>)?.daily;
     const edge = props?.payload?._rangeEdge;
+    if (adaptive.active) {
+      const special = adaptiveDot(props, 3);
+      if (special) return special;
+    }
     if (typical && typeof val === "number" && (edge === "low" || edge === "high")) {
       return <CappedDailyPoint cx={Number(props.cx)} cy={Number(props.cy)} formattedValue={fmtYTick(val)} showLabel={false} edge={edge} color={val < 0 ? negativeColor : effectiveDailyColor} index={Number(props.index)} count={chartData.length} />;
     }
@@ -222,6 +284,9 @@ export function DailyStreamsWithMAChart({
   const activeDot = (props: any) => {
     const val = (props?.payload as Record<string, unknown>)?.daily;
     const edge = props?.payload?._rangeEdge;
+    if (adaptive.active && props?.payload?._partialBucket && typeof val === "number") {
+      return adaptiveDot(props, 4.5);
+    }
     if (typical && typeof val === "number" && (edge === "low" || edge === "high")) {
       return <CappedDailyPoint cx={Number(props.cx)} cy={Number(props.cy)} formattedValue={fmtYTick(val)} showLabel={false} edge={edge} color={val < 0 ? negativeColor : effectiveDailyColor} index={Number(props.index)} count={chartData.length} />;
     }
@@ -243,6 +308,19 @@ export function DailyStreamsWithMAChart({
   const pinnedPoint = pinned ? chartData[pinned.index] : undefined;
 
   return (
+    <>
+    {adaptive.active && view ? (
+      <AdaptiveChartToolbar
+        view={view}
+        granularity={adaptive.granularity}
+        forcedDaily={faintDaily}
+        isCumulative={false}
+        bounds={adaptive.bounds}
+        phone={phone}
+        rootLabel={adaptiveRootLabel}
+        onNeedMoreData={onNeedMoreData}
+      />
+    ) : null}
     <div
       className="relative w-full overflow-visible outline-none"
       ref={touchContainerRef}
@@ -251,12 +329,14 @@ export function DailyStreamsWithMAChart({
       onPointerCancelCapture={() => { containerProps.onPointerCancel(); onPointerCancelCapture(); }}
       onPointerMoveCapture={onPointerMoveCapture}
       {...containerProps}
+      onClick={adaptive.guardCopyClick(containerProps.onClick)}
     >
       <ResponsiveContainer width="100%" height={heightPx} minWidth={0} style={{ overflow: "visible" }}>
         <ComposedChart
           data={chartData}
           margin={{ top: 6, right: 6, left: 0, bottom: 0 }}
           style={{ outline: "none" }}
+          {...adaptive.chartHandlers}
         >
           <defs>
             {/* Area fill gradient: accent above zero, red below zero */}
@@ -292,7 +372,7 @@ export function DailyStreamsWithMAChart({
           />
           <XAxis
             dataKey="date"
-            tickFormatter={formatXAxisTick}
+            tickFormatter={adaptive.active ? adaptive.tickFormatter : formatXAxisTick}
             stroke={labelColor}
             fontSize={10}
             tickLine={false}
@@ -324,6 +404,7 @@ export function DailyStreamsWithMAChart({
                 fmtValue={fmtValue}
                 isDark={themeColors.isDark}
                 chartColor={effectiveDailyColor}
+                formatDate={adaptive.active ? adaptive.formatDate : undefined}
                 onValuesFormatted={(v) => {
                   setTooltipValues(v);
                 }}
@@ -336,6 +417,38 @@ export function DailyStreamsWithMAChart({
               opacity: 0.8,
             }}
           />
+          {/* Archived history (before the first live snapshot): subtle shading with a label */}
+          {adaptive.active && adaptive.archiveShade ? (
+            <ReferenceArea
+              x1={adaptive.archiveShade.x1}
+              x2={adaptive.archiveShade.x2}
+              fill={themeColors.isDark ? "#ffffff" : "#000000"}
+              fillOpacity={themeColors.isDark ? 0.045 : 0.05}
+              stroke="none"
+              ifOverflow="hidden"
+              label={{ value: "Archived history", position: "insideTopLeft", fontSize: 10, fill: labelColor }}
+            />
+          ) : null}
+          {adaptive.dragArea ? (
+            <ReferenceArea
+              x1={adaptive.dragArea.x1}
+              x2={adaptive.dragArea.x2}
+              fill={effectiveDailyColor}
+              fillOpacity={0.15}
+              stroke={effectiveDailyColor}
+              strokeOpacity={0.45}
+              ifOverflow="visible"
+            />
+          ) : null}
+          {adaptive.gotoDate ? (
+            <ReferenceLine
+              x={adaptive.gotoDate}
+              stroke={effectiveDailyColor}
+              strokeWidth={2}
+              strokeDasharray="2 3"
+              ifOverflow="visible"
+            />
+          ) : null}
           {/* Subtle highlight-day indicator (daily charts) */}
           {highlightDates.map((d) => (
             <ReferenceLine
@@ -383,10 +496,11 @@ export function DailyStreamsWithMAChart({
             type="monotone"
             dataKey={typical ? "_rangeValue" : "daily"}
             name="daily"
-            stroke={strokeZeroOffset ? `url(#${gid}-stroke)` : effectiveDailyColor}
+            stroke={faintDaily ? "transparent" : strokeZeroOffset ? `url(#${gid}-stroke)` : effectiveDailyColor}
             strokeWidth={2}
-            fillOpacity={1}
+            fillOpacity={faintDaily ? 0.5 : 1}
             fill={`url(#${gid})`}
+            connectNulls={false}
             dot={dot}
             activeDot={activeDot}
           />
@@ -394,12 +508,12 @@ export function DailyStreamsWithMAChart({
             <Line
               type="monotone"
               dataKey={typical ? "_rangeMa7" : "ma7"}
-              stroke={effectiveMaColor}
-              strokeWidth={3}
+              stroke={faintDaily ? effectiveDailyColor : effectiveMaColor}
+              strokeWidth={faintDaily ? 2.5 : 3}
               dot={maDot}
               activeDot={typical ? maDot : undefined}
               isAnimationActive={false}
-              strokeDasharray="6 4"
+              strokeDasharray={faintDaily ? undefined : "6 4"}
               connectNulls={false}
               name="ma7"
             />
@@ -422,10 +536,13 @@ export function DailyStreamsWithMAChart({
               ...(pinnedPoint.ma7 != null ? [{ dataKey: "ma7", value: pinnedPoint.ma7, payload: pinnedPoint }] : []),
             ]}
             valueLabel={valueLabel} fmtValue={fmtValue} isDark={themeColors.isDark}
-            chartColor={effectiveDailyColor} onValuesFormatted={setTooltipValues} />
+            chartColor={effectiveDailyColor} onValuesFormatted={setTooltipValues}
+            formatDate={adaptive.active ? adaptive.formatDate : undefined}
+            onZoomHere={adaptive.active && adaptive.granularity !== "daily" ? () => adaptive.drillInto(pinnedPoint.date) : undefined} />
         </div>
       ) : null}
       {copyModal}
     </div>
+    </>
   );
 }

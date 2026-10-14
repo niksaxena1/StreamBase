@@ -12,6 +12,8 @@ import { slugifyForFilename, todayIsoDate } from "@/lib/csv";
 import { getChartColor, inferChartMetricFromLabels, useThemeColors } from "@/components/charts/useThemeColors";
 import { useChartStartDate } from "@/components/charts/ChartStartDateContext";
 import { filterDailySeriesFromIsoDate, downsampleSeries } from "@/components/charts/chartUtils";
+import { buildDailyExportRows } from "@/components/charts/aggregateSeries";
+import { useChartViewport } from "@/components/charts/useChartViewport";
 
 type ChartData = {
   date: string;
@@ -56,6 +58,11 @@ type InteractiveChartSectionProps = {
   csvExtraByDate?: Record<string, Record<string, number | null>>;
   onPrimaryContentReady?: () => void;
   dailyRangeStorageKey?: string;
+  /** Archived history is loaded: enable zoom, adaptive granularity and the archived boundary. */
+  adaptiveHistory?: boolean;
+  /** First live day (data-date basis); earlier days are archived. */
+  firstLiveDateIso?: string | null;
+  onNeedMoreData?: (dateIso: string) => void;
 };
 
 type ChartType = "daily" | "total";
@@ -81,7 +88,12 @@ export function InteractiveChartSection({
   csvExtraByDate,
   onPrimaryContentReady,
   dailyRangeStorageKey,
+  adaptiveHistory = false,
+  firstLiveDateIso,
+  onNeedMoreData,
 }: InteractiveChartSectionProps) {
+  const dailyView = useChartViewport("home-daily");
+  const totalView = useChartViewport("home-total");
   useEffect(() => { onPrimaryContentReady?.(); }, [onPrimaryContentReady]);
   const [selectedChartState, setSelectedChartState] =
     useState<ChartType>("daily");
@@ -98,14 +110,15 @@ export function InteractiveChartSection({
   const statRingColor = statAccentColor ?? accentColor;
   const sparklineColor = effectiveColor;
 
-  const dailyFiltered = useMemo(
-    () => downsampleSeries(filterDailySeriesFromIsoDate(dailyStreamsData ?? [], chartStartDateIso)),
-    [dailyStreamsData, chartStartDateIso],
-  );
-  const totalFiltered = useMemo(
-    () => downsampleSeries(filterDailySeriesFromIsoDate(totalStreamsData ?? [], chartStartDateIso)),
-    [totalStreamsData, chartStartDateIso],
-  );
+  // Adaptive history aggregates real daily points itself; peak-picking downsampling would bias the averages.
+  const dailyFiltered = useMemo(() => {
+    const filtered = filterDailySeriesFromIsoDate(dailyStreamsData ?? [], chartStartDateIso);
+    return adaptiveHistory ? filtered : downsampleSeries(filtered);
+  }, [dailyStreamsData, chartStartDateIso, adaptiveHistory]);
+  const totalFiltered = useMemo(() => {
+    const filtered = filterDailySeriesFromIsoDate(totalStreamsData ?? [], chartStartDateIso);
+    return adaptiveHistory ? filtered : downsampleSeries(filtered);
+  }, [totalStreamsData, chartStartDateIso, adaptiveHistory]);
 
   const totalTrend = useMemo(
     () =>
@@ -141,6 +154,22 @@ export function InteractiveChartSection({
   };
 
   const currentChart = chartConfigs[selectedChart];
+  const currentView = selectedChart === "daily" ? dailyView : totalView;
+
+  const csvRows = useMemo(() => {
+    const rows: Array<Record<string, unknown>> = adaptiveHistory
+      ? // Visible range at daily resolution: date, total, daily, archived.
+        buildDailyExportRows({
+          dailyRows: dailyFiltered,
+          dailyKey: "value",
+          totalRows: totalFiltered,
+          totalKey: "value",
+          window: currentView.window,
+          firstLiveIso: firstLiveDateIso ?? undefined,
+        })
+      : (currentChart.data as Array<Record<string, unknown>>);
+    return rows.map((r) => (csvExtraByDate ? { ...r, ...(csvExtraByDate[String(r.date)] ?? {}) } : r));
+  }, [adaptiveHistory, dailyFiltered, totalFiltered, currentView.window, firstLiveDateIso, currentChart.data, csvExtraByDate]);
 
   return (
     <>
@@ -191,9 +220,7 @@ export function InteractiveChartSection({
           <div className="flex flex-wrap items-center gap-2">
             {dailyRangeStorageKey && chartMetric === "streams" && selectedChart === "daily" ? <DailyRangeToggle {...dailyRange} /> : null}
             <ChartCsvDownloadButton
-              rows={(currentChart.data as Array<Record<string, unknown>>).map((r) =>
-                csvExtraByDate ? { ...r, ...(csvExtraByDate[String(r.date)] ?? {}) } : r,
-              )}
+              rows={csvRows}
               filename={`home-${slugifyForFilename(currentChart.title)}-${rangeDays}d-${todayIsoDate()}.csv`}
               title="Download CSV"
             />
@@ -212,6 +239,10 @@ export function InteractiveChartSection({
             showMA7={selectedChart === "daily"}
             isCumulative={selectedChart === "total"}
             annotations={annotations}
+            adaptiveView={adaptiveHistory ? currentView : undefined}
+            firstLiveDateIso={firstLiveDateIso}
+            adaptiveRootLabel="All time"
+            onNeedMoreData={onNeedMoreData}
           />
         </div>
 

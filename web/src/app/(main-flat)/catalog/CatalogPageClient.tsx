@@ -43,6 +43,9 @@ import { useLongPress } from "@/components/charts/useLongPress";
 import type { TrackSeriesPoint, TrackDailyPoint, SelectedTrack, TrackPlaylistMembership, TopTrack, ChartDataPoint, DailyDataPoint, ArtistOption, TrackOption } from "./catalogTypes";
 import { sortTopTracks, toggleSort, type SortState, type TopSortKey } from "./catalogUtils";
 import { CATALOG_ALL_HISTORY_DAYS } from "./catalogPageUtils";
+import { buildDailyExportRows, rangeDaysNeededFor, type ViewWindow } from "@/components/charts/aggregateSeries";
+import { useChartViewport } from "@/components/charts/useChartViewport";
+import type { OlderArtistHistoryTarget } from "./useOlderArtistHistory";
 import { ChartStartDateOverride } from "@/components/charts/ChartStartDateContext";
 import { FreshnessLabel } from "@/components/ui/DataStates";
 
@@ -81,6 +84,8 @@ export function CatalogPageClient(props: {
   latestDataDate?: string | null;
   rangeDays: number;
   cumSeriesAsc: ChartDataPoint[];
+  /** Artist All history: the older part is fetched after the recent year renders. */
+  olderArtistHistory?: OlderArtistHistoryTarget | null;
   dailyArtistDesc: DailyDataPoint[];
   artist24h: number;
   artist7d: number;
@@ -123,6 +128,20 @@ export function CatalogPageClient(props: {
   const pushRange = useCallback(
     (range: number) => router.push(hrefWithPatchedSearchParams(sp, { range: String(range), start: null, end: null })),
     [router, sp],
+  );
+  // Zoom / adaptive granularity is an own-catalog feature; competitor mode keeps its existing charts.
+  const adaptiveCharts = mode === "own";
+  const trackTotalView = useChartViewport("catalog-track-total");
+  const trackDailyView = useChartViewport("catalog-track-daily");
+  const chartRootLabel = props.rangeDays > 365 ? "All time" : "Loaded range";
+  // "Go to date" before the loaded data: widen the URL range so the server loads it (always past 365 days so the
+  // global chart start date no longer clips it).
+  const handleNeedMoreData = useCallback(
+    (dateIso: string) => {
+      if (!props.latestDataDate) return;
+      pushRange(Math.max(366, rangeDaysNeededFor(props.latestDataDate, dateIso, CATALOG_ALL_HISTORY_DAYS)));
+    },
+    [props.latestDataDate, pushRange],
   );
   const handleGranularityChange = useCallback(
     (g: Granularity) =>
@@ -186,6 +205,8 @@ export function CatalogPageClient(props: {
       yTickFormat,
       cumSeries,
       dailySeries,
+      cumSeriesRaw,
+      dailySeriesRaw,
       trackOverrideAnnotations,
       cumulativeTitle: trackMode === "revenue" ? "Track total revenue" : "Track total streams",
       dailyTitle: trackMode === "revenue" ? `Track ${glTrack} revenue` : `Track ${glTrack} streams`,
@@ -194,6 +215,18 @@ export function CatalogPageClient(props: {
       trackChartColor,
     };
   }, [props.isrc, props.trackCumDesc, props.trackDailyWithMaDesc, metric, granularity, streamPayoutPerStreamUsd, props.trackOverrideAnnotations]);
+
+  // CSV exports the visible range at daily resolution (date, total, daily, archived) whatever the chart granularity.
+  const trackExportRows = (window: ViewWindow | null) =>
+    trackChartData
+      ? buildDailyExportRows({
+          dailyRows: trackChartData.dailySeriesRaw,
+          dailyKey: "daily",
+          totalRows: trackChartData.cumSeriesRaw,
+          totalKey: "value",
+          window,
+        })
+      : [];
 
   // Top-track tables only make sense for streams/revenue; treat "tracks" as streams.
   const topTracksMode: "streams" | "revenue" = metric === "revenue" ? "revenue" : "streams";
@@ -492,6 +525,7 @@ export function CatalogPageClient(props: {
             latestDate={props.latestDate}
             rangeDays={props.rangeDays}
             cumSeriesAsc={props.cumSeriesAsc}
+            olderArtistHistory={props.olderArtistHistory}
             dailyArtistDesc={props.dailyArtistDesc}
             artist24h={props.artist24h}
             artist7d={props.artist7d}
@@ -500,6 +534,8 @@ export function CatalogPageClient(props: {
             trackCount={props.trackCount}
             overrideAnnotations={props.artistOverrideAnnotations}
             granularity={granularity}
+            adaptive={adaptiveCharts}
+            onNeedMoreData={handleNeedMoreData}
           />
 
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
@@ -968,7 +1004,7 @@ export function CatalogPageClient(props: {
                   </div>
                 </div>
                 <ChartCsvDownloadButton
-                  rows={trackChartData.cumSeries as unknown as Array<Record<string, unknown>>}
+                  rows={(adaptiveCharts ? trackExportRows(trackTotalView.window) : trackChartData.cumSeries) as unknown as Array<Record<string, unknown>>}
                   filename={`catalog-track-${slugifyForFilename(trackChartData.cumulativeTitle)}-${props.rangeDays}d-${todayIsoDate()}.csv`}
                   title="Download CSV"
                 />
@@ -983,6 +1019,9 @@ export function CatalogPageClient(props: {
                   isCumulative={true}
                   color={trackChartData.trackChartColor}
                   annotations={trackChartData.trackOverrideAnnotations}
+                  adaptiveView={adaptiveCharts ? trackTotalView : undefined}
+                  adaptiveRootLabel={chartRootLabel}
+                  onNeedMoreData={handleNeedMoreData}
                 />
               </div>
             </SpotlightCard>
@@ -1004,7 +1043,7 @@ export function CatalogPageClient(props: {
                 <div className="flex flex-wrap items-center justify-end gap-2">
                   {metric !== "revenue" ? <DailyRangeToggle {...trackDailyRange} /> : null}
                   <ChartCsvDownloadButton
-                    rows={trackChartData.dailySeries as unknown as Array<Record<string, unknown>>}
+                    rows={(adaptiveCharts ? trackExportRows(trackDailyView.window) : trackChartData.dailySeries) as unknown as Array<Record<string, unknown>>}
                     filename={`catalog-track-${slugifyForFilename(trackChartData.dailyTitle)}-${props.rangeDays}d-${todayIsoDate()}.csv`}
                     title="Download CSV"
                   />
@@ -1020,6 +1059,9 @@ export function CatalogPageClient(props: {
                   heightPx={220}
                   dailyColor={trackChartData.trackChartColor}
                   annotations={trackChartData.trackOverrideAnnotations}
+                  adaptiveView={adaptiveCharts ? trackDailyView : undefined}
+                  adaptiveRootLabel={chartRootLabel}
+                  onNeedMoreData={handleNeedMoreData}
                 />
               </div>
             </SpotlightCard>

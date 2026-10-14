@@ -64,6 +64,8 @@ export function DailySeriesTooltip({
   chartColor,
   onValuesFormatted,
   isCumulative,
+  formatDate,
+  onZoomHere,
 }: {
   active?: boolean;
   label?: string;
@@ -74,6 +76,10 @@ export function DailySeriesTooltip({
   chartColor: string;
   onValuesFormatted?: (v: TooltipCopyValues) => void;
   isCumulative?: boolean;
+  /** Adaptive charts: heading formatter ("Thu 14 Mar 2024", "Week of 4 Mar 2024"). */
+  formatDate?: (label: string) => string;
+  /** Pinned (phone) tooltip on a weekly/monthly bucket: drill into that bucket at daily detail. */
+  onZoomHere?: () => void;
 }) {
   // Avoid update loops by only notifying when values change.
   const lastSentKeyRef = useRef<string>("");
@@ -152,7 +158,24 @@ export function DailySeriesTooltip({
           color: "var(--sb-text)",
         }}
       >
-        {label ? <div className="mb-2 text-xs font-medium">{formatTooltipDateSmart(label)}</div> : null}
+        {label ? <div className="mb-2 text-xs font-medium">{formatDate ? formatDate(label) : formatTooltipDateSmart(label)}</div> : null}
+
+        {Boolean(sorted[0]?.payload?._archived) && (
+          <div
+            className="mb-1.5 inline-block rounded px-1.5 py-0.5 text-[10px] font-medium"
+            style={{ backgroundColor: "var(--sb-surface)", color: "var(--sb-muted)" }}
+          >
+            archived
+          </div>
+        )}
+        {!sorted[0]?.payload?._archived && Boolean(sorted[0]?.payload?._straddlesArchive) && (
+          <div
+            className="mb-1.5 inline-block rounded px-1.5 py-0.5 text-[10px] font-medium"
+            style={{ backgroundColor: "var(--sb-surface)", color: "var(--sb-muted)" }}
+          >
+            includes archived days
+          </div>
+        )}
 
         {Boolean(sorted[0]?.payload?._isPartial) && (
           <div
@@ -249,6 +272,38 @@ export function DailySeriesTooltip({
             );
           })
         )}
+
+        {(() => {
+          const p = sorted[0]?.payload as Record<string, unknown> | undefined;
+          const kind = p?._bucketKind;
+          if (kind !== "weekly" && kind !== "monthly") return null;
+          const covered = Number(p?._coverageDays);
+          const calendar = Number(p?._calendarDays);
+          const total = p?._bucketTotal == null ? NaN : Number(p._bucketTotal);
+          return (
+            <div className="mt-1 space-y-0.5 text-[10px]" style={{ color: "var(--sb-muted)" }}>
+              {p?._isAverage ? (
+                <div>avg per day{Number.isFinite(total) ? ` · total ${fmtValue(Math.round(total))}` : ""}</div>
+              ) : (
+                <div>{kind === "weekly" ? "week" : "month"}-end value</div>
+              )}
+              {p?._partialBucket && Number.isFinite(covered) && Number.isFinite(calendar) ? (
+                <div>{covered} of {calendar} days</div>
+              ) : null}
+            </div>
+          );
+        })()}
+
+        {onZoomHere ? (
+          <button
+            type="button"
+            onClick={onZoomHere}
+            className="mt-2 w-full rounded-md border px-2 py-1.5 text-xs font-medium"
+            style={{ borderColor: "var(--sb-border)", backgroundColor: "var(--sb-surface)", color: "var(--sb-text)" }}
+          >
+            Zoom here
+          </button>
+        ) : null}
 
         {weekendDipPct != null && (
           <div
