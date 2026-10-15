@@ -543,8 +543,16 @@ async function recordProviderCall(provider: StreamLookupProvider) {
   const date = todayKey();
   try {
     const svc = supabaseService();
-    const quota = await loadQuotaState();
-    const nextCalls = quota.providers[provider].used + 1;
+    // Today's row holds today's calls only; quota "used" is month-to-date for monthly
+    // providers, so building on it would double-count when the month is summed.
+    const { data: todayRow, error: readError } = await svc
+      .from("stream_lookup_usage")
+      .select("calls")
+      .eq("usage_date", date)
+      .eq("provider", provider)
+      .maybeSingle();
+    if (readError) throw readError;
+    const nextCalls = Number((todayRow as { calls?: number } | null)?.calls ?? 0) + 1;
     const { error } = await svc.from("stream_lookup_usage").upsert(
       [
         {

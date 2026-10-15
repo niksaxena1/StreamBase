@@ -197,8 +197,22 @@ def usage_for_period(pg: Postgrest, run_date: str, existing: list) -> dict:
         }
 
 
+_TODAY_CALLS: dict = {}
+
+
 def record_provider_call(pg: Postgrest, run_date: str, provider: str, current_usage: dict):
+    # current_usage holds the quota view (month-to-date for monthly providers); the stored row
+    # for run_date must hold only that day's calls, or summing the month double-counts.
     current_usage[provider] = int(current_usage.get(provider, 0)) + 1
+    key = (run_date, provider)
+    if key not in _TODAY_CALLS:
+        try:
+            rows = pg.select("stream_lookup_usage", "calls",
+                             f"usage_date=eq.{run_date}&provider=eq.{provider}&limit=1")
+            _TODAY_CALLS[key] = int(rows[0].get("calls") or 0) if rows else 0
+        except Exception:
+            _TODAY_CALLS[key] = 0
+    _TODAY_CALLS[key] += 1
     try:
         pg.upsert(
             "stream_lookup_usage",
@@ -206,7 +220,7 @@ def record_provider_call(pg: Postgrest, run_date: str, provider: str, current_us
                 {
                     "usage_date": run_date,
                     "provider": provider,
-                    "calls": current_usage[provider],
+                    "calls": _TODAY_CALLS[key],
                 }
             ],
             "usage_date,provider",
