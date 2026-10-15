@@ -444,9 +444,9 @@ export function CatalogPageClient(props: {
             <div className="flex-1 min-w-0">
               <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <div className="flex items-center gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
                     <div className="text-xs font-medium">Artist</div>
-                    <div className="sb-ring rounded-xl bg-black/10 px-2.5 py-1.5 dark:bg-white/10 min-w-[280px] w-full max-w-[400px]">
+                    <div className="sb-ring rounded-xl bg-black/10 px-2.5 py-1.5 dark:bg-white/10 min-w-0 sm:min-w-[280px] w-full max-w-[400px]">
                       <Combobox
                         ariaLabel="Select artist"
                         value={props.artistId}
@@ -459,9 +459,9 @@ export function CatalogPageClient(props: {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
                     <div className="text-xs font-medium">Track</div>
-                    <div className="sb-ring rounded-xl bg-black/10 px-2.5 py-1.5 dark:bg-white/10 min-w-[280px] w-full max-w-[400px]">
+                    <div className="sb-ring rounded-xl bg-black/10 px-2.5 py-1.5 dark:bg-white/10 min-w-0 sm:min-w-[280px] w-full max-w-[400px]">
                       <Combobox
                         ariaLabel="Select track"
                         value={props.isrc ?? null}
@@ -544,7 +544,7 @@ export function CatalogPageClient(props: {
           />
 
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-            <div className="space-y-3">
+            <div className="min-w-0 space-y-3">
               <div className="flex items-end justify-between px-1">
                 <div className="flex items-center gap-2">
                   <h2 className="text-sm font-semibold">Tracks (total)</h2>
@@ -632,7 +632,7 @@ export function CatalogPageClient(props: {
                   { label: "SHARE", align: "right" },
                 ]}
                 maxBodyHeightClassName="max-h-56"
-                bodyClassName="overflow-x-hidden"
+                bodyClassName="overflow-x-auto"
               >
                 {topByCumulativeSorted.map((t) => {
                   const isThreshold = t.isrc === concentrationTotal.thresholdIsrc;
@@ -731,7 +731,7 @@ export function CatalogPageClient(props: {
               </GlassTable>
             </div>
 
-            <div className="space-y-3">
+            <div className="min-w-0 space-y-3">
               <div className="flex items-end justify-between px-1">
                 <div className="flex items-center gap-2">
                   <h2 className="text-sm font-semibold">Tracks (daily)</h2>
@@ -819,7 +819,7 @@ export function CatalogPageClient(props: {
                   { label: "SHARE", align: "right" },
                 ]}
                 maxBodyHeightClassName="max-h-56"
-                bodyClassName="overflow-x-hidden"
+                bodyClassName="overflow-x-auto"
               >
                 {topByDailySorted.map((t) => {
                   const isThreshold = t.isrc === concentrationDaily.thresholdIsrc;

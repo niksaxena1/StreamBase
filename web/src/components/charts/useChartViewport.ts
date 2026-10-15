@@ -12,7 +12,7 @@ import {
   type ViewWindow,
 } from "./aggregateSeries";
 
-export type ZoomEntry = { label: string; window: ViewWindow; granularity?: ChartGranularity };
+export type ZoomEntry = { label: string; window: ViewWindow; granularity?: ChartGranularity; mode?: GranularityMode };
 
 /** A go-to-date that needs older data than is loaded survives the URL change (and any remount it causes). */
 const pendingGoTo = new Map<string, { date: string; fromStart: string | null; fromEnd: string | null }>();
@@ -53,18 +53,28 @@ export type ChartViewport = {
 
 /** Client-only zoom / granularity state for one adaptive chart. Hosts call this and hand the result to the chart. */
 export function useChartViewport(id: string): ChartViewport {
-  const [mode, setMode] = useState<GranularityMode>("auto");
+  const [overviewMode, setOverviewMode] = useState<GranularityMode>("auto");
   const [stack, setStack] = useState<ZoomEntry[]>([]);
   const [gotoDate, setGotoDate] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [compare, setCompare] = useState(false);
 
+  const mode = stack.at(-1)?.mode ?? overviewMode;
+  const setMode = useCallback((next: GranularityMode) => {
+    if (stack.length) setStack((prev) => prev.map((entry, index) => index === prev.length - 1 ? { ...entry, mode: next } : entry));
+    else setOverviewMode(next);
+  }, [stack.length]);
+
   const clearNotice = useCallback(() => setNotice(null), []);
   const zoomTo = useCallback((window: ViewWindow, label?: string, granularity?: ChartGranularity) => {
     setGotoDate(null);
     setNotice(null);
-    setStack((prev) => [...prev, { label: label ?? formatWindowLabel(window, granularity), window, granularity }]);
-  }, []);
+    // A bucket drill always opens daily detail; Back/Reset retain the overview's selection.
+    setStack((prev) => [...prev, {
+      label: label ?? formatWindowLabel(window, granularity), window, granularity,
+      mode: granularity === "weekly" || granularity === "monthly" ? "daily" : mode,
+    }]);
+  }, [mode]);
   const back = useCallback(() => {
     setGotoDate(null);
     setNotice(null);
@@ -79,11 +89,11 @@ export function useChartViewport(id: string): ChartViewport {
   const applyGoTo = useCallback((dateIso: string, bounds: ViewWindow | null, message: string | null) => {
     const window = goToDateWindow(dateIso, bounds);
     const shown = bounds ? clampWindow({ start: dateIso, end: dateIso }, bounds).start : dateIso;
-    setStack([{ label: formatWindowLabel({ start: shown, end: shown }), window }]);
+    setStack([{ label: formatWindowLabel({ start: shown, end: shown }), window,
+      mode: mode === "weekly" || mode === "monthly" ? "auto" : mode }]);
     setGotoDate(shown);
     setNotice(message);
-    setMode((current) => (current === "weekly" || current === "monthly" ? "auto" : current));
-  }, []);
+  }, [mode]);
 
   const goTo = useCallback(
     (dateIso: string, bounds: ViewWindow | null, onNeedMoreData?: NeedMoreData) => {
@@ -125,6 +135,6 @@ export function useChartViewport(id: string): ChartViewport {
 
   return useMemo(
     () => ({ id, mode, setMode, stack, window, gotoDate, notice, clearNotice, zoomTo, back, reset, goTo, applyPending, compare, setCompare }),
-    [id, mode, stack, window, gotoDate, notice, clearNotice, zoomTo, back, reset, goTo, applyPending, compare],
+    [id, mode, setMode, stack, window, gotoDate, notice, clearNotice, zoomTo, back, reset, goTo, applyPending, compare],
   );
 }
