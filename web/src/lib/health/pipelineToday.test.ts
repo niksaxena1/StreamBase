@@ -60,10 +60,10 @@ describe("buildPipelineTimeline", () => {
     expect(find(t, "second-look")).toMatchObject({ status: "neutral", label: "Not needed" });
   });
 
-  it("flags a missing second-look dispatch after 11:40 UTC when tracks stay unfixed", () => {
+  it("flags a missing second-look dispatch after 17:40 UTC when tracks stay unfixed", () => {
     const data = base({ stale: { affected: 100, unfixed: 12, fixed: 88, rejected: 0, by_source: {} } });
-    expect(find(buildPipelineTimeline(data, new Date(`${RUN}T11:00:00Z`)), "second-look").label).toBe("Scheduled");
-    const late = find(buildPipelineTimeline(data, new Date(`${RUN}T12:30:00Z`)), "second-look");
+    expect(find(buildPipelineTimeline(data, new Date(`${RUN}T17:00:00Z`)), "second-look").label).toBe("Scheduled");
+    const late = find(buildPipelineTimeline(data, new Date(`${RUN}T18:30:00Z`)), "second-look");
     expect(late.status).toBe("amber");
   });
 
@@ -83,10 +83,10 @@ describe("buildPipelineTimeline", () => {
     expect(find(buildPipelineTimeline(failed, new Date(`${RUN}T13:00:00Z`)), "second-look").status).toBe("red");
   });
 
-  it("marks a stage that has not started by 08:30 UTC red and before that neutral", () => {
+  it("marks a stage that has not started by 15:30 UTC red and before that neutral", () => {
     const data = base({ stages: [], dispatches: [] });
-    expect(find(buildPipelineTimeline(data, new Date(`${RUN}T05:00:00Z`)), "own-refresh").status).toBe("neutral");
-    expect(find(buildPipelineTimeline(data, new Date(`${RUN}T09:00:00Z`)), "own-refresh").status).toBe("red");
+    expect(find(buildPipelineTimeline(data, new Date(`${RUN}T12:00:00Z`)), "own-refresh").status).toBe("neutral");
+    expect(find(buildPipelineTimeline(data, new Date(`${RUN}T16:00:00Z`)), "own-refresh").status).toBe("red");
   });
 
   it("treats started as amber, stuck started (over 150 min) as red, failure as red, skipped as green", () => {
@@ -123,8 +123,8 @@ describe("buildPipelineTimeline", () => {
     const failed = base({ artist_tools: { ...base().artist_tools!, status: "failed", error: "re-run authorize" } });
     expect(find(buildPipelineTimeline(failed, new Date(`${RUN}T20:00:00Z`)), "artist-tools").status).toBe("red");
     const none = base({ artist_tools: null });
-    expect(find(buildPipelineTimeline(none, new Date(`${RUN}T12:00:00Z`)), "artist-tools")).toMatchObject({ status: "neutral", label: "Scheduled" });
-    expect(find(buildPipelineTimeline(none, new Date(`${RUN}T16:00:00Z`)), "artist-tools").status).toBe("red");
+    expect(find(buildPipelineTimeline(none, new Date(`${RUN}T17:00:00Z`)), "artist-tools")).toMatchObject({ status: "neutral", label: "Scheduled" });
+    expect(find(buildPipelineTimeline(none, new Date(`${RUN}T21:00:00Z`)), "artist-tools").status).toBe("red");
   });
 
   it("side jobs: HTTP status shown, non-2xx red, overdue daily job amber, monthly job never overdue", () => {

@@ -36,7 +36,7 @@ on:
         default: false
   schedule:
     # Late fallback; the Supabase scheduler normally dispatches each stage.
-    - cron: "30 9 * * *"
+    - cron: "30 16 * * *"
 
 concurrency:
   group: sot-competitor-pipeline

@@ -6,7 +6,7 @@ permissions:
 
 on:
   schedule:
-    - cron: "41 9 * * *" # 13:41 Dubai / 09:41 UTC daily
+    - cron: "41 16 * * *" # 20:41 Dubai / 16:41 UTC daily (fallback)
   workflow_dispatch:
     inputs:
       mock_email_preview:
@@ -15,7 +15,7 @@ on:
         type: boolean
         default: false
       second_look:
-        description: Re-check only tracks that are still stale (dispatched by the database at 11:30 UTC)
+        description: Re-check only tracks that are still stale (dispatched by the database at 17:30 UTC)
         required: false
         type: boolean
         default: false
@@ -385,7 +385,7 @@ jobs:
           html_body: ${{ steps.notify_check.outputs.html_body }}
 
       # Always hand off to artist.tools, including when RapidAPI failed or hit quota.
-      # The second look does not: artist.tools has its own 13:17 UTC database dispatch.
+      # The second look does not: artist.tools has its own 18:17 UTC database dispatch.
       - name: Start artist.tools fallback
         if: always() && github.event.inputs.mock_email_preview != 'true' && github.event.inputs.second_look != 'true'
         env:

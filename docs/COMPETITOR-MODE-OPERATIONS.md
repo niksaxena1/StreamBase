@@ -47,18 +47,18 @@ The three SpotOnTrack workflows regenerate `config/competitor_playlists.csv` fro
 
 The competitor SpotOnTrack pipeline is one workflow, `sot_competitor_daily_pipeline.yml`,
 started by the Supabase scheduler (`ops.pipeline_tick`, pg_cron) with
-`repository_dispatch` type `competitor-pipeline`: refresh at 05:23 UTC (09:23 Dubai),
+`repository_dispatch` type `competitor-pipeline`: refresh at 12:16 UTC (16:16 Dubai),
 then dashboard sync + export 10 minutes after the refresh reports success. It has its
 own concurrency group (`sot-competitor-pipeline`) and writes only to the `competitor`
-schema. If today's competitor data is not ingested by 08:30 UTC the scheduler emails an
-alert; a 09:30 UTC GitHub cron runs the full pipeline as a fallback. The old
+schema. If today's competitor data is not ingested by 15:30 UTC the scheduler emails an
+alert; a 16:30 UTC GitHub cron runs the full pipeline as a fallback. The old
 refresh/sync/export/watchdog workflows are manual-only. Dashboard sync restores
 competitor state, saves partial progress, and runs a full sync on Sundays UTC or with
 manual `full_sync`. See [Daily pipeline](DAILY-PIPELINE.md) for setup, manual runs and recovery.
 
 ## First-run checklist
 
-1. Run **SOT Competitor Daily Pipeline** manually with `stage=full`, or wait for the scheduler's 05:23 UTC start.
+1. Run **SOT Competitor Daily Pipeline** manually with `stage=full`, or wait for the scheduler's 12:16 UTC start.
 2. Monitor the competitor dashboard sync workflow as it populates the SpotOnTrack dashboard.
 3. Verify the pipeline's sync + export job succeeds.
 4. Run the Spotify competitor enrichment workflow to fill track metadata and playlist thumbnails.
@@ -88,7 +88,7 @@ before using the form; it is not applied automatically by the app or workflows.
 1. In SpotOnTrack, open the competitor playlist and create an empty dashboard for it.
 2. As an administrator in Competitor Mode, open `/competitors` and click **Add competitor**. Choose a new or existing label, enter names, and paste the Spotify playlist, SpotOnTrack playlist, and dashboard links. Keys are derived from the names and may be overridden. Dashboard name defaults to playlist name; minimum rows defaults to 1.
 3. The admin-only `POST /api/competitors/onboard` validates inputs before constructing the service-role client. It rejects existing keys, Spotify/SpotOnTrack playlists and dashboards, writes only `competitor.labels` / `competitor.playlists`, and calls `competitor.onboard_competitor` once via RPC. Label insertion/reactivation and playlist insertion share one transaction: any SQL error rolls back all changes, so there is no client-side compensating deletion or half-created label after a lost response. An identical retry returns HTTP 200 with the existing label and playlist records; a new insertion returns HTTP 201. Retry matching checks every requested playlist field and, for a new label, its name/accent (hex case is ignored); different configuration returns 409. The function serializes concurrent onboarding requests with a competitor-only transaction advisory lock and unique indexes protect identities. Successful writes invalidate only the competitor ops page and selector cache; own-catalog cache tags are untouched. No per-competitor migration or CSV commit is needed.
-4. The next refresh picks up the new playlist. Successful non-manual refresh chains to dashboard sync after a 10-minute wait, then export; fallback crons remain 05:23 / 08:53 / 11:29 UTC. To start sooner, run all three manually in order (manual refresh/sync do not chain). Totals appear after ingestion; daily deltas need two snapshots.
+4. The next refresh picks up the new playlist. Successful non-manual refresh chains to dashboard sync after a 10-minute wait, then export; the GitHub fallback cron is 16:30 UTC. To start sooner, run all three manually in order (manual refresh/sync do not chain). Totals appear after ingestion; daily deltas need two snapshots.
 5. Run Spotify competitor enrichment to populate thumbnails. If the accent was blank, it is stored as NULL: every label load already calls `applyResolvedLabelAccents` to give it a canonical palette fallback, including harmonization and pinned-brand handling. Then run `cd web && npm run extract-competitor-accents` with the existing Supabase credentials to extract and persist its artwork accent through the same resolver as existing labels. This is an operator step, not an automatic workflow. Provided accents are harmonized at load time too; `--force` intentionally re-extracts all existing/custom accents.
 6. Verify `/competitors` and the global competitor selector. Optionally refresh and commit the snapshot with `python scripts/export_competitor_config_from_db.py`; `--check` reports drift and fails on DB errors. `/health` in Competitor Mode distinguishes a stale committed snapshot from rows missing in the DB.
 

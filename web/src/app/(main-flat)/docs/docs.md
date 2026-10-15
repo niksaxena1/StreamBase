@@ -455,19 +455,19 @@ This part describes how the system is built, protected, and operated.
 
 ## Daily automation schedule
 
-Times are **UTC** with Dubai time (UTC+4). The Supabase database scheduler starts the own-catalog pipeline at 05:07 UTC and the competitor pipeline at 05:23 UTC. It can retry a failed or stalled stage once and emails an alert when ingestion has not succeeded by 08:30 UTC. GitHub Actions runs the dispatched work; its scheduled fallback runs may start late.
+Times are **UTC** with Dubai time (UTC+4). The Supabase database scheduler starts the own-catalog pipeline at 12:00 UTC (16:00 Dubai) and the competitor pipeline at 12:16 UTC. It can retry a failed or stalled stage once and emails an alert when ingestion has not succeeded by 15:30 UTC. GitHub Actions runs the dispatched work; its scheduled fallback runs may start late.
 
 ### Own-catalog schedule
 
 | Workflow | Trigger / time (UTC) | Dubai (UTC+4) | What it does |
 |---|---|---:|---|
 | Spotify Takedown Watch (`spotify_takedown_watch.yml`) | Daily 20:00 (database scheduler) | 00:00 | Checks own-catalog tracks for Spotify availability changes |
-| Own daily pipeline (`sot_own_daily_pipeline.yml`) | Database scheduler dispatch at 05:07; sync + export after refresh succeeds; GitHub fallback cron 09:00 | 09:07 | Refreshes SpotOnTrack playlists, syncs dashboards with `config/playlists.csv`, exports and ingests into Supabase (idempotent) |
-| RapidAPI stale-track fix (`rapidapi_stale_fix.yml`) | Dispatched after a successful, current-UTC-date own-catalog export is ingested; daily fallback cron 09:41 | 13:41 | Attempts own-catalog stale-track corrections |
-| RapidAPI stale-track second look (`rapidapi_stale_fix.yml`, `second_look=true`) | Database scheduler dispatch 11:30 | 15:30 | Re-checks only tracks that are still stale after the morning fix, using the same free providers within their caps |
+| Own daily pipeline (`sot_own_daily_pipeline.yml`) | Database scheduler dispatch at 12:00; sync + export after refresh succeeds; GitHub fallback cron 16:00 | 16:00 | Refreshes SpotOnTrack playlists, syncs dashboards with `config/playlists.csv`, exports and ingests into Supabase (idempotent) |
+| RapidAPI stale-track fix (`rapidapi_stale_fix.yml`) | Dispatched after a successful, current-UTC-date own-catalog export is ingested; daily fallback cron 16:41 | 20:41 | Attempts own-catalog stale-track corrections |
+| RapidAPI stale-track second look (`rapidapi_stale_fix.yml`, `second_look=true`) | Database scheduler dispatch 17:30 | 21:30 | Re-checks only tracks that are still stale after the first fix, using the same free providers within their caps |
 | Spotify enrichment (`spotify_enrich.yml`) | 10:29 UTC on odd days of the month | 14:29 | Refreshes own playlist thumbnails, then enriches missing track metadata via Spotify |
-| Deadline check (Supabase `ops.pipeline_tick`) | 08:30 | 12:30 | Emails if today's own-catalog ingestion has not succeeded |
-| Artist Tools Daily (`artist_tools_daily.yml`) | Dispatched whenever RapidAPI stale-fix finishes; daily database dispatch (pg_cron) 13:17 | 17:17 | Records artist counts and repairs remaining stale tracks |
+| Deadline check (Supabase `ops.pipeline_tick`) | 15:30 | 19:30 | Emails if today's own-catalog ingestion has not succeeded |
+| Artist Tools Daily (`artist_tools_daily.yml`) | Dispatched whenever RapidAPI stale-fix finishes; daily database dispatch (pg_cron) 18:17 | 22:17 | Records artist counts and repairs remaining stale tracks |
 | Spotify artist image cache refresh (`spotify_artist_image_refresh.yml`) | Fridays at 15:00 (database scheduler); runs only when UTC day-of-month is 1–7 | 19:00 | Refreshes cached Spotify artist images once on the month's first Friday; manual dispatch is not date-gated |
 | Spotify Playlist Watch Daily (`spotify_playlist_watch_daily.yml`) | Daily 15:11 (database scheduler) | 19:11 | Collects watchlist follower counts and evaluates alert rules |
 | Pipeline Quality CI (`pipeline_quality.yml`) | Matching pull requests and pushes to `main` that change configured paths; event-triggered, no cron | Event-driven | Runs pipeline tests and workflow lint |
@@ -478,9 +478,9 @@ Competitor workflows are intentionally separate from the own-catalog workflows: 
 
 | Workflow | Trigger / time (UTC) | Dubai (UTC+4) | What it does |
 |---|---|---:|---|
-| Competitor daily pipeline (`sot_competitor_daily_pipeline.yml`) | Database scheduler dispatch at 05:23; sync + export after refresh succeeds; GitHub fallback cron 09:30 | 09:23 | Refreshes competitor playlists, syncs dashboards, exports and ingests into the `competitor` schema |
+| Competitor daily pipeline (`sot_competitor_daily_pipeline.yml`) | Database scheduler dispatch at 12:16; sync + export after refresh succeeds; GitHub fallback cron 16:30 | 16:16 | Refreshes competitor playlists, syncs dashboards, exports and ingests into the `competitor` schema |
 | Spotify competitor enrichment (`spotify_competitor_enrich.yml`) | 11:09 UTC on even days of the month | 15:09 | Refreshes competitor playlist thumbnails, then enriches competitor tracks with Spotify metadata |
-| Deadline check (Supabase `ops.pipeline_tick`) | 08:30 | 12:30 | Emails if today's competitor ingestion has not succeeded |
+| Deadline check (Supabase `ops.pipeline_tick`) | 15:30 | 19:30 | Emails if today's competitor ingestion has not succeeded |
 
 After a successful current-day own-catalog ingestion, the pipeline starts RapidAPI stale-track repair; that workflow starts Artist Tools Daily when it finishes. Artist Tools Daily also has its own scheduled fallback. See `docs/DAILY-PIPELINE.md` for recovery details.
 

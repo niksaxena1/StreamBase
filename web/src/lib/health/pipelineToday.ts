@@ -68,9 +68,9 @@ export type PipelineTimeline = {
 };
 
 const MIN = 60_000;
-export const OWN_DEADLINE_UTC = "08:30";
-const SECOND_LOOK_UTC_MINUTES = 11 * 60 + 30;
-const ARTIST_TOOLS_UTC_MINUTES = 13 * 60 + 17;
+export const OWN_DEADLINE_UTC = "15:30";
+const SECOND_LOOK_UTC_MINUTES = 17 * 60 + 30;
+const ARTIST_TOOLS_UTC_MINUTES = 18 * 60 + 17;
 
 const SIDE_JOBS: Array<{ workflow: string; title: string; maxAgeHours: number | null; cadence: string }> = [
   { workflow: "spotify_takedown_watch.yml", title: "Takedown watch", maxAgeHours: 26, cadence: "daily 20:00 UTC" },
@@ -137,7 +137,7 @@ function stageStep(
 
   const last = rows[rows.length - 1];
   if (!last) {
-    const deadlinePassed = utcMinutesOfDay(now) >= 8 * 60 + 30 && now.toISOString().slice(0, 10) === data.run_date;
+    const deadlinePassed = utcMinutesOfDay(now) >= 15 * 60 + 30 && now.toISOString().slice(0, 10) === data.run_date;
     if (dispatchBad) return { id, title: label, status: "red", label: "Dispatch failed", time: null, detail: dispatchText };
     return {
       id,
@@ -234,13 +234,13 @@ function secondLookStep(data: PipelineTodayData, now: Date): TimelineStep {
     return { id, title, status: "neutral", label: "Not needed", time: null, detail: "Every stale track was fixed in the first pass" };
   }
   if (isToday && minutes < SECOND_LOOK_UTC_MINUTES + 10) {
-    return { id, title, status: "neutral", label: "Scheduled", time: "11:30 UTC", detail: null };
+    return { id, title, status: "neutral", label: "Scheduled", time: "17:30 UTC", detail: null };
   }
   if (!isToday) {
     return { id, title, status: "neutral", label: "No dispatch recorded", time: null, detail: null };
   }
   return {
-    id, title, status: "amber", label: "No dispatch recorded", time: "11:30 UTC",
+    id, title, status: "amber", label: "No dispatch recorded", time: "17:30 UTC",
     detail: "The database job is missing or still disabled",
   };
 }
@@ -253,9 +253,9 @@ function artistToolsStep(data: PipelineTodayData, now: Date): TimelineStep {
   if (!at) {
     const minutes = utcMinutesOfDay(now);
     if (isToday && minutes < ARTIST_TOOLS_UTC_MINUTES + 20) {
-      return { id, title, status: "neutral", label: "Scheduled", time: "13:17 UTC", detail: null };
+      return { id, title, status: "neutral", label: "Scheduled", time: "18:17 UTC", detail: null };
     }
-    const lateRed = isToday && minutes > 15 * 60 + 30;
+    const lateRed = isToday && minutes > 20 * 60 + 30;
     return {
       id, title, status: lateRed ? "red" : isToday ? "amber" : "neutral", label: "No run recorded", time: null,
       detail: null,

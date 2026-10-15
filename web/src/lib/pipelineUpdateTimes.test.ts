@@ -3,9 +3,9 @@ import { pipelineUpdateTooltip } from "./pipelineUpdateTimes";
 
 describe("pipelineUpdateTooltip", () => {
   it("selects the own catalog schedule", () => {
-    expect(pipelineUpdateTooltip("own")).toBe("Next update starts 09:07 GMT+4 (daily, automatic).");
+    expect(pipelineUpdateTooltip("own")).toBe("Next update starts 16:00 GMT+4 (daily, automatic).");
   });
   it("selects the competitor schedule", () => {
-    expect(pipelineUpdateTooltip("competitor")).toBe("Next update starts 09:23 GMT+4 (daily, automatic).");
+    expect(pipelineUpdateTooltip("competitor")).toBe("Next update starts 16:16 GMT+4 (daily, automatic).");
   });
 });

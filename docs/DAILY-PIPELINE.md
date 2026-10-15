@@ -4,12 +4,14 @@ The daily SpotOnTrack pipeline is started and supervised by the Supabase databas
 (pg_cron), not by GitHub schedules. GitHub starts cron jobs on this repo 5-7 hours
 late (Oct 2026: a 05:07 UTC cron started at 11:06-12:12 UTC), so data used to land
 between 14:30 and 18:00 UTC. A `repository_dispatch` request starts a workflow
-within seconds. Own-catalog and competitor pipelines stay separate: separate
+within seconds. Since 2026-10-15 the start is 12:00 UTC (16:00 Abu Dhabi): at the earlier
+05:07 UTC start SpotOnTrack had not re-checked many tracks yet (113-135 own stale fixes a day vs
+0-2 in the afternoon; competitor frozen tracks doubled). Own-catalog and competitor pipelines stay separate: separate
 workflows, concurrency groups, configs, dispatch event types and Supabase schemas.
 
 ```mermaid
 flowchart LR
-  Tick[pg_cron every 5 min, 04:00-12:55 UTC<br/>ops.pipeline_tick] -->|05:07 own / 05:23 competitor| R[repository_dispatch stage=refresh]
+  Tick[pg_cron every 5 min, 11:00-16:55 UTC<br/>ops.pipeline_tick] -->|12:00 own / 12:16 competitor| R[repository_dispatch stage=refresh]
   R --> WF[SOT Own / Competitor Daily Pipeline]
   WF -->|pipeline_record_stage| Stages[(ops.pipeline_stage_runs)]
   Stages -->|refresh success + 10 min| S[repository_dispatch stage=sync_export]
@@ -17,17 +19,17 @@ flowchart LR
   WF -->|ingested| Ingest[(public / competitor ingestion_runs)]
   WF -->|own only: gh workflow run| Fix[RapidAPI Stale Track Fix]
   Fix -->|gh workflow run| Artist[Artist Tools Daily]
-  Tick -->|08:30 UTC deadline, not ingested| Alert[(ops.pipeline_alerts)] --> Mail[Edge Function pipeline-alert<br/>Gmail SMTP 465]
+  Tick -->|15:30 UTC deadline, not ingested| Alert[(ops.pipeline_alerts)] --> Mail[Edge Function pipeline-alert<br/>Gmail SMTP 465]
 ```
 
 ## How a day runs
 
 | Step | Own catalog | Competitor |
 | --- | --- | --- |
-| Refresh dispatched | 05:07 UTC (09:07 Dubai) | 05:23 UTC (09:23 Dubai) |
+| Refresh dispatched | 12:00 UTC (16:00 Dubai) | 12:16 UTC (16:16 Dubai) |
 | Sync + export dispatched | 10 min after refresh reports success | same |
-| Deadline alert | 08:30 UTC (12:30 Dubai) | 08:30 UTC |
-| GitHub fallback (`stage=full`) | 09:00 UTC cron | 09:30 UTC cron |
+| Deadline alert | 15:30 UTC (19:30 Dubai) | 15:30 UTC |
+| GitHub fallback (`stage=full`) | 16:00 UTC cron | 16:30 UTC cron |
 
 The two universes share one SpotOnTrack login, so their starts stay 16 minutes apart.
 
@@ -87,7 +89,7 @@ The own-export dispatch starts the stale fixer only for an export dated UTC toda
 Successful historical manual re-ingestions do not dispatch today's repair jobs.
 
 Artist Tools Daily is dispatched by `RapidAPI Stale Track Fix` on any completion (the stale fix is started by the own pipeline after a real ingest)
-and by pg_cron (`streambase-artist-tools-daily`, 13:17 UTC / 17:17 Dubai) through `ops.dispatch_workflow`; it has no GitHub `schedule:`. It records own-catalog
+and by pg_cron (`streambase-artist-tools-daily`, 18:17 UTC / 22:17 Dubai) through `ops.dispatch_workflow`; it has no GitHub `schedule:`. It records own-catalog
 cumulative counts even
 for tracks RapidAPI fixed, then repairs remaining stale tracks without replacing
 existing overrides. It retains the fewer-than-500 safety boundary. Only Supabase
@@ -95,16 +97,16 @@ URL/service-role secrets are needed; rotating OAuth tokens live in a private tab
 Successful UTC-date runs are skipped by the cron and optional 19:00-local Windows
 fallback. See [authorization, limits, comparisons and setup](ARTIST-TOOLS-SOURCE.md).
 
-The 13:17 UTC database dispatch and the optional PC task remain as fallbacks.
+The 18:17 UTC database dispatch and the optional PC task remain as fallbacks.
 
 ## Stale-track repair: first pass, second look, consolidation
 
 1. **First pass** (`scripts/rapidapi_stale_fix.py`, started by the own pipeline after a real ingest) fixes tracks of
    today's `individual_tracks_stale` warning from the free providers in priority order (Beat Analytics, Music Metrics,
    MusicAnalytics, CheckLeakedCC) inside their daily/monthly caps.
-2. **Second look** (`SECOND_LOOK=true`, dispatched at 11:30 UTC) re-checks only tracks that are still stale (today's
+2. **Second look** (`SECOND_LOOK=true`, dispatched at 17:30 UTC) re-checks only tracks that are still stale (today's
    effective value not above yesterday's) and have no override. Notes carry `; second-look`. It sends no
-   "incomplete" email and does not chain to artist.tools (that has its own 13:17 UTC dispatch).
+   "incomplete" email and does not chain to artist.tools (that has its own 18:17 UTC dispatch).
 3. **Best of all sources** (`scripts/stream_consolidation.py`): candidates are the provider values plus the artist.tools
    observation already stored for the day. A candidate must be above the stored value, at least the previous day's
    effective value, and at most previous day + 5 x the track's typical daily gain (mean of positive gains over the
@@ -145,7 +147,7 @@ These scheduled workflows run independently of the SpotOnTrack completion chains
 
 The own and competitor ingestion watchdog workflows are manual-only; they do not
 run on daily schedules. The Supabase database scheduler checks ingestion status
-and sends the 08:30 UTC deadline email when a successful run is missing. The
+and sends the 15:30 UTC deadline email when a successful run is missing. The
 manual workflows remain available for diagnosis. They normalize list, object,
 empty, malformed, and error responses before reporting ingestion status; unknown
 stale counts are informational.
@@ -158,11 +160,11 @@ GitHub's own `schedule:` triggers ran 6–8 hours late, so these workflows are s
 | Job | pg_cron name | When |
 |---|---|---|
 | `spotify_takedown_watch.yml` | `streambase-takedown-watch` | 20:00 daily (00:00 Dubai) |
-| `artist_tools_daily.yml` | `streambase-artist-tools-daily` | 13:17 daily |
+| `artist_tools_daily.yml` | `streambase-artist-tools-daily` | 18:17 daily |
 | `spotify_playlist_watch_daily.yml` | `streambase-playlist-watch` | 15:11 daily |
 | `spotify_artist_image_refresh.yml` | `streambase-artist-image-refresh` | 15:00 on the first Friday of the month |
-| `rapidapi_stale_fix.yml` with `second_look=true` | `streambase-stale-second-look` | 11:30 daily (created disabled; enable with `supabase/manual/2026-10-15_enable_stale_second_look.sql` once the workflow input is on `main`) |
-| `public.refresh_stream_source_quality(30)` (SQL only) | `streambase-source-quality` | 07:30 daily |
+| `rapidapi_stale_fix.yml` with `second_look=true` | `streambase-stale-second-look` | 17:30 daily |
+| `public.refresh_stream_source_quality(30)` (SQL only) | `streambase-source-quality` | 19:00 daily |
 
 `ops.check_workflow_dispatches()` (every 15 min) records GitHub's reply in `ops.workflow_dispatches` and emails
 once per workflow per day if GitHub did not answer 204. `ops.check_db_size()` (04:00 daily) emails at most
