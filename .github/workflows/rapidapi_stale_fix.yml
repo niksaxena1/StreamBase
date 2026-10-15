@@ -14,6 +14,11 @@ on:
         required: false
         type: boolean
         default: false
+      second_look:
+        description: Re-check only tracks that are still stale (dispatched by the database at 11:30 UTC)
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   fix:
@@ -47,6 +52,7 @@ jobs:
           MUSIC_ANALYTICS_RAPIDAPI_KEY: ${{ secrets.MUSIC_ANALYTICS_RAPIDAPI_KEY }}
           CHECKLEAKEDCC_RAPIDAPI_KEY: ${{ secrets.CHECKLEAKEDCC_RAPIDAPI_KEY }}
           RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
+          SECOND_LOOK: ${{ github.event.inputs.second_look }}
         run: python scripts/rapidapi_stale_fix.py
 
       - name: Create mock email preview summary
@@ -168,6 +174,7 @@ jobs:
             exit 0
           fi
 
+          SECOND_LOOK=$(python3 -c "import json; d=json.load(open('.artifacts/stale_fix_summary.json')); print(str(d.get('second_look', False)).lower())" 2>/dev/null || echo "false")
           FIXED=$(python3 -c "import json; d=json.load(open('.artifacts/stale_fix_summary.json')); print(d.get('fixed', 0))" 2>/dev/null || echo "0")
           STATUS=$(python3 -c "import json; d=json.load(open('.artifacts/stale_fix_summary.json')); print(d.get('status', 'completed'))" 2>/dev/null || echo "completed")
           AFFECTED=$(python3 -c "import json; d=json.load(open('.artifacts/stale_fix_summary.json')); print(d.get('affected', 0))" 2>/dev/null || echo "0")
@@ -178,6 +185,9 @@ jobs:
           if [ "$STATUS" = "partial_runtime_limit" ]; then
             SHOULD_NOTIFY="true"
             SUBJECT="[StreamBase] Auto-fix partial: ${FIXED} stale track(s) corrected before runtime limit"
+          elif [ "$SECOND_LOOK" = "true" ]; then
+            # The second look is a best-effort retry: tracks that stay unfixed are expected, no email.
+            SHOULD_NOTIFY="false"
           elif [ "$STATUS" = "completed" ] && [ "$ATTEMPTED" -gt "$FIXED" ] 2>/dev/null; then
             SHOULD_NOTIFY="true"
             SUBJECT="[StreamBase] Auto-fix incomplete: $((ATTEMPTED - FIXED)) of ${ATTEMPTED} stale track(s) not corrected"
@@ -375,8 +385,9 @@ jobs:
           html_body: ${{ steps.notify_check.outputs.html_body }}
 
       # Always hand off to artist.tools, including when RapidAPI failed or hit quota.
+      # The second look does not: artist.tools has its own 13:17 UTC database dispatch.
       - name: Start artist.tools fallback
-        if: always() && github.event.inputs.mock_email_preview != 'true'
+        if: always() && github.event.inputs.mock_email_preview != 'true' && github.event.inputs.second_look != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run artist_tools_daily.yml --repo "$GITHUB_REPOSITORY" --ref "${{ github.ref_name }}"

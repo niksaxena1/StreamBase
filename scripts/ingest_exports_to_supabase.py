@@ -1540,19 +1540,6 @@ def main():
         if warn_rows:
             pg.insert("ingestion_warnings", warn_rows)
 
-        # Keep the Catalog/Playlists fast-path summaries current as data grows.
-        try:
-            refreshed = pg.rpc(
-                "refresh_artist_daily_stats",
-                {
-                    "p_start_date": run_date.isoformat(),
-                    "p_end_date": run_date.isoformat(),
-                },
-            )
-            print(f"  INFO Refreshed artist_daily_stats for {run_date}: {refreshed}")
-        except Exception as _artist_stats_err:
-            print(f"  WARN Could not refresh artist_daily_stats: {_artist_stats_err}")
-
         # Automatic catch-up smoothing (SpotOnTrack lag then a catch-up day). Warn-and-
         # continue; runs after today's stats exist so the cascade covers the run date.
         catchup = smooth_own_catalog(pg, run_date, run_id=run_id)

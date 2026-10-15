@@ -147,8 +147,8 @@ class CompetitorIngestTests(unittest.TestCase):
         result = normalize_competitor_analytics(pg, date(2026, 8, 13))
 
         self.assertEqual(result["recompute_start"], "2026-07-30")
-        artist_calls = [call for call in pg.calls if call[0] == "refresh_artist_daily_stats"]
-        self.assertEqual(len(artist_calls), 5)
+        # refresh_artist_daily_stats is retired (artist series are computed on demand).
+        self.assertFalse([call for call in pg.calls if call[0] == "refresh_artist_daily_stats"])
 
 
 if __name__ == "__main__":

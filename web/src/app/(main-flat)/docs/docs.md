@@ -464,11 +464,12 @@ Times are **UTC** with Dubai time (UTC+4). The Supabase database scheduler start
 | Spotify Takedown Watch (`spotify_takedown_watch.yml`) | Daily 20:00 (database scheduler) | 00:00 | Checks own-catalog tracks for Spotify availability changes |
 | Own daily pipeline (`sot_own_daily_pipeline.yml`) | Database scheduler dispatch at 05:07; sync + export after refresh succeeds; GitHub fallback cron 09:00 | 09:07 | Refreshes SpotOnTrack playlists, syncs dashboards with `config/playlists.csv`, exports and ingests into Supabase (idempotent) |
 | RapidAPI stale-track fix (`rapidapi_stale_fix.yml`) | Dispatched after a successful, current-UTC-date own-catalog export is ingested; daily fallback cron 09:41 | 13:41 | Attempts own-catalog stale-track corrections |
+| RapidAPI stale-track second look (`rapidapi_stale_fix.yml`, `second_look=true`) | Database scheduler dispatch 11:30 | 15:30 | Re-checks only tracks that are still stale after the morning fix, using the same free providers within their caps |
 | Spotify enrichment (`spotify_enrich.yml`) | 10:29 UTC on odd days of the month | 14:29 | Refreshes own playlist thumbnails, then enriches missing track metadata via Spotify |
 | Deadline check (Supabase `ops.pipeline_tick`) | 08:30 | 12:30 | Emails if today's own-catalog ingestion has not succeeded |
-| Artist Tools Daily (`artist_tools_daily.yml`) | Dispatched whenever RapidAPI stale-fix finishes; daily fallback cron 13:17 | 17:17 | Records artist counts and repairs remaining stale tracks |
-| Spotify artist image cache refresh (`spotify_artist_image_refresh.yml`) | Fridays at 15:00; runs only when UTC day-of-month is 1–7 | 19:00 | Refreshes cached Spotify artist images once on the month's first Friday; manual dispatch is not date-gated |
-| Spotify Playlist Watch Daily (`spotify_playlist_watch_daily.yml`) | Daily cron 15:11 | 19:11 | Collects watchlist follower counts and evaluates alert rules |
+| Artist Tools Daily (`artist_tools_daily.yml`) | Dispatched whenever RapidAPI stale-fix finishes; daily database dispatch (pg_cron) 13:17 | 17:17 | Records artist counts and repairs remaining stale tracks |
+| Spotify artist image cache refresh (`spotify_artist_image_refresh.yml`) | Fridays at 15:00 (database scheduler); runs only when UTC day-of-month is 1–7 | 19:00 | Refreshes cached Spotify artist images once on the month's first Friday; manual dispatch is not date-gated |
+| Spotify Playlist Watch Daily (`spotify_playlist_watch_daily.yml`) | Daily 15:11 (database scheduler) | 19:11 | Collects watchlist follower counts and evaluates alert rules |
 | Pipeline Quality CI (`pipeline_quality.yml`) | Matching pull requests and pushes to `main` that change configured paths; event-triggered, no cron | Event-driven | Runs pipeline tests and workflow lint |
 
 ### Competitor Mode schedule

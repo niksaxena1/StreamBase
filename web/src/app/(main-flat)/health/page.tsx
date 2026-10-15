@@ -19,7 +19,8 @@ import { MissingCatalogSection } from "@/components/health/MissingCatalogSection
 import { SpotifyAvailabilitySection } from "@/components/health/SpotifyAvailabilitySection";
 import { CompetitorHealthSection } from "./CompetitorHealthSection";
 import { EventsSection } from "@/components/health/EventsSection";
-import { ChartSkeleton, StatCardSkeleton, TableSkeleton } from "@/components/ui/Skeleton";
+import { PipelineTodayCard, SourceQualityCard } from "@/components/health/PipelineTodayCard";
+import { ChartSkeleton, Skeleton, StatCardSkeleton, TableSkeleton } from "@/components/ui/Skeleton";
 
 export const dynamic = "force-dynamic";
 
@@ -90,6 +91,15 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
           {shell.runsError ?? shell.exportsError ?? "unknown error"}
         </Alert>
       )}
+
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        <Suspense fallback={<Skeleton className="h-72 w-full rounded-2xl" />}>
+          <PipelineTodayCard />
+        </Suspense>
+        <Suspense fallback={<Skeleton className="h-40 w-full rounded-2xl" />}>
+          <SourceQualityCard />
+        </Suspense>
+      </div>
 
       <Suspense fallback={<WarningSkeleton />}>
         <WarningsSection

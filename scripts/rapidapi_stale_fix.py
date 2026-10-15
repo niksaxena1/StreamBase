@@ -9,6 +9,17 @@ and CheckLeakedCC fourth, then writes overrides to track_daily_stream_overrides.
 Repairs all stale tracks while the batch is below the 500-track safety
 threshold. Automated runs only use free provider quotas and never paid overage.
 
+Second look (``--second-look`` or ``SECOND_LOOK=true``): started about six hours after the
+morning ingest. It re-checks only tracks of today's stale warning that are still stale (today's
+effective value not above yesterday's) and have no override of any kind, with the same free
+providers inside their remaining daily/monthly caps. Notes get a "; second-look" marker.
+
+Every run (first pass or second look) never touches a date/ISRC that already has an override
+(manual and artist.tools fixes always win), never lowers a value, and chooses the highest
+plausible candidate via ``stream_consolidation`` (floor = previous day, cap = 5x the trailing
+7-day gain). Rejected candidates are logged to ``stream_consolidation_rejects`` and counted per
+source in ``stream_source_quality_daily``.
+
 Usage:
     export SUPABASE_URL="https://your-project.supabase.co"
     export SUPABASE_SERVICE_ROLE_KEY="..."
@@ -26,13 +37,14 @@ import json
 import os
 import sys
 import time
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import List
 
 import requests
 from streambase_postgrest import Postgrest
 from streambase_home_snapshots import refresh_own_home_snapshots
+import stream_consolidation as sc
 
 MAX_AUTO_FIX_TRACKS = 500
 BEAT_ANALYTICS_DAILY_CAP = 50
@@ -48,6 +60,8 @@ MUSIC_ANALYTICS_ENDPOINT = f"https://{MUSIC_ANALYTICS_HOST}/v1/spotify/tracks"
 CHECKLEAKEDCC_HOST = "spotify81.p.rapidapi.com"
 CHECKLEAKEDCC_ENDPOINT = f"https://{CHECKLEAKEDCC_HOST}/partner/track/count"
 OVERRIDE_NOTE_PREFIX = "stale-fix:"
+ARTIST_TOOLS_SOURCE = "artist.tools"
+HISTORY_CHUNK = 80
 RATE_LIMIT_MS = 1100
 REQUEST_TIMEOUT_SECONDS = 12
 OVERRIDE_FLUSH_BATCH_SIZE = 25
@@ -245,7 +259,7 @@ def build_override_rows(run_date: str, fixed: list) -> list:
             "date": run_date,
             "isrc": f["isrc"],
             "streams_cumulative_override": f["streams"],
-            "note": f"stale-fix: {f.get('provider') or 'stream lookup'} auto",
+            "note": f.get("note") or f"stale-fix: {f.get('provider') or 'stream lookup'} auto",
         }
         for f in fixed
     ]
@@ -260,7 +274,92 @@ def flush_override_batch(pg: Postgrest, run_date: str, pending: list) -> int:
     return flushed
 
 
+def _chunks(items: list, size: int):
+    for i in range(0, len(items), size):
+        yield items[i : i + size]
+
+
+def load_effective_history(pg: Postgrest, run_date: str, isrcs: list) -> dict:
+    """{isrc: [(date, effective cumulative)]} for the 8 days up to and including run_date. Best effort."""
+    out: dict = {}
+    start = (date.fromisoformat(run_date) - timedelta(days=sc.TRAILING_DAYS + 1)).isoformat()
+    for chunk in _chunks(isrcs, HISTORY_CHUNK):
+        try:
+            rows = pg.select(
+                "track_daily_streams_effective_public",
+                "isrc,date,streams_cumulative",
+                f"date=gte.{start}&date=lte.{run_date}&isrc=in.({','.join(chunk)})",
+            )
+        except Exception as e:
+            print(f"Warning: could not load stream history ({e}); plausibility cap skipped for a batch.")
+            continue
+        for isrc, points in sc.rows_by_isrc(rows).items():
+            out.setdefault(isrc, []).extend(points)
+    return out
+
+
+def load_artist_tools_observations(pg: Postgrest, run_date: str, isrcs: list) -> dict:
+    """{isrc: streams} recorded by artist.tools for run_date. Best effort."""
+    out: dict = {}
+    for chunk in _chunks(isrcs, HISTORY_CHUNK):
+        try:
+            rows = pg.select(
+                "artist_tools_track_streams",
+                "isrc,streams",
+                f"date=eq.{run_date}&isrc=in.({','.join(chunk)})",
+            )
+        except Exception:
+            continue
+        for row in rows:
+            isrc = str(row.get("isrc") or "").strip().upper()
+            if isrc and row.get("streams") is not None:
+                out[isrc] = int(row["streams"])
+    return out
+
+
+def record_source_quality(pg: Postgrest, run_date: str, stats: dict, rejects: list) -> None:
+    """Persist per-source attempts/rejects and the reject log. Never raises."""
+    for source, st in stats.items():
+        if not st["attempts"] and not st["rejects"]:
+            continue
+        try:
+            pg.rpc(
+                "record_stream_source_attempts",
+                {
+                    "p_date": run_date,
+                    "p_source": source,
+                    "p_attempts": st["attempts"],
+                    "p_rejects": st["rejects"],
+                },
+                idempotent=False,
+            )
+        except Exception as e:
+            print(f"Warning: could not record source quality for {source} ({e}).")
+    if rejects:
+        rows = [
+            {
+                "date": run_date,
+                "isrc": r["isrc"],
+                "source": r["source"],
+                "value": r["value"],
+                "reason": r["reason"],
+                "prev_value": r["prev_value"],
+                "cap_value": r["cap_value"],
+            }
+            for r in rejects
+        ]
+        try:
+            pg.upsert("stream_consolidation_rejects", rows, "date,isrc,source")
+        except Exception as e:
+            print(f"Warning: could not log consolidation rejects ({e}).")
+
+
+def is_second_look() -> bool:
+    return "--second-look" in sys.argv or os.environ.get("SECOND_LOOK", "").strip().lower() in ("1", "true", "yes")
+
+
 def main():
+    second_look = is_second_look()
     supabase_url = os.environ.get("SUPABASE_URL", "").strip()
     service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
     legacy_api_key = os.environ.get("RAPIDAPI_KEY", "").strip()
@@ -333,6 +432,13 @@ def main():
         f"date=eq.{run_date}&note=like.{OVERRIDE_NOTE_PREFIX}*auto*",
     )
     existing_isrcs = {str(r.get("isrc", "")).strip().upper() for r in existing}
+    # Manual, interpolation and artist.tools overrides always win: never touch a date/ISRC that has any override.
+    try:
+        all_overrides = pg.select("track_daily_stream_overrides", "isrc,note", f"date=eq.{run_date}")
+    except Exception as e:
+        print(f"Warning: could not load all of today's overrides ({e}). Falling back to stale-fix overrides.")
+        all_overrides = existing
+    overridden_isrcs = {str(r.get("isrc", "")).strip().upper() for r in all_overrides} | existing_isrcs
     usage_date = datetime.now(timezone.utc).date().isoformat()
     usage = usage_for_period(pg, usage_date, existing)
     existing_music_analytics = usage["music_analytics"]
@@ -362,27 +468,61 @@ def main():
     for t in affected_tracks:
         isrc = str(t.get("isrc", "")).strip().upper()
         streams = int(t.get("streams_cumulative", 0))
-        if not isrc or isrc in existing_isrcs:
+        if not isrc or isrc in overridden_isrcs:
             continue
         candidates.append({"isrc": isrc, "stale_streams": streams})
     candidates = attach_spotify_track_ids(pg, candidates[:budget])
 
+    history = load_effective_history(pg, run_date, [c["isrc"] for c in candidates]) if candidates else {}
+    if second_look and candidates:
+        # Re-check only tracks that are still stale now: today's effective value is not above yesterday's.
+        still_stale = []
+        for c in candidates:
+            prev_value, _, _ = sc.history_stats(history.get(c["isrc"], []), date.fromisoformat(run_date))
+            today_value = next(
+                (v for d, v in history.get(c["isrc"], []) if d == date.fromisoformat(run_date)), None
+            )
+            if today_value is not None:
+                c["stale_streams"] = today_value
+            if today_value is not None and prev_value is not None and today_value > prev_value:
+                continue
+            still_stale.append(c)
+        print(f"  Second look: {len(still_stale)} of {len(candidates)} candidate(s) still stale.")
+        candidates = still_stale
+
     if not candidates:
         print("All stale tracks already fixed or none eligible. Nothing to do.")
-        write_summary(run_date, 0, 0, [], status="nothing_to_do", affected_count=len(affected_tracks))
+        write_summary(
+            run_date, 0, 0, [], status="nothing_to_do", affected_count=len(affected_tracks), second_look=second_look
+        )
         sys.exit(0)
 
+    artist_tools_obs = load_artist_tools_observations(pg, run_date, [c["isrc"] for c in candidates])
     print(f"  Fetching stream counts for {len(candidates)} track(s)...")
 
     started_at = time.monotonic()
     fixed: List[dict] = []
     pending_overrides: List[dict] = []
     attempted = 0
-    beat_attempted = 0
-    music_attempted = 0
-    music_analytics_attempted = 0
-    checkleakedcc_attempted = 0
     stopped_early = False
+    reject_log: List[dict] = []
+    source_stats = {
+        name: {"attempts": 0, "rejects": 0}
+        for name in ("Beat Analytics", "Music Metrics", "MusicAnalytics", "CheckLeakedCC", ARTIST_TOOLS_SOURCE)
+    }
+    # (display name, usage key, key present, needs Spotify id, budget). Fetchers are resolved at call time.
+    providers = [
+        ("Beat Analytics", "beat_analytics", bool(beat_key), True, beat_budget,
+         lambda c: fetch_beat_analytics_streams(c["spotify_track_id"], beat_key)),
+        ("Music Metrics", "music_metrics", bool(music_key), False, music_budget,
+         lambda c: fetch_music_metrics_streams(c["isrc"], music_key)),
+        ("MusicAnalytics", "music_analytics", bool(music_analytics_key), True, music_analytics_budget,
+         lambda c: fetch_music_analytics_streams(c["spotify_track_id"], music_analytics_key)),
+        ("CheckLeakedCC", "checkleakedcc", bool(checkleakedcc_key), True, checkleakedcc_budget,
+         lambda c: fetch_checkleakedcc_streams(c["spotify_track_id"], c["isrc"], checkleakedcc_key)),
+    ]
+    provider_attempted = {name: 0 for name, *_ in providers}
+    run_day = date.fromisoformat(run_date)
 
     for i, c in enumerate(candidates):
         if time.monotonic() - started_at >= MAX_RUNTIME_SECONDS:
@@ -396,68 +536,66 @@ def main():
         isrc = c["isrc"]
         stale = c["stale_streams"]
         attempted += 1
-        api_val = None
-        provider = None
+        prev_value, avg_gain, flat_run = sc.history_stats(history.get(isrc, []), run_day)
+        ctx = sc.Context(stale_value=stale, prev_value=prev_value, avg_daily_gain=avg_gain, flat_run=flat_run)
+        candidates_seen: List[tuple] = []
+        got_data = False
 
-        if beat_key and c.get("spotify_track_id") and beat_attempted < beat_budget:
-            beat_attempted += 1
-            record_provider_call(pg, usage_date, "beat_analytics", usage)
+        def log_reject(rej: "sc.Reject"):
+            source_stats.setdefault(rej.source, {"attempts": 0, "rejects": 0})["rejects"] += 1
+            reject_log.append({"isrc": isrc, **rej.__dict__})
+            print(
+                f"    {isrc}: rejected {rej.source}={rej.value:,} ({rej.reason}; "
+                f"stale={stale:,}, prev={prev_value if prev_value is None else format(prev_value, ',')}, "
+                f"cap={rej.cap_value if rej.cap_value is None else format(rej.cap_value, ',')})"
+            )
+
+        # artist.tools observation already stored for today is one more candidate (no quota used).
+        if isrc in artist_tools_obs:
+            candidates_seen.append((ARTIST_TOOLS_SOURCE, artist_tools_obs[isrc]))
+
+        # Providers in priority order; stop at the first plausible provider value, fall through on rejects.
+        for name, usage_key, has_key, needs_spotify, prov_budget, fetch in providers:
+            if not has_key or (needs_spotify and not c.get("spotify_track_id")):
+                continue
+            if provider_attempted[name] >= prov_budget:
+                continue
+            provider_attempted[name] += 1
+            source_stats[name]["attempts"] += 1
+            record_provider_call(pg, usage_date, usage_key, usage)
             try:
-                api_val = fetch_beat_analytics_streams(c["spotify_track_id"], beat_key)
-                if api_val is not None:
-                    provider = "Beat Analytics"
+                value = fetch(c)
             except Exception as e:
-                print(f"    {isrc}: Beat Analytics error - {e}")
+                print(f"    {isrc}: {name} error - {e}")
+                continue
+            if value is None:
+                continue
+            got_data = True
+            candidates_seen.append((name, value))
+            if sc.check_candidate(name, value, ctx) is None:
+                break
 
-        if api_val is None and music_key and music_attempted < music_budget:
-            music_attempted += 1
-            record_provider_call(pg, usage_date, "music_metrics", usage)
-            try:
-                api_val = fetch_music_metrics_streams(isrc, music_key)
-                if api_val is not None:
-                    provider = "Music Metrics"
-            except Exception as e:
-                print(f"    {isrc}: Music Metrics error - {e}")
+        decision = sc.consolidate(candidates_seen, ctx)
+        for rej in decision.rejects:
+            log_reject(rej)
+        provider = decision.source
+        api_val = decision.value
 
-        if (
-            api_val is None
-            and music_analytics_key
-            and c.get("spotify_track_id")
-            and music_analytics_attempted < music_analytics_budget
-        ):
-            music_analytics_attempted += 1
-            record_provider_call(pg, usage_date, "music_analytics", usage)
-            try:
-                api_val = fetch_music_analytics_streams(c["spotify_track_id"], music_analytics_key)
-                if api_val is not None:
-                    provider = "MusicAnalytics"
-            except Exception as e:
-                print(f"    {isrc}: MusicAnalytics error - {e}")
-
-        if (
-            api_val is None
-            and checkleakedcc_key
-            and c.get("spotify_track_id")
-            and checkleakedcc_attempted < checkleakedcc_budget
-        ):
-            checkleakedcc_attempted += 1
-            record_provider_call(pg, usage_date, "checkleakedcc", usage)
-            try:
-                api_val = fetch_checkleakedcc_streams(c["spotify_track_id"], isrc, checkleakedcc_key)
-                if api_val is not None:
-                    provider = "CheckLeakedCC"
-            except Exception as e:
-                print(f"    {isrc}: CheckLeakedCC error - {e}")
-
-
-        if api_val is None:
-            print(f"    {isrc}: no data from stream providers")
-        elif api_val < stale:
-            print(f"    {isrc}: suspicious ({provider}={api_val:,} < stale={stale:,}), skipping")
+        if not decision.accepted:
+            if not got_data and not decision.rejects:
+                print(f"    {isrc}: no data from stream providers")
+            else:
+                print(f"    {isrc}: no plausible value, left unchanged")
         else:
             delta = api_val - stale
             print(f"    {isrc}: OK stale={stale:,} -> {provider}={api_val:,} (+{delta:,})")
-            item = {"isrc": isrc, "streams": api_val, "stale": stale, "provider": provider}
+            item = {
+                "isrc": isrc,
+                "streams": api_val,
+                "stale": stale,
+                "provider": provider,
+                "note": sc.provenance_note(decision, second_look=second_look),
+            }
             fixed.append(item)
             pending_overrides.append(item)
             if len(pending_overrides) >= OVERRIDE_FLUSH_BATCH_SIZE:
@@ -481,7 +619,8 @@ def main():
         print("\n  No overrides to write.")
 
     fixed = enrich_fixed_tracks(pg, fixed)
-    print(f"\nDone. Attempted={attempted}, Fixed={len(fixed)}")
+    print(f"\nDone. Attempted={attempted}, Fixed={len(fixed)}, Rejected={len(reject_log)}")
+    record_source_quality(pg, run_date, source_stats, reject_log)
     write_summary(
         run_date,
         attempted,
@@ -489,6 +628,8 @@ def main():
         fixed,
         status="partial_runtime_limit" if stopped_early else "completed",
         affected_count=len(affected_tracks),
+        second_look=second_look,
+        rejected=len(reject_log),
     )
 
 
@@ -499,9 +640,13 @@ def write_summary(
     fixed: list,
     status: str = "completed",
     affected_count: int = 0,
+    second_look: bool = False,
+    rejected: int = 0,
 ):
     summary = {
         "status": status,
+        "second_look": second_look,
+        "rejected": rejected,
         "run_date": run_date,
         "affected": affected_count,
         "attempted": attempted,

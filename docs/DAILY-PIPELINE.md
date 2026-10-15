@@ -87,7 +87,7 @@ The own-export dispatch starts the stale fixer only for an export dated UTC toda
 Successful historical manual re-ingestions do not dispatch today's repair jobs.
 
 Artist Tools Daily is dispatched by `RapidAPI Stale Track Fix` on any completion (the stale fix is started by the own pipeline after a real ingest)
-and also has a daily 13:17 UTC (17:17 Dubai) cron fallback. It records own-catalog
+and by pg_cron (`streambase-artist-tools-daily`, 13:17 UTC / 17:17 Dubai) through `ops.dispatch_workflow`; it has no GitHub `schedule:`. It records own-catalog
 cumulative counts even
 for tracks RapidAPI fixed, then repairs remaining stale tracks without replacing
 existing overrides. It retains the fewer-than-500 safety boundary. Only Supabase
@@ -95,7 +95,27 @@ URL/service-role secrets are needed; rotating OAuth tokens live in a private tab
 Successful UTC-date runs are skipped by the cron and optional 19:00-local Windows
 fallback. See [authorization, limits, comparisons and setup](ARTIST-TOOLS-SOURCE.md).
 
-The 13:17 UTC cron and the optional PC task remain as fallbacks.
+The 13:17 UTC database dispatch and the optional PC task remain as fallbacks.
+
+## Stale-track repair: first pass, second look, consolidation
+
+1. **First pass** (`scripts/rapidapi_stale_fix.py`, started by the own pipeline after a real ingest) fixes tracks of
+   today's `individual_tracks_stale` warning from the free providers in priority order (Beat Analytics, Music Metrics,
+   MusicAnalytics, CheckLeakedCC) inside their daily/monthly caps.
+2. **Second look** (`SECOND_LOOK=true`, dispatched at 11:30 UTC) re-checks only tracks that are still stale (today's
+   effective value not above yesterday's) and have no override. Notes carry `; second-look`. It sends no
+   "incomplete" email and does not chain to artist.tools (that has its own 13:17 UTC dispatch).
+3. **Best of all sources** (`scripts/stream_consolidation.py`): candidates are the provider values plus the artist.tools
+   observation already stored for the day. A candidate must be above the stored value, at least the previous day's
+   effective value, and at most previous day + 5 x the track's typical daily gain (mean of positive gains over the
+   trailing 7 days, minimum allowance 1,000 streams/day, times `1 + days already flat`). The highest plausible value
+   wins; the note records provenance (`stale-fix: <source> auto[; second-look][; best-of=A:v,B:v]`). Rejects are
+   logged in `public.stream_consolidation_rejects`. A date/ISRC that already has any override (manual, interpolation,
+   artist.tools) is never touched, and values are never lowered.
+4. **Source quality**: `public.stream_source_quality_daily` (per source and day: attempts, fixes, rejects, plus
+   `checked`/`in_range` = fixes that fall between the previous day and SpotOnTrack's raw next-day value, refreshed by
+   `streambase-source-quality`). Shown on Health as "Source quality (30 days)", next to "Today's pipeline"
+   (`public.health_pipeline_today`, service-role only). Both RPCs are read server-side by the web app.
 
 ## Incremental dashboard sync
 
@@ -117,9 +137,8 @@ rerunning the same run ID can restore its existing entry but cannot overwrite it
 
 These scheduled workflows run independently of the SpotOnTrack completion chains:
 
-- Spotify enrichment runs at 10:29 UTC (14:29 Dubai) on odd UTC calendar days; competitor enrichment runs at 11:09 UTC (15:09 Dubai) on even UTC calendar days.
-- Spotify Takedown Watch runs daily at 04:37 UTC (08:37 Dubai), and Spotify Playlist Watch Daily runs daily at 15:11 UTC (19:11 Dubai).
-- Artist image refresh is scheduled Fridays at 15:00 UTC (19:00 Dubai). Its job guard limits scheduled runs to UTC dates 1–7, so it runs on the month's first Friday. Manual dispatches bypass the date guard.
+- Spotify enrichment runs at 10:29 UTC (14:29 Dubai) on odd UTC calendar days; competitor enrichment runs at 11:09 UTC (15:09 Dubai) on even UTC calendar days (still GitHub `schedule:` triggers, so they can start late).
+- Spotify Takedown Watch (20:00 UTC), Spotify Playlist Watch Daily (15:11 UTC) and the artist image refresh (first Friday, 15:00 UTC) are dispatched by the database; see the table under "Other scheduled jobs" below. They have no GitHub `schedule:` trigger.
 - Pipeline Quality CI runs on matching pull requests and pushes to `main`; it has no cron.
 
 ## Watchdogs
@@ -142,6 +161,8 @@ GitHub's own `schedule:` triggers ran 6–8 hours late, so these workflows are s
 | `artist_tools_daily.yml` | `streambase-artist-tools-daily` | 13:17 daily |
 | `spotify_playlist_watch_daily.yml` | `streambase-playlist-watch` | 15:11 daily |
 | `spotify_artist_image_refresh.yml` | `streambase-artist-image-refresh` | 15:00 on the first Friday of the month |
+| `rapidapi_stale_fix.yml` with `second_look=true` | `streambase-stale-second-look` | 11:30 daily (created disabled; enable with `supabase/manual/2026-10-15_enable_stale_second_look.sql` once the workflow input is on `main`) |
+| `public.refresh_stream_source_quality(30)` (SQL only) | `streambase-source-quality` | 07:30 daily |
 
 `ops.check_workflow_dispatches()` (every 15 min) records GitHub's reply in `ops.workflow_dispatches` and emails
 once per workflow per day if GitHub did not answer 204. `ops.check_db_size()` (04:00 daily) emails at most

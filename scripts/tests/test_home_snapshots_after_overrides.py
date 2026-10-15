@@ -29,15 +29,21 @@ class RepairPG:
             return [{"run_date": D, "details_json": {"affected_tracks": [
                 {"isrc": isrc, "streams_cumulative": 100} for isrc in ("A", "B")
             ]}}]
-        assert table in ("user_settings", "track_daily_stream_overrides")
+        # Read-only context lookups (history, artist.tools observations) return nothing here.
+        assert table in ("user_settings", "track_daily_stream_overrides",
+                         "track_daily_streams_effective_public", "artist_tools_track_streams")
         return []
 
     def upsert(self, table, rows, *_):
+        if table == "stream_consolidation_rejects":
+            return rows
         assert table == "track_daily_stream_overrides"
         self.events.append(("write", rows))
         return rows
 
-    def rpc(self, name, params):
+    def rpc(self, name, params, **_):
+        if name == "record_stream_source_attempts":
+            return None  # source-quality bookkeeping, not part of the write/recompute ordering
         self.events.append((name, params))
         if name == SNAPSHOT and self.fail_snapshot:
             raise RuntimeError("snapshot timeout")
@@ -223,7 +229,7 @@ def test_competitor_refresh_follows_all_override_rpcs_before_revalidation(tmp_pa
     names = [name for name, _ in events]
     first_snapshot = names.index(SNAPSHOT)
     for name in ("spotibase_reconcile_auto_overrides", "spotibase_interpolate_stale_streams",
-                 "spotibase_rebase_downward_revisions", CASCADE, "refresh_artist_daily_stats", "success"):
+                 "spotibase_rebase_downward_revisions", CASCADE, "success"):
         assert names.index(name) < first_snapshot
     assert names[-1] == "revalidate"
     assert [params["p_label_key"] for name, params in events if name == SNAPSHOT] == [None, "a", "b"]

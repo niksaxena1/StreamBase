@@ -13,20 +13,20 @@ The old daily partitions are still in place; the owner removes them with `supaba
   - `<schema>.track_daily_streams_range(p_start, p_end)` all tracks, only touches needed months (plan shows compact branch skipped for recent windows). Do not pass the 3rd arg (see below).
   - `<schema>.track_daily_streams_range_isrcs(p_start, p_end, p_isrcs text[])` ISRC-scoped; uses the `(isrc, date)` and `(isrc, month)` indexes.
   - `<schema>.track_daily_streams_all` full-history view. Good for single-ISRC filters and ad-hoc work; a date-only filter unnests the whole compact table (about 100 ms), so prefer the functions in hot paths.
-  - The 3-arg `track_daily_streams_range(..., p_isrcs)` is superseded: `p_isrcs is null or ...` blocks index use when the array is not a plan-time constant (3 s vs 80 ms). Leave it unused; the owner can remove it later.
+  - `track_daily_streams_range(p_start, p_end, p_isrcs default null)` is ONE function per schema (there is no separate 2-arg or 3-arg overload): the 2-arg call form relies on the `p_isrcs` default and is still used (e.g. `public.effective_streams_for_date`), so it must not be dropped. Only the non-null `p_isrcs` argument is superseded by `track_daily_streams_range_isrcs` (`p_isrcs is null or ...` blocks index use when the array is not a plan-time constant, 3 s vs 80 ms): do not pass it.
 - Migrations: `20261012120000_add_compact_stream_history.sql`, `20261012121500_compact_stream_history_parallel_safe.sql`, `20261012123000_add_compact_stream_history_isrc_range.sql`.
 
-## Packed so far (hot window = 2026-07-01 onward)
+## Packed so far (hot window moves monthly; 2026-09-01 onward on 2026-10-15)
 
-public 2026-01..06 (17,125 rows), competitor 2026-05..06 (19,628 rows). Daily-vs-compact `EXCEPT ALL` is 0 in both directions for every month.
+The first pack (2026-01..06: public 17,125 rows, competitor 2026-05..06: 19,628 rows) has since been extended by the monthly job, which now packs everything up to the current month minus 2, so the daily tables hold roughly the previous and the current month. Read the live value from `stream_history_hot_from()`. Daily-vs-compact `EXCEPT ALL` is 0 in both directions for every month.
 
 ## Switchover plan
 
 ### (i) Repointing readers
 
-"Recent" = only touches dates within the last ~30 to 120 days; keep on the daily table, no change. "History" = can span more than the hot window; switch the base-table read to the range function.
+"Recent" = only touches dates within the last ~30 days (the hot window is the previous plus the current month); keep on the daily table, no change. "History" = can span more than the hot window; switch the base-table read to the range function.
 
-History readers (need more than 4 months), both schemas unless noted:
+History readers (need more than about 1-2 months), both schemas unless noted:
 - `catalog_artist_series_fast`, `catalog_artist_series` -> `track_daily_streams_range_isrcs(start, end, arr)` (replace the `base` CTE; overrides CTE stays as is).
 - `track_series(isrc, start, end)` (public) -> `range_isrcs(start, end, array[isrc])`.
 - `collector_tracks`, `collector_tracks_paged`, `collector_tracks_paged_scoped` (start/end range).
@@ -34,7 +34,7 @@ History readers (need more than 4 months), both schemas unless noted:
 - `home_artificial_stream_spikes` (start/end) both schemas.
 - `health_daily_stream_totals(start, end[, label])`.
 - `playlist_top_tracks(playlist, start, end, n)`.
-- `home_negative_daily_streams()`, `health_negative_daily_streams(label)`: full-history lag windows. Either keep them scanning only the hot window (recommended: negative deltas older than 4 months are not actionable) or read `track_daily_streams_all`. Measured: own 1.6 s current vs 2.7 s via view; competitor May-Oct 23 s vs 20 s (already heavy, add a date floor).
+- `home_negative_daily_streams()`, `health_negative_daily_streams(label)`: full-history lag windows. Either keep them scanning only the hot window (recommended: negative deltas older than the hot window are not actionable) or read `track_daily_streams_all`. Measured: own 1.6 s current vs 2.7 s via view; competitor May-Oct 23 s vs 20 s (already heavy, add a date floor).
 - `track_daily_streams_effective`, `track_daily_streams_effective_public`: see (iv).
 
 Point-in-time / as-of readers (single date `d`, plus lookback such as d-1, d-7, d-30): recent unless the UI lets users pick an old date. Keep on the daily table and wrap with `range(d - lookback, d)` only if old dates must keep working. Verify each body for its lookback: `artist_total_streams_for_date`, `track_total_streams_for_date`, `playlist_total_streams_for_date`, `effective_streams_for_date`, `catalog_artist_top_tracks_daily/_total`, `playlist_top_tracks_total`, `collector_artists_stats_paged(_scoped)`, `catalog_config_artist_rows/track_rows`, `label_artists_paged`, `label_tracks_paged`, `label_top_tracks_daily`, `playlist_current_tracks`, `network_selection_scoped_track_totals`, `network_export_artist_stream_stats`, `home_artist_weekend_dips`, `home_track_weekend_dips` (weekend dips look back weeks only), `health_missing_catalog_tracks(_detailed)`, `health_playlist_missing_catalog_tracks`, `health_unplayable_candidates`, `spotify_availability_candidates`, `spotibase_system_stats` (row counts; will undercount after removal, switch to `count(*)` of daily + sum of non-null array elements, or accept).
@@ -51,7 +51,7 @@ No change. Both ingest scripts keep upserting into the daily tables. Caveat: ing
 
 ### (iii) Monthly job and partition removal
 
-Policy: on the 1st of month M pack month M-4 (keeps 3 full months plus the current one, matching today's hot_from of 2026-07-01 on 2026-10-12; on 2026-11-01 it packs July).
+Policy (current): pack every unpacked month up to M-2, so the daily tables keep the previous and the current month (hot_from was 2026-09-01 on 2026-10-15; on 2026-11-01 it packs September). The first rollout used M-4; the snippet below is historical, the live job is `ops.pack_aged_stream_months()` (see Monthly job).
 
 ```sql
 select cron.schedule('streambase-pack-stream-month', '30 3 1 * *', $$
@@ -165,7 +165,7 @@ Nothing reads packed months from the daily partitions any more. Every repointed 
 
 ### Monthly job
 `ops.pack_aged_stream_months()` via pg_cron `streambase-pack-stream-month` (`40 3 1-3 * *` UTC): packs every unpacked month
-up to current month minus 4 (both schemas), raises `ops.pipeline_alerts` rows `pack_stream_month_failed` on errors and
+up to current month minus 2 (both schemas), raises `ops.pipeline_alerts` rows `pack_stream_month_failed` on errors and
 `partition_ready_to_remove_YYYY_MM` after each pack (the removal itself stays an owner paste).
 
 ### Measured cost of the history-aware path (warm)

@@ -115,7 +115,7 @@ If you applied the migration that partitions `track_daily_streams` by month:
   `supabase/migrations/20260526183038_add_home_catalog_playlist_fast_paths.sql` added `public.artist_daily_stats` and `competitor.artist_daily_stats`; `supabase/migrations/20261011141439_compute_artist_series_on_demand.sql` retires them. `catalog_artist_series_fast` now computes the artist series on demand from `track_daily_streams` + overrides and never reads the summary tables (the tables can be dropped by the owner; the DROP statements are commented out in that migration).
 
 - **Refresh after ingestion**
-  Own-catalog and competitor ingestion scripts still call `refresh_artist_daily_stats`, but it is now a no-op that returns 0 (artist series are computed on demand), so no manual refresh is needed after backfills or repairs.
+  `refresh_artist_daily_stats` is retired (a no-op returning 0 in the database) and the ingest scripts no longer call it; artist series are computed on demand, so no refresh is needed after backfills or repairs.
 
 - **Playlists summary**
   The same migration adds `public.playlist_dashboard_summary`, combining latest snapshot context, distinct artist count, and capped removed-track count. The page falls back to the older individual RPCs if the summary function is not present.
