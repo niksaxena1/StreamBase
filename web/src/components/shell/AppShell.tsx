@@ -68,7 +68,7 @@ export function AppShell(props: {
       <MobileNavWithBadge datasetMode={navDatasetMode} appAccess={appAccess} isAdmin={props.isAdmin === true} />
       {playlistWatchOnly ? null : <LazyAIWidget />}
 
-      <div className="sb-app-shell min-h-dvh" data-mode={datasetMode}>
+      <div className="sb-app-shell min-h-dvh overflow-x-clip" data-mode={datasetMode}>
         <div
           className="pointer-events-none fixed inset-0 z-0 overflow-hidden"
           style={{ contain: "strict" }}

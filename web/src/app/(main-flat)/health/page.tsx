@@ -92,7 +92,7 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
         </Alert>
       )}
 
-      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <Suspense fallback={<Skeleton className="h-72 w-full rounded-2xl" />}>
           <PipelineTodayCard />
         </Suspense>
