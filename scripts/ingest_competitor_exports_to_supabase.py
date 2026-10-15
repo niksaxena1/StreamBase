@@ -19,7 +19,6 @@ from streambase_rate import load_stream_payout_usd
 
 STREAM_PAYOUT_USD = 0.002
 COMPETITOR_INTERPOLATION_LOOKBACK_DAYS = 14
-ARTIST_REFRESH_BATCH_DAYS = 3
 
 COMPETITOR_TABLES = {
     "tracks": "competitor.tracks",
@@ -209,27 +208,6 @@ def normalize_competitor_analytics(pg: Postgrest, run_date: date, run_id: Option
     )
     print(f"INFO Recomputed competitor.playlist_daily_stats for {recompute_start}..{run_date}: {recomputed}")
 
-    artist_rows_refreshed = 0
-    for batch_start, batch_end in date_batches(
-        recompute_start,
-        run_date,
-        ARTIST_REFRESH_BATCH_DAYS,
-    ):
-        try:
-            refreshed = pg.rpc(
-                "refresh_artist_daily_stats",
-                {
-                    "p_start_date": batch_start.isoformat(),
-                    "p_end_date": batch_end.isoformat(),
-                },
-            )
-            artist_rows_refreshed += int(refreshed or 0)
-        except Exception as artist_stats_err:
-            print(
-                f"WARN Could not refresh competitor.artist_daily_stats for "
-                f"{batch_start}..{batch_end}: {artist_stats_err}"
-            )
-
     return {
         "overrides_written": overrides_written,
         "tracks_affected": tracks_affected,
@@ -237,7 +215,6 @@ def normalize_competitor_analytics(pg: Postgrest, run_date: date, run_id: Option
         "catchup_tracks_smoothed": sum(int(r.get("tracks_smoothed") or 0) for r in catchup["applied_rows"]),
         "catchup_needs_review": len(catchup["review_rows"]),
         "recomputed_days": int(recomputed or 0),
-        "artist_rows_refreshed": artist_rows_refreshed,
     }
 
 

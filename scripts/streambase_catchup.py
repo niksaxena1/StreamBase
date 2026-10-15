@@ -132,9 +132,8 @@ def _warn_needs_review(
 def smooth_own_catalog(pg: Any, run_date: date, *, run_id: Any = None, reconcile_days: int = 14) -> Dict[str, Any]:
     """Own-catalog pipeline step: reconcile obsolete rows, smooth, then cascade stats.
 
-    The own catalog has no other normalization pass, so the playlist/artist stats
-    cascade (``spotibase_recompute_playlist_daily_stats_cascade``, which also
-    refreshes artist_daily_stats) is triggered here from the earliest changed day.
+    The own catalog has no other normalization pass, so the playlist stats
+    cascade (``spotibase_recompute_playlist_daily_stats_cascade``) is triggered here from the earliest changed day.
     Never raises.
     """
     lookback_start = run_date - timedelta(days=reconcile_days)
