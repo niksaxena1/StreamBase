@@ -212,12 +212,12 @@ async function computeDistroMovement(args: {
     const chunk = eventIsrcs.slice(index, index + 200);
     const [latest, previous] = await Promise.all([
       svc
-        .from("track_daily_streams_effective")
+        .from("track_daily_streams_effective_public")
         .select("isrc,streams_cumulative")
         .eq("date", args.runDate)
         .in("isrc", chunk),
       svc
-        .from("track_daily_streams_effective")
+        .from("track_daily_streams_effective_public")
         .select("isrc,streams_cumulative")
         .eq("date", prevRunDate)
         .in("isrc", chunk),

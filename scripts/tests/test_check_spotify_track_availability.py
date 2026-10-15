@@ -203,7 +203,7 @@ class FakePg:
             "spotify_track_availability": list(states),
             "spotify_track_availability_events": list(events),
             "tracks": [],
-            "track_daily_streams_effective": list(daily_streams),
+            "track_daily_streams_effective_public": list(daily_streams),
         }
         self.next_id = 1 + len(events)
         self.effective_queries = []
@@ -217,7 +217,7 @@ class FakePg:
         return self.rpc(name, params)
 
     def select_all(self, table, select, filters, order=None, page_size=1000):
-        if table == "track_daily_streams_effective":
+        if table == "track_daily_streams_effective_public":
             self.effective_queries.append((select, filters, order))
             requested_isrcs = set(filters.split("isrc=in.(", 1)[1].split(")", 1)[0].split(","))
             return [dict(r) for r in self.tables[table] if r["isrc"] in requested_isrcs]

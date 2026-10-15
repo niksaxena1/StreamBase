@@ -370,7 +370,7 @@ def already_dead_takedowns(pg: Postgrest, events: List[dict], tracks_by_isrc: Di
     end = max(dated.values())
     isrc_filter = ",".join(quote(e["isrc"], safe="") for e in candidates)
     rows = pg.select_all(
-        "track_daily_streams_effective",
+        "track_daily_streams_effective_public",
         "date,isrc,streams_cumulative",
         f"isrc=in.({isrc_filter})&date=gte.{start.isoformat()}&date=lte.{end.isoformat()}",
         order="date.asc,isrc.asc",
