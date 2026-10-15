@@ -869,6 +869,23 @@ def main():
             # Table may not exist yet; no exclusions.
             pass
 
+        # Compare against yesterday's corrected value: when yesterday was stale and repaired by an
+        # override, SOT often reports that repaired value today (still a day behind). Raw-to-raw
+        # that looks like growth; against the override it is flat (or lower), i.e. stale again.
+        prev_effective = dict(prev_streams)
+        try:
+            for r in pg.select_all(
+                "track_daily_stream_overrides",
+                "isrc,streams_cumulative_override",
+                f"date=eq.{prev_date.isoformat()}",
+                order="isrc.asc",
+            ):
+                o_isrc = norm_isrc(r.get("isrc") or "")
+                if o_isrc and r.get("streams_cumulative_override") is not None:
+                    prev_effective[o_isrc] = int(r["streams_cumulative_override"])
+        except Exception as e:
+            print(f"  ⚠ Could not load yesterday's overrides for stale detection: {e}")
+
         # Phase 1: find candidate stale tracks (cumulative threshold only).
         candidate_stale_isrcs: List[str] = []
         candidate_stale_map: dict = {}
@@ -876,9 +893,9 @@ def main():
             if isrc.strip().upper() in stale_excluded_isrcs:
                 continue
             today_val = catalog_streams_today.get(isrc)
-            prev_val = prev_streams.get(isrc)
+            prev_val = prev_effective.get(isrc)
             if today_val is not None and prev_val is not None:
-                if today_val == prev_val and prev_val >= stale_track_threshold:
+                if today_val <= prev_val and prev_val >= stale_track_threshold:
                     candidate_stale_isrcs.append(isrc)
                     candidate_stale_map[isrc] = today_val
 
