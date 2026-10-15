@@ -17,6 +17,7 @@ import {
   type ViewWindow,
 } from "./aggregateSeries";
 import type { ChartViewport } from "./useChartViewport";
+import { previousYearAvailable, withPreviousYear, type YoYMeta } from "./yoyCompare";
 
 type CategoricalState = { activeLabel?: string | number | undefined };
 
@@ -57,7 +58,27 @@ export function useAdaptiveChart<R extends { date: string }>(args: {
   const spanDays = series?.spanDays ?? 0;
   // Weekend shading, weekend-dip labels and per-point % only make sense for a short daily view.
   const dailyDetail = !active || (granularity === "daily" && spanDays <= DAILY_MAX_SPAN_DAYS);
-  const rowsDesc = (active && series ? series.rowsDesc : rows) as Array<R & Partial<AdaptiveMeta>>;
+  const baseRowsDesc = (active && series ? series.rowsDesc : rows) as Array<R & Partial<AdaptiveMeta>>;
+
+  // "Compare: Previous year": offered only when the shifted window has data in the loaded rows.
+  const compareAvailable = useMemo(
+    () => active && previousYearAvailable(rows, valueKey, visibleWindow),
+    [active, rows, valueKey, visibleWindow],
+  );
+  const compareOn = compareAvailable && Boolean(view?.compare);
+  const rowsDesc = useMemo(
+    () =>
+      compareOn
+        ? (withPreviousYear({
+            displayRows: baseRowsDesc as Array<R & { _bucketEnd?: string }>,
+            allRows: rows,
+            valueKey,
+            isCumulative,
+            granularity,
+          }) as Array<R & Partial<AdaptiveMeta> & Partial<YoYMeta>>)
+        : baseRowsDesc,
+    [compareOn, baseRowsDesc, rows, valueKey, isCumulative, granularity],
+  );
 
   // A go-to-date that needed older data completes once the server delivers it.
   const applyPending = view?.applyPending;
@@ -174,6 +195,8 @@ export function useAdaptiveChart<R extends { date: string }>(args: {
     rowsDesc,
     granularity,
     forcedDaily,
+    compareAvailable,
+    compareOn,
     bounds,
     visibleWindow: visibleWindow as ViewWindow | null,
     spanDays,

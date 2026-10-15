@@ -20,6 +20,7 @@ import { DailyChartLabels, UniformYAxisTick } from "./DailyChartLabels";
 import { usePhoneChart } from "./usePhoneChart";
 import { AdaptiveChartToolbar } from "./AdaptiveChartToolbar";
 import { useAdaptiveChart } from "./useAdaptiveChart";
+import { YOY_SERIES_KEY } from "./yoyCompare";
 import type { ChartViewport } from "./useChartViewport";
 import { TouchChartPoint, useTouchChartTooltip } from "./useTouchChartTooltip";
 
@@ -208,6 +209,8 @@ export function DailyStreamsWithMAChart({
   const allDailyValues = [
     ...chartData.map((d) => d.daily),
     ...chartData.map((d) => d.ma7),
+    // The previous-year overlay shares the y axis, so it must be inside the domain.
+    ...(adaptive.compareOn ? chartData.map((d) => (d as { _prevValue?: number | null })._prevValue) : []),
   ];
   const hasNegatives = allDailyValues.some(
     (x) => typeof x === "number" && Number.isFinite(x) && (x as number) < 0,
@@ -319,6 +322,9 @@ export function DailyStreamsWithMAChart({
         phone={phone}
         rootLabel={adaptiveRootLabel}
         onNeedMoreData={onNeedMoreData}
+        compareAvailable={adaptive.compareAvailable}
+        compareOn={adaptive.compareOn}
+        compareColor={effectiveDailyColor}
       />
     ) : null}
     <div
@@ -397,7 +403,7 @@ export function DailyStreamsWithMAChart({
               <DailySeriesTooltip
                 active={active}
                 label={label as string}
-                payload={payload?.map((entry) => entry.dataKey === "_rangeValue"
+                payload={payload?.filter((entry) => entry.dataKey !== YOY_SERIES_KEY).map((entry) => entry.dataKey === "_rangeValue"
                     ? { ...entry, dataKey: "daily", value: entry.payload?.daily }
                     : entry.dataKey === "_rangeMa7" ? { ...entry, dataKey: "ma7", value: entry.payload?.ma7 } : entry) as TooltipPayload[]}
                 valueLabel={valueLabel}
@@ -492,6 +498,20 @@ export function DailyStreamsWithMAChart({
               ifOverflow="hidden"
             />
           )}
+          {adaptive.compareOn ? (
+            <Line
+              type="monotone"
+              dataKey={YOY_SERIES_KEY}
+              name="Previous year"
+              stroke="var(--sb-muted)"
+              strokeOpacity={0.85}
+              strokeWidth={1.75}
+              dot={false}
+              activeDot={false}
+              isAnimationActive={false}
+              connectNulls={false}
+            />
+          ) : null}
           <Area
             type="monotone"
             dataKey={typical ? "_rangeValue" : "daily"}

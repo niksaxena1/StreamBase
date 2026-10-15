@@ -46,6 +46,9 @@ export type ChartViewport = {
   goTo: (dateIso: string, bounds: ViewWindow | null, onNeedMoreData?: NeedMoreData) => void;
   /** Complete a remembered go-to-date once enough data has loaded. */
   applyPending: (bounds: ViewWindow | null) => void;
+  /** "Compare: Previous year" overlay. Per-session choice, off by default. */
+  compare: boolean;
+  setCompare: (on: boolean) => void;
 };
 
 /** Client-only zoom / granularity state for one adaptive chart. Hosts call this and hand the result to the chart. */
@@ -54,6 +57,7 @@ export function useChartViewport(id: string): ChartViewport {
   const [stack, setStack] = useState<ZoomEntry[]>([]);
   const [gotoDate, setGotoDate] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [compare, setCompare] = useState(false);
 
   const clearNotice = useCallback(() => setNotice(null), []);
   const zoomTo = useCallback((window: ViewWindow, label?: string, granularity?: ChartGranularity) => {
@@ -120,7 +124,7 @@ export function useChartViewport(id: string): ChartViewport {
   const window = stack.length ? stack[stack.length - 1].window : null;
 
   return useMemo(
-    () => ({ id, mode, setMode, stack, window, gotoDate, notice, clearNotice, zoomTo, back, reset, goTo, applyPending }),
-    [id, mode, stack, window, gotoDate, notice, clearNotice, zoomTo, back, reset, goTo, applyPending],
+    () => ({ id, mode, setMode, stack, window, gotoDate, notice, clearNotice, zoomTo, back, reset, goTo, applyPending, compare, setCompare }),
+    [id, mode, stack, window, gotoDate, notice, clearNotice, zoomTo, back, reset, goTo, applyPending, compare],
   );
 }

@@ -21,6 +21,7 @@ import { DailyChartLabels, UniformYAxisTick } from "./DailyChartLabels";
 import { usePhoneChart } from "./usePhoneChart";
 import { AdaptiveChartToolbar } from "./AdaptiveChartToolbar";
 import { useAdaptiveChart } from "./useAdaptiveChart";
+import { YOY_SERIES_KEY } from "./yoyCompare";
 import type { ChartViewport } from "./useChartViewport";
 import { TouchChartPoint, useTouchChartTooltip } from "./useTouchChartTooltip";
 import { formatCompactMoney, formatInt, formatUsd } from "@/lib/format";
@@ -217,6 +218,8 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
   // - Daily with negatives: always compute domain so negatives are visible (never clamped at 0).
   const v = chartData.map((d) => d.value);
   const ma = hasMA7 ? chartData.map((d) => d.ma7) : [];
+  // The previous-year overlay shares the y axis, so it must be inside the domain.
+  const prevYear = adaptive.compareOn ? chartData.map((d) => (d as { _prevValue?: number | null })._prevValue) : [];
   const hasNegatives = !isCumulative && [...v, ...ma].some(
     (x) => typeof x === "number" && Number.isFinite(x) && (x as number) < 0,
   );
@@ -226,19 +229,19 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
     if (typicalDomain) return typicalDomain;
     if (chartData.length === 0) return undefined;
     if (isCumulative) {
-      const values = v.filter((x): x is number => typeof x === "number" && Number.isFinite(x));
+      const values = [...v, ...prevYear].filter((x): x is number => typeof x === "number" && Number.isFinite(x));
       if (!values.length) return undefined;
       return [Math.min(...values), Math.max(...values)] as [number, number];
     }
     if (!zoomDailyYAxis && !hasNegatives) return undefined;
-    return computePaddedDomain([...v, ...ma], {
+    return computePaddedDomain([...v, ...ma, ...prevYear], {
       clampMinToZero: allNonNegativeDaily,
       padRatio: 0.10,
       minAbsPad: 1,
     });
   })();
 
-  const finiteValues = [...(typical ? chartData.map((d) => d._rangeValue) : v), ...(typical ? chartData.map((d) => d._rangeMa7) : ma)].filter((x): x is number => typeof x === "number" && Number.isFinite(x));
+  const finiteValues = [...(typical ? chartData.map((d) => d._rangeValue) : v), ...(typical ? chartData.map((d) => d._rangeMa7) : ma), ...prevYear].filter((x): x is number => typeof x === "number" && Number.isFinite(x));
   const dataMax = finiteValues.length ? Math.max(...finiteValues) : 0;
   const dataMin = finiteValues.length ? Math.min(...finiteValues) : 0;
   // Match Recharts' default nice domain, then supply numeric bounds so label
@@ -265,7 +268,7 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
     return formatKmbTick(n);
   };
 
-  const ChartComponent = hasMA7 ? ComposedChart : AreaChart;
+  const ChartComponent = hasMA7 || adaptive.compareOn ? ComposedChart : AreaChart;
   const { dot: baseDot, activeDot: baseActiveDot } = makeHighlightDayDotRenderers({
     baseColor: effectiveColor,
     highlightColor: sundayColor,
@@ -349,6 +352,9 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
         phone={phone}
         rootLabel={adaptiveRootLabel}
         onNeedMoreData={onNeedMoreData}
+        compareAvailable={adaptive.compareAvailable}
+        compareOn={adaptive.compareOn}
+        compareColor={effectiveColor}
       />
     ) : null}
     <div
@@ -428,7 +434,7 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
                 <DailySeriesTooltip
                   active={active}
                   label={label as string}
-                  payload={payload?.map((entry) => entry.dataKey === "_rangeValue"
+                  payload={payload?.filter((entry) => entry.dataKey !== YOY_SERIES_KEY).map((entry) => entry.dataKey === "_rangeValue"
                     ? { ...entry, dataKey: "value", value: entry.payload?.value }
                     : entry.dataKey === "_rangeMa7" ? { ...entry, dataKey: "ma7", value: entry.payload?.ma7 } : entry) as TooltipPayload[]}
                   valueLabel={valueLabel}
@@ -525,6 +531,20 @@ export const DailyStreamsChart = memo(function DailyStreamsChart({
               ifOverflow="hidden"
             />
           )}
+          {adaptive.compareOn ? (
+            <Line
+              type="monotone"
+              dataKey={YOY_SERIES_KEY}
+              name="Previous year"
+              stroke="var(--sb-muted)"
+              strokeOpacity={0.85}
+              strokeWidth={1.75}
+              dot={false}
+              activeDot={false}
+              isAnimationActive={false}
+              connectNulls={false}
+            />
+          ) : null}
           <Area
             type="monotone"
             dataKey={typical ? "_rangeValue" : "value"}

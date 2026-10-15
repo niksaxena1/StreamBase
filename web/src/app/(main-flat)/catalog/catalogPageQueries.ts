@@ -108,6 +108,36 @@ export async function fetchCatalogArtistSeries(
   return { ...base, data: [...((cold.data ?? []) as unknown[]), ...((base.data ?? []) as unknown[])] };
 }
 
+/** The precomputed table is refreshed over this many trailing days; newer dates are always computed on demand. */
+export const PRECOMPUTED_ARTIST_SERIES_STABLE_DAYS = 45;
+
+/**
+ * Older part of an artist's All-history series. Reads the precomputed per-artist monthly table
+ * (`catalog_artist_series_precomputed`, same rows as the on-demand readers) and falls back to the on-demand
+ * computation when the table has nothing for the artist, errors, or the range touches the recently-changing window.
+ */
+export async function fetchOlderCatalogArtistSeries(
+  sb: SupabaseClient,
+  args: { artistId: string; startDate: string; endDate: string; todayIso?: string },
+) {
+  const today = args.todayIso ?? new Date().toISOString().slice(0, 10);
+  const stableUntil = new Date(Date.parse(`${today}T00:00:00Z`) - PRECOMPUTED_ARTIST_SERIES_STABLE_DAYS * 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+  if (args.endDate <= stableUntil) {
+    const pre = await sb.rpc("catalog_artist_series_precomputed", {
+      p_artist: args.artistId,
+      p_start: args.startDate,
+      p_end: args.endDate,
+    });
+    if (!pre.error && Array.isArray(pre.data) && pre.data.length > 0) return pre;
+    if (pre.error && !isMissingPostgresFunctionError(pre.error)) {
+      logWarn("catalog.artist_series.precomputed_failed", { message: pre.error.message });
+    }
+  }
+  return await fetchCatalogArtistSeries(sb, args);
+}
+
 /** Batch-fetch the distro playlist (playlist_type = 'Distro') for every top-track ISRC. */
 export async function fetchTopTrackDistroPlaylists(
   svc: CatalogServiceClient,

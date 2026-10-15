@@ -17,6 +17,8 @@ const MODES: ReadonlyArray<{ value: GranularityMode; label: string }> = [
   { value: "monthly", label: "Monthly" },
 ];
 
+const COMPARE_OPTION = "__compare";
+
 const stop = {
   onMouseDown: (event: { stopPropagation: () => void }) => event.stopPropagation(),
   onPointerDown: (event: { stopPropagation: () => void }) => event.stopPropagation(),
@@ -41,6 +43,9 @@ export function AdaptiveChartToolbar({
   phone,
   rootLabel = "All time",
   onNeedMoreData,
+  compareAvailable = false,
+  compareOn = false,
+  compareColor,
 }: {
   view: ChartViewport;
   /** Granularity currently drawn (resolved from Auto). */
@@ -52,6 +57,12 @@ export function AdaptiveChartToolbar({
   phone: boolean;
   rootLabel?: string;
   onNeedMoreData?: (dateIso: string) => boolean | void;
+  /** Previous-year data exists for at least part of the visible window: show the Compare toggle. */
+  compareAvailable?: boolean;
+  /** Overlay is drawn (toggle on and available). */
+  compareOn?: boolean;
+  /** Colour of the current series, for the legend swatch. */
+  compareColor?: string;
 }) {
   const hint = granularityHint(granularity, isCumulative, forcedDaily);
   const zoomed = view.stack.length > 0;
@@ -62,7 +73,10 @@ export function AdaptiveChartToolbar({
         <select
           aria-label="Chart granularity"
           value={view.mode}
-          onChange={(event) => view.setMode(event.target.value as GranularityMode)}
+          onChange={(event) => {
+            if (event.target.value === COMPARE_OPTION) view.setCompare(!view.compare);
+            else view.setMode(event.target.value as GranularityMode);
+          }}
           className="min-h-8 rounded-md border px-2 py-1 text-xs"
           style={controlStyle}
         >
@@ -71,6 +85,9 @@ export function AdaptiveChartToolbar({
               {m.value === "auto" ? `Auto (${granularity})` : m.label}
             </option>
           ))}
+          {compareAvailable ? (
+            <option value={COMPARE_OPTION}>{view.compare ? "Compare: Previous year (on)" : "Compare: Previous year"}</option>
+          ) : null}
         </select>
       ) : (
         <div role="group" aria-label="Chart granularity" className="flex shrink-0 rounded-md border" style={controlStyle}>
@@ -111,6 +128,31 @@ export function AdaptiveChartToolbar({
           style={controlStyle}
         />
       </label>
+
+      {compareAvailable && !phone ? (
+        <button
+          type="button"
+          aria-pressed={view.compare}
+          onClick={() => view.setCompare(!view.compare)}
+          className="min-h-8 shrink-0 rounded-md border px-2 py-1"
+          style={{ ...controlStyle, fontWeight: view.compare ? 600 : 400, opacity: view.compare ? 1 : 0.7 }}
+        >
+          Compare: Previous year
+        </button>
+      ) : null}
+
+      {compareOn ? (
+        <span className="flex shrink-0 items-center gap-3" style={{ color: "var(--sb-muted)" }} data-sb-yoy-legend>
+          <span className="flex items-center gap-1">
+            <svg width="16" height="6" aria-hidden><line x1="0" y1="3" x2="16" y2="3" stroke={compareColor ?? "var(--sb-text)"} strokeWidth="2.5" /></svg>
+            Current
+          </span>
+          <span className="flex items-center gap-1">
+            <svg width="16" height="6" aria-hidden><line x1="0" y1="3" x2="16" y2="3" stroke="var(--sb-muted)" strokeWidth="2" strokeOpacity="0.8" /></svg>
+            Previous year
+          </span>
+        </span>
+      ) : null}
 
       {view.notice ? (
         <span id="chart-goto-notice" role="status" style={{ color: "var(--sb-muted)" }}>{view.notice}</span>

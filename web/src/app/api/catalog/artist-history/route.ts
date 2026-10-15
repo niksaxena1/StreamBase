@@ -5,7 +5,7 @@ import { supabaseService } from "@/lib/supabase/service";
 import { apiJsonErr, apiJsonOk, requireAdmin } from "@/lib/api/server";
 import { cachedQuery } from "@/lib/supabase/cache";
 import { CACHE_TTL_1H } from "@/lib/constants";
-import { fetchCatalogArtistSeries } from "@/app/(main-flat)/catalog/catalogPageQueries";
+import { fetchOlderCatalogArtistSeries } from "@/app/(main-flat)/catalog/catalogPageQueries";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,6 +15,7 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 /**
  * Older (cold / archived) part of a Catalog artist series. The page renders the recent year first and the client
  * fills older history from here, because the cold artist aggregate can take many seconds for large artists.
+ * Served from the precomputed per-artist monthly table when possible (milliseconds), on demand otherwise.
  * Run-date basis, same row shape as the page's own artist series; cached for an hour per artist and range.
  */
 export async function GET(request: NextRequest) {
@@ -40,8 +41,8 @@ export async function GET(request: NextRequest) {
   }
 
   const { data, error } = await cachedQuery(
-    async () => await fetchCatalogArtistSeries(svc, { artistId, startDate: start, endDate: end }),
-    `catalog-artist-series-older-v1-${artistId}-${start}-${end}-ov${overrideBuster}`,
+    async () => await fetchOlderCatalogArtistSeries(svc, { artistId, startDate: start, endDate: end }),
+    `catalog-artist-series-older-v2-${artistId}-${start}-${end}-ov${overrideBuster}`,
     CACHE_TTL_1H,
   );
   if (error) return apiJsonErr(error.message, 500);

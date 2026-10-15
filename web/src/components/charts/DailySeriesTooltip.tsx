@@ -7,6 +7,7 @@ import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import type { TooltipCopyValues } from "@/components/charts/useChartCopyToClipboard";
 import { formatInt } from "@/lib/format";
+import { formatYoyPercent } from "@/components/charts/yoyCompare";
 
 /** Weekly/monthly averages are fractional; show whole streams, but keep currency (revenue) precision. */
 export function formatBucketValue(value: number, isAverage: boolean, fmt: (n: number) => string): string {
@@ -279,6 +280,31 @@ export function DailySeriesTooltip({
             );
           })
         )}
+
+        {(() => {
+          const p = sorted[0]?.payload as Record<string, unknown> | undefined;
+          if (!p || typeof p._prevLabel !== "string") return null;
+          const prev = toNum(p._prevValue);
+          const pct = toNum(p._yoyPct);
+          return (
+            <div className="mt-1 text-xs" data-sb-yoy-tooltip>
+              <span style={{ color: "var(--sb-muted)" }}>
+                {p._prevLabel}:{" "}
+                <span className="font-semibold" style={{ color: "var(--sb-text)" }}>
+                  {prev == null ? "no data" : formatBucketValue(prev, Boolean(p._isAverage), fmtValue)}
+                </span>
+              </span>
+              {pct != null ? (
+                <span
+                  className="ml-1.5 text-[10px] font-semibold"
+                  style={{ color: pct > 0 ? "var(--sb-success, #10b981)" : pct < 0 ? "var(--sb-error, #ef4444)" : "var(--sb-muted)" }}
+                >
+                  ({formatYoyPercent(pct)})
+                </span>
+              ) : null}
+            </div>
+          );
+        })()}
 
         {(() => {
           const p = sorted[0]?.payload as Record<string, unknown> | undefined;
