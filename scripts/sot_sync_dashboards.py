@@ -164,7 +164,7 @@ def confirmed_empty_page(page, url: str, *, dashboard: bool) -> bool:
         # "Checked N minutes ago" instead (empty playlists also keep a spinner in the Tracks card).
         and (
             page.get_by_role("button", name="Refresh now", exact=True).is_visible()
-            or page.get_by_text(re.compile(r"^Checked\s")).first.is_visible()
+            or page.get_by_text(re.compile(r"^\s*Checked\s")).first.is_visible()
         )
         and (
             page.locator("table").count() == 0
@@ -172,7 +172,9 @@ def confirmed_empty_page(page, url: str, *, dashboard: bool) -> bool:
                 "It looks like this playlist was empty at this date.", exact=True
             ).is_visible()
         )
-        and page.get_by_text(re.compile(r"^Updated\s")).first.is_visible()
+        # Raw text nodes keep their source indentation (newline + spaces before "Updated 2 months ago"),
+        # and Playwright matches the regex against that raw text, so allow leading whitespace.
+        and page.get_by_text(re.compile(r"^\s*Updated\s")).first.is_visible()
         and not page.get_by_text(re.compile(r"^Loading", re.I)).first.is_visible()
     )
 

@@ -113,7 +113,7 @@ class ExpectedEmptySyncTests(unittest.TestCase):
         def matching_text(pattern):
             if pattern.search("Loading tracks"):
                 return loading
-            if pattern.search("Checked 23 minutes ago"):
+            if pattern.search("\n        Checked 23 minutes ago\n"):
                 return checked
             return updated
 
@@ -178,7 +178,8 @@ class ExpectedEmptySyncTests(unittest.TestCase):
         def matching_text(pattern):
             if pattern.search("Loading tracks"):
                 return loading
-            self.assertIsNotNone(pattern.search("Updated 5 minutes ago"))
+            # SOT serves "Updated" as an indented bare text node; Playwright matches the raw text.
+            self.assertIsNotNone(pattern.search("\n                    Updated 2 months ago\n"))
             return updated
 
         page.get_by_text.side_effect = matching_text
