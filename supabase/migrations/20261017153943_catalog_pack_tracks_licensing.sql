@@ -26,13 +26,13 @@ update catalog.packs set licensee = 'Evenfall', batch_date = date '2026-10-17'
  where name = 'Evenfall 17.10.26' and licensee is null;
 
 insert into catalog.pack_tracks (pack_id, catalog_id, status, status_on, dropbox_path, shared_link)
-select distinct on (c.target) (c.after->>'pack_id')::bigint, c.target, 'staged',
+select distinct on (c.target, (c.after->>'pack_id')::bigint) (c.after->>'pack_id')::bigint, c.target, 'staged',
        coalesce((c.after->>'staged_on')::date, c.at::date), c.after->>'dropbox_path', c.after->>'shared_link'
   from catalog.change_log c
   join catalog.tracks t on t.catalog_id = c.target
   join catalog.packs p on p.id = (c.after->>'pack_id')::bigint
  where c.action = 'pack_staged'
- order by c.target, c.at desc
+ order by c.target, (c.after->>'pack_id')::bigint, c.at desc
 on conflict do nothing;
 
 -- Mark tracks staged or sent in one batch; every change is logged.
