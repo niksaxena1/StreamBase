@@ -66,12 +66,13 @@ export function libraryOpeningOffset(items: readonly LibraryTableItem[], sort: L
   return index < 0 ? 0 : Math.max(0, libraryItemOffsets(items)[index] - 3 * LIBRARY_ROW_HEIGHT - LIBRARY_GROUP_HEIGHT);
 }
 
-/** A group entering the 26px overlay replaces the previous label before it can be obscured. */
-export function pinnedLibraryMonth(groups: readonly { item: Extract<LibraryTableItem, { kind: "month" }>; offset: number }[], scrollTop: number) {
+/** Hide the overlay wherever it would obscure any part of a month or Today divider. */
+export function pinnedLibraryMonth(decorations: readonly { item: Exclude<LibraryTableItem, { kind: "row" }>; offset: number }[], scrollTop: number) {
   let active: Extract<LibraryTableItem, { kind: "month" }> | undefined;
-  for (const group of groups) {
-    if (group.offset > scrollTop + LIBRARY_GROUP_HEIGHT) break;
-    active = group.item;
+  for (const { item, offset } of decorations) {
+    if (offset >= scrollTop + LIBRARY_GROUP_HEIGHT) break;
+    if (offset + LIBRARY_GROUP_HEIGHT > scrollTop) return undefined;
+    if (item.kind === "month") active = item;
   }
   return active;
 }

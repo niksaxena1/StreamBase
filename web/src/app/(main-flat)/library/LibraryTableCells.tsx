@@ -3,7 +3,7 @@
 import { ArrowDown, ArrowUp, Check, Copy, ExternalLink, Folder } from "lucide-react";
 import { useEffect, useRef, type ReactNode } from "react";
 
-import { LIBRARY_TABLE_COLUMNS, libraryPinnedOffsets, originalityInfo, type LibraryColumn } from "@/lib/library/columns";
+import { LIBRARY_TABLE_COLUMNS, libraryPinnedOffsets, originalityInfo, type LibraryColumn, type LibraryColumnId } from "@/lib/library/columns";
 import { defaultSortDir, type LibrarySortDir, type LibrarySortKey } from "@/lib/library/filters";
 import { formatDuration, formatReleaseDate } from "@/lib/library/format";
 import { formatCompactStreams, formatExactStreams } from "@/lib/library/streams";
@@ -113,6 +113,7 @@ const alignClass = (c: LibraryColumn) => (c.align === "right" ? "text-right" : c
  */
 export function HeaderCells({
   columns = LIBRARY_TABLE_COLUMNS,
+  pinnedOffsets = libraryPinnedOffsets(columns),
   sort,
   dir,
   onSort,
@@ -122,6 +123,7 @@ export function HeaderCells({
   headerFilters,
 }: {
   columns?: readonly LibraryColumn[];
+  pinnedOffsets?: ReadonlyMap<LibraryColumnId, number>;
   sort: LibrarySortKey;
   dir: LibrarySortDir;
   onSort: (sort: LibrarySortKey, dir: LibrarySortDir) => void;
@@ -130,7 +132,7 @@ export function HeaderCells({
   onToggleAll: () => void;
   headerFilters?: LibraryHeaderFilterProps;
 }) {
-  const offsets = libraryPinnedOffsets(columns);
+  const lastPinned = [...pinnedOffsets.keys()].at(-1);
   return (
     <>
       {columns.map((c) => {
@@ -142,8 +144,9 @@ export function HeaderCells({
             role="columnheader"
             aria-sort={sortKey ? active ? (dir === "asc" ? "ascending" : "descending") : "none" : undefined}
             data-column={c.id}
-            data-pinned={Boolean(c.pinned)}
-            style={{ left: offsets.get(c.id) }}
+            data-pinned={pinnedOffsets.has(c.id)}
+            style={{ left: pinnedOffsets.get(c.id) }}
+            data-pinned-last={c.id === lastPinned}
             className={[styles.cell, "group", alignClass(c)].join(" ")}
             title={c.id === "originality" ? "Originality" : c.label || undefined}
           >
@@ -174,12 +177,14 @@ export function HeaderCells({
 /** One cell per column, in the same order as `HeaderCells`. */
 export function RowCells({
   columns = LIBRARY_TABLE_COLUMNS,
+  pinnedOffsets = libraryPinnedOffsets(columns),
   row,
   entityNames,
   checked,
   onToggle,
 }: {
   columns?: readonly LibraryColumn[];
+  pinnedOffsets?: ReadonlyMap<LibraryColumnId, number>;
   row: LibraryRow;
   entityNames: Map<string, string>;
   checked: boolean;
@@ -188,7 +193,7 @@ export function RowCells({
   const artist = row.sheet_artist;
   const title = row.sheet_title;
   const entityName = row.entity ? (entityNames.get(row.entity) ?? row.entity.toUpperCase()) : "";
-  const offsets = libraryPinnedOffsets(columns);
+  const lastPinned = [...pinnedOffsets.keys()].at(-1);
 
   const render = (c: LibraryColumn): ReactNode => {
     switch (c.id) {
@@ -265,7 +270,7 @@ export function RowCells({
   return (
     <>
       {columns.map((c) => (
-        <div key={c.id} role="cell" data-column={c.id} data-pinned={Boolean(c.pinned)} style={{ left: offsets.get(c.id) }} className={[styles.cell, alignClass(c)].join(" ")}>
+        <div key={c.id} role="cell" data-column={c.id} data-pinned={pinnedOffsets.has(c.id)} style={{ left: pinnedOffsets.get(c.id) }} data-pinned-last={c.id === lastPinned} className={[styles.cell, alignClass(c)].join(" ")}>
           {render(c)}
         </div>
       ))}

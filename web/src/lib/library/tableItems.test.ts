@@ -56,12 +56,40 @@ describe("Library table items", () => {
     expect(libraryOpeningOffset(items, "release", "desc")).toBe(0);
   });
 
-  it("hands off the pinned label when the next group enters the overlay, including a short final group", () => {
+  it("leaves the next group readable in the overlay area, including a short final group", () => {
     const items = buildLibraryItems(sortRows(rows, "release", "asc"), "release", "asc", today);
     const offsets = libraryItemOffsets(items);
     const groups = items.flatMap((item, index) => item.kind === "month" ? [{ item, offset: offsets[index] }] : []);
-    expect(pinnedLibraryMonth(groups, groups.at(-1)!.offset - 6)?.label).toBe("No release date");
+    expect(pinnedLibraryMonth(groups, groups.at(-1)!.offset - 6)).toBeUndefined();
+    expect(pinnedLibraryMonth(groups, groups.at(-1)!.offset + 26)?.label).toBe("No release date");
     expect(pinnedLibraryMonth(groups, groups[1].offset - 27)?.month).toBe("2026-09");
-    expect(pinnedLibraryMonth(groups, groups[1].offset - 26)?.month).toBe("2026-10");
+    expect(pinnedLibraryMonth(groups, groups[1].offset - 25)).toBeUndefined();
+    expect(pinnedLibraryMonth(groups, groups[1].offset)).toBeUndefined();
+  });
+
+  it("never obscures Today followed by a month at the top of descending released rows", () => {
+    const released = ["2026-10-16", "2026-10-15", "2026-09-01"].map((release_date, i) => makeRow({ catalog_id: String(i), release_date }));
+    const items = buildLibraryItems(released, "release", "desc", today);
+    const offsets = libraryItemOffsets(items);
+    const decorations = items.flatMap((item, i) => item.kind !== "row" ? [{ item, offset: offsets[i] }] : []);
+    expect(items.slice(0, 2).map((item) => item.kind)).toEqual(["today", "month"]);
+    for (const top of [0, 1, 25, 26, 27, 51]) expect(pinnedLibraryMonth(decorations, top)).toBeUndefined();
+    expect(pinnedLibraryMonth(decorations, 52)?.month).toBe("2026-10");
+    expect(pinnedLibraryMonth(decorations, 90)?.month).toBe("2026-10");
+    for (const top of [91, 115, 116, 141]) expect(pinnedLibraryMonth(decorations, top)).toBeUndefined();
+    expect(pinnedLibraryMonth(decorations, 142)?.month).toBe("2026-09");
+  });
+
+  it.each(["asc", "desc"] as const)("hides for every intersecting decoration and resumes over data in %s order", (dir) => {
+    const items = buildLibraryItems(sortRows(rows, "release", dir), "release", dir, today);
+    const offsets = libraryItemOffsets(items);
+    const decorations = items.flatMap((item, i) => item.kind !== "row" ? [{ item, offset: offsets[i] }] : []);
+    for (let top = 0; top < offsets.at(-1)!; top++) {
+      const overlaps = decorations.some(({ offset }) => offset < top + 26 && offset + 26 > top);
+      const overlay = pinnedLibraryMonth(decorations, top);
+      if (overlaps) expect(overlay).toBeUndefined();
+      else expect(overlay?.kind).toBe("month");
+    }
+    expect(pinnedLibraryMonth([], 0)).toBeUndefined();
   });
 });

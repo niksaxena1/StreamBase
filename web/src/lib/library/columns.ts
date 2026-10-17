@@ -87,11 +87,15 @@ export function libraryMinWidth(columns: readonly LibraryColumn[]): number {
   return columns.reduce((sum, c) => sum + c.minPx, 0);
 }
 
-export function libraryPinnedOffsets(columns: readonly LibraryColumn[]): Map<LibraryColumnId, number> {
+/** Reserve 360px of this table's viewport for horizontal browsing before freezing extra columns. */
+export function libraryPinnedOffsets(columns: readonly LibraryColumn[], viewportWidth = Infinity): Map<LibraryColumnId, number> {
+  const full = columns.filter((c) => c.pinned);
+  const compact = full.filter((c) => c.id === "select" || c.id === "cover" || c.id === "release");
+  const fits = (set: readonly LibraryColumn[]) => viewportWidth - set.reduce((sum, c) => sum + c.minPx, 0) >= 360;
+  const pinned = fits(full) ? full : fits(compact) ? compact : full.filter((c) => c.id === "select");
   let left = 0;
   const offsets = new Map<LibraryColumnId, number>();
-  for (const c of columns) {
-    if (!c.pinned) continue;
+  for (const c of pinned) {
     offsets.set(c.id, left);
     left += c.minPx;
   }

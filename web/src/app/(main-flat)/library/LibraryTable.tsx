@@ -3,10 +3,11 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useLayoutEffect, useMemo, useRef, type RefObject } from "react";
 
-import { libraryGridTemplate, libraryMinWidth, type LibraryColumn } from "@/lib/library/columns";
+import { libraryGridTemplate, libraryMinWidth, libraryPinnedOffsets, type LibraryColumn } from "@/lib/library/columns";
 import type { LibraryFilters, LibrarySortDir, LibrarySortKey } from "@/lib/library/filters";
 import { buildLibraryItems, libraryItemHeight, libraryItemOffsets, libraryOpeningOffset, pinnedLibraryMonth, LIBRARY_GROUP_HEIGHT, LIBRARY_HEADER_HEIGHT, LIBRARY_ROW_HEIGHT } from "@/lib/library/tableItems";
 import { useLibraryViewportHeight } from "@/lib/library/useLibraryViewportHeight";
+import { useLibraryTableWidth } from "@/lib/library/useLibraryTableWidth";
 import type { LibraryRow } from "@/lib/library/types";
 
 import type { FilterOptionLists } from "./LibraryFilters";
@@ -43,9 +44,11 @@ export function LibraryTable({
   const scrollRef = useRef<HTMLDivElement>(null);
   const previousSort = useRef<string | null>(null);
   useLibraryViewportHeight(scrollRef, toolbarRef);
+  const viewportWidth = useLibraryTableWidth(scrollRef);
+  const pinnedOffsets = useMemo(() => libraryPinnedOffsets(columns, viewportWidth), [columns, viewportWidth]);
   const items = useMemo(() => buildLibraryItems(rows, sort, dir, today), [rows, sort, dir, today]);
   const offsets = useMemo(() => libraryItemOffsets(items), [items]);
-  const months = useMemo(() => items.flatMap((item, index) => item.kind === "month" ? [{ item, offset: offsets[index] }] : []), [items, offsets]);
+  const decorations = useMemo(() => items.flatMap((item, index) => item.kind !== "row" ? [{ item, offset: offsets[index] }] : []), [items, offsets]);
   const gridTemplateColumns = libraryGridTemplate(columns);
   // TanStack Virtual returns unmemoizable functions; the table is the only thing that uses them.
   // eslint-disable-next-line react-hooks/incompatible-library
@@ -67,14 +70,14 @@ export function LibraryTable({
 
   const allSelected = rows.length > 0 && rows.every((r) => selection.selected.has(r.catalog_id));
   const top = virtualizer.scrollOffset ?? 0;
-  const activeMonth = pinnedLibraryMonth(months, top);
+  const activeMonth = pinnedLibraryMonth(decorations, top);
 
   return (
     <div className="sb-card relative overflow-hidden">
       <div ref={scrollRef} className="min-h-[360px] overflow-auto" style={{ height: 360 }}>
         <div role="table" aria-label="Releases" aria-rowcount={rows.length + 1} className={styles.table} style={{ minWidth: libraryMinWidth(columns) }}>
           <div role="row" aria-rowindex={1} className="sticky top-0 z-30 grid items-center text-[10px] font-medium uppercase tracking-wide" style={{ gridTemplateColumns, height: LIBRARY_HEADER_HEIGHT, color: "var(--sb-muted)", background: "var(--library-surface)", boxShadow: "0 1px 0 0 var(--sb-border)" }}>
-            <HeaderCells columns={columns} sort={sort} dir={dir} onSort={onSort} allSelected={allSelected} someSelected={selection.selected.size > 0} onToggleAll={selection.onToggleAll} headerFilters={{ filters, options: filterOptions, onChange: onFilter }} />
+            <HeaderCells columns={columns} pinnedOffsets={pinnedOffsets} sort={sort} dir={dir} onSort={onSort} allSelected={allSelected} someSelected={selection.selected.size > 0} onToggleAll={selection.onToggleAll} headerFilters={{ filters, options: filterOptions, onChange: onFilter }} />
           </div>
 
           {activeMonth ? <div aria-hidden="true" className="pointer-events-none sticky z-20 h-0" style={{ top: LIBRARY_HEADER_HEIGHT }}>
@@ -105,7 +108,7 @@ export function LibraryTable({
                   data-odd={rowIndex % 2 !== 0} data-upcoming={Boolean(row.release_date && row.release_date > today)} data-highlighted={selected || checked}
                   className={`${styles.row} absolute left-0 top-0 grid w-full cursor-pointer items-center whitespace-nowrap text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--sb-accent)]`}
                   style={{ ...position, height: LIBRARY_ROW_HEIGHT, gridTemplateColumns }}>
-                  <RowCells columns={columns} row={row} entityNames={entityNames} checked={checked} onToggle={(shift) => selection.onToggle(rowIndex, shift)} />
+                  <RowCells columns={columns} pinnedOffsets={pinnedOffsets} row={row} entityNames={entityNames} checked={checked} onToggle={(shift) => selection.onToggle(rowIndex, shift)} />
                 </div>
               );
             })}

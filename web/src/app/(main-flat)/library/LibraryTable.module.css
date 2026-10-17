@@ -32,7 +32,7 @@
   z-index: 2;
   background: var(--library-background, linear-gradient(var(--sb-surface), var(--sb-surface)), var(--sb-bg));
 }
-.cell[data-column="title"] { border-right: 1px solid var(--sb-border); }
+.cell[data-pinned-last="true"] { border-right: 1px solid var(--sb-border); }
 .row[data-upcoming="true"] .cell[data-column="select"] { box-shadow: inset 2px 0 0 var(--sb-warning); }
 .row[data-upcoming="true"] .cell[data-column="release"] { color: var(--sb-warning); }
 
