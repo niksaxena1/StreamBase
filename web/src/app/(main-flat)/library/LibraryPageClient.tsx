@@ -1,13 +1,15 @@
 "use client";
 
-import { Library, Plus } from "lucide-react";
+import { Download, Library, Plus, Search, X } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Alert } from "@/components/ui/Alert";
-import { Button } from "@/components/ui/Button";
+import { Button, IconButton } from "@/components/ui/Button";
 import { Chip, ChipGroup } from "@/components/ui/Chip";
 import { SectionEmptyState } from "@/components/ui/DataStates";
+import { Input } from "@/components/ui/Input";
+import { activeLibraryFilterChips } from "@/lib/library/activeFilterChips";
 import { downloadCsv } from "@/lib/csv";
 import { attentionCounts } from "@/lib/library/attention";
 import { libraryCsvFilename, libraryCsvRows } from "@/lib/library/exportCsv";
@@ -53,7 +55,7 @@ import { AddReleaseModal } from "./AddReleaseModal";
 import { LibraryAttentionPanel } from "./LibraryAttentionPanel";
 import { LibraryBulkBar } from "./LibraryBulkBar";
 import { LibraryDetailPanel } from "./LibraryDetailPanel";
-import { LibraryFilterBar, type FilterOptionLists } from "./LibraryFilters";
+import { FacetSelect, LibraryFilterBar, type FilterOptionLists } from "./LibraryFilters";
 import { LibrarySchedule } from "./LibrarySchedule";
 import { LibraryTable } from "./LibraryTable";
 import { LibraryViews } from "./LibraryViews";
@@ -95,6 +97,7 @@ export function LibraryPageClient({
   streams: LibraryStream[];
   today: string;
 }) {
+  const toolbarRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const searchParams = useSearchParams();
   const openId = searchParams.get("id");
@@ -171,6 +174,7 @@ export function LibraryPageClient({
   }, [entities, rows, counts, filters.entities]);
 
   const activeCount = narrowingFilterCount(filters, activeFilterCount(filters));
+  const filterChips = activeLibraryFilterChips(filters);
   const total = rows.length;
   const selectedRow = openId ? (rows.find((r) => r.catalog_id === openId) ?? null) : null;
   const isSchedule = filters.view === "schedule";
@@ -202,93 +206,87 @@ export function LibraryPageClient({
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <div
-          className="flex h-10 w-10 items-center justify-center rounded-lg sb-ring"
-          style={{ background: "var(--sb-surface)" }}
-        >
-          <Library className="h-5 w-5" style={{ color: "var(--sb-accent)" }} />
-        </div>
-        <div className="min-w-0">
-          <h1 className="font-display text-xl font-semibold tracking-tight sm:text-2xl">Library</h1>
-          <p className="text-xs" style={{ color: "var(--sb-muted)" }} aria-live="polite">
+    <div className="space-y-1">
+      <div ref={toolbarRef} className="space-y-1">
+        <div className="flex min-w-0 items-center gap-2">
+          <h1 className="shrink-0 font-display text-lg font-semibold tracking-tight">Library</h1>
+          <p className="min-w-0 flex-1 truncate text-[11px]" style={{ color: "var(--sb-muted)" }} aria-live="polite">
             {formatCount(total)} {total === 1 ? "release" : "releases"}
-            {activeCount > 0 || filtered.length !== total ? ` · ${formatCount(filtered.length)} shown` : ""}
-            {asOf ? ` · Streams as of ${formatReleaseDate(asOf)}` : " · Stream figures unavailable"}
+            {` \u00b7 ${formatCount(filtered.length)} shown`}
+            {asOf ? ` \u00b7 Streams as of ${formatReleaseDate(asOf)}` : " \u00b7 Stream figures unavailable"}
           </p>
+          <ChipGroup segmented aria-label="Layout" className="ml-auto shrink-0">
+            <Chip segmented className="px-2 py-1" selected={!isSchedule} onClick={() => setView("list")}>List</Chip>
+            <Chip segmented className="px-2 py-1" selected={isSchedule} onClick={() => setView("schedule")}>Schedule</Chip>
+          </ChipGroup>
+          <Button variant="accent" className="h-7 shrink-0 gap-1 px-2" aria-label="Add release" leftIcon={<Plus className="h-3.5 w-3.5" aria-hidden="true" />} onClick={() => setAddOpen(true)}>
+            <span className="hidden sm:inline">Add release</span>
+          </Button>
         </div>
-        <ChipGroup segmented aria-label="Layout" className="ml-auto">
-          <Chip segmented selected={!isSchedule} onClick={() => setView("list")}>
-            List
-          </Chip>
-          <Chip segmented selected={isSchedule} onClick={() => setView("schedule")}>
-            Schedule
-          </Chip>
-        </ChipGroup>
-        <Button variant="accent" leftIcon={<Plus className="h-3.5 w-3.5" />} onClick={() => setAddOpen(true)}>
-          Add release
-        </Button>
-      </div>
 
-      {notice ? (
-        <Alert
-          variant="success"
-          actions={
-            <Button size="xs" variant="ghost" onClick={() => setNotice(null)}>
-              Dismiss
-            </Button>
-          }
-        >
-          {notice}
-        </Alert>
-      ) : null}
+        <div className="flex flex-wrap items-center gap-1" aria-label="Library toolbar" role="group">
+          <div className="relative min-w-[140px] flex-[1_1_150px]">
+            <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style={{ color: "var(--sb-muted)" }} aria-hidden="true" />
+            <Input type="search" aria-label="Search releases" placeholder="Search releases..." className="h-7 py-1 pl-7 text-xs" value={filters.q} onChange={(e) => patchFilters({ q: e.target.value })} />
+          </div>
+          <div className="min-w-0 max-w-full flex-[0_1_auto] overflow-x-auto">
+            <ChipGroup segmented aria-label="Filter by entity" className="whitespace-nowrap">
+              <Chip segmented className="gap-1 px-2 py-1" selected={filters.entities.length === 0} onClick={() => patchFilters({ entities: [] })}>
+                All <span className="tabular-nums opacity-70">{formatCount(Array.from(counts.values()).reduce((a, b) => a + b, 0))}</span>
+              </Chip>
+              {entityChips.map((e) => (
+                <Chip segmented key={e.code} className="gap-1 px-2 py-1" selected={filters.entities.includes(e.code)} onClick={() => patchFilters({ entities: toggleEntity(filters.entities, e.code) })}>
+                  {e.name}<span className="tabular-nums opacity-70">{formatCount(counts.get(e.code) ?? 0)}</span>
+                </Chip>
+              ))}
+            </ChipGroup>
+          </div>
+          <FacetSelect label="Year" value={filters.year} options={options.years} onChange={(year) => patchFilters({ year })} />
+          <LibraryFilterBar filters={filters} options={options} activeCount={filterChips.length} onChange={patchFilters} onClear={() => setFilters(resetLibraryFilters)} />
+          {/* TODO Task B: wire the Columns toolbar control to column visibility. */}
+          <LibraryAttentionPanel counts={attention} active={filters.attention} onPick={(rule) => setFilters((f) => attentionFilters(f, rule))} />
+          <IconButton className="h-7 w-7 shrink-0" aria-label="Export CSV" title="Export CSV" disabled={filtered.length === 0} onClick={() => downloadCsv({ filename: libraryCsvFilename(today), rows: libraryCsvRows(filtered), sortForExport: false })}>
+            <Download className="h-3.5 w-3.5" aria-hidden="true" />
+          </IconButton>
+        </div>
 
-      <LibraryAttentionPanel
-        counts={attention}
-        active={filters.attention}
-        onPick={(rule) => setFilters((f) => attentionFilters(f, rule))}
-      />
+        <LibraryViews filters={filters} today={today} onApply={setFilters} />
 
-      <LibraryViews filters={filters} today={today} onApply={setFilters} />
+        {filterChips.length > 0 ? (
+          <div className="flex items-center gap-1 overflow-x-auto whitespace-nowrap" role="group" aria-label="Active filters">
+            {filterChips.map((chip) => (
+              <Chip key={chip.key} className="shrink-0 gap-1 px-2 py-0.5 text-[10px]" aria-label={`Remove ${chip.label}`} onClick={() => patchFilters(chip.clear)}>
+                {chip.label}<X className="h-2.5 w-2.5" aria-hidden="true" />
+              </Chip>
+            ))}
+            <Button size="xs" variant="ghost" className="h-5 shrink-0" onClick={() => setFilters(resetLibraryFilters)}>Clear all</Button>
+          </div>
+        ) : null}
 
-      <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filter by entity">
-        <Chip selected={filters.entities.length === 0} onClick={() => patchFilters({ entities: [] })}>
-          All entities
-          <span className="tabular-nums opacity-70">{formatCount(Array.from(counts.values()).reduce((a, b) => a + b, 0))}</span>
-        </Chip>
-        {entityChips.map((e) => (
-          <Chip
-            key={e.code}
-            selected={filters.entities.includes(e.code)}
-            onClick={() => patchFilters({ entities: toggleEntity(filters.entities, e.code) })}
+        {notice ? (
+          <Alert
+            variant="success"
+            actions={
+              <Button size="xs" variant="ghost" onClick={() => setNotice(null)}>
+                Dismiss
+              </Button>
+            }
           >
-            {e.name}
-            <span className="tabular-nums opacity-70">{formatCount(counts.get(e.code) ?? 0)}</span>
-          </Chip>
-        ))}
+            {notice}
+          </Alert>
+        ) : null}
+
+        {!isSchedule && selectedIds.length > 0 ? (
+          <LibraryBulkBar
+            selectedIds={selectedIds}
+            entities={entities}
+            distributors={distributorNames}
+            options={options}
+            onClear={() => setSelection(EMPTY_SELECTION)}
+            onDone={bulkDone}
+          />
+        ) : null}
       </div>
-
-      <LibraryFilterBar
-        filters={filters}
-        options={options}
-        activeCount={activeCount}
-        onChange={patchFilters}
-        onClear={() => setFilters(resetLibraryFilters)}
-        onExport={() => downloadCsv({ filename: libraryCsvFilename(today), rows: libraryCsvRows(filtered), sortForExport: false })}
-        exportDisabled={filtered.length === 0}
-      />
-
-      {!isSchedule && selectedIds.length > 0 ? (
-        <LibraryBulkBar
-          selectedIds={selectedIds}
-          entities={entities}
-          distributors={distributorNames}
-          options={options}
-          onClear={() => setSelection(EMPTY_SELECTION)}
-          onDone={bulkDone}
-        />
-      ) : null}
 
       {filtered.length === 0 ? (
         <SectionEmptyState
@@ -307,6 +305,7 @@ export function LibraryPageClient({
         <LibrarySchedule rows={filtered} today={today} entityNames={entityNames} selectedId={openId} onSelect={openPanel} />
       ) : (
         <LibraryTable
+          toolbarRef={toolbarRef}
           rows={filtered}
           entityNames={entityNames}
           selectedId={openId}

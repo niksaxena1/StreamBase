@@ -1,10 +1,11 @@
 "use client";
 
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useRef } from "react";
+import { useRef, type RefObject } from "react";
 
 import { LIBRARY_GRID_COLUMNS, LIBRARY_TABLE_MIN_WIDTH } from "@/lib/library/columns";
 import type { LibrarySortDir, LibrarySortKey } from "@/lib/library/filters";
+import { useLibraryViewportHeight } from "@/lib/library/useLibraryViewportHeight";
 import type { LibraryRow } from "@/lib/library/types";
 
 import { HeaderCells, RowCells } from "./LibraryTableCells";
@@ -28,6 +29,7 @@ export function LibraryTable({
   dir,
   onSort,
   selection,
+  toolbarRef,
 }: {
   rows: LibraryRow[];
   entityNames: Map<string, string>;
@@ -37,8 +39,10 @@ export function LibraryTable({
   dir: LibrarySortDir;
   onSort: (sort: LibrarySortKey, dir: LibrarySortDir) => void;
   selection: LibraryTableSelection;
+  toolbarRef: RefObject<HTMLDivElement | null>;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  useLibraryViewportHeight(scrollRef, toolbarRef);
   // TanStack Virtual returns unmemoizable functions; the table is the only thing that uses them.
   // eslint-disable-next-line react-hooks/incompatible-library
   const virtualizer = useVirtualizer({
@@ -53,7 +57,7 @@ export function LibraryTable({
 
   return (
     <div className="sb-card relative overflow-hidden">
-      <div ref={scrollRef} className="h-[calc(100dvh-380px)] min-h-[360px] overflow-auto">
+      <div ref={scrollRef} className="min-h-[360px] overflow-auto" style={{ height: 360 }}>
         <div role="table" aria-label="Releases" aria-rowcount={rows.length + 1} style={{ minWidth: LIBRARY_TABLE_MIN_WIDTH }}>
           <div
             role="row"
