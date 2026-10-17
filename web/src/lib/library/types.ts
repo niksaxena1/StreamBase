@@ -1,3 +1,5 @@
+import type { LibraryLicense, LibraryLicenseDetail } from "./licensing";
+
 /** One row of `catalog.track_overview` (numerics normalised by the loader). */
 export type LibraryRow = {
   catalog_id: string;
@@ -28,6 +30,7 @@ export type LibraryRow = {
   updated_at: string | null;
   /** True when the drive holds a signed contract for this release. */
   has_signed_contract: boolean;
+  licensing: LibraryLicense[];
   /** Streams, merged in on the client from `track_streams()`; absent until then. */
   total_streams?: number | null;
   streams_7d?: number | null;
@@ -91,6 +94,7 @@ export type LibraryHistoryEntry = {
 };
 
 export type LibraryTrackDetail = {
+  licensing: LibraryLicenseDetail[];
   files: LibraryFile[];
   isrcs: LibraryCode[];
   upcs: LibraryCode[];
@@ -126,12 +130,11 @@ export const LIBRARY_COLUMNS = [
   "file_count",
   "updated_at",
   "has_signed_contract",
+  "licensing",
 ] as const satisfies ReadonlyArray<keyof LibraryRow>;
 
-/** Columns added to the CSV export after the overview columns. */
-export const LIBRARY_CSV_STREAM_COLUMNS = ["total_streams", "streams_7d", "album_image_url"] as const satisfies ReadonlyArray<
-  keyof LibraryRow
->;
+/** Columns added after the overview: streams, artwork and readable licensing summaries. */
+export const LIBRARY_CSV_STREAM_COLUMNS = ["total_streams", "streams_7d", "album_image_url", "Uniqode", "Evenfall"] as const;
 
 export const LIBRARY_ORIGINALITY_OPTIONS = ["Original", "Cover"] as const;
 export const LIBRARY_EXCLUSIVITY_OPTIONS = ["Exclusive", "Non-Exclusive"] as const;

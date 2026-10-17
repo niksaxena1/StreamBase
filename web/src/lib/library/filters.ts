@@ -2,10 +2,11 @@ import { foldForSearch } from "@/lib/searchFold";
 
 import { matchesAttention, parseAttention, type LibraryAttention } from "./attention";
 import { formatDuration, parseDuration } from "./format";
+import { licensingBatches, matchesLicensing, parseLicensingFilter, type LicensingFilter } from "./licensing";
 import type { LibraryRow } from "./types";
 
 export type LibrarySortKey = "release" | "artist" | "title" | "duration" | "catalog" | "streams" | "streams7d"
-  | "entity" | "distributor" | "labelGenre" | "isrc" | "upc" | "comment1" | "comment2";
+  | "entity" | "distributor" | "labelGenre" | "isrc" | "upc" | "comment1" | "comment2" | "uniqode" | "evenfall";
 export type LibraryViewMode = "list" | "schedule";
 export type LibrarySortDir = "asc" | "desc";
 
@@ -18,6 +19,8 @@ export type LibraryFilters = {
   labelGenre: string;
   originality: string;
   exclusivity: string;
+  uniqode: LicensingFilter;
+  evenfall: LicensingFilter;
   upcoming: boolean;
   released: boolean;
   hasMaster: boolean;
@@ -39,7 +42,7 @@ export type LibraryFilters = {
   view: LibraryViewMode;
 };
 
-export const LIBRARY_SORT_KEYS: LibrarySortKey[] = ["release", "artist", "title", "duration", "catalog", "streams", "streams7d", "entity", "distributor", "labelGenre", "isrc", "upc", "comment1", "comment2"];
+export const LIBRARY_SORT_KEYS: LibrarySortKey[] = ["release", "artist", "title", "duration", "catalog", "streams", "streams7d", "entity", "distributor", "labelGenre", "isrc", "upc", "comment1", "comment2", "uniqode", "evenfall"];
 
 export const LIBRARY_SORT_LABELS: Record<LibrarySortKey, string> = {
   release: "Release date",
@@ -56,10 +59,12 @@ export const LIBRARY_SORT_LABELS: Record<LibrarySortKey, string> = {
   upc: "UPC",
   comment1: "Comment 1",
   comment2: "Comment 2",
+  uniqode: "Uniqode",
+  evenfall: "Evenfall",
 };
 
 export function defaultSortDir(sort: LibrarySortKey): LibrarySortDir {
-  return sort === "release" || sort === "streams" || sort === "streams7d" ? "desc" : "asc";
+  return sort === "release" || sort === "streams" || sort === "streams7d" || sort === "uniqode" || sort === "evenfall" ? "desc" : "asc";
 }
 
 export const DEFAULT_LIBRARY_FILTERS: LibraryFilters = {
@@ -70,6 +75,8 @@ export const DEFAULT_LIBRARY_FILTERS: LibraryFilters = {
   labelGenre: "",
   originality: "",
   exclusivity: "",
+  uniqode: "",
+  evenfall: "",
   upcoming: false,
   released: false,
   hasMaster: false,
@@ -96,6 +103,8 @@ export const LIBRARY_FILTER_PARAMS = [
   "genre",
   "orig",
   "excl",
+  "uniq",
+  "even",
   "upcoming",
   "released",
   "master",
@@ -134,6 +143,8 @@ export function parseLibraryFilters(params: ParamsLike): LibraryFilters {
     labelGenre: params.get("genre") ?? "",
     originality: params.get("orig") ?? "",
     exclusivity: params.get("excl") ?? "",
+    uniqode: parseLicensingFilter(params.get("uniq")),
+    evenfall: parseLicensingFilter(params.get("even")),
     upcoming: flag("upcoming"),
     released: flag("released"),
     hasMaster: flag("master"),
@@ -162,6 +173,8 @@ export function serializeLibraryFilters(f: LibraryFilters): URLSearchParams {
   if (f.labelGenre) p.set("genre", f.labelGenre);
   if (f.originality) p.set("orig", f.originality);
   if (f.exclusivity) p.set("excl", f.exclusivity);
+  if (f.uniqode) p.set("uniq", f.uniqode);
+  if (f.evenfall) p.set("even", f.evenfall);
   if (f.upcoming) p.set("upcoming", "1");
   if (f.released) p.set("released", "1");
   if (f.hasMaster) p.set("master", "1");
@@ -217,7 +230,7 @@ export function activeFilterCount(f: LibraryFilters): number {
   let n = 0;
   if (f.q.trim()) n++;
   if (f.entities.length) n++;
-  for (const v of [f.year, f.distributor, f.labelGenre, f.originality, f.exclusivity]) if (v) n++;
+  for (const v of [f.year, f.distributor, f.labelGenre, f.originality, f.exclusivity, f.uniqode, f.evenfall]) if (v) n++;
   for (const v of [f.upcoming, f.released, f.hasMaster, f.missingIsrc, f.missingUpc, f.onDrive, f.splice, f.missingCode]) if (v) n++;
   if (f.month) n++;
   if (f.attention) n++;
@@ -322,6 +335,8 @@ export function rowMatches(row: LibraryRow, f: LibraryFilters, today: string, op
   if (!matchesExact(row.label_genre, f.labelGenre)) return false;
   if (!matchesExact(row.originality, f.originality)) return false;
   if (!matchesExact(row.exclusivity, f.exclusivity)) return false;
+  if (!matchesLicensing(row.licensing, "uniqode", f.uniqode)) return false;
+  if (!matchesLicensing(row.licensing, "evenfall", f.evenfall)) return false;
   if (!matchesTiming(row, today, f.upcoming, f.released)) return false;
   if (f.hasMaster && !row.has_m_master) return false;
   if (f.missingIsrc && !blank(row.isrc)) return false;
@@ -371,6 +386,12 @@ export function sortRows(rows: LibraryRow[], sort: LibrarySortKey, dir: LibraryS
       aMissing = !a.release_date;
       bMissing = !b.release_date;
       if (!aMissing && !bMissing) cmp = a.release_date! < b.release_date! ? -1 : a.release_date! > b.release_date! ? 1 : 0;
+    } else if (sort === "uniqode" || sort === "evenfall") {
+      const ka = licensingBatches(a.licensing, sort)[0]?.batch_date ?? null;
+      const kb = licensingBatches(b.licensing, sort)[0]?.batch_date ?? null;
+      aMissing = ka === null;
+      bMissing = kb === null;
+      if (ka !== null && kb !== null) cmp = ka.localeCompare(kb);
     } else if (sort === "streams" || sort === "streams7d") {
       const va = sort === "streams" ? a.total_streams : a.streams_7d;
       const vb = sort === "streams" ? b.total_streams : b.streams_7d;

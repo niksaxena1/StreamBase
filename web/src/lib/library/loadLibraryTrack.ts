@@ -8,6 +8,7 @@ import {
   sortCodes,
 } from "./normalize";
 import { fetchAllPages } from "./paging";
+import { loadLibraryLicensing } from "./loadLicensing";
 import type { LibraryRow, LibraryTrackDetail } from "./types";
 
 type RawRow = Record<string, unknown>;
@@ -23,7 +24,7 @@ const HISTORY_LIMIT = 100;
  */
 export async function loadLibraryTrackDetail(catalogId: string): Promise<LibraryTrackDetail> {
   const db = catalogService();
-  const [files, isrcs, upcs, history] = await Promise.all([
+  const [files, isrcs, upcs, history, licensing] = await Promise.all([
     fetchAllPages<RawRow>(async (from, to) => {
       const { data, error } = await db
         .from("files")
@@ -41,12 +42,14 @@ export async function loadLibraryTrackDetail(catalogId: string): Promise<Library
       .eq("target", catalogId)
       .order("at", { ascending: false })
       .limit(HISTORY_LIMIT),
+    loadLibraryLicensing([catalogId]),
   ]);
   if (isrcs.error) throw new Error(isrcs.error.message);
   if (upcs.error) throw new Error(upcs.error.message);
   if (history.error) throw new Error(history.error.message);
 
   return {
+    licensing,
     files: files.map(normalizeFile),
     isrcs: sortCodes(((isrcs.data ?? []) as RawRow[]).map((r) => normalizeCode(r, "isrc"))),
     upcs: sortCodes(((upcs.data ?? []) as RawRow[]).map((r) => normalizeCode(r, "upc"))),

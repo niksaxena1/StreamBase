@@ -13,6 +13,8 @@ export type LibraryColumnId =
   | "labelGenre"
   | "comment1"
   | "comment2"
+  | "uniqode"
+  | "evenfall"
   | "isrc"
   | "upc"
   | "streams"
@@ -48,6 +50,8 @@ export const LIBRARY_TABLE_COLUMNS: readonly LibraryColumn[] = [
   { id: "labelGenre", label: "Label / Genre", track: "136px", minPx: 136, sort: "labelGenre" },
   { id: "comment1", label: "Comment 1", track: "minmax(120px,1fr)", minPx: 120, sort: "comment1" },
   { id: "comment2", label: "Comment 2", track: "minmax(120px,1fr)", minPx: 120, sort: "comment2" },
+  { id: "uniqode", label: "Uniqode", track: "148px", minPx: 148, sort: "uniqode" },
+  { id: "evenfall", label: "Evenfall", track: "148px", minPx: 148, sort: "evenfall" },
   { id: "isrc", label: "ISRC", track: "128px", minPx: 128, sort: "isrc" },
   { id: "upc", label: "UPC", track: "116px", minPx: 116, sort: "upc" },
   { id: "streams", label: "Streams", track: "72px", minPx: 72, align: "right", sort: "streams" },

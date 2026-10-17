@@ -14,6 +14,7 @@ import { CodesSection, DriveFolder, FilesSection, HistorySection, Section } from
 import { LibraryEditForm } from "./LibraryEditForm";
 import { LibraryCover } from "./LibraryCover";
 import { LibraryStreamsSection } from "./LibraryStreamsSection";
+import { LibraryLicensingSection } from "./LibraryLicensingSection";
 import { EntityBadge } from "./LibraryTable";
 import { fetchLibraryTrackDetail, type LibraryDetailResult, type LibrarySaveResult } from "./library.actions";
 
@@ -190,6 +191,10 @@ export function LibraryDetailPanel({
 
   function handleSaved(result: Extract<LibrarySaveResult, { ok: true }>) {
     setEditing(false);
+    refreshSavedDetails(result);
+  }
+
+  function refreshSavedDetails(result: Extract<LibrarySaveResult, { ok: true }>) {
     if (result.detail) setLoaded({ id: catalogId, result: { ok: true, detail: result.detail } });
     else setReloadKey((k) => k + 1);
     onSaved(result.row);
@@ -286,6 +291,10 @@ export function LibraryDetailPanel({
                 fallbackIsrc={row.isrc}
                 fallbackUpc={row.upc}
               />
+
+              {detail ? <LibraryLicensingSection batches={detail.licensing} onSaved={refreshSavedDetails} /> : !detailResult ? (
+                <Section title="Licensing"><Skeleton className="h-16 w-full rounded-xl" /></Section>
+              ) : null}
 
               {row.file_count > 0 ? (
                 detail ? (

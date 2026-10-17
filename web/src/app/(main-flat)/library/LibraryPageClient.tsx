@@ -193,6 +193,7 @@ export function LibraryPageClient({
   function rememberRow(row: LibraryRow | null) {
     if (!row) {
       // The save went through but the fresh row couldn't be read back: reload from the server.
+      setOverrides(new Map());
       router.refresh();
       return;
     }
@@ -206,6 +207,8 @@ export function LibraryPageClient({
 
   function bulkDone(updated: number) {
     setSelection(EMPTY_SELECTION);
+    // Batch status changes do not advance tracks.updated_at; discard earlier edit overlays before refreshing.
+    setOverrides(new Map());
     setNotice(`Updated ${formatCount(updated)} ${updated === 1 ? "release" : "releases"}`);
     router.refresh();
   }

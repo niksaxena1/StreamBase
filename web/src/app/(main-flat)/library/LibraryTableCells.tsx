@@ -10,6 +10,7 @@ import { formatCompactStreams, formatExactStreams } from "@/lib/library/streams"
 import type { LibraryRow } from "@/lib/library/types";
 
 import { LibraryCover } from "./LibraryCover";
+import { LibraryLicensingBadge } from "./LibraryLicensingBadge";
 import { LibraryHeaderFilter, type LibraryHeaderFilterProps } from "./LibraryHeaderFilter";
 import styles from "./LibraryTable.module.css";
 
@@ -223,6 +224,9 @@ export function RowCells({
         return <Cell value={row.comment_1} muted />;
       case "comment2":
         return <Cell value={row.comment_2} muted />;
+      case "uniqode":
+      case "evenfall":
+        return <LibraryLicensingBadge licensing={row.licensing} licensee={c.id} />;
       case "isrc":
         return <Cell value={row.isrc} mono />;
       case "upc":

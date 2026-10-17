@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/Input";
 import type { LibraryColumn } from "@/lib/library/columns";
 import type { LibraryFilters } from "@/lib/library/filters";
 import { LIBRARY_HEADER_FILTERS, libraryHeaderFilterActive } from "@/lib/library/headerFilters";
-import { DurationField, FacetSelect, type FilterOptionLists } from "./LibraryFilters";
+import { DurationField, FacetSelect, LicensingFilterSelect, type FilterOptionLists } from "./LibraryFilters";
 import { LibraryToolbarPopover } from "./LibraryToolbarPopover";
 
 export type LibraryHeaderFilterProps = {
@@ -24,6 +24,9 @@ export function LibraryHeaderFilter({ column, filters, options, onChange }: Libr
     <LibraryToolbarPopover compact active={libraryHeaderFilterActive(column.id, filters)} label={`Filter ${column.label}`} trigger={<Filter className="h-3 w-3" aria-hidden="true" />}>
       {() => (
         <div className="flex flex-wrap items-center gap-2">
+          {column.id === "uniqode" || column.id === "evenfall" ? (
+            <LicensingFilterSelect label={column.label} value={filters[column.id]} onChange={(value) => onChange({ [column.id]: value })} />
+          ) : null}
           {column.id === "release" ? <>
             <FacetSelect label="Year" value={filters.year} options={options.years} onChange={(year) => onChange({ year })} />
             <label className="flex items-center gap-2">Month<Input aria-label="Month" type="month" className="h-7 text-xs" value={filters.month} onChange={(e) => onChange({ month: e.target.value })} /></label>

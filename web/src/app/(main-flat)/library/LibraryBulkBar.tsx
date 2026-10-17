@@ -12,6 +12,7 @@ import type { LibraryEntity } from "@/lib/library/types";
 import { DistributorCombobox, EntitySelect } from "./LibraryEditForm";
 import type { FilterOptionLists } from "./LibraryFilters";
 import { bulkUpdateLibraryTracks } from "./library.actions";
+import { LibraryBulkLicensing } from "./LibraryBulkLicensing";
 
 const UNSET = "__unset";
 const CLEAR = "__clear";
@@ -154,6 +155,7 @@ export function LibraryBulkBar({
       <Button variant="ghost" onClick={onClear} disabled={pending}>
         Clear selection
       </Button>
+      <LibraryBulkLicensing selectedIds={selectedIds} disabled={pending} onDone={onDone} />
 
       {error ? (
         <span role="alert" style={{ color: "var(--sb-error)" }}>

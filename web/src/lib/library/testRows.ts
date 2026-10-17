@@ -30,6 +30,7 @@ export function makeRow(overrides: Partial<LibraryRow> = {}): LibraryRow {
     file_count: 0,
     updated_at: null,
     has_signed_contract: false,
+    licensing: [],
     ...overrides,
   };
 }

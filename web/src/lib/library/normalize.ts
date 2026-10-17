@@ -1,4 +1,5 @@
 import type { LibraryCode, LibraryDistributor, LibraryEntity, LibraryFile, LibraryHistoryEntry, LibraryRow } from "./types";
+import { parseLicensing } from "./licensing";
 
 type Raw = Record<string, unknown>;
 
@@ -49,6 +50,7 @@ export function normalizeOverviewRow(raw: Raw): LibraryRow {
     file_count: num(raw.file_count) ?? 0,
     updated_at: str(raw.updated_at),
     has_signed_contract: raw.has_signed_contract === true,
+    licensing: parseLicensing(raw.licensing),
   };
 }
 

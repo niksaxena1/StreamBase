@@ -8,6 +8,8 @@ import { LIBRARY_CACHE_TAG, LIBRARY_STREAMS_CACHE_TAG } from "@/lib/library/cach
 import { loadLibraryStreamSeries } from "@/lib/library/loadLibraryStreams";
 import { loadLibraryOverviewRow, loadLibraryTrackDetail } from "@/lib/library/loadLibraryTrack";
 import { isStreamRange } from "@/lib/library/streams";
+import { loadLibraryLicensing } from "@/lib/library/loadLicensing";
+import type { LibraryLicenseDetail } from "@/lib/library/licensing";
 import type { LibraryRow, LibraryStreamPoint, LibraryTrackDetail } from "@/lib/library/types";
 import { logError } from "@/lib/logger";
 import { requireLibraryAdmin } from "@/lib/library/adminGate.server";
@@ -23,6 +25,9 @@ export type LibrarySaveResult =
 export type LibraryStreamSeriesResult = { ok: true; points: LibraryStreamPoint[] } | LibraryActionError;
 export type LibraryBulkResult = { ok: true; updated: number; total: number } | (LibraryActionError & { updated: number });
 export type LibraryCreateResult = { ok: true; catalogId: string; row: LibraryRow | null } | LibraryActionError;
+export type LibraryPackStatusResult =
+  | { ok: true; updated: number; total: number; row: LibraryRow | null; detail: LibraryTrackDetail | null }
+  | LibraryActionError;
 
 const CATALOG_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
@@ -180,5 +185,52 @@ async function callBulkUpdate(chunk: string[], changes: BulkChanges, actor: stri
     logError("Library bulk update failed", error);
     return { error: queryErrorMessage(error) };
   }
+}
+
+/** Lists only batches containing at least one selected track, after the same admin gate as edits. */
+export async function fetchLibraryLicensing(catalogIds: unknown): Promise<{ ok: true; batches: LibraryLicenseDetail[] } | LibraryActionError> {
+  const gate = await requireLibraryAdmin();
+  if (!gate.ok) return gate;
+  const ids = cleanBulkIds(catalogIds, CATALOG_ID_RE);
+  if (!ids) return { ok: false, error: "Pick between 1 and 3,000 releases" };
+  try {
+    return { ok: true, batches: await loadLibraryLicensing(ids) };
+  } catch (error) {
+    logError("Library licensing load failed", error);
+    return { ok: false, error: queryErrorMessage(error) };
+  }
+}
+
+/** Atomic per-batch status update; the RPC restricts changes to existing memberships and logs each. */
+export async function setLibraryPackTrackStatus(packId: unknown, catalogIds: unknown, status: unknown): Promise<LibraryPackStatusResult> {
+  const gate = await requireLibraryAdmin();
+  if (!gate.ok) return gate;
+  if (typeof packId !== "number" || !Number.isSafeInteger(packId) || packId < 1) return { ok: false, error: "Unknown batch" };
+  const ids = cleanBulkIds(catalogIds, CATALOG_ID_RE);
+  if (!ids) return { ok: false, error: "Pick between 1 and 3,000 releases" };
+  if (status !== "staged" && status !== "sent") return { ok: false, error: "Status must be staged or sent" };
+  let updated: number;
+  try {
+    const { data, error } = await catalogService().schema("catalog").rpc("set_pack_track_status", {
+      p_pack_id: packId, p_catalog_ids: ids, p_status: status, p_actor: gate.actor,
+    });
+    if (error) return { ok: false, error: error.message };
+    updated = Number(data);
+    if (!Number.isInteger(updated) || updated < 0 || updated > ids.length) return { ok: false, error: "The database returned an invalid change count" };
+  } catch (error) {
+    logError("Library licensing status update failed", error);
+    return { ok: false, error: queryErrorMessage(error) };
+  }
+  expireLibraryCache();
+  // A successful write stays successful even if the fresh detail cannot be read back.
+  if (ids.length === 1) {
+    try {
+      const [row, detail] = await Promise.all([loadLibraryOverviewRow(ids[0]), loadLibraryTrackDetail(ids[0])]);
+      return { ok: true, updated, total: ids.length, row, detail };
+    } catch (error) {
+      logError("Library licensing re-read failed", error);
+    }
+  }
+  return { ok: true, updated, total: ids.length, row: null, detail: null };
 }
 

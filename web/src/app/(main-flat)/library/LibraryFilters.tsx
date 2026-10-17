@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import type { LibraryFilters as Filters } from "@/lib/library/filters";
 import { formatDuration, parseDuration } from "@/lib/library/format";
+import { parseLicensingFilter, type LicensingFilter } from "@/lib/library/licensing";
 
 import { LibraryToolbarPopover } from "./LibraryToolbarPopover";
 
@@ -21,6 +22,16 @@ export type FilterOptionLists = {
 };
 
 const SELECT_CLASS = "h-7 w-auto min-w-0 max-w-full !py-1 pl-2 pr-6 text-[11px]";
+
+export function LicensingFilterSelect({ label, value, onChange }: { label: string; value: LicensingFilter; onChange: (value: LicensingFilter) => void }) {
+  return <Select aria-label={`${label} batch status`} value={value} className={SELECT_CLASS} onChange={(e) => onChange(parseLicensingFilter(e.target.value))}>
+    <option value="">{label}: Any</option>
+    <option value="any">In any batch</option>
+    <option value="staged">Staged</option>
+    <option value="sent">Sent</option>
+    <option value="none">Not in a batch</option>
+  </Select>;
+}
 
 export function FacetSelect({
   label,
@@ -109,6 +120,8 @@ export function LibraryFilterBar({
             <FacetSelect label="Label / Genre" value={filters.labelGenre} options={options.labelGenres} onChange={(labelGenre) => onChange({ labelGenre })} />
             <FacetSelect label="Originality" value={filters.originality} options={options.originalities} onChange={(originality) => onChange({ originality })} />
             <FacetSelect label="Exclusivity" value={filters.exclusivity} options={options.exclusivities} onChange={(exclusivity) => onChange({ exclusivity })} />
+            <LicensingFilterSelect label="Uniqode" value={filters.uniqode} onChange={(uniqode) => onChange({ uniqode })} />
+            <LicensingFilterSelect label="Evenfall" value={filters.evenfall} onChange={(evenfall) => onChange({ evenfall })} />
           </div>
           <div className="flex flex-wrap gap-1.5">
             {([

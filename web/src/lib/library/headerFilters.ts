@@ -4,6 +4,7 @@ import type { LibraryFilters } from "./filters";
 export const LIBRARY_HEADER_FILTERS: Partial<Record<LibraryColumnId, readonly (keyof LibraryFilters)[]>> = {
   release: ["year", "month", "upcoming", "released"],
   distributor: ["distributor"], labelGenre: ["labelGenre"],
+  uniqode: ["uniqode"], evenfall: ["evenfall"],
   originality: ["originality", "exclusivity", "splice"],
   isrc: ["missingIsrc"], upc: ["missingUpc"],
   length: ["minDuration", "maxDuration"], master: ["hasMaster"], drive: ["onDrive"],

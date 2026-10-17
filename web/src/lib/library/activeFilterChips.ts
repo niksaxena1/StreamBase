@@ -11,6 +11,11 @@ export type LibraryFilterChip = {
 /** Visible facets beyond the toolbar's search/entity/year. Each removal clears only its own facet. */
 export function activeLibraryFilterChips(filters: LibraryFilters): LibraryFilterChip[] {
   const chips: LibraryFilterChip[] = [];
+  for (const [key, label] of [["uniqode", "Uniqode"], ["evenfall", "Evenfall"]] as const) {
+    const value = filters[key];
+    const labels = { any: "Any batch", staged: "Staged", sent: "Sent", none: "Not in a batch" };
+    if (value) chips.push({ key, label: `${label}: ${labels[value]}`, clear: { [key]: "" } });
+  }
   const facets = [
     ["distributor", "Distributor"], ["labelGenre", "Label / Genre"],
     ["originality", "Originality"], ["exclusivity", "Exclusivity"], ["month", "Month"],

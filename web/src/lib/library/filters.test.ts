@@ -22,6 +22,39 @@ import {
   type LibraryFilters,
 } from "./filters";
 import { makeRow } from "./testRows";
+import { parseLicensing } from "./licensing";
+
+describe("licensing filters", () => {
+  const licensing = parseLicensing([
+    { licensee: "UNIQODE", pack: "old", batch_date: "2026-08-12", status: "sent" },
+    { licensee: "Uniqode", pack: "new", batch_date: "2026-10-17", status: "staged" },
+    { licensee: "Evenfall", pack: "fall", batch_date: "2026-10-01", status: "sent" },
+  ]);
+  const licensed = makeRow({ catalog_id: "licensed", licensing });
+  const empty = makeRow({ catalog_id: "empty" });
+  it("round trips all valid values and rejects invalid URL values", () => {
+    for (const value of ["", "any", "staged", "sent", "none"] as const) {
+      const filters = { ...DEFAULT_LIBRARY_FILTERS, uniqode: value, evenfall: value };
+      expect(parseLibraryFilters(serializeLibraryFilters(filters))).toEqual(filters);
+    }
+    expect(parseLibraryFilters(new URLSearchParams("uniq=bad&even=bad"))).toMatchObject({ uniqode: "", evenfall: "" });
+  });
+  it("filters using the newest status, separately for each licensee", () => {
+    const filter = (patch: Partial<LibraryFilters>) => filterRows([licensed, empty], { ...DEFAULT_LIBRARY_FILTERS, ...patch }, "2026-10-17");
+    expect(filter({ uniqode: "staged", evenfall: "sent" })).toEqual([licensed]);
+    expect(filter({ uniqode: "sent" })).toEqual([]);
+    expect(filter({ uniqode: "any" })).toEqual([licensed]);
+    expect(filter({ evenfall: "none" })).toEqual([empty]);
+    expect(activeFilterCount({ ...DEFAULT_LIBRARY_FILTERS, uniqode: "any", evenfall: "sent" })).toBe(2);
+    expect(clearLibraryFilters({ ...DEFAULT_LIBRARY_FILTERS, uniqode: "any" }).uniqode).toBe("");
+  });
+  it("sorts by newest batch date with blanks last in either direction", () => {
+    const older = makeRow({ catalog_id: "older", licensing: parseLicensing([{ licensee: "Uniqode", pack: "older", batch_date: "2026-01-01", status: "sent" }]) });
+    expect(sortRows([empty, licensed, older], "uniqode", "desc")).toEqual([licensed, older, empty]);
+    expect(sortRows([empty, licensed, older], "uniqode", "asc")).toEqual([older, licensed, empty]);
+    expect(sortRows([empty, licensed], "evenfall", "desc")).toEqual([licensed, empty]);
+  });
+});
 
 const TODAY = "2026-06-15";
 const f = (over: Partial<LibraryFilters> = {}): LibraryFilters => ({ ...DEFAULT_LIBRARY_FILTERS, ...over });
@@ -275,6 +308,8 @@ describe("URL <-> filter state", () => {
       labelGenre: "Deep House & Garage",
       originality: "Cover",
       exclusivity: "Non-Exclusive",
+      uniqode: "staged",
+      evenfall: "none",
       upcoming: true,
       released: true,
       hasMaster: true,

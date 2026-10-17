@@ -26,6 +26,21 @@ import {
 const TODAY = "2026-10-12";
 const base: LibraryFilters = { ...DEFAULT_LIBRARY_FILTERS, entities: ["tg", "p"] };
 
+describe("licensing views", () => {
+  it("preserves licensing in saved views and Back/Forward while keeping the open panel", () => {
+    const filters = { ...base, uniqode: "staged" as const, evenfall: "none" as const };
+    const query = applyLibraryUrlState("?id=TG-1", filters);
+    expect(query).toContain("uniq=staged");
+    expect(query).toContain("even=none");
+    expect(query).toContain("id=TG-1");
+    expect(libraryStateAfterNavigation(base, query)).toEqual(filters);
+    expect(filtersForSavedView({ name: "Licensing", query: savedViewQuery(filters) })).toEqual(filters);
+    expect(savedViewMatches({ name: "Licensing", query: savedViewQuery(filters) }, base)).toBe(false);
+    expect(activePreset(filters, TODAY)).toBeNull();
+    expect(resetLibraryFilters(filters)).toEqual(base);
+  });
+});
+
 const rows = [
   makeRow({ catalog_id: "TG-1", entity: "tg", release_date: "2026-10-20" }),
   makeRow({ catalog_id: "TG-2", entity: "tg", release_date: "2026-10-05", isrc: "USABC2600001", upc: "012345678905" }),

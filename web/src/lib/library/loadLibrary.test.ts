@@ -70,6 +70,13 @@ beforeEach(() => {
 });
 
 describe("loadLibrary", () => {
+  it("loads licensing with the overview and includes it in the cache key", async () => {
+    state.tables.track_overview = [{ ...overviewRow("TG-1"), licensing: [{ licensee: "Uniqode", pack: "Summer", batch_date: "2026-08-12", status: "sent", status_on: "2026-08-13" }] }];
+    const res = await loadLibrary();
+    if (res.status !== "ok") throw new Error("expected ok");
+    expect(res.rows[0].licensing).toMatchObject([{ licensee: "Uniqode", status: "sent" }]);
+    expect(state.cacheKeys.find((k) => k.startsWith("library-overview"))).toMatch(/,licensing$/);
+  });
   it("reports a missing connection without touching the database", async () => {
     state.configured = false;
     const res = await loadLibrary();
