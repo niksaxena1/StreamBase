@@ -32,35 +32,72 @@ export type LibraryColumn = {
   minPx: number;
   align?: "right" | "center";
   sort?: LibrarySortKey;
+  pinned?: boolean;
 };
 
 /** Every table column, in display order. Header and rows are both drawn from this list. */
 export const LIBRARY_TABLE_COLUMNS: readonly LibraryColumn[] = [
-  { id: "select", label: "", track: "20px", minPx: 20 },
-  { id: "cover", label: "", track: "32px", minPx: 32 },
-  { id: "release", label: "Release date", track: "104px", minPx: 104, sort: "release" },
-  { id: "artist", label: "Artist", track: "minmax(140px,1.2fr)", minPx: 140, sort: "artist" },
-  { id: "title", label: "Title", track: "minmax(160px,1.6fr)", minPx: 160, sort: "title" },
-  { id: "originality", label: "Orig.", track: "36px", minPx: 36, align: "center" },
-  { id: "entity", label: "Entity", track: "96px", minPx: 96 },
-  { id: "distributor", label: "Distributor", track: "120px", minPx: 120 },
-  { id: "labelGenre", label: "Label / Genre", track: "120px", minPx: 120 },
-  { id: "comment1", label: "Comment 1", track: "minmax(120px,1fr)", minPx: 120 },
-  { id: "comment2", label: "Comment 2", track: "minmax(120px,1fr)", minPx: 120 },
-  { id: "isrc", label: "ISRC", track: "128px", minPx: 128 },
-  { id: "upc", label: "UPC", track: "116px", minPx: 116 },
+  { id: "select", label: "", track: "32px", minPx: 32, pinned: true },
+  { id: "cover", label: "", track: "24px", minPx: 24, pinned: true },
+  { id: "release", label: "Release date", track: "116px", minPx: 116, sort: "release", pinned: true },
+  { id: "artist", label: "Artist", track: "170px", minPx: 170, sort: "artist", pinned: true },
+  { id: "title", label: "Title", track: "210px", minPx: 210, sort: "title", pinned: true },
+  { id: "originality", label: "Orig.", track: "64px", minPx: 64, align: "center" },
+  { id: "entity", label: "Entity", track: "96px", minPx: 96, sort: "entity" },
+  { id: "distributor", label: "Distributor", track: "120px", minPx: 120, sort: "distributor" },
+  { id: "labelGenre", label: "Label / Genre", track: "136px", minPx: 136, sort: "labelGenre" },
+  { id: "comment1", label: "Comment 1", track: "minmax(120px,1fr)", minPx: 120, sort: "comment1" },
+  { id: "comment2", label: "Comment 2", track: "minmax(120px,1fr)", minPx: 120, sort: "comment2" },
+  { id: "isrc", label: "ISRC", track: "128px", minPx: 128, sort: "isrc" },
+  { id: "upc", label: "UPC", track: "116px", minPx: 116, sort: "upc" },
   { id: "streams", label: "Streams", track: "72px", minPx: 72, align: "right", sort: "streams" },
   { id: "streams7d", label: "7 days", track: "64px", minPx: 64, align: "right", sort: "streams7d" },
-  { id: "length", label: "Length", track: "56px", minPx: 56, align: "right", sort: "duration" },
-  { id: "master", label: "Master", track: "56px", minPx: 56, align: "center" },
-  { id: "drive", label: "Drive", track: "60px", minPx: 60, align: "center" },
+  { id: "length", label: "Length", track: "88px", minPx: 88, align: "right", sort: "duration" },
+  { id: "master", label: "Master", track: "76px", minPx: 76, align: "center" },
+  { id: "drive", label: "Drive", track: "68px", minPx: 68, align: "center" },
   { id: "catalog", label: "Catalog ID", track: "92px", minPx: 92, sort: "catalog" },
 ];
 
-export const LIBRARY_GRID_COLUMNS = LIBRARY_TABLE_COLUMNS.map((c) => c.track).join(" ");
+export const DEFAULT_HIDDEN_COLUMNS: LibraryColumnId[] = ["catalog"];
+export const LIBRARY_COLUMNS_STORAGE_KEY = "sb:library:columns";
 
-/** Narrowest table width: every column at its minimum, plus the 12 px gaps and side padding. */
-export const LIBRARY_TABLE_MIN_WIDTH = LIBRARY_TABLE_COLUMNS.reduce((sum, c) => sum + c.minPx, 0) + 12 * (LIBRARY_TABLE_COLUMNS.length - 1) + 24;
+export function visibleLibraryColumns(hidden: readonly string[] = DEFAULT_HIDDEN_COLUMNS): readonly LibraryColumn[] {
+  return LIBRARY_TABLE_COLUMNS.filter((c) => c.pinned || !hidden.includes(c.id));
+}
+
+export function parseHiddenColumns(raw: string | null): LibraryColumnId[] {
+  try {
+    const parsed: unknown = JSON.parse(raw ?? "null");
+    if (!Array.isArray(parsed)) return [...DEFAULT_HIDDEN_COLUMNS];
+    return LIBRARY_TABLE_COLUMNS.filter((c) => !c.pinned && parsed.includes(c.id)).map((c) => c.id);
+  } catch {
+    return [...DEFAULT_HIDDEN_COLUMNS];
+  }
+}
+
+export function libraryGridTemplate(columns: readonly LibraryColumn[]): string {
+  return columns.map((c) => c.track).join(" ");
+}
+
+export function libraryMinWidth(columns: readonly LibraryColumn[]): number {
+  return columns.reduce((sum, c) => sum + c.minPx, 0);
+}
+
+export function libraryPinnedOffsets(columns: readonly LibraryColumn[]): Map<LibraryColumnId, number> {
+  let left = 0;
+  const offsets = new Map<LibraryColumnId, number>();
+  for (const c of columns) {
+    if (!c.pinned) continue;
+    offsets.set(c.id, left);
+    left += c.minPx;
+  }
+  return offsets;
+}
+
+export const LIBRARY_GRID_COLUMNS = libraryGridTemplate(LIBRARY_TABLE_COLUMNS);
+
+/** Cell padding is included in the grid tracks. */
+export const LIBRARY_TABLE_MIN_WIDTH = libraryMinWidth(LIBRARY_TABLE_COLUMNS);
 
 export type OriginalityInfo = { kind: "cover" | "original"; text: string };
 

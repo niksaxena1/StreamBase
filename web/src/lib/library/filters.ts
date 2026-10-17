@@ -4,7 +4,8 @@ import { matchesAttention, parseAttention, type LibraryAttention } from "./atten
 import { formatDuration, parseDuration } from "./format";
 import type { LibraryRow } from "./types";
 
-export type LibrarySortKey = "release" | "artist" | "title" | "duration" | "catalog" | "streams" | "streams7d";
+export type LibrarySortKey = "release" | "artist" | "title" | "duration" | "catalog" | "streams" | "streams7d"
+  | "entity" | "distributor" | "labelGenre" | "isrc" | "upc" | "comment1" | "comment2";
 export type LibraryViewMode = "list" | "schedule";
 export type LibrarySortDir = "asc" | "desc";
 
@@ -38,7 +39,7 @@ export type LibraryFilters = {
   view: LibraryViewMode;
 };
 
-export const LIBRARY_SORT_KEYS: LibrarySortKey[] = ["release", "artist", "title", "duration", "catalog", "streams", "streams7d"];
+export const LIBRARY_SORT_KEYS: LibrarySortKey[] = ["release", "artist", "title", "duration", "catalog", "streams", "streams7d", "entity", "distributor", "labelGenre", "isrc", "upc", "comment1", "comment2"];
 
 export const LIBRARY_SORT_LABELS: Record<LibrarySortKey, string> = {
   release: "Release date",
@@ -48,6 +49,13 @@ export const LIBRARY_SORT_LABELS: Record<LibrarySortKey, string> = {
   catalog: "Catalog ID",
   streams: "Streams",
   streams7d: "Streams (7 days)",
+  entity: "Entity",
+  distributor: "Distributor",
+  labelGenre: "Label / Genre",
+  isrc: "ISRC",
+  upc: "UPC",
+  comment1: "Comment 1",
+  comment2: "Comment 2",
 };
 
 export function defaultSortDir(sort: LibrarySortKey): LibrarySortDir {
@@ -341,7 +349,12 @@ export function buildSearchIndex(rows: LibraryRow[]): Map<string, string> {
 // Sorting
 
 function textKey(row: LibraryRow, sort: LibrarySortKey): string | null {
-  const v = sort === "artist" ? row.sheet_artist : sort === "title" ? row.sheet_title : row.catalog_id;
+  const fields = {
+    artist: row.sheet_artist, title: row.sheet_title, catalog: row.catalog_id,
+    entity: row.entity, distributor: row.distributor_account, labelGenre: row.label_genre,
+    isrc: row.isrc, upc: row.upc, comment1: row.comment_1, comment2: row.comment_2,
+  };
+  const v = fields[sort as keyof typeof fields];
   return v && v.trim() ? v : null;
 }
 

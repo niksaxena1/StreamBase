@@ -47,7 +47,7 @@ export function FacetSelect({
   );
 }
 
-function DurationField({
+export function DurationField({
   label,
   value,
   onChange,

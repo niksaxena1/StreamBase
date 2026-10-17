@@ -3,13 +3,15 @@
 import { ArrowDown, ArrowUp, Check, Copy, ExternalLink, Folder } from "lucide-react";
 import { useEffect, useRef, type ReactNode } from "react";
 
-import { LIBRARY_TABLE_COLUMNS, originalityInfo, type LibraryColumn } from "@/lib/library/columns";
+import { LIBRARY_TABLE_COLUMNS, libraryPinnedOffsets, originalityInfo, type LibraryColumn } from "@/lib/library/columns";
 import { defaultSortDir, type LibrarySortDir, type LibrarySortKey } from "@/lib/library/filters";
 import { formatDuration, formatReleaseDate } from "@/lib/library/format";
 import { formatCompactStreams, formatExactStreams } from "@/lib/library/streams";
 import type { LibraryRow } from "@/lib/library/types";
 
 import { LibraryCover } from "./LibraryCover";
+import { LibraryHeaderFilter, type LibraryHeaderFilterProps } from "./LibraryHeaderFilter";
+import styles from "./LibraryTable.module.css";
 
 function Dash() {
   return (
@@ -116,6 +118,7 @@ export function HeaderCells({
   allSelected,
   someSelected,
   onToggleAll,
+  headerFilters,
 }: {
   columns?: readonly LibraryColumn[];
   sort: LibrarySortKey;
@@ -124,57 +127,42 @@ export function HeaderCells({
   allSelected: boolean;
   someSelected: boolean;
   onToggleAll: () => void;
+  headerFilters?: LibraryHeaderFilterProps;
 }) {
+  const offsets = libraryPinnedOffsets(columns);
   return (
     <>
       {columns.map((c) => {
-        if (c.id === "select") {
-          return (
-            <div key={c.id} role="columnheader" className="flex items-center">
-              <SelectBox
-                checked={allSelected}
-                indeterminate={someSelected && !allSelected}
-                label="Select all shown releases"
-                onClick={() => onToggleAll()}
-              />
-            </div>
-          );
-        }
-        if (c.id === "cover") {
-          return (
-            <div key={c.id} role="columnheader">
-              <span className="sr-only">Cover</span>
-            </div>
-          );
-        }
-        if (!c.sort) {
-          return (
-            <div key={c.id} role="columnheader" className={["min-w-0 truncate", alignClass(c)].join(" ")} title={c.id === "originality" ? "Originality" : undefined}>
-              {c.label}
-            </div>
-          );
-        }
         const sortKey = c.sort;
-        const active = sort === sortKey;
+        const active = Boolean(sortKey && sort === sortKey);
         return (
           <div
             key={c.id}
             role="columnheader"
-            aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : "none"}
-            className={["min-w-0", alignClass(c)].join(" ")}
+            aria-sort={sortKey ? active ? (dir === "asc" ? "ascending" : "descending") : "none" : undefined}
+            data-column={c.id}
+            data-pinned={Boolean(c.pinned)}
+            style={{ left: offsets.get(c.id) }}
+            className={[styles.cell, "group", alignClass(c)].join(" ")}
+            title={c.id === "originality" ? "Originality" : c.label || undefined}
           >
-            <button
+            {c.id === "select" ? <SelectBox checked={allSelected} indeterminate={someSelected && !allSelected} label="Select all shown releases" onClick={() => onToggleAll()} />
+              : c.id === "cover" ? <span className="sr-only">Cover</span>
+              : <div className="flex min-w-0 items-center gap-0.5">
+            {sortKey ? <button
               type="button"
               className={[
-                "inline-flex max-w-full items-center gap-1 uppercase tracking-wider focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)]",
-                c.align === "right" ? "w-full justify-end" : "",
+                "inline-flex min-w-0 flex-1 items-center gap-0.5 uppercase tracking-wider focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)]",
+                c.align === "right" ? "justify-end" : "",
               ].join(" ")}
               style={active ? { color: "var(--sb-text)" } : undefined}
               onClick={() => onSort(sortKey, active ? (dir === "asc" ? "desc" : "asc") : defaultSortDir(sortKey))}
             >
               <span className="truncate">{c.label}</span>
               {active ? dir === "asc" ? <ArrowUp className="h-3 w-3 flex-none" /> : <ArrowDown className="h-3 w-3 flex-none" /> : null}
-            </button>
+            </button> : <span className="min-w-0 flex-1 truncate">{c.label}</span>}
+            {headerFilters ? <LibraryHeaderFilter column={c} {...headerFilters} /> : null}
+            </div>}
           </div>
         );
       })}
@@ -199,6 +187,7 @@ export function RowCells({
   const artist = row.sheet_artist;
   const title = row.sheet_title;
   const entityName = row.entity ? (entityNames.get(row.entity) ?? row.entity.toUpperCase()) : "";
+  const offsets = libraryPinnedOffsets(columns);
 
   const render = (c: LibraryColumn): ReactNode => {
     switch (c.id) {
@@ -209,10 +198,10 @@ export function RowCells({
           </div>
         );
       case "cover":
-        return <LibraryCover url={row.album_image_url} size={32} />;
+        return row.album_image_url ? <LibraryCover url={row.album_image_url} size={20} /> : null;
       case "release":
         return (
-          <span className="whitespace-nowrap tabular-nums">{row.release_date ? formatReleaseDate(row.release_date) : <Dash />}</span>
+          <span className="truncate whitespace-nowrap tabular-nums" title={row.release_date ? formatReleaseDate(row.release_date) : undefined}>{row.release_date ? formatReleaseDate(row.release_date) : <Dash />}</span>
         );
       case "artist":
         return (
@@ -272,7 +261,7 @@ export function RowCells({
   return (
     <>
       {columns.map((c) => (
-        <div key={c.id} role="cell" className={["min-w-0", alignClass(c)].join(" ")}>
+        <div key={c.id} role="cell" data-column={c.id} data-pinned={Boolean(c.pinned)} style={{ left: offsets.get(c.id) }} className={[styles.cell, alignClass(c)].join(" ")}>
           {render(c)}
         </div>
       ))}

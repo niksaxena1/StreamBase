@@ -34,6 +34,8 @@ import {
   type SelectionState,
 } from "@/lib/library/selection";
 import { mergeStreams, streamsAsOf } from "@/lib/library/streams";
+import { useLibraryColumns } from "@/lib/library/useLibraryColumns";
+import { visibleLibraryColumns } from "@/lib/library/columns";
 import {
   LIBRARY_EXCLUSIVITY_OPTIONS,
   LIBRARY_ORIGINALITY_OPTIONS,
@@ -54,6 +56,7 @@ import {
 import { AddReleaseModal } from "./AddReleaseModal";
 import { LibraryAttentionPanel } from "./LibraryAttentionPanel";
 import { LibraryBulkBar } from "./LibraryBulkBar";
+import { LibraryColumnPicker } from "./LibraryColumnPicker";
 import { LibraryDetailPanel } from "./LibraryDetailPanel";
 import { FacetSelect, LibraryFilterBar, type FilterOptionLists } from "./LibraryFilters";
 import { LibrarySchedule } from "./LibrarySchedule";
@@ -98,6 +101,8 @@ export function LibraryPageClient({
   today: string;
 }) {
   const toolbarRef = useRef<HTMLDivElement>(null);
+  const { hidden, setHidden } = useLibraryColumns();
+  const columns = useMemo(() => visibleLibraryColumns(hidden), [hidden]);
   const router = useRouter();
   const searchParams = useSearchParams();
   const openId = searchParams.get("id");
@@ -243,7 +248,7 @@ export function LibraryPageClient({
           </div>
           <FacetSelect label="Year" value={filters.year} options={options.years} onChange={(year) => patchFilters({ year })} />
           <LibraryFilterBar filters={filters} options={options} activeCount={filterChips.length} onChange={patchFilters} onClear={() => setFilters(resetLibraryFilters)} />
-          {/* TODO Task B: wire the Columns toolbar control to column visibility. */}
+          {!isSchedule ? <LibraryColumnPicker hidden={hidden} onChange={setHidden} /> : null}
           <LibraryAttentionPanel counts={attention} active={filters.attention} onPick={(rule) => setFilters((f) => attentionFilters(f, rule))} />
           <IconButton className="h-7 w-7 shrink-0" aria-label="Export CSV" title="Export CSV" disabled={filtered.length === 0} onClick={() => downloadCsv({ filename: libraryCsvFilename(today), rows: libraryCsvRows(filtered), sortForExport: false })}>
             <Download className="h-3.5 w-3.5" aria-hidden="true" />
@@ -305,6 +310,11 @@ export function LibraryPageClient({
         <LibrarySchedule rows={filtered} today={today} entityNames={entityNames} selectedId={openId} onSelect={openPanel} />
       ) : (
         <LibraryTable
+          columns={columns}
+          today={today}
+          filters={filters}
+          filterOptions={options}
+          onFilter={patchFilters}
           toolbarRef={toolbarRef}
           rows={filtered}
           entityNames={entityNames}
