@@ -149,7 +149,9 @@ def smooth_own_catalog(pg: Any, run_date: date, *, run_id: Any = None, reconcile
         if reconciled:
             print(f"INFO Reconciled {reconciled} obsolete auto-catchup override(s)")
     except Exception as err:
-        print(f"WARN Could not reconcile auto-catchup overrides: {err}")
+        # The own catalog has no reconcile function yet (competitor-only, see the 2026-08-14 migration).
+        if "PGRST202" not in str(err):
+            print(f"WARN Could not reconcile auto-catchup overrides: {err}")
 
     result = run_catchup_smoothing(pg, run_date, run_id=run_id, universe="own")
     start = result["earliest"]

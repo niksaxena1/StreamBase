@@ -454,8 +454,8 @@ jobs:
             if [ "$STALE_TRACKS_COUNT" != "0" ]; then
               echo "${STALE_TRACKS_COUNT} track(s) had zero daily stream growth despite"
               echo "having significant total streams (severity: ${STALE_TRACKS_SEVERITY:-warn})."
-              echo "The RapidAPI auto-fix is scheduled to run at 09:15 UTC and will"
-              echo "attempt to correct up to 20 tracks automatically."
+              echo "The stale-track fix runs right after this ingest (free providers, then"
+              echo "artist.tools); it emails again only if tracks stay unfixed."
               echo ""
             fi
             if [ "$ZEROED_COUNT" != "0" ]; then
