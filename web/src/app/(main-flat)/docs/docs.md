@@ -470,6 +470,7 @@ Times are **UTC** with Dubai time (UTC+4). The Supabase database scheduler start
 | Artist Tools Daily (`artist_tools_daily.yml`) | Dispatched whenever RapidAPI stale-fix finishes; daily database dispatch (pg_cron) 18:17 | 22:17 | Records artist counts and repairs remaining stale tracks |
 | Spotify artist image cache refresh (`spotify_artist_image_refresh.yml`) | Fridays at 15:00 (database scheduler); runs only when UTC day-of-month is 1–7 | 19:00 | Refreshes cached Spotify artist images once on the month's first Friday; manual dispatch is not date-gated |
 | Spotify Playlist Watch Daily (`spotify_playlist_watch_daily.yml`) | Daily 14:00 (database scheduler) | 18:00 | Collects watchlist follower counts and evaluates alert rules |
+| Beatport Chart Snapshot (`beatport_chart_snapshot.yml`) | Daily 10:00 (database scheduler) | 14:00 | Snapshots the Beatport Tech House Top 100 for the Charts page (one plain request per day) |
 | Pipeline Quality CI (`pipeline_quality.yml`) | Matching pull requests and pushes to `main` that change configured paths; event-triggered, no cron | Event-driven | Runs pipeline tests and workflow lint |
 
 ### Competitor Mode schedule

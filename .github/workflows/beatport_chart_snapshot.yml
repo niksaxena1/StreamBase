@@ -1,0 +1,49 @@
+name: Beatport Chart Snapshot
+
+on:
+  workflow_dispatch:
+  # Scheduled by the database (pg_cron -> ops.dispatch_workflow), daily 10:00 UTC.
+  # Dispatch failures email via ops.check_workflow_dispatches.
+
+concurrency:
+  group: beatport-chart-snapshot
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      STREAMBASE_REVALIDATE_URL: ${{ secrets.STREAMBASE_REVALIDATE_URL }}
+      REVALIDATE_SECRET: ${{ secrets.REVALIDATE_SECRET }}
+      NOTIFY_SMTP_PASSWORD: ${{ secrets.NOTIFY_SMTP_PASSWORD }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Snapshot Beatport charts
+        run: python scripts/beatport_chart_snapshot.py
+
+      - name: Send failure notification
+        if: failure()
+        uses: ./.github/actions/notify-email
+        with:
+          password: ${{ secrets.NOTIFY_SMTP_PASSWORD }}
+          subject: "[StreamBase] Beatport Chart Snapshot FAILED"
+          body: |
+            The Beatport chart snapshot workflow failed (no snapshot was written for the failing chart).
+
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

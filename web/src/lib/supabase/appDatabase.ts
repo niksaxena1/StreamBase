@@ -39,6 +39,7 @@ export type AppDatabase = {
   };
   competitor: LooseSchema;
   playlist_watch: LooseSchema;
+  charts: LooseSchema;
 };
 
 /** Row type for a public-schema table, e.g. `TableRow<"tracks">`. */

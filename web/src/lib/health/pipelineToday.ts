@@ -75,6 +75,7 @@ const ARTIST_TOOLS_UTC_MINUTES = 18 * 60 + 17;
 const SIDE_JOBS: Array<{ workflow: string; title: string; maxAgeHours: number | null; cadence: string }> = [
   { workflow: "spotify_takedown_watch.yml", title: "Takedown watch", maxAgeHours: 26, cadence: "daily 20:00 UTC" },
   { workflow: "spotify_playlist_watch_daily.yml", title: "Playlist watch", maxAgeHours: 26, cadence: "daily 14:00 UTC" },
+  { workflow: "beatport_chart_snapshot.yml", title: "Beatport chart", maxAgeHours: 26, cadence: "daily 10:00 UTC" },
   { workflow: "spotify_artist_image_refresh.yml", title: "Artist image refresh", maxAgeHours: null, cadence: "first Friday 15:00 UTC" },
 ];
 
