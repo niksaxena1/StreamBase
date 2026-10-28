@@ -19,6 +19,7 @@ export const metadata: Metadata = {
 
 type SearchParams = {
   archived?: string;
+  collection?: string;
 };
 
 export default async function PlaylistWatchPage({
@@ -29,7 +30,7 @@ export default async function PlaylistWatchPage({
   const sp = (await searchParams) ?? {};
   const includeArchived = sp.archived === "1";
 
-  const { rows, isAdmin, latestRun } = await loadPlaylistWatchPage(includeArchived);
+  const { rows, collections, isAdmin, latestRun } = await loadPlaylistWatchPage(includeArchived);
 
   return (
     <div className="space-y-4">
@@ -41,7 +42,13 @@ export default async function PlaylistWatchPage({
             : "Track daily follower counts for independent Spotify playlists."
         }
       />
-      <PlaylistWatchClient playlists={rows} isAdmin={isAdmin} includeArchived={includeArchived} />
+      <PlaylistWatchClient
+        playlists={rows}
+        collections={collections}
+        initialCollection={sp.collection ?? null}
+        isAdmin={isAdmin}
+        includeArchived={includeArchived}
+      />
     </div>
   );
 }

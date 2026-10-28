@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import type { PlaylistWatchRow } from "@/app/(main-flat)/playlist-watch/PlaylistWatchClient";
+import type { PlaylistWatchCollection } from "@/app/(main-flat)/playlist-watch/collectionsModel";
 import { CACHE_TTL_1H } from "@/lib/constants";
 import {
   getDemoFollowerSnapshots,
@@ -56,8 +57,40 @@ function deltaSince(rows: SnapshotRow[], latest: number | null, days: number) {
   return latest - Number(baseline.follower_count);
 }
 
+/**
+ * Collections are small, user-edited and shared, so they are read fresh (not through the 1h
+ * snapshot cache) and a mutation followed by router.refresh() shows up immediately.
+ */
+async function loadCollections(): Promise<PlaylistWatchCollection[]> {
+  const pw = supabaseService().schema("playlist_watch");
+  const [{ data: collections, error: collectionsErr }, { data: members, error: membersErr }] = await Promise.all([
+    pw
+      .from("collections")
+      .select("id,name,color,sort_order")
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true }),
+    pw.from("collection_playlists").select("collection_id,spotify_playlist_id").limit(20000),
+  ]);
+  if (collectionsErr) throw new Error(collectionsErr.message);
+  if (membersErr) throw new Error(membersErr.message);
+  const byCollection = new Map<string, string[]>();
+  for (const m of (members ?? []) as { collection_id: string; spotify_playlist_id: string }[]) {
+    const bucket = byCollection.get(m.collection_id) ?? [];
+    bucket.push(m.spotify_playlist_id);
+    byCollection.set(m.collection_id, bucket);
+  }
+  return ((collections ?? []) as { id: string; name: string; color: string | null; sort_order: number }[]).map((c) => ({
+    id: c.id,
+    name: c.name,
+    color: c.color,
+    sortOrder: c.sort_order,
+    playlistIds: byCollection.get(c.id) ?? [],
+  }));
+}
+
 export async function loadPlaylistWatchPage(includeArchived: boolean): Promise<{
   rows: PlaylistWatchRow[];
+  collections: PlaylistWatchCollection[];
   isAdmin: boolean;
   latestRun: {
     run_date: string | null;
@@ -78,7 +111,7 @@ export async function loadPlaylistWatchPage(includeArchived: boolean): Promise<{
 
   const cacheKey = `playlist-watch-${includeArchived ? "all" : "active"}`;
 
-  const cached = await cachedQuery(
+  const [cached, collections] = await Promise.all([cachedQuery(
     async () => {
       const pw = supabaseService().schema("playlist_watch");
       let playlistQuery = pw
@@ -190,12 +223,13 @@ export async function loadPlaylistWatchPage(includeArchived: boolean): Promise<{
     },
     cacheKey,
     CACHE_TTL_1H,
-  );
+  ), loadCollections()]);
 
   if (cached.error) throw new Error(cached.error.message);
 
   return {
     rows: cached.data?.rows ?? [],
+    collections,
     isAdmin: Boolean(isAdmin),
     latestRun: cached.data?.latestRun ?? null,
   };
