@@ -140,7 +140,7 @@ rerunning the same run ID can restore its existing entry but cannot overwrite it
 These scheduled workflows run independently of the SpotOnTrack completion chains:
 
 - Spotify enrichment runs at 10:29 UTC (14:29 Dubai) on odd UTC calendar days; competitor enrichment runs at 11:09 UTC (15:09 Dubai) on even UTC calendar days (still GitHub `schedule:` triggers, so they can start late).
-- Spotify Takedown Watch (20:00 UTC), Spotify Playlist Watch Daily (15:11 UTC) and the artist image refresh (first Friday, 15:00 UTC) are dispatched by the database; see the table under "Other scheduled jobs" below. They have no GitHub `schedule:` trigger.
+- Spotify Takedown Watch (20:00 UTC), Spotify Playlist Watch Daily (14:00 UTC, 18:00 Abu Dhabi) and the artist image refresh (first Friday, 15:00 UTC) are dispatched by the database; see the table under "Other scheduled jobs" below. They have no GitHub `schedule:` trigger.
 - Pipeline Quality CI runs on matching pull requests and pushes to `main`; it has no cron.
 
 ## Watchdogs
@@ -161,7 +161,7 @@ GitHub's own `schedule:` triggers ran 6–8 hours late, so these workflows are s
 |---|---|---|
 | `spotify_takedown_watch.yml` | `streambase-takedown-watch` | 20:00 daily (00:00 Dubai) |
 | `artist_tools_daily.yml` | `streambase-artist-tools-daily` | 18:17 daily |
-| `spotify_playlist_watch_daily.yml` | `streambase-playlist-watch` | 15:11 daily |
+| `spotify_playlist_watch_daily.yml` | `streambase-playlist-watch` | 14:00 daily (18:00 Abu Dhabi) |
 | `spotify_artist_image_refresh.yml` | `streambase-artist-image-refresh` | 15:00 on the first Friday of the month |
 | `rapidapi_stale_fix.yml` with `second_look=true` | `streambase-stale-second-look` | 17:30 daily |
 | `public.refresh_stream_source_quality(30)` (SQL only) | `streambase-source-quality` | 19:00 daily |

@@ -30,7 +30,7 @@ function base(overrides: Partial<PipelineTodayData> = {}): PipelineTodayData {
     ],
     workflows: [
       { workflow: "artist_tools_daily.yml", http_status: 204, error: null, at: `${RUN}T13:17:00Z`, checked_at: null },
-      { workflow: "spotify_playlist_watch_daily.yml", http_status: 204, error: null, at: `${RUN}T15:11:00Z`, checked_at: null },
+      { workflow: "spotify_playlist_watch_daily.yml", http_status: 204, error: null, at: `${RUN}T14:00:00Z`, checked_at: null },
       { workflow: "spotify_takedown_watch.yml", http_status: 204, error: null, at: `${RUN}T20:00:00Z`, checked_at: null },
     ],
     alerts: [],
