@@ -140,6 +140,16 @@ describe("buildPipelineTimeline", () => {
     expect(find(buildPipelineTimeline(monthly, new Date(`${RUN}T21:00:00Z`)), "job-spotify_artist_image_refresh.yml").status).toBe("green");
   });
 
+  it("beatport chart job: no dispatch yet is neutral, dispatched is green, overdue after 26h is amber", () => {
+    const t0 = buildPipelineTimeline(base(), new Date(`${RUN}T21:00:00Z`));
+    expect(find(t0, "job-beatport_chart_snapshot.yml")).toMatchObject({ title: "Beatport chart", status: "neutral", label: "No dispatch yet" });
+    expect(find(t0, "job-beatport_chart_snapshot.yml").detail).toBe("daily 10:00 UTC");
+    const withJob = base({ workflows: [...base().workflows, { workflow: "beatport_chart_snapshot.yml", http_status: 204, error: null, at: `${RUN}T10:00:00Z`, checked_at: null }] });
+    expect(find(buildPipelineTimeline(withJob, new Date(`${RUN}T21:00:00Z`)), "job-beatport_chart_snapshot.yml")).toMatchObject({ status: "green", label: "Dispatched" });
+    const overdue = buildPipelineTimeline(withJob, new Date("2026-10-18T12:00:00Z"));
+    expect(find(overdue, "job-beatport_chart_snapshot.yml").status).toBe("amber");
+  });
+
   it("alerts raised today are red rows; overall is the worst status", () => {
     const data = base({ alerts: [{ universe: "own", kind: "not_ingested", subject: "[StreamBase] not ingested", at: `${RUN}T08:30:00Z`, sent_at: `${RUN}T08:31:00Z`, send_error: null }] });
     const t = buildPipelineTimeline(data, new Date(`${RUN}T21:00:00Z`));

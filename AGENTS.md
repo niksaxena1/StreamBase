@@ -2,10 +2,11 @@
 
 ## Read this first
 
-StreamBase has two analytics universes:
+StreamBase has two analytics universes (plus a small third, Charts, below):
 
 1. **Own catalog** in the `public` schema.
 2. **Competitors** in the isolated `competitor` schema.
+3. **Charts** (public music-chart snapshots, first: Beatport Tech House Top 100) in the isolated `charts` schema. Separate, additive, independent of the dataset-mode switch; never join it to `public`/`competitor` analytics. See `docs/CHARTS.md`.
 
 Do not blur them. Competitor work should be additive and schema-scoped; own-catalog workflows, queries, and pages must keep their existing performance characteristics unless the user explicitly asks otherwise.
 

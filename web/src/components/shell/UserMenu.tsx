@@ -3,7 +3,7 @@
 import Link from "@/components/shell/RouteLink";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { BookOpen, Eye, LogOut, Network, Settings, User, Moon, Sun } from "lucide-react";
+import { BarChart3, BookOpen, Eye, LogOut, Network, Settings, User, Moon, Sun } from "lucide-react";
 
 import { IconButton } from "@/components/ui/Button";
 import { hasStreamBaseAccess, type AppAccess } from "@/lib/appAccess";
@@ -150,6 +150,18 @@ export function UserMenu({ appAccess, userEmail }: { appAccess?: AppAccess; user
         >
           <Network className="h-4 w-4 opacity-70" />
           <span>Network</span>
+        </Link>
+      ) : null}
+
+      {showStreamBaseUtilityNav ? (
+        <Link
+          href="/charts"
+          className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs transition hover:bg-black/5 dark:hover:bg-white/10"
+          onClick={() => setOpen(false)}
+          title="Beatport charts"
+        >
+          <BarChart3 className="h-4 w-4 opacity-70" />
+          <span>Charts</span>
         </Link>
       ) : null}
 
