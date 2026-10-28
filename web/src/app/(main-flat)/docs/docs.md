@@ -159,6 +159,16 @@ Files:
 
 Tracks daily Spotify follower counts for watched playlists. Search and sort the list, filter active playlists/favorites/archived items, open follower history, and view playlist owner details. You can add one or more Spotify playlist URLs, URIs, or IDs; mark favorites; archive or restore playlists; and manage follower alert rules and their alert history. Archived playlists keep their saved history but are not checked by the daily follower job.
 
+**Collections** group watched playlists, for example "Ads · Account A", "Ads · Account B" and "Others", so you can compare follower growth day by day. Collections are shared by everyone who can use Playlist Watch, and a playlist can be in several collections.
+
+- Chips above the list switch between **All**, each collection (with its playlist count) and **Unassigned** (shown when some playlist is in no collection). The choice is kept in the URL as `?collection=<id|all|unassigned>`, and also filters the playlist table.
+- For the selected chip, a strip shows playlists, combined followers, gained today (latest snapshot date vs the previous one), 7 days and 30 days. "—" means there is not enough history yet; positive is green and negative red. A chart plots the combined followers or the daily gain (click the chart title to switch).
+- The combined chart only includes days where every tracked member playlist has a snapshot, and a playlist added mid-range joins from its first day without counting as growth. Archived playlists are left out of collection totals.
+- With two or more collections, **Compare collections** lists playlists, followers, today, 7d and 30d side by side.
+- Use the **Collections** button to create, rename, recolor, reorder and delete collections (deleting never removes playlists). On a playlist row, the folder button adds or removes that playlist; with rows selected, **Collections** in the action bar does it in bulk.
+
+Implementation: `web/src/app/(main-flat)/playlist-watch/collectionsModel.ts` (pure calculations, tested), `CollectionsSection.tsx`, `CollectionsDialogs.tsx`, API in `web/src/app/api/playlist-watch/collections/`, tables in `supabase/migrations/20261028032632_playlist_watch_collections.sql`.
+
 ### Health (`/health`)
 
 - Purpose:

@@ -210,7 +210,16 @@ export function FollowerSparkline({
   );
 }
 
-export function MetricTile({ label, value }: { label: string; value: string }) {
+export function MetricTile({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  /** Colors the value: positive green, negative red. */
+  tone?: "positive" | "negative" | null;
+}) {
   return (
     <div
       className="min-w-0 rounded-lg border p-2 sm:p-3"
@@ -225,7 +234,13 @@ export function MetricTile({ label, value }: { label: string; value: string }) {
       >
         {label}
       </div>
-      <div className="mt-0.5 truncate font-mono text-sm font-semibold leading-tight sm:mt-1 sm:text-lg">
+      <div
+        className={[
+          "mt-0.5 truncate font-mono text-sm font-semibold leading-tight sm:mt-1 sm:text-lg",
+          tone === "positive" ? "sb-positive" : "",
+          tone === "negative" ? "text-red-600 dark:text-red-400" : "",
+        ].filter(Boolean).join(" ")}
+      >
         {value}
       </div>
     </div>

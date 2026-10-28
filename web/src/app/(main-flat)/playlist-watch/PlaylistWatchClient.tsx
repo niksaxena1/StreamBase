@@ -1,7 +1,7 @@
 "use client";
 
 import { useNavigationRouter as useRouter } from "@/components/shell/useNavigationRouter";
-import { Archive, ArchiveRestore, Bell, BellRing, ChevronDown, ChevronUp, Copy, ExternalLink, Heart, Mail, Plus, Search, Trash2, User, X } from "lucide-react";
+import { Archive, ArchiveRestore, Bell, BellRing, ChevronDown, ChevronUp, Copy, ExternalLink, FolderPlus, Heart, Mail, Plus, Search, Trash2, User, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { EmptyState, GlassTable, TableCell, TableRow } from "@/components/ui/GlassTable";
@@ -13,6 +13,9 @@ import { spotifyUserUrl } from "@/lib/playlistWatch/spotifyUserUrl";
 import { showToast } from "@/lib/toast";
 import { formatTooltipDateDaily } from "@/components/charts/chartUtils";
 import { buildAlertPreview } from "@/lib/playlistWatch/alertPreview";
+import { CollectionMembershipModal, CollectionsManagerModal, ColorDot } from "./CollectionsDialogs";
+import { CollectionAnalytics, CollectionChips } from "./CollectionsSection";
+import { COLLECTION_ALL, COLLECTION_UNASSIGNED, normalizeSelection, selectionIdSet, sortCollections, unassignedPlaylistIds, type CollectionSelection, type PlaylistWatchCollection } from "./collectionsModel";
 import { FollowerSparkline, MetricTile, PlaylistFollowerChart, StatusIcon, TrendValue } from "./PlaylistWatchVisuals";
 import { compareNullableMetric, emptyAlertEditor, extractPlaylistIdForSummary, fmtDelta, formatCheckedAt, looksLikeSpotifyPlaylistInput, metricForSort, type AlertEditorState, type ImportSummary, type OwnerModalTab, type OwnerProfile, type OwnerSpotifyPlaylistRow, type PlaylistWatchAlertEvent, type PlaylistWatchAlertRule, type PlaylistWatchFilter, type PlaylistWatchRow, type PlaylistWatchSortKey } from "./playlistWatchClientModel";
 
@@ -20,10 +23,14 @@ export type { PlaylistWatchRow } from "./playlistWatchClientModel";
 
 export function PlaylistWatchClient({
   playlists,
+  collections,
+  initialCollection,
   isAdmin,
   includeArchived,
 }: {
   playlists: PlaylistWatchRow[];
+  collections: PlaylistWatchCollection[];
+  initialCollection: string | null;
   isAdmin: boolean;
   includeArchived: boolean;
 }) {
@@ -53,6 +60,9 @@ export function PlaylistWatchClient({
   const [alertsLoaded, setAlertsLoaded] = useState(false);
   const [alertEditor, setAlertEditor] = useState<AlertEditorState>(emptyAlertEditor);
   const [tableMode, setTableMode] = useState<"playlists" | "alerts">("playlists");
+  const [rawCollection, setRawCollection] = useState<string | null>(initialCollection);
+  const [collectionsManagerOpen, setCollectionsManagerOpen] = useState(false);
+  const [membershipTarget, setMembershipTarget] = useState<{ ids: string[]; title: string } | null>(null);
 
   useEffect(() => {
     void loadAlertRules();
@@ -163,14 +173,38 @@ export function PlaylistWatchClient({
   const activeCount = useMemo(() => playlists.filter((p) => p.watchStatus !== "archived").length, [playlists]);
   const favoriteCount = useMemo(() => playlists.filter((p) => p.isFavorite && p.watchStatus !== "archived").length, [playlists]);
   const archivedCount = useMemo(() => playlists.filter((p) => p.watchStatus === "archived").length, [playlists]);
+  const orderedCollections = useMemo(() => sortCollections(collections), [collections]);
+  const collectionSelection: CollectionSelection = useMemo(() => {
+    const normalized = normalizeSelection(rawCollection, collections);
+    // The Unassigned chip disappears once nothing is unassigned; fall back to All.
+    if (normalized === COLLECTION_UNASSIGNED) {
+      const live = playlists.filter((p) => p.watchStatus !== "archived");
+      if (collections.length === 0 || unassignedPlaylistIds(live, collections).size === 0) return COLLECTION_ALL;
+    }
+    return normalized;
+  }, [rawCollection, collections, playlists]);
+  const collectionIdSet = useMemo(
+    () => selectionIdSet(playlists, collections, collectionSelection),
+    [playlists, collections, collectionSelection],
+  );
+  const collectionsByPlaylist = useMemo(() => {
+    const map = new Map<string, PlaylistWatchCollection[]>();
+    for (const collection of orderedCollections) {
+      for (const id of collection.playlistIds) map.set(id, [...(map.get(id) ?? []), collection]);
+    }
+    return map;
+  }, [orderedCollections]);
   const filteredPlaylists = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
+    const inCollection = collectionIdSet
+      ? playlists.filter((p) => collectionIdSet.has(p.spotifyPlaylistId))
+      : playlists;
     const byMode =
       filter === "favorites"
-        ? playlists.filter((p) => p.isFavorite && p.watchStatus !== "archived")
+        ? inCollection.filter((p) => p.isFavorite && p.watchStatus !== "archived")
         : filter === "archived"
-          ? playlists.filter((p) => p.watchStatus === "archived")
-          : playlists.filter((p) => p.watchStatus !== "archived");
+          ? inCollection.filter((p) => p.watchStatus === "archived")
+          : inCollection.filter((p) => p.watchStatus !== "archived");
     if (!q) return byMode;
     return byMode.filter((p) =>
       [
@@ -183,7 +217,7 @@ export function PlaylistWatchClient({
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(q)),
     );
-  }, [filter, playlists, searchQuery]);
+  }, [filter, playlists, searchQuery, collectionIdSet]);
   const sortedPlaylists = useMemo(() => {
     return [...filteredPlaylists].sort((a, b) =>
       compareNullableMetric(metricForSort(a, sortKey), metricForSort(b, sortKey), sortDir),
@@ -370,11 +404,25 @@ export function PlaylistWatchClient({
 
   function selectFilter(nextFilter: PlaylistWatchFilter) {
     setFilter(nextFilter);
+    const collectionParam = collectionSelection === COLLECTION_ALL ? "" : `collection=${encodeURIComponent(collectionSelection)}`;
     if (nextFilter === "archived" && !includeArchived) {
-      router.push("/playlist-watch?archived=1");
+      router.push(`/playlist-watch?archived=1${collectionParam ? `&${collectionParam}` : ""}`);
     } else if (nextFilter !== "archived" && includeArchived) {
-      router.push("/playlist-watch");
+      router.push(`/playlist-watch${collectionParam ? `?${collectionParam}` : ""}`);
     }
+  }
+
+  function selectCollection(next: CollectionSelection) {
+    setRawCollection(next);
+    // Keep the choice in the URL (shareable, survives refresh) without a server round trip.
+    const url = new URL(window.location.href);
+    if (next === COLLECTION_ALL) url.searchParams.delete("collection");
+    else url.searchParams.set("collection", next);
+    window.history.replaceState(null, "", `${url.pathname}${url.search}`);
+  }
+
+  function refreshAfterCollectionChange() {
+    router.refresh();
   }
 
   async function loadAlertRules() {
@@ -602,6 +650,21 @@ export function PlaylistWatchClient({
         </div>
       </div>
 
+      {tableMode === "playlists" ? (
+        <div className="space-y-4">
+          <CollectionChips
+            rows={playlists}
+            collections={collections}
+            selection={collectionSelection}
+            onSelect={selectCollection}
+            onManage={() => setCollectionsManagerOpen(true)}
+          />
+          {filter !== "archived" ? (
+            <CollectionAnalytics rows={playlists} collections={collections} selection={collectionSelection} />
+          ) : null}
+        </div>
+      ) : null}
+
       {message ? (
         <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-200">
           {message}
@@ -642,6 +705,16 @@ export function PlaylistWatchClient({
             >
               Toggle favorite
             </button>
+            {collections.length > 0 ? (
+              <button
+                type="button"
+                disabled={busyKey !== null}
+                onClick={() => setMembershipTarget({ ids: selectedIds, title: `${selectedIds.length} selected playlists` })}
+                className="sb-ring rounded-lg px-2.5 py-1.5 font-medium hover:bg-black/5 disabled:opacity-40 dark:hover:bg-white/10"
+              >
+                Collections
+              </button>
+            ) : null}
             {isAdmin ? (
               filter === "archived" ? (
                 <button
@@ -673,6 +746,26 @@ export function PlaylistWatchClient({
           </div>
         ) : null}
       </div>
+
+      <CollectionsManagerModal
+        open={collectionsManagerOpen}
+        onClose={() => setCollectionsManagerOpen(false)}
+        collections={collections}
+        onChanged={refreshAfterCollectionChange}
+      />
+      {membershipTarget ? (
+        <CollectionMembershipModal
+          playlistIds={membershipTarget.ids}
+          title={membershipTarget.title}
+          collections={collections}
+          onClose={() => setMembershipTarget(null)}
+          onChanged={refreshAfterCollectionChange}
+          onManage={() => {
+            setMembershipTarget(null);
+            setCollectionsManagerOpen(true);
+          }}
+        />
+      ) : null}
 
       <Modal
         open={bulkAddOpen}
@@ -913,6 +1006,11 @@ export function PlaylistWatchClient({
                     <div className="flex items-center gap-1.5">
                       <StatusIcon playlist={playlist} />
                       {playlist.isFavorite ? <Heart className="h-3.5 w-3.5 fill-current text-red-500" /> : null}
+                      {(collectionsByPlaylist.get(playlist.spotifyPlaylistId) ?? []).map((collection) => (
+                        <span key={collection.id} title={`In ${collection.name}`} className="inline-flex shrink-0 items-center">
+                          <ColorDot color={collection.color ?? "var(--sb-muted)"} className="h-2 w-2" />
+                        </span>
+                      ))}
                       {recentAlert ? (
                         <button
                           type="button"
@@ -995,6 +1093,24 @@ export function PlaylistWatchClient({
                     <ExternalLink className="h-4 w-4" />
                   </a>
                   <div className="mx-1 h-8 w-px" style={{ background: "var(--sb-border)" }} />
+                  <button
+                    title={collections.length > 0 ? "Collections" : "Create a collection first"}
+                    disabled={busyKey !== null}
+                    data-row-action
+                    onClick={() =>
+                      collections.length > 0
+                        ? setMembershipTarget({ ids: [playlist.spotifyPlaylistId], title: playlist.displayName })
+                        : setCollectionsManagerOpen(true)
+                    }
+                    className="sb-ring relative grid h-8 w-8 place-items-center rounded-lg hover:bg-black/5 disabled:opacity-40 dark:hover:bg-white/10"
+                  >
+                    <FolderPlus className="h-4 w-4" />
+                    {(collectionsByPlaylist.get(playlist.spotifyPlaylistId) ?? []).length > 0 ? (
+                      <span className="absolute -right-0.5 -top-0.5 grid h-3.5 min-w-3.5 place-items-center rounded-full bg-black px-0.5 font-mono text-[9px] text-white dark:bg-white dark:text-black">
+                        {(collectionsByPlaylist.get(playlist.spotifyPlaylistId) ?? []).length}
+                      </span>
+                    ) : null}
+                  </button>
                   <button
                     title={playlistAlertRules(playlist.spotifyPlaylistId).some((rule) => rule.isActive) ? "Edit playlist alerts" : "Add playlist alert"}
                     disabled={busyKey !== null}
