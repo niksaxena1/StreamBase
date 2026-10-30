@@ -12,6 +12,7 @@ import {
 } from "@/lib/playlistWatch/demoPlaylist";
 import { buildFollowerHistory } from "@/lib/playlistWatch/history";
 import { cachedQuery } from "@/lib/supabase/cache";
+import { playlistWatchCacheKey } from "@/lib/playlistWatch/cache";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 
@@ -109,7 +110,7 @@ export async function loadPlaylistWatchPage(includeArchived: boolean): Promise<{
   ]);
   if (!canAccess) redirect("/");
 
-  const cacheKey = `playlist-watch-${includeArchived ? "all" : "active"}`;
+  const cacheKey = playlistWatchCacheKey(includeArchived);
 
   const [cached, collections] = await Promise.all([cachedQuery(
     async () => {

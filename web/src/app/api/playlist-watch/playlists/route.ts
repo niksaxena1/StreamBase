@@ -2,6 +2,7 @@ import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { apiJsonErr, apiJsonOk, readJsonBodyOptional } from "@/lib/api/server";
 import { requirePlaylistWatchAdmin } from "@/lib/playlistWatch/access";
+import { expirePlaylistWatchCache } from "@/lib/playlistWatch/cache";
 import { parseSpotifyPlaylistId } from "@/lib/playlistWatch/spotifyPlaylistId";
 import { getPlaylistWithFollowers } from "@/lib/spotify";
 
@@ -60,5 +61,6 @@ export async function POST(req: Request) {
   );
   if (snapErr) return apiJsonErr(snapErr.message, 500);
 
+  expirePlaylistWatchCache();
   return apiJsonOk({ playlist: meta });
 }

@@ -2,6 +2,7 @@ import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { apiJsonErr, apiJsonOk, readJsonBodyOptional } from "@/lib/api/server";
 import { requirePlaylistWatchAccess, requirePlaylistWatchAdmin } from "@/lib/playlistWatch/access";
+import { expirePlaylistWatchCache } from "@/lib/playlistWatch/cache";
 import { parseSpotifyPlaylistId } from "@/lib/playlistWatch/spotifyPlaylistId";
 
 export async function PATCH(
@@ -45,6 +46,7 @@ export async function PATCH(
       })
       .eq("spotify_playlist_id", playlistId);
     if (error) return apiJsonErr(error.message, 500);
+    expirePlaylistWatchCache();
     return apiJsonOk({ spotify_playlist_id: playlistId, watch_status: isArchive ? "archived" : "active" });
   }
 
