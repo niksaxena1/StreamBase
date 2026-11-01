@@ -39,7 +39,7 @@ import sys
 import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 import requests
 from streambase_postgrest import Postgrest
@@ -516,6 +516,7 @@ def main():
 
     started_at = time.monotonic()
     fixed: List[dict] = []
+    unfixed: List[dict] = []
     pending_overrides: List[dict] = []
     attempted = 0
     stopped_early = False
@@ -598,8 +599,21 @@ def main():
         if not decision.accepted:
             if not got_data and not decision.rejects:
                 print(f"    {isrc}: no data from stream providers")
+                reason = "No data from stream providers"
             else:
                 print(f"    {isrc}: no plausible value, left unchanged")
+                values = [r.value for r in decision.rejects if r.value is not None]
+                if values and max(values) <= stale:
+                    reason = "Providers report no new streams"
+                else:
+                    reason = "No plausible provider value"
+            seen_values = [v for _, v in candidates_seen if v is not None]
+            unfixed.append({
+                "isrc": isrc,
+                "stale": stale,
+                "best_seen": max(seen_values) if seen_values else None,
+                "reason": reason,
+            })
         else:
             delta = api_val - stale
             print(f"    {isrc}: OK stale={stale:,} -> {provider}={api_val:,} (+{delta:,})")
@@ -633,6 +647,7 @@ def main():
         print("\n  No overrides to write.")
 
     fixed = enrich_fixed_tracks(pg, fixed)
+    unfixed = enrich_fixed_tracks(pg, unfixed)
     print(f"\nDone. Attempted={attempted}, Fixed={len(fixed)}, Rejected={len(reject_log)}")
     record_source_quality(pg, run_date, source_stats, reject_log)
     write_summary(
@@ -644,6 +659,7 @@ def main():
         affected_count=len(affected_tracks),
         second_look=second_look,
         rejected=len(reject_log),
+        unfixed=unfixed,
     )
 
 
@@ -656,6 +672,7 @@ def write_summary(
     affected_count: int = 0,
     second_look: bool = False,
     rejected: int = 0,
+    unfixed: Optional[list] = None,
 ):
     summary = {
         "status": status,
@@ -676,6 +693,18 @@ def write_summary(
                 "provider": f.get("provider"),
             }
             for f in fixed
+        ],
+        "unfixed": [
+            {
+                "isrc": u["isrc"],
+                "track_name": u.get("track_name"),
+                "artist_names": u.get("artist_names"),
+                "album_image_url": u.get("album_image_url"),
+                "stale": u["stale"],
+                "best_seen": u.get("best_seen"),
+                "reason": u.get("reason"),
+            }
+            for u in (unfixed or [])
         ],
     }
     out = Path(".artifacts") / "stale_fix_summary.json"

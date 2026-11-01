@@ -221,6 +221,9 @@ jobs:
           run_date_raw = str(data.get("run_date") or "?")
           run_date = html.escape(run_date_raw)
           providers = Counter(str(t.get("provider") or "stream lookup") for t in tracks)
+          unfixed = data.get("unfixed") or []
+          attempted = int(data.get("attempted") or 0)
+          incomplete = status == "completed" and attempted > fixed
 
           def esc(value):
               return html.escape(str(value or ""))
@@ -242,6 +245,11 @@ jobs:
                   f"StreamBase auto-fix partially completed for {run_date_raw}",
                   f"Fixed: {fixed} of {affected} stale track(s)",
                   "Reason: graceful runtime ceiling reached before the workflow timeout.",
+              ]
+          elif incomplete:
+              plain_lines = [
+                  f"StreamBase auto-fix incomplete for {run_date_raw}",
+                  f"Fixed: {fixed} of {attempted} stale track(s)",
               ]
           else:
               plain_lines = [
@@ -321,10 +329,59 @@ jobs:
                 </tr>
               """)
 
+          unfixed_rows = []
+          if unfixed:
+              plain_lines.append("")
+              plain_lines.append("Not corrected:")
+          for track in unfixed[:email_track_limit]:
+              artists = track.get("artist_names")
+              artist_plain = ", ".join(str(a).strip() for a in artists if str(a).strip()) if isinstance(artists, list) else ""
+              artist_plain = artist_plain or "Unknown Artist"
+              stale = int(track.get("stale") or 0)
+              reason = str(track.get("reason") or "Not corrected")
+              plain_lines.append(
+                  f"- {track.get('track_name') or 'Unknown Track'} - {artist_plain} "
+                  f"({track.get('isrc') or '?'}) stays at {stale:,}: {reason}"
+              )
+              image_url = esc(track.get("album_image_url") or "")
+              unfixed_rows.append(f"""
+                <tr>
+                  <td style="padding:9px 0;border-top:1px solid #25262b;">
+                    <table role="presentation" cellspacing="0" cellpadding="0" style="border-collapse:collapse;">
+                      <tr>
+                        <td style="width:40px;padding:0 10px 0 0;vertical-align:middle;">
+                          {f'<img src="{image_url}" width="34" height="34" alt="" style="display:block;width:34px;height:34px;border-radius:7px;border:1px solid #34363b;background:#202124;">' if image_url else '<div style="width:34px;height:34px;border-radius:7px;background:#202124;border:1px solid #34363b;"></div>'}
+                        </td>
+                        <td style="vertical-align:middle;">
+                          <div style="font-size:13px;font-weight:650;color:#ededed;line-height:1.22;">{esc(track.get("track_name") or "Unknown Track")}</div>
+                          <div style="font-size:12px;color:#a1a1aa;line-height:1.25;margin-top:2px;font-weight:400;">{esc(artist_plain)}</div>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                  <td style="padding:9px 10px;border-top:1px solid #25262b;font:11px ui-monospace,SFMono-Regular,Menlo,monospace;color:#fbbf24;white-space:nowrap;">{esc(track.get("isrc") or "?")}</td>
+                  <td style="padding:9px 0;border-top:1px solid #25262b;text-align:right;white-space:nowrap;">
+                    <div style="font:12px ui-monospace,SFMono-Regular,Menlo,monospace;color:#ededed;font-weight:650;">{fmt_int(stale)}</div>
+                    <div style="font-size:11px;color:#8b8d94;margin-top:2px;">{esc(reason)}</div>
+                  </td>
+                </tr>
+              """)
+          if len(unfixed) > email_track_limit:
+              plain_lines.append(f"...and {len(unfixed) - email_track_limit} more not corrected")
+          unfixed_section = ""
+          if unfixed_rows:
+              unfixed_section = f"""
+                  <div style="font-size:11px;color:#fbbf24;font-weight:650;text-transform:uppercase;letter-spacing:.05em;margin:18px 0 7px;">Not corrected</div>
+                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;">
+                    {"".join(unfixed_rows)}
+                  </table>"""
           plain_lines.append("")
           plain_lines.append(f"Workflow run: {run_url}")
           plain_body = "\n".join(plain_lines)
+          fixed_heading = "Fixed tracks" if incomplete else "Track"
           track_rows = "".join(rows) or (
+              '<tr><td colspan="3" style="padding:12px 0;border-top:1px solid rgba(255,255,255,.08);color:#9ca3af;">No tracks were fixed in this run.</td></tr>'
+          ) if (rows or incomplete) else (
               '<tr><td colspan="3" style="padding:12px 0;border-top:1px solid rgba(255,255,255,.08);color:#9ca3af;">No track details available.</td></tr>'
           )
 
@@ -334,9 +391,9 @@ jobs:
               <div style="max-width:700px;margin:0 auto;border:1px solid #2a2b30;border-radius:14px;background:#141419;overflow:hidden;box-shadow:0 12px 32px rgba(0,0,0,.34);">
                 <div style="padding:18px 22px 16px;border-bottom:1px solid #25262b;background:#10120f;">
                   <div style="font-size:11px;color:#d4ff4d;font-weight:700;letter-spacing:.06em;text-transform:uppercase;">StreamBase</div>
-                  <div style="margin-top:5px;font-size:22px;font-weight:650;color:#ededed;line-height:1.18;">{'Auto-fix skipped' if status == 'skipped_too_many' else 'Auto-fix partial' if status == 'partial_runtime_limit' else 'Auto-fix complete'}</div>
+                  <div style="margin-top:5px;font-size:22px;font-weight:650;color:#ededed;line-height:1.18;">{'Auto-fix skipped' if status == 'skipped_too_many' else 'Auto-fix partial' if status == 'partial_runtime_limit' else 'Auto-fix incomplete' if incomplete else 'Auto-fix complete'}</div>
                   <div style="margin-top:7px;font-size:13px;color:#a1a1aa;">
-                    {f'<span style="color:#ededed;font-weight:600;">{affected}</span> stale tracks exceeded safety threshold' if status == 'skipped_too_many' else f'<span style="color:#ededed;font-weight:600;">{fixed}</span> of <span style="color:#ededed;font-weight:600;">{affected}</span> stale tracks fixed before runtime limit' if status == 'partial_runtime_limit' else f'<span style="color:#ededed;font-weight:600;">{fixed}</span> stale track{"s" if fixed != 1 else ""} fixed'}
+                    {f'<span style="color:#ededed;font-weight:600;">{affected}</span> stale tracks exceeded safety threshold' if status == 'skipped_too_many' else f'<span style="color:#ededed;font-weight:600;">{fixed}</span> of <span style="color:#ededed;font-weight:600;">{affected}</span> stale tracks fixed before runtime limit' if status == 'partial_runtime_limit' else f'<span style="color:#ededed;font-weight:600;">{fixed}</span> of <span style="color:#ededed;font-weight:600;">{attempted}</span> stale tracks fixed' if incomplete else f'<span style="color:#ededed;font-weight:600;">{fixed}</span> stale track{"s" if fixed != 1 else ""} fixed'}
                     <span style="color:#575a61;">&nbsp;/&nbsp;</span>
                     Run date <span style="color:#ededed;font-weight:600;">{run_date}</span>
                   </div>
@@ -352,7 +409,7 @@ jobs:
                   </table>
                   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;margin-bottom:4px;">
                     <tr>
-                      <td style="font-size:11px;color:#9ca3af;text-transform:uppercase;letter-spacing:.05em;font-weight:650;padding-bottom:7px;">Track</td>
+                      <td style="font-size:11px;color:#9ca3af;text-transform:uppercase;letter-spacing:.05em;font-weight:650;padding-bottom:7px;">{fixed_heading}</td>
                       <td style="font-size:11px;color:#9ca3af;text-transform:uppercase;letter-spacing:.05em;font-weight:650;padding:0 10px 7px;white-space:nowrap;">ISRC</td>
                       <td style="font-size:11px;color:#9ca3af;text-transform:uppercase;letter-spacing:.05em;font-weight:650;text-align:right;padding-bottom:7px;white-space:nowrap;">Streams</td>
                     </tr>
@@ -360,6 +417,7 @@ jobs:
                   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;">
                     {track_rows}
                   </table>
+                  {unfixed_section}
                   <div style="margin-top:18px;padding-top:14px;border-top:1px solid #25262b;">
                     <a href="{html.escape(run_url)}" style="display:inline-block;padding:9px 12px;border-radius:9px;background:#d4ff4d;color:#0b0b0c;text-decoration:none;font-size:13px;font-weight:700;">View workflow run</a>
                     <span style="display:inline-block;margin-left:10px;font-size:12px;color:#7d8087;">No paid overage was used by this automated run.</span>
