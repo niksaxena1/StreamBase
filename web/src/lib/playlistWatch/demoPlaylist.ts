@@ -49,3 +49,22 @@ export function getDemoFollowerSnapshots(): DemoFollowerSnapshot[] {
 export function getDemoLatestFollowerCount(): number {
   return DEMO_FOLLOWER_TOTALS[DEMO_FOLLOWER_TOTALS.length - 1]?.follower_count ?? 0;
 }
+
+type DemoEnv = Record<string, string | undefined>;
+
+/**
+ * The demo row is synthetic, so it is kept out of the page entirely unless demo mode is switched on
+ * explicitly with PLAYLIST_WATCH_DEMO=1, and never on the production deployment.
+ */
+export function isPlaylistWatchDemoModeEnabled(env: DemoEnv = process.env): boolean {
+  return env.PLAYLIST_WATCH_DEMO === "1" && env.VERCEL_ENV !== "production";
+}
+
+/** Drops demo rows unless demo mode is on. Use the same call for every row source on a page. */
+export function excludeDemoPlaylists<T>(
+  rows: readonly T[],
+  playlistIdOf: (row: T) => string,
+  demoModeEnabled: boolean,
+): T[] {
+  return demoModeEnabled ? [...rows] : rows.filter((row) => !isPlaylistWatchDemoPlaylistId(playlistIdOf(row)));
+}

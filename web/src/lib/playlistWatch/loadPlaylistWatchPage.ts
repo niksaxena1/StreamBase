@@ -4,7 +4,9 @@ import type { PlaylistWatchRow } from "@/app/(main-flat)/playlist-watch/Playlist
 import type { AdStatus, CollectionMember, PlaylistWatchCollection } from "@/app/(main-flat)/playlist-watch/collectionsModel";
 import { CACHE_TTL_1H } from "@/lib/constants";
 import {
+  excludeDemoPlaylists,
   getDemoFollowerSnapshots,
+  isPlaylistWatchDemoModeEnabled,
   getDemoLatestFollowerCount,
   isPlaylistWatchDemoPlaylistId,
   PLAYLIST_WATCH_DEMO_IMAGE_URL,
@@ -58,7 +60,7 @@ function deltaSince(rows: SnapshotRow[], latest: number | null, days: number) {
  * Collections are small, user-edited and shared, so they are read fresh (not through the 1h
  * snapshot cache) and a mutation followed by router.refresh() shows up immediately.
  */
-async function loadCollections(): Promise<PlaylistWatchCollection[]> {
+async function loadCollections(demoMode: boolean): Promise<PlaylistWatchCollection[]> {
   const pw = supabaseService().schema("playlist_watch");
   const [{ data: collections, error: collectionsErr }, { data: members, error: membersErr }] = await Promise.all([
     pw
@@ -71,12 +73,13 @@ async function loadCollections(): Promise<PlaylistWatchCollection[]> {
   if (collectionsErr) throw new Error(collectionsErr.message);
   if (membersErr) throw new Error(membersErr.message);
   const byCollection = new Map<string, CollectionMember[]>();
-  for (const m of (members ?? []) as {
+  const memberRows = (members ?? []) as {
     collection_id: string;
     spotify_playlist_id: string;
     ad_status: AdStatus | null;
     ad_status_changed_at: string | null;
-  }[]) {
+  }[];
+  for (const m of excludeDemoPlaylists(memberRows, (r) => r.spotify_playlist_id, demoMode)) {
     const bucket = byCollection.get(m.collection_id) ?? [];
     bucket.push({ playlistId: m.spotify_playlist_id, adStatus: m.ad_status, adStatusChangedAt: m.ad_status_changed_at });
     byCollection.set(m.collection_id, bucket);
@@ -112,7 +115,8 @@ export async function loadPlaylistWatchPage(includeArchived: boolean): Promise<{
   ]);
   if (!canAccess) redirect("/");
 
-  const cacheKey = playlistWatchCacheKey(includeArchived);
+  const demoMode = isPlaylistWatchDemoModeEnabled();
+  const cacheKey = playlistWatchCacheKey(includeArchived, demoMode);
 
   // The viewer's favorite marks are read fresh on every load, never through the shared cache:
   // the cache is shared by all users, and a favorite toggle must show up on the next refresh.
@@ -140,7 +144,12 @@ export async function loadPlaylistWatchPage(includeArchived: boolean): Promise<{
       const { data: playlistsRaw, error: playlistsErr } = await playlistQuery;
       if (playlistsErr) return { data: null, error: playlistsErr };
 
-      const playlistRows = (playlistsRaw ?? []) as PlaylistRow[];
+      // Same exclusion as collections, so counts, totals, charts and tables share one set of rows.
+      const playlistRows = excludeDemoPlaylists(
+        (playlistsRaw ?? []) as PlaylistRow[],
+        (p) => p.spotify_playlist_id,
+        demoMode,
+      );
       const playlistIds = playlistRows.map((p) => p.spotify_playlist_id);
       const since = isoDaysAgo(35);
 
@@ -224,7 +233,7 @@ export async function loadPlaylistWatchPage(includeArchived: boolean): Promise<{
     },
     cacheKey,
     CACHE_TTL_1H,
-  ), loadCollections(), marksPromise]);
+  ), loadCollections(demoMode), marksPromise]);
 
   if (cached.error) throw new Error(cached.error.message);
   // Fail loudly rather than showing every playlist as not-favorited.
