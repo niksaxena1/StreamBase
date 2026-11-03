@@ -10,6 +10,7 @@ import {
   PLAYLIST_WATCH_DEMO_IMAGE_URL,
   PLAYLIST_WATCH_DEMO_OWNER_NAME,
 } from "@/lib/playlistWatch/demoPlaylist";
+import { favoriteIdsFromMarks, withFavorites, type FavoriteMarkRow } from "@/lib/playlistWatch/favorites";
 import { buildFollowerHistory } from "@/lib/playlistWatch/history";
 import { cachedQuery } from "@/lib/supabase/cache";
 import { playlistWatchCacheKey } from "@/lib/playlistWatch/cache";
@@ -35,11 +36,6 @@ type SnapshotRow = {
   date: string;
   spotify_playlist_id: string;
   follower_count: number;
-};
-
-type MarkRow = {
-  spotify_playlist_id: string;
-  is_favorite: boolean;
 };
 
 function isoDaysAgo(days: number) {
@@ -118,7 +114,17 @@ export async function loadPlaylistWatchPage(includeArchived: boolean): Promise<{
 
   const cacheKey = playlistWatchCacheKey(includeArchived);
 
-  const [cached, collections] = await Promise.all([cachedQuery(
+  // The viewer's favorite marks are read fresh on every load, never through the shared cache:
+  // the cache is shared by all users, and a favorite toggle must show up on the next refresh.
+  const userId = userData.user.id;
+  const marksPromise = supabaseService()
+    .schema("playlist_watch")
+    .from("user_playlist_marks")
+    .select("spotify_playlist_id,is_favorite")
+    .eq("user_id", userId)
+    .limit(20000);
+
+  const [cached, collections, marksResult] = await Promise.all([cachedQuery(
     async () => {
       const pw = supabaseService().schema("playlist_watch");
       let playlistQuery = pw
@@ -138,7 +144,7 @@ export async function loadPlaylistWatchPage(includeArchived: boolean): Promise<{
       const playlistIds = playlistRows.map((p) => p.spotify_playlist_id);
       const since = isoDaysAgo(35);
 
-      const [{ data: snapshotsRaw }, { data: marksRaw }, { data: latestRun }] = await Promise.all([
+      const [{ data: snapshotsRaw }, { data: latestRun }] = await Promise.all([
         playlistIds.length
           ? pw
               .from("follower_snapshots")
@@ -146,13 +152,6 @@ export async function loadPlaylistWatchPage(includeArchived: boolean): Promise<{
               .in("spotify_playlist_id", playlistIds)
               .gte("date", since)
           : Promise.resolve({ data: [] as SnapshotRow[], error: null }),
-        playlistIds.length
-          ? pw
-              .from("user_playlist_marks")
-              .select("spotify_playlist_id,is_favorite")
-              .eq("user_id", userData.user!.id)
-              .in("spotify_playlist_id", playlistIds)
-          : Promise.resolve({ data: [] as MarkRow[], error: null }),
         pw
           .from("ingestion_runs")
           .select("run_date,status,success_count,failure_count,finished_at")
@@ -168,12 +167,6 @@ export async function loadPlaylistWatchPage(includeArchived: boolean): Promise<{
         bucket.push(row);
         snapshotsByPlaylist.set(row.spotify_playlist_id, bucket);
       }
-
-      const favoriteIds = new Set(
-        ((marksRaw ?? []) as MarkRow[])
-          .filter((row) => row.is_favorite)
-          .map((row) => row.spotify_playlist_id),
-      );
 
       const rows: PlaylistWatchRow[] = playlistRows.map((playlist) => {
         const isDemo = isPlaylistWatchDemoPlaylistId(playlist.spotify_playlist_id);
@@ -198,7 +191,8 @@ export async function loadPlaylistWatchPage(includeArchived: boolean): Promise<{
           latestFollowerCount: latest,
           latestSnapshotDate: playlist.latest_snapshot_date,
           latestCheckedAt: playlist.latest_checked_at,
-          isFavorite: favoriteIds.has(playlist.spotify_playlist_id),
+          // Per-user; filled in outside the shared cache by withFavorites below.
+          isFavorite: false,
           delta1d: deltaSince(snapshots, latest, 1),
           delta7d: deltaSince(snapshots, latest, 7),
           delta30d: deltaSince(snapshots, latest, 30),
@@ -230,12 +224,15 @@ export async function loadPlaylistWatchPage(includeArchived: boolean): Promise<{
     },
     cacheKey,
     CACHE_TTL_1H,
-  ), loadCollections()]);
+  ), loadCollections(), marksPromise]);
 
   if (cached.error) throw new Error(cached.error.message);
+  // Fail loudly rather than showing every playlist as not-favorited.
+  if (marksResult.error) throw new Error(`Could not load favorites: ${marksResult.error.message}`);
+  const favoriteIds = favoriteIdsFromMarks((marksResult.data ?? []) as FavoriteMarkRow[]);
 
   return {
-    rows: cached.data?.rows ?? [],
+    rows: withFavorites(cached.data?.rows ?? [], favoriteIds),
     collections,
     isAdmin: Boolean(isAdmin),
     latestRun: cached.data?.latestRun ?? null,
