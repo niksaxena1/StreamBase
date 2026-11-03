@@ -146,3 +146,33 @@ export function formatCheckedAt(value: string | null) {
     minute: "2-digit",
   }).format(date);
 }
+
+export type PlaylistWatchSort = { key: PlaylistWatchSortKey; dir: "asc" | "desc" };
+
+/**
+ * Table sort. An explicit pick (column click) always wins. Otherwise the Stopped view defaults to
+ * 7-day change descending ("what grows on its own") and everything else to followers descending.
+ */
+export function effectiveSort(
+  explicit: PlaylistWatchSort | null,
+  statusFilter: "all" | "live" | "stopped",
+): PlaylistWatchSort {
+  if (explicit) return explicit;
+  return statusFilter === "stopped"
+    ? { key: "delta7d", dir: "desc" }
+    : { key: "followers", dir: "desc" };
+}
+
+/** Next explicit sort after clicking a column header, given the sort currently in effect. */
+export function nextSortOnClick(current: PlaylistWatchSort, key: PlaylistWatchSortKey): PlaylistWatchSort {
+  if (key === current.key) return { key, dir: current.dir === "asc" ? "desc" : "asc" };
+  return { key, dir: "desc" };
+}
+
+/** "12 Oct 2026" in UTC (stable between server and client rendering); empty for bad input. */
+export function formatStatusDate(value: string | null): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(date);
+}

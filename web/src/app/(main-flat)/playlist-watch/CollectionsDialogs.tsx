@@ -3,12 +3,14 @@
 import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { Chip, ChipGroup } from "@/components/ui/Chip";
 import { Modal } from "@/components/ui/Modal";
 import { showToast } from "@/lib/toast";
 import {
   COLLECTION_COLOR_PRESETS,
   COLLECTION_NAME_MAX,
   sortCollections,
+  type AdStatus,
   type PlaylistWatchCollection,
 } from "./collectionsModel";
 
@@ -308,41 +310,85 @@ export function CollectionsManagerModal({
   );
 }
 
+/** Ad status per collection: undefined = mixed across the selected playlists. */
+type StatusValue = AdStatus | null | undefined;
+
+const STATUS_OPTIONS: Array<{ value: AdStatus | null; label: string }> = [
+  { value: null, label: "None" },
+  { value: "live", label: "Live" },
+  { value: "stopped", label: "Stopped" },
+];
+
+function StatusPicker({
+  label,
+  value,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: StatusValue;
+  disabled: boolean;
+  onChange: (status: AdStatus | null) => void;
+}) {
+  return (
+    <ChipGroup segmented aria-label={`Ad status in ${label}`}>
+      {STATUS_OPTIONS.map((option) => (
+        <Chip
+          key={option.label}
+          segmented
+          disabled={disabled}
+          selected={value === option.value}
+          onClick={() => onChange(option.value)}
+          className="px-2 py-1"
+        >
+          {option.label}
+        </Chip>
+      ))}
+    </ChipGroup>
+  );
+}
+
 function CheckRow({
   label,
   color,
   state,
   disabled,
   onToggle,
+  status,
 }: {
   label: string;
   color: string | null;
   state: "all" | "some" | "none";
   disabled: boolean;
   onToggle: () => void;
+  /** Rendered under the row when the playlist(s) are in this collection. */
+  status?: React.ReactNode;
 }) {
   const ref = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (ref.current) ref.current.indeterminate = state === "some";
   }, [state]);
   return (
-    <label className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/10">
-      <input
-        ref={ref}
-        type="checkbox"
-        checked={state === "all"}
-        disabled={disabled}
-        onChange={onToggle}
-        className="h-4 w-4 accent-[var(--sb-accent)]"
-      />
-      <ColorDot color={color} />
-      <span className="min-w-0 flex-1 truncate">{label}</span>
-      {state === "some" ? (
-        <span className="text-[11px]" style={{ color: "var(--sb-muted)" }}>
-          some
-        </span>
-      ) : null}
-    </label>
+    <div>
+      <label className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/10">
+        <input
+          ref={ref}
+          type="checkbox"
+          checked={state === "all"}
+          disabled={disabled}
+          onChange={onToggle}
+          className="h-4 w-4 accent-[var(--sb-accent)]"
+        />
+        <ColorDot color={color} />
+        <span className="min-w-0 flex-1 truncate">{label}</span>
+        {state === "some" ? (
+          <span className="text-[11px]" style={{ color: "var(--sb-muted)" }}>
+            some
+          </span>
+        ) : null}
+      </label>
+      {status ? <div className="flex items-center gap-2 pb-1.5 pl-9 pr-2">{status}</div> : null}
+    </div>
   );
 }
 
@@ -368,8 +414,46 @@ export function CollectionMembershipModal({
   const [membership, setMembership] = useState(
     () => new Map(collections.map((c) => [c.id, new Set(c.playlistIds)])),
   );
+  // collection id -> playlist id -> ad status (only members have an entry).
+  const [statuses, setStatuses] = useState(
+    () =>
+      new Map(
+        collections.map((c) => [c.id, new Map(c.members.map((m) => [m.playlistId, m.adStatus] as const))]),
+      ),
+  );
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  function statusFor(collectionId: string): StatusValue {
+    const map = statuses.get(collectionId);
+    const values = new Set(playlistIds.filter((id) => membership.get(collectionId)?.has(id)).map((id) => map?.get(id) ?? null));
+    if (values.size !== 1) return undefined;
+    return [...values][0];
+  }
+
+  async function setStatus(collectionId: string, status: AdStatus | null) {
+    const targets = playlistIds.filter((id) => membership.get(collectionId)?.has(id));
+    if (targets.length === 0) return;
+    setBusyId(collectionId);
+    setError(null);
+    try {
+      await callApi(`/api/playlist-watch/collections/${collectionId}`, "PUT", {
+        status: targets.map((playlist) => ({ playlist, ad_status: status })),
+      });
+      setStatuses((prev) => {
+        const next = new Map(prev);
+        const map = new Map(next.get(collectionId) ?? []);
+        for (const id of targets) map.set(id, status);
+        next.set(collectionId, map);
+        return next;
+      });
+      onChanged();
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   function stateFor(collectionId: string): "all" | "some" | "none" {
     const members = membership.get(collectionId);
@@ -392,6 +476,14 @@ export function CollectionMembershipModal({
         else members.add(id);
       }
       setMembership((prev) => new Map(prev).set(collectionId, members));
+      setStatuses((prev) => {
+        const map = new Map(prev.get(collectionId) ?? []);
+        for (const id of ids) {
+          if (removing) map.delete(id);
+          else if (!map.has(id)) map.set(id, null);
+        }
+        return new Map(prev).set(collectionId, map);
+      });
       onChanged();
     } catch (err) {
       setError(errorText(err));
@@ -405,7 +497,7 @@ export function CollectionMembershipModal({
     <Modal
       open
       onClose={onClose}
-      title="Add to collections"
+      title="Collections and ad status"
       subtitle={title}
       maxWidthClassName="max-w-sm"
     >
@@ -429,6 +521,21 @@ export function CollectionMembershipModal({
                 state={stateFor(collection.id)}
                 disabled={busyId !== null}
                 onToggle={() => void toggle(collection.id)}
+                status={
+                  stateFor(collection.id) === "none" ? undefined : (
+                    <>
+                      <span className="text-[11px]" style={{ color: "var(--sb-muted)" }}>
+                        Ads
+                      </span>
+                      <StatusPicker
+                        label={collection.name}
+                        value={statusFor(collection.id)}
+                        disabled={busyId !== null}
+                        onChange={(status) => void setStatus(collection.id, status)}
+                      />
+                    </>
+                  )
+                }
               />
             ))}
           </div>

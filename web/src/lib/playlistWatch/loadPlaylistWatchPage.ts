@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 
 import type { PlaylistWatchRow } from "@/app/(main-flat)/playlist-watch/PlaylistWatchClient";
-import type { PlaylistWatchCollection } from "@/app/(main-flat)/playlist-watch/collectionsModel";
+import type { AdStatus, CollectionMember, PlaylistWatchCollection } from "@/app/(main-flat)/playlist-watch/collectionsModel";
 import { CACHE_TTL_1H } from "@/lib/constants";
 import {
   getDemoFollowerSnapshots,
@@ -70,14 +70,19 @@ async function loadCollections(): Promise<PlaylistWatchCollection[]> {
       .select("id,name,color,sort_order")
       .order("sort_order", { ascending: true })
       .order("created_at", { ascending: true }),
-    pw.from("collection_playlists").select("collection_id,spotify_playlist_id").limit(20000),
+    pw.from("collection_playlists").select("collection_id,spotify_playlist_id,ad_status,ad_status_changed_at").limit(20000),
   ]);
   if (collectionsErr) throw new Error(collectionsErr.message);
   if (membersErr) throw new Error(membersErr.message);
-  const byCollection = new Map<string, string[]>();
-  for (const m of (members ?? []) as { collection_id: string; spotify_playlist_id: string }[]) {
+  const byCollection = new Map<string, CollectionMember[]>();
+  for (const m of (members ?? []) as {
+    collection_id: string;
+    spotify_playlist_id: string;
+    ad_status: AdStatus | null;
+    ad_status_changed_at: string | null;
+  }[]) {
     const bucket = byCollection.get(m.collection_id) ?? [];
-    bucket.push(m.spotify_playlist_id);
+    bucket.push({ playlistId: m.spotify_playlist_id, adStatus: m.ad_status, adStatusChangedAt: m.ad_status_changed_at });
     byCollection.set(m.collection_id, bucket);
   }
   return ((collections ?? []) as { id: string; name: string; color: string | null; sort_order: number }[]).map((c) => ({
@@ -85,7 +90,8 @@ async function loadCollections(): Promise<PlaylistWatchCollection[]> {
     name: c.name,
     color: c.color,
     sortOrder: c.sort_order,
-    playlistIds: byCollection.get(c.id) ?? [],
+    playlistIds: (byCollection.get(c.id) ?? []).map((m) => m.playlistId),
+    members: byCollection.get(c.id) ?? [],
   }));
 }
 

@@ -11,9 +11,20 @@ import { DailyStreamsChart } from "@/components/charts/DailyStreamsChart";
 import { formatTooltipDateDaily } from "@/components/charts/chartUtils";
 import { formatInt } from "@/lib/format";
 import type { FollowerHistoryPoint } from "@/lib/playlistWatch/history";
+import { formatGrowthPercent, growthPercent } from "./collectionsModel";
 import { fmtDelta, type PlaylistWatchRow } from "./playlistWatchClientModel";
 
-export function TrendValue({ value }: { value: number | null }) {
+export function TrendValue({
+  value,
+  followers,
+  showPercent = false,
+}: {
+  value: number | null;
+  /** Latest follower count; with `showPercent` it gives the growth base (followers - delta). */
+  followers?: number | null;
+  showPercent?: boolean;
+}) {
+  const percent = showPercent ? formatGrowthPercent(growthPercent(followers ?? null, value)) : null;
   return value === null ? (
     <span
       title="Needs another daily snapshot for trend data"
@@ -22,7 +33,10 @@ export function TrendValue({ value }: { value: number | null }) {
       -
     </span>
   ) : (
-    <>{fmtDelta(value)}</>
+    <>
+      {fmtDelta(value)}
+      {percent ? <span className="ml-1 text-[11px] opacity-70">({percent})</span> : null}
+    </>
   );
 }
 
@@ -214,9 +228,12 @@ export function MetricTile({
   label,
   value,
   tone,
+  subline,
 }: {
   label: string;
   value: string;
+  /** Small muted line under the value. */
+  subline?: string;
   /** Colors the value: positive green, negative red. */
   tone?: "positive" | "negative" | null;
 }) {
@@ -243,6 +260,11 @@ export function MetricTile({
       >
         {value}
       </div>
+      {subline ? (
+        <div className="mt-0.5 truncate text-[10px] sm:text-[11px]" style={{ color: "var(--sb-muted)" }}>
+          {subline}
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -3,7 +3,7 @@
 import { Layers } from "lucide-react";
 import { useMemo } from "react";
 
-import { Chip } from "@/components/ui/Chip";
+import { Chip, ChipGroup } from "@/components/ui/Chip";
 import { GlassTable, TableCell, TableRow } from "@/components/ui/GlassTable";
 import { formatInt } from "@/lib/format";
 import { ColorDot } from "./CollectionsDialogs";
@@ -14,11 +14,15 @@ import {
   COLLECTION_UNASSIGNED,
   combinedToHistory,
   computeTotals,
-  rowsForSelection,
-  sortCollections,
+  effectiveStatusFilter,
+  growingWithoutAds,
+  rowsForView,
+  statusCounts,
   unassignedPlaylistIds,
+  visibleCollections,
   type CollectionSelection,
   type PlaylistWatchCollection,
+  type StatusFilter,
 } from "./collectionsModel";
 import { MetricTile, PlaylistFollowerChart } from "./PlaylistWatchVisuals";
 import { fmtDelta, type PlaylistWatchRow } from "./playlistWatchClientModel";
@@ -58,17 +62,19 @@ export function CollectionChips({
 }) {
   const live = useMemo(() => rows.filter((r) => r.watchStatus !== "archived"), [rows]);
   const unassignedCount = useMemo(() => unassignedPlaylistIds(live, collections).size, [live, collections]);
+  // Empty collections (no non-archived member) get no chip.
+  const shown = useMemo(() => visibleCollections(live, collections), [live, collections]);
   const counts = useMemo(() => {
     const liveIds = new Set(live.map((r) => r.spotifyPlaylistId));
-    return new Map(collections.map((c) => [c.id, c.playlistIds.filter((id) => liveIds.has(id)).length]));
-  }, [live, collections]);
+    return new Map(shown.map((c) => [c.id, c.playlistIds.filter((id) => liveIds.has(id)).length]));
+  }, [live, shown]);
 
   return (
     <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Collections">
       <Chip selected={selection === COLLECTION_ALL} onClick={() => onSelect(COLLECTION_ALL)}>
         All <span className="font-mono opacity-70">{formatInt(live.length)}</span>
       </Chip>
-      {sortCollections(collections).map((collection) => (
+      {shown.map((collection) => (
         <Chip key={collection.id} selected={selection === collection.id} onClick={() => onSelect(collection.id)}>
           <ColorDot color={collection.color} />
           <span className="max-w-[160px] truncate">{collection.name}</span>
@@ -105,29 +111,82 @@ export function CollectionChips({
   );
 }
 
-export function CollectionAnalytics({
+const STATUS_SEGMENTS: Array<{ value: StatusFilter; label: string }> = [
+  { value: "all", label: "All" },
+  { value: "live", label: "Live" },
+  { value: "stopped", label: "Stopped" },
+];
+
+/** Segmented All / Live / Stopped switch with counts. Hidden for the Unassigned chip. */
+export function StatusSwitch({
   rows,
   collections,
   selection,
+  status,
+  onChange,
 }: {
   rows: PlaylistWatchRow[];
   collections: PlaylistWatchCollection[];
   selection: CollectionSelection;
+  status: StatusFilter;
+  onChange: (status: StatusFilter) => void;
 }) {
-  const selectedRows = useMemo(() => rowsForSelection(rows, collections, selection), [rows, collections, selection]);
+  const counts = useMemo(() => statusCounts(rows, collections, selection), [rows, collections, selection]);
+  if (selection === COLLECTION_UNASSIGNED) return null;
+  return (
+    <ChipGroup segmented aria-label="Ad status">
+      {STATUS_SEGMENTS.map((segment) => (
+        <Chip key={segment.value} segmented selected={status === segment.value} onClick={() => onChange(segment.value)}>
+          {segment.label} <span className="font-mono opacity-70">{formatInt(counts[segment.value])}</span>
+        </Chip>
+      ))}
+    </ChipGroup>
+  );
+}
+
+export function CollectionAnalytics({
+  rows,
+  collections,
+  selection,
+  status,
+}: {
+  rows: PlaylistWatchRow[];
+  collections: PlaylistWatchCollection[];
+  selection: CollectionSelection;
+  status: StatusFilter;
+}) {
+  const effectiveStatus = effectiveStatusFilter(status, selection);
+  const selectedRows = useMemo(
+    () => rowsForView(rows, collections, selection, effectiveStatus),
+    [rows, collections, selection, effectiveStatus],
+  );
   const totals = useMemo(() => computeTotals(selectedRows), [selectedRows]);
+  const growing = useMemo(() => growingWithoutAds(selectedRows), [selectedRows]);
   const series = useMemo(() => buildCombinedSeries(selectedRows), [selectedRows]);
   const history = useMemo(() => combinedToHistory(series), [series]);
-  const compareRows = useMemo(() => buildCompareRows(rows, collections), [rows, collections]);
+  const shownCollections = useMemo(() => visibleCollections(rows, collections), [rows, collections]);
+  const compareRows = useMemo(
+    () => buildCompareRows(rows, shownCollections, effectiveStatus),
+    [rows, shownCollections, effectiveStatus],
+  );
+  const showGrowing = effectiveStatus === "stopped";
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+      <div className={`grid grid-cols-2 gap-2 ${showGrowing ? "sm:grid-cols-6" : "sm:grid-cols-5"}`}>
         <MetricTile label="Playlists" value={formatInt(totals.playlistCount)} />
         <MetricTile label="Followers" value={totals.followers === null ? MISSING : formatInt(totals.followers)} />
         <MetricTile label="Today" value={deltaText(totals.today)} tone={toneFor(totals.today)} />
         <MetricTile label="7 days" value={deltaText(totals.delta7d)} tone={toneFor(totals.delta7d)} />
         <MetricTile label="30 days" value={deltaText(totals.delta30d)} tone={toneFor(totals.delta30d)} />
+        {showGrowing ? (
+          <MetricTile
+            label="Growing without ads"
+            value={formatInt(growing.count)}
+            subline={`${fmtDelta(growing.gain7d)} followers in 7 days`}
+            tone={growing.count > 0 ? "positive" : null}
+          />
+        ) : null}
       </div>
 
       {selectedRows.length > 0 ? (
@@ -140,7 +199,7 @@ export function CollectionAnalytics({
         </div>
       ) : null}
 
-      {collections.length >= 2 ? (
+      {shownCollections.length >= 2 ? (
         <div className="space-y-2">
           <h2 className="font-display text-sm font-semibold">Compare collections</h2>
           <GlassTable

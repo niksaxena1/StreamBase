@@ -5,6 +5,8 @@ import { requirePlaylistWatchAccess } from "@/lib/playlistWatch/access";
 import {
   COLLECTION_COLOR_RE,
   validateCollectionName,
+  type AdStatus,
+  type CollectionMember,
 } from "@/app/(main-flat)/playlist-watch/collectionsModel";
 
 type CollectionDbRow = {
@@ -26,15 +28,20 @@ export async function GET() {
       .select("id,name,color,sort_order")
       .order("sort_order", { ascending: true })
       .order("created_at", { ascending: true }),
-    svc.from("collection_playlists").select("collection_id,spotify_playlist_id").limit(20000),
+    svc.from("collection_playlists").select("collection_id,spotify_playlist_id,ad_status,ad_status_changed_at").limit(20000),
   ]);
   if (collectionsErr) return apiJsonErr(collectionsErr.message, 500);
   if (membersErr) return apiJsonErr(membersErr.message, 500);
 
-  const byCollection = new Map<string, string[]>();
-  for (const m of (members ?? []) as { collection_id: string; spotify_playlist_id: string }[]) {
+  const byCollection = new Map<string, CollectionMember[]>();
+  for (const m of (members ?? []) as {
+    collection_id: string;
+    spotify_playlist_id: string;
+    ad_status: AdStatus | null;
+    ad_status_changed_at: string | null;
+  }[]) {
     const bucket = byCollection.get(m.collection_id) ?? [];
-    bucket.push(m.spotify_playlist_id);
+    bucket.push({ playlistId: m.spotify_playlist_id, adStatus: m.ad_status, adStatusChangedAt: m.ad_status_changed_at });
     byCollection.set(m.collection_id, bucket);
   }
 
@@ -44,7 +51,8 @@ export async function GET() {
       name: c.name,
       color: c.color,
       sortOrder: c.sort_order,
-      playlistIds: byCollection.get(c.id) ?? [],
+      playlistIds: (byCollection.get(c.id) ?? []).map((m) => m.playlistId),
+      members: byCollection.get(c.id) ?? [],
     })),
   });
 }
@@ -88,7 +96,7 @@ export async function POST(req: Request) {
 
   const created = data as CollectionDbRow;
   return apiJsonOk(
-    { collection: { id: created.id, name: created.name, color: created.color, sortOrder: created.sort_order, playlistIds: [] } },
+    { collection: { id: created.id, name: created.name, color: created.color, sortOrder: created.sort_order, playlistIds: [], members: [] } },
     { status: 201 },
   );
 }

@@ -5,7 +5,9 @@ import { requirePlaylistWatchAccess } from "@/lib/playlistWatch/access";
 import { parseSpotifyPlaylistId } from "@/lib/playlistWatch/spotifyPlaylistId";
 import {
   COLLECTION_COLOR_RE,
+  parseStatusUpdates,
   validateCollectionName,
+  type AdStatus,
 } from "@/app/(main-flat)/playlist-watch/collectionsModel";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -93,7 +95,11 @@ export async function DELETE(_req: Request, ctx: Ctx) {
   return apiJsonOk({ id: collectionId });
 }
 
-/** Membership changes: body `{ add: string[], remove: string[] }` of Spotify playlist ids. */
+/**
+ * Membership and ad-status changes. Body: `{ add?: string[], remove?: string[], status?: [{ playlist, ad_status }] }`
+ * (Spotify playlist ids; `ad_status` is 'live' | 'stopped' | null). A status target must already be a
+ * member or be in `add` in the same request. `ad_status_changed_at` only moves when the status changes.
+ */
 export async function PUT(req: Request, ctx: Ctx) {
   const collectionId = await readCollectionId(ctx);
   if (!collectionId) return apiJsonErr("invalid_collection_id", 400);
@@ -106,7 +112,11 @@ export async function PUT(req: Request, ctx: Ctx) {
   const add = parseIdList(body.add);
   const remove = parseIdList(body.remove);
   if (add === null || remove === null) return apiJsonErr("invalid_spotify_playlist", 400);
-  if (add.length === 0 && remove.length === 0) return apiJsonErr("nothing_to_update", 400);
+  const statusUpdates = parseStatusUpdates(body.status);
+  if (statusUpdates === null) return apiJsonErr("invalid_status_update", 400);
+  if (add.length === 0 && remove.length === 0 && statusUpdates.length === 0) return apiJsonErr("nothing_to_update", 400);
+  const removeSet = new Set(remove);
+  if (statusUpdates.some((u) => removeSet.has(u.playlistId))) return apiJsonErr("status_for_removed_playlist", 400);
 
   const svc = supabaseService().schema("playlist_watch");
   const { data: collection, error: collectionErr } = await svc
@@ -116,6 +126,24 @@ export async function PUT(req: Request, ctx: Ctx) {
     .maybeSingle();
   if (collectionErr) return apiJsonErr(collectionErr.message, 500);
   if (!collection) return apiJsonErr("not_found", 404);
+
+  // Validate status targets before any write, and remember the current statuses for change detection.
+  const currentStatus = new Map<string, AdStatus | null>();
+  if (statusUpdates.length > 0) {
+    const { data: existing, error: existingErr } = await svc
+      .from("collection_playlists")
+      .select("spotify_playlist_id,ad_status")
+      .eq("collection_id", collectionId)
+      .in("spotify_playlist_id", statusUpdates.map((u) => u.playlistId));
+    if (existingErr) return apiJsonErr(existingErr.message, 500);
+    for (const m of (existing ?? []) as { spotify_playlist_id: string; ad_status: AdStatus | null }[]) {
+      currentStatus.set(m.spotify_playlist_id, m.ad_status);
+    }
+    const addSet = new Set(add);
+    if (statusUpdates.some((u) => !currentStatus.has(u.playlistId) && !addSet.has(u.playlistId))) {
+      return apiJsonErr("not_a_member", 400);
+    }
+  }
 
   if (add.length > 0) {
     const { data: known, error: knownErr } = await svc
@@ -144,6 +172,20 @@ export async function PUT(req: Request, ctx: Ctx) {
     if (removeErr) return apiJsonErr(removeErr.message, 500);
   }
 
-  await svc.from("collections").update({ updated_at: new Date().toISOString() }).eq("id", collectionId);
-  return apiJsonOk({ id: collectionId, added: add.length, removed: remove.length });
+  // Only rows whose status really changes are touched; new members start at null.
+  const changed = statusUpdates.filter((u) => (currentStatus.get(u.playlistId) ?? null) !== u.adStatus);
+  const now = new Date().toISOString();
+  for (const target of ["live", "stopped", null] as const) {
+    const ids = changed.filter((u) => u.adStatus === target).map((u) => u.playlistId);
+    if (ids.length === 0) continue;
+    const { error: statusErr } = await svc
+      .from("collection_playlists")
+      .update({ ad_status: target, ad_status_changed_at: target === null ? null : now })
+      .eq("collection_id", collectionId)
+      .in("spotify_playlist_id", ids);
+    if (statusErr) return apiJsonErr(statusErr.message, 500);
+  }
+
+  await svc.from("collections").update({ updated_at: now }).eq("id", collectionId);
+  return apiJsonOk({ id: collectionId, added: add.length, removed: remove.length, statusChanged: changed.length });
 }

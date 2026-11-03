@@ -1,6 +1,19 @@
 import type { FollowerHistoryPoint } from "@/lib/playlistWatch/history";
 
+import { parseSpotifyPlaylistId } from "@/lib/playlistWatch/spotifyPlaylistId";
+
 import type { PlaylistWatchRow } from "./playlistWatchClientModel";
+
+/** Ad status of a playlist inside one collection: an ad promotes it now, or its ads ended. */
+export type AdStatus = "live" | "stopped";
+/** Status switch value, kept in the URL as `?status=`. */
+export type StatusFilter = "all" | AdStatus;
+
+export type CollectionMember = {
+  playlistId: string;
+  adStatus: AdStatus | null;
+  adStatusChangedAt: string | null;
+};
 
 /** A shared, named group of watched playlists (e.g. one ad account). */
 export type PlaylistWatchCollection = {
@@ -8,7 +21,9 @@ export type PlaylistWatchCollection = {
   name: string;
   color: string | null;
   sortOrder: number;
+  /** Same playlists as `members`, kept for compatibility. */
   playlistIds: string[];
+  members: CollectionMember[];
 };
 
 /** `all`, `unassigned`, or a collection id. */
@@ -64,6 +79,14 @@ export function normalizeSelection(
   return collections.some((c) => c.id === value) ? value : COLLECTION_ALL;
 }
 
+export function normalizeStatusFilter(value: string | null | undefined): StatusFilter {
+  return value === "live" || value === "stopped" ? value : "all";
+}
+
+export function isAdStatus(value: unknown): value is AdStatus {
+  return value === "live" || value === "stopped";
+}
+
 export function sortCollections<T extends { sortOrder: number; name: string }>(items: readonly T[]): T[] {
   return [...items].sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
 }
@@ -76,6 +99,169 @@ export function unassignedPlaylistIds(
   const assigned = new Set<string>();
   for (const c of collections) for (const id of c.playlistIds) assigned.add(id);
   return new Set(rows.map((r) => r.spotifyPlaylistId).filter((id) => !assigned.has(id)));
+}
+
+/** Collections with at least one non-archived member, in display order (empty ones are hidden). */
+export function visibleCollections(
+  rows: readonly Pick<PlaylistWatchRow, "spotifyPlaylistId" | "watchStatus">[],
+  collections: readonly PlaylistWatchCollection[],
+): PlaylistWatchCollection[] {
+  const liveIds = new Set(rows.filter((r) => r.watchStatus !== "archived").map((r) => r.spotifyPlaylistId));
+  return sortCollections(collections).filter((c) => c.playlistIds.some((id) => liveIds.has(id)));
+}
+
+/**
+ * Normalises a chip choice for display: unknown ids, hidden (empty) collections and an
+ * Unassigned chip with nothing unassigned all fall back to All.
+ */
+export function resolveSelection(
+  value: string | null | undefined,
+  rows: readonly PlaylistWatchRow[],
+  collections: readonly PlaylistWatchCollection[],
+): CollectionSelection {
+  const normalized = normalizeSelection(value, collections);
+  if (normalized === COLLECTION_ALL) return normalized;
+  const live = rows.filter((r) => r.watchStatus !== "archived");
+  if (normalized === COLLECTION_UNASSIGNED) {
+    return collections.length === 0 || unassignedPlaylistIds(live, collections).size === 0 ? COLLECTION_ALL : normalized;
+  }
+  return visibleCollections(live, collections).some((c) => c.id === normalized) ? normalized : COLLECTION_ALL;
+}
+
+export type ScopedStatus = { status: AdStatus; changedAt: string | null };
+
+/**
+ * Ad status of each playlist within a chip. Inside a collection it is that membership's status.
+ * Under All: live if live in any collection, else stopped if stopped in any (changedAt = the
+ * latest "stopped since" among those memberships, i.e. when the last ads ended), else none.
+ * Unassigned has no statuses. Playlists without a status are absent from the map.
+ */
+export function statusMapForSelection(
+  collections: readonly PlaylistWatchCollection[],
+  selection: CollectionSelection,
+): Map<string, ScopedStatus> {
+  const out = new Map<string, ScopedStatus>();
+  if (selection === COLLECTION_UNASSIGNED) return out;
+  const scope = selection === COLLECTION_ALL ? collections : collections.filter((c) => c.id === selection);
+  for (const c of scope) {
+    for (const m of c.members) {
+      if (!m.adStatus) continue;
+      const prev = out.get(m.playlistId);
+      if (!prev) {
+        out.set(m.playlistId, { status: m.adStatus, changedAt: m.adStatusChangedAt });
+      } else if (prev.status === m.adStatus) {
+        if (m.adStatusChangedAt && (!prev.changedAt || m.adStatusChangedAt > prev.changedAt)) {
+          out.set(m.playlistId, { status: prev.status, changedAt: m.adStatusChangedAt });
+        }
+      } else if (m.adStatus === "live") {
+        out.set(m.playlistId, { status: "live", changedAt: m.adStatusChangedAt });
+      }
+    }
+  }
+  return out;
+}
+
+/** The status switch only applies to All and collection chips. */
+export function effectiveStatusFilter(status: StatusFilter, selection: CollectionSelection): StatusFilter {
+  return selection === COLLECTION_UNASSIGNED ? "all" : status;
+}
+
+/** Keeps rows whose scoped status matches; "all" keeps everything (also rows with no status). */
+export function filterRowsByStatus<T extends Pick<PlaylistWatchRow, "spotifyPlaylistId">>(
+  rows: readonly T[],
+  collections: readonly PlaylistWatchCollection[],
+  selection: CollectionSelection,
+  status: StatusFilter,
+): T[] {
+  const effective = effectiveStatusFilter(status, selection);
+  if (effective === "all") return [...rows];
+  const map = statusMapForSelection(collections, selection);
+  return rows.filter((r) => map.get(r.spotifyPlaylistId)?.status === effective);
+}
+
+/** Rows for a chip + status switch (archived playlists excluded). */
+export function rowsForView(
+  rows: readonly PlaylistWatchRow[],
+  collections: readonly PlaylistWatchCollection[],
+  selection: CollectionSelection,
+  status: StatusFilter,
+): PlaylistWatchRow[] {
+  return filterRowsByStatus(rowsForSelection(rows, collections, selection), collections, selection, status);
+}
+
+export type StatusCounts = { all: number; live: number; stopped: number };
+
+/** Segment counts for the status switch within a chip. */
+export function statusCounts(
+  rows: readonly PlaylistWatchRow[],
+  collections: readonly PlaylistWatchCollection[],
+  selection: CollectionSelection,
+): StatusCounts {
+  const scoped = rowsForSelection(rows, collections, selection);
+  const map = statusMapForSelection(collections, selection);
+  let live = 0;
+  let stopped = 0;
+  for (const r of scoped) {
+    const status = map.get(r.spotifyPlaylistId)?.status;
+    if (status === "live") live += 1;
+    else if (status === "stopped") stopped += 1;
+  }
+  return { all: scoped.length, live, stopped };
+}
+
+/** Percent growth of a delta over its starting base (followers - delta); null when undefined. */
+export function growthPercent(followers: number | null, delta: number | null): number | null {
+  if (followers === null || delta === null || !Number.isFinite(followers) || !Number.isFinite(delta)) return null;
+  const base = followers - delta;
+  if (base <= 0) return null;
+  return (delta / base) * 100;
+}
+
+export function formatGrowthPercent(percent: number | null): string | null {
+  if (percent === null) return null;
+  const text = percent.toFixed(1);
+  return `${percent > 0 && text !== "0.0" ? "+" : ""}${text}%`;
+}
+
+export type GrowingWithoutAds = { count: number; gain7d: number };
+
+/** Of the given (stopped) rows: how many gained followers over 7 days, and the summed gain. */
+export function growingWithoutAds(stoppedRows: readonly Pick<PlaylistWatchRow, "delta7d">[]): GrowingWithoutAds {
+  let count = 0;
+  let gain7d = 0;
+  for (const r of stoppedRows) {
+    if (r.delta7d !== null && r.delta7d > 0) {
+      count += 1;
+      gain7d += r.delta7d;
+    }
+  }
+  return { count, gain7d };
+}
+
+export type StatusUpdate = { playlistId: string; adStatus: AdStatus | null };
+
+export const MAX_STATUS_UPDATES = 500;
+
+/**
+ * Validates the PUT body `status: [{ playlist, ad_status }]`. Duplicate playlists collapse to the
+ * last entry. Returns null for any malformed input.
+ */
+export function parseStatusUpdates(value: unknown): StatusUpdate[] | null {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value) || value.length > MAX_STATUS_UPDATES) return null;
+  const byPlaylist = new Map<string, AdStatus | null>();
+  for (const item of value) {
+    if (typeof item !== "object" || item === null || Array.isArray(item)) return null;
+    const entry = item as Record<string, unknown>;
+    if (typeof entry.playlist !== "string") return null;
+    const id = parseSpotifyPlaylistId(entry.playlist);
+    if (!id) return null;
+    if (!("ad_status" in entry)) return null;
+    const status = entry.ad_status;
+    if (status !== null && !isAdStatus(status)) return null;
+    byPlaylist.set(id, status);
+  }
+  return Array.from(byPlaylist, ([playlistId, adStatus]) => ({ playlistId, adStatus }));
 }
 
 /** Ids a chip selects, or null for "no restriction" (All / unknown collection). */
@@ -192,15 +378,17 @@ export function combinedToHistory(points: readonly CombinedPoint[]): FollowerHis
   return points.map((p) => ({ date: p.date, followers: p.total, dailyDelta: p.gain }));
 }
 
+/** One row per given collection; `status` filters each collection's own members. */
 export function buildCompareRows(
   rows: readonly PlaylistWatchRow[],
   collections: readonly PlaylistWatchCollection[],
+  status: StatusFilter = "all",
 ): CollectionCompareRow[] {
   return sortCollections(collections).map((c) => ({
     id: c.id,
     name: c.name,
     color: c.color,
-    ...computeTotals(rowsForSelection(rows, collections, c.id)),
+    ...computeTotals(rowsForView(rows, collections, c.id, status)),
   }));
 }
 

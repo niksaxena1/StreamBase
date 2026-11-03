@@ -14,10 +14,10 @@ import { showToast } from "@/lib/toast";
 import { formatTooltipDateDaily } from "@/components/charts/chartUtils";
 import { buildAlertPreview } from "@/lib/playlistWatch/alertPreview";
 import { CollectionMembershipModal, CollectionsManagerModal, ColorDot } from "./CollectionsDialogs";
-import { CollectionAnalytics, CollectionChips } from "./CollectionsSection";
-import { COLLECTION_ALL, COLLECTION_UNASSIGNED, normalizeSelection, selectionIdSet, sortCollections, unassignedPlaylistIds, type CollectionSelection, type PlaylistWatchCollection } from "./collectionsModel";
+import { CollectionAnalytics, CollectionChips, StatusSwitch } from "./CollectionsSection";
+import { COLLECTION_ALL, effectiveStatusFilter, normalizeStatusFilter, resolveSelection, selectionIdSet, sortCollections, statusMapForSelection, type CollectionSelection, type PlaylistWatchCollection, type StatusFilter } from "./collectionsModel";
 import { FollowerSparkline, MetricTile, PlaylistFollowerChart, StatusIcon, TrendValue } from "./PlaylistWatchVisuals";
-import { compareNullableMetric, emptyAlertEditor, extractPlaylistIdForSummary, fmtDelta, formatCheckedAt, looksLikeSpotifyPlaylistInput, metricForSort, type AlertEditorState, type ImportSummary, type OwnerModalTab, type OwnerProfile, type OwnerSpotifyPlaylistRow, type PlaylistWatchAlertEvent, type PlaylistWatchAlertRule, type PlaylistWatchFilter, type PlaylistWatchRow, type PlaylistWatchSortKey } from "./playlistWatchClientModel";
+import { compareNullableMetric, effectiveSort, emptyAlertEditor, extractPlaylistIdForSummary, fmtDelta, formatCheckedAt, formatStatusDate, looksLikeSpotifyPlaylistInput, metricForSort, nextSortOnClick, type AlertEditorState, type ImportSummary, type OwnerModalTab, type OwnerProfile, type OwnerSpotifyPlaylistRow, type PlaylistWatchAlertEvent, type PlaylistWatchAlertRule, type PlaylistWatchFilter, type PlaylistWatchRow, type PlaylistWatchSort, type PlaylistWatchSortKey } from "./playlistWatchClientModel";
 
 export type { PlaylistWatchRow } from "./playlistWatchClientModel";
 
@@ -25,12 +25,14 @@ export function PlaylistWatchClient({
   playlists,
   collections,
   initialCollection,
+  initialStatus,
   isAdmin,
   includeArchived,
 }: {
   playlists: PlaylistWatchRow[];
   collections: PlaylistWatchCollection[];
   initialCollection: string | null;
+  initialStatus: string | null;
   isAdmin: boolean;
   includeArchived: boolean;
 }) {
@@ -51,8 +53,8 @@ export function PlaylistWatchClient({
   const [ownerSpotifyLoading, setOwnerSpotifyLoading] = useState(false);
   const [ownerSpotifyError, setOwnerSpotifyError] = useState<string | null>(null);
   const [ownerProfile, setOwnerProfile] = useState<OwnerProfile | null>(null);
-  const [sortKey, setSortKey] = useState<PlaylistWatchSortKey>("followers");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  // null until the user clicks a column header; then the default (per status view) applies.
+  const [explicitSort, setExplicitSort] = useState<PlaylistWatchSort | null>(null);
   const [filter, setFilter] = useState<PlaylistWatchFilter>(includeArchived ? "archived" : "active");
   const [alertRules, setAlertRules] = useState<PlaylistWatchAlertRule[]>([]);
   const [alertEvents, setAlertEvents] = useState<PlaylistWatchAlertEvent[]>([]);
@@ -61,6 +63,7 @@ export function PlaylistWatchClient({
   const [alertEditor, setAlertEditor] = useState<AlertEditorState>(emptyAlertEditor);
   const [tableMode, setTableMode] = useState<"playlists" | "alerts">("playlists");
   const [rawCollection, setRawCollection] = useState<string | null>(initialCollection);
+  const [rawStatus, setRawStatus] = useState<string | null>(initialStatus);
   const [collectionsManagerOpen, setCollectionsManagerOpen] = useState(false);
   const [membershipTarget, setMembershipTarget] = useState<{ ids: string[]; title: string } | null>(null);
 
@@ -174,15 +177,20 @@ export function PlaylistWatchClient({
   const favoriteCount = useMemo(() => playlists.filter((p) => p.isFavorite && p.watchStatus !== "archived").length, [playlists]);
   const archivedCount = useMemo(() => playlists.filter((p) => p.watchStatus === "archived").length, [playlists]);
   const orderedCollections = useMemo(() => sortCollections(collections), [collections]);
-  const collectionSelection: CollectionSelection = useMemo(() => {
-    const normalized = normalizeSelection(rawCollection, collections);
-    // The Unassigned chip disappears once nothing is unassigned; fall back to All.
-    if (normalized === COLLECTION_UNASSIGNED) {
-      const live = playlists.filter((p) => p.watchStatus !== "archived");
-      if (collections.length === 0 || unassignedPlaylistIds(live, collections).size === 0) return COLLECTION_ALL;
-    }
-    return normalized;
-  }, [rawCollection, collections, playlists]);
+  // Chips for empty collections and an empty Unassigned disappear; a stale choice falls back to All.
+  const collectionSelection: CollectionSelection = useMemo(
+    () => resolveSelection(rawCollection, playlists, collections),
+    [rawCollection, collections, playlists],
+  );
+  const statusFilter: StatusFilter = useMemo(
+    () => (filter === "archived" ? "all" : effectiveStatusFilter(normalizeStatusFilter(rawStatus), collectionSelection)),
+    [rawStatus, collectionSelection, filter],
+  );
+  const scopedStatuses = useMemo(
+    () => statusMapForSelection(collections, collectionSelection),
+    [collections, collectionSelection],
+  );
+  const sort = useMemo(() => effectiveSort(explicitSort, statusFilter), [explicitSort, statusFilter]);
   const collectionIdSet = useMemo(
     () => selectionIdSet(playlists, collections, collectionSelection),
     [playlists, collections, collectionSelection],
@@ -196,9 +204,10 @@ export function PlaylistWatchClient({
   }, [orderedCollections]);
   const filteredPlaylists = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    const inCollection = collectionIdSet
+    const inCollection = (collectionIdSet
       ? playlists.filter((p) => collectionIdSet.has(p.spotifyPlaylistId))
-      : playlists;
+      : playlists
+    ).filter((p) => statusFilter === "all" || scopedStatuses.get(p.spotifyPlaylistId)?.status === statusFilter);
     const byMode =
       filter === "favorites"
         ? inCollection.filter((p) => p.isFavorite && p.watchStatus !== "archived")
@@ -217,25 +226,20 @@ export function PlaylistWatchClient({
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(q)),
     );
-  }, [filter, playlists, searchQuery, collectionIdSet]);
+  }, [filter, playlists, searchQuery, collectionIdSet, statusFilter, scopedStatuses]);
   const sortedPlaylists = useMemo(() => {
     return [...filteredPlaylists].sort((a, b) =>
-      compareNullableMetric(metricForSort(a, sortKey), metricForSort(b, sortKey), sortDir),
+      compareNullableMetric(metricForSort(a, sort.key), metricForSort(b, sort.key), sort.dir),
     );
-  }, [filteredPlaylists, sortKey, sortDir]);
+  }, [filteredPlaylists, sort]);
 
   function toggleSort(key: PlaylistWatchSortKey) {
-    if (key === sortKey) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    } else {
-      setSortKey(key);
-      setSortDir("desc");
-    }
+    setExplicitSort(nextSortOnClick(sort, key));
   }
 
   function sortIndicator(key: PlaylistWatchSortKey) {
-    if (key !== sortKey) return null;
-    return sortDir === "asc" ? (
+    if (key !== sort.key) return null;
+    return sort.dir === "asc" ? (
       <ChevronUp className="ml-1 inline h-3 w-3 opacity-60" aria-hidden />
     ) : (
       <ChevronDown className="ml-1 inline h-3 w-3 opacity-60" aria-hidden />
@@ -404,12 +408,25 @@ export function PlaylistWatchClient({
 
   function selectFilter(nextFilter: PlaylistWatchFilter) {
     setFilter(nextFilter);
-    const collectionParam = collectionSelection === COLLECTION_ALL ? "" : `collection=${encodeURIComponent(collectionSelection)}`;
+    const params = new URLSearchParams();
+    if (nextFilter === "archived") params.set("archived", "1");
+    if (collectionSelection !== COLLECTION_ALL) params.set("collection", collectionSelection);
+    const chosenStatus = normalizeStatusFilter(rawStatus);
+    if (chosenStatus !== "all") params.set("status", chosenStatus);
+    const query = params.toString();
     if (nextFilter === "archived" && !includeArchived) {
-      router.push(`/playlist-watch?archived=1${collectionParam ? `&${collectionParam}` : ""}`);
+      router.push(`/playlist-watch?${query}`);
     } else if (nextFilter !== "archived" && includeArchived) {
-      router.push(`/playlist-watch${collectionParam ? `?${collectionParam}` : ""}`);
+      router.push(`/playlist-watch${query ? `?${query}` : ""}`);
     }
+  }
+
+  function selectStatus(next: StatusFilter) {
+    setRawStatus(next);
+    const url = new URL(window.location.href);
+    if (next === "all") url.searchParams.delete("status");
+    else url.searchParams.set("status", next);
+    window.history.replaceState(null, "", `${url.pathname}${url.search}`);
   }
 
   function selectCollection(next: CollectionSelection) {
@@ -659,8 +676,22 @@ export function PlaylistWatchClient({
             onSelect={selectCollection}
             onManage={() => setCollectionsManagerOpen(true)}
           />
+          {filter !== "archived" && collectionSelection !== "unassigned" && collections.length > 0 ? (
+            <StatusSwitch
+              rows={playlists}
+              collections={collections}
+              selection={collectionSelection}
+              status={statusFilter}
+              onChange={selectStatus}
+            />
+          ) : null}
           {filter !== "archived" ? (
-            <CollectionAnalytics rows={playlists} collections={collections} selection={collectionSelection} />
+            <CollectionAnalytics
+              rows={playlists}
+              collections={collections}
+              selection={collectionSelection}
+              status={statusFilter}
+            />
           ) : null}
         </div>
       ) : null}
@@ -1061,13 +1092,18 @@ export function PlaylistWatchClient({
                         <span className="truncate">{playlist.spotifyPlaylistId}</span>
                       )}
                     </div>
+                    {statusFilter === "stopped" && scopedStatuses.get(playlist.spotifyPlaylistId)?.changedAt ? (
+                      <div className="truncate text-[11px]" style={{ color: "var(--sb-muted)" }}>
+                        Stopped since {formatStatusDate(scopedStatuses.get(playlist.spotifyPlaylistId)!.changedAt)}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               </TableCell>
               <TableCell numeric>{formatInt(playlist.latestFollowerCount)}</TableCell>
               <TableCell numeric><TrendValue value={playlist.delta1d} /></TableCell>
-              <TableCell numeric><TrendValue value={playlist.delta7d} /></TableCell>
-              <TableCell numeric><TrendValue value={playlist.delta30d} /></TableCell>
+              <TableCell numeric><TrendValue value={playlist.delta7d} followers={playlist.latestFollowerCount} showPercent /></TableCell>
+              <TableCell numeric><TrendValue value={playlist.delta30d} followers={playlist.latestFollowerCount} showPercent /></TableCell>
               <TableCell align="center">
                 <FollowerSparkline history={playlist.history} />
               </TableCell>

@@ -72,6 +72,27 @@ Access is controlled through `public.app_user_access`:
 
 Watch-only users should not need normal StreamBase admin access.
 
+## Collections and ad status
+
+Collections (`playlist_watch.collections`, members in `playlist_watch.collection_playlists`) group watched playlists, normally one collection per ad account. They are shared and read fresh (not through the 1h page cache). Service-role access only, behind `requirePlaylistWatchAccess`.
+
+Each membership carries an optional ad status (`ad_status`, migration `20261102144740_playlist_watch_collection_ad_status.sql`):
+
+- `live`: an ad currently promotes the playlist.
+- `stopped`: its ads ended; `ad_status_changed_at` is when it stopped (the UI shows "Stopped since <date>").
+- `null`: no status recorded.
+
+Status is per collection membership, so the same playlist can be live in one account and stopped in another. Under the page's **All** chip a playlist counts as live if it is live in any collection, otherwise stopped if it is stopped in any.
+
+API (`/api/playlist-watch/collections`):
+
+- `GET` returns each collection with `playlistIds` (compat) and `members: [{ playlistId, adStatus, adStatusChangedAt }]`.
+- `PUT /collections/<id>` takes `{ add?, remove?, status? }`. `status` is `[{ "playlist": "<spotify id|url|uri>", "ad_status": "live" | "stopped" | null }]`. The playlist must already be a member or be in `add` in the same request (new members default to `null`). `ad_status_changed_at` is set to now only when the status actually changes (clearing it sets the timestamp to null); resending the same status leaves it alone. Invalid ids/values return 400 (`invalid_status_update`, `not_a_member`, `status_for_removed_playlist`).
+
+The daily ads job should set statuses with that `PUT` call.
+
+Page URL params: `?collection=<id|all|unassigned>` and `?status=all|live|stopped` (default `all`, unknown values fall back to `all`; ignored for Unassigned and the archived view). Collections with no non-archived members get no chip.
+
 ## Archived Playlists
 
 Removing a playlist from the active watchlist should archive it, not delete it. Archived playlists keep their historical snapshots and are hidden from `/playlist-watch` unless the archived filter is enabled.

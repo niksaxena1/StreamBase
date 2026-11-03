@@ -20,6 +20,7 @@ export const metadata: Metadata = {
 type SearchParams = {
   archived?: string;
   collection?: string;
+  status?: string;
 };
 
 export default async function PlaylistWatchPage({
@@ -46,6 +47,7 @@ export default async function PlaylistWatchPage({
         playlists={rows}
         collections={collections}
         initialCollection={sp.collection ?? null}
+        initialStatus={sp.status ?? null}
         isAdmin={isAdmin}
         includeArchived={includeArchived}
       />
