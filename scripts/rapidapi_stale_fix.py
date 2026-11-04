@@ -3,8 +3,9 @@ Auto-fix stale tracks via stream lookup providers.
 
 Runs as a standalone scheduled job (separate from ingestion). Queries the DB
 for the latest individual_tracks_stale warning, fetches corrected stream
-counts from Beat Analytics first, Music Metrics second, MusicAnalytics third,
-and CheckLeakedCC fourth, then writes overrides to track_daily_stream_overrides.
+counts from the Spotify web player first (free, no quota; scripts/spotify_web_playcount.py), then
+Beat Analytics, Music Metrics, MusicAnalytics and CheckLeakedCC, and writes overrides to
+track_daily_stream_overrides.
 
 Repairs all stale tracks while the batch is below the 500-track safety
 threshold. Automated runs only use free provider quotas and never paid overage.
@@ -45,6 +46,7 @@ import requests
 from streambase_postgrest import Postgrest
 from streambase_home_snapshots import refresh_own_home_snapshots
 import stream_consolidation as sc
+from spotify_web_playcount import PlaycountClient
 
 MAX_AUTO_FIX_TRACKS = 500
 BEAT_ANALYTICS_DAILY_CAP = 50
@@ -61,6 +63,7 @@ CHECKLEAKEDCC_HOST = "spotify81.p.rapidapi.com"
 CHECKLEAKEDCC_ENDPOINT = f"https://{CHECKLEAKEDCC_HOST}/partner/track/count"
 OVERRIDE_NOTE_PREFIX = "stale-fix:"
 ARTIST_TOOLS_SOURCE = "artist.tools"
+WEB_PLAYER_SOURCE = "Spotify Web Player"
 HISTORY_CHUNK = 80
 RATE_LIMIT_MS = 1100
 REQUEST_TIMEOUT_SECONDS = 12
@@ -385,8 +388,9 @@ def main():
     if not supabase_url or not service_key:
         print("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.")
         sys.exit(1)
-    if not beat_key and not music_key and not music_analytics_key and not checkleakedcc_key:
-        print("No stream lookup provider key is set. Skipping stale-fix.")
+    web_player_enabled = (os.environ.get("STALE_FIX_WEB_PLAYER", "true").strip().lower() != "false")
+    if not web_player_enabled and not beat_key and not music_key and not music_analytics_key and not checkleakedcc_key:
+        print("No stream lookup provider is available. Skipping stale-fix.")
         sys.exit(0)
 
     pg = Postgrest(supabase_url, service_key)
@@ -406,7 +410,7 @@ def main():
 
     print(
         f"Auto-fix ceiling: fewer than {MAX_AUTO_FIX_TRACKS} stale track(s); free providers only "
-        f"(Beat Analytics {BEAT_ANALYTICS_DAILY_CAP}/day + "
+        f"(Spotify web player {'on' if web_player_enabled else 'off'}, no quota; Beat Analytics {BEAT_ANALYTICS_DAILY_CAP}/day + "
         f"Music Metrics {MUSIC_METRICS_DAILY_CAP}/day + "
         f"MusicAnalytics {MUSIC_ANALYTICS_MONTHLY_CAP}/month + "
         f"CheckLeakedCC {CHECKLEAKEDCC_MONTHLY_CAP}/month)"
@@ -523,10 +527,16 @@ def main():
     reject_log: List[dict] = []
     source_stats = {
         name: {"attempts": 0, "rejects": 0}
-        for name in ("Beat Analytics", "Music Metrics", "MusicAnalytics", "CheckLeakedCC", ARTIST_TOOLS_SOURCE)
+        for name in (WEB_PLAYER_SOURCE, "Beat Analytics", "Music Metrics", "MusicAnalytics", "CheckLeakedCC",
+                     ARTIST_TOOLS_SOURCE)
     }
     # (display name, usage key, key present, needs Spotify id, budget). Fetchers are resolved at call time.
+    web_player = PlaycountClient("track/" + next(
+        (c["spotify_track_id"] for c in candidates if c.get("spotify_track_id")), "6lmVjtpng1wIQnH4E4a7p6"))
+    # usage key None = no quota, so no stream_lookup_usage row. Same plausibility checks as every provider.
     providers = [
+        (WEB_PLAYER_SOURCE, None, web_player_enabled, True, budget,
+         lambda c: web_player.playcount(c["spotify_track_id"])),
         ("Beat Analytics", "beat_analytics", bool(beat_key), True, beat_budget,
          lambda c: fetch_beat_analytics_streams(c["spotify_track_id"], beat_key)),
         ("Music Metrics", "music_metrics", bool(music_key), False, music_budget,
@@ -577,7 +587,8 @@ def main():
                 continue
             provider_attempted[name] += 1
             source_stats[name]["attempts"] += 1
-            record_provider_call(pg, usage_date, usage_key, usage)
+            if usage_key:
+                record_provider_call(pg, usage_date, usage_key, usage)
             try:
                 value = fetch(c)
             except Exception as e:

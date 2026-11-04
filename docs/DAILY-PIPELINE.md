@@ -102,8 +102,11 @@ The 18:17 UTC database dispatch and the optional PC task remain as fallbacks.
 ## Stale-track repair: first pass, second look, consolidation
 
 1. **First pass** (`scripts/rapidapi_stale_fix.py`, started by the own pipeline after a real ingest) fixes tracks of
-   today's `individual_tracks_stale` warning from the free providers in priority order (Beat Analytics, Music Metrics,
-   MusicAnalytics, CheckLeakedCC) inside their daily/monthly caps.
+   today's `individual_tracks_stale` warning from the free providers in priority order: the Spotify web player first
+   (`scripts/spotify_web_playcount.py`, the in-app play count, no key or quota; matched 120/120 stored cumulatives on
+   2026-11-04; `STALE_FIX_WEB_PLAYER=false` turns it off, repo variable `PLAYCOUNT_QUERY_HASH` fixes a rotated query
+   hash), then Beat Analytics, Music Metrics, MusicAnalytics, CheckLeakedCC inside their daily/monthly caps. Every
+   source goes through the same plausibility checks; a web-player error or reject falls through to the next provider.
 2. **Second look** (`SECOND_LOOK=true`, dispatched at 17:30 UTC) re-checks only tracks that are still stale (today's
    effective value not above yesterday's) and have no override. Notes carry `; second-look`. It sends no
    "incomplete" email and does not chain to artist.tools (that has its own 18:17 UTC dispatch).

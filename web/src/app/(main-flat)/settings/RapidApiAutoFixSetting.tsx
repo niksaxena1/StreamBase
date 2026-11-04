@@ -69,8 +69,8 @@ export function RapidApiAutoFixSetting() {
           <h3 className="text-sm font-medium">Stream lookup auto-fix</h3>
           <p className="mt-1 text-xs opacity-70">
             When enabled, the scheduled job automatically corrects stale tracks
-            via Beat Analytics first, then Music Metrics, then MusicAnalytics,
-            then CheckLeakedCC. It fixes every stale track when fewer than 500
+            via the Spotify web player first (free, no quota), then Beat Analytics,
+            Music Metrics, MusicAnalytics and CheckLeakedCC. It fixes every stale track when fewer than 500
             are stale, using free provider quotas only; paid overage stays manual.
           </p>
         </div>

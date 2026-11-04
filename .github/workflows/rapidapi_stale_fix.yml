@@ -52,6 +52,7 @@ jobs:
           MUSIC_ANALYTICS_RAPIDAPI_KEY: ${{ secrets.MUSIC_ANALYTICS_RAPIDAPI_KEY }}
           CHECKLEAKEDCC_RAPIDAPI_KEY: ${{ secrets.CHECKLEAKEDCC_RAPIDAPI_KEY }}
           RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
+          PLAYCOUNT_QUERY_HASH: ${{ vars.PLAYCOUNT_QUERY_HASH }}
           SECOND_LOOK: ${{ github.event.inputs.second_look }}
         run: python scripts/rapidapi_stale_fix.py
 

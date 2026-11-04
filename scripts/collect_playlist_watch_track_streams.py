@@ -31,15 +31,10 @@ import requests
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from streambase_postgrest import Postgrest  # noqa: E402
+from spotify_web_playcount import PlaycountClient, parse_playcount, query_hash_from_env  # noqa: E402,F401
 
 SCHEMA = "playlist_watch"
 SOURCE = "spotify_web_player"
-USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
-PATHFINDER_URL = "https://api-partner.spotify.com/pathfinder/v1/query"
-# Persisted-query hash of the web player's getTrack operation. Spotify rotates these occasionally;
-# override with PLAYCOUNT_QUERY_HASH (find the current one in open.spotify.com network traffic).
-DEFAULT_GET_TRACK_HASH = "ae85b52abb74d20a4c331d4143d4772c95f34757bfa8c625474b912b9055b5c0"
-TOKEN_RE = re.compile(r'"accessToken":"([^"]+)"')
 TRACK_ID_RE = re.compile(r"^[A-Za-z0-9]{16,32}$")
 REQUEST_TIMEOUT = 20
 CALL_SPACING_S = 0.35
@@ -182,64 +177,6 @@ def tracks_to_collect(current: List[dict], existing: List[dict], removed_today: 
     return ids
 
 
-# ---------------------------------------------------------------- Web-player play counts
-
-class PlaycountClient:
-    def __init__(self, embed_playlist_id: str, query_hash: str):
-        self.embed_playlist_id = embed_playlist_id
-        self.query_hash = query_hash
-        self.session = requests.Session()
-        self.session.headers["User-Agent"] = USER_AGENT
-        self.token: Optional[str] = None
-
-    def refresh_token(self) -> None:
-        r = self.session.get(f"https://open.spotify.com/embed/playlist/{self.embed_playlist_id}", timeout=REQUEST_TIMEOUT)
-        r.raise_for_status()
-        m = TOKEN_RE.search(r.text)
-        if not m:
-            raise RuntimeError("No anonymous access token found on the Spotify embed page (page format changed?)")
-        self.token = m.group(1)
-
-    def playcount(self, track_id: str) -> Optional[int]:
-        if not self.token:
-            self.refresh_token()
-        params = {
-            "operationName": "getTrack",
-            "variables": json.dumps({"uri": f"spotify:track:{track_id}"}),
-            "extensions": json.dumps({"persistedQuery": {"version": 1, "sha256Hash": self.query_hash}}),
-        }
-        for attempt in range(4):
-            r = self.session.get(
-                PATHFINDER_URL,
-                params=params,
-                headers={"Authorization": f"Bearer {self.token}", "App-Platform": "WebPlayer"},
-                timeout=REQUEST_TIMEOUT,
-            )
-            if r.status_code == 401:
-                self.refresh_token()
-                continue
-            if r.status_code == 429 or r.status_code >= 500:
-                wait = min(int(r.headers.get("Retry-After", "0") or 0) or 3 * (attempt + 1), 60)
-                time.sleep(wait)
-                continue
-            if r.status_code >= 400:
-                raise RuntimeError(f"getTrack {track_id} -> {r.status_code} {r.text[:200]}")
-            return parse_playcount(r.json())
-        raise RuntimeError(f"getTrack {track_id} kept failing")
-
-
-def parse_playcount(payload: dict) -> Optional[int]:
-    if payload.get("errors"):
-        msg = "; ".join(str(e.get("message")) for e in payload["errors"])
-        raise RuntimeError(f"getTrack GraphQL error: {msg[:200]}")
-    union = ((payload.get("data") or {}).get("trackUnion")) or {}
-    raw = union.get("playcount")
-    if raw is None or str(raw).strip() == "":
-        return None
-    value = int(str(raw))
-    return value if value >= 0 else None
-
-
 # ---------------------------------------------------------------- main
 
 def chunks(seq: List, n: int):
@@ -255,7 +192,7 @@ def run(args) -> int:
     run_date = args.run_date or datetime.now(timezone.utc).date().isoformat()
     pg = Postgrest(require_env("SUPABASE_URL"), require_env("SUPABASE_SERVICE_ROLE_KEY"), schema=SCHEMA)
     api_token = spotify_api_token(require_env("SPOTIFY_CLIENT_ID"), require_env("SPOTIFY_CLIENT_SECRET"))
-    query_hash = (os.environ.get("PLAYCOUNT_QUERY_HASH") or "").strip() or DEFAULT_GET_TRACK_HASH
+    query_hash = query_hash_from_env()
 
     playlists = pg.select("track_watch_playlists", "spotify_playlist_id,slug,removed_retention_days", "is_active=eq.true")
     if not playlists:
@@ -304,7 +241,7 @@ def run(args) -> int:
                 pg.patch("track_watch_memberships", {"removed_date": run_date},
                          f"spotify_playlist_id=eq.{pid}&spotify_track_id={in_filter(batch)}")
 
-        client = PlaycountClient(pid, query_hash)
+        client = PlaycountClient(f"playlist/{pid}", query_hash)
         snapshots, failures = [], []
         for i, tid in enumerate(collect_ids):
             try:
