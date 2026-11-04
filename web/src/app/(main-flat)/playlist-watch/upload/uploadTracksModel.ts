@@ -1,9 +1,9 @@
-export type GrowthWindow = "1d" | "7d" | "28d" | "added";
+export type GrowthWindow = "fri" | "1d" | "7d" | "28d" | "added";
 export type GrowthMetric = "abs" | "pct";
 export type UploadSortKey = "track" | "streams" | "growth" | "added";
 export type SortDir = "asc" | "desc";
 
-export const GROWTH_WINDOWS: GrowthWindow[] = ["1d", "7d", "28d", "added"];
+export const GROWTH_WINDOWS: GrowthWindow[] = ["fri", "1d", "7d", "28d", "added"];
 
 export type UploadTrackRow = {
   spotifyTrackId: string;
@@ -13,6 +13,8 @@ export type UploadTrackRow = {
   /** ISO date (yyyy-mm-dd) shown as the added date: Spotify added_at, else first_seen_date. */
   addedDate: string | null;
   removedDate: string | null;
+  /** Raw Spotify release_date: yyyy-mm-dd, or only yyyy / yyyy-mm (treated as old). */
+  releaseDate: string | null;
   latestDate: string | null;
   latestPlaycount: number | null;
   playcount1d: number | null;
@@ -54,6 +56,7 @@ export function normalizeRow(raw: Record<string, unknown>): UploadTrackRow {
     imageUrl: typeof raw.image_url === "string" && raw.image_url ? raw.image_url : null,
     addedDate: dateOnly(raw.added_at) ?? dateOnly(raw.first_seen_date),
     removedDate: dateOnly(raw.removed_date),
+    releaseDate: typeof raw.release_date === "string" && raw.release_date ? raw.release_date : null,
     latestDate: dateOnly(raw.latest_date),
     latestPlaycount: num(raw.latest_playcount),
     playcount1d: num(raw.playcount_1d),
@@ -69,8 +72,64 @@ export function normalizeRows(raw: unknown): UploadTrackRow[] {
   return raw.map((r) => normalizeRow(r as Record<string, unknown>));
 }
 
-export function baselineFor(row: UploadTrackRow, window: GrowthWindow): number | null {
+const DAY_MS = 86_400_000;
+
+/** Latest snapshot date across a row set (yyyy-mm-dd), or null when nothing is collected yet. */
+export function latestSnapshotDateOf(rows: UploadTrackRow[]): string | null {
+  let latest: string | null = null;
+  for (const r of rows) if (r.latestDate && (latest === null || r.latestDate > latest)) latest = r.latestDate;
+  return latest;
+}
+
+/**
+ * The most recent Friday strictly before `latestDate`: a Saturday snapshot gives yesterday,
+ * a Friday snapshot gives the Friday a week earlier. Null when there is no snapshot yet.
+ */
+export function referenceFriday(latestDate: string | null): string | null {
+  if (!latestDate) return null;
+  const ms = Date.parse(`${latestDate}T00:00:00Z`);
+  if (!Number.isFinite(ms)) return null;
+  const dow = new Date(ms).getUTCDay(); // 0 Sun .. 5 Fri .. 6 Sat
+  const back = (dow - 5 + 7) % 7 || 7;
+  return new Date(ms - back * DAY_MS).toISOString().slice(0, 10);
+}
+
+/** "Fri 31 Oct" for a reference Friday (yyyy-mm-dd). */
+export function formatFridayLabel(refFriday: string | null): string {
+  if (!refFriday) return "Fri";
+  const d = new Date(`${refFriday}T12:00:00Z`);
+  if (!Number.isFinite(d.getTime())) return "Fri";
+  const month = d.toLocaleDateString("en-US", { month: "short", timeZone: "UTC" });
+  return `Fri ${d.getUTCDate()} ${month}`;
+}
+
+/** True only for a full yyyy-mm-dd release date on/after the reference Friday. */
+export function isReleasedSince(releaseDate: string | null, refFriday: string | null): boolean {
+  if (!releaseDate || !refFriday || !/^\d{4}-\d{2}-\d{2}$/.test(releaseDate)) return false;
+  return releaseDate >= refFriday;
+}
+
+/**
+ * Baseline for "Since Fri": 0 for a release on/after that Friday, else the latest history point
+ * on or before it, else the first point after it, else null.
+ */
+export function fridayBaseline(row: UploadTrackRow, refFriday: string | null): number | null {
+  if (!refFriday) return null;
+  if (isReleasedSince(row.releaseDate, refFriday)) return 0;
+  let onOrBefore: number | null = null;
+  for (const [date, count] of row.history) {
+    if (date <= refFriday) onOrBefore = count;
+    // First point after Friday only counts as a baseline if it is older than the latest point;
+    // otherwise growth would read +0 when there is simply no history yet.
+    else return onOrBefore ?? (row.latestDate !== null && date < row.latestDate ? count : null);
+  }
+  return onOrBefore;
+}
+
+export function baselineFor(row: UploadTrackRow, window: GrowthWindow, refFriday: string | null = null): number | null {
   switch (window) {
+    case "fri":
+      return fridayBaseline(row, refFriday);
     case "1d":
       return row.playcount1d;
     case "7d":
@@ -83,16 +142,16 @@ export function baselineFor(row: UploadTrackRow, window: GrowthWindow): number |
 }
 
 /** Latest playcount minus the window baseline; null when either side is missing. */
-export function growthFor(row: UploadTrackRow, window: GrowthWindow): number | null {
-  const baseline = baselineFor(row, window);
+export function growthFor(row: UploadTrackRow, window: GrowthWindow, refFriday: string | null = null): number | null {
+  const baseline = baselineFor(row, window, refFriday);
   if (row.latestPlaycount === null || baseline === null) return null;
   return row.latestPlaycount - baseline;
 }
 
 /** Growth as a percent of the baseline; null when the baseline is missing or zero. */
-export function growthPercentFor(row: UploadTrackRow, window: GrowthWindow): number | null {
-  const growth = growthFor(row, window);
-  const baseline = baselineFor(row, window);
+export function growthPercentFor(row: UploadTrackRow, window: GrowthWindow, refFriday: string | null = null): number | null {
+  const growth = growthFor(row, window, refFriday);
+  const baseline = baselineFor(row, window, refFriday);
   if (growth === null || baseline === null || baseline <= 0) return null;
   return (growth / baseline) * 100;
 }
@@ -137,6 +196,7 @@ export function sortRows(
   dir: SortDir,
   window: GrowthWindow,
   metric: GrowthMetric,
+  refFriday: string | null = null,
 ): UploadTrackRow[] {
   const mult = dir === "asc" ? 1 : -1;
   return [...rows].sort((a, b) => {
@@ -144,8 +204,11 @@ export function sortRows(
     if (key === "track") c = mult * a.name.localeCompare(b.name);
     else if (key === "streams") c = compareNullable(a.latestPlaycount, b.latestPlaycount, dir);
     else if (key === "growth") {
-      const get = (r: UploadTrackRow) => (metric === "pct" ? growthPercentFor(r, window) : growthFor(r, window));
+      const get = (r: UploadTrackRow) =>
+        metric === "pct" ? growthPercentFor(r, window, refFriday) : growthFor(r, window, refFriday);
       c = compareNullable(get(a), get(b), dir);
+      // In % mode, rows without a % (zero baseline) rank by absolute growth, after rows with a %.
+      if (c === 0 && metric === "pct") c = compareNullable(growthFor(a, window, refFriday), growthFor(b, window, refFriday), "desc");
       // Ties (and the first days, when growth is still null for every row) rank by total streams.
       if (c === 0) c = compareNullable(a.latestPlaycount, b.latestPlaycount, "desc");
     } else {
@@ -171,13 +234,13 @@ export type UploadSummary = {
   topGainer: { row: UploadTrackRow; growth: number } | null;
 };
 
-export function summarize(current: UploadTrackRow[], window: GrowthWindow): UploadSummary {
+export function summarize(current: UploadTrackRow[], window: GrowthWindow, refFriday: string | null = null): UploadSummary {
   let totalStreams = 0;
   let windowGrowth: number | null = null;
   let topGainer: UploadSummary["topGainer"] = null;
   for (const row of current) {
     totalStreams += row.latestPlaycount ?? 0;
-    const g = growthFor(row, window);
+    const g = growthFor(row, window, refFriday);
     if (g === null) continue;
     windowGrowth = (windowGrowth ?? 0) + g;
     if (g > 0 && (topGainer === null || g > topGainer.growth)) topGainer = { row, growth: g };
@@ -186,7 +249,7 @@ export function summarize(current: UploadTrackRow[], window: GrowthWindow): Uplo
 }
 
 export function parseWindow(value: string | null | undefined): GrowthWindow {
-  return value === "1d" || value === "28d" || value === "added" || value === "7d" ? value : "7d";
+  return value === "1d" || value === "28d" || value === "added" || value === "7d" || value === "fri" ? value : "fri";
 }
 
 export function parseMetric(value: string | null | undefined): GrowthMetric {

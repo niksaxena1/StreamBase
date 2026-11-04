@@ -1,7 +1,7 @@
 "use client";
 
-import { ChevronDown, ChevronUp, Search } from "lucide-react";
-import { useMemo, useState } from "react";
+import { ChevronDown, ChevronRight, ChevronUp, Search } from "lucide-react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 
 import { Chip, ChipGroup } from "@/components/ui/Chip";
 import { EmptyState, GlassTable, TableCell, TableRow } from "@/components/ui/GlassTable";
@@ -12,11 +12,15 @@ import { fmtDelta } from "../playlistWatchClientModel";
 import {
   dailyGains,
   filterRows,
+  formatFridayLabel,
   formatPercent,
   GROWTH_WINDOWS,
   growthFor,
   growthPercentFor,
   isNewlyAdded,
+  isReleasedSince,
+  latestSnapshotDateOf,
+  referenceFriday,
   sortRows,
   splitRemoved,
   summarize,
@@ -26,15 +30,53 @@ import {
   type UploadSortKey,
   type UploadTrackRow,
 } from "./uploadTracksModel";
+import { generateDemoHistory, normalizeSnapshots, type TrackHistory } from "./trackHistoryModel";
+import { TrackHistoryPanel, type HistoryState } from "./TrackHistoryPanel";
 
 const WINDOW_LABEL: Record<GrowthWindow, string> = {
+  fri: "Since Fri",
   "1d": "1d",
   "7d": "7d",
   "28d": "28d",
   added: "Since added",
 };
 
+/** Dev-only: `?demoHistory=1` swaps the API call for synthetic history. Dead code in production builds. */
+function demoHistoryEnabled(): boolean {
+  if (process.env.NODE_ENV === "production") return false;
+  try {
+    return new URL(globalThis.location.href).searchParams.get("demoHistory") === "1";
+  } catch {
+    return false;
+  }
+}
+
+async function fetchTrackHistory(row: UploadTrackRow, today: string): Promise<TrackHistory> {
+  if (demoHistoryEnabled()) {
+    return generateDemoHistory({
+      trackId: row.spotifyTrackId,
+      latestPlaycount: row.latestPlaycount,
+      lastDate: row.latestDate ?? today,
+      removedDate: row.removedDate,
+    });
+  }
+  const res = await fetch(`/api/playlist-watch/upload/tracks/${encodeURIComponent(row.spotifyTrackId)}/history`, { cache: "no-store" });
+  const json = (await res.json().catch(() => null)) as { success?: boolean; error?: string; data?: Record<string, unknown> } | null;
+  if (!res.ok || !json?.success || !json.data) throw new Error(json?.error ?? `HTTP ${res.status}`);
+  const m = json.data.membership as TrackHistory["membership"] | null | undefined;
+  return {
+    track_id: row.spotifyTrackId,
+    snapshots: normalizeSnapshots(json.data.snapshots),
+    membership: m ?? null,
+  };
+}
+
 const EMPTY_MESSAGE = "No stream data yet. The first snapshot runs daily at 18:20 Abu Dhabi.";
+
+/** Full label for a window; "Since Fri" carries the concrete reference date. */
+function windowLabel(window: GrowthWindow, refFriday: string | null): string {
+  return window === "fri" ? `Since ${formatFridayLabel(refFriday)}` : WINDOW_LABEL[window];
+}
 
 function GainSparkline({ history }: { history: [string, number][] }) {
   const gains = dailyGains(history);
@@ -56,8 +98,18 @@ function GainSparkline({ history }: { history: [string, number][] }) {
   );
 }
 
-function GrowthCell({ row, window, metric }: { row: UploadTrackRow; window: GrowthWindow; metric: GrowthMetric }) {
-  const growth = growthFor(row, window);
+function GrowthCell({
+  row,
+  window,
+  metric,
+  refFriday,
+}: {
+  row: UploadTrackRow;
+  window: GrowthWindow;
+  metric: GrowthMetric;
+  refFriday: string | null;
+}) {
+  const growth = growthFor(row, window, refFriday);
   if (growth === null) {
     return (
       <span title="Needs another daily snapshot" style={{ color: "var(--sb-muted)" }}>
@@ -66,7 +118,7 @@ function GrowthCell({ row, window, metric }: { row: UploadTrackRow; window: Grow
     );
   }
   const abs = fmtDelta(growth);
-  const pct = formatPercent(growthPercentFor(row, window));
+  const pct = formatPercent(growthPercentFor(row, window, refFriday));
   const primary = metric === "pct" ? pct : abs;
   const secondary = metric === "pct" ? abs : pct;
   return (
@@ -110,17 +162,25 @@ function TrackTable({
   rows,
   window,
   metric,
+  refFriday,
   sortKey,
   dir,
   onSort,
   today,
   removed,
   hasRows,
+  expandedId,
+  onToggle,
+  histories,
 }: {
+  expandedId: string | null;
+  onToggle: (row: UploadTrackRow) => void;
+  histories: Record<string, HistoryState>;
   hasRows: boolean;
   rows: UploadTrackRow[];
   window: GrowthWindow;
   metric: GrowthMetric;
+  refFriday: string | null;
   sortKey: UploadSortKey;
   dir: SortDir;
   onSort: (k: UploadSortKey) => void;
@@ -135,7 +195,7 @@ function TrackTable({
     <SortHeader key="a" label="Added" k="added" {...sh} />,
     ...(removed ? ["Removed on"] : []),
     { label: <SortHeader label="Total streams" k="streams" {...sh} align="right" />, align: "right" as const },
-    { label: <SortHeader label={`Growth (${WINDOW_LABEL[window]})`} k="growth" {...sh} align="right" />, align: "right" as const },
+    { label: <SortHeader label={`Growth (${windowLabel(window, refFriday)})`} k="growth" {...sh} align="right" />, align: "right" as const },
     { label: "Daily gains", align: "right" as const },
   ];
   const colSpan = headers.length;
@@ -144,10 +204,32 @@ function TrackTable({
       {rows.length === 0 ? (
         <EmptyState colSpan={colSpan} message={hasRows ? "No tracks match your search." : EMPTY_MESSAGE} />
       ) : (
-        rows.map((row, i) => (
-          <TableRow key={row.spotifyTrackId}>
+        rows.map((row, i) => {
+          const open = expandedId === row.spotifyTrackId;
+          const panelId = `track-history-${row.spotifyTrackId}`;
+          return (
+          <Fragment key={row.spotifyTrackId}>
+          <TableRow
+            className="cursor-pointer"
+            onClick={(e) => {
+              if ((e.target as HTMLElement).closest("a, button:not([data-row-toggle])")) return;
+              onToggle(row);
+            }}
+          >
             <TableCell align="right" className="font-mono">
-              {i + 1}
+              <div className="flex items-center justify-end gap-1">
+                <button
+                  type="button"
+                  data-row-toggle
+                  aria-expanded={open}
+                  aria-controls={open ? panelId : undefined}
+                  aria-label={`${open ? "Hide" : "Show"} stream history for ${row.name}`}
+                  className="rounded p-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)]"
+                >
+                  <ChevronRight className={["h-3.5 w-3.5 transition-transform", open ? "rotate-90" : ""].join(" ")} aria-hidden />
+                </button>
+                <span>{i + 1}</span>
+              </div>
             </TableCell>
             <TableCell>
               {row.imageUrl ? (
@@ -167,7 +249,15 @@ function TrackTable({
                   >
                     {row.name}
                   </a>
-                  {!removed && isNewlyAdded(row.addedDate, today) ? (
+                  {!removed && isReleasedSince(row.releaseDate, refFriday) ? (
+                    <span
+                      className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold"
+                      style={{ background: "var(--sb-accent)", color: "var(--sb-accent-text,#000)" }}
+                      title={`Released on or after ${formatFridayLabel(refFriday)}`}
+                    >
+                      Released this week
+                    </span>
+                  ) : !removed && isNewlyAdded(row.addedDate, today) ? (
                     <span
                       className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold"
                       style={{ background: "var(--sb-accent)", color: "var(--sb-accent-text,#000)" }}
@@ -187,7 +277,7 @@ function TrackTable({
               {row.latestPlaycount === null ? <span style={{ color: "var(--sb-muted)" }}>-</span> : formatInt(row.latestPlaycount)}
             </TableCell>
             <TableCell align="right" className="whitespace-nowrap font-mono">
-              <GrowthCell row={row} window={window} metric={metric} />
+              <GrowthCell row={row} window={window} metric={metric} refFriday={refFriday} />
             </TableCell>
             <TableCell align="right">
               <div className="flex justify-end">
@@ -195,7 +285,18 @@ function TrackTable({
               </div>
             </TableCell>
           </TableRow>
-        ))
+          {open ? (
+            <tr id={panelId}>
+              <td colSpan={colSpan} className="px-3 pb-4 pt-2" style={{ background: "var(--sb-row-hover)" }}>
+                <div className="max-w-full min-w-0">
+                  <TrackHistoryPanel state={histories[row.spotifyTrackId]} latestPlaycount={row.latestPlaycount} />
+                </div>
+              </td>
+            </tr>
+          ) : null}
+          </Fragment>
+          );
+        })
       )}
     </GlassTable>
   );
@@ -218,6 +319,32 @@ export function UploadTracksClient({
   const [dir, setDir] = useState<SortDir>("desc");
   const [query, setQuery] = useState("");
   const [showRemoved, setShowRemoved] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [histories, setHistories] = useState<Record<string, HistoryState>>({});
+
+  const onToggle = useCallback(
+    (row: UploadTrackRow) => {
+      const id = row.spotifyTrackId;
+      setExpandedId((cur) => (cur === id ? null : id));
+      if (histories[id]?.status === "ready" || histories[id]?.status === "loading") return;
+      setHistories((h) => ({ ...h, [id]: { status: "loading" } }));
+      fetchTrackHistory(row, today)
+        .then((history) => setHistories((h) => ({ ...h, [id]: { status: "ready", history } })))
+        .catch((err: unknown) =>
+          setHistories((h) => ({ ...h, [id]: { status: "error", message: err instanceof Error ? err.message : "unknown error" } })),
+        );
+    },
+    [histories, today],
+  );
+
+  useEffect(() => {
+    if (expandedId === null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setExpandedId(null);
+    };
+    globalThis.addEventListener("keydown", onKey);
+    return () => globalThis.removeEventListener("keydown", onKey);
+  }, [expandedId]);
 
   function syncUrl(nextWindow: GrowthWindow, nextMetric: GrowthMetric) {
     try {
@@ -239,14 +366,15 @@ export function UploadTracksClient({
   }
 
   const { current, removed } = useMemo(() => splitRemoved(rows), [rows]);
-  const summary = useMemo(() => summarize(current, window), [current, window]);
+  const refFriday = useMemo(() => referenceFriday(latestSnapshotDateOf(rows)), [rows]);
+  const summary = useMemo(() => summarize(current, window, refFriday), [current, window, refFriday]);
   const sortedCurrent = useMemo(
-    () => sortRows(filterRows(current, query), sortKey, dir, window, metric),
-    [current, query, sortKey, dir, window, metric],
+    () => sortRows(filterRows(current, query), sortKey, dir, window, metric, refFriday),
+    [current, query, sortKey, dir, window, metric, refFriday],
   );
   const sortedRemoved = useMemo(
-    () => sortRows(filterRows(removed, query), sortKey, dir, window, metric),
-    [removed, query, sortKey, dir, window, metric],
+    () => sortRows(filterRows(removed, query), sortKey, dir, window, metric, refFriday),
+    [removed, query, sortKey, dir, window, metric, refFriday],
   );
 
   const top = summary.topGainer;
@@ -257,7 +385,7 @@ export function UploadTracksClient({
         <MetricTile label="Tracks in playlist" value={formatInt(summary.trackCount)} />
         <MetricTile label="Total streams" value={formatInt(summary.totalStreams)} />
         <MetricTile
-          label={`Streams gained (${WINDOW_LABEL[window]})`}
+          label={`Streams gained (${windowLabel(window, refFriday)})`}
           value={summary.windowGrowth === null ? "-" : fmtDelta(summary.windowGrowth)}
           tone={summary.windowGrowth !== null && summary.windowGrowth > 0 ? "positive" : null}
         />
@@ -276,12 +404,13 @@ export function UploadTracksClient({
               key={w}
               segmented
               selected={window === w}
+              title={w === "fri" ? `Growth since ${formatFridayLabel(refFriday)}; new releases start from 0` : undefined}
               onClick={() => {
                 setWindow(w);
                 syncUrl(w, metric);
               }}
             >
-              {WINDOW_LABEL[w]}
+              {windowLabel(w, refFriday)}
             </Chip>
           ))}
         </ChipGroup>
@@ -316,12 +445,16 @@ export function UploadTracksClient({
         rows={sortedCurrent}
         window={window}
         metric={metric}
+        refFriday={refFriday}
         sortKey={sortKey}
         dir={dir}
         onSort={onSort}
         today={today}
         removed={false}
         hasRows={rows.length > 0}
+        expandedId={expandedId}
+        onToggle={onToggle}
+        histories={histories}
       />
 
       {removed.length > 0 ? (
@@ -344,12 +477,16 @@ export function UploadTracksClient({
                 rows={sortedRemoved}
                 window={window}
                 metric={metric}
+                refFriday={refFriday}
                 sortKey={sortKey}
                 dir={dir}
                 onSort={onSort}
                 today={today}
                 removed
                 hasRows
+                expandedId={expandedId}
+                onToggle={onToggle}
+                histories={histories}
               />
             </>
           ) : null}

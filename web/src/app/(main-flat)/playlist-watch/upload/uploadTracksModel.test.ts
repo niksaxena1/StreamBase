@@ -9,7 +9,12 @@ import {
   isNewlyAdded,
   normalizeRow,
   parseMetric,
+  fridayBaseline,
+  formatFridayLabel,
+  isReleasedSince,
+  latestSnapshotDateOf,
   parseWindow,
+  referenceFriday,
   sortRows,
   splitRemoved,
   summarize,
@@ -23,6 +28,7 @@ function row(over: Partial<UploadTrackRow> & { name: string }): UploadTrackRow {
     imageUrl: null,
     addedDate: "2026-10-01",
     removedDate: null,
+    releaseDate: "2020-01-01",
     latestDate: "2026-11-04",
     latestPlaycount: 1000,
     playcount1d: 990,
@@ -153,9 +159,90 @@ describe("summarize / params", () => {
   });
 
   it("parses params with defaults", () => {
-    expect(parseWindow("bogus")).toBe("7d");
+    expect(parseWindow("bogus")).toBe("fri");
+    expect(parseWindow(undefined)).toBe("fri");
+    expect(parseWindow("fri")).toBe("fri");
+    expect(parseWindow("7d")).toBe("7d");
     expect(parseWindow("28d")).toBe("28d");
     expect(parseMetric("pct")).toBe("pct");
     expect(parseMetric(undefined)).toBe("abs");
+  });
+});
+
+describe("Since Fri window", () => {
+  it("picks the most recent Friday strictly before the latest snapshot", () => {
+    expect(referenceFriday("2026-11-04")).toBe("2026-10-30"); // Wed
+    expect(referenceFriday("2026-11-01")).toBe("2026-10-30"); // Sun
+    expect(referenceFriday("2026-10-31")).toBe("2026-10-30"); // Sat -> yesterday
+    expect(referenceFriday("2026-10-30")).toBe("2026-10-23"); // Fri -> a week earlier
+    expect(referenceFriday("2026-10-29")).toBe("2026-10-23"); // Thu
+    expect(referenceFriday(null)).toBeNull();
+    expect(referenceFriday("nope")).toBeNull();
+  });
+  it("labels the reference Friday", () => {
+    expect(formatFridayLabel("2026-10-30")).toBe("Fri 30 Oct");
+    expect(formatFridayLabel(null)).toBe("Fri");
+  });
+  it("finds the latest snapshot date across rows", () => {
+    expect(
+      latestSnapshotDateOf([
+        row({ name: "a", latestDate: "2026-11-02" }),
+        row({ name: "b", latestDate: "2026-11-04" }),
+        row({ name: "c", latestDate: null }),
+      ]),
+    ).toBe("2026-11-04");
+    expect(latestSnapshotDateOf([])).toBeNull();
+  });
+  it("treats only full dates on/after the Friday as new releases", () => {
+    expect(isReleasedSince("2026-10-30", "2026-10-30")).toBe(true);
+    expect(isReleasedSince("2026-11-03", "2026-10-30")).toBe(true);
+    expect(isReleasedSince("2026-10-29", "2026-10-30")).toBe(false);
+    expect(isReleasedSince("2026", "2026-10-30")).toBe(false);
+    expect(isReleasedSince("2026-11", "2026-10-30")).toBe(false);
+    expect(isReleasedSince(null, "2026-10-30")).toBe(false);
+  });
+  const hist: [string, number][] = [
+    ["2026-10-28", 100],
+    ["2026-10-29", 120],
+    ["2026-11-01", 200],
+    ["2026-11-04", 260],
+  ];
+  it("uses 0 for new releases, else the latest point on/before the Friday, else the first after", () => {
+    const ref = "2026-10-30";
+    expect(fridayBaseline(row({ name: "n", releaseDate: "2026-10-30", history: hist }), ref)).toBe(0);
+    expect(fridayBaseline(row({ name: "o", history: hist }), ref)).toBe(120);
+    expect(fridayBaseline(row({ name: "o", history: [["2026-10-30", 150], ["2026-11-01", 200]] }), ref)).toBe(150);
+    expect(fridayBaseline(row({ name: "late", history: [["2026-11-01", 200], ["2026-11-04", 260]] }), ref)).toBe(200);
+    expect(fridayBaseline(row({ name: "none", history: [] }), ref)).toBeNull();
+    expect(fridayBaseline(row({ name: "x", history: hist }), null)).toBeNull();
+  });
+  it("computes growth, drops % on a zero baseline, and ranks them after % rows in % mode", () => {
+    const ref = "2026-10-30";
+    const fresh = row({ name: "fresh", releaseDate: "2026-10-31", latestPlaycount: 5000, history: [["2026-11-04", 5000]] });
+    const old = row({ name: "old", latestPlaycount: 260, history: hist });
+    expect(growthFor(fresh, "fri", ref)).toBe(5000);
+    expect(growthPercentFor(fresh, "fri", ref)).toBeNull();
+    expect(growthFor(old, "fri", ref)).toBe(140);
+    expect(growthPercentFor(old, "fri", ref)).toBeCloseTo(116.67, 1);
+    expect(sortRows([fresh, old], "growth", "desc", "fri", "pct", ref).map((r) => r.name)).toEqual(["old", "fresh"]);
+    expect(sortRows([old, fresh], "growth", "desc", "fri", "abs", ref).map((r) => r.name)).toEqual(["fresh", "old"]);
+  });
+  it("ranks several zero-baseline rows by absolute growth in % mode", () => {
+    const ref = "2026-10-30";
+    const a = row({ name: "a", releaseDate: "2026-10-31", latestPlaycount: 300, history: [] });
+    const b = row({ name: "b", releaseDate: "2026-11-01", latestPlaycount: 900, history: [] });
+    expect(sortRows([a, b], "growth", "desc", "fri", "pct", ref).map((r) => r.name)).toEqual(["b", "a"]);
+  });
+  it("feeds the summary tiles", () => {
+    const ref = "2026-10-30";
+    const fresh = row({ name: "fresh", releaseDate: "2026-10-31", latestPlaycount: 5000, history: [] });
+    const old = row({ name: "old", latestPlaycount: 260, history: hist });
+    const s = summarize([fresh, old], "fri", ref);
+    expect(s.windowGrowth).toBe(5140);
+    expect(s.topGainer?.row.name).toBe("fresh");
+  });
+  it("normalizeRow keeps the raw release date", () => {
+    expect(normalizeRow({ spotify_track_id: "t", release_date: "2026-10" }).releaseDate).toBe("2026-10");
+    expect(normalizeRow({ spotify_track_id: "t" }).releaseDate).toBeNull();
   });
 });
