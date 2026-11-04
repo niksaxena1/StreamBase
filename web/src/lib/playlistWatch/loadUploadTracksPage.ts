@@ -1,5 +1,11 @@
 import { redirect } from "next/navigation";
 
+import {
+  normalizeCandidates,
+  normalizeChartPositions,
+  type ChartCandidate,
+  type ChartPositionRow,
+} from "@/app/(main-flat)/playlist-watch/upload/chartLinkModel";
 import { normalizeRows, type UploadTrackRow } from "@/app/(main-flat)/playlist-watch/upload/uploadTracksModel";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
@@ -23,6 +29,10 @@ export async function loadUploadTracksPage(): Promise<{
   rows: UploadTrackRow[];
   /** Latest snapshot date across all tracks (yyyy-mm-dd), or null when nothing is collected yet. */
   latestSnapshotDate: string | null;
+  /** Beatport chart positions of upload tracks (empty when the chart RPCs fail). */
+  chartPositions: ChartPositionRow[];
+  /** Chart tracks not in the playlist (empty when the chart RPCs fail). */
+  candidates: ChartCandidate[];
 }> {
   const sb = await supabaseServer();
   const { data: userData } = await sb.auth.getUser();
@@ -32,7 +42,22 @@ export async function loadUploadTracksPage(): Promise<{
   if (!canAccess) redirect("/");
 
   const pw = supabaseService().schema("playlist_watch");
-  const [metaResult, rowsResult] = await Promise.all([
+  /** Chart data is additive: a failure is logged and the page renders without it. */
+  const chartRpc = async (fn: "track_watch_chart_positions" | "track_watch_chart_candidates"): Promise<unknown> => {
+    try {
+      const res = await pw.rpc(fn, { p_slug: UPLOAD_SLUG });
+      if (res.error) {
+        console.error(`[upload-tracks] ${fn} failed:`, res.error.message);
+        return [];
+      }
+      return res.data;
+    } catch (err) {
+      console.error(`[upload-tracks] ${fn} threw:`, err);
+      return [];
+    }
+  };
+
+  const [metaResult, rowsResult, chartPositionsRaw, candidatesRaw] = await Promise.all([
     pw
       .from("track_watch_playlists")
       .select(
@@ -41,6 +66,8 @@ export async function loadUploadTracksPage(): Promise<{
       .eq("slug", UPLOAD_SLUG)
       .maybeSingle(),
     pw.rpc("track_watch_rows", { p_slug: UPLOAD_SLUG }),
+    chartRpc("track_watch_chart_positions"),
+    chartRpc("track_watch_chart_candidates"),
   ]);
   if (metaResult.error) throw new Error(metaResult.error.message);
   if (rowsResult.error) throw new Error(rowsResult.error.message);
@@ -77,5 +104,7 @@ export async function loadUploadTracksPage(): Promise<{
       : null,
     rows,
     latestSnapshotDate,
+    chartPositions: normalizeChartPositions(chartPositionsRaw),
+    candidates: normalizeCandidates(candidatesRaw),
   };
 }

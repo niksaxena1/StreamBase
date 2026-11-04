@@ -22,7 +22,7 @@ export default async function UploadTracksPage({
   searchParams?: Promise<SearchParams>;
 }) {
   const sp = (await searchParams) ?? {};
-  const { playlist, rows, latestSnapshotDate } = await loadUploadTracksPage();
+  const { playlist, rows, latestSnapshotDate, chartPositions, candidates } = await loadUploadTracksPage();
   const current = rows.filter((r) => !r.removedDate).length;
   const trackCount = rows.length > 0 ? current : (playlist?.trackCount ?? 0);
 
@@ -61,6 +61,8 @@ export default async function UploadTracksPage({
       />
       <UploadTracksClient
         rows={rows}
+        chartPositions={chartPositions}
+        candidates={candidates}
         today={new Date().toISOString().slice(0, 10)}
         initialWindow={parseWindow(sp.window)}
         initialMetric={parseMetric(sp.metric)}

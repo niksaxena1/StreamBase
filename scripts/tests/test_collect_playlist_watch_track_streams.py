@@ -1,5 +1,7 @@
 import unittest
 
+import scripts.collect_playlist_watch_track_streams as c
+
 from scripts.collect_playlist_watch_track_streams import (
     normalize_items,
     parse_playcount,
@@ -72,3 +74,32 @@ class TrackStreamsCollectorTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_norm_title_strips_mix_and_feat():
+    assert c.norm_title("DANGER DANGER (feat. Skepta)") == "danger danger"
+    assert c.norm_title("Circles Thru My Mind - Original Mix") == "circles thru my mind"
+    assert c.norm_title("3:30AM (ft. Lzee) ") == "3 30am"
+
+
+def _cand(tid, name, artists, isrc):
+    return {"id": tid, "name": name, "artists": [{"name": a} for a in artists], "external_ids": {"isrc": isrc}}
+
+
+def test_pick_name_match_original_skips_remix_and_prefers_registrant():
+    cands = [
+        _cand("r1", "Takes Me - Someone Remix", ["Sapian"], "USA2P2676600"),
+        _cand("x1", "Takes Me", ["Sapian"], "GBXXX2600001"),
+        _cand("o1", "Takes Me", ["Sapian"], "USA2P2676605"),
+        _cand("w1", "Takes Me", ["Other Artist"], "USA2P2676606"),
+    ]
+    assert c.pick_name_match(cands, "Takes Me", "Extended Mix", "Sapian", "USA2P2678733")["id"] == "o1"
+
+
+def test_pick_name_match_remix_requires_remix_name():
+    cands = [
+        _cand("o1", "The Sign", ["Ace of Base"], "SEAAA0000001"),
+        _cand("t1", "The Sign - Tiesto Remix", ["Ace of Base", "Tiesto"], "SEAAA0000002"),
+    ]
+    assert c.pick_name_match(cands, "The Sign", "Tiesto Remix", "Ace of Base", "SEAAA0000009")["id"] == "t1"
+    assert c.pick_name_match(cands[:1], "The Sign", "Tiesto Remix", "Ace of Base", "X") is None

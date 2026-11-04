@@ -112,3 +112,12 @@ Daily Spotify play counts for every track of selected playlists, first the owner
 - If every play-count call fails, Spotify probably rotated the persisted-query hash: copy the current `getTrack` `sha256Hash` from open.spotify.com network traffic into the repo variable `PLAYCOUNT_QUERY_HASH`.
 - Removed tracks keep being collected for `removed_retention_days` and show in the page's Removed section.
 - Add another playlist: insert a `track_watch_playlists` row (id + slug); the page currently reads slug `upload`.
+
+### Beatport link (upload candidates)
+
+The upload page also reads the Beatport chart tracker (`charts` schema) by ISRC, read-only, to help pick what to post on YouTube (migrations `20261104190543_playlist_watch_upload_beatport_link.sql`, `20261104192216_playlist_watch_upload_beatport_spotify_match.sql`).
+
+- `playlist_watch.track_watch_chart_positions(p_slug)`: Beatport rank today, rank on the reference Friday, best rank and days on chart for upload tracks (current and removed), last 60 days.
+- `playlist_watch.track_watch_chart_candidates(p_slug)`: tracks on each active chart's latest snapshot that are not in the playlist, with Spotify play counts and 60-day history.
+- `playlist_watch.track_watch_isrc_map`: Beatport ISRC -> Spotify track id. Beatport usually lists the extended mix under its own ISRC, so the collector tries Spotify search `isrc:` first (`status = ok`), then title + first artist (`name_match`: same base title, a shared artist, same remix; same ISRC registrant+year wins ties). Misses (`not_found`/`error`) are re-checked after 7 days. Both RPCs match upload tracks by ISRC or through this map.
+- Chart tracks' play counts are collected by the same daily job (step after the playlist; `--skip-charts` turns it off) into the same `track_watch_tracks` / `track_watch_stream_snapshots` tables.

@@ -1,6 +1,6 @@
 export type GrowthWindow = "fri" | "1d" | "7d" | "28d" | "added";
 export type GrowthMetric = "abs" | "pct";
-export type UploadSortKey = "track" | "streams" | "growth" | "added";
+export type UploadSortKey = "track" | "streams" | "growth" | "added" | "beatport";
 export type SortDir = "asc" | "desc";
 
 export const GROWTH_WINDOWS: GrowthWindow[] = ["fri", "1d", "7d", "28d", "added"];
@@ -197,12 +197,15 @@ export function sortRows(
   window: GrowthWindow,
   metric: GrowthMetric,
   refFriday: string | null = null,
+  /** Current Beatport chart rank for a row (null = not charted); needed for the "beatport" key. */
+  rankOf: (row: UploadTrackRow) => number | null = () => null,
 ): UploadTrackRow[] {
   const mult = dir === "asc" ? 1 : -1;
   return [...rows].sort((a, b) => {
     let c = 0;
     if (key === "track") c = mult * a.name.localeCompare(b.name);
     else if (key === "streams") c = compareNullable(a.latestPlaycount, b.latestPlaycount, dir);
+    else if (key === "beatport") c = compareNullable(rankOf(a), rankOf(b), dir);
     else if (key === "growth") {
       const get = (r: UploadTrackRow) =>
         metric === "pct" ? growthPercentFor(r, window, refFriday) : growthFor(r, window, refFriday);

@@ -7,6 +7,10 @@ Charts is a third, fully separate data universe: schema `charts`, its own workfl
 (`/charts`). It never joins `public` or `competitor` analytics tables and does not depend on the
 own/competitor dataset switch (the page shows the same content in both modes).
 
+One read-only consumer outside `/charts`: Playlist Watch's upload page reads `charts.entries` /
+`charts.tracks` by ISRC (functions in schema `playlist_watch`, see `docs/PLAYLIST-WATCH-OPERATIONS.md`,
+"Beatport link"). Nothing is written to `charts` and charts still never feeds `public`/`competitor`.
+
 ## Source and policy
 
 - `GET` the chart page; the track list is in the `<script id="__NEXT_DATA__">` JSON at

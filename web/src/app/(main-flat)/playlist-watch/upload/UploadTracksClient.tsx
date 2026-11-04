@@ -1,12 +1,26 @@
 "use client";
 
-import { ChevronDown, ChevronRight, ChevronUp, Search } from "lucide-react";
+import { ChevronDown, ChevronRight, ChevronUp, ExternalLink, Search } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 
 import { Chip, ChipGroup } from "@/components/ui/Chip";
 import { EmptyState, GlassTable, TableCell, TableRow } from "@/components/ui/GlassTable";
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { formatInt } from "@/lib/format";
+import {
+  candidateKey,
+  candidateToRow,
+  cellFor,
+  cellRank,
+  cellsByTrack,
+  dedupeCandidates,
+  filterCandidates,
+  sortCandidates,
+  type BeatportCell,
+  type CandidateSortKey,
+  type ChartCandidate,
+  type ChartPositionRow,
+} from "./chartLinkModel";
 import { MetricTile } from "../PlaylistWatchVisuals";
 import { fmtDelta } from "../playlistWatchClientModel";
 import {
@@ -129,6 +143,30 @@ function GrowthCell({
   );
 }
 
+function BeatportCellView({ cell }: { cell: BeatportCell | undefined }) {
+  if (!cell) return <span style={{ color: "var(--sb-muted)" }}>-</span>;
+  const best = cell.bestPosition !== null ? `best #${cell.bestPosition}` : null;
+  const title = [cell.chartName, cell.position === null ? "not on the chart today" : null, best].filter(Boolean).join(" · ");
+  const m = cell.movement;
+  return (
+    <span className="inline-flex items-baseline gap-1 whitespace-nowrap font-mono" title={title}>
+      {cell.position === null ? (
+        <span style={{ color: "var(--sb-muted)" }}>off</span>
+      ) : (
+        <span className="font-semibold">#{cell.position}</span>
+      )}
+      {m.kind === "up" ? <span className="sb-positive text-[11px]">▲{m.delta}</span> : null}
+      {m.kind === "down" ? <span className="text-[11px] text-red-600 dark:text-red-400">▼{m.delta}</span> : null}
+      {m.kind === "new" ? <span className="sb-positive text-[11px]">new</span> : null}
+      {m.kind === "same" ? (
+        <span className="text-[11px]" style={{ color: "var(--sb-muted)" }}>
+          =
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 function SortHeader({
   label,
   k,
@@ -172,7 +210,9 @@ function TrackTable({
   expandedId,
   onToggle,
   histories,
+  cells,
 }: {
+  cells: Map<string, BeatportCell>;
   expandedId: string | null;
   onToggle: (row: UploadTrackRow) => void;
   histories: Record<string, HistoryState>;
@@ -194,6 +234,7 @@ function TrackTable({
     <SortHeader key="t" label="Track" k="track" {...sh} />,
     <SortHeader key="a" label="Added" k="added" {...sh} />,
     ...(removed ? ["Removed on"] : []),
+    <SortHeader key="b" label="Beatport" k="beatport" {...sh} />,
     { label: <SortHeader label="Total streams" k="streams" {...sh} align="right" />, align: "right" as const },
     { label: <SortHeader label={`Growth (${windowLabel(window, refFriday)})`} k="growth" {...sh} align="right" />, align: "right" as const },
     { label: "Daily gains", align: "right" as const },
@@ -273,6 +314,9 @@ function TrackTable({
             </TableCell>
             <TableCell className="whitespace-nowrap font-mono">{row.addedDate ?? "-"}</TableCell>
             {removed ? <TableCell className="whitespace-nowrap font-mono">{row.removedDate ?? "-"}</TableCell> : null}
+            <TableCell className="whitespace-nowrap">
+              <BeatportCellView cell={cells.get(row.spotifyTrackId)} />
+            </TableCell>
             <TableCell align="right" className="font-mono">
               {row.latestPlaycount === null ? <span style={{ color: "var(--sb-muted)" }}>-</span> : formatInt(row.latestPlaycount)}
             </TableCell>
@@ -302,13 +346,216 @@ function TrackTable({
   );
 }
 
+function SmallSort<K extends string>({
+  label,
+  k,
+  sortKey,
+  dir,
+  onSort,
+  align = "left",
+}: {
+  label: string;
+  k: K;
+  sortKey: K;
+  dir: SortDir;
+  onSort: (k: K) => void;
+  align?: "left" | "right";
+}) {
+  const active = sortKey === k;
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(k)}
+      className={["inline-flex items-center gap-1 uppercase tracking-wider", align === "right" ? "flex-row-reverse" : ""].join(" ")}
+      aria-label={`Sort by ${label}`}
+    >
+      <span>{label}</span>
+      {active ? dir === "desc" ? <ChevronDown className="h-3 w-3" aria-hidden /> : <ChevronUp className="h-3 w-3" aria-hidden /> : null}
+    </button>
+  );
+}
+
+function CandidatesTable({
+  candidates,
+  window,
+  metric,
+  refFriday,
+}: {
+  candidates: ChartCandidate[];
+  window: GrowthWindow;
+  metric: GrowthMetric;
+  refFriday: string | null;
+}) {
+  const [sortKey, setSortKey] = useState<CandidateSortKey>("rank");
+  const [dir, setDir] = useState<SortDir>("asc");
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+
+  const sorted = useMemo(
+    () => sortCandidates(candidates, sortKey, dir, window, metric, refFriday),
+    [candidates, sortKey, dir, window, metric, refFriday],
+  );
+
+  function onSort(k: CandidateSortKey) {
+    if (k === sortKey) setDir((d) => (d === "desc" ? "asc" : "desc"));
+    else {
+      setSortKey(k);
+      setDir(k === "rank" ? "asc" : "desc");
+    }
+  }
+
+  const sh = { sortKey, dir, onSort };
+  const headers = [
+    <SmallSort key="r" label="Beatport" k="rank" {...sh} />,
+    "",
+    "Track",
+    "Label",
+    "BPM / key",
+    <SmallSort key="d" label="Released" k="release" {...sh} />,
+    { label: <SmallSort label="Spotify plays" k="plays" {...sh} align="right" />, align: "right" as const },
+    { label: <SmallSort label={`Growth (${windowLabel(window, refFriday)})`} k="growth" {...sh} align="right" />, align: "right" as const },
+    "Links",
+  ];
+  const colSpan = headers.length;
+
+  return (
+    <GlassTable headers={headers} maxBodyHeightClassName="max-h-[70vh]">
+      {sorted.length === 0 ? (
+        <EmptyState colSpan={colSpan} message="No candidates match your search." />
+      ) : (
+        sorted.map((c) => {
+          const key = candidateKey(c);
+          const row = candidateToRow(c);
+          const canExpand = c.spotifyTrackId !== null;
+          const open = canExpand && expandedKey === key;
+          const panelId = `candidate-history-${key}`;
+          const state: HistoryState = {
+            status: "ready",
+            history: {
+              track_id: c.spotifyTrackId ?? key,
+              snapshots: c.history.map(([date, playcount]) => ({ date, playcount })),
+              membership: null,
+            },
+          };
+          const bpmKey = [c.bpm === null ? null : Math.round(c.bpm), c.camelot].filter((v) => v !== null && v !== "").join(" · ");
+          return (
+            <Fragment key={key}>
+              <TableRow
+                className={canExpand ? "cursor-pointer" : undefined}
+                onClick={(e) => {
+                  if (!canExpand || (e.target as HTMLElement).closest("a, button:not([data-row-toggle])")) return;
+                  setExpandedKey((cur) => (cur === key ? null : key));
+                }}
+              >
+                <TableCell className="whitespace-nowrap">
+                  <div className="flex items-center gap-1">
+                    {canExpand ? (
+                      <button
+                        type="button"
+                        data-row-toggle
+                        aria-expanded={open}
+                        aria-controls={open ? panelId : undefined}
+                        aria-label={`${open ? "Hide" : "Show"} stream history for ${c.name}`}
+                        className="rounded p-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)]"
+                      >
+                        <ChevronRight className={["h-3.5 w-3.5 transition-transform", open ? "rotate-90" : ""].join(" ")} aria-hidden />
+                      </button>
+                    ) : (
+                      <span className="inline-block w-[18px]" aria-hidden />
+                    )}
+                    <BeatportCellView cell={cellFor(c)} />
+                  </div>
+                </TableCell>
+                <TableCell>
+                  {c.imageUrl ? (
+                    <PreviewableArtwork src={c.imageUrl} alt={c.name} width={36} height={36} className="h-9 w-9 rounded-md object-cover sb-ring" />
+                  ) : (
+                    <div className="h-9 w-9 rounded-md bg-white/10 sb-ring" aria-hidden />
+                  )}
+                </TableCell>
+                <TableCell>
+                  <div className="min-w-[200px] max-w-[360px]">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-sm font-semibold">
+                        {c.name}
+                        {c.mixName ? (
+                          <span className="ml-1 font-normal" style={{ color: "var(--sb-muted)" }}>
+                            ({c.mixName})
+                          </span>
+                        ) : null}
+                      </span>
+                      {c.removedFromUploadDate ? (
+                        <span
+                          className="shrink-0 rounded bg-black/10 px-1.5 py-0.5 text-[10px] font-semibold dark:bg-white/15"
+                          title="You had this track in the playlist and removed it"
+                        >
+                          Was in upload, removed {c.removedFromUploadDate}
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="truncate text-[11px]" style={{ color: "var(--sb-muted)" }}>
+                      {c.artists || "-"}
+                    </div>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <div className="max-w-[180px] truncate">{c.labelName ?? "-"}</div>
+                </TableCell>
+                <TableCell className="whitespace-nowrap font-mono">{bpmKey || "-"}</TableCell>
+                <TableCell className="whitespace-nowrap font-mono">{c.releaseDate ?? "-"}</TableCell>
+                <TableCell align="right" className="font-mono">
+                  {c.latestPlaycount === null ? <span style={{ color: "var(--sb-muted)" }}>-</span> : formatInt(c.latestPlaycount)}
+                </TableCell>
+                <TableCell align="right" className="whitespace-nowrap font-mono">
+                  <GrowthCell row={row} window={window} metric={metric} refFriday={refFriday} />
+                </TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-3 whitespace-nowrap">
+                    {c.beatportUrl ? (
+                      <a href={c.beatportUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:underline">
+                        Beatport <ExternalLink className="h-3 w-3" aria-hidden />
+                      </a>
+                    ) : null}
+                    {c.spotifyTrackId ? (
+                      <a
+                        href={`https://open.spotify.com/track/${c.spotifyTrackId}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 hover:underline"
+                      >
+                        Spotify <ExternalLink className="h-3 w-3" aria-hidden />
+                      </a>
+                    ) : null}
+                  </div>
+                </TableCell>
+              </TableRow>
+              {open ? (
+                <tr id={panelId}>
+                  <td colSpan={colSpan} className="px-3 pb-4 pt-2" style={{ background: "var(--sb-row-hover)" }}>
+                    <div className="max-w-full min-w-0">
+                      <TrackHistoryPanel state={state} latestPlaycount={c.latestPlaycount} />
+                    </div>
+                  </td>
+                </tr>
+              ) : null}
+            </Fragment>
+          );
+        })
+      )}
+    </GlassTable>
+  );
+}
+
 export function UploadTracksClient({
   rows,
+  chartPositions,
+  candidates,
   today,
   initialWindow,
   initialMetric,
 }: {
   rows: UploadTrackRow[];
+  chartPositions: ChartPositionRow[];
+  candidates: ChartCandidate[];
   today: string;
   initialWindow: GrowthWindow;
   initialMetric: GrowthMetric;
@@ -361,20 +608,24 @@ export function UploadTracksClient({
     if (k === sortKey) setDir((d) => (d === "desc" ? "asc" : "desc"));
     else {
       setSortKey(k);
-      setDir(k === "track" ? "asc" : "desc");
+      setDir(k === "track" || k === "beatport" ? "asc" : "desc");
     }
   }
 
   const { current, removed } = useMemo(() => splitRemoved(rows), [rows]);
   const refFriday = useMemo(() => referenceFriday(latestSnapshotDateOf(rows)), [rows]);
+  const cells = useMemo(() => cellsByTrack(chartPositions), [chartPositions]);
+  const rankOf = useCallback((r: UploadTrackRow) => cellRank(cells.get(r.spotifyTrackId)), [cells]);
+  const allCandidates = useMemo(() => dedupeCandidates(candidates), [candidates]);
+  const filteredCandidates = useMemo(() => filterCandidates(allCandidates, query), [allCandidates, query]);
   const summary = useMemo(() => summarize(current, window, refFriday), [current, window, refFriday]);
   const sortedCurrent = useMemo(
-    () => sortRows(filterRows(current, query), sortKey, dir, window, metric, refFriday),
-    [current, query, sortKey, dir, window, metric, refFriday],
+    () => sortRows(filterRows(current, query), sortKey, dir, window, metric, refFriday, rankOf),
+    [current, query, sortKey, dir, window, metric, refFriday, rankOf],
   );
   const sortedRemoved = useMemo(
-    () => sortRows(filterRows(removed, query), sortKey, dir, window, metric, refFriday),
-    [removed, query, sortKey, dir, window, metric, refFriday],
+    () => sortRows(filterRows(removed, query), sortKey, dir, window, metric, refFriday, rankOf),
+    [removed, query, sortKey, dir, window, metric, refFriday, rankOf],
   );
 
   const top = summary.topGainer;
@@ -455,7 +706,22 @@ export function UploadTracksClient({
         expandedId={expandedId}
         onToggle={onToggle}
         histories={histories}
+        cells={cells}
       />
+
+      {allCandidates.length > 0 ? (
+        <section className="space-y-2">
+          <div>
+            <h2 className="text-sm font-semibold">
+              Upload candidates <span className="font-mono opacity-70">{formatInt(allCandidates.length)}</span>
+            </h2>
+            <p className="text-xs" style={{ color: "var(--sb-muted)" }}>
+              Beatport chart tracks not in the playlist.
+            </p>
+          </div>
+          <CandidatesTable candidates={filteredCandidates} window={window} metric={metric} refFriday={refFriday} />
+        </section>
+      ) : null}
 
       {removed.length > 0 ? (
         <section className="space-y-2">
@@ -487,6 +753,7 @@ export function UploadTracksClient({
                 expandedId={expandedId}
                 onToggle={onToggle}
                 histories={histories}
+                cells={cells}
               />
             </>
           ) : null}

@@ -11,6 +11,8 @@ Per active row of playlist_watch.track_watch_playlists:
      still inside removed_retention_days, from Spotify's web-player GraphQL endpoint using the anonymous
      token embedded in the public playlist embed page. No API keys or paid quota.
   4. Upsert one snapshot per (track, run date).
+  5. For "upload": the same for Beatport chart tracks not in the playlist (upload candidates), mapped
+     ISRC -> Spotify id via Spotify search (playlist_watch.track_watch_isrc_map; misses re-checked weekly).
 
 Usage:
     SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... SPOTIFY_CLIENT_ID=... SPOTIFY_CLIENT_SECRET=... \
@@ -179,6 +181,161 @@ def tracks_to_collect(current: List[dict], existing: List[dict], removed_today: 
 
 # ---------------------------------------------------------------- main
 
+NOT_FOUND_RECHECK_DAYS = 7
+
+
+def spotify_track_for_isrc(isrc: str, token: str) -> Optional[dict]:
+    data = spotify_get("https://api.spotify.com/v1/search", token, {"q": f"isrc:{isrc}", "type": "track", "limit": 1})
+    items = ((data.get("tracks") or {}).get("items")) or []
+    return items[0] if items else None
+
+
+_PAREN_RE = re.compile(r"[\(\[][^\)\]]*[\)\]]")
+_FEAT_RE = re.compile(r"\s+(feat\.?|ft\.?|featuring|with)\s+.*$", re.I)
+
+
+def norm_title(value: str) -> str:
+    """Title without bracketed parts, feat. credits, ' - Extended Mix' suffixes and punctuation."""
+    t = _PAREN_RE.sub(" ", value or "")
+    t = t.split(" - ")[0]
+    t = _FEAT_RE.sub("", t)
+    return re.sub(r"[^0-9a-z]+", " ", t.lower()).strip()
+
+
+def norm_artist(value: str) -> str:
+    return re.sub(r"[^0-9a-z]+", " ", (value or "").lower()).strip()
+
+
+def is_remix_mix(mix_name: Optional[str]) -> bool:
+    m = (mix_name or "").lower()
+    return bool(m) and not re.search(r"extended|original|radio|club mix|^mix$", m)
+
+
+def pick_name_match(candidates: List[dict], name: str, mix_name: Optional[str], artists: str, isrc: str) -> Optional[dict]:
+    """Best Spotify search hit for the same song: same base title, a shared artist, same remix.
+
+    Beatport often lists the extended mix under its own ISRC, so this finds the Spotify release of the
+    same song. A remix must carry the remix name; an original/extended mix must not be a remix. Same
+    ISRC registrant+year (first 7 chars) wins ties.
+    """
+    want_title = norm_title(name)
+    want_artists = {norm_artist(a) for a in (artists or "").split(",") if norm_artist(a)}
+    remix_words = set(norm_artist(mix_name).split()) if is_remix_mix(mix_name) else set()
+    best, best_score = None, -1
+    for c in candidates:
+        cname = (c or {}).get("name") or ""
+        if not c or not c.get("id") or norm_title(cname) != want_title:
+            continue
+        have = {norm_artist(a.get("name", "")) for a in c.get("artists") or []}
+        if not (want_artists & have):
+            continue
+        cwords = set(norm_artist(cname).split())
+        if remix_words and not remix_words <= cwords:
+            continue
+        if not remix_words and "remix" in cwords:
+            continue
+        cand_isrc = str((c.get("external_ids") or {}).get("isrc") or "").upper()
+        score = 1 if isrc and cand_isrc[:7] == isrc[:7] else 0
+        if score > best_score:
+            best, best_score = c, score
+    return best
+
+
+def spotify_track_by_name(name: str, mix_name: Optional[str], artists: str, isrc: str, token: str) -> Optional[dict]:
+    first_artist = (artists or "").split(",")[0].strip()
+    query = f"{name} {mix_name} {first_artist}" if is_remix_mix(mix_name) else f"{name} {first_artist}"
+    data = spotify_get("https://api.spotify.com/v1/search", token, {"q": query, "type": "track", "limit": 10})
+    items = ((data.get("tracks") or {}).get("items")) or []
+    return pick_name_match(items, name, mix_name, artists, isrc)
+
+
+def track_row_from_api(track: dict, isrc: str) -> dict:
+    album = track.get("album") or {}
+    images = sorted((i for i in album.get("images") or [] if i.get("url")), key=lambda i: i.get("width") or 0)
+    image = next((i["url"] for i in images if (i.get("width") or 0) >= 64), images[-1]["url"] if images else None)
+    return {
+        "spotify_track_id": track["id"],
+        "isrc": isrc,
+        "name": track.get("name"),
+        "artists": ", ".join(a.get("name") for a in track.get("artists") or [] if a.get("name")),
+        "album_name": album.get("name"),
+        "image_url": image,
+        "release_date": album.get("release_date"),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def collect_chart_candidates(pg: Postgrest, api_token: str, query_hash: str, slug: str, run_date: str,
+                             dry_run: bool) -> Tuple[int, int]:
+    """Play counts for Beatport chart tracks not in the playlist (upload candidates). Returns (attempted, failed)."""
+    rows = pg.rpc("track_watch_chart_candidates", {"p_slug": slug}) or []
+    isrcs = sorted({str(r["isrc"]).upper() for r in rows if r.get("isrc")})
+    if not isrcs:
+        print("[charts] no chart candidates")
+        return 0, 0
+    known = {}
+    for batch in chunks(isrcs, 100):
+        for m in pg.select("track_watch_isrc_map", "isrc,spotify_track_id,status,checked_at", f"isrc={in_filter(batch)}"):
+            known[m["isrc"]] = m
+    recheck_before = (datetime.now(timezone.utc) - timedelta(days=NOT_FOUND_RECHECK_DAYS)).isoformat()
+    by_isrc = {str(r["isrc"]).upper(): r for r in rows if r.get("isrc")}
+    to_map = [i for i in isrcs if i not in known
+              or (not known[i].get("spotify_track_id") and str(known[i].get("checked_at")) < recheck_before)]
+    map_rows, track_rows = [], []
+    for isrc in to_map:
+        try:
+            track, status = spotify_track_for_isrc(isrc, api_token), "ok"
+            if not track:
+                r = by_isrc[isrc]
+                track, status = spotify_track_by_name(r.get("name") or "", r.get("mix_name"), r.get("artists") or "", isrc, api_token), "name_match"
+        except Exception as exc:  # noqa: BLE001
+            print(f"[charts] ISRC search failed for {isrc}: {exc}")
+            map_rows.append({"isrc": isrc, "spotify_track_id": None, "status": "error",
+                             "checked_at": datetime.now(timezone.utc).isoformat()})
+            continue
+        now = datetime.now(timezone.utc).isoformat()
+        if track and track.get("id") and TRACK_ID_RE.match(track["id"]):
+            map_rows.append({"isrc": isrc, "spotify_track_id": track["id"], "status": status, "checked_at": now})
+            track_rows.append(track_row_from_api(track, isrc))
+            known[isrc] = {"spotify_track_id": track["id"]}
+        else:
+            map_rows.append({"isrc": isrc, "spotify_track_id": None, "status": "not_found", "checked_at": now})
+    if not dry_run:
+        for batch in chunks(track_rows, 200):
+            pg.upsert("track_watch_tracks", batch, "spotify_track_id")
+        for batch in chunks(map_rows, 200):
+            pg.upsert("track_watch_isrc_map", batch, "isrc")
+
+    ids = sorted({known[i]["spotify_track_id"] for i in isrcs if (known.get(i) or {}).get("spotify_track_id")})
+    done_today = {r["spotify_track_id"] for r in rows if r.get("spotify_track_id") and r.get("latest_date") == run_date}
+    ids = [i for i in ids if i not in done_today]
+    print(f"[charts] {len(isrcs)} chart candidates; {len(to_map)} ISRC lookups; {len(ids)} play counts to fetch")
+    client = PlaycountClient(f"track/{ids[0]}" if ids else "playlist/39VN40Aa1bTQEtkuo0HOjD", query_hash)
+    snapshots, failed = [], 0
+    for tid in ids:
+        try:
+            count = client.playcount(tid)
+            if count is None:
+                failed += 1
+            else:
+                snapshots.append({"date": run_date, "spotify_track_id": tid, "playcount": count, "source": SOURCE})
+        except Exception as exc:  # noqa: BLE001
+            failed += 1
+            print(f"[charts] play count failed for {tid}: {exc}")
+        time.sleep(CALL_SPACING_S)
+    print(f"[charts] play counts: {len(snapshots)} ok, {failed} failed")
+    if not dry_run:
+        for batch in chunks(snapshots, 200):
+            pg.upsert("track_watch_stream_snapshots", batch, "spotify_track_id,date")
+        latest_rows = [{"spotify_track_id": s["spotify_track_id"], "latest_playcount": s["playcount"],
+                        "latest_snapshot_date": run_date, "last_check_status": "ok"} for s in snapshots]
+        for batch in chunks(latest_rows, 200):
+            pg.upsert("track_watch_tracks", batch, "spotify_track_id")
+    elif snapshots:
+        print(f"  sample chart {snapshots[0]['spotify_track_id']}: {snapshots[0]['playcount']}")
+    return len(ids), failed
+
+
 def chunks(seq: List, n: int):
     for i in range(0, len(seq), n):
         yield seq[i:i + n]
@@ -289,6 +446,14 @@ def run(args) -> int:
         total_attempted += len(collect_ids)
         total_failed += len(failures)
 
+        if pl["slug"] == "upload" and not args.skip_charts:
+            try:  # the playlist data above is already saved; a chart-side error is reported, not fatal
+                attempted, failed = collect_chart_candidates(pg, api_token, query_hash, slug, run_date, args.dry_run)
+                total_attempted += attempted
+                total_failed += failed
+            except Exception as exc:  # noqa: BLE001
+                print(f"::warning::[charts] upload candidates step failed: {exc}")
+
     if total_attempted and total_failed / total_attempted > MAX_FAILURE_RATIO:
         print(f"FAILED: {total_failed}/{total_attempted} play counts failed")
         return 1
@@ -301,6 +466,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--dry-run", action="store_true", help="Fetch without writing to Supabase")
     parser.add_argument("--run-date", help="Snapshot date (default: today UTC)")
+    parser.add_argument("--skip-charts", action="store_true", help="Skip Beatport chart candidates")
     sys.exit(run(parser.parse_args()))
 
 
