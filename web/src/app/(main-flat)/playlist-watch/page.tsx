@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import nextDynamic from "next/dynamic";
 
 import { PageHeader } from "@/components/shell/PageHeader";
@@ -36,6 +37,15 @@ export default async function PlaylistWatchPage({
   return (
     <div className="space-y-4">
       <PageHeader
+        actions={
+          <Link
+            href="/playlist-watch/upload"
+            className="sb-ring inline-flex h-9 items-center rounded-lg bg-white/60 px-3 text-sm font-semibold hover:bg-white/80 dark:bg-white/10 dark:hover:bg-white/15"
+            style={{ color: "var(--sb-text)" }}
+          >
+            Upload tracks
+          </Link>
+        }
         title="Playlist Watch"
         subtitle={
           latestRun?.run_date

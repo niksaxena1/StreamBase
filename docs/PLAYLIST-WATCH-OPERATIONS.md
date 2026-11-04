@@ -100,3 +100,15 @@ Removing a playlist from the active watchlist should archive it, not delete it. 
 ## Demo playlist (local UI)
 
 The watchlist row `MockWatchDemo00000001` ("DEMO - Follower Growth Playlist") uses deterministic mock follower history from `web/src/lib/playlistWatch/demoPlaylist.ts`. The page overrides DB snapshots for that ID so the chart can be exercised with negative daily deltas without reseeding Supabase. Edit that file to change the demo curve.
+
+## Track streams (`/playlist-watch/upload`)
+
+Daily Spotify play counts for every track of selected playlists, first the owner's "upload" playlist (`39VN40Aa1bTQEtkuo0HOjD`, tracks by other artists, changed mostly on Fridays). Separate from the follower watchlist above and from all own-catalog/competitor stream data; no SpotOnTrack dashboard involved.
+
+- Tables (migration `20261104174153_playlist_watch_track_streams.sql`, service-role only): `track_watch_playlists` (config; `slug` names the page, `removed_retention_days` default 30), `track_watch_tracks`, `track_watch_memberships` (`first_seen_date`, `removed_date`; a re-added track clears `removed_date` and keeps `first_seen_date`), `track_watch_stream_snapshots` (one row per track per day).
+- Page data: RPC `playlist_watch.track_watch_rows(p_slug)` (latest play count, baselines 1/7/28 days back, first snapshot since added, 60-day history).
+- Workflow `Playlist Watch Track Streams Daily` (`playlist_watch_track_streams_daily.yml`), dispatched by pg_cron job `streambase-playlist-watch-tracks` at 14:20 UTC. Script `scripts/collect_playlist_watch_track_streams.py`.
+- Membership comes from the Spotify Web API (client credentials). Play counts come from the web player's `getTrack` GraphQL query (`api-partner.spotify.com/pathfinder`) with the anonymous token on the public playlist embed page: free, no RapidAPI/artist.tools quota.
+- If every play-count call fails, Spotify probably rotated the persisted-query hash: copy the current `getTrack` `sha256Hash` from open.spotify.com network traffic into the repo variable `PLAYCOUNT_QUERY_HASH`.
+- Removed tracks keep being collected for `removed_retention_days` and show in the page's Removed section.
+- Add another playlist: insert a `track_watch_playlists` row (id + slug); the page currently reads slug `upload`.
