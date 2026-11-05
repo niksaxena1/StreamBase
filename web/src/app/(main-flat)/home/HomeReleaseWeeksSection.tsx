@@ -10,7 +10,7 @@ import { fetchApiJson } from "@/lib/api";
 import { formatInt } from "@/lib/format";
 import { addDaysISO, dataDateFromRunDate } from "@/lib/sotDates";
 import { readStoredBool, writeStoredBool } from "@/lib/storage";
-import { groupReleaseWeeks, prettyDate, type ReleaseBucket, type ReleaseWeekTrack } from "./releaseWeeks";
+import { groupReleaseWeeks, prettyDate, releaseWeekStart, type ReleaseBucket, type ReleaseWeekTrack } from "./releaseWeeks";
 
 const KEY = "sb:home-release-weeks-open";
 const PAGE = 50;
@@ -78,8 +78,17 @@ function CoverStack({ bucket }: { bucket: ReleaseBucket }) {
   );
 }
 
-function bucketTitle(b: ReleaseBucket) {
+/** "this week" / "last week" / "3 wks ago", relative to the release week holding the latest data date. */
+export function weeksAgoLabel(friday: string, currentFriday: string): string {
+  const weeks = Math.round((Date.parse(`${currentFriday}T00:00:00Z`) - Date.parse(`${friday}T00:00:00Z`)) / (7 * 86_400_000));
+  if (weeks <= 0) return "this week";
+  if (weeks === 1) return "last week";
+  return `${weeks} wks ago`;
+}
+
+function bucketTitle(b: ReleaseBucket, currentFriday: string | null) {
   if (b.kind !== "week") return <span className="font-semibold">{b.label}</span>;
+  const ago = currentFriday ? weeksAgoLabel(b.sortDate, currentFriday) : null;
   const rest = b.label.replace(/^Week of /, "");
   const year = rest.slice(-4);
   return (
@@ -87,6 +96,7 @@ function bucketTitle(b: ReleaseBucket) {
       <span className="opacity-50 text-[11px] mr-1">Week of</span>
       <span className="font-semibold">{rest.slice(0, -5)}</span>
       <span className="opacity-40 ml-1 text-[11px]">{year}</span>
+      {ago ? <span className="ml-2 text-[10px] italic opacity-35">{ago}</span> : null}
     </span>
   );
 }
@@ -113,6 +123,7 @@ export function HomeReleaseWeeksSection() {
 
   const end = payload?.runDate ? dataDateFromRunDate(payload.runDate) : null;
   const grouped = useMemo(() => (payload && end ? groupReleaseWeeks(payload.tracks, end) : null), [payload, end]);
+  const currentFriday = end ? releaseWeekStart(end) : null;
   const totals = grouped?.buckets.reduce(
     (acc, b) => ({ prev: acc.prev + b.prev, cur: acc.cur + b.cur, count: acc.count + b.trackCount }),
     { prev: 0, cur: 0, count: 0 },
@@ -222,7 +233,7 @@ export function HomeReleaseWeeksSection() {
                               ▸
                             </span>
                             <CoverStack bucket={b} />
-                            {bucketTitle(b)}
+                            {bucketTitle(b, currentFriday)}
                           </div>
                         </TableCell>
                         <TableCell numeric className={`opacity-60 ${num}`}>{formatInt(b.trackCount)}</TableCell>
