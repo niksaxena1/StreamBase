@@ -1,7 +1,7 @@
 import { addDaysISO, dataDateFromRunDate } from "@/lib/sotDates";
 
 export type ReleaseWeekTrack = {
-  isrc: string; name: string | null; artist_names: string[] | null; release_date: string | null;
+  isrc: string; name: string | null; artist_names: string[] | null; album_image_url?: string | null; release_date: string | null;
   prev_streams: number | null; cur_streams: number | null; reset_drop: number | null;
   reset_run_date: string | null; run_date: string;
 };

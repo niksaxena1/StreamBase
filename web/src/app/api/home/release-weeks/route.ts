@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
     // The generated database types predate this RPC.
     const client: SupabaseClient = svc;
     for (let offset = 0; ; offset += size) {
-      const { data, error } = await client.rpc("home_release_week_tracks", runDate ? { p_run_date: runDate } : {}).order("isrc").range(offset, offset + size - 1);
+      const { data, error } = await client.rpc("home_release_week_rows", runDate ? { p_run_date: runDate } : {}).order("isrc").range(offset, offset + size - 1);
       if (error) throw error;
       const page = (data ?? []) as ReleaseWeekTrack[];
       tracks.push(...page);
