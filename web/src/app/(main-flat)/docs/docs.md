@@ -57,6 +57,8 @@ Files:
   - In All Catalog, enable **Archived history** to include the recovered 2023–2025 Grafana series (up to 1200 days)
   - View quick KPIs and charts
 
+**Change by release week** compares the latest seven data days with the preceding seven for the own catalog. Expand a release cohort to see its tracks; recent releases are grouped Friday–Thursday, then older releases by month or year. Counter resets are excluded and listed below the table.
+
 Data:
 
 - `playlist_daily_stats` (cached, live/default)

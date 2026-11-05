@@ -45,6 +45,7 @@ import { HomeMilestonesSection } from "./home/HomeMilestonesSection";
 import { HomeDailyDistributionSection } from "./home/HomeDailyDistributionSection";
 import { HomeNegativeStreamsSection } from "./home/HomeNegativeStreamsSection";
 
+import { HomeReleaseWeeksSection } from "./home/HomeReleaseWeeksSection";
 import { HomeWeekendDipsSection } from "./home/HomeWeekendDipsSection";
 import { HomeHistorySection } from "./home/HomeHistorySection";
 import { HomeFilterBuilderSection } from "./home/HomeFilterBuilderSection";
@@ -724,6 +725,8 @@ function HomeDashboardInner(props: HomeDashboardServerProps) {
             onRequestData={requestDiagnosticsData}
           />
         ) : null}
+
+      {props.datasetMode === "own" ? <HomeReleaseWeeksSection /> : null}
 
       <HomeHistorySection history={props.history.slice(0, props.rangeDays)} />
 
