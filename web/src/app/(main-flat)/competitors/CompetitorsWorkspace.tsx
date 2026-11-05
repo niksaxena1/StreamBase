@@ -17,6 +17,7 @@ import { ChartSkeleton, TableSkeleton } from "@/components/ui/Skeleton";
 import { isOwnCatalogLabelKey } from "@/lib/competitors/ownCatalog";
 
 import { CompetitorLabelCards } from "./CompetitorLabelCards";
+import { CompetitorMa7Table } from "./CompetitorMa7Table";
 import { CompetitorsClient } from "./CompetitorsClient";
 import { CompetitorsIntelSections } from "./CompetitorsIntelSections";
 import type { CompetitorWorkspaceView } from "./competitorsTypes";
@@ -131,6 +132,7 @@ export function CompetitorsWorkspace({ core }: { core: CompetitorsPageCoreProps 
               playlistsByLabel={core.playlistsByLabel}
               showCards={false}
             />
+            <CompetitorMa7Table labels={activeLabels} labelSeries={core.labelSeries} />
             <CompetitorComparisonInsights labels={activeLabels} labelSeries={core.labelSeries} />
           </div>
         ) : null}

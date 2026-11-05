@@ -60,6 +60,11 @@ import {
 import { isOwnCatalogLabelKey } from "@/lib/competitors/ownCatalog";
 
 import { labelColor } from "./competitorsUtils";
+import { bucketLabelSeriesWeekly, smoothLabelSeriesMa7 } from "./competitorMa7";
+
+const COMPARE_VIEW_STORAGE = "sb:competitors-compare-view";
+type CompareView = "daily" | "ma7" | "weekly";
+const COMPARE_VIEW_LABEL: Record<CompareView, string> = { daily: "Daily", ma7: "MA7", weekly: "Weekly" };
 
 // TODO(competitor-history-depth): once we have >=60 days of competitor history
 // per label, add weekend-dip and spike callouts (parity with /home).
@@ -107,6 +112,15 @@ export function CompetitorsClient(props: {
     return "individual";
   });
 
+  const [compareView, setCompareView] = useState<CompareView>(() => {
+    const stored = readStoredString(COMPARE_VIEW_STORAGE);
+    return stored === "daily" || stored === "ma7" || stored === "weekly" ? stored : "ma7";
+  });
+  const selectCompareView = useCallback((view: CompareView) => {
+    setCompareView(view);
+    writeStoredString(COMPARE_VIEW_STORAGE, view);
+  }, []);
+
   const [comparisonBaseline, setComparisonBaseline] = useState<"ma7" | "yday">("ma7");
   const [activeLabelKey, setActiveLabelKey] = useState<string | null>(props.selectedCompetitorLabelKey);
   const [breakdownOpen, setBreakdownOpen] = useState(false);
@@ -144,9 +158,13 @@ export function CompetitorsClient(props: {
   const seriesLabels = useMemo(() => buildSeriesLabelMap(labels), [labels]);
 
   const comparisonChartData = useMemo(() => {
-    const filtered = filterDailySeriesFromIsoDate(props.labelSeries, chartStartDateIso);
+    // Smooth the full series first so the first visible days are full 7-day means.
+    const source = compareView === "ma7" ? smoothLabelSeriesMa7(props.labelSeries) : props.labelSeries;
+    const filtered = filterDailySeriesFromIsoDate(source, chartStartDateIso);
+    // The chart expects pre-bucketed rows for non-daily granularities.
+    if (compareView === "weekly") return bucketLabelSeriesWeekly(filtered);
     return labelSeriesToCollectorDailyData(filtered);
-  }, [chartStartDateIso, props.labelSeries]);
+  }, [chartStartDateIso, compareView, props.labelSeries]);
 
   const sparkByLabel = useMemo(
     () => buildSparkByLabel(props.labelSeries, chartStartDateIso, streamPayoutPerStreamUsd),
@@ -516,6 +534,13 @@ export function CompetitorsClient(props: {
                 </div>
               </div>
               <div className="flex flex-col items-end gap-2">
+                <ChipGroup segmented aria-label="Chart view">
+                  {(["daily", "ma7", "weekly"] as const).map((v) => (
+                    <Chip key={v} segmented selected={compareView === v} onClick={() => selectCompareView(v)}>
+                      {COMPARE_VIEW_LABEL[v]}
+                    </Chip>
+                  ))}
+                </ChipGroup>
                 <ChipGroup segmented>
                   {(["combined", "individual", "percentage"] as const).map((m) => (
                     <Chip
@@ -569,7 +594,7 @@ export function CompetitorsClient(props: {
                 mode={effectiveMode}
                 metric={chartMetric}
                 heightPx={260}
-                granularity="daily"
+                granularity={compareView === "weekly" ? "weekly" : "daily"}
                 seriesColors={seriesColors}
                 seriesLabels={seriesLabels}
                 emptyStateMessage="Select at least one competitor to view the chart"

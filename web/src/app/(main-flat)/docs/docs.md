@@ -124,6 +124,8 @@ Shows how artists connect through tracks in the selected catalog or playlist sco
 
 Admin-only workspace for the separate competitor dataset. Its tabs show an overview, label comparisons, track movement, catalog intelligence, and data health. Compare selected labels, inspect gainers/losers and catalog adds/removals, and review overlaps and ingestion warnings. **Add competitor** creates a label and its first playlist; a label can have more playlists managed by the pipeline configuration.
 
+On the Compare tab, the comparison chart has a **Daily | MA7 | Weekly** toggle (MA7 is the default and is remembered in this browser). MA7 smooths each label with its trailing 7-day average of daily streams; Weekly sums each Monday–Sunday week and hides the current week until it is complete. **MA7 week on week** lists each label's latest 7-day average against the 7 days before, with the change, the % and how far each competitor is from Own Catalog in points. The benchmark chart has an **MA7** chip that applies the same smoothing, and Indexed 100 now starts from the first seven days shown.
+
 ### Collectors (`/collectors`)
 
 Collectors are **groups of playlists** (think “collection buckets”) based on the `playlists.collector` column.

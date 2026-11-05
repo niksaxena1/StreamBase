@@ -22,6 +22,9 @@ function percentChange(value: number, baseline: number): number {
   return baseline > 0 ? ((value - baseline) / baseline) * 100 : 0;
 }
 
+/** Benchmark baselines use the first seven positive days inside this displayed window. */
+export const BENCHMARK_WINDOW_DAYS = 60;
+
 export type BenchmarkMode = "absolute" | "indexed" | "per_track" | "median_growth";
 
 export function buildBenchmarkRows(
@@ -38,7 +41,7 @@ export function buildBenchmarkRows(
     byDate.set(point.date, row);
   }
 
-  const dates = [...byDate.keys()].sort();
+  const dates = [...byDate.keys()].sort().slice(-BENCHMARK_WINDOW_DAYS);
   const baselines = new Map<string, number>();
   for (const key of labelKeys) {
     const first = dates

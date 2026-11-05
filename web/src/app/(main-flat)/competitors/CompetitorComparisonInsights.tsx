@@ -20,14 +20,18 @@ import { formatKmbTick } from "@/components/charts/chartUtils";
 import { getChartTooltipStyle, useThemeColors } from "@/components/charts/useThemeColors";
 import { formatInt } from "@/lib/format";
 import { isOwnCatalogLabelKey } from "@/lib/competitors/ownCatalog";
+import { readStoredString, writeStoredString } from "@/lib/storage";
 
 import {
   buildBenchmarkRows,
   buildShareRows,
   type BenchmarkMode,
 } from "./competitorWorkspaceAnalytics";
+import { smoothLabelSeriesMa7 } from "./competitorMa7";
 import type { LabelDailyPoint, LabelRow } from "./competitorsTypes";
 import { labelColor } from "./competitorsUtils";
+
+const BENCHMARK_MA7_STORAGE = "sb:competitors-benchmark-ma7";
 
 const MODE_LABEL: Record<BenchmarkMode, string> = {
   absolute: "Absolute",
@@ -54,6 +58,14 @@ export function CompetitorComparisonInsights({
   const tooltipStyle = getChartTooltipStyle(colors);
   const searchParams = useSearchParams();
   const [benchmarkMode, setBenchmarkMode] = useState<BenchmarkMode>("indexed");
+  const [ma7On, setMa7On] = useState(() => readStoredString(BENCHMARK_MA7_STORAGE) !== "0");
+  const toggleMa7 = () => {
+    setMa7On((prev) => {
+      writeStoredString(BENCHMARK_MA7_STORAGE, prev ? "0" : "1");
+      return !prev;
+    });
+  };
+  const benchmarkSeries = useMemo(() => (ma7On ? smoothLabelSeriesMa7(labelSeries) : labelSeries), [labelSeries, ma7On]);
   const activeLabels = useMemo(() => labels.filter((label) => label.is_active !== false), [labels]);
   const selectedLabels = useMemo(() => {
     const fromUrl = String(searchParams.get("labels") ?? "")
@@ -74,16 +86,16 @@ export function CompetitorComparisonInsights({
   const benchmarkRows = useMemo(
     () =>
       buildBenchmarkRows(
-        labelSeries,
+        benchmarkSeries,
         selectedLabels,
         benchmarkMode,
         competitorLabels.map((label) => label.label_key),
       ).slice(-60),
-    [benchmarkMode, competitorLabels, labelSeries, selectedLabels],
+    [benchmarkMode, benchmarkSeries, competitorLabels, selectedLabels],
   );
   const shareRows = useMemo(
-    () => buildShareRows(labelSeries, competitorLabels.map((label) => label.label_key), 60),
-    [competitorLabels, labelSeries],
+    () => buildShareRows(benchmarkSeries, competitorLabels.map((label) => label.label_key), 60),
+    [benchmarkSeries, competitorLabels],
   );
 
   const referenceValue = benchmarkMode === "indexed" ? 100 : benchmarkMode === "median_growth" ? 0 : null;
@@ -102,10 +114,13 @@ export function CompetitorComparisonInsights({
             <p className="mt-1 text-xs" style={{ color: colors.muted }}>
               {benchmarkMode === "median_growth"
                 ? "Daily growth gap from the selected competitor median; zero means in line with peers."
-                : "Each series uses the mean of its first seven positive days as the index baseline."}
+                : "Each series is indexed to the mean of its first seven positive days shown, so every line starts near 100 at the left edge."}
             </p>
           </div>
-          <div className="max-w-full overflow-x-auto pb-1">
+          <div className="flex max-w-full items-center gap-2 overflow-x-auto pb-1">
+            <Chip selected={ma7On} onClick={toggleMa7} title="Smooth daily streams with a 7-day average">
+              MA7
+            </Chip>
             <ChipGroup segmented aria-label="Benchmark mode">
               {(Object.keys(MODE_LABEL) as BenchmarkMode[]).map((mode) => (
                 <Chip key={mode} segmented selected={benchmarkMode === mode} onClick={() => setBenchmarkMode(mode)}>

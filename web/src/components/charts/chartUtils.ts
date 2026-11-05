@@ -97,7 +97,7 @@ export function computePaddedDomain(values: Array<number | null | undefined>, op
   return [mn, mx];
 }
 
-function isoDateToIsoWeekKey(dateIso: string): string | null {
+export function isoDateToIsoWeekKey(dateIso: string): string | null {
   // Returns ISO week key like "2026-W05" (zero-padded).
   if (!isIsoDateString(dateIso)) return null;
   const d = isoDateToNoonUtc(dateIso);
