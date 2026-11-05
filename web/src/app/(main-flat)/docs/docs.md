@@ -57,7 +57,7 @@ Files:
   - In All Catalog, enable **Archived history** to include the recovered 2023–2025 Grafana series (up to 1200 days)
   - View quick KPIs and charts
 
-**Change by release week** compares the latest seven data days with the preceding seven for the own catalog. Expand a release cohort to see its tracks; recent releases are grouped Friday–Thursday, then older releases by month or year. Counter resets are excluded and listed below the table.
+**Change by release week** compares the latest seven data days with the preceding seven for the own catalog. Expand a release cohort to see its tracks; recent releases are grouped Friday–Thursday, then older releases by month or year. Counter resets are excluded and listed below the table. Admins and users with competitor access get an **Ours | vs Competitors** toggle: it adds **Competitors** (the median of each competitor's own % change for releases in the same range, with how many competitors released then) and **Vs comps** (our % minus that median, in points). Open a week and pick **Competitors** to see each competitor's totals; click one for its most affected tracks (top 100 drops). Competitor numbers come only from the competitor schema and use the same 7-day windows.
 
 Data:
 

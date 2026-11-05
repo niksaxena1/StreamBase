@@ -1,58 +1,30 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState, type CSSProperties, type KeyboardEvent } from "react";
+import { Fragment, useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { ChartCsvDownloadButton } from "@/components/charts/ChartCsvDownloadButton";
-import Link from "@/components/shell/RouteLink";
-import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
 import { EmptyState, GlassTable, TableCell, TableRow } from "@/components/ui/GlassTable";
-import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { fetchApiJson } from "@/lib/api";
 import { formatInt } from "@/lib/format";
 import { addDaysISO, dataDateFromRunDate } from "@/lib/sotDates";
 import { readStoredBool, writeStoredBool } from "@/lib/storage";
-import { groupReleaseWeeks, prettyDate, releaseWeekStart, type ReleaseBucket, type ReleaseWeekTrack } from "./releaseWeeks";
+import { ReleaseWeekCompetitorRows, type CompetitorLabelInfo } from "./ReleaseWeekCompetitorRows";
+import {
+  groupCompetitorReleaseWeeks,
+  groupReleaseWeeks,
+  prettyDate,
+  releaseWeekStart,
+  type CompetitorSummaryRow,
+  type ReleaseBucket,
+  type ReleaseWeekTrack,
+} from "./releaseWeeks";
+import { Artwork, PctPill, TrackRow, VsPoints, changeText, childRowClass, num, tone } from "./releaseWeeksUi";
 
 const KEY = "sb:home-release-weeks-open";
+const COMPARE_KEY = "sb:home-release-weeks-competitors";
 const PAGE = 50;
-type Payload = { runDate: string | null; tracks: ReleaseWeekTrack[] };
-
-function tone(pct: number | null): string {
-  if (pct == null) return "#3b82f6";
-  if (pct <= -0.15) return "#ef4444";
-  if (pct <= -0.05) return "#f97316";
-  if (pct >= 0.05) return "#22c55e";
-  return "var(--sb-muted)";
-}
-function pctText(pct: number | null) { return pct == null ? "new" : `${pct > 0 ? "+" : ""}${(pct * 100).toFixed(1)}%`; }
-function changeText(value: number) { return `${value > 0 ? "+" : ""}${formatInt(value)}`; }
-const num = "tabular-nums";
-
-function PctPill({ pct }: { pct: number | null }) {
-  const c = tone(pct);
-  return (
-    <span
-      className={`inline-block min-w-[58px] rounded-full px-2 py-0.5 text-center text-[11px] font-semibold ${num}`}
-      style={{ color: c, background: `color-mix(in srgb, ${c} 14%, transparent)` }}
-    >
-      {pctText(pct)}
-    </span>
-  );
-}
-
-function Artwork({ track, size = 32 }: { track: ReleaseWeekTrack; size?: number }) {
-  const style: CSSProperties = { width: size, height: size };
-  return track.album_image_url ? (
-    <PreviewableArtwork
-      src={track.album_image_url}
-      alt={track.name ?? track.isrc}
-      width={size}
-      height={size}
-      className="rounded-md object-cover sb-ring flex-shrink-0"
-    />
-  ) : (
-    <div className="rounded-md sb-ring bg-white/60 dark:bg-white/10 flex-shrink-0" style={style} />
-  );
-}
+type Payload = { runDate: string | null; tracks: ReleaseWeekTrack[]; competitorsAvailable?: boolean };
+type CompPayload = { runDate: string; labels: CompetitorLabelInfo[]; rows: CompetitorSummaryRow[] };
+type Tab = "ours" | "comps";
 
 /** Up to 4 overlapping covers of the group's biggest tracks (by this week's streams). */
 function CoverStack({ bucket }: { bucket: ReleaseBucket }) {
@@ -92,7 +64,7 @@ function bucketTitle(b: ReleaseBucket, currentFriday: string | null) {
   const rest = b.label.replace(/^Week of /, "");
   const year = rest.slice(-4);
   return (
-    <span>
+    <span className="whitespace-nowrap">
       <span className="opacity-50 text-[11px] mr-1">Week of</span>
       <span className="font-semibold">{rest.slice(0, -5)}</span>
       <span className="opacity-40 ml-1 text-[11px]">{year}</span>
@@ -101,17 +73,46 @@ function bucketTitle(b: ReleaseBucket, currentFriday: string | null) {
   );
 }
 
+function headerPill(active: boolean) {
+  return [
+    "rounded-full px-2.5 py-1.5 text-[11px] font-medium transition",
+    active ? "bg-black text-white dark:bg-white dark:text-black" : "text-black/70 hover:bg-white/70 dark:text-white/70 dark:hover:bg-white/20",
+  ].join(" ");
+}
+
+function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${active ? "sb-ring bg-white/70 dark:bg-white/15" : "opacity-55 hover:opacity-90"}`}
+    >
+      {children}
+    </button>
+  );
+}
+
 export function HomeReleaseWeeksSection() {
   const [open, setOpen] = useState(false);
+  const [compare, setCompare] = useState(false);
   const [ready, setReady] = useState(false);
   const [payload, setPayload] = useState<Payload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [comp, setComp] = useState<CompPayload | null>(null);
+  const [compError, setCompError] = useState<string | null>(null);
+  const [compAttempt, setCompAttempt] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>("ours");
   const [showAll, setShowAll] = useState(false);
 
-  useEffect(() => { setOpen(readStoredBool(KEY, false)); setReady(true); }, []);
+  useEffect(() => {
+    setOpen(readStoredBool(KEY, false));
+    setCompare(readStoredBool(COMPARE_KEY, false));
+    setReady(true);
+  }, []);
   useEffect(() => { if (ready) writeStoredBool(KEY, open); }, [ready, open]);
+  useEffect(() => { if (ready) writeStoredBool(COMPARE_KEY, compare); }, [ready, compare]);
   useEffect(() => {
     if (!ready || !open || payload) return;
     let active = true;
@@ -121,8 +122,23 @@ export function HomeReleaseWeeksSection() {
     return () => { active = false; };
   }, [ready, open, payload, attempt]);
 
-  const end = payload?.runDate ? dataDateFromRunDate(payload.runDate) : null;
+  const canCompare = Boolean(payload?.competitorsAvailable);
+  const compareOn = compare && canCompare;
+  const runDate = payload?.runDate ?? null;
+  useEffect(() => {
+    if (!open || !compareOn || !runDate || comp) return;
+    let active = true;
+    fetchApiJson<CompPayload>(`/api/home/release-weeks/competitors?run_date=${runDate}`)
+      .then((data) => { if (active) setComp(data); })
+      .catch((e) => { if (active) setCompError(e instanceof Error ? e.message : "Failed to load competitors"); });
+    return () => { active = false; };
+  }, [open, compareOn, runDate, comp, compAttempt]);
+
+  const end = runDate ? dataDateFromRunDate(runDate) : null;
   const grouped = useMemo(() => (payload && end ? groupReleaseWeeks(payload.tracks, end) : null), [payload, end]);
+  const compBuckets = useMemo(() => (comp && end ? groupCompetitorReleaseWeeks(comp.rows, end) : null), [comp, end]);
+  const compTotal = useMemo(() => (comp ? groupCompetitorReleaseWeeks(comp.rows.map((r) => ({ ...r, release_date: null })), end ?? "2000-01-01").get("unknown") : undefined), [comp, end]);
+  const labelInfo = useMemo(() => new Map((comp?.labels ?? []).map((l) => [l.label_key, l])), [comp]);
   const currentFriday = end ? releaseWeekStart(end) : null;
   const totals = grouped?.buckets.reduce(
     (acc, b) => ({ prev: acc.prev + b.prev, cur: acc.cur + b.cur, count: acc.count + b.trackCount }),
@@ -133,10 +149,34 @@ export function HomeReleaseWeeksSection() {
     ? `This week ${prettyDate(addDaysISO(end, -6), { weekday: true, year: false })} – ${prettyDate(end, { weekday: true, year: false })} · last week ${prettyDate(addDaysISO(end, -13), { weekday: true, year: false })} – ${prettyDate(addDaysISO(end, -7), { weekday: true, year: false })}`
     : "This 7 days vs last 7 days, grouped by release week (Fri–Thu)";
 
-  const toggle = (key: string) => { setSelected((s) => (s === key ? null : key)); setShowAll(false); };
+  const pad = compareOn ? 2 : 0;
+  const cols = 6 + pad;
+  const compLoading = compareOn && !comp && !compError;
+
+  const toggle = (key: string) => {
+    setSelected((s) => (s === key ? null : key));
+    setShowAll(false);
+    setTab("ours");
+  };
   const onKey = (key: string) => (e: KeyboardEvent) => {
     if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(key); }
   };
+
+  const compCells = (median: number | null | undefined, n: number | undefined, ours: number | null) => (
+    <>
+      <TableCell numeric>
+        {compLoading ? (
+          <span className="inline-block h-4 w-14 animate-pulse rounded-full bg-black/5 dark:bg-white/10" />
+        ) : (
+          <span className="inline-flex items-center gap-1.5">
+            <PctPill pct={median ?? null} empty="—" />
+            {n ? <span className="text-[10px] opacity-35" title="Competitors with releases in this range">{n}</span> : null}
+          </span>
+        )}
+      </TableCell>
+      <TableCell numeric>{compLoading ? null : <VsPoints ours={ours} median={median ?? null} />}</TableCell>
+    </>
+  );
 
   return (
     <details
@@ -165,18 +205,36 @@ export function HomeReleaseWeeksSection() {
               onMouseDown={(ev) => ev.stopPropagation()}
               onClick={(ev) => { ev.preventDefault(); ev.stopPropagation(); }}
             >
+              {canCompare ? (
+                <div className="sb-ring flex items-center gap-0.5 rounded-full bg-white/60 p-0.5 dark:bg-white/10">
+                  <button type="button" className={headerPill(!compareOn)} onClick={() => setCompare(false)}>Ours</button>
+                  <button type="button" className={headerPill(compareOn)} onClick={() => setCompare(true)} title="Compare with competitors' releases from the same weeks">
+                    vs Competitors
+                  </button>
+                </div>
+              ) : null}
               <ChartCsvDownloadButton
                 filename={`home-release-weeks-${end}.csv`}
                 title="Download release weeks CSV"
                 sortForExport={false}
-                rows={grouped.buckets.map((b) => ({
-                  Released: b.label,
-                  Tracks: b.trackCount,
-                  "Last 7 days": b.prev,
-                  "This 7 days": b.cur,
-                  Change: b.change,
-                  "%": b.pct == null ? "new" : Number((b.pct * 100).toFixed(1)),
-                }))}
+                rows={grouped.buckets.map((b) => {
+                  const c = compBuckets?.get(b.key);
+                  return {
+                    Released: b.label,
+                    Tracks: b.trackCount,
+                    "Last 7 days": b.prev,
+                    "This 7 days": b.cur,
+                    Change: b.change,
+                    "%": b.pct == null ? "new" : Number((b.pct * 100).toFixed(1)),
+                    ...(compareOn && compBuckets
+                      ? {
+                          "Competitor median %": c?.medianPct == null ? "" : Number((c.medianPct * 100).toFixed(1)),
+                          Competitors: c?.labels.length ?? 0,
+                          "Vs competitors (pts)": b.pct == null || c?.medianPct == null ? "" : Number(((b.pct - c.medianPct) * 100).toFixed(1)),
+                        }
+                      : {}),
+                  };
+                })}
               />
             </div>
           ) : null}
@@ -194,10 +252,18 @@ export function HomeReleaseWeeksSection() {
             </div>
           ) : !payload ? (
             <div className="h-24 animate-pulse rounded-lg bg-black/5 dark:bg-white/10" aria-label="Loading release weeks" />
-          ) : !grouped ? (
+          ) : !grouped || !runDate ? (
             <div className="text-sm opacity-70">No release-week data available.</div>
           ) : (
             <>
+              {compareOn && compError ? (
+                <div className="mb-2 text-xs">
+                  Competitor comparison failed to load.{" "}
+                  <button type="button" className="underline" onClick={() => { setCompError(null); setCompAttempt((n) => n + 1); }}>
+                    Retry
+                  </button>
+                </div>
+              ) : null}
               <GlassTable
                 headers={[
                   "RELEASED",
@@ -206,13 +272,20 @@ export function HomeReleaseWeeksSection() {
                   { label: "THIS WEEK", align: "right" as const },
                   { label: "CHANGE", align: "right" as const },
                   { label: "%", align: "right" as const },
+                  ...(compareOn
+                    ? [
+                        { label: "COMPETITORS", align: "right" as const },
+                        { label: "VS COMPS", align: "right" as const },
+                      ]
+                    : []),
                 ]}
                 maxBodyHeightClassName="max-h-[720px]"
               >
-                {grouped.buckets.length === 0 ? <EmptyState colSpan={6} message="No tracks found" /> : null}
+                {grouped.buckets.length === 0 ? <EmptyState colSpan={cols} message="No tracks found" /> : null}
                 {grouped.buckets.map((b) => {
                   const isOpen = selected === b.key;
                   const shown = showAll ? b.tracks : b.tracks.slice(0, PAGE);
+                  const c = compBuckets?.get(b.key);
                   return (
                     <Fragment key={b.key}>
                       <TableRow
@@ -241,47 +314,38 @@ export function HomeReleaseWeeksSection() {
                         <TableCell numeric className={`font-medium ${num}`}>{formatInt(b.cur)}</TableCell>
                         <TableCell numeric className={`font-semibold ${num}`} style={{ color: tone(b.pct) }}>{changeText(b.change)}</TableCell>
                         <TableCell numeric><PctPill pct={b.pct} /></TableCell>
+                        {compareOn ? compCells(c?.medianPct, c?.labels.length, b.pct) : null}
                       </TableRow>
 
-                      {isOpen
-                        ? shown.map((t) => {
-                            const prev = Number(t.prev_streams ?? 0);
-                            const cur = Number(t.cur_streams ?? 0);
-                            const pct = t.prev_streams == null || prev === 0 ? null : (cur - prev) / prev;
-                            const artists = t.artist_names?.join(", ") || "—";
-                            return (
-                              <TableRow key={t.isrc} className="bg-black/[0.02] dark:bg-white/[0.025]">
-                                <TableCell>
-                                  <div className="flex items-center gap-2.5 min-w-0 pl-5">
-                                    <Artwork track={t} />
-                                    <div className="min-w-0">
-                                      <Link
-                                        href={`/catalog?isrc=${encodeURIComponent(t.isrc)}`}
-                                        className="block truncate font-medium transition-colors sb-link-hover"
-                                      >
-                                        {t.name ?? t.isrc}
-                                      </Link>
-                                      <div className="truncate text-[11px] opacity-60">{artists}</div>
-                                      <div className="truncate text-[10px] opacity-40">
-                                        {t.release_date ? prettyDate(t.release_date, { weekday: true }) : "No release date"}
-                                        {" · "}
-                                        <CopyableIsrc inline isrc={t.isrc} className="font-mono" />
-                                      </div>
-                                    </div>
-                                  </div>
-                                </TableCell>
-                                <TableCell numeric><span aria-hidden="true" /></TableCell>
-                                <TableCell numeric className={`opacity-70 ${num}`}>{t.prev_streams == null ? "—" : formatInt(prev)}</TableCell>
-                                <TableCell numeric className={`font-medium ${num}`}>{t.cur_streams == null ? "—" : formatInt(cur)}</TableCell>
-                                <TableCell numeric className={`font-semibold ${num}`} style={{ color: tone(pct) }}>{changeText(cur - prev)}</TableCell>
-                                <TableCell numeric><PctPill pct={pct} /></TableCell>
-                              </TableRow>
-                            );
-                          })
+                      {isOpen && compareOn ? (
+                        <TableRow className={childRowClass}>
+                          <TableCell colSpan={cols}>
+                            <div className="flex items-center gap-1 pl-5">
+                              <TabButton active={tab === "ours"} onClick={() => setTab("ours")}>Our tracks · {formatInt(b.trackCount)}</TabButton>
+                              <TabButton active={tab === "comps"} onClick={() => setTab("comps")}>
+                                Competitors{c ? ` · ${c.labels.length}` : ""}
+                              </TabButton>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ) : null}
+
+                      {isOpen && compareOn && tab === "comps" ? (
+                        compBuckets ? (
+                          <ReleaseWeekCompetitorRows runDate={runDate} bucket={b} comp={c} labels={labelInfo} padCells={pad} />
+                        ) : (
+                          <TableRow className={childRowClass}>
+                            <TableCell colSpan={cols}><div className="ml-5 h-8 animate-pulse rounded-md bg-black/5 dark:bg-white/10" aria-label="Loading competitors" /></TableCell>
+                          </TableRow>
+                        )
+                      ) : null}
+
+                      {isOpen && (!compareOn || tab === "ours")
+                        ? shown.map((t) => <TrackRow key={t.isrc} track={t} linkToCatalog padCells={pad} />)
                         : null}
-                      {isOpen && b.trackCount > PAGE && !showAll ? (
-                        <TableRow className="bg-black/[0.02] dark:bg-white/[0.025]">
-                          <TableCell colSpan={6}>
+                      {isOpen && (!compareOn || tab === "ours") && b.trackCount > PAGE && !showAll ? (
+                        <TableRow className={childRowClass}>
+                          <TableCell colSpan={cols}>
                             <button type="button" className="pl-5 text-xs font-medium sb-link-hover" onClick={() => setShowAll(true)}>
                               Show all {formatInt(b.trackCount)} tracks
                             </button>
@@ -299,6 +363,17 @@ export function HomeReleaseWeeksSection() {
                     <TableCell numeric className={`font-bold ${num}`}>{formatInt(totals.cur)}</TableCell>
                     <TableCell numeric className={`font-bold ${num}`} style={{ color: tone(totalPct) }}>{changeText(totals.cur - totals.prev)}</TableCell>
                     <TableCell numeric><PctPill pct={totalPct} /></TableCell>
+                    {compareOn ? compCells(compTotal?.medianPct, compTotal?.labels.length, totalPct) : null}
+                  </TableRow>
+                ) : null}
+                {compareOn ? (
+                  <TableRow>
+                    <TableCell colSpan={cols}>
+                      <span className="text-[10px] opacity-40">
+                        Competitors = median of each competitor&apos;s own % change for releases in the same range (so one big label can&apos;t dominate); the small number is how many competitors released then. Vs comps = our % minus that median, in points. Open a week and pick the Competitors tab to see each one.
+                      </span>
+
+                    </TableCell>
                   </TableRow>
                 ) : null}
               </GlassTable>
@@ -314,7 +389,7 @@ export function HomeReleaseWeeksSection() {
                   <div className="space-y-1.5">
                     {grouped.resets.map(({ track, drop, dataDate }) => (
                       <div key={track.isrc} className="flex items-center gap-2.5 text-xs">
-                        <Artwork track={track} size={24} />
+                        <Artwork src={track.album_image_url} alt={track.name ?? track.isrc} size={24} />
                         <div className="min-w-0 flex-1 truncate">
                           <span className="font-medium">{track.artist_names?.join(", ") || "—"} – {track.name ?? "—"}</span>
                           <span className="ml-1.5 font-mono text-[10px] opacity-40">{track.isrc}</span>

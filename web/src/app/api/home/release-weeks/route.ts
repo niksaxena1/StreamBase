@@ -5,6 +5,7 @@ import { apiJsonErr, apiJsonOk } from "@/lib/api/server";
 import { logError } from "@/lib/logger";
 import { getRequestAppContext } from "@/lib/requestAppContext.server";
 import type { ReleaseWeekTrack } from "@/app/(main-flat)/home/releaseWeeks";
+import { canCompareCompetitorReleaseWeeks } from "./competitors/shared";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,7 +30,7 @@ export async function GET(request: NextRequest) {
       runDate ??= page[0]?.run_date ?? null;
       if (page.length < size) break;
     }
-    return apiJsonOk({ runDate: tracks[0]?.run_date ?? null, tracks });
+    return apiJsonOk({ runDate: tracks[0]?.run_date ?? null, tracks, competitorsAvailable: canCompareCompetitorReleaseWeeks(isAdmin, appAccess) });
   } catch (error) {
     logError("[home-release-weeks] error", error);
     return apiJsonErr("Failed to load release weeks", 500);
