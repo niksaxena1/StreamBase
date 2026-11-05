@@ -12,6 +12,7 @@ import {
   PLAYLIST_WATCH_DEMO_IMAGE_URL,
   PLAYLIST_WATCH_DEMO_OWNER_NAME,
 } from "@/lib/playlistWatch/demoPlaylist";
+import { deltaSince } from "@/lib/playlistWatch/deltas";
 import { favoriteIdsFromMarks, withFavorites, type FavoriteMarkRow } from "@/lib/playlistWatch/favorites";
 import { buildFollowerHistory } from "@/lib/playlistWatch/history";
 import { cachedQuery } from "@/lib/supabase/cache";
@@ -46,15 +47,6 @@ function isoDaysAgo(days: number) {
   return d.toISOString().slice(0, 10);
 }
 
-function deltaSince(rows: SnapshotRow[], latest: number | null, days: number) {
-  if (latest === null) return null;
-  const target = isoDaysAgo(days);
-  const baseline = rows
-    .filter((row) => row.date <= target)
-    .sort((a, b) => b.date.localeCompare(a.date))[0];
-  if (!baseline) return null;
-  return latest - Number(baseline.follower_count);
-}
 
 /**
  * Collections are small, user-edited and shared, so they are read fresh (not through the 1h
