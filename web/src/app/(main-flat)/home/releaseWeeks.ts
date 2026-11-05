@@ -9,8 +9,20 @@ export type ReleaseBucket = {
   key: string; label: string; kind: "week" | "month" | "year" | "unknown"; sortDate: string;
   trackCount: number; prev: number; cur: number; change: number; pct: number | null; tracks: ReleaseWeekTrack[];
 };
-const dateFormat = (date: string, options: Intl.DateTimeFormatOptions) =>
-  new Intl.DateTimeFormat("en-GB", { ...options, timeZone: "UTC" }).format(new Date(`${date}T00:00:00Z`));
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+function ordinal(n: number): string {
+  const s = n % 100 >= 11 && n % 100 <= 13 ? "th" : ({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[n % 10] ?? "th";
+  return `${n}${s}`;
+}
+/** "2nd Jun 2025" (UTC, date-only). Options add a weekday prefix or drop the year. */
+export function prettyDate(iso: string, opts: { weekday?: boolean; year?: boolean } = {}): string {
+  const d = new Date(`${iso.slice(0, 10)}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return iso;
+  const parts = [ordinal(d.getUTCDate()), MONTHS[d.getUTCMonth()]];
+  if (opts.year !== false) parts.push(String(d.getUTCFullYear()));
+  return `${opts.weekday ? `${WEEKDAYS[d.getUTCDay()]} ` : ""}${parts.join(" ")}`;
+}
 export function releaseWeekStart(isoDate: string): string {
   const day = new Date(`${isoDate}T00:00:00Z`).getUTCDay();
   return addDaysISO(isoDate, -((day + 2) % 7));
@@ -28,10 +40,10 @@ export function groupReleaseWeeks(tracks: ReleaseWeekTrack[], dataDate: string) 
     if (!date || !friday) { kind = "unknown"; key = "unknown"; label = "Unknown"; sortDate = ""; }
     else if (friday >= weeklyFloor) {
       kind = "week"; key = `week:${friday}`; sortDate = friday;
-      label = `Week of ${dateFormat(friday, { weekday: "short", day: "numeric", month: "short", year: "numeric" }).replace(",", "")}`;
+      label = `Week of ${prettyDate(friday, { weekday: true })}`;
     } else if (date.slice(0, 7) >= monthFloor) {
       kind = "month"; key = `month:${date.slice(0, 7)}`; sortDate = `${date.slice(0, 7)}-01`;
-      label = dateFormat(sortDate, { month: "short", year: "numeric" });
+      label = `${MONTHS[Number(date.slice(5, 7)) - 1]} ${date.slice(0, 4)}`;
     } else { kind = "year"; key = `year:${date.slice(0, 4)}`; label = date.slice(0, 4); sortDate = `${label}-01-01`; }
     let bucket = groups.get(key);
     if (!bucket) { bucket = { key, label, kind, sortDate, trackCount: 0, prev: 0, cur: 0, change: 0, pct: null, tracks: [] }; groups.set(key, bucket); }

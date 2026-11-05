@@ -8,12 +8,12 @@ import { fetchApiJson } from "@/lib/api";
 import { formatInt } from "@/lib/format";
 import { addDaysISO, dataDateFromRunDate } from "@/lib/sotDates";
 import { readStoredBool, writeStoredBool } from "@/lib/storage";
-import { groupReleaseWeeks, type ReleaseWeekTrack } from "./releaseWeeks";
+import { groupReleaseWeeks, prettyDate, type ReleaseWeekTrack } from "./releaseWeeks";
 
 const KEY = "sb:home-release-weeks-open";
 type Payload = { runDate: string | null; tracks: ReleaseWeekTrack[] };
 function dateLabel(date: string, year = false) {
-  return new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", weekday: "short", day: "numeric", month: "short", ...(year ? { year: "numeric" } : {}) }).format(new Date(`${date}T00:00:00Z`)).replace(",", "");
+  return prettyDate(date, { weekday: true, year });
 }
 function color(pct: number | null) {
   if (pct == null) return "var(--sb-muted)";
@@ -60,12 +60,12 @@ export function HomeReleaseWeeksSection() {
             <TableCell><span aria-hidden="true">{selected === b.key ? "▾" : "▸"}</span> {b.label}</TableCell><TableCell numeric>{formatInt(b.trackCount)}</TableCell><TableCell numeric>{formatInt(b.prev)}</TableCell><TableCell numeric>{formatInt(b.cur)}</TableCell><TableCell numeric style={{ color: color(b.pct) }}>{change(b.change)}</TableCell><TableCell numeric style={{ color: color(b.pct) }}>{percent(b.pct)}</TableCell>
           </TableRow>
           {selected === b.key && <TableRow><TableCell colSpan={6}><GlassTable headers={["Artist", "Title", "ISRC", "Release date", ...numericHeaders(["Last 7 days", "This 7 days", "Change", "%"])]} maxBodyHeightClassName="max-h-[500px]">
-            {(showAll ? b.tracks : b.tracks.slice(0, 50)).map(t => { const prev = Number(t.prev_streams ?? 0), cur = Number(t.cur_streams ?? 0), pct = prev ? (cur - prev) / prev : null; return <TableRow key={t.isrc}><TableCell>{t.artist_names?.join(", ") || "—"}</TableCell><TableCell>{t.name ?? "—"}</TableCell><TableCell><CopyableIsrc isrc={t.isrc} /></TableCell><TableCell>{t.release_date ?? "—"}</TableCell><TableCell numeric>{t.prev_streams == null ? "new" : formatInt(prev)}</TableCell><TableCell numeric>{t.cur_streams == null ? "—" : formatInt(cur)}</TableCell><TableCell numeric style={{ color: color(pct) }}>{change(cur - prev)}</TableCell><TableCell numeric style={{ color: color(pct) }}>{percent(pct)}</TableCell></TableRow>; })}
+            {(showAll ? b.tracks : b.tracks.slice(0, 50)).map(t => { const prev = Number(t.prev_streams ?? 0), cur = Number(t.cur_streams ?? 0), pct = prev ? (cur - prev) / prev : null; return <TableRow key={t.isrc}><TableCell>{t.artist_names?.join(", ") || "—"}</TableCell><TableCell>{t.name ?? "—"}</TableCell><TableCell><CopyableIsrc isrc={t.isrc} /></TableCell><TableCell>{t.release_date ? prettyDate(t.release_date) : "—"}</TableCell><TableCell numeric>{t.prev_streams == null ? "new" : formatInt(prev)}</TableCell><TableCell numeric>{t.cur_streams == null ? "—" : formatInt(cur)}</TableCell><TableCell numeric style={{ color: color(pct) }}>{change(cur - prev)}</TableCell><TableCell numeric style={{ color: color(pct) }}>{percent(pct)}</TableCell></TableRow>; })}
           </GlassTable>{b.trackCount > 50 && !showAll && <button type="button" className="mt-2 underline" onClick={() => setShowAll(true)}>Show all {formatInt(b.trackCount)}</button>}</TableCell></TableRow>}
         </Fragment>)}
         {totals && <TableRow className="font-bold"><TableCell>Total</TableCell><TableCell numeric>{formatInt(totals.count)}</TableCell><TableCell numeric>{formatInt(totals.prev)}</TableCell><TableCell numeric>{formatInt(totals.cur)}</TableCell><TableCell numeric style={{ color: color(totalPct) }}>{change(totals.cur - totals.prev)}</TableCell><TableCell numeric style={{ color: color(totalPct) }}>{percent(totalPct)}</TableCell></TableRow>}
       </GlassTable>
-      {grouped.resets.length > 0 && <div className="mt-3 text-xs opacity-70"><div>Counter resets excluded from totals:</div>{grouped.resets.map(({ track, drop, dataDate }) => <div key={track.isrc}>{track.artist_names?.join(", ") || "—"} – {track.name ?? "—"} ({track.isrc}): {formatInt(drop)}{dataDate ? ` on ${new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(`${dataDate}T00:00:00Z`))}` : ""}</div>)}</div>}
+      {grouped.resets.length > 0 && <div className="mt-3 text-xs opacity-70"><div>Counter resets excluded from totals:</div>{grouped.resets.map(({ track, drop, dataDate }) => <div key={track.isrc}>{track.artist_names?.join(", ") || "—"} – {track.name ?? "—"} ({track.isrc}): {formatInt(drop)}{dataDate ? ` on ${prettyDate(dataDate, { year: false })}` : ""}</div>)}</div>}
     </>}</div>}
   </details>;
 }

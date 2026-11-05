@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { groupReleaseWeeks, releaseWeekStart, type ReleaseWeekTrack } from "./releaseWeeks";
+import { groupReleaseWeeks, prettyDate, releaseWeekStart, type ReleaseWeekTrack } from "./releaseWeeks";
 
 const track = (isrc: string, release_date: string | null, prev_streams: number | null = 10, cur_streams: number | null = 20): ReleaseWeekTrack => ({ isrc, name: isrc, artist_names: ["Artist"], release_date, prev_streams, cur_streams, reset_drop: null, reset_run_date: null, run_date: "2026-11-05" });
 describe("release week grouping", () => {
   it.each([["2026-10-16", "2026-10-16"], ["2026-10-22", "2026-10-16"], ["2026-10-17", "2026-10-16"], ["2026-10-18", "2026-10-16"], ["2026-10-21", "2026-10-16"]])("maps %s to Friday %s", (date, friday) => expect(releaseWeekStart(date)).toBe(friday));
   it("places boundary releases in weekly, monthly, yearly and unknown buckets", () => {
     const result = groupReleaseWeeks([track("weekly", "2026-08-07"), track("monthly", "2026-08-06"), track("old-month", "2025-08-01"), track("year", "2025-07-31"), track("unknown", null)], "2026-11-03");
-    expect(result.buckets.map(b => [b.kind, b.label])).toEqual([["week", "Week of Fri 7 Aug 2026"], ["month", "Aug 2026"], ["month", "Aug 2025"], ["year", "2025"], ["unknown", "Unknown"]]);
+    expect(result.buckets.map(b => [b.kind, b.label])).toEqual([["week", "Week of Fri 7th Aug 2026"], ["month", "Aug 2026"], ["month", "Aug 2025"], ["year", "2025"], ["unknown", "Unknown"]]);
   });
   it("sums and sorts changes, preserves new tracks, and reports resets", () => {
     const dropped = { ...track("drop", "2026-10-16", 100, 20), reset_drop: -211473, reset_run_date: "2026-11-03" };
@@ -18,5 +18,20 @@ describe("release week grouping", () => {
     expect(b.tracks[1].prev_streams).toBeNull();
     expect(result.buckets[1].pct).toBeNull();
     expect(result.resets.map(r => [r.track.isrc, r.drop, r.dataDate])).toEqual([["drop", -211473, "2026-11-01"]]);
+  });
+});
+
+describe("prettyDate", () => {
+  it("formats with ordinals and short months", () => {
+    expect(prettyDate("2025-06-02")).toBe("2nd Jun 2025");
+    expect(prettyDate("2026-09-01")).toBe("1st Sep 2026");
+    expect(prettyDate("2026-10-23")).toBe("23rd Oct 2026");
+    expect(prettyDate("2026-11-11")).toBe("11th Nov 2026");
+    expect(prettyDate("2026-11-12")).toBe("12th Nov 2026");
+    expect(prettyDate("2026-11-13")).toBe("13th Nov 2026");
+    expect(prettyDate("2026-10-31")).toBe("31st Oct 2026");
+    expect(prettyDate("2026-10-22")).toBe("22nd Oct 2026");
+    expect(prettyDate("2026-10-16", { weekday: true })).toBe("Fri 16th Oct 2026");
+    expect(prettyDate("2026-11-01", { year: false })).toBe("1st Nov");
   });
 });
