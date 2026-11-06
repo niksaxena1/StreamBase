@@ -1,4 +1,7 @@
 @import "tailwindcss";
+/* Liquid Glass (glisse). Layered so Tailwind utilities still win; see glass.css. */
+@import "glisse/styles.css" layer(components);
+@import "./glass.css";
 
 /* Make Tailwind's `dark:` variant follow our theme toggle (html[data-theme="dark"]) */
 @custom-variant dark (&:where(html[data-theme="dark"], html[data-theme="dark"] *));

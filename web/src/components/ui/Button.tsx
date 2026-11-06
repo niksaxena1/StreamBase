@@ -11,16 +11,23 @@ import { cx } from "@/lib/cx";
 type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "accent";
 type ButtonSize = "xs" | "sm" | "md" | "lg";
 
+// Liquid Glass (glisse, see app/glass.css): primary/accent are the filled accent button,
+// secondary is clear glass, danger is a filled destructive button. Ghost stays flat.
+// Colours for the glass variants come from glisse, so they carry no Tailwind colour classes.
 const VARIANT: Record<ButtonVariant, string> = {
-  primary: "bg-black text-white hover:bg-black/90 dark:bg-white dark:text-black dark:hover:bg-white/90",
-  secondary:
-    "bg-white/70 text-black/80 hover:bg-white dark:bg-white/10 dark:text-white/80 dark:hover:bg-white/15",
+  primary: "lg-glass lg-button",
+  secondary: "lg-glass lg-button",
   ghost: "bg-transparent text-black/70 hover:bg-black/5 dark:text-white/70 dark:hover:bg-white/10",
-  danger:
-    "bg-red-600 text-white hover:bg-red-600/90 dark:bg-red-500 dark:text-white dark:hover:bg-red-500/90",
-  accent:
-    "bg-[var(--sb-accent)] text-[var(--sb-accent-text,#000)] hover:brightness-105 dark:bg-[var(--sb-accent)] dark:text-[var(--sb-accent-text,#000)] dark:hover:brightness-110",
+  danger: "lg-glass lg-button",
+  accent: "lg-glass lg-button",
 };
+
+/** The glisse data attributes that pick a glass button's look. */
+function glassAttrs(variant: ButtonVariant) {
+  if (variant === "primary" || variant === "accent") return { "data-variant": "filled" };
+  if (variant === "danger") return { "data-variant": "filled", "data-destructive": "" };
+  return {};
+}
 
 const SIZE: Record<ButtonSize, string> = {
   xs: "h-6 px-2 text-[11px]",
@@ -79,6 +86,7 @@ export const Button = forwardRef<
     const el = children as ReactElement<any>;
     return cloneElement(el, {
       ...props,
+      ...glassAttrs(variant),
       disabled: loading || props.disabled,
       "aria-busy": loading ? "true" : undefined,
       className: cx(el.props?.className, composedClassName),
@@ -96,6 +104,7 @@ export const Button = forwardRef<
     <button
       ref={ref}
       {...props}
+      {...glassAttrs(variant)}
       disabled={loading || props.disabled}
       aria-busy={loading ? "true" : undefined}
       className={composedClassName}
@@ -117,14 +126,8 @@ export const IconButton = forwardRef<
   }
 >(function IconButton({ className, variant = "ghost", size = "sm", asChild, children, ...props }, ref) {
   const dim = size === "lg" ? "h-11 w-11" : size === "md" ? "h-9 w-9" : size === "xs" ? "h-6 w-6" : "h-8 w-8";
-  const v =
-    variant === "primary"
-      ? "bg-black text-white hover:bg-black/90 dark:bg-white dark:text-black dark:hover:bg-white/90"
-      : variant === "accent"
-      ? VARIANT.accent
-      : variant === "secondary"
-      ? VARIANT.secondary
-      : VARIANT.ghost;
+  const v = VARIANT[variant];
+  const glass = glassAttrs(variant);
 
   const composedClassName = cx(
     "sb-ring sb-control inline-flex items-center justify-center rounded-full transition",
@@ -146,6 +149,7 @@ export const IconButton = forwardRef<
 
     return cloneElement(el, {
       ...rest,
+      ...glass,
       className: cx(el.props?.className, composedClassName),
       children: el.props?.children,
     });
@@ -155,6 +159,7 @@ export const IconButton = forwardRef<
     <button
       ref={ref}
       {...props}
+      {...glass}
       className={composedClassName}
     >
       {children}

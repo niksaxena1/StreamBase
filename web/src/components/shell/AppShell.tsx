@@ -1,4 +1,5 @@
 import { ReactNode } from "react";
+import { Glass } from "glisse";
 import Link from "@/components/shell/RouteLink";
 
 import { LogoMark } from "@/components/LogoMark";
@@ -91,7 +92,7 @@ export function AppShell(props: {
           <SideRailWithBadge datasetMode={navDatasetMode} appAccess={appAccess} isAdmin={props.isAdmin === true} />
 
           <div className="flex min-w-0 flex-1 flex-col gap-3">
-            <header className="sb-app-header sb-glass relative z-20 px-3 py-2">
+            <Glass role="banner" className="sb-app-header sb-glass-toolbar sticky top-3 z-30 px-3 py-2">
               <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
                   <Link href={homeHref} className="transition-opacity hover:opacity-80" suppressHydrationWarning>
@@ -128,7 +129,7 @@ export function AppShell(props: {
                   <UserMenu appAccess={appAccess} userEmail={props.userEmail} />
                 </div>
               </div>
-            </header>
+            </Glass>
 
             <main
               id="main-content"

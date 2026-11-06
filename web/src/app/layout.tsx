@@ -52,6 +52,10 @@ export default function RootLayout({
         {/* Favicon per color scheme (browser/OS light or dark mode) */}
         <link rel="icon" href="/favicon-light.ico" type="image/x-icon" media="(prefers-color-scheme: light)" />
         <link rel="icon" href="/favicon-dark.ico" type="image/x-icon" media="(prefers-color-scheme: dark)" />
+        {/* glisse injects its CSS unlayered into a <style id="glisse-styles"> unless one exists. We load
+            that CSS ourselves in a cascade layer (globals.css) so Tailwind utilities keep winning; this
+            empty placeholder stops the duplicate, unlayered copy. */}
+        <style id="glisse-styles" />
         {/* Theme initialization script - runs synchronously before hydration to prevent flash */}
         <script
           dangerouslySetInnerHTML={{

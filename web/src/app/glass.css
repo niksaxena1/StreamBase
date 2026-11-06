@@ -1,0 +1,72 @@
+/*
+ * StreamBase Liquid Glass styling (glisse), the same look as Signet.
+ * glisse's own stylesheet is imported into the `components` layer in globals.css,
+ * so Tailwind utilities (sizes, spacing) still win over it. These rules are
+ * unlayered on purpose: they are the deliberate overrides.
+ */
+
+/* glisse reads its palette from <html data-theme>; the fill follows the app accent,
+   including the per-competitor accent CompetitorAccentStyle sets. */
+html,
+html[data-theme="light"],
+html[data-theme="dark"] {
+  --lg-fill: var(--sb-accent);
+}
+
+/* ── Floating glass toolbar (the app header) ────────────────────────── */
+.sb-glass-toolbar {
+  --lg-blur: 14px;
+  border-radius: var(--sb-radius-lg);
+  transition: box-shadow var(--sb-motion-section) ease;
+}
+
+/* Once the page scrolls under it, the bar lifts off the content a little. */
+.sb-app-shell[data-scrolled="true"] .sb-glass-toolbar {
+  box-shadow:
+    inset 0 0 0 0.5px var(--lg-edge),
+    0 10px 30px -12px var(--lg-shadow),
+    0 1px 3px var(--lg-drop);
+}
+
+/* Toolbar icon buttons sit flush on the glass and light up with glass on hover. */
+.sb-glass-toolbar :is(button, a).sb-ring:not(.lg-button) {
+  color: var(--lg-foreground);
+  background-color: transparent;
+}
+.sb-glass-toolbar :is(button, a).sb-ring:not(.lg-button):is(:hover, [aria-expanded="true"]) {
+  background-color: var(--lg-glass-active);
+}
+
+/* ── Glass buttons (ui/Button) ──────────────────────────────────────── */
+/* The filled primary takes the accent fill with the accent's own text colour
+   (lime needs dark text, glisse defaults to white). */
+.lg-button[data-variant="filled"]:not([data-destructive]):not([data-tint]) {
+  color: var(--sb-accent-text, #000);
+}
+
+/* ── Readable fallback ──────────────────────────────────────────────── */
+/* No live backdrop, or asked for less transparency/motion: paint real surfaces instead. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  html .lg-glass {
+    background-color: var(--sb-card);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  html .lg-button[data-variant="filled"] {
+    background-color: var(--lg-button-fill);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  html .lg-glass {
+    background-color: var(--sb-card);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  html .lg-button[data-variant="filled"] {
+    background-color: var(--lg-button-fill);
+  }
+  .lg-glass::after {
+    display: none;
+  }
+}
