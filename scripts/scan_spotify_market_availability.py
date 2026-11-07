@@ -1,4 +1,4 @@
-"""Weekly per-market Spotify availability scan for the own catalog.
+"""Daily per-territory Spotify availability scan for the own catalog.
 
 The daily takedown watch (check_spotify_track_availability.py) only asks "does
 this track play anywhere?". This scan asks the finer question: in which Spotify
@@ -589,6 +589,18 @@ def filter_candidates(
     return out[:limit] if limit else out
 
 
+def skip_taken_down(candidates: Sequence[dict], taken_down: Iterable[str]) -> Tuple[List[dict], int]:
+    """Drop tracks the takedown watch currently marks unavailable; returns (kept, skipped count).
+
+    A taken-down track is unplayable everywhere, so scanning it per territory
+    only produces noise. Its stored market row is left untouched (no events, no
+    deletes) and it is scanned normally again once the watch sees it back.
+    """
+    blocked = {norm_isrc(i) for i in taken_down}
+    kept = [c for c in candidates if norm_isrc(c.get("isrc")) not in blocked]
+    return kept, len(candidates) - len(kept)
+
+
 def artists_label(candidate: dict) -> str:
     return ", ".join(candidate.get("artist_names") or []) or "Unknown artist"
 
@@ -622,7 +634,7 @@ def build_email(events: List[dict], tracks_by_isrc: Dict[str, dict]) -> Tuple[st
         if e["event"] == "lost":
             by_isrc.setdefault(e["isrc"], []).append(e["market"])
     n = len(by_isrc)
-    subject = f"[StreamBase] Spotify markets: {n} track{'s' if n != 1 else ''} lost availability"
+    subject = f"[StreamBase] Spotify territories: {n} track{'s' if n != 1 else ''} lost availability"
     lines: List[str] = []
     items: List[str] = []
     for isrc, markets in by_isrc.items():
@@ -632,7 +644,7 @@ def build_email(events: List[dict], tracks_by_isrc: Dict[str, dict]) -> Tuple[st
         text = f"{artists} – {name} ({isrc}): newly unavailable in {', '.join(sorted(markets))}"
         lines.append(f"- {text}")
         items.append(f"<li>{html.escape(text)}</li>")
-    footer = "Checked per country against the Spotify Web API. Full list: StreamBase -> Health -> Spotify markets."
+    footer = "Checked per territory against the Spotify Web API. Full list: StreamBase -> Health -> Territories."
     text_body = "\n".join(lines) + "\n\n" + footer
     html_body = "<ul>" + "".join(items) + f"</ul><p style=\"color:#666;font-size:12px\">{html.escape(footer)}</p>"
     return subject, text_body, html_body
@@ -711,6 +723,12 @@ def run(pg: Postgrest, sp: Any, args: argparse.Namespace) -> int:
     tracks_by_isrc = {c["isrc"]: c for c in candidates}
 
     todo = filter_candidates(candidates, args.artist, args.isrc or [], args.limit)
+    taken_down = pg.select_all(
+        "spotify_track_availability", "isrc", "status=eq.unavailable", order="isrc.asc"
+    )
+    todo, skipped_down = skip_taken_down(todo, [r["isrc"] for r in taken_down])
+    if skipped_down:
+        print(f"Skipping {skipped_down} track(s) the takedown watch marks unavailable (existing rows untouched)")
     print(f"Scanning {len(todo)} of {len(candidates)} catalog tracks across {len(markets)} markets")
     if not todo:
         print("Nothing to scan.")
@@ -736,7 +754,7 @@ def run(pg: Postgrest, sp: Any, args: argparse.Namespace) -> int:
 
     summary = [
         "## Spotify market scan",
-        f"- Tracks scanned: {len(todo)} · markets: {len(markets)}",
+        f"- Tracks scanned: {len(todo)} · territories: {len(markets)} · skipped (taken down): {skipped_down}",
         f"- Spotify requests used: {requests_used} (budget {args.max_requests}, verify cap {args.max_verify_requests}, search cap {args.max_search_requests})",
     ]
     if not args.skip_safety_valve:

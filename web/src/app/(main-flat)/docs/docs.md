@@ -59,7 +59,7 @@ Files:
 
 **Change by release week** compares the latest seven data days with the preceding seven for the own catalog. Expand a release cohort to see its tracks; recent releases are grouped Friday–Thursday, then older releases by month or year. Counter resets are excluded and listed below the table. Admins and users with competitor access get an **Ours | vs Competitors** toggle: it adds **Competitors** (the median of each competitor's own % change for releases in the same range, with how many competitors released then) and **Vs comps** (our % minus that median, in points). Open a week and pick **Competitors** to see each competitor's totals; click one for its most affected tracks (top 100 drops). Competitor numbers come only from the competitor schema and use the same 7-day windows.
 
-**Territories** (own catalog, admins) is a collapsed section near the bottom of Home listing tracks that are not playable on Spotify in some or all territories. A strip at the top shows each affected territory and how many tracks it blocks; below it, tracks unavailable everywhere come first, then tracks missing some territories, each with the missing territories by name (hover for the reason) and a "Live in 179/183" coverage bar. The green icon opens the track on Spotify; the title opens it in Catalog. It is hidden until the first scan and when nothing is restricted. See **Weekly territory availability** in Part 2.
+**Territories** (own catalog, admins) is a collapsed section near the bottom of Home listing tracks that are not playable on Spotify in some or all territories. A strip at the top shows each affected territory and how many tracks it blocks (major markets such as US, GB, DE, BR, MX, IN are highlighted); below it, tracks unavailable everywhere come first, then tracks missing some territories, biggest tracks (latest daily streams) first, each with the missing territories (hover for the name and reason), its daily streams and a "Live in 179/183" coverage bar. A small switch changes the list to **By distributor** (one expandable card per distributor, such as "Masafy LANDR · 7 tracks · missing BR IN MX PK"); the choice is remembered in your browser. A **Recent changes** list shows the last 30 days ("07 Nov 2026 · Saxena – Dance Monkey · lost CA", lost in red, regained in green). The green icon opens the track on Spotify; the title opens it in Catalog. It is hidden until the first scan and when nothing is restricted. See **Daily territory availability** in Part 2.
 
 Data:
 
@@ -395,7 +395,7 @@ StreamBase uses ISRC because SpotOnTrack exports are ISRC-based and it’s the b
 
 ### How do I see which countries a track is available in on Spotify?
 
-Open the track in **Catalog** (badge under the title), check **Home → Territories**, or **Health → Territories** for the full list of restricted tracks. Data comes from the official Spotify Web API (free), refreshed by the weekly territory scan. To check one artist on demand, run the scan with `--artist` (see Part 2, **Weekly territory availability**).
+Open the track in **Catalog** (badge under the title), check **Home → Territories**, or **Health → Territories** for the full list of restricted tracks. Data comes from the official Spotify Web API (free), refreshed by the daily territory scan. To check one artist on demand, run the scan with `--artist` (see Part 2, **Daily territory availability**).
 
 ### Why do dates look “2 days behind”?
 
@@ -486,7 +486,7 @@ Times are **UTC** with Dubai time (UTC+4). The Supabase database scheduler start
 | Workflow | Trigger / time (UTC) | Dubai (UTC+4) | What it does |
 |---|---|---:|---|
 | Spotify Takedown Watch (`spotify_takedown_watch.yml`) | Daily 20:00 (database scheduler) | 00:00 | Checks own-catalog tracks for Spotify availability changes |
-| Spotify Market Availability (`spotify_market_availability_weekly.yml`) | Sundays 21:00 (database scheduler) | 01:00 Mon | Records which territories each own-catalog track is not playable in on Spotify |
+| Spotify Territory Availability (`spotify_market_availability_weekly.yml`, file name kept for the scheduler) | Daily 21:00 (database scheduler) | 01:00 | Records which territories each own-catalog track is not playable in on Spotify |
 | Own daily pipeline (`sot_own_daily_pipeline.yml`) | Database scheduler dispatch at 12:00; sync + export after refresh succeeds; GitHub fallback cron 16:00 | 16:00 | Refreshes SpotOnTrack playlists, syncs dashboards with `config/playlists.csv`, exports and ingests into Supabase (idempotent) |
 | RapidAPI stale-track fix (`rapidapi_stale_fix.yml`) | Dispatched after a successful, current-UTC-date own-catalog export is ingested; daily fallback cron 16:41 | 20:41 | Attempts own-catalog stale-track corrections |
 | RapidAPI stale-track second look (`rapidapi_stale_fix.yml`, `second_look=true`) | Database scheduler dispatch 17:30 | 21:30 | Re-checks only tracks that are still stale after the first fix, using the same free providers within their caps |
@@ -1627,17 +1627,17 @@ overrides. Successful refreshes retain snapshots from the run date back through
 30 days earlier; older selections continue to use live calculations.
 See `docs/COMPETITOR-MODE-OPERATIONS.md` for migration and refresh details.
 
-## Weekly territory availability
+## Daily territory availability
 
-The `spotify_market_availability_weekly.yml` workflow runs on **Sundays at 21:00 UTC / 01:00 Dubai (Monday)**, started by the database scheduler (job `streambase-market-availability`). It is own-catalog only. **Apply `supabase/migrations/20261106233500_add_spotify_market_availability.sql` first.**
+The `spotify_market_availability_weekly.yml` workflow runs **daily at 21:00 UTC / 01:00 Dubai**, started by the database scheduler (job `streambase-market-availability`). It is own-catalog only. The file name still says "weekly" because the scheduler dispatches it by name. **Apply `supabase/migrations/20261106233500_add_spotify_market_availability.sql`, then `20261107090000_reschedule_market_availability_daily.sql` (weekly to daily).**
 
 For every own-catalog track with a Spotify id it records the territories (Spotify "markets", i.e. countries) where the track is **not** playable. Results appear in three places:
 
-- **Health → Territories**: restricted tracks with the missing territories by name, a coverage bar and any unusual restriction reason. Hidden until the first scan.
-- **Home → Territories** (own-catalog mode, admin): a collapsed list, with tracks unavailable everywhere first.
-- **Catalog**: a badge under the selected track, such as "Live in all 183 territories" or "Not on Spotify in Brazil, India, Mexico, Pakistan 179/183".
+- **Health → Territories**: restricted tracks, biggest first, with the distributor, latest daily streams, missing territories, a coverage bar and any unusual restriction reason. Click territory chips to filter, pick a distributor, search artist, title or ISRC, switch to **By distributor**, and download the filtered rows as CSV. A Recent changes list sits below. Hidden until the first scan.
+- **Home → Territories** (own-catalog mode, admin): a collapsed list, with tracks unavailable everywhere first, a By track / By distributor switch and Recent changes.
+- **Catalog**: a badge under the selected track, such as "Live in all 183 territories" or "Not on Spotify in Brazil, India, Mexico, Pakistan 179/183". Click it for a world map (missing territories red, the rest green; hover for the country), the full territory list and that track's change history.
 
-A track newly lost in a market is emailed; regained markets are only recorded. The first scan seeds the table silently. Safety valves stop a run without writing if more than 20% of checks come back missing, or more than 10% of tracks lose 10 or more markets at once. Run **Actions → Spotify Market Availability Weekly → Run workflow** with `dry_run=true` (optionally an `artist`) to check without writing; a CSV report is attached to the run.
+A track newly lost in a market is emailed; regained markets are only recorded. The first scan seeds the table silently. Safety valves stop a run without writing if more than 20% of checks come back missing, or more than 10% of tracks lose 10 or more markets at once. Run **Actions → Spotify Territory Availability (daily) → Run workflow** with `dry_run=true` (optionally an `artist`) to check without writing; a CSV report is attached to the run.
 
 ### Which API, and what it costs
 
@@ -1680,9 +1680,18 @@ Spotify sometimes replaces a track with a re-delivered copy (new Spotify id, sam
 
 Example from the first scan: 7 of the 45 Saxena tracks (solo covers) were blocked in Brazil, India, Mexico and Pakistan with reason `market`; Saxena – Dance Monkey (SE6QE2375858) was also blocked in Canada.
 
+### Distributors, big tracks first, recent changes
+
+- **Distributor** is the track's current membership of a `Distro` playlist (the same rule as the Catalog "distro" column). A territory gap is usually a distributor setting, so grouping by distributor shows which distributor to fix. Tracks with no Distro playlist are grouped last as "No distributor found".
+- **Daily streams** are the latest data date minus the day before, read from the last 7 days of `track_daily_streams_effective_public` for the restricted ISRCs only (never an unbounded history read). Lists sort by daily streams, then by number of territories missing. A dash means no recent data.
+- **Major markets** (US, GB, DE, BR, MX, IN, FR, CA, AU, JP, ES, IT, NL, SE, ID, PH, PL, TR) get a stronger chip and are listed first (`MAJOR_TERRITORIES` in `web/src/lib/health/spotifyMarketFormat.ts`).
+- **Recent changes** come from `public.spotify_track_market_events` (last 30 days, newest 200). The Catalog modal shows the history of the selected ISRC.
+- The Catalog map is drawn from `world-atlas` (110m countries) with `d3-geo`, bundled locally and loaded only when the modal opens. Very small territories the atlas leaves out (for example Singapore) are listed under the map instead.
+- The list data is cached for an hour in the Territories loader (`cachedSpotifyMarketAvailability`).
+
 ### How often each track is checked
 
-Currently **once a week** (Sundays 21:00 UTC). With the few-hundred-request design a **daily** scan fits comfortably inside the quota (the takedown watch already makes ~190 requests a day), and tracks the takedown watch currently marks unavailable can be skipped (the takedown watch keeps checking them daily and reports restorations). The plan is to switch to daily once a full run's real request count is confirmed.
+**Daily** at 21:00 UTC, one hour after the takedown watch. The few-hundred-request design fits comfortably inside the quota (the takedown watch makes ~190 requests a day). Tracks the takedown watch currently marks unavailable (`public.spotify_track_availability.status = 'unavailable'`) are **skipped**: they are unplayable everywhere, so per-territory results would be noise. A skipped track keeps its existing territory row untouched (no events, no deletes). When the takedown watch sees it back, the next scan checks it normally again.
 
 ### Running it by hand
 

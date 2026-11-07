@@ -1,3 +1,5 @@
+import { formatDisplayDayMonth } from "@/lib/format";
+
 export type ManualOverrideTooltipItem = {
   note: string;
   title?: string;
@@ -214,10 +216,7 @@ export function formatXAxisTick(value: string): string {
     case "yearly":
       return value;
     default: {
-      const date = new Date(value);
-      const day = String(date.getDate()).padStart(2, "0");
-      const month = String(date.getMonth() + 1).padStart(2, "0");
-      return `${day}/${month}`;
+      return formatDisplayDayMonth(value);
     }
   }
 }

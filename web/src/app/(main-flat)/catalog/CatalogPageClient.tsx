@@ -31,6 +31,7 @@ import { useMetric } from "@/components/metrics/MetricContext";
 import { SectionHeader } from "@/components/ui/SectionHeader";
 import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
 import { SpotifyMarketsBadge } from "@/components/spotify/SpotifyMarketsBadge";
+import type { SpotifyTrackMarkets } from "@/lib/health/spotifyMarketTypes";
 import { SpotifyNotFoundBadge } from "@/components/ui/SpotifyNotFoundBadge";
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { RememberTrackSelection } from "@/components/dashboard/RememberTrackSelection";
@@ -112,14 +113,8 @@ export function CatalogPageClient(props: {
   track28d: number;
   track30d: number;
   selectedTrackPlaylistMemberships: TrackPlaylistMembership[];
-  /** Own catalog only: weekly Spotify per-market availability summary for the selected track. */
-  selectedTrackMarkets?: {
-    markets_checked: number;
-    available_count: number;
-    unavailable_markets: string[];
-    unavailable_reasons?: Record<string, string>;
-    last_checked_at?: string | null;
-  } | null;
+  /** Own catalog only: daily Spotify territory availability summary (and recent changes) for the selected track. */
+  selectedTrackMarkets?: SpotifyTrackMarkets | null;
 }) {
   useSyncCatalogSelection(props.artistId, props.isrc, props.mode ?? "own", props.competitorLabelKey, props.artists);
   const mode = props.mode ?? "own";

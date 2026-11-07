@@ -12,7 +12,7 @@ import {
   YAxis,
 } from "recharts";
 import { useCallback, useId, useMemo, useRef } from "react";
-import { formatCompactMoney, formatInt, formatUsd2 } from "@/lib/format";
+import { formatCompactMoney, formatDisplayDayMonth, formatInt, formatUsd2 } from "@/lib/format";
 import {
   computePaddedDomain,
   computeRollingAvg7,
@@ -661,11 +661,8 @@ export function CollectorComparisonChart({
                 // Format: "2024" -> "2024"
                 return value;
               }
-              // Daily: format as dd/mm
-              const date = new Date(value);
-              const day = String(date.getDate()).padStart(2, "0");
-              const month = String(date.getMonth() + 1).padStart(2, "0");
-              return `${day}/${month}`;
+              // Daily: "07 Oct"
+              return formatDisplayDayMonth(value);
             }}
             stroke="var(--sb-muted)"
             fontSize={10}

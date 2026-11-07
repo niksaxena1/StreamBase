@@ -1,8 +1,10 @@
-name: Spotify Market Availability Weekly
+name: Spotify Territory Availability (daily)
 
 # Own catalog only. Checks every catalog track against the Spotify Web API in
-# each market and records where it is NOT playable; emails when a track newly
-# loses markets. See scripts/scan_spotify_market_availability.py.
+# each territory and records where it is NOT playable; emails when a track newly
+# loses territories. Tracks the takedown watch marks unavailable are skipped.
+# (The file name still says "weekly" because pg_cron dispatches it by name.)
+# See scripts/scan_spotify_market_availability.py.
 
 on:
   workflow_dispatch:
@@ -19,9 +21,10 @@ on:
         description: "Write even if a safety valve trips (only after confirming the changes are real)"
         required: false
         default: "false"
-  # Scheduled weekly by the database (pg_cron -> ops.dispatch_workflow, job
-  # streambase-market-availability, Sundays 21:00 UTC; migration
-  # 20261106233500_add_spotify_market_availability.sql). No GitHub `schedule:` trigger.
+  # Scheduled daily by the database (pg_cron -> ops.dispatch_workflow, job
+  # streambase-market-availability, 21:00 UTC; created by
+  # 20261106233500_add_spotify_market_availability.sql, made daily by
+  # 20261107090000_reschedule_market_availability_daily.sql). No GitHub `schedule:` trigger.
   # Dispatch failures email via ops.check_workflow_dispatches.
 
 concurrency:
@@ -60,7 +63,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Scan Spotify markets
+      - name: Scan Spotify territories
         id: scan
         run: |
           mkdir -p artifacts
@@ -70,7 +73,7 @@ jobs:
           [ "${SKIP_SAFETY_VALVE}" = "true" ] && args+=(--skip-safety-valve)
           python scripts/scan_spotify_market_availability.py "${args[@]}"
 
-      - name: Upload market report
+      - name: Upload territory report
         if: always()
         uses: actions/upload-artifact@v7
         with:
@@ -79,7 +82,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30
 
-      - name: Send market-loss alerts
+      - name: Send territory-loss alerts
         if: steps.scan.outputs.alert != ''
         uses: ./.github/actions/notify-email
         with:
@@ -105,9 +108,9 @@ jobs:
         uses: ./.github/actions/notify-email
         with:
           password: ${{ secrets.NOTIFY_SMTP_PASSWORD }}
-          subject: "[StreamBase] Spotify Market Availability scan FAILED"
+          subject: "[StreamBase] Spotify Territory Availability scan FAILED"
           body: |
-            The weekly Spotify market availability scan failed, so per-country restrictions may go unnoticed until it is fixed.
+            The daily Spotify territory availability scan failed, so per-territory restrictions may go unnoticed until it is fixed.
             A deliberate stop (missing-data or mass-loss safety valve) also lands here; the run summary says which.
 
             Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

@@ -1,14 +1,10 @@
-import { formatDisplayDate } from "@/lib/format";
-/** UAE standard time (Abu Dhabi, Dubai, etc.) */
-const ABU_DHABI_TZ = "Asia/Dubai";
+import { formatDisplayDateTimeUtc } from "@/lib/format";
 
 /**
- * Human-readable date + time in Abu Dhabi for display on shared snapshot pages.
+ * Human-readable UTC date + time ("06 Nov 2026, 20:00 UTC") for shared snapshot pages.
+ * Unparseable input is returned unchanged.
  */
-export function formatShareSnapshotCreatedAtAbuDhabi(createdAtIso: string): string {
-  const d = new Date(createdAtIso);
-  if (Number.isNaN(d.getTime())) return createdAtIso;
-  const date = formatDisplayDate(new Intl.DateTimeFormat("en-CA", { timeZone: ABU_DHABI_TZ }).format(d));
-  const time = new Intl.DateTimeFormat("en-GB", { timeZone: ABU_DHABI_TZ, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(d);
-  return `${date}, ${time} GST`;
+export function formatShareSnapshotCreatedAt(createdAtIso: string): string {
+  const out = formatDisplayDateTimeUtc(createdAtIso);
+  return out === "—" ? createdAtIso : out;
 }

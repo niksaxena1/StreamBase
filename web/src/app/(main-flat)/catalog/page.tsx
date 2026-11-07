@@ -715,7 +715,7 @@ async function CatalogPageContent({
 
   const selectedTrackPlaylistMemberships = await selectedTrackPlaylistMembershipsPromise;
 
-  // Weekly per-market Spotify scan: one cached primary-key lookup, own catalog only (this branch
+  // Daily territory scan: one cached primary-key lookup (+ that ISRC's recent events), own catalog only (this branch
   // is already admin-gated). Never blocks or breaks the page; null when never scanned.
   let selectedTrackMarkets: SpotifyTrackMarkets | null = null;
   if (isrc) {

@@ -7,7 +7,7 @@ import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/Gla
 import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
 import { formatDateISO, formatInt, formatUsd } from "@/lib/format";
 import { parseConcentrationShareSnapshotV1 } from "@/lib/share/concentrationSnapshot";
-import { formatShareSnapshotCreatedAtAbuDhabi } from "@/lib/share/formatShareCreatedAt";
+import { formatShareSnapshotCreatedAt } from "@/lib/share/formatShareCreatedAt";
 import { CONCENTRATION_SHARE_TTL_DAYS } from "@/lib/share/concentrationShareTtl";
 import { supabaseService } from "@/lib/supabase/service";
 
@@ -75,9 +75,8 @@ export default async function SharedConcentrationPage(props: PageProps) {
             <p className="text-xs opacity-50" style={{ color: "var(--sb-muted)" }}>
               Snapshot created{" "}
               <span className="font-mono tabular-nums">
-                {formatShareSnapshotCreatedAtAbuDhabi(createdAtIso)}
-              </span>{" "}
-              <span className="opacity-70">(Abu Dhabi)</span>
+                {formatShareSnapshotCreatedAt(createdAtIso)}
+              </span>
             </p>
           ) : null}
           {snap.latestRunDate ? (

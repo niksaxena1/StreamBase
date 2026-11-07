@@ -8,6 +8,7 @@ import {
   filterBucketedSeriesFromIsoDate,
   computePaddedDomain,
   formatKmbTick,
+  formatXAxisTick,
   extractOverrideItemsFromRechartsPayload,
   computeWeekendDipMap,
   extractWeekendDipFromRechartsPayload,
@@ -571,5 +572,12 @@ describe("dailyFromCumulativeAsc", () => {
       { date: "2026-01-24", daily: null },
       { date: "2026-01-25", daily: 12 },
     ]);
+  });
+});
+
+describe("formatXAxisTick", () => {
+  it("shows daily ticks as DD Mon, not DD/MM", () => {
+    expect(formatXAxisTick("2026-10-07")).toBe("07 Oct");
+    expect(formatXAxisTick("2026-01-02")).toBe("02 Jan");
   });
 });

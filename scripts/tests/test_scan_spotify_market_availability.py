@@ -423,7 +423,12 @@ class FakePg:
     def rpc_all(self, name, params, order):
         return self.candidates
 
+    taken_down = ()
+
     def select_all(self, table, select, filters, order=None):
+        if table == "spotify_track_availability":
+            assert filters == "status=eq.unavailable"
+            return [{"isrc": i} for i in self.taken_down]
         if table == "spotify_track_market_availability":
             return self.prev_rows
         if table == "spotify_track_market_events":
@@ -502,3 +507,33 @@ def test_run_budget_exceeded_writes_nothing_and_exits_nonzero():
     sp = UniverseSpotify(lists={TID: ["US"]})
     assert m.run(pg, sp, args(max_requests=1)) == m.EXIT_BUDGET
     assert pg.upserted == [] and pg.inserted == []
+
+
+def test_skip_taken_down_drops_only_listed_isrcs():
+    a, b = cand("QZ1"), cand("QZ2")
+    kept, skipped = m.skip_taken_down([a, b], ["qz1"])
+    assert kept == [b] and skipped == 1
+    assert m.skip_taken_down([a, b], []) == ([a, b], 0)
+
+
+def test_run_skips_taken_down_track_and_leaves_its_row_untouched(monkeypatch):
+    monkeypatch.setattr(m, "notify_web_revalidate", lambda: None)
+    monkeypatch.setattr(m, "send_email", lambda *a, **k: None)
+    down, live = cand("QZ0000000001", tid="DOWN"), cand("QZ0000000002", tid=TID)
+    pg = FakePg([down, live], [prev_row(["BR"]) | {"isrc": "QZ0000000001"}])
+    pg.taken_down = ["QZ0000000001"]
+    sp = UniverseSpotify(lists={TID: ["IN", "US"]}, blocked={(TID, "BR")})
+    assert m.run(pg, sp, args()) == 0
+    assert [r["isrc"] for r in pg.upserted] == ["QZ0000000002"]
+    assert pg.inserted == []
+    assert all(ids != ("DOWN",) for ids, _ in sp.calls) and not any("DOWN" in ids for ids, _ in sp.calls)
+
+
+def test_run_scans_track_again_once_takedown_watch_sees_it_back(monkeypatch):
+    monkeypatch.setattr(m, "notify_web_revalidate", lambda: None)
+    monkeypatch.setattr(m, "send_email", lambda *a, **k: None)
+    pg = FakePg([cand("QZ0000000001")], [])
+    pg.taken_down = []
+    sp = UniverseSpotify(lists={TID: ["IN", "US"]}, blocked={(TID, "BR")})
+    assert m.run(pg, sp, args()) == 0
+    assert [r["isrc"] for r in pg.upserted] == ["QZ0000000001"]

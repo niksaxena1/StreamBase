@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { fetchApiJson } from "@/lib/api";
+import { formatDisplayDayMonth } from "@/lib/format";
 import { useNavigationRouter as useRouter } from "@/components/shell/useNavigationRouter";
 import {
   BarChart,
@@ -157,10 +158,7 @@ export function WarningHistoryChart() {
             />
             <XAxis
               dataKey="date"
-              tickFormatter={(v) => {
-                const d = new Date(v);
-                return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`;
-              }}
+              tickFormatter={(v) => formatDisplayDayMonth(String(v))}
               stroke="var(--sb-muted)"
               fontSize={10}
               tickLine={false}

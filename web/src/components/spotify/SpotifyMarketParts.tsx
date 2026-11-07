@@ -1,5 +1,12 @@
 import { cx } from "@/lib/cx";
-import { marketName, marketReasonLabel, tallyMarkets } from "@/lib/health/spotifyMarketFormat";
+import {
+  formatDailyStreams,
+  isMajorTerritory,
+  marketName,
+  marketReasonLabel,
+  sortTerritories,
+  tallyMarkets,
+} from "@/lib/health/spotifyMarketFormat";
 
 /**
  * Shared, server- and client-safe pieces for the per-market Spotify availability UI
@@ -24,17 +31,25 @@ export function TerritoryFlag({ code, size = 16 }: { code: string; size?: 16 | 2
   );
 }
 
-/** One missing territory: flag + full name, reason on hover. */
+/** One missing territory: flag + ISO code, name and reason on hover. Major Spotify markets get a stronger style. */
 export function MarketChip({ code, reason, count }: { code: string; reason?: string | null; count?: number }) {
   const name = marketName(code);
-  const title = count != null ? `${name}: ${count} ${count === 1 ? "track" : "tracks"} unavailable` : `${name}: ${marketReasonLabel(reason)}`;
+  const major = isMajorTerritory(code);
+  const title =
+    (count != null ? `${name}: ${count} ${count === 1 ? "track" : "tracks"} unavailable` : `${name}: ${marketReasonLabel(reason)}`) +
+    (major ? " (major market)" : "");
   return (
     <span
       title={title}
-      className="inline-flex items-center gap-1.5 rounded-md border border-red-500/25 bg-red-500/10 py-0.5 pl-1.5 pr-2 text-xs text-red-800 dark:border-red-400/25 dark:bg-red-500/15 dark:text-red-200"
+      className={cx(
+        "inline-flex items-center gap-1.5 rounded-md border py-0.5 pl-1.5 pr-2 text-xs",
+        major
+          ? "border-red-600/70 bg-red-500/25 font-semibold text-red-900 shadow-[0_0_0_1px_rgba(220,38,38,0.25)] dark:border-red-400/70 dark:bg-red-500/35 dark:text-red-50"
+          : "border-red-500/25 bg-red-500/10 text-red-800 dark:border-red-400/25 dark:bg-red-500/15 dark:text-red-200",
+      )}
     >
       <TerritoryFlag code={code} />
-      <span className="font-mono text-[11px] font-semibold tracking-wide">{code}</span>
+      <span className={cx("font-mono text-[11px] tracking-wide", major ? "font-bold" : "font-semibold")}>{code}</span>
       {count != null ? (
         <span className="ml-0.5 rounded bg-red-500/20 px-1 font-mono text-[10px] font-semibold tabular-nums dark:bg-red-400/25">
           {count}
@@ -56,8 +71,9 @@ export function MarketChipList({
   max?: number;
   className?: string;
 }) {
-  const shown = markets.slice(0, max);
-  const hidden = markets.slice(max);
+  const ordered = sortTerritories(markets);
+  const shown = ordered.slice(0, max);
+  const hidden = ordered.slice(max);
   return (
     <div className={cx("flex flex-wrap gap-1", className)}>
       {shown.map((code) => (
@@ -138,5 +154,14 @@ export function MarketCountrySummary({
         ) : null}
       </div>
     </div>
+  );
+}
+
+/** "12,345 / day" (latest daily streams); renders a dash when unknown. */
+export function DailyStreamsLabel({ value, className }: { value: number | null | undefined; className?: string }) {
+  return (
+    <span className={cx("whitespace-nowrap font-mono text-[11px] tabular-nums", className)} style={{ color: "var(--sb-muted)" }} title="Latest daily streams">
+      <span style={{ color: "var(--sb-text)" }}>{formatDailyStreams(value)}</span> / day
+    </span>
   );
 }

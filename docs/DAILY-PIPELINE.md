@@ -163,7 +163,7 @@ GitHub's own `schedule:` triggers ran 6–8 hours late, so these workflows are s
 | Job | pg_cron name | When |
 |---|---|---|
 | `spotify_takedown_watch.yml` | `streambase-takedown-watch` | 20:00 daily (00:00 Dubai) |
-| `spotify_market_availability_weekly.yml` | `streambase-market-availability` | 21:00 on Sundays (01:00 Dubai Monday) |
+| `spotify_market_availability_weekly.yml` | `streambase-market-availability` | 21:00 daily (01:00 Dubai) |
 | `artist_tools_daily.yml` | `streambase-artist-tools-daily` | 18:17 daily |
 | `spotify_playlist_watch_daily.yml` | `streambase-playlist-watch` | 14:00 daily (18:00 Abu Dhabi) |
 | `spotify_artist_image_refresh.yml` | `streambase-artist-image-refresh` | 15:00 on the first Friday of the month |
@@ -175,11 +175,11 @@ once per workflow per day if GitHub did not answer 204. `ops.check_db_size()` (0
 weekly while the database is above 450 MB (Free plan limit 500 MB). Manual runs: GitHub Actions → Run workflow,
 or `select ops.dispatch_workflow('<file>.yml', '{"input":"value"}');`.
 
-## Weekly Spotify market availability scan
+## Daily Spotify territory availability scan
 
-`spotify_market_availability_weekly.yml` (own catalog only) records, per track, the Spotify markets where it is **not** playable. It is dispatched by pg_cron (`streambase-market-availability`, `0 21 * * 0`) through `ops.dispatch_workflow`, has its own concurrency group (`spotify-market-availability`) and a 45 minute timeout.
+`spotify_market_availability_weekly.yml` (own catalog only) records, per track, the Spotify territories (markets) where it is **not** playable. It is dispatched by pg_cron (`streambase-market-availability`, `0 21 * * *`, daily; weekly until `20261107090000_reschedule_market_availability_daily.sql`) through `ops.dispatch_workflow`, has its own concurrency group (`spotify-market-availability`) and a 45 minute timeout.
 
-**Apply `supabase/migrations/20261106233500_add_spotify_market_availability.sql` before the first run.** It creates `public.spotify_track_market_availability` (latest result per ISRC) and `public.spotify_track_market_events` (`lost`/`gained` per market, with `notified_at`), both backend-only with RLS and service-role grants, and schedules the cron job. Candidates reuse `public.spotify_availability_candidates()`.
+**Apply `supabase/migrations/20261106233500_add_spotify_market_availability.sql` before the first run.** It creates `public.spotify_track_market_availability` (latest result per ISRC) and `public.spotify_track_market_events` (`lost`/`gained` per market, with `notified_at`), both backend-only with RLS and service-role grants, and schedules the cron job. Candidates reuse `public.spotify_availability_candidates()`. Tracks the takedown watch currently marks unavailable (`public.spotify_track_availability.status = 'unavailable'`) are skipped; their existing rows stay untouched and they are scanned again once the watch sees them back. The workflow file keeps its `weekly` name because pg_cron references it.
 
 1. Universe (1 request): the `available_markets` of track `0VjIjW4GlUZAMYd2vXMi3b` minus `XK` (Spotify answers `market=XK` with HTTP 400). Fewer than 150 markets aborts the run with nothing written.
 2. Spotify enforces a per-app quota (a per-market sweep of ~11.7k requests hit `QUOTA_EXCEEDED` with a ~19 hour `Retry-After`, blocking the takedown watch too), so the scan uses a few hundred requests:
@@ -191,4 +191,4 @@ or `select ops.dispatch_workflow('<file>.yml', '{"input":"value"}');`.
 4. Safety valves (nonzero exit, nothing written, failure email): more than 20% of (track, market) checks missing or errored, or more than 10% of tracks newly losing 10 or more markets. `--skip-safety-valve` / the `skip_safety_valve` input overrides after manual confirmation. A candidate-count guard (< 50% of stored rows) cannot be skipped.
 5. Budget: `--max-requests` (default 1000) counts every Spotify call, retries and token calls included; exceeding it aborts with exit 6 and nothing written. Requests used are printed and shown in the step summary. Default throttle is 0.5 s per request. A 429 with `Retry-After` over 120 s aborts the run (nothing written). The workflow timeout is 45 minutes.
 
-Local usage: `python scripts/scan_spotify_market_availability.py --dry-run --artist NAME --report-csv out.csv` (also `--isrc X` repeatable, `--limit N`, `--lookback-days`, `--max-requests`, `--max-verify-requests`). The web app reads the tables through `web/src/lib/health/spotifyMarketAvailability.ts` (Health "Spotify markets", Home "Spotify market gaps", Catalog line).
+Local usage: `python scripts/scan_spotify_market_availability.py --dry-run --artist NAME --report-csv out.csv` (also `--isrc X` repeatable, `--limit N`, `--lookback-days`, `--max-requests`, `--max-verify-requests`). The web app reads the tables through `web/src/lib/health/spotifyMarketAvailability.ts` (one cached loader: restricted tracks plus each track's Distro playlist, latest daily streams from the last 7 days of the effective view, and the last 30 days of `spotify_track_market_events`; Health "Territories", Home "Territories", Catalog badge).
