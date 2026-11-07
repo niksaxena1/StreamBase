@@ -59,6 +59,8 @@ Files:
 
 **Change by release week** compares the latest seven data days with the preceding seven for the own catalog. Expand a release cohort to see its tracks; recent releases are grouped Friday–Thursday, then older releases by month or year. Counter resets are excluded and listed below the table. Admins and users with competitor access get an **Ours | vs Competitors** toggle: it adds **Competitors** (the median of each competitor's own % change for releases in the same range, with how many competitors released then) and **Vs comps** (our % minus that median, in points). Open a week and pick **Competitors** to see each competitor's totals; click one for its most affected tracks (top 100 drops). Competitor numbers come only from the competitor schema and use the same 7-day windows.
 
+**Spotify market gaps** (own catalog, admins) is a collapsed section near the bottom of Home listing tracks that are not playable on Spotify in some or all countries: tracks unavailable everywhere first, then tracks missing some markets, each with "available / checked" and the blocked country codes (hover for the country name). Click a row to open the track in Catalog. It is hidden until the first scan and when nothing is restricted. See **Weekly Spotify market availability** in Part 2.
+
 Data:
 
 - `playlist_daily_stats` (cached, live/default)
@@ -188,6 +190,8 @@ Implementation: `web/src/app/(main-flat)/playlist-watch/collectionsModel.ts` (pu
   - Download raw export CSVs for the selected run date
 
 On Health, expand **Events** below warning history for a newest-first timeline of discoveries, playlist changes, stream repairs, ingestion runs, and large daily movements. Choose 7, 30, or 90 days and filter by type. Own-catalog Events also include Spotify takedowns/restorations, including suppressed alerts marked “already dead in StreamBase.” Removals occur the day after the last active membership day. Snapshot events show data dates; ingestion dates are marked `run`. Streams lag SpotOnTrack by about two days. Movement comparisons use seven prior complete days and require at least 90% paired-track coverage; less complete days show **Partial data** instead of a movement alert.
+
+**Spotify markets** (below Spotify availability) lists every own-catalog track that is not playable in at least one Spotify country, with the reason Spotify gives (usually `market`, a distributor territory setting). The selected track in **Catalog** also shows a one-line summary such as "Spotify: unavailable in BR, IN, MX, PK (179/183)".
 
 Core warning types you’ll see:
 
@@ -388,6 +392,10 @@ Yes. In StreamBase, **ISRC is the primary track identity** (`tracks.isrc` and jo
 - ISRC: the industry recording identifier; more stable across releases and systems.
 
 StreamBase uses ISRC because SpotOnTrack exports are ISRC-based and it’s the best stable join key.
+
+### How do I see which countries a track is available in on Spotify?
+
+Open the track in **Catalog** (one-line summary under the title), check **Home → Spotify market gaps**, or **Health → Spotify markets** for the full list of restricted tracks. Data comes from the official Spotify Web API (free), refreshed by the Spotify market availability scan. To check one artist on demand, run the scan with `--artist` (see Part 2, **Weekly Spotify market availability**).
 
 ### Why do dates look “2 days behind”?
 
@@ -1623,13 +1631,73 @@ See `docs/COMPETITOR-MODE-OPERATIONS.md` for migration and refresh details.
 
 The `spotify_market_availability_weekly.yml` workflow runs on **Sundays at 21:00 UTC / 01:00 Dubai (Monday)**, started by the database scheduler (job `streambase-market-availability`). It is own-catalog only. **Apply `supabase/migrations/20261106233500_add_spotify_market_availability.sql` first.**
 
-For every own-catalog track with a Spotify id it records the Spotify markets (about 183, taken from a globally released reference track, minus Kosovo which the API rejects) where the track is **not** playable. To stay inside Spotify's per-app quota it uses only a few hundred requests per run: one market-less list call per 50 tracks, a small resolve step for stale relinked ids, and a capped per-market verify step (markets beyond the cap are recorded as `unverified`). A hard request budget aborts the run without writing if exceeded. Results appear in three places:
+For every own-catalog track with a Spotify id it records the Spotify markets (countries) where the track is **not** playable. Results appear in three places:
 
 - **Health → Spotify markets**: restricted tracks with available/checked counts, country codes (hover for the country name) and Spotify's restriction reason. Hidden until the first scan.
 - **Home → Spotify market gaps** (own-catalog mode, admin): a collapsed list, with tracks unavailable everywhere first.
 - **Catalog**: a line under the selected track, such as "Spotify: all 183 markets" or "Spotify: unavailable in BR, IN, MX, PK (179/183)".
 
 A track newly lost in a market is emailed; regained markets are only recorded. The first scan seeds the table silently. Safety valves stop a run without writing if more than 20% of checks come back missing, or more than 10% of tracks lose 10 or more markets at once. Run **Actions → Spotify Market Availability Weekly → Run workflow** with `dry_run=true` (optionally an `artist`) to check without writing; a CSV report is attached to the run.
+
+### Which API, and what it costs
+
+It uses the **official Spotify Web API** with StreamBase's existing Spotify app credentials (`SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET`, client-credentials token), the same app the takedown watch and enrichment use. The API is **free**; the only limit is Spotify's **per-app request quota**, which Spotify does not publish. GitHub Actions minutes for the run are free on the current setup. No RapidAPI or other paid service is involved.
+
+**Why not a RapidAPI Spotify wrapper?** Free tiers are typically a few hundred requests a month (not enough for one catalog scan a day), they are unofficial proxies running on someone else's credentials, and their data comes from Spotify anyway. The official API gives the same answer for free.
+
+### The market universe
+
+The list of markets is taken each run from the `available_markets` of a globally released major-label reference track (184 markets), **minus Kosovo (`XK`)**: Spotify rejects `market=XK` with HTTP 400 for every track, so it cannot be checked. That leaves **183 checkable markets**.
+
+### How a scan works (and why it only needs a few hundred requests)
+
+Spotify's `GET /v1/tracks?ids=…` accepts up to **50 track ids per request**. Called *without* a market, each returned track includes its full `available_markets` list, so one request answers "where is this available?" for 50 tracks at once.
+
+| Pass | What it does | Requests for ~3,200 tracks |
+|---|---|---|
+| A. List | `available_markets` for every stored Spotify id, 50 per request | ~64 |
+| B. Resolve | Only ids whose list is empty (old relinked copies, see below): probe US, then GB, then DE to find the current copy, then read that copy's list | ~70–100 |
+| B2. ISRC search | Only tracks still unresolved: a market-less `search?q=isrc:` and union the lists of every copy with that ISRC (capped at 150) | 0–150 |
+| C. Verify | Only for markets missing from a track's list: one `?market=XX` batch per market, covering just the tracks missing it | ~20–100 |
+
+Typical total: **~150–400 requests**, with a hard cap of **1,000** (`--max-requests`; the run aborts without writing if exceeded) and a 0.5 s gap between requests. Markets left over by the verify cap are recorded as `unverified`: they never trigger events and keep their previous state (on a track's first scan they make no claim at all, so no false gaps are seeded).
+
+**Why not just ask market by market?** That is 64 batches × 183 markets ≈ **11,700 requests**. The first full run (7 Nov 2026) did exactly that and Spotify answered `429 QUOTA_EXCEEDED` after ~3,200 requests in 12 minutes, blocking the whole Spotify app (takedown watch and enrichment included) for about 19.5 hours. Nothing was written. The list/resolve/verify design replaced it the same day.
+
+### Relinking: why a stored id can show "0 markets" but still play
+
+Spotify sometimes replaces a track with a re-delivered copy (new Spotify id, same ISRC) and silently **relinks** the old id to the new copy. The old id's own `available_markets` is then empty, even though listeners can play the track. Example: Saxena – Get You The Moon (SE6XX2310476) listed 0 markets on its stored id but plays in 179. So the scan never trusts an empty list on its own: it resolves the current copy (pass B) or searches by ISRC (pass B2) before calling anything unavailable. The `relinked` column marks tracks where this happened. Only if no copy is found anywhere is a track recorded as unavailable in every market (reason `not_found`).
+
+### Restriction reasons
+
+| Reason | Meaning |
+|---|---|
+| `market` | Spotify says the track is not licensed/released in that country. Usually a territory setting at the distributor. |
+| `explicit` / `product` | Restricted by listener settings or account tier, not by the release itself. |
+| `none` | Not playable there and Spotify gave no reason. |
+| `not_found` | No playable copy of the recording exists on Spotify (stored id, relinked copy and ISRC search all came up empty). |
+| `unverified` | Not confirmed this run (verify or search cap reached). Never alerts. |
+
+Example from the first scan: 7 of the 45 Saxena tracks (solo covers) were blocked in Brazil, India, Mexico and Pakistan with reason `market`; Saxena – Dance Monkey (SE6QE2375858) was also blocked in Canada.
+
+### How often each track is checked
+
+Currently **once a week** (Sundays 21:00 UTC). With the few-hundred-request design a **daily** scan fits comfortably inside the quota (the takedown watch already makes ~190 requests a day), and tracks the takedown watch currently marks unavailable can be skipped (the takedown watch keeps checking them daily and reports restorations). The plan is to switch to daily once a full run's real request count is confirmed.
+
+### Running it by hand
+
+```bash
+python scripts/scan_spotify_market_availability.py --artist Saxena --dry-run --report-csv out.csv
+```
+
+Flags: `--artist NAME`, `--isrc X` (repeatable), `--limit N`, `--dry-run`, `--report-csv PATH`, `--max-requests`, `--max-verify-requests`, `--max-search-requests`, `--min-interval`, `--skip-safety-valve`. Needs `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`.
+
+### Data
+
+- `public.spotify_track_market_availability`: one row per ISRC (stored Spotify id, markets checked, available count, `unavailable_markets`, `unavailable_reasons` market → reason, `relinked`, first/last checked, when the set last changed).
+- `public.spotify_track_market_events`: per-market `lost` / `gained` history with `notified_at` for the email audit.
+- Both are backend-only (RLS on, service-role grants); the web app reads them with the service client after admin gating.
+- Script: `scripts/scan_spotify_market_availability.py` (tests in `scripts/tests/test_scan_spotify_market_availability.py`). Web loader: `web/src/lib/health/spotifyMarketAvailability.ts`.
 
 ## Daily Spotify takedown watch
 
