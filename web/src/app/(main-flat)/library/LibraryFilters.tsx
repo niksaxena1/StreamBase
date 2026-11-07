@@ -10,6 +10,7 @@ import { Select } from "@/components/ui/Select";
 import type { LibraryFilters as Filters } from "@/lib/library/filters";
 import { formatDuration, parseDuration } from "@/lib/library/format";
 import { parseLicensingFilter, type LicensingFilter } from "@/lib/library/licensing";
+import { parseTerritoryGapsFilter, type TerritoryGapsFilter } from "@/lib/library/territories";
 
 import { LibraryToolbarPopover } from "./LibraryToolbarPopover";
 
@@ -30,6 +31,14 @@ export function LicensingFilterSelect({ label, value, onChange }: { label: strin
     <option value="staged">Staged</option>
     <option value="sent">Sent</option>
     <option value="none">Not in a batch</option>
+  </Select>;
+}
+
+export function TerritoryGapsSelect({ value, onChange }: { value: TerritoryGapsFilter; onChange: (value: TerritoryGapsFilter) => void }) {
+  return <Select aria-label="Territory gaps" value={value} className={SELECT_CLASS} onChange={(e) => onChange(parseTerritoryGapsFilter(e.target.value))}>
+    <option value="">Territory gaps: any / none</option>
+    <option value="any">Territory gaps: any</option>
+    <option value="none">Territory gaps: none</option>
   </Select>;
 }
 
@@ -122,6 +131,7 @@ export function LibraryFilterBar({
             <FacetSelect label="Exclusivity" value={filters.exclusivity} options={options.exclusivities} onChange={(exclusivity) => onChange({ exclusivity })} />
             <LicensingFilterSelect label="Uniqode" value={filters.uniqode} onChange={(uniqode) => onChange({ uniqode })} />
             <LicensingFilterSelect label="Evenfall" value={filters.evenfall} onChange={(evenfall) => onChange({ evenfall })} />
+            <TerritoryGapsSelect value={filters.territoryGaps} onChange={(territoryGaps) => onChange({ territoryGaps })} />
           </div>
           <div className="flex flex-wrap gap-1.5">
             {([

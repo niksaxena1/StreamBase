@@ -7,6 +7,7 @@ import { LIBRARY_TABLE_COLUMNS, libraryPinnedOffsets, originalityInfo, type Libr
 import { defaultSortDir, type LibrarySortDir, type LibrarySortKey } from "@/lib/library/filters";
 import { formatDuration, formatReleaseDate } from "@/lib/library/format";
 import { formatCompactStreams, formatExactStreams } from "@/lib/library/streams";
+import { territoryGapLabel, territoryGapTitle } from "@/lib/library/territories";
 import type { LibraryRow } from "@/lib/library/types";
 
 import { LibraryCover } from "./LibraryCover";
@@ -240,6 +241,16 @@ export function RowCells({
         return <StreamsCell value={row.total_streams} />;
       case "streams7d":
         return <StreamsCell value={row.streams_7d} />;
+      case "territories":
+        return row.territory_gaps && row.territory_gaps.length > 0 ? (
+          <span
+            className="inline-block rounded-full border border-red-500/25 bg-red-500/10 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-red-800 dark:text-red-200"
+            title={territoryGapTitle(row.territory_gaps)}
+            aria-label={territoryGapTitle(row.territory_gaps)}
+          >
+            {territoryGapLabel(row.territory_gaps)}
+          </span>
+        ) : null;
       case "length":
         return row.master_duration_s !== null ? <span className="tabular-nums">{formatDuration(row.master_duration_s)}</span> : <Dash />;
       case "master":

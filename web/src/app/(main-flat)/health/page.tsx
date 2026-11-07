@@ -18,6 +18,7 @@ import { WarningsSection } from "@/components/health/WarningsSection";
 import { MissingCatalogSection } from "@/components/health/MissingCatalogSection";
 import { SpotifyAvailabilitySection } from "@/components/health/SpotifyAvailabilitySection";
 import { SpotifyMarketsSection } from "@/components/health/SpotifyMarketsSection";
+import { TerritoryScanAlert } from "@/components/health/TerritoryScanAlert";
 import { CompetitorHealthSection } from "./CompetitorHealthSection";
 import { EventsSection } from "@/components/health/EventsSection";
 import { PipelineTodayCard, SourceQualityCard } from "@/components/health/PipelineTodayCard";
@@ -101,6 +102,10 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
           <SourceQualityCard />
         </Suspense>
       </div>
+
+      <Suspense fallback={null}>
+        <TerritoryScanAlert />
+      </Suspense>
 
       <Suspense fallback={<WarningSkeleton />}>
         <WarningsSection

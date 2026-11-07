@@ -19,6 +19,7 @@ export type LibraryColumnId =
   | "upc"
   | "streams"
   | "streams7d"
+  | "territories"
   | "length"
   | "master"
   | "drive"
@@ -56,6 +57,7 @@ export const LIBRARY_TABLE_COLUMNS: readonly LibraryColumn[] = [
   { id: "upc", label: "UPC", track: "116px", minPx: 116, sort: "upc" },
   { id: "streams", label: "Streams", track: "72px", minPx: 72, align: "right", sort: "streams" },
   { id: "streams7d", label: "7 days", track: "64px", minPx: 64, align: "right", sort: "streams7d" },
+  { id: "territories", label: "Territories", track: "92px", minPx: 92, align: "center" },
   { id: "length", label: "Length", track: "88px", minPx: 88, align: "right", sort: "duration" },
   { id: "master", label: "Master", track: "76px", minPx: 76, align: "center" },
   { id: "drive", label: "Drive", track: "68px", minPx: 68, align: "center" },

@@ -486,7 +486,7 @@ Times are **UTC** with Dubai time (UTC+4). The Supabase database scheduler start
 | Workflow | Trigger / time (UTC) | Dubai (UTC+4) | What it does |
 |---|---|---:|---|
 | Spotify Takedown Watch (`spotify_takedown_watch.yml`) | Daily 20:00 (database scheduler) | 00:00 | Checks own-catalog tracks for Spotify availability changes |
-| Spotify Territory Availability (`spotify_market_availability_weekly.yml`, file name kept for the scheduler) | Daily 21:00 (database scheduler) | 01:00 | Records which territories each own-catalog track is not playable in on Spotify |
+| Spotify Territory Availability (`spotify_market_availability_daily.yml`) | Daily 21:00 (database scheduler) | 01:00 | Records which territories each own-catalog track is not playable in on Spotify |
 | Own daily pipeline (`sot_own_daily_pipeline.yml`) | Database scheduler dispatch at 12:00; sync + export after refresh succeeds; GitHub fallback cron 16:00 | 16:00 | Refreshes SpotOnTrack playlists, syncs dashboards with `config/playlists.csv`, exports and ingests into Supabase (idempotent) |
 | RapidAPI stale-track fix (`rapidapi_stale_fix.yml`) | Dispatched after a successful, current-UTC-date own-catalog export is ingested; daily fallback cron 16:41 | 20:41 | Attempts own-catalog stale-track corrections |
 | RapidAPI stale-track second look (`rapidapi_stale_fix.yml`, `second_look=true`) | Database scheduler dispatch 17:30 | 21:30 | Re-checks only tracks that are still stale after the first fix, using the same free providers within their caps |
@@ -1629,7 +1629,7 @@ See `docs/COMPETITOR-MODE-OPERATIONS.md` for migration and refresh details.
 
 ## Daily territory availability
 
-The `spotify_market_availability_weekly.yml` workflow runs **daily at 21:00 UTC / 01:00 Dubai**, started by the database scheduler (job `streambase-market-availability`). It is own-catalog only. The file name still says "weekly" because the scheduler dispatches it by name. **Apply `supabase/migrations/20261106233500_add_spotify_market_availability.sql`, then `20261107090000_reschedule_market_availability_daily.sql` (weekly to daily).**
+The `spotify_market_availability_daily.yml` workflow runs **daily at 21:00 UTC / 01:00 Dubai**, started by the database scheduler (job `streambase-market-availability`). It is own-catalog only. **Apply `supabase/migrations/20261106233500_add_spotify_market_availability.sql`, then `20261107090000_reschedule_market_availability_daily.sql`, then `20261108100000_rename_market_availability_workflow_daily.sql` (re-points the scheduler at the renamed file) and `20261108110000_add_territory_scan_coverage.sql` (Health coverage).**
 
 For every own-catalog track with a Spotify id it records the territories (Spotify "markets", i.e. countries) where the track is **not** playable. Results appear in three places:
 
@@ -1693,13 +1693,25 @@ Example from the first scan: 7 of the 45 Saxena tracks (solo covers) were blocke
 
 **Daily** at 21:00 UTC, one hour after the takedown watch. The few-hundred-request design fits comfortably inside the quota (the takedown watch makes ~190 requests a day). Tracks the takedown watch currently marks unavailable (`public.spotify_track_availability.status = 'unavailable'`) are **skipped**: they are unplayable everywhere, so per-territory results would be noise. A skipped track keeps its existing territory row untouched (no events, no deletes). When the takedown watch sees it back, the next scan checks it normally again.
 
+**Release day.** When the own daily pipeline (or the Spotify enrichment run) finishes, the same workflow runs once in `--new-only` mode: it checks only catalog tracks added in the last 14 days that have no territory row yet, with a small request budget. Unlike the bulk seed, a new track missing territories at release is recorded as lost and emailed straight away. If nothing is new, it makes no Spotify calls.
+
+### Emails
+
+One email per run lists **Lost** and **Regained** territories per track as `Artist – Title (ISRC): lost BR, IN` and `regained CA`.
+
+### Health and track views
+
+- Health shows **Last successful scan** (red, with a warning at the top of Health, when it is older than 36 hours), **Checked X of Y catalog tracks**, and a collapsible list of unchecked tracks (Taken down, or Not checked yet).
+- The Catalog Library has a **Territories** column (a red chip such as −4, hover for the codes) and a **Territory gaps: any / none** filter. It joins by each release's primary ISRC; releases without an ISRC, or never scanned, show nothing.
+- A track's page (Catalog, own mode) has a **Territories** card: current status and a newest-first history of lost and regained territories and takedowns (up to 100 entries).
+
 ### Running it by hand
 
 ```bash
 python scripts/scan_spotify_market_availability.py --artist Saxena --dry-run --report-csv out.csv
 ```
 
-Flags: `--artist NAME`, `--isrc X` (repeatable), `--limit N`, `--dry-run`, `--report-csv PATH`, `--max-requests`, `--max-verify-requests`, `--max-search-requests`, `--min-interval`, `--skip-safety-valve`. Needs `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`.
+Flags: `--artist NAME`, `--isrc X` (repeatable), `--limit N`, `--dry-run`, `--report-csv PATH`, `--max-requests`, `--max-verify-requests`, `--max-search-requests`, `--min-interval`, `--skip-safety-valve`, `--new-only`. Needs `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`.
 
 ### Data
 

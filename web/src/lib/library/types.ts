@@ -36,6 +36,8 @@ export type LibraryRow = {
   streams_7d?: number | null;
   album_image_url?: string | null;
   spotify_track_id?: string | null;
+  /** Territories this release's Spotify track is not playable in; absent when live everywhere or not checked. */
+  territory_gaps?: string[];
 };
 
 /** One row of `catalog.track_streams()`. */

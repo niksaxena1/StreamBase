@@ -3,6 +3,7 @@ import { foldForSearch } from "@/lib/searchFold";
 import { matchesAttention, parseAttention, type LibraryAttention } from "./attention";
 import { formatDuration, parseDuration } from "./format";
 import { licensingBatches, matchesLicensing, parseLicensingFilter, type LicensingFilter } from "./licensing";
+import { matchesTerritoryGaps, parseTerritoryGapsFilter, type TerritoryGapsFilter } from "./territories";
 import type { LibraryRow } from "./types";
 
 export type LibrarySortKey = "release" | "artist" | "title" | "duration" | "catalog" | "streams" | "streams7d"
@@ -21,6 +22,8 @@ export type LibraryFilters = {
   exclusivity: string;
   uniqode: LicensingFilter;
   evenfall: LicensingFilter;
+  /** Territory gaps from the daily scan: any gap / none (empty = no filter). */
+  territoryGaps: TerritoryGapsFilter;
   upcoming: boolean;
   released: boolean;
   hasMaster: boolean;
@@ -77,6 +80,7 @@ export const DEFAULT_LIBRARY_FILTERS: LibraryFilters = {
   exclusivity: "",
   uniqode: "",
   evenfall: "",
+  territoryGaps: "",
   upcoming: false,
   released: false,
   hasMaster: false,
@@ -105,6 +109,7 @@ export const LIBRARY_FILTER_PARAMS = [
   "excl",
   "uniq",
   "even",
+  "gaps",
   "upcoming",
   "released",
   "master",
@@ -145,6 +150,7 @@ export function parseLibraryFilters(params: ParamsLike): LibraryFilters {
     exclusivity: params.get("excl") ?? "",
     uniqode: parseLicensingFilter(params.get("uniq")),
     evenfall: parseLicensingFilter(params.get("even")),
+    territoryGaps: parseTerritoryGapsFilter(params.get("gaps")),
     upcoming: flag("upcoming"),
     released: flag("released"),
     hasMaster: flag("master"),
@@ -175,6 +181,7 @@ export function serializeLibraryFilters(f: LibraryFilters): URLSearchParams {
   if (f.exclusivity) p.set("excl", f.exclusivity);
   if (f.uniqode) p.set("uniq", f.uniqode);
   if (f.evenfall) p.set("even", f.evenfall);
+  if (f.territoryGaps) p.set("gaps", f.territoryGaps);
   if (f.upcoming) p.set("upcoming", "1");
   if (f.released) p.set("released", "1");
   if (f.hasMaster) p.set("master", "1");
@@ -230,7 +237,7 @@ export function activeFilterCount(f: LibraryFilters): number {
   let n = 0;
   if (f.q.trim()) n++;
   if (f.entities.length) n++;
-  for (const v of [f.year, f.distributor, f.labelGenre, f.originality, f.exclusivity, f.uniqode, f.evenfall]) if (v) n++;
+  for (const v of [f.year, f.distributor, f.labelGenre, f.originality, f.exclusivity, f.uniqode, f.evenfall, f.territoryGaps]) if (v) n++;
   for (const v of [f.upcoming, f.released, f.hasMaster, f.missingIsrc, f.missingUpc, f.onDrive, f.splice, f.missingCode]) if (v) n++;
   if (f.month) n++;
   if (f.attention) n++;
@@ -337,6 +344,7 @@ export function rowMatches(row: LibraryRow, f: LibraryFilters, today: string, op
   if (!matchesExact(row.exclusivity, f.exclusivity)) return false;
   if (!matchesLicensing(row.licensing, "uniqode", f.uniqode)) return false;
   if (!matchesLicensing(row.licensing, "evenfall", f.evenfall)) return false;
+  if (!matchesTerritoryGaps(row, f.territoryGaps)) return false;
   if (!matchesTiming(row, today, f.upcoming, f.released)) return false;
   if (f.hasMaster && !row.has_m_master) return false;
   if (f.missingIsrc && !blank(row.isrc)) return false;

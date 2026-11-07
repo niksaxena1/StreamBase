@@ -31,6 +31,7 @@ import { useMetric } from "@/components/metrics/MetricContext";
 import { SectionHeader } from "@/components/ui/SectionHeader";
 import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
 import { SpotifyMarketsBadge } from "@/components/spotify/SpotifyMarketsBadge";
+import { SpotifyTerritoryCard } from "@/components/spotify/SpotifyTerritoryCard";
 import type { SpotifyTrackMarkets } from "@/lib/health/spotifyMarketTypes";
 import { SpotifyNotFoundBadge } from "@/components/ui/SpotifyNotFoundBadge";
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
@@ -985,7 +986,7 @@ export function CatalogPageClient(props: {
                   <CopyableIsrc isrc={props.isrc} className="font-mono" />
                 </span>
               </div>
-              {!isCompetitorMode && props.selectedTrackMarkets ? (
+              {!isCompetitorMode && props.selectedTrackMarkets && props.selectedTrackMarkets.scanned !== false ? (
                 <div className="mt-1.5">
                   <SpotifyMarketsBadge
                     markets={props.selectedTrackMarkets}
@@ -1003,6 +1004,10 @@ export function CatalogPageClient(props: {
             </div>
           </div>
         )}
+
+        {!isCompetitorMode && props.selectedTrack && props.selectedTrackMarkets ? (
+          <SpotifyTerritoryCard markets={props.selectedTrackMarkets} />
+        ) : null}
 
         {trackChartData ? (
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">

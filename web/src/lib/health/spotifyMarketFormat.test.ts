@@ -1,11 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
   describeMarketReasons,
+  buildTerritoryTimeline,
+  formatCoverageLine,
   formatMarketCount,
   formatMarketsLine,
   formatScanTime,
   marketName,
   marketReasonLabel,
+  scanStaleness,
+  timelineLabel,
+  uncheckedReasonLabel,
   tallyMarkets,
   truncateMarkets,
   unusualReasonSummary,
@@ -55,5 +60,40 @@ describe("Spotify market labels", () => {
   it("formats scan time in UTC", () => {
     expect(formatScanTime("2026-11-07T00:03:00Z")).toBe("07 Nov 2026, 00:03 UTC");
     expect(formatScanTime(null)).toBe("never");
+  });
+});
+
+describe("Territory scan health and history", () => {
+  const now = new Date("2026-11-08T12:00:00Z");
+
+  it("flags a scan older than 36 hours as stale", () => {
+    expect(scanStaleness("2026-11-07T21:15:00Z", now)).toEqual({ stale: false, message: null });
+    const stale = scanStaleness("2026-11-06T21:15:00Z", now);
+    expect(stale.stale).toBe(true);
+    expect(stale.message).toContain("hasn't succeeded since");
+    expect(scanStaleness(null, now).stale).toBe(false);
+  });
+
+  it("formats the coverage line and unchecked reasons", () => {
+    expect(formatCoverageLine(3152, 3172)).toBe("Checked 3,152 of 3,172 catalog tracks");
+    expect(uncheckedReasonLabel("taken_down")).toBe("Taken down (skipped until it's back)");
+    expect(uncheckedReasonLabel("not_checked")).toBe("Not checked yet");
+  });
+
+  it("builds a newest-first timeline with merged same-day events and a limit", () => {
+    const tl = buildTerritoryTimeline(
+      [
+        { market: "CA", event: "lost", reason: null, detected_at: "2026-11-07T21:00:00Z" },
+        { market: "BR", event: "lost", reason: null, detected_at: "2026-11-07T21:00:00Z" },
+        { market: "CA", event: "gained", reason: null, detected_at: "2026-11-10T21:00:00Z" },
+      ] as never,
+      [{ event: "taken_down", reason: null, detected_at: "2026-11-09T08:00:00Z" }] as never,
+    );
+    expect(tl.map(timelineLabel)).toEqual(["Regained CA", "Taken down", "Lost BR CA"]);
+    expect(buildTerritoryTimeline(
+      [
+        { market: "CA", event: "lost", reason: null, detected_at: "2026-11-07T21:00:00Z" },
+        { market: "CA", event: "gained", reason: null, detected_at: "2026-11-08T21:00:00Z" },
+      ] as never, [], 1)).toHaveLength(1);
   });
 });

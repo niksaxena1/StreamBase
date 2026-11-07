@@ -310,6 +310,7 @@ describe("URL <-> filter state", () => {
       exclusivity: "Non-Exclusive",
       uniqode: "staged",
       evenfall: "none",
+      territoryGaps: "any",
       upcoming: true,
       released: true,
       hasMaster: true,

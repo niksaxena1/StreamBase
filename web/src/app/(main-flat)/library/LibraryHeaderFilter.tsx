@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/Input";
 import type { LibraryColumn } from "@/lib/library/columns";
 import type { LibraryFilters } from "@/lib/library/filters";
 import { LIBRARY_HEADER_FILTERS, libraryHeaderFilterActive } from "@/lib/library/headerFilters";
-import { DurationField, FacetSelect, LicensingFilterSelect, type FilterOptionLists } from "./LibraryFilters";
+import { DurationField, FacetSelect, LicensingFilterSelect, TerritoryGapsSelect, type FilterOptionLists } from "./LibraryFilters";
 import { LibraryToolbarPopover } from "./LibraryToolbarPopover";
 
 export type LibraryHeaderFilterProps = {
@@ -39,6 +39,7 @@ export function LibraryHeaderFilter({ column, filters, options, onChange }: Libr
             <FacetSelect label="Exclusivity" value={filters.exclusivity} options={options.exclusivities} onChange={(exclusivity) => onChange({ exclusivity })} />
             {toggle("splice", "Splice samples")}
           </> : null}
+          {column.id === "territories" ? <TerritoryGapsSelect value={filters.territoryGaps} onChange={(territoryGaps) => onChange({ territoryGaps })} /> : null}
           {column.id === "isrc" ? toggle("missingIsrc", "Missing ISRC") : null}
           {column.id === "upc" ? toggle("missingUpc", "Missing UPC") : null}
           {column.id === "master" ? toggle("hasMaster", "Has master") : null}

@@ -4,6 +4,8 @@ import { formatDisplayDate, formatDisplayDateTimeUtc } from "@/lib/format";
 import type {
   SpotifyMarketEvent,
   SpotifyMarketRestrictedTrack,
+  SpotifyTrackMarketEvent,
+  SpotifyTrackTakedownEvent,
   TerritoryDistributor,
 } from "./spotifyMarketTypes";
 
@@ -286,4 +288,87 @@ export function eventVerb(event: "lost" | "gained"): string {
 /** "07 Nov 2026" for a YYYY-MM-DD day. */
 export function formatEventDay(day: string): string {
   return formatDisplayDate(day);
+}
+
+/** The nightly scan is overdue after this many hours without a successful run. */
+export const SCAN_STALE_HOURS = 36;
+
+/** "Last successful scan" status from max(last_checked_at). Never scanned is not "stale" (the section hides). */
+export function scanStaleness(
+  lastCheckedAt: string | null | undefined,
+  now: Date | number = Date.now(),
+): { stale: boolean; message: string | null } {
+  if (!lastCheckedAt) return { stale: false, message: null };
+  const t = new Date(lastCheckedAt).getTime();
+  if (!Number.isFinite(t)) return { stale: false, message: null };
+  const hours = (new Date(now).getTime() - t) / 3_600_000;
+  if (hours <= SCAN_STALE_HOURS) return { stale: false, message: null };
+  return { stale: true, message: `The nightly territory scan hasn't succeeded since ${formatScanTime(lastCheckedAt)}.` };
+}
+
+/** "Checked 3,152 of 3,172 catalog tracks". */
+export function formatCoverageLine(checked: number, total: number): string {
+  return `Checked ${checked.toLocaleString("en-US")} of ${total.toLocaleString("en-US")} catalog tracks`;
+}
+
+export function uncheckedReasonLabel(reason: "taken_down" | "not_checked"): string {
+  return reason === "taken_down" ? "Taken down (skipped until it's back)" : "Not checked yet";
+}
+
+export type TerritoryTimelineEntry = {
+  /** UTC calendar day (YYYY-MM-DD). */
+  day: string;
+  kind: "lost" | "gained" | "taken_down" | "restored";
+  /** Territory codes for lost/gained; empty for takedown entries. */
+  markets: string[];
+};
+
+export const TERRITORY_TIMELINE_LIMIT = 100;
+
+/**
+ * One newest-first timeline for the track page: territory changes (same-day, same-direction events
+ * merged) and takedown-watch transitions ("Taken down", "Back on Spotify"). Capped at TERRITORY_TIMELINE_LIMIT.
+ */
+export function buildTerritoryTimeline(
+  marketEvents: readonly SpotifyTrackMarketEvent[],
+  takedownEvents: readonly SpotifyTrackTakedownEvent[],
+  limit: number = TERRITORY_TIMELINE_LIMIT,
+): TerritoryTimelineEntry[] {
+  const entries: Array<TerritoryTimelineEntry & { at: string }> = [];
+  const byKey = new Map<string, TerritoryTimelineEntry & { at: string }>();
+  for (const e of marketEvents) {
+    const day = e.detected_at.slice(0, 10);
+    const key = `${day}|${e.event}`;
+    const g = byKey.get(key);
+    if (g) {
+      if (!g.markets.includes(e.market)) g.markets.push(e.market);
+      if (e.detected_at > g.at) g.at = e.detected_at;
+    } else {
+      const entry = { day, kind: e.event, markets: [e.market], at: e.detected_at };
+      byKey.set(key, entry);
+      entries.push(entry);
+    }
+  }
+  for (const e of takedownEvents) {
+    entries.push({ day: e.detected_at.slice(0, 10), kind: e.event, markets: [], at: e.detected_at });
+  }
+  return entries
+    .map((e) => ({ ...e, markets: sortTerritories(e.markets) }))
+    .sort((a, b) => b.at.localeCompare(a.at) || a.kind.localeCompare(b.kind))
+    .slice(0, limit)
+    .map(({ day, kind, markets }) => ({ day, kind, markets }));
+}
+
+/** "Lost CA IN", "Regained CA", "Taken down", "Back on Spotify". */
+export function timelineLabel(entry: TerritoryTimelineEntry): string {
+  switch (entry.kind) {
+    case "lost":
+      return `Lost ${entry.markets.join(" ")}`;
+    case "gained":
+      return `Regained ${entry.markets.join(" ")}`;
+    case "taken_down":
+      return "Taken down";
+    case "restored":
+      return "Back on Spotify";
+  }
 }

@@ -401,17 +401,67 @@ def test_report_csv_shows_artist_names(tmp_path):
     assert '"A, B"' in text and "181 / 183" in text and "BR=market; IN=none" in text
 
 
-def test_email_only_lists_lost_events():
+def test_email_has_lost_and_regained_sections_in_one_email():
     events = [
         {"id": 1, "isrc": "QZ1", "market": "IN", "event": "lost"},
         {"id": 2, "isrc": "QZ1", "market": "BR", "event": "lost"},
-        {"id": 3, "isrc": "QZ1", "market": "MX", "event": "gained"},
+        {"id": 3, "isrc": "QZ2", "market": "CA", "event": "gained"},
+        {"id": 4, "isrc": "QZ3", "market": "MX", "event": "lost"},
     ]
-    subject, text, _ = m.build_email(events, {"QZ1": {"name": "Song", "artist_names": ["A", "B"]}})
-    assert "1 track lost" in subject
-    assert "A, B – Song (QZ1): newly unavailable in BR, IN" in text
-    assert "MX" not in text
+    tracks = {
+        "QZ1": {"name": "Song", "artist_names": ["A", "B"]},
+        "QZ2": {"name": "Other", "artist_names": ["C"]},
+        "QZ3": {"name": "Third", "artist_names": ["D"]},
+    }
+    subject, text, html_body = m.build_email(events, tracks)
+    assert subject == "[StreamBase] Territories: 2 tracks lost, 1 regained availability"
+    assert "Lost\n- A, B – Song (QZ1): lost BR, IN" in text
+    assert "Regained\n- C – Other (QZ2): regained CA" in text
+    assert text.index("Lost") < text.index("Regained")
+    assert "<h3>Lost</h3>" in html_body and "<h3>Regained</h3>" in html_body
 
+
+def test_email_with_only_regained_events():
+    subject, text, _ = m.build_email(
+        [{"id": 1, "isrc": "QZ1", "market": "CA", "event": "gained"}],
+        {"QZ1": {"name": "Song", "artist_names": ["A"]}},
+    )
+    assert subject == "[StreamBase] Territories: 1 regained availability"
+    assert "Lost" not in text and "A – Song (QZ1): regained CA" in text
+
+
+# --- new tracks (release-day rule) -------------------------------------------
+
+def test_new_track_first_scan_records_lost_events_but_old_track_seeds_silently():
+    unavailable = {"BR": "market", "IN": "none"}
+    assert m.diff_events(None, unavailable, is_new=True) == [
+        {"market": "BR", "event": "lost", "reason": "market"},
+        {"market": "IN", "event": "lost", "reason": "none"},
+    ]
+    assert m.diff_events(None, unavailable, is_new=False) == []
+    assert m.diff_events(None, unavailable, errored=["IN"], is_new=True) == [
+        {"market": "BR", "event": "lost", "reason": "market"}
+    ]
+    assert m.diff_events(None, {}, is_new=True) == []
+
+
+def test_new_track_isrcs_needs_no_row_and_recent_tracks_row():
+    todo = [cand("QZ1"), cand("QZ2"), cand("QZ3")]
+    prev = {"QZ2": prev_row([])}
+    assert m.new_track_isrcs(todo, prev, ["qz1", "QZ2"]) == {"QZ1"}  # QZ2 has a row, QZ3 is old
+
+
+def test_bulk_import_of_new_tracks_is_seeded_silently():
+    todo = [cand(f"QZ{i:04d}") for i in range(m.MAX_NEW_TRACK_ALERTS + 1)]
+    assert m.new_track_isrcs(todo, {}, [c["isrc"] for c in todo]) == set()
+
+
+def test_is_uncertain_flags_errored_unverified_and_not_found():
+    ok = {"unavailable": {"BR": "market"}, "errored": [], "unverified": []}
+    assert not m.is_uncertain(ok)
+    assert m.is_uncertain({**ok, "errored": ["IN"]})
+    assert m.is_uncertain({**ok, "unverified": ["IN"]})
+    assert m.is_uncertain({"unavailable": {"BR": "not_found"}, "errored": [], "unverified": []})
 
 # --- end to end with a fake DB ---------------------------------------------
 
@@ -424,8 +474,11 @@ class FakePg:
         return self.candidates
 
     taken_down = ()
+    recent_tracks = ()
 
     def select_all(self, table, select, filters, order=None):
+        if table == "tracks" and "created_at=gte" in filters:
+            return [{"isrc": i} for i in self.recent_tracks]
         if table == "spotify_track_availability":
             assert filters == "status=eq.unavailable"
             return [{"isrc": i} for i in self.taken_down]
@@ -449,7 +502,7 @@ class FakePg:
 def args(**kw):
     base = dict(
         dry_run=False, limit=0, artist=None, isrc=None, lookback_days=30, report_csv=None,
-        email_output=None, skip_safety_valve=False,
+        email_output=None, skip_safety_valve=False, new_only=False,
         max_requests=1000, max_verify_requests=400, max_search_requests=150,
     )
     base.update(kw)
@@ -483,7 +536,7 @@ def test_run_second_scan_inserts_events_and_emails(tmp_path, monkeypatch):
     assert m.run(pg, sp, args(email_output=str(out))) == 0
     kinds = sorted((e["market"], e["event"]) for e in pg.inserted)
     assert kinds == [("BR", "lost"), ("IN", "gained")]
-    assert next(e for e in pg.inserted if e["event"] == "gained")["notified_at"] is not None
+    assert next(e for e in pg.inserted if e["event"] == "gained")["notified_at"] is None  # emailed now, acked after
     assert next(e for e in pg.inserted if e["event"] == "lost")["notified_at"] is None
     assert out.exists()
 
@@ -537,3 +590,68 @@ def test_run_scans_track_again_once_takedown_watch_sees_it_back(monkeypatch):
     sp = UniverseSpotify(lists={TID: ["IN", "US"]}, blocked={(TID, "BR")})
     assert m.run(pg, sp, args()) == 0
     assert [r["isrc"] for r in pg.upserted] == ["QZ0000000001"]
+
+
+def test_run_new_track_with_gaps_records_lost_events_and_emails(tmp_path, monkeypatch):
+    monkeypatch.setattr(m, "notify_web_revalidate", lambda: None)
+    pg = FakePg([cand("QZ0000000001")], [])
+    pg.recent_tracks = ["QZ0000000001"]
+    sp = UniverseSpotify(lists={TID: ["IN", "US"]}, blocked={(TID, "BR")})
+    out = tmp_path / "email.json"
+    assert m.run(pg, sp, args(email_output=str(out))) == 0
+    assert [(e["market"], e["event"], e["notified_at"]) for e in pg.inserted] == [("BR", "lost", None)]
+    assert out.exists()
+
+
+def test_run_old_untracked_track_still_seeds_silently(monkeypatch):
+    monkeypatch.setattr(m, "notify_web_revalidate", lambda: None)
+    monkeypatch.setattr(m, "send_email", lambda *a, **k: None)
+    pg = FakePg([cand("QZ0000000001")], [])  # no recent tracks row: part of the bulk catalog
+    sp = UniverseSpotify(lists={TID: ["IN", "US"]}, blocked={(TID, "BR")})
+    assert m.run(pg, sp, args()) == 0
+    assert pg.inserted == [] and pg.upserted[0]["unavailable_markets"] == ["BR"]
+
+
+def test_run_gained_events_are_emailed_not_silently_marked(tmp_path, monkeypatch):
+    monkeypatch.setattr(m, "notify_web_revalidate", lambda: None)
+    pg = FakePg([cand()], [prev_row(["IN"]) | {"isrc": "QZ0000000001"}])
+    sp = UniverseSpotify(lists={TID: ["IN", "US", "BR"]})
+    out = tmp_path / "email.json"
+    assert m.run(pg, sp, args(email_output=str(out))) == 0
+    assert [(e["market"], e["event"], e["notified_at"]) for e in pg.inserted] == [("IN", "gained", None)]
+
+
+def test_run_new_only_scans_only_new_tracks_without_a_row(monkeypatch):
+    monkeypatch.setattr(m, "notify_web_revalidate", lambda: None)
+    monkeypatch.setattr(m, "send_email", lambda *a, **k: None)
+    fresh = cand("QZ0000000001", tid=TID)
+    has_row = cand("QZ0000000002", tid="HASROW")
+    old_unscanned = cand("QZ0000000003", tid="OLD")
+    down = cand("QZ0000000004", tid="DOWN")
+    pg = FakePg([fresh, has_row, old_unscanned, down], [prev_row([]) | {"isrc": "QZ0000000002"}])
+    pg.recent_tracks = ["QZ0000000001", "QZ0000000002", "QZ0000000004"]
+    pg.taken_down = ["QZ0000000004"]
+    sp = UniverseSpotify(lists={TID: ["IN", "US"]}, blocked={(TID, "BR")})
+    assert m.run(pg, sp, args(new_only=True, max_requests=100)) == 0
+    assert [r["isrc"] for r in pg.upserted] == ["QZ0000000001"]
+    assert [(e["isrc"], e["market"], e["event"]) for e in pg.inserted] == [("QZ0000000001", "BR", "lost")]
+    assert {i for ids, _ in sp.calls for i in ids} == {TID}
+
+
+def test_run_new_only_makes_no_spotify_call_when_nothing_is_new():
+    class NoCallSpotify(UniverseSpotify):
+        def market_universe(self):
+            raise AssertionError("must not call Spotify")
+
+    pg = FakePg([cand("QZ0000000001")], [])  # no recent tracks row
+    assert m.run(pg, NoCallSpotify(), args(new_only=True)) == 0
+    assert pg.upserted == [] and pg.inserted == []
+
+
+def test_run_new_track_with_uncertain_answer_is_deferred_not_written(monkeypatch):
+    monkeypatch.setattr(m, "notify_web_revalidate", lambda: None)
+    pg = FakePg([cand("QZ0000000001")], [])
+    pg.recent_tracks = ["QZ0000000001"]
+    sp = UniverseSpotify(lists={TID: ["US"]}, error_markets={"BR", "IN"})  # verify calls fail: uncertain
+    assert m.run(pg, sp, args(new_only=True)) == 0
+    assert pg.upserted == [] and pg.inserted == []

@@ -34,6 +34,7 @@ import {
   type SelectionState,
 } from "@/lib/library/selection";
 import { mergeStreams, streamsAsOf } from "@/lib/library/streams";
+import { mergeTerritoryGaps, type LibraryTerritoryGap } from "@/lib/library/territories";
 import { useLibraryColumns } from "@/lib/library/useLibraryColumns";
 import { visibleLibraryColumns } from "@/lib/library/columns";
 import {
@@ -92,12 +93,15 @@ export function LibraryPageClient({
   entities,
   distributors,
   streams,
+  territoryGaps = [],
   today,
 }: {
   rows: LibraryRow[];
   entities: LibraryEntity[];
   distributors: LibraryDistributor[];
   streams: LibraryStream[];
+  /** Tracks with territory gaps from the daily scan, joined to rows by ISRC. */
+  territoryGaps?: LibraryTerritoryGap[];
   today: string;
 }) {
   const toolbarRef = useRef<HTMLDivElement>(null);
@@ -132,7 +136,10 @@ export function LibraryPageClient({
   const patchFilters = useCallback((patch: Partial<LibraryFilters>) => setFilters((f) => ({ ...f, ...patch })), []);
 
   // Edits are layered over the server rows first, then stream figures go on top of the result.
-  const rows = useMemo(() => mergeStreams(mergeRows(serverRows, overrides), streams), [serverRows, overrides, streams]);
+  const rows = useMemo(
+    () => mergeTerritoryGaps(mergeStreams(mergeRows(serverRows, overrides), streams), territoryGaps),
+    [serverRows, overrides, streams, territoryGaps],
+  );
   const asOf = useMemo(() => streamsAsOf(streams), [streams]);
   const searchIndex = useMemo(() => buildSearchIndex(rows), [rows]);
   const filtered = useMemo(

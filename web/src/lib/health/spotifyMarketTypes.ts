@@ -35,7 +35,28 @@ export type SpotifyMarketEvent = {
 /** Per-track history entry (Catalog modal). */
 export type SpotifyTrackMarketEvent = Pick<SpotifyMarketEvent, "market" | "event" | "reason" | "detected_at">;
 
+/** Catalog track the nightly scan is not currently checking, with why. */
+export type TerritoryUncheckedTrack = {
+  isrc: string;
+  name: string | null;
+  artist_names: string[] | null;
+  /** taken_down = the takedown watch skips it until it is back; not_checked = no territory row yet. */
+  reason: "taken_down" | "not_checked";
+};
+
+/** Scan coverage over the same catalog the scan works on (public.territory_scan_coverage()). */
+export type TerritoryCoverage = {
+  catalogTotal: number;
+  /** catalogTotal minus every unchecked track. */
+  checked: number;
+  uncheckedTotal: number;
+  /** Capped list (see the RPC); uncheckedTotal is the true count. */
+  unchecked: TerritoryUncheckedTrack[];
+};
+
 export type SpotifyMarketSnapshot = {
+  /** Scan coverage; null when the coverage migration has not been applied yet. */
+  coverage: TerritoryCoverage | null;
   /** Tracks with unavailable territories, biggest daily streams first. */
   restricted: SpotifyMarketRestrictedTrack[];
   /** Territory changes in the last 30 days, newest first (max 200). */
@@ -46,7 +67,18 @@ export type SpotifyMarketSnapshot = {
   marketsChecked: number | null;
 };
 
+/** Takedown watch transition for one track (taken_down / restored). */
+export type SpotifyTrackTakedownEvent = {
+  event: "taken_down" | "restored";
+  reason: string | null;
+  detected_at: string;
+};
+
 export type SpotifyTrackMarkets = {
+  /** False when the track has no territory row yet (only takedown events are known). Default true. */
+  scanned?: boolean;
+  /** Takedown watch history for this ISRC, newest first. */
+  takedown_events?: SpotifyTrackTakedownEvent[];
   markets_checked: number;
   available_count: number;
   unavailable_markets: string[];

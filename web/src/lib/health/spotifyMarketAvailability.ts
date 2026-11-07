@@ -10,7 +10,10 @@ import type {
   SpotifyMarketSnapshot,
   SpotifyTrackMarketEvent,
   SpotifyTrackMarkets,
+  SpotifyTrackTakedownEvent,
+  TerritoryCoverage,
   TerritoryDistributor,
+  TerritoryUncheckedTrack,
 } from "./spotifyMarketTypes";
 
 export type {
@@ -19,7 +22,10 @@ export type {
   SpotifyMarketSnapshot,
   SpotifyTrackMarketEvent,
   SpotifyTrackMarkets,
+  SpotifyTrackTakedownEvent,
+  TerritoryCoverage,
   TerritoryDistributor,
+  TerritoryUncheckedTrack,
 } from "./spotifyMarketTypes";
 
 /** Max restricted tracks read per request (the table only holds tracks with gaps in this view). */
@@ -189,6 +195,40 @@ async function fetchLatestDailyStreams(isrcs: string[]): Promise<Map<string, num
   return out;
 }
 
+/** Max per-track timeline entries read (territory changes and takedown transitions each). */
+const TRACK_TIMELINE_LIMIT = 100;
+
+type LooseRpc = {
+  rpc(fn: string, args?: Record<string, unknown>): PromiseLike<{ data: unknown; error: { message: string } | null }>;
+};
+
+/**
+ * Scan coverage from `public.territory_scan_coverage()` (one bounded call; the unchecked list is capped
+ * in SQL). Null when the migration is not applied yet or the call fails, so the UI just omits the line.
+ */
+async function fetchTerritoryCoverage(): Promise<TerritoryCoverage | null> {
+  try {
+    const { data, error } = await (supabaseService() as unknown as LooseRpc).rpc("territory_scan_coverage", {
+      p_lookback_days: 30,
+    });
+    if (error || !data || typeof data !== "object") return null;
+    const d = data as { catalog_total?: unknown; unchecked_total?: unknown; unchecked?: unknown };
+    const catalogTotal = Number(d.catalog_total);
+    const uncheckedTotal = Number(d.unchecked_total);
+    if (!Number.isFinite(catalogTotal) || !Number.isFinite(uncheckedTotal)) return null;
+    const list = Array.isArray(d.unchecked) ? (d.unchecked as Array<Record<string, unknown>>) : [];
+    const unchecked: TerritoryUncheckedTrack[] = list.map((u) => ({
+      isrc: String(u.isrc ?? ""),
+      name: typeof u.name === "string" ? u.name : null,
+      artist_names: Array.isArray(u.artist_names) ? (u.artist_names as string[]) : null,
+      reason: u.reason === "taken_down" ? "taken_down" : "not_checked",
+    }));
+    return { catalogTotal, checked: Math.max(0, catalogTotal - uncheckedTotal), uncheckedTotal, unchecked };
+  } catch {
+    return null;
+  }
+}
+
 /** Territory changes of the last EVENT_WINDOW_DAYS days (newest first, max EVENT_LIMIT); never throws. */
 async function fetchRecentEvents(): Promise<SpotifyMarketEvent[]> {
   try {
@@ -242,10 +282,11 @@ async function fetchSpotifyMarketAvailability(): Promise<SpotifyMarketSnapshot |
     (r) => (r.unavailable_markets ?? []).length > 0,
   );
   const isrcs = rows.map((r) => r.isrc);
-  const [distributors, daily, events] = await Promise.all([
+  const [distributors, daily, events, coverage] = await Promise.all([
     fetchDistributors(isrcs),
     fetchLatestDailyStreams(isrcs),
     fetchRecentEvents(),
+    fetchTerritoryCoverage(),
   ]);
 
   const latest = latestRes.data?.[0] as { last_checked_at?: string; markets_checked?: number } | undefined;
@@ -265,6 +306,7 @@ async function fetchSpotifyMarketAvailability(): Promise<SpotifyMarketSnapshot |
     daily_streams: daily.get(r.isrc) ?? null,
   }));
   return {
+    coverage,
     restricted: sortByDailyStreams(restricted),
     events,
     lastCheckedAt: latest?.last_checked_at ?? null,
@@ -275,15 +317,19 @@ async function fetchSpotifyMarketAvailability(): Promise<SpotifyMarketSnapshot |
 export async function cachedSpotifyMarketAvailability() {
   return cachedQuery(
     async () => ({ data: await fetchSpotifyMarketAvailability(), error: null }),
-    "health-spotify-market-availability-v5",
+    "health-spotify-market-availability-v6",
     CACHE_TTL_1H,
   );
 }
 
-/** Single primary-key lookup (+ its recent events) for the catalog's selected track. Null if never scanned. */
+/**
+ * Single primary-key lookup plus that ISRC's recent territory events and takedown transitions
+ * (each capped at TRACK_TIMELINE_LIMIT) for the track page. Null when the track was never scanned
+ * and has no takedown history either.
+ */
 async function fetchSpotifyMarketsForIsrc(isrc: string): Promise<SpotifyTrackMarkets | null> {
   const svc = supabaseService();
-  const [rowRes, historyRes] = await Promise.all([
+  const [rowRes, historyRes, takedownRes] = await Promise.all([
     svc
       .from("spotify_track_market_availability")
       .select("markets_checked,available_count,unavailable_markets,unavailable_reasons,last_checked_at")
@@ -294,16 +340,22 @@ async function fetchSpotifyMarketsForIsrc(isrc: string): Promise<SpotifyTrackMar
       .select("market,event,reason,detected_at")
       .eq("isrc", isrc)
       .order("detected_at", { ascending: false })
-      .limit(50),
+      .limit(TRACK_TIMELINE_LIMIT),
+    svc
+      .from("spotify_track_availability_events")
+      .select("event,reason,detected_at")
+      .eq("isrc", isrc)
+      .order("detected_at", { ascending: false })
+      .limit(TRACK_TIMELINE_LIMIT),
   ]);
-  if (rowRes.error || !rowRes.data) return null;
-  const row = rowRes.data as {
-    markets_checked: number;
-    available_count: number;
-    unavailable_markets: string[] | null;
-    unavailable_reasons: unknown;
-    last_checked_at: string | null;
-  };
+  if (rowRes.error) return null;
+  const takedown_events: SpotifyTrackTakedownEvent[] = takedownRes.error
+    ? []
+    : ((takedownRes.data ?? []) as SpotifyTrackTakedownEvent[]).map((e) => ({
+        event: e.event,
+        reason: e.reason,
+        detected_at: e.detected_at,
+      }));
   const history: SpotifyTrackMarketEvent[] = historyRes.error
     ? []
     : ((historyRes.data ?? []) as SpotifyTrackMarketEvent[]).map((e) => ({
@@ -312,20 +364,41 @@ async function fetchSpotifyMarketsForIsrc(isrc: string): Promise<SpotifyTrackMar
         reason: e.reason,
         detected_at: e.detected_at,
       }));
+  if (!rowRes.data) {
+    if (takedown_events.length === 0 && history.length === 0) return null;
+    return {
+      scanned: false,
+      markets_checked: 0,
+      available_count: 0,
+      unavailable_markets: [],
+      last_checked_at: null,
+      history,
+      takedown_events,
+    };
+  }
+  const row = rowRes.data as {
+    markets_checked: number;
+    available_count: number;
+    unavailable_markets: string[] | null;
+    unavailable_reasons: unknown;
+    last_checked_at: string | null;
+  };
   return {
+    scanned: true,
     markets_checked: row.markets_checked,
     available_count: row.available_count,
     unavailable_markets: row.unavailable_markets ?? [],
     unavailable_reasons: asReasons(row.unavailable_reasons),
     last_checked_at: row.last_checked_at,
     history,
+    takedown_events,
   };
 }
 
 export async function cachedSpotifyMarketsForIsrc(isrc: string) {
   return cachedQuery(
     async () => ({ data: await fetchSpotifyMarketsForIsrc(isrc), error: null }),
-    `spotify-markets-isrc-v3-${isrc}`,
+    `spotify-markets-isrc-v4-${isrc}`,
     CACHE_TTL_1H,
   );
 }

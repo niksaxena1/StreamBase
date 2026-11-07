@@ -29,9 +29,23 @@ Spotify enforces a per-app quota, so a per-market sweep (markets x batches,
   abort without writing. Requests used are printed and put in the step summary.
 
 Results go to `public.spotify_track_market_availability`; per-market changes
-are logged in `public.spotify_track_market_events` (only for tracks that
-already had a previous row, so the first scan seeds silently) and "lost" events
-are emailed. "unverified" and errored markets never create events.
+are logged in `public.spotify_track_market_events` and every unnotified event
+('lost' and 'gained') is emailed, one email per run. "unverified" and errored
+markets never create events.
+
+First scan of a track ("seeding"): for the bulk catalog the first full scan is
+silent (it would otherwise email every long-standing gap). A track whose
+`tracks` row was created within the last NEW_TRACK_DAYS (14) days is "new"
+instead: it is a release, so if it is missing territories on its first scan the
+gaps are recorded as 'lost' events and emailed. If more than MAX_NEW_TRACK_ALERTS
+tracks look new at once (bulk re-import), they are seeded silently. A new track
+whose answer is uncertain (errored, unverified, not found) is not written at
+all, so it is retried by the next run instead of raising a false alarm.
+
+`--new-only` (release-day check, run after the own pipeline enriches new
+tracks): scans only catalog tracks that are new (see above), have no row yet and
+are not taken down, makes no Spotify call when there are none, and is meant to
+run with a small `--max-requests` (the workflow passes 100).
 
 Safety valves (write nothing, exit non-zero; --skip-safety-valve overrides):
 - more than 20% of (track, market) checks are missing/not_found or errored;
@@ -74,6 +88,8 @@ PROBE_MARKETS = ("US", "GB", "DE")
 DEFAULT_MAX_REQUESTS = 1000
 DEFAULT_MAX_VERIFY_REQUESTS = 400
 DEFAULT_MAX_SEARCH_REQUESTS = 150
+NEW_TRACK_DAYS = 14
+MAX_NEW_TRACK_ALERTS = 100
 
 DEFAULT_ALERT_TO = "nikhil.auh@gmail.com"
 DEFAULT_SMTP_USERNAME = "nikhil.auh@gmail.com"
@@ -481,11 +497,25 @@ def effective_unavailable(prev: Optional[dict], scan: dict) -> Dict[str, str]:
     return out
 
 
-def diff_events(prev: Optional[dict], new_unavailable: Dict[str, str], errored: Iterable[str] = ()) -> List[dict]:
-    """lost/gained events; none for a track without a previous row (first scan seeds)."""
-    if prev is None:
-        return []
+def diff_events(
+    prev: Optional[dict],
+    new_unavailable: Dict[str, str],
+    errored: Iterable[str] = (),
+    is_new: bool = False,
+) -> List[dict]:
+    """lost/gained events.
+
+    A track without a previous row seeds silently, unless it is a new release
+    (`is_new`): then every market it is missing on its first scan is a 'lost' event.
+    """
     skip = set(errored)
+    if prev is None:
+        if not is_new:
+            return []
+        return [
+            {"market": market, "event": "lost", "reason": new_unavailable[market]}
+            for market in sorted(set(new_unavailable) - skip)
+        ]
     before = set(prev.get("unavailable_markets") or [])
     after = set(new_unavailable)
     events = []
@@ -519,6 +549,26 @@ def build_row(
         "last_checked_at": now_iso,
         "markets_changed_at": now_iso if changed else (prev or {}).get("markets_changed_at") or now_iso,
     }
+
+
+def new_track_isrcs(todo: Sequence[dict], prev_by_isrc: Dict[str, dict], recent_isrcs: Iterable[str]) -> set:
+    """ISRCs in `todo` that are releases: no stored row yet and a `tracks` row created recently.
+
+    More than MAX_NEW_TRACK_ALERTS of them at once means a bulk (re-)import, not
+    releases, so none is treated as new (they seed silently).
+    """
+    recent = {norm_isrc(i) for i in recent_isrcs}
+    new = {c["isrc"] for c in todo if c["isrc"] not in prev_by_isrc and norm_isrc(c["isrc"]) in recent}
+    return new if len(new) <= MAX_NEW_TRACK_ALERTS else set()
+
+
+def is_uncertain(res: dict) -> bool:
+    """True when a scan result cannot be trusted for a first row (errored, unverified or not found)."""
+    return bool(
+        res["errored"]
+        or res.get("unverified")
+        or any(r in ("missing", "not_found") for r in res["unavailable"].values())
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -627,26 +677,39 @@ def write_report_csv(path: str, rows: Sequence[Tuple[dict, dict]]) -> None:
             )
 
 
+def _event_line(isrc: str, markets: List[str], verb: str, tracks_by_isrc: Dict[str, dict]) -> str:
+    t = tracks_by_isrc.get(isrc, {})
+    name = t.get("name") or isrc
+    artists = ", ".join(t.get("artist_names") or []) or "Unknown artist"
+    return f"{artists} – {name} ({isrc}): {verb} {', '.join(sorted(markets))}"
+
+
 def build_email(events: List[dict], tracks_by_isrc: Dict[str, dict]) -> Tuple[str, str, str]:
-    """Email only 'lost' events, grouped per track."""
-    by_isrc: Dict[str, List[str]] = {}
+    """One email per run: a 'Lost' and a 'Regained' section, grouped per track."""
+    sections = (("lost", "Lost"), ("gained", "Regained"))
+    grouped: Dict[str, Dict[str, List[str]]] = {"lost": {}, "gained": {}}
     for e in events:
-        if e["event"] == "lost":
-            by_isrc.setdefault(e["isrc"], []).append(e["market"])
-    n = len(by_isrc)
-    subject = f"[StreamBase] Spotify territories: {n} track{'s' if n != 1 else ''} lost availability"
-    lines: List[str] = []
-    items: List[str] = []
-    for isrc, markets in by_isrc.items():
-        t = tracks_by_isrc.get(isrc, {})
-        name = t.get("name") or isrc
-        artists = ", ".join(t.get("artist_names") or []) or "Unknown artist"
-        text = f"{artists} – {name} ({isrc}): newly unavailable in {', '.join(sorted(markets))}"
-        lines.append(f"- {text}")
-        items.append(f"<li>{html.escape(text)}</li>")
+        if e["event"] in grouped:
+            grouped[e["event"]].setdefault(e["isrc"], []).append(e["market"])
+    n_lost, n_gained = len(grouped["lost"]), len(grouped["gained"])
+    parts = []
+    if n_lost:
+        parts.append(f"{n_lost} track{'s' if n_lost != 1 else ''} lost")
+    if n_gained:
+        parts.append(f"{n_gained} regained")
+    subject = f"[StreamBase] Territories: {', '.join(parts) or 'no changes'} availability"
+    text_blocks: List[str] = []
+    html_blocks: List[str] = []
+    for key, title in sections:
+        if not grouped[key]:
+            continue
+        verb = "lost" if key == "lost" else "regained"
+        lines = [_event_line(i, mk, verb, tracks_by_isrc) for i, mk in grouped[key].items()]
+        text_blocks.append(f"{title}\n" + "\n".join(f"- {line}" for line in lines))
+        html_blocks.append(f"<h3>{title}</h3><ul>" + "".join(f"<li>{html.escape(line)}</li>" for line in lines) + "</ul>")
     footer = "Checked per territory against the Spotify Web API. Full list: StreamBase -> Health -> Territories."
-    text_body = "\n".join(lines) + "\n\n" + footer
-    html_body = "<ul>" + "".join(items) + f"</ul><p style=\"color:#666;font-size:12px\">{html.escape(footer)}</p>"
+    text_body = "\n\n".join(text_blocks) + "\n\n" + footer
+    html_body = "".join(html_blocks) + f"<p style=\"color:#666;font-size:12px\">{html.escape(footer)}</p>"
     return subject, text_body, html_body
 
 
@@ -701,9 +764,7 @@ def acknowledge_workflow_email(pg: Postgrest, path: str) -> None:
 # ---------------------------------------------------------------------------
 
 def run(pg: Postgrest, sp: Any, args: argparse.Namespace) -> int:
-    markets = sp.market_universe()
-    print(f"Market universe: {len(markets)} markets")
-
+    new_only = bool(getattr(args, "new_only", False))
     candidates = pg.rpc_all("spotify_availability_candidates", {"p_lookback_days": args.lookback_days}, order="isrc.asc")
     prev_rows = pg.select_all(
         "spotify_track_market_availability",
@@ -729,10 +790,23 @@ def run(pg: Postgrest, sp: Any, args: argparse.Namespace) -> int:
     todo, skipped_down = skip_taken_down(todo, [r["isrc"] for r in taken_down])
     if skipped_down:
         print(f"Skipping {skipped_down} track(s) the takedown watch marks unavailable (existing rows untouched)")
-    print(f"Scanning {len(todo)} of {len(candidates)} catalog tracks across {len(markets)} markets")
+
+    # Releases: no stored row yet and a `tracks` row created in the last NEW_TRACK_DAYS days.
+    new_isrcs: set = set()
+    if any(c["isrc"] not in prev_by_isrc for c in todo):
+        since_new = (datetime.now(timezone.utc) - timedelta(days=NEW_TRACK_DAYS)).isoformat()
+        recent_tracks = pg.select_all("tracks", "isrc", f"created_at=gte.{quote(since_new)}", order="isrc.asc")
+        new_isrcs = new_track_isrcs(todo, prev_by_isrc, [r["isrc"] for r in recent_tracks])
+    if new_only:
+        todo = [c for c in todo if c["isrc"] in new_isrcs]
+        print(f"New-only: {len(todo)} new catalog track(s) without a territory row")
+    print(f"Scanning {len(todo)} of {len(candidates)} catalog tracks")
     if not todo:
         print("Nothing to scan.")
         return 0
+
+    markets = sp.market_universe()
+    print(f"Market universe: {len(markets)} markets")
 
     try:
         results = scan_catalog(
@@ -752,9 +826,20 @@ def run(pg: Postgrest, sp: Any, args: argparse.Namespace) -> int:
     requests_used = getattr(sp, "requests", 0)
     print(f"Spotify requests used: {requests_used} (budget {args.max_requests})")
 
+    # A new release with an uncertain answer is retried by the next run, not written (no false alarm).
+    deferred = [c for c in todo if c["isrc"] in new_isrcs and is_uncertain(results[c["isrc"]])]
+    if deferred:
+        print(f"Deferring {len(deferred)} new track(s) with an uncertain answer to the next run")
+        deferred_isrcs = {c["isrc"] for c in deferred}
+        todo = [c for c in todo if c["isrc"] not in deferred_isrcs]
+        results = {i: r for i, r in results.items() if i not in deferred_isrcs}
+    if not todo:
+        write_step_summary(f"## Spotify market scan\n- {len(deferred)} new track(s) deferred (uncertain answer); nothing written.")
+        return 0
+
     summary = [
-        "## Spotify market scan",
-        f"- Tracks scanned: {len(todo)} · territories: {len(markets)} · skipped (taken down): {skipped_down}",
+        "## Spotify market scan" + (" (new tracks only)" if new_only else ""),
+        f"- Tracks scanned: {len(todo)} · territories: {len(markets)} · skipped (taken down): {skipped_down} · deferred: {len(deferred)}",
         f"- Spotify requests used: {requests_used} (budget {args.max_requests}, verify cap {args.max_verify_requests}, search cap {args.max_search_requests})",
     ]
     if not args.skip_safety_valve:
@@ -773,20 +858,20 @@ def run(pg: Postgrest, sp: Any, args: argparse.Namespace) -> int:
         row = build_row(cand, res, prev, len(markets), now_iso)
         upserts.append(row)
         report_rows.append((cand, row))
-        for ev in diff_events(prev, effective_unavailable(prev, res), carried_markets(res)):
+        for ev in diff_events(prev, effective_unavailable(prev, res), carried_markets(res), cand["isrc"] in new_isrcs):
             new_events.append({"isrc": cand["isrc"], **ev})
 
     restricted = [r for r in upserts if r["unavailable_markets"]]
     lost = [e for e in new_events if e["event"] == "lost"]
     gained = [e for e in new_events if e["event"] == "gained"]
-    seeded = sum(1 for c in todo if c["isrc"] not in prev_by_isrc)
+    seeded = sum(1 for c in todo if c["isrc"] not in prev_by_isrc and c["isrc"] not in new_isrcs)
     print(
         f"Done: restricted tracks={len(restricted)}/{len(upserts)} "
         f"lost events={len(lost)} gained events={len(gained)} first-scan tracks={seeded}"
     )
     summary += [
         f"- Tracks with unavailable markets: {len(restricted)} of {len(upserts)}",
-        f"- Newly lost: {len(lost)} (track, market) pairs · regained: {len(gained)} · seeded silently: {seeded}",
+        f"- Newly lost: {len(lost)} (track, market) pairs · regained: {len(gained)} · seeded silently: {seeded} · new releases: {sum(1 for c in todo if c['isrc'] in new_isrcs)}",
     ]
 
     if args.report_csv:
@@ -823,7 +908,7 @@ def run(pg: Postgrest, sp: Any, args: argparse.Namespace) -> int:
                 "market": e["market"],
                 "event": e["event"],
                 "reason": e["reason"],
-                "notified_at": now_iso if e["event"] == "gained" else None,
+                "notified_at": None,
             }
             for e in new_events
             if latest.get((e["isrc"], e["market"])) != e["event"]
@@ -833,11 +918,11 @@ def run(pg: Postgrest, sp: Any, args: argparse.Namespace) -> int:
     for start in range(0, len(upserts), 500):
         pg.upsert("spotify_track_market_availability", upserts[start : start + 500], on_conflict="isrc")
 
-    # Email every lost event not yet notified (also retries a failed email step).
+    # Email every event (lost and regained) not yet notified, one email per run (also retries a failed email step).
     pending = pg.select_all(
         "spotify_track_market_events",
         "id,isrc,market,event,reason,detected_at",
-        "event=eq.lost&notified_at=is.null",
+        "notified_at=is.null",
         order="id.asc",
     )
     if pending:
@@ -873,6 +958,7 @@ def main() -> int:
     ap.add_argument("--limit", type=int, default=0, help="Max tracks to scan (0 = all)")
     ap.add_argument("--artist", help="Only tracks with this artist name (case-insensitive)")
     ap.add_argument("--isrc", action="append", help="Only this ISRC (repeatable)")
+    ap.add_argument("--new-only", action="store_true", help="Release-day check: scan only new catalog tracks (created in the last 14 days) that have no territory row yet")
     ap.add_argument("--lookback-days", type=int, default=30, help="Catalog snapshot window defining 'own catalog'")
     ap.add_argument("--min-interval", type=float, default=0.5, help="Seconds between Spotify requests")
     ap.add_argument("--max-requests", type=int, default=DEFAULT_MAX_REQUESTS, help="Hard budget of Spotify API calls (abort, no writes, if exceeded)")

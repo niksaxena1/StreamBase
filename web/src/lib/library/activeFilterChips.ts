@@ -16,6 +16,13 @@ export function activeLibraryFilterChips(filters: LibraryFilters): LibraryFilter
     const labels = { any: "Any batch", staged: "Staged", sent: "Sent", none: "Not in a batch" };
     if (value) chips.push({ key, label: `${label}: ${labels[value]}`, clear: { [key]: "" } });
   }
+  if (filters.territoryGaps) {
+    chips.push({
+      key: "territoryGaps",
+      label: `Territory gaps: ${filters.territoryGaps === "any" ? "Any" : "None"}`,
+      clear: { territoryGaps: "" },
+    });
+  }
   const facets = [
     ["distributor", "Distributor"], ["labelGenre", "Label / Genre"],
     ["originality", "Originality"], ["exclusivity", "Exclusivity"], ["month", "Month"],
