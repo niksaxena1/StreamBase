@@ -1623,7 +1623,7 @@ See `docs/COMPETITOR-MODE-OPERATIONS.md` for migration and refresh details.
 
 The `spotify_market_availability_weekly.yml` workflow runs on **Sundays at 21:00 UTC / 01:00 Dubai (Monday)**, started by the database scheduler (job `streambase-market-availability`). It is own-catalog only. **Apply `supabase/migrations/20261106233500_add_spotify_market_availability.sql` first.**
 
-For every own-catalog track with a Spotify id it checks each Spotify market (about 183, taken from a globally released reference track, minus Kosovo which the API rejects) and records where the track is **not** playable. Results appear in three places:
+For every own-catalog track with a Spotify id it records the Spotify markets (about 183, taken from a globally released reference track, minus Kosovo which the API rejects) where the track is **not** playable. To stay inside Spotify's per-app quota it uses only a few hundred requests per run: one market-less list call per 50 tracks, a small resolve step for stale relinked ids, and a capped per-market verify step (markets beyond the cap are recorded as `unverified`). A hard request budget aborts the run without writing if exceeded. Results appear in three places:
 
 - **Health → Spotify markets**: restricted tracks with available/checked counts, country codes (hover for the country name) and Spotify's restriction reason. Hidden until the first scan.
 - **Home → Spotify market gaps** (own-catalog mode, admin): a collapsed list, with tracks unavailable everywhere first.

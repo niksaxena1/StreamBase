@@ -6,25 +6,37 @@ markets is each own-catalog track NOT playable? Distributors can geo-restrict a
 track (e.g. a solo cover blocked in BR, IN, MX, PK) and nothing else surfaces
 that.
 
-Method (proven by a one-off prototype):
-- Market universe = `available_markets` of a globally released reference track
-  (Blinding Lights), minus "XK" (Spotify answers market=XK with HTTP 400 for
-  every track). Fewer than 150 markets => abort, write nothing.
-- For each market: GET /v1/tracks?ids=<up to 50>&market=M. `is_playable` true
-  => available (a `linked_from` means Spotify relinked to another copy, which
-  still plays). Otherwise unavailable, reason `restrictions.reason` or "none".
-  A null/error entry => unavailable with reason "missing".
-- The stored id's own `available_markets` is NOT used: relinked copies report
-  zero markets even though they play.
+Spotify enforces a per-app quota, so a per-market sweep (markets x batches,
+~11.7k requests) is not viable. The scan uses a few hundred requests:
+
+- Universe (1 request): `available_markets` of a globally released reference
+  track (Blinding Lights) minus "XK" (HTTP 400 for every track). Fewer than 150
+  markets => abort, write nothing.
+- A. List pass: GET /tracks?ids=<50> with NO market => `available_markets` per
+  stored track id (~64 requests for 3,200 tracks).
+- B. Resolve pass, only for tracks whose list is empty (stale relinked copies
+  report 0 markets): GET /tracks?ids=<50>&market=US, then GB, then DE for the
+  remainder. A playable entry whose id differs (or has `linked_from`) is the
+  current copy; its own `available_markets` (one more list call) is unioned
+  with the stored id's list. Still unresolved => market-less ISRC search (other copies; capped by
+  --max-search-requests, beyond it "unverified"), then "not_found" everywhere.
+- C. Verify pass: for each market M outside a track's union, group tracks by M
+  and GET /tracks?ids=<50>&market=M. `is_playable` true => available there
+  (another copy); otherwise unavailable with `restrictions.reason` or "none".
+  Capped by --max-verify-requests; markets with the most tracks are verified
+  first and the rest are recorded from the list with reason "unverified".
+- D. Hard budget --max-requests (every API call, retries included): exceeded =>
+  abort without writing. Requests used are printed and put in the step summary.
 
 Results go to `public.spotify_track_market_availability`; per-market changes
 are logged in `public.spotify_track_market_events` (only for tracks that
 already had a previous row, so the first scan seeds silently) and "lost" events
-are emailed.
+are emailed. "unverified" and errored markets never create events.
 
 Safety valves (write nothing, exit non-zero; --skip-safety-valve overrides):
-- more than 20% of (track, market) checks are "missing" or errored;
+- more than 20% of (track, market) checks are missing/not_found or errored;
 - more than 10% of tracks newly lose >= 10 markets in one run.
+A 429 with Retry-After > 120 s aborts the run with nothing written.
 
 Usage:
   python scripts/scan_spotify_market_availability.py --dry-run --artist Saxena
@@ -58,6 +70,10 @@ REFERENCE_TRACK_ID = "0VjIjW4GlUZAMYd2vXMi3b"  # Blinding Lights, globally relea
 EXCLUDED_MARKETS = {"XK"}
 MIN_UNIVERSE_MARKETS = 150
 BATCH_SIZE = 50
+PROBE_MARKETS = ("US", "GB", "DE")
+DEFAULT_MAX_REQUESTS = 1000
+DEFAULT_MAX_VERIFY_REQUESTS = 400
+DEFAULT_MAX_SEARCH_REQUESTS = 150
 
 DEFAULT_ALERT_TO = "nikhil.auh@gmail.com"
 DEFAULT_SMTP_USERNAME = "nikhil.auh@gmail.com"
@@ -70,6 +86,7 @@ EXIT_MISSING_VALVE = 2
 EXIT_MASS_LOSS_VALVE = 3
 EXIT_BAD_UNIVERSE = 4
 EXIT_CANDIDATE_GUARD = 5
+EXIT_BUDGET = 6
 
 
 def require_env(name: str) -> str:
@@ -87,6 +104,10 @@ class SpotifyRateLimited(RuntimeError):
     pass
 
 
+class RequestBudgetExceeded(RuntimeError):
+    pass
+
+
 class Spotify:
     """Minimal client-credentials Spotify client with throttling and retries."""
 
@@ -94,9 +115,10 @@ class Spotify:
         self,
         client_id: str,
         client_secret: str,
-        min_interval_s: float = 0.12,
+        min_interval_s: float = 0.5,
         max_retry_after_s: int = 120,
         session: Optional[requests.Session] = None,
+        max_requests: int = DEFAULT_MAX_REQUESTS,
     ):
         self.client_id = client_id
         self.client_secret = client_secret
@@ -107,12 +129,20 @@ class Spotify:
         self._expires_at = 0.0
         self._last_request_at = 0.0
         self._batch_supported = True
+        self.max_requests = max_requests
+        self.requests = 0  # every API call, retries and token calls included
+
+    def _count_request(self) -> None:
+        if self.requests >= self.max_requests:
+            raise RequestBudgetExceeded(f"Spotify request budget of {self.max_requests} exhausted")
+        self.requests += 1
 
     def token(self, force: bool = False) -> str:
         now = time.time()
         if self._token and not force and self._expires_at > now + 30:
             return self._token
         auth = base64.b64encode(f"{self.client_id}:{self.client_secret}".encode("utf-8")).decode("utf-8")
+        self._count_request()
         res = self.http.post(
             "https://accounts.spotify.com/api/token",
             headers={"Authorization": f"Basic {auth}", "Content-Type": "application/x-www-form-urlencoded"},
@@ -137,6 +167,7 @@ class Spotify:
         refreshed = False
         for attempt in range(5):
             self._throttle()
+            self._count_request()
             try:
                 res = self.http.get(
                     f"https://api.spotify.com/v1{path}",
@@ -180,14 +211,20 @@ class Spotify:
         markets = body.get("available_markets") if status == 200 and isinstance(body, dict) else None
         return build_universe(markets)
 
-    def market_entries(self, ids: Sequence[str], market: str) -> List[Tuple[str, Optional[dict]]]:
-        """One (ENTRY_OK, body_or_None) or (ENTRY_ERROR, None) per id for this market.
+    def search_isrc(self, isrc: str) -> Tuple[int, Optional[dict]]:
+        """Market-less ISRC search (items carry available_markets and external_ids)."""
+        return self.get(f"/search?q={quote('isrc:' + isrc)}&type=track&limit=10")
+
+    def tracks(self, ids: Sequence[str], market: Optional[str] = None) -> List[Tuple[str, Optional[dict]]]:
+        """One (ENTRY_OK, body_or_None) or (ENTRY_ERROR, None) per id (max 50).
 
         Batch endpoint first; falls back to single-track calls if the app is
-        denied the batch endpoint (403/404), as the takedown watch does.
+        denied the batch endpoint (403/404), as the takedown watch does. The
+        fallback costs one request per id, so the request budget aborts it.
         """
+        suffix = f"&market={quote(market)}" if market else ""
         if self._batch_supported:
-            status, body = self.get(f"/tracks?ids={quote(','.join(ids))}&market={quote(market)}")
+            status, body = self.get(f"/tracks?ids={quote(','.join(ids))}{suffix}")
             if status in (403, 404):
                 print("  [spotify] batch endpoint unavailable; using single tracks")
                 self._batch_supported = False
@@ -199,9 +236,10 @@ class Spotify:
                         for item in items
                     ]
                 return [(ENTRY_ERROR, None)] * len(ids)
+        single = f"?market={quote(market)}" if market else ""
         out: List[Tuple[str, Optional[dict]]] = []
         for tid in ids:
-            status, body = self.get(f"/tracks/{quote(tid, safe='')}?market={quote(market)}")
+            status, body = self.get(f"/tracks/{quote(tid, safe='')}{single}")
             if status == 200 and isinstance(body, dict):
                 out.append((ENTRY_OK, body))
             elif status == 404:
@@ -242,34 +280,177 @@ def classify_entry(entry: Optional[dict], requested_id: str) -> Tuple[bool, Opti
     return False, reason, False
 
 
-def scan_markets(
+def _fetch(
+    sp: Any, ids: Sequence[str], market: Optional[str], max_requests: int
+) -> Dict[str, Tuple[str, Optional[dict]]]:
+    """id -> (state, entry) for unique ids, in batches of 50, enforcing the budget."""
+    unique = list(dict.fromkeys(ids))
+    out: Dict[str, Tuple[str, Optional[dict]]] = {}
+    for i in range(0, len(unique), BATCH_SIZE):
+        chunk = unique[i : i + BATCH_SIZE]
+        entries = sp.tracks(chunk, market)
+        if getattr(sp, "requests", 0) > max_requests:
+            raise RequestBudgetExceeded(f"Spotify request budget of {max_requests} exceeded")
+        out.update(zip(chunk, entries))
+    return out
+
+
+def _list_markets(entry: Optional[dict], universe: set) -> set:
+    markets = entry.get("available_markets") if isinstance(entry, dict) else None
+    if not isinstance(markets, list):
+        return set()
+    return {str(m).upper() for m in markets} & universe
+
+
+def search_markets(body: dict, isrc: str, universe: set) -> set:
+    """Union of available_markets of every search item whose external_ids.isrc matches."""
+    tracks = body.get("tracks")
+    items = tracks.get("items") if isinstance(tracks, dict) else None
+    found: set = set()
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        item_isrc = norm_isrc((item.get("external_ids") or {}).get("isrc"))
+        if item_isrc and item_isrc == isrc:
+            found |= _list_markets(item, universe)
+    return found
+
+
+def verify_plan(groups: Dict[str, List[str]], max_verify_requests: int) -> Tuple[List[str], List[str]]:
+    """(markets to verify, markets to leave unverified): most tracks first, within the request cap."""
+    ordered = sorted(groups, key=lambda m: (-len(groups[m]), m))
+    verify: List[str] = []
+    used = 0
+    for market in ordered:
+        cost = -(-len(groups[market]) // BATCH_SIZE)
+        if used + cost > max_verify_requests:
+            continue
+        verify.append(market)
+        used += cost
+    skipped = [m for m in ordered if m not in verify]
+    return verify, skipped
+
+
+def scan_catalog(
     sp: Any,
     tracks: Sequence[dict],
-    markets: Sequence[str],
+    universe: Sequence[str],
+    max_verify_requests: int = DEFAULT_MAX_VERIFY_REQUESTS,
+    max_requests: int = DEFAULT_MAX_REQUESTS,
+    max_search_requests: int = DEFAULT_MAX_SEARCH_REQUESTS,
     log=print,
 ) -> Dict[str, dict]:
-    """Per-ISRC scan result: unavailable {market: reason}, checked, errored, relinked."""
+    """Per-ISRC scan result: unavailable {market: reason}, checked, errored, unverified, relinked."""
+    uni = set(universe)
+    stored = {t["isrc"]: t["spotify_track_id"].strip() for t in tracks}
     results: Dict[str, dict] = {
-        t["isrc"]: {"unavailable": {}, "checked": 0, "errored": [], "relinked": False} for t in tracks
+        isrc: {"unavailable": {}, "checked": len(universe), "errored": [], "unverified": [], "relinked": False}
+        for isrc in stored
     }
-    chunks = [tracks[i : i + BATCH_SIZE] for i in range(0, len(tracks), BATCH_SIZE)]
-    for n, market in enumerate(markets, 1):
-        for chunk in chunks:
-            ids = [c["spotify_track_id"].strip() for c in chunk]
-            entries = sp.market_entries(ids, market)
-            for track, tid, (state, entry) in zip(chunk, ids, entries):
-                res = results[track["isrc"]]
-                if state == ENTRY_ERROR:
-                    res["errored"].append(market)
-                    continue
-                res["checked"] += 1
-                available, reason, relinked = classify_entry(entry, tid)
-                if available:
-                    res["relinked"] = res["relinked"] or relinked
-                else:
-                    res["unavailable"][market] = reason or "none"
+    union: Dict[str, set] = {}
+    needs_resolve: List[str] = []
+
+    # A. list pass (no market): available_markets per stored id
+    listed = _fetch(sp, list(stored.values()), None, max_requests)
+    log(f"List pass done ({getattr(sp, 'requests', '?')} requests)")
+    for isrc, tid in stored.items():
+        state, entry = listed[tid]
+        if state == ENTRY_ERROR:
+            results[isrc]["errored"] = list(universe)
+            results[isrc]["checked"] = 0
+            continue
+        union[isrc] = _list_markets(entry, uni)
+        if not union[isrc]:
+            needs_resolve.append(isrc)
+
+    # B. resolve pass for stale relinked copies
+    resolved_id: Dict[str, str] = {}
+    probe_hit: Dict[str, str] = {}
+    remaining = list(needs_resolve)
+    for market in PROBE_MARKETS:
+        if not remaining:
+            break
+        probed = _fetch(sp, [stored[i] for i in remaining], market, max_requests)
+        still: List[str] = []
+        for isrc in remaining:
+            state, entry = probed[stored[isrc]]
+            available, _reason, relinked = classify_entry(entry if state == ENTRY_OK else None, stored[isrc])
+            if state == ENTRY_OK and available:
+                probe_hit[isrc] = market
+                new_id = entry.get("id")
+                if relinked and new_id and new_id != stored[isrc]:
+                    resolved_id[isrc] = new_id
+                    results[isrc]["relinked"] = True
+            else:
+                still.append(isrc)
+        remaining = still
+    if resolved_id:
+        copies = _fetch(sp, list(resolved_id.values()), None, max_requests)
+        for isrc, new_id in resolved_id.items():
+            state, entry = copies[new_id]
+            if state == ENTRY_OK:
+                union[isrc] |= _list_markets(entry, uni)
+    for isrc, market in probe_hit.items():
+        union[isrc].add(market)  # known playable there
+    # Last resort before "not_found": market-less ISRC search (other copies of the recording).
+    not_found: set = set()
+    searches = 0
+    for isrc in remaining:
+        if searches >= max_search_requests:
+            results[isrc]["unavailable"] = {mk: "unverified" for mk in universe}
+            results[isrc]["unverified"] = list(universe)
+            union.pop(isrc, None)  # excluded from the verify pass
+            continue
+        searches += 1
+        status, body = sp.search_isrc(norm_isrc(isrc))
+        if getattr(sp, "requests", 0) > max_requests:
+            raise RequestBudgetExceeded(f"Spotify request budget of {max_requests} exceeded")
+        if status != 200 or not isinstance(body, dict):
+            results[isrc]["unavailable"] = {mk: "unverified" for mk in universe}
+            results[isrc]["unverified"] = list(universe)
+            union.pop(isrc, None)
+            continue
+        found = search_markets(body, norm_isrc(isrc), uni)
+        if found:
+            union[isrc] = found
+            results[isrc]["relinked"] = True
+        else:
+            not_found.add(isrc)
+            results[isrc]["unavailable"] = {mk: "not_found" for mk in universe}
+    log(
+        f"Resolve pass done ({getattr(sp, 'requests', '?')} requests): {len(needs_resolve)} stale, "
+        f"{searches} ISRC searches, {len(not_found)} not found"
+    )
+
+    # C. verify pass: group by market outside the union
+    groups: Dict[str, List[str]] = {}
+    for isrc, markets in union.items():
+        if isrc in not_found:
+            continue
+        for market in uni - markets:
+            groups.setdefault(market, []).append(isrc)
+    verify, skipped = verify_plan(groups, max_verify_requests)
+    for market in skipped:
+        for isrc in groups[market]:
+            results[isrc]["unverified"].append(market)
+            results[isrc]["unavailable"][market] = "unverified"
+    for n, market in enumerate(verify, 1):
+        isrcs = groups[market]
+        got = _fetch(sp, [stored[i] for i in isrcs], market, max_requests)
+        for isrc in isrcs:
+            state, entry = got[stored[isrc]]
+            if state == ENTRY_ERROR:
+                results[isrc]["errored"].append(market)
+                results[isrc]["checked"] -= 1
+                continue
+            available, reason, relinked = classify_entry(entry, stored[isrc])
+            if available:
+                results[isrc]["relinked"] = results[isrc]["relinked"] or relinked
+            else:
+                results[isrc]["unavailable"][market] = reason or "none"
         if n % 25 == 0:
-            log(f"Scanned {n}/{len(markets)} markets...")
+            log(f"Verified {n}/{len(verify)} markets...")
+    log(f"Verify pass done ({getattr(sp, 'requests', '?')} requests): {len(verify)} markets, {len(skipped)} left unverified")
     return results
 
 
@@ -277,14 +458,26 @@ def scan_markets(
 # Diffing and rows
 # ---------------------------------------------------------------------------
 
+def carried_markets(scan: dict) -> List[str]:
+    """Markets without a trustworthy fresh answer (errored or unverified)."""
+    return list(scan["errored"]) + list(scan.get("unverified", []))
+
+
 def effective_unavailable(prev: Optional[dict], scan: dict) -> Dict[str, str]:
-    """Scan result with errored markets carried over from the previous row."""
+    """Scan result where errored/unverified markets keep their previous state when a row exists."""
     out = dict(scan["unavailable"])
-    if prev and scan["errored"]:
+    if prev:
+        prev_markets = prev.get("unavailable_markets") or []
         prev_reasons = prev.get("unavailable_reasons") or {}
-        for market in scan["errored"]:
-            if market in (prev.get("unavailable_markets") or []):
+        for market in carried_markets(scan):
+            if market in prev_markets:
                 out[market] = prev_reasons.get(market) or "none"
+            else:
+                out.pop(market, None)
+    else:
+        # First scan: no trustworthy answer means no claim (never seed false gaps).
+        for market in carried_markets(scan):
+            out.pop(market, None)
     return out
 
 
@@ -337,7 +530,7 @@ def missing_share(results: Dict[str, dict]) -> Tuple[int, int]:
     bad = total = 0
     for res in results.values():
         errored = len(res["errored"])
-        missing = sum(1 for r in res["unavailable"].values() if r == "missing")
+        missing = sum(1 for r in res["unavailable"].values() if r in ("missing", "not_found"))
         bad += errored + missing
         total += res["checked"] + errored
     return bad, total
@@ -364,7 +557,7 @@ def safety_valve_reason(
             prev = prev_by_isrc.get(isrc)
             if prev is None:
                 continue
-            events = diff_events(prev, effective_unavailable(prev, res), res["errored"])
+            events = diff_events(prev, effective_unavailable(prev, res), carried_markets(res))
             if sum(1 for e in events if e["event"] == "lost") >= mass_loss_markets:
                 mass += 1
         if mass / len(results) > max_mass_loss_share:
@@ -523,10 +716,29 @@ def run(pg: Postgrest, sp: Any, args: argparse.Namespace) -> int:
         print("Nothing to scan.")
         return 0
 
-    results = scan_markets(sp, todo, markets)
+    try:
+        results = scan_catalog(
+            sp,
+            todo,
+            markets,
+            max_verify_requests=args.max_verify_requests,
+            max_requests=args.max_requests,
+            max_search_requests=args.max_search_requests,
+        )
+    except RequestBudgetExceeded as exc:
+        msg = f"{exc} after {getattr(sp, 'requests', '?')} requests. Nothing written."
+        print(msg)
+        write_step_summary("## Spotify market scan\n- **" + msg + "**")
+        return EXIT_BUDGET
     now_iso = datetime.now(timezone.utc).isoformat()
+    requests_used = getattr(sp, "requests", 0)
+    print(f"Spotify requests used: {requests_used} (budget {args.max_requests})")
 
-    summary = ["## Spotify market scan", f"- Tracks scanned: {len(todo)} · markets: {len(markets)}"]
+    summary = [
+        "## Spotify market scan",
+        f"- Tracks scanned: {len(todo)} · markets: {len(markets)}",
+        f"- Spotify requests used: {requests_used} (budget {args.max_requests}, verify cap {args.max_verify_requests}, search cap {args.max_search_requests})",
+    ]
     if not args.skip_safety_valve:
         valve = safety_valve_reason(results, prev_by_isrc)
         if valve:
@@ -543,7 +755,7 @@ def run(pg: Postgrest, sp: Any, args: argparse.Namespace) -> int:
         row = build_row(cand, res, prev, len(markets), now_iso)
         upserts.append(row)
         report_rows.append((cand, row))
-        for ev in diff_events(prev, effective_unavailable(prev, res), res["errored"]):
+        for ev in diff_events(prev, effective_unavailable(prev, res), carried_markets(res)):
             new_events.append({"isrc": cand["isrc"], **ev})
 
     restricted = [r for r in upserts if r["unavailable_markets"]]
@@ -644,7 +856,10 @@ def main() -> int:
     ap.add_argument("--artist", help="Only tracks with this artist name (case-insensitive)")
     ap.add_argument("--isrc", action="append", help="Only this ISRC (repeatable)")
     ap.add_argument("--lookback-days", type=int, default=30, help="Catalog snapshot window defining 'own catalog'")
-    ap.add_argument("--min-interval", type=float, default=0.12, help="Seconds between Spotify requests")
+    ap.add_argument("--min-interval", type=float, default=0.5, help="Seconds between Spotify requests")
+    ap.add_argument("--max-requests", type=int, default=DEFAULT_MAX_REQUESTS, help="Hard budget of Spotify API calls (abort, no writes, if exceeded)")
+    ap.add_argument("--max-search-requests", type=int, default=DEFAULT_MAX_SEARCH_REQUESTS, help="Cap on ISRC searches for unresolved tracks; beyond it they are recorded as unverified")
+    ap.add_argument("--max-verify-requests", type=int, default=DEFAULT_MAX_VERIFY_REQUESTS, help="Cap on per-market verify requests; the rest are recorded as unverified")
     ap.add_argument("--report-csv", help="Write a CSV report to this path")
     ap.add_argument("--email-output", help="Prepare email JSON for the workflow composite action instead of SMTP")
     ap.add_argument("--ack-notifications", help="Mark event IDs in this JSON as notified; no Spotify calls")
@@ -660,11 +875,14 @@ def main() -> int:
 
     if args.limit < 0 or args.lookback_days < 1 or args.min_interval < 0:
         ap.error("limit and min-interval must be nonnegative; lookback-days must be positive")
+    if args.max_requests < 1 or args.max_verify_requests < 0 or args.max_search_requests < 0:
+        ap.error("max-requests must be positive; max-verify-requests nonnegative")
 
     sp = Spotify(
         require_env("SPOTIFY_CLIENT_ID"),
         require_env("SPOTIFY_CLIENT_SECRET"),
         min_interval_s=args.min_interval,
+        max_requests=args.max_requests,
     )
     pg = Postgrest(require_env("SUPABASE_URL"), require_env("SUPABASE_SERVICE_ROLE_KEY"))
     return run(pg, sp, args)
