@@ -92,6 +92,7 @@ export function describeUnavailableReason(reason: string | null): string {
   if (reason === "no_markets") return "No markets";
   if (reason.startsWith("not_playable")) {
     const detail = reason.split(":")[1];
+    if (detail === "market") return "Taken down";
     return detail ? `Not playable (${detail})` : "Not playable";
   }
   return reason;

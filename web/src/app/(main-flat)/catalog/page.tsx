@@ -19,7 +19,7 @@ import { normalizeDatasetMode } from "@/lib/datasetMode";
 import { getRequestAppContext } from "@/lib/requestAppContext.server";
 import { timedServerStep } from "@/lib/serverTiming";
 import { cachedSpotifyMarketsForIsrc } from "@/lib/health/spotifyMarketAvailability";
-import { formatMarketsLine } from "@/lib/health/spotifyMarketFormat";
+import type { SpotifyTrackMarkets } from "@/lib/health/spotifyMarketAvailability";
 import { resolveCatalogTrackSelection } from "@/lib/catalogSelection";
 import { CatalogArtistUnavailable, CatalogTrackUnavailable } from "./CatalogUnavailable";
 import { renderCompetitorCatalogContent } from "./competitorCatalogContent";
@@ -717,13 +717,13 @@ async function CatalogPageContent({
 
   // Weekly per-market Spotify scan: one cached primary-key lookup, own catalog only (this branch
   // is already admin-gated). Never blocks or breaks the page; null when never scanned.
-  let selectedTrackMarketsLine: string | null = null;
+  let selectedTrackMarkets: SpotifyTrackMarkets | null = null;
   if (isrc) {
     try {
       const { data: markets } = await cachedSpotifyMarketsForIsrc(isrc);
-      if (markets) selectedTrackMarketsLine = formatMarketsLine(markets);
+      selectedTrackMarkets = markets ?? null;
     } catch {
-      selectedTrackMarketsLine = null;
+      selectedTrackMarkets = null;
     }
   }
 
@@ -760,7 +760,7 @@ async function CatalogPageContent({
         track28d={track28d}
         track30d={track30d}
         selectedTrackPlaylistMemberships={selectedTrackPlaylistMemberships}
-        selectedTrackMarketsLine={selectedTrackMarketsLine}
+        selectedTrackMarkets={selectedTrackMarkets}
       />
     </div>
   );

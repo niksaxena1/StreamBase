@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { describeMarketReasons, formatMarketCount, formatMarketsLine, marketName, truncateMarkets } from "./spotifyMarketFormat";
+import {
+  describeMarketReasons,
+  formatMarketCount,
+  formatMarketsLine,
+  formatScanTime,
+  marketName,
+  marketReasonLabel,
+  tallyMarkets,
+  truncateMarkets,
+  unusualReasonSummary,
+} from "./spotifyMarketFormat";
 
 describe("Spotify market formatting", () => {
   it("names countries and falls back to the code", () => {
@@ -25,5 +35,25 @@ describe("Spotify market formatting", () => {
     expect(describeMarketReasons({ BR: "market", IN: "market" })).toBe("market");
     expect(describeMarketReasons({ BR: "market", IN: "none" })).toBe("market, No reason given");
     expect(describeMarketReasons({})).toBe("—");
+  });
+});
+
+describe("Spotify market labels", () => {
+  it("explains reasons and hides the ordinary geo-block", () => {
+    expect(marketReasonLabel("market")).toBe("Not released in this country");
+    expect(marketReasonLabel(undefined)).toBe("Not playable (no reason given)");
+    expect(unusualReasonSummary({ BR: "market", IN: "market" })).toBeNull();
+    expect(unusualReasonSummary({ BR: "market", IN: "product" })).toBe("Not released in this country · Premium only");
+  });
+
+  it("tallies countries across tracks", () => {
+    expect(
+      tallyMarkets([{ unavailable_markets: ["BR", "IN"] }, { unavailable_markets: ["BR", "CA"] }]),
+    ).toEqual([{ code: "BR", count: 2 }, { code: "CA", count: 1 }, { code: "IN", count: 1 }]);
+  });
+
+  it("formats scan time in UTC", () => {
+    expect(formatScanTime("2026-11-07T00:03:00Z")).toBe("07 Nov 2026, 00:03 UTC");
+    expect(formatScanTime(null)).toBe("never");
   });
 });

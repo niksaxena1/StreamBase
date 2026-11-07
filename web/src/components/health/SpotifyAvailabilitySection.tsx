@@ -1,4 +1,6 @@
+import { formatScanTime } from "@/lib/health/spotifyMarketFormat";
 import Link from "@/components/shell/RouteLink";
+import { SpotifyIconLink } from "@/components/spotify/SpotifyIconLink";
 
 import { cachedSpotifyAvailability, describeUnavailableReason } from "@/lib/health/spotifyAvailability";
 import { GlassTable, TableRow, TableCell } from "@/components/ui/GlassTable";
@@ -8,8 +10,7 @@ import { SectionHeader } from "@/components/ui/SectionHeader";
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 
 function formatUtc(ts: string | null): string {
-  if (!ts) return "—";
-  return `${ts.slice(0, 16).replace("T", " ")} UTC`;
+  return ts ? formatScanTime(ts) : "—";
 }
 
 /**
@@ -67,14 +68,7 @@ export async function SpotifyAvailabilitySection() {
                         isrc={track.isrc}
                         className="font-mono text-[10px] text-lime-600 underline hover:opacity-80 dark:text-lime-400"
                       />
-                      <a
-                        href={`https://open.spotify.com/track/${encodeURIComponent(track.spotify_track_id)}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[10px] underline opacity-70 hover:opacity-100"
-                      >
-                        Spotify
-                      </a>
+                      <SpotifyIconLink trackId={track.spotify_track_id} label={track.name ?? undefined} />
                     </div>
                   </div>
                 </div>

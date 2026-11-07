@@ -48,3 +48,45 @@ export function formatMarketsLine(args: {
   const list = more > 0 ? `${shown.join(", ")} +${more} more` : shown.join(", ");
   return `Spotify: unavailable in ${list} (${args.available_count}/${args.markets_checked})`;
 }
+
+/** Plain-English meaning of Spotify's `restrictions.reason` for one market. */
+export function marketReasonLabel(reason: string | null | undefined): string {
+  switch (reason) {
+    case "market":
+      return "Not released in this country";
+    case "product":
+      return "Premium only";
+    case "explicit":
+      return "Hidden by explicit-content filter";
+    case "missing":
+      return "Missing from the Spotify API";
+    default:
+      return "Not playable (no reason given)";
+  }
+}
+
+/** Short reason summary for a track: null when every market is the ordinary geo-block. */
+export function unusualReasonSummary(reasons: Record<string, string> | null | undefined): string | null {
+  const distinct = Array.from(new Set(Object.values(reasons ?? {}).filter(Boolean)));
+  if (distinct.length === 0 || (distinct.length === 1 && distinct[0] === "market")) return null;
+  return distinct.map((r) => marketReasonLabel(r)).join(" · ");
+}
+
+/** How many tracks miss each country, most affected first (ties by country name). */
+export function tallyMarkets(tracks: { unavailable_markets: string[] }[]): { code: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const t of tracks) for (const code of t.unavailable_markets) counts.set(code, (counts.get(code) ?? 0) + 1);
+  return Array.from(counts, ([code, count]) => ({ code, count })).sort(
+    (a, b) => b.count - a.count || marketName(a.code).localeCompare(marketName(b.code)),
+  );
+}
+
+/** "07 Nov 2026, 00:03 UTC" (owner's preferred date format: DD Mon YYYY). */
+export function formatScanTime(ts: string | null | undefined): string {
+  if (!ts) return "never";
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return ts;
+  const date = d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
+  const time = d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" });
+  return `${date}, ${time} UTC`;
+}

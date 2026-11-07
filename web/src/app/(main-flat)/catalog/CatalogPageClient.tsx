@@ -30,6 +30,7 @@ import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { useMetric } from "@/components/metrics/MetricContext";
 import { SectionHeader } from "@/components/ui/SectionHeader";
 import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
+import { SpotifyMarketsBadge } from "@/components/spotify/SpotifyMarketParts";
 import { SpotifyNotFoundBadge } from "@/components/ui/SpotifyNotFoundBadge";
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { RememberTrackSelection } from "@/components/dashboard/RememberTrackSelection";
@@ -112,7 +113,7 @@ export function CatalogPageClient(props: {
   track30d: number;
   selectedTrackPlaylistMemberships: TrackPlaylistMembership[];
   /** Own catalog only: weekly Spotify per-market availability summary for the selected track. */
-  selectedTrackMarketsLine?: string | null;
+  selectedTrackMarkets?: { markets_checked: number; available_count: number; unavailable_markets: string[] } | null;
 }) {
   useSyncCatalogSelection(props.artistId, props.isrc, props.mode ?? "own", props.competitorLabelKey, props.artists);
   const mode = props.mode ?? "own";
@@ -983,9 +984,9 @@ export function CatalogPageClient(props: {
                   <CopyableIsrc isrc={props.isrc} className="font-mono" />
                 </span>
               </div>
-              {!isCompetitorMode && props.selectedTrackMarketsLine ? (
-                <div className="mt-0.5 text-xs" style={{ color: "var(--sb-muted)" }}>
-                  {props.selectedTrackMarketsLine}
+              {!isCompetitorMode && props.selectedTrackMarkets ? (
+                <div className="mt-1.5">
+                  <SpotifyMarketsBadge markets={props.selectedTrackMarkets} />
                 </div>
               ) : null}
             </div>
