@@ -1005,10 +1005,6 @@ export function CatalogPageClient(props: {
           </div>
         )}
 
-        {!isCompetitorMode && props.selectedTrack && props.selectedTrackMarkets ? (
-          <SpotifyTerritoryCard markets={props.selectedTrackMarkets} />
-        ) : null}
-
         {trackChartData ? (
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
             <SpotlightCard className="lg:col-span-6 p-3 overflow-visible">
@@ -1088,6 +1084,10 @@ export function CatalogPageClient(props: {
               </div>
             </SpotlightCard>
           </div>
+        ) : null}
+
+        {!isCompetitorMode && props.selectedTrack && props.selectedTrackMarkets ? (
+          <SpotifyTerritoryCard markets={props.selectedTrackMarkets} />
         ) : null}
       </div>
 
