@@ -25,7 +25,7 @@ import {
 } from "@/components/charts/chartUtils";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
-import { useThemeColors, getChartColor } from "@/components/charts/useThemeColors";
+import { useThemeColors, getChartColor, GLASS_TOOLTIP_SURFACE } from "@/components/charts/useThemeColors";
 import { useWeekHighlight } from "@/components/charts/WeekHighlightContext";
 import { useChartStartDate } from "@/components/charts/ChartStartDateContext";
 import { useChartAxisZoom } from "@/components/charts/ChartAxisZoomContext";
@@ -153,7 +153,7 @@ function CustomTooltip({
       <div
         className="rounded-lg border p-3"
         style={{
-          backgroundColor: "var(--sb-card)",
+          ...GLASS_TOOLTIP_SURFACE,
           borderColor: isAnomaly ? "#F59E0B" : "var(--sb-border)",
           boxShadow: "var(--sb-shadow-compact)",
           color: "var(--sb-text)",

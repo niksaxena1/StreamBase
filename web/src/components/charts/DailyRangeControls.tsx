@@ -33,8 +33,7 @@ export function DailyRangeToggle({ typical, setRange }: { typical: boolean; setR
     <div
       role="group"
       aria-label="Daily streams chart range"
-      className="flex shrink-0 rounded-md border text-xs"
-      style={{ borderColor: "var(--sb-border)", background: "var(--sb-surface)" }}
+      className="lg-glass sb-glass-segmented shrink-0 text-xs"
       onMouseDown={(event) => event.stopPropagation()}
       onPointerDown={(event) => event.stopPropagation()}
       onClick={(event) => event.stopPropagation()}
@@ -45,8 +44,8 @@ export function DailyRangeToggle({ typical, setRange }: { typical: boolean; setR
           type="button"
           aria-pressed={typical === (range === "typical")}
           onClick={() => setRange(range)}
-          className="min-h-8 rounded-md px-2 py-1 focus-visible:outline focus-visible:outline-1"
-          style={{ color: "var(--sb-text)", opacity: typical === (range === "typical") ? 1 : 0.55 }}
+          className="min-h-8 px-2.5 py-1 focus-visible:outline focus-visible:outline-1"
+          style={{ opacity: typical === (range === "typical") ? 1 : 0.6 }}
         >
           {range === "full" ? "Full range" : "Typical range"}
         </button>

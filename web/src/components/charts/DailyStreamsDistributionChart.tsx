@@ -15,7 +15,7 @@ import { useCallback, useEffect, useId, useMemo, useRef } from "react";
 import type { PointerEvent, MouseEvent } from "react";
 import { formatCompactMoney, formatInt, formatUsd } from "@/lib/format";
 import { formatKmbTick } from "@/components/charts/chartUtils";
-import { useThemeColors } from "@/components/charts/useThemeColors";
+import { useThemeColors, GLASS_TOOLTIP_SURFACE } from "@/components/charts/useThemeColors";
 import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
 import { useCurrencyDisplay } from "@/components/currency/CurrencyDisplayContext";
 import { useLongPress } from "@/components/charts/useLongPress";
@@ -103,8 +103,8 @@ function DistributionTooltip({
       <div
         className="rounded-lg border px-3 py-2 text-xs shadow-lg backdrop-blur"
         style={{
-          backgroundColor: "var(--sb-card)",
-          borderColor: "var(--sb-border)",
+          ...GLASS_TOOLTIP_SURFACE,
+          borderColor: "var(--sb-glass-tip-edge)",
           color: "var(--sb-text)",
           boxShadow: "var(--sb-shadow-compact)",
         }}

@@ -14,18 +14,29 @@ html[data-theme="dark"] {
 }
 
 /* ── Floating glass toolbar (the app header) ────────────────────────── */
+/* Tinted glass in the app's own card colour, with the app's usual outline:
+   1px border, rounded corners and compact shadow (glisse's bright painted rim
+   is switched off). Scrolled state comes from .sb-app-header in globals.css. */
 .sb-glass-toolbar {
-  --lg-blur: 14px;
+  --lg-blur: 4px;
+  --lg-glass: rgb(20 20 25 / 0.6);
+  --lg-filter: saturate(1.2);
+  --sb-toolbar-text-shadow: 0 1px 2px rgb(0 0 0 / 0.45);
+  --sb-toolbar-well: rgb(0 0 0 / 0.28);
+  --sb-toolbar-well-hover: rgb(0 0 0 / 0.36);
+  --sb-toolbar-well-edge: rgb(255 255 255 / 0.08);
+  background-image: none;
+  border: 1px solid var(--sb-border);
   border-radius: var(--sb-radius-lg);
-  transition: box-shadow var(--sb-motion-section) ease;
+  box-shadow: var(--sb-shadow-compact);
+  text-shadow: var(--sb-toolbar-text-shadow);
 }
-
-/* Once the page scrolls under it, the bar lifts off the content a little. */
-.sb-app-shell[data-scrolled="true"] .sb-glass-toolbar {
-  box-shadow:
-    inset 0 0 0 0.5px var(--lg-edge),
-    0 10px 30px -12px var(--lg-shadow),
-    0 1px 3px var(--lg-drop);
+html[data-theme="light"] .sb-glass-toolbar {
+  --lg-glass: rgb(255 255 255 / 0.68);
+  --sb-toolbar-text-shadow: 0 0 3px rgb(255 255 255 / 0.85);
+  --sb-toolbar-well: rgb(255 255 255 / 0.55);
+  --sb-toolbar-well-hover: rgb(255 255 255 / 0.72);
+  --sb-toolbar-well-edge: rgb(0 0 0 / 0.08);
 }
 
 /* Toolbar icon buttons sit flush on the glass and light up with glass on hover. */
@@ -35,6 +46,71 @@ html[data-theme="dark"] {
 }
 .sb-glass-toolbar :is(button, a).sb-ring:not(.lg-button):is(:hover, [aria-expanded="true"]) {
   background-color: var(--lg-glass-active);
+}
+
+/* Search is set into the bar: a recessed, fully rounded well (Mac toolbar style). */
+.sb-glass-toolbar .sb-glass-search > button.sb-ring {
+  border-width: 0; /* the trigger sets its border colour inline */
+  border-radius: 9999px;
+  padding-inline: 1rem;
+  background-color: var(--sb-toolbar-well);
+  box-shadow:
+    inset 0 1px 2px rgb(0 0 0 / 0.18),
+    inset 0 0 0 0.5px var(--sb-toolbar-well-edge);
+}
+.sb-glass-toolbar .sb-glass-search > button.sb-ring:hover {
+  background-color: var(--sb-toolbar-well-hover);
+}
+
+/* ── Sticky page bars (FilterBar) ───────────────────────────────────── */
+/* Real glisse glass like the toolbar: glisse sets an inline --lg-filter lens
+   that bends what scrolls underneath. Each bar keeps its own colour and border
+   (lime-tinted or neutral, from globals.css); glisse's bright rim is replaced by
+   a soft top sheen. html:root raises specificity above the globals.css
+   per-theme .sb-filter-bar rules, which use the `background` shorthand. */
+html:root .sb-glass-bar.lg-glass {
+  --lg-blur: 4px;
+  -webkit-backdrop-filter: blur(var(--lg-blur)) var(--lg-filter, saturate(1.5));
+  backdrop-filter: blur(var(--lg-blur)) var(--lg-filter, saturate(1.5));
+  background-image: linear-gradient(180deg, rgb(255 255 255 / 0.08), transparent 55%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.12),
+    var(--sb-shadow-compact);
+}
+html[data-theme="light"]:root .sb-glass-bar.lg-glass {
+  background-image: linear-gradient(180deg, rgb(255 255 255 / 0.35), transparent 55%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.6),
+    var(--sb-shadow-compact);
+}
+
+/* ── Chart glass: tooltips and on-chart controls ───────────────────── */
+/* Glass only on what floats above the data; the chart cards stay solid.
+   Tooltips use frosted (CSS-only) glass: they move every frame, so no live lens. */
+:root {
+  --sb-glass-tip: rgb(255 255 255 / 0.72);
+  --sb-glass-tip-filter: blur(12px) saturate(1.2);
+  --sb-glass-tip-edge: rgb(0 0 0 / 0.08);
+}
+html[data-theme="dark"] {
+  --sb-glass-tip: rgb(20 20 25 / 0.66);
+  --sb-glass-tip-edge: rgb(255 255 255 / 0.1);
+}
+
+.sb-glass-segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 9999px;
+}
+.sb-glass-segmented > button {
+  border-radius: 9999px;
+  color: var(--lg-foreground);
+  transition: background-color 150ms ease, opacity 150ms ease;
+}
+.sb-glass-segmented > button[aria-pressed="true"] {
+  background-color: var(--lg-glass-active);
+  box-shadow: inset 0 0 0 0.5px var(--lg-edge);
 }
 
 /* ── Glass buttons (ui/Button) ──────────────────────────────────────── */
@@ -68,5 +144,13 @@ html[data-theme="dark"] {
   }
   .lg-glass::after {
     display: none;
+  }
+  .sb-glass-toolbar {
+    text-shadow: none;
+  }
+  html:root .sb-glass-bar.lg-glass {
+    background-image: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
   }
 }

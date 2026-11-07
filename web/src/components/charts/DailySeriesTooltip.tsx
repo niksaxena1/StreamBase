@@ -1,5 +1,6 @@
 "use client";
 
+import { GLASS_TOOLTIP_SURFACE } from "@/components/charts/useThemeColors";
 import { useEffect, useRef } from "react";
 
 import { extractOverrideItemsFromRechartsPayload, extractWeekendDipFromRechartsPayload, formatTooltipDateSmart } from "@/components/charts/chartUtils";
@@ -160,8 +161,8 @@ export function DailySeriesTooltip({
       <div
         className="rounded-lg border p-3 max-h-[60vh] overflow-auto"
         style={{
-          backgroundColor: "var(--sb-card)",
-          borderColor: "var(--sb-border)",
+          ...GLASS_TOOLTIP_SURFACE,
+          borderColor: "var(--sb-glass-tip-edge)",
           boxShadow: "var(--sb-shadow-compact)",
           color: "var(--sb-text)",
         }}

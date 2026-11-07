@@ -1,5 +1,4 @@
 import { ReactNode } from "react";
-import { Glass } from "glisse";
 import Link from "@/components/shell/RouteLink";
 
 import { LogoMark } from "@/components/LogoMark";
@@ -23,6 +22,7 @@ import { PerformanceMonitor } from "@/components/performance/PerformanceMonitor"
 import { ShellScrollState } from "@/components/shell/ShellScrollState";
 import { UniverseSync } from "@/components/shell/UniverseSync";
 import { MutationRefresh } from "@/components/shell/MutationRefresh";
+import { AppHeaderBar } from "@/components/shell/AppHeaderBar";
 
 type MainSurface = "glass" | "plain";
 
@@ -92,27 +92,26 @@ export function AppShell(props: {
           <SideRailWithBadge datasetMode={navDatasetMode} appAccess={appAccess} isAdmin={props.isAdmin === true} />
 
           <div className="flex min-w-0 flex-1 flex-col gap-3">
-            <Glass role="banner" className="sb-app-header sb-glass-toolbar sticky top-3 z-30 px-3 py-2">
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <Link href={homeHref} className="transition-opacity hover:opacity-80" suppressHydrationWarning>
+            {/* Floating glass toolbar with the search set into it (sticky except on pages with their own sticky filter bar). */}
+            <AppHeaderBar>
+              <div className="flex items-center justify-between gap-2 sm:gap-4">
+                <div className="flex min-w-0 shrink items-center gap-3 pl-2">
+                  <Link href={homeHref} className="shrink-0 transition-opacity hover:opacity-80" suppressHydrationWarning>
                     <LogoMark />
                   </Link>
-                  <div className="flex items-center gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
                     <BrandLink href={homeHref} label={APP_SHORT_NAME} />
                     <Breadcrumbs />
                   </div>
                 </div>
 
-                <div className="flex min-w-0 flex-1 items-center gap-3 sm:flex-initial">
-                  {playlistWatchOnly ? null : (
-                    <div className="w-full max-w-xs sm:w-64 lg:w-80 xl:w-96">
-                      <SearchBar datasetMode={datasetMode} />
-                    </div>
-                  )}
-                </div>
+                {playlistWatchOnly ? null : (
+                  <div className="sb-glass-search min-w-0 flex-1 sm:w-64 sm:flex-initial lg:w-80 xl:w-96">
+                    <SearchBar datasetMode={datasetMode} />
+                  </div>
+                )}
 
-                <div className="flex items-center gap-2">
+                <div className="flex shrink-0 items-center gap-1">
                   {playlistWatchOnly ? null : (
                     <>
                       {showCompetitorSwitcher ? (
@@ -129,7 +128,7 @@ export function AppShell(props: {
                   <UserMenu appAccess={appAccess} userEmail={props.userEmail} />
                 </div>
               </div>
-            </Glass>
+            </AppHeaderBar>
 
             <main
               id="main-content"

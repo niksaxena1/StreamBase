@@ -212,14 +212,21 @@ export function inferChartMetricFromLabels(
   return "streams";
 }
 
+/** Frosted-glass surface for chart tooltips (variables live in app/glass.css). */
+export const GLASS_TOOLTIP_SURFACE: React.CSSProperties = {
+  backgroundColor: "var(--sb-glass-tip)",
+  backdropFilter: "var(--sb-glass-tip-filter)",
+  WebkitBackdropFilter: "var(--sb-glass-tip-filter)",
+};
+
 /**
  * Common chart tooltip styles - use this for consistent tooltip styling.
  * @param colors - Theme colors from useThemeColors()
  */
 export function getChartTooltipStyle(colors: ThemeColors): React.CSSProperties {
   return {
-    backgroundColor: colors.card,
-    borderColor: colors.border,
+    ...GLASS_TOOLTIP_SURFACE,
+    borderColor: "var(--sb-glass-tip-edge)",
     borderRadius: "10px",
     boxShadow: "var(--sb-shadow-compact)",
     color: colors.text,

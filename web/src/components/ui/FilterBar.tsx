@@ -1,4 +1,5 @@
 import { ReactNode } from "react";
+import { Glass } from "glisse";
 
 export function FilterBar(props: {
   left?: ReactNode;
@@ -9,10 +10,12 @@ export function FilterBar(props: {
 }) {
   const { variant = "accent" } = props;
   
+  // Real Liquid Glass (glisse) so the content scrolling under the sticky bar bends;
+  // the bar keeps its own lime/neutral colour from globals.css.
   return (
-    <div
+    <Glass
       className={[
-        "sb-ring sticky top-0 z-20 rounded-xl p-3 shadow-sm",
+        "sb-ring sb-glass-bar sticky top-0 z-20 rounded-xl p-3 shadow-sm",
         variant === "accent" 
           ? "sb-filter-bar" 
           : "sb-glass",
@@ -27,7 +30,7 @@ export function FilterBar(props: {
           </div>
         ) : null}
       </div>
-    </div>
+    </Glass>
   );
 }
 

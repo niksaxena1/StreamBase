@@ -13,7 +13,7 @@ import {
 import { useCallback, useId, useRef } from "react";
 import { formatCompactMoney, formatInt, formatUsd } from "@/lib/format";
 import { filterMonthlySeriesFromIsoDate, formatKmbTick } from "@/components/charts/chartUtils";
-import { getChartColor, useThemeColors } from "@/components/charts/useThemeColors";
+import { getChartColor, useThemeColors, GLASS_TOOLTIP_SURFACE } from "@/components/charts/useThemeColors";
 import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
 import { useChartStartDate } from "@/components/charts/ChartStartDateContext";
 import { useLongPress } from "@/components/charts/useLongPress";
@@ -67,8 +67,8 @@ function MonthlyTooltip({
       <div
         className="rounded-lg border px-3 py-2 text-xs"
         style={{
-          backgroundColor: "var(--sb-card)",
-          borderColor: "var(--sb-border)",
+          ...GLASS_TOOLTIP_SURFACE,
+          borderColor: "var(--sb-glass-tip-edge)",
           borderRadius: "10px",
           boxShadow: "var(--sb-shadow-compact)",
           color: "var(--sb-text)",

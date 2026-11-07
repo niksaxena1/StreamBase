@@ -8,7 +8,7 @@ import { CartesianGrid, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAx
 
 import { formatCompactMoney, formatInt, formatUsd, formatUsd2 } from "@/lib/format";
 import { formatKmbTick } from "@/components/charts/chartUtils";
-import { useThemeColors } from "@/components/charts/useThemeColors";
+import { useThemeColors, GLASS_TOOLTIP_SURFACE } from "@/components/charts/useThemeColors";
 import type { TrackStreamsXYPoint } from "@/components/charts/TrackStreamsXYChart";
 import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
 
@@ -122,7 +122,7 @@ const CustomTooltip = ({
     <div
       className="rounded-lg border p-3"
       style={{
-        backgroundColor: "var(--sb-card)",
+        ...GLASS_TOOLTIP_SURFACE,
         backgroundImage: frozen
           ? `radial-gradient(80% 70% at 25% 20%, ${hexToRgba(accentColor, 0.18)} 0%, transparent 55%), radial-gradient(70% 60% at 85% 85%, ${hexToRgba(accentColor, 0.12)} 0%, transparent 60%)`
           : undefined,
