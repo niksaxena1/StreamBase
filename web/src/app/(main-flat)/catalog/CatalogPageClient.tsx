@@ -111,6 +111,8 @@ export function CatalogPageClient(props: {
   track28d: number;
   track30d: number;
   selectedTrackPlaylistMemberships: TrackPlaylistMembership[];
+  /** Own catalog only: weekly Spotify per-market availability summary for the selected track. */
+  selectedTrackMarketsLine?: string | null;
 }) {
   useSyncCatalogSelection(props.artistId, props.isrc, props.mode ?? "own", props.competitorLabelKey, props.artists);
   const mode = props.mode ?? "own";
@@ -981,6 +983,11 @@ export function CatalogPageClient(props: {
                   <CopyableIsrc isrc={props.isrc} className="font-mono" />
                 </span>
               </div>
+              {!isCompetitorMode && props.selectedTrackMarketsLine ? (
+                <div className="mt-0.5 text-xs" style={{ color: "var(--sb-muted)" }}>
+                  {props.selectedTrackMarketsLine}
+                </div>
+              ) : null}
             </div>
           </div>
         ) : (

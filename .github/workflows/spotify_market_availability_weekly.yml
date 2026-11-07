@@ -1,0 +1,113 @@
+name: Spotify Market Availability Weekly
+
+# Own catalog only. Checks every catalog track against the Spotify Web API in
+# each market and records where it is NOT playable; emails when a track newly
+# loses markets. See scripts/scan_spotify_market_availability.py.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Scan without writing to Supabase or emailing"
+        required: false
+        default: "false"
+      artist:
+        description: "Optional artist name to scan only that artist's tracks"
+        required: false
+        default: ""
+      skip_safety_valve:
+        description: "Write even if a safety valve trips (only after confirming the changes are real)"
+        required: false
+        default: "false"
+  # Scheduled weekly by the database (pg_cron -> ops.dispatch_workflow, job
+  # streambase-market-availability, Sundays 21:00 UTC; migration
+  # 20261106233500_add_spotify_market_availability.sql). No GitHub `schedule:` trigger.
+  # Dispatch failures email via ops.check_workflow_dispatches.
+
+concurrency:
+  group: spotify-market-availability
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
+      SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
+      STREAMBASE_REVALIDATE_URL: ${{ secrets.STREAMBASE_REVALIDATE_URL }}
+      REVALIDATE_SECRET: ${{ secrets.REVALIDATE_SECRET }}
+      DRY_RUN: ${{ inputs.dry_run || 'false' }}
+      ARTIST: ${{ inputs.artist || '' }}
+      SKIP_SAFETY_VALVE: ${{ inputs.skip_safety_valve || 'false' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Scan Spotify markets
+        id: scan
+        run: |
+          mkdir -p artifacts
+          args=(--report-csv artifacts/spotify-market-availability.csv --email-output artifacts/spotify-market-email.json)
+          [ -n "${ARTIST}" ] && args+=(--artist "${ARTIST}")
+          [ "${DRY_RUN}" = "true" ] && args+=(--dry-run)
+          [ "${SKIP_SAFETY_VALVE}" = "true" ] && args+=(--skip-safety-valve)
+          python scripts/scan_spotify_market_availability.py "${args[@]}"
+
+      - name: Upload market report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: spotify-market-availability-report
+          path: artifacts/spotify-market-availability.csv
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Send market-loss alerts
+        if: steps.scan.outputs.alert != ''
+        uses: ./.github/actions/notify-email
+        with:
+          password: ${{ secrets.NOTIFY_SMTP_PASSWORD }}
+          subject: ${{ fromJSON(steps.scan.outputs.alert).subject }}
+          body: ${{ fromJSON(steps.scan.outputs.alert).body }}
+          html_body: ${{ fromJSON(steps.scan.outputs.alert).html_body }}
+
+      - name: Mark delivered alerts as notified
+        if: steps.scan.outputs.alert != ''
+        run: python scripts/scan_spotify_market_availability.py --ack-notifications artifacts/spotify-market-email.json
+
+      - name: Upload alert audit
+        if: always() && steps.scan.outputs.alert != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: spotify-market-alert
+          path: artifacts/spotify-market-email.json
+          retention-days: 7
+
+      - name: Send failure notification
+        if: failure()
+        uses: ./.github/actions/notify-email
+        with:
+          password: ${{ secrets.NOTIFY_SMTP_PASSWORD }}
+          subject: "[StreamBase] Spotify Market Availability scan FAILED"
+          body: |
+            The weekly Spotify market availability scan failed, so per-country restrictions may go unnoticed until it is fixed.
+            A deliberate stop (missing-data or mass-loss safety valve) also lands here; the run summary says which.
+
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

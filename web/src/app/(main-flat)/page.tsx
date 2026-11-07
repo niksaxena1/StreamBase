@@ -12,6 +12,7 @@ import { HomeDashboardHeader, type HomeHeaderProps } from "./home/HomeDashboardH
 import { ChartSkeleton, StatCardSkeleton } from "@/components/ui/Skeleton";
 import type { HomeDashboardServerProps } from "./home/homeTypes";
 import { HomeDashboardClient } from "./HomeDashboardClient";
+import { HomeSpotifyMarketGaps } from "./home/HomeSpotifyMarketGaps";
 
 // Uses Supabase session cookies; this route must be dynamic in Next 16.
 export const dynamic = "force-dynamic";
@@ -102,6 +103,11 @@ async function HomeContent({
       <Suspense fallback={null}>
         <HomeNoticeData data={data} />
       </Suspense>
+      {isAdmin && shellContext.datasetMode === "own" ? (
+        <Suspense fallback={null}>
+          <HomeSpotifyMarketGaps />
+        </Suspense>
+      ) : null}
     </div>
   );
 }

@@ -1337,6 +1337,91 @@ export type Database = {
           },
         ]
       }
+      spotify_track_market_availability: {
+        Row: {
+          available_count: number
+          first_checked_at: string
+          isrc: string
+          last_checked_at: string
+          markets_changed_at: string
+          markets_checked: number
+          relinked: boolean
+          spotify_track_id: string
+          unavailable_markets: string[]
+          unavailable_reasons: Json
+        }
+        Insert: {
+          available_count: number
+          first_checked_at?: string
+          isrc: string
+          last_checked_at?: string
+          markets_changed_at?: string
+          markets_checked: number
+          relinked?: boolean
+          spotify_track_id: string
+          unavailable_markets?: string[]
+          unavailable_reasons?: Json
+        }
+        Update: {
+          available_count?: number
+          first_checked_at?: string
+          isrc?: string
+          last_checked_at?: string
+          markets_changed_at?: string
+          markets_checked?: number
+          relinked?: boolean
+          spotify_track_id?: string
+          unavailable_markets?: string[]
+          unavailable_reasons?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "spotify_track_market_availability_isrc_fkey"
+            columns: ["isrc"]
+            isOneToOne: true
+            referencedRelation: "tracks"
+            referencedColumns: ["isrc"]
+          },
+        ]
+      }
+      spotify_track_market_events: {
+        Row: {
+          detected_at: string
+          event: string
+          id: number
+          isrc: string
+          market: string
+          notified_at: string | null
+          reason: string | null
+        }
+        Insert: {
+          detected_at?: string
+          event: string
+          id?: number
+          isrc: string
+          market: string
+          notified_at?: string | null
+          reason?: string | null
+        }
+        Update: {
+          detected_at?: string
+          event?: string
+          id?: number
+          isrc?: string
+          market?: string
+          notified_at?: string | null
+          reason?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "spotify_track_market_events_isrc_fkey"
+            columns: ["isrc"]
+            isOneToOne: false
+            referencedRelation: "tracks"
+            referencedColumns: ["isrc"]
+          },
+        ]
+      }
       track_daily_streams: {
         Row: {
           created_at: string | null

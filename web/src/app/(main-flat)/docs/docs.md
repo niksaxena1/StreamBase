@@ -478,6 +478,7 @@ Times are **UTC** with Dubai time (UTC+4). The Supabase database scheduler start
 | Workflow | Trigger / time (UTC) | Dubai (UTC+4) | What it does |
 |---|---|---:|---|
 | Spotify Takedown Watch (`spotify_takedown_watch.yml`) | Daily 20:00 (database scheduler) | 00:00 | Checks own-catalog tracks for Spotify availability changes |
+| Spotify Market Availability (`spotify_market_availability_weekly.yml`) | Sundays 21:00 (database scheduler) | 01:00 Mon | Records which Spotify markets each own-catalog track is not playable in |
 | Own daily pipeline (`sot_own_daily_pipeline.yml`) | Database scheduler dispatch at 12:00; sync + export after refresh succeeds; GitHub fallback cron 16:00 | 16:00 | Refreshes SpotOnTrack playlists, syncs dashboards with `config/playlists.csv`, exports and ingests into Supabase (idempotent) |
 | RapidAPI stale-track fix (`rapidapi_stale_fix.yml`) | Dispatched after a successful, current-UTC-date own-catalog export is ingested; daily fallback cron 16:41 | 20:41 | Attempts own-catalog stale-track corrections |
 | RapidAPI stale-track second look (`rapidapi_stale_fix.yml`, `second_look=true`) | Database scheduler dispatch 17:30 | 21:30 | Re-checks only tracks that are still stale after the first fix, using the same free providers within their caps |
@@ -1617,6 +1618,18 @@ Own-catalog stale-track repair jobs refresh diagnostics after writing stream
 overrides. Successful refreshes retain snapshots from the run date back through
 30 days earlier; older selections continue to use live calculations.
 See `docs/COMPETITOR-MODE-OPERATIONS.md` for migration and refresh details.
+
+## Weekly Spotify market availability
+
+The `spotify_market_availability_weekly.yml` workflow runs on **Sundays at 21:00 UTC / 01:00 Dubai (Monday)**, started by the database scheduler (job `streambase-market-availability`). It is own-catalog only. **Apply `supabase/migrations/20261106233500_add_spotify_market_availability.sql` first.**
+
+For every own-catalog track with a Spotify id it checks each Spotify market (about 183, taken from a globally released reference track, minus Kosovo which the API rejects) and records where the track is **not** playable. Results appear in three places:
+
+- **Health → Spotify markets**: restricted tracks with available/checked counts, country codes (hover for the country name) and Spotify's restriction reason. Hidden until the first scan.
+- **Home → Spotify market gaps** (own-catalog mode, admin): a collapsed list, with tracks unavailable everywhere first.
+- **Catalog**: a line under the selected track, such as "Spotify: all 183 markets" or "Spotify: unavailable in BR, IN, MX, PK (179/183)".
+
+A track newly lost in a market is emailed; regained markets are only recorded. The first scan seeds the table silently. Safety valves stop a run without writing if more than 20% of checks come back missing, or more than 10% of tracks lose 10 or more markets at once. Run **Actions → Spotify Market Availability Weekly → Run workflow** with `dry_run=true` (optionally an `artist`) to check without writing; a CSV report is attached to the run.
 
 ## Daily Spotify takedown watch
 

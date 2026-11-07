@@ -17,6 +17,7 @@ import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { WarningsSection } from "@/components/health/WarningsSection";
 import { MissingCatalogSection } from "@/components/health/MissingCatalogSection";
 import { SpotifyAvailabilitySection } from "@/components/health/SpotifyAvailabilitySection";
+import { SpotifyMarketsSection } from "@/components/health/SpotifyMarketsSection";
 import { CompetitorHealthSection } from "./CompetitorHealthSection";
 import { EventsSection } from "@/components/health/EventsSection";
 import { PipelineTodayCard, SourceQualityCard } from "@/components/health/PipelineTodayCard";
@@ -118,6 +119,10 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
 
       <Suspense fallback={<MissingSkeleton />}>
         <SpotifyAvailabilitySection />
+      </Suspense>
+
+      <Suspense fallback={<MissingSkeleton />}>
+        <SpotifyMarketsSection />
       </Suspense>
 
       <Suspense fallback={<MissingSkeleton />}>

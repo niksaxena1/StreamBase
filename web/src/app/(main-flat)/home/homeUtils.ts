@@ -12,6 +12,7 @@ export const HOME_DETAILS_STORAGE = {
   milestoneOpen: "sb:home:details:milestones_open",
   dailyDistOpen: "sb:home:details:daily_dist_open",
   historyOpen: "sb:home:details:history_open",
+  spotifyMarketGapsOpen: "sb:home:details:spotify_market_gaps_open",
 } as const;
 
 export const HOME_MILESTONE_SETTINGS_STORAGE = {
