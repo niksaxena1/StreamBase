@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { AlertCircle, Database, RefreshCw } from "lucide-react";
 
 import { Alert } from "@/components/ui/Alert";
+import { formatDisplayDate } from "@/lib/format";
 
 export function FreshnessLabel({
   date,
@@ -26,7 +27,7 @@ export function FreshnessLabel({
       />
       {prefix}{" "}
       <time dateTime={date} className="font-mono">
-        {date}
+        {/^\d{4}-\d{2}-\d{2}/.test(date) ? formatDisplayDate(date) : date}
       </time>
     </span>
   );

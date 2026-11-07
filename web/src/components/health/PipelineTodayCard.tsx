@@ -10,6 +10,7 @@ import {
 } from "@/lib/health/pipelineToday";
 import { supabaseService } from "@/lib/supabase/service";
 
+import { formatDisplayDate } from "@/lib/format";
 type RpcClient = Parameters<typeof loadPipelineToday>[0];
 
 /** The service client is typed against the generated schema; these two RPCs are new and untyped. */
@@ -99,7 +100,7 @@ export async function PipelineTodayCard() {
   return (
     <CardShell
       title="Today's pipeline"
-      subtitle={`Run date ${data.run_date} (UTC) · data date ${dataDateFromRunDate(data.run_date)}`}
+      subtitle={`Run date ${formatDisplayDate(data.run_date)} (UTC) · data date ${formatDisplayDate(dataDateFromRunDate(data.run_date))}`}
       right={<StatusPill status={timeline.overall} />}
     >
       <ol className="relative ml-[5px] space-y-0.5 border-l pl-4" style={{ borderColor: "var(--sb-border)" }}>

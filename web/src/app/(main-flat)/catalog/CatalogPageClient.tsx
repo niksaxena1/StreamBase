@@ -386,7 +386,7 @@ export function CatalogPageClient(props: {
         title="Catalog"
         subtitle={
           props.latestDate ? (
-            <FreshnessLabel date={formatDateISO(dataDateFromRunDate(props.latestDate))} />
+            <FreshnessLabel date={dataDateFromRunDate(props.latestDate)} />
           ) : (
             "No ingestion date found yet."
           )

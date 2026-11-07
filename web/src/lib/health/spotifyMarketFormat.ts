@@ -81,10 +81,12 @@ export function tallyMarkets(tracks: { unavailable_markets: string[] }[]): { cod
   );
 }
 
-/** "2026-11-07 00:03 UTC": StreamBase's standard ISO date + UTC time. */
+/** "07 Nov 2026, 00:03 UTC" (StreamBase display format: DD Mon YYYY). */
 export function formatScanTime(ts: string | null | undefined): string {
   if (!ts) return "never";
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return ts;
-  return `${d.toISOString().slice(0, 16).replace("T", " ")} UTC`;
+  const iso = d.toISOString();
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `${iso.slice(8, 10)} ${months[d.getUTCMonth()]} ${iso.slice(0, 4)}, ${iso.slice(11, 16)} UTC`;
 }

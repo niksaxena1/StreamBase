@@ -81,7 +81,7 @@ export default async function SharedConcentrationPage(props: PageProps) {
             </p>
           ) : null}
           {snap.latestRunDate ? (
-            <p className="text-xs font-mono opacity-40">Run date {snap.latestRunDate}</p>
+            <p className="text-xs font-mono opacity-40">Run date {formatDateISO(snap.latestRunDate)}</p>
           ) : null}
           <p className="text-xs opacity-40">Read-only · links and filters are disabled</p>
           <p className="text-xs opacity-40">

@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 
 import { DailyStreamsChart } from "@/components/charts/DailyStreamsChart";
 import { Chip, ChipGroup } from "@/components/ui/Chip";
-import { formatInt } from "@/lib/format";
+import { formatInt, formatDisplayDate } from "@/lib/format";
 import {
   addedDateOf,
   buildChartData,
@@ -119,7 +119,7 @@ function ReadyPanel({ history, latestPlaycount }: { history: TrackHistory; lates
 
       {annotations.length > 0 ? (
         <p className="text-[11px]" style={{ color: "var(--sb-muted)" }}>
-          Dashed lines: {annotations.map((a) => `${a.title} ${a.date}`).join(", ")}.
+          Dashed lines: {annotations.map((a) => `${a.title} ${formatDisplayDate(a.date)}`).join(", ")}.
         </p>
       ) : null}
 

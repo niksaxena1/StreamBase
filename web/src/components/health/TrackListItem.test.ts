@@ -13,7 +13,7 @@ describe("Health track placeholder status", () => {
       track: { isrc: "REMOVED", name: "Removed track", spotify_not_found_since: "2026-10-01T00:00:00Z" },
     }));
     expect(html).toContain("Not on Spotify");
-    expect(html).toContain("since 2026-10-01; rechecked monthly");
+    expect(html).toContain("since 01 Oct 2026; rechecked monthly");
   });
 
   it("does not label an ordinary missing thumbnail", () => {

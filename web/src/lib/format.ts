@@ -91,33 +91,77 @@ export function formatUsd2(n: number | null | undefined): string {
   return formatMoney(n, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-export function formatDateISO(s: string | null | undefined): string {
-  if (!s) return "—";
-  return s;
+const DISPLAY_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
 }
 
-function ordinalSuffix(n: number): string {
-  const mod100 = n % 100;
-  if (mod100 >= 11 && mod100 <= 13) return "th";
-  const mod10 = n % 10;
-  if (mod10 === 1) return "st";
-  if (mod10 === 2) return "nd";
-  if (mod10 === 3) return "rd";
-  return "th";
+/** Parse a bare `YYYY-MM-DD` (or the date part of an ISO timestamp) as a UTC date. Invalid -> null. */
+function parseUtcDate(value: string | null | undefined): Date | null {
+  const s = String(value ?? "").trim();
+  if (!s) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  if (!m) return null;
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) return null;
+  return dt;
+}
+
+/** "2026-11-06" (or ISO timestamp) -> "06 Nov 2026". UTC-safe. Empty/invalid -> "—". */
+export function formatDisplayDate(iso: string | null | undefined): string {
+  const d = parseUtcDate(iso);
+  if (!d) {
+    // Spotify release dates can be year-only ("2019") or year-month ("2019-05").
+    const s = String(iso ?? "").trim();
+    if (/^\d{4}$/.test(s)) return s;
+    const ym = /^(\d{4})-(\d{2})$/.exec(s);
+    if (ym && Number(ym[2]) >= 1 && Number(ym[2]) <= 12) return `${DISPLAY_MONTHS[Number(ym[2]) - 1]} ${ym[1]}`;
+    return "—";
+  }
+  return `${pad2(d.getUTCDate())} ${DISPLAY_MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
+
+/** "2026-11-06" -> "06 Nov" (no year). UTC-safe. Empty/invalid -> "—". */
+export function formatDisplayDayMonth(iso: string | null | undefined): string {
+  const d = parseUtcDate(iso);
+  if (!d) return "—";
+  return `${pad2(d.getUTCDate())} ${DISPLAY_MONTHS[d.getUTCMonth()]}`;
+}
+
+function parseTimestamp(ts: string | number | Date | null | undefined): Date | null {
+  if (ts === null || ts === undefined || ts === "") return null;
+  const d = ts instanceof Date ? ts : new Date(ts);
+  return Number.isFinite(d.getTime()) ? d : null;
+}
+
+/** Timestamp -> "06 Nov 2026, 20:00 UTC". Empty/invalid -> "—". */
+export function formatDisplayDateTimeUtc(ts: string | number | Date | null | undefined): string {
+  const d = parseTimestamp(ts);
+  if (!d) return "—";
+  return `${pad2(d.getUTCDate())} ${DISPLAY_MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}, ${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())} UTC`;
+}
+
+/** Timestamp -> "06 Nov, 20:00 UTC" (no year). Empty/invalid -> "—". */
+export function formatDisplayDayMonthTimeUtc(ts: string | number | Date | null | undefined): string {
+  const d = parseTimestamp(ts);
+  if (!d) return "—";
+  return `${pad2(d.getUTCDate())} ${DISPLAY_MONTHS[d.getUTCMonth()]}, ${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())} UTC`;
+}
+
+/** Display formatter for ISO dates ("06 Nov 2026"). Display only: use the raw ISO string for values/exports. */
+export function formatDateISO(s: string | null | undefined): string {
+  if (!s) return "—";
+  const out = formatDisplayDate(s);
+  // Unrecognised non-empty values are shown as-is (the old pass-through behaviour).
+  return out === "—" ? s : out;
 }
 
 /**
- * Format an ISO date (`YYYY-MM-DD`) as `12th Apr 2019` (UTC-safe).
+ * Format an ISO date (`YYYY-MM-DD`) as `12 Apr 2019` (UTC-safe).
+ * (Name kept for existing callers; the ordinal suffix is no longer shown.)
  */
 export function formatDateOrdinalDMonYYYY(iso: string | null | undefined): string {
-  const s = String(iso ?? "").trim();
-  if (!s) return "—";
-  const d = new Date(`${s}T00:00:00Z`);
-  if (!Number.isFinite(d.getTime())) return "—";
-
-  const day = d.getUTCDate();
-  const year = d.getUTCFullYear();
-  const month = Intl.DateTimeFormat("en-GB", { month: "short", timeZone: "UTC" }).format(d);
-
-  return `${day}${ordinalSuffix(day)} ${month} ${year}`;
+  return formatDisplayDate(iso);
 }

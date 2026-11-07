@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import Link from "@/components/shell/RouteLink";
 import type { Metadata } from "next";
 
-import { formatDateISO } from "@/lib/format";
+import { formatDateISO, formatDisplayDateTimeUtc } from "@/lib/format";
 import { dataDateFromRunDate } from "@/lib/sotDates";
 import { loadHealthPageShell } from "@/lib/health/loadHealthPageShell";
 
@@ -81,7 +81,7 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
         title="System Health"
         subtitle={
           shell.latestRunDate
-            ? `Recent ingestion runs and anomaly warnings. Last ingested: ${dataDateFromRunDate(shell.latestRunDate)}`
+            ? `Recent ingestion runs and anomaly warnings. Last ingested: ${formatDateISO(dataDateFromRunDate(shell.latestRunDate))}`
             : "Recent ingestion runs and anomaly warnings."
         }
         actions={<RefreshButton />}
@@ -251,7 +251,7 @@ export default async function HealthPage({ searchParams }: HealthPageProps) {
               </TableCell>
               <TableCell numeric>{(r.rows_count as number) ?? null}</TableCell>
               <TableCell numeric mono className="text-xs">
-                {r.exported_at ? new Date(r.exported_at as string).toLocaleString() : null}
+                {r.exported_at ? formatDisplayDateTimeUtc(r.exported_at as string) : null}
               </TableCell>
               <TableCell>
                 {r.storage_bucket && r.object_key ? (

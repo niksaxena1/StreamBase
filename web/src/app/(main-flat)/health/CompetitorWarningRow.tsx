@@ -7,6 +7,7 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { TableCell, TableRow } from "@/components/ui/GlassTable";
 import type { CompetitorWarningRow } from "@/lib/health/competitor/types";
 
+import { formatDisplayDateTimeUtc } from "@/lib/format";
 function severityClass(severity: string): string {
   if (severity === "critical") return "bg-red-500/20 text-red-700 dark:text-red-300";
   if (severity === "warn") return "bg-amber-500/20 text-amber-700 dark:text-amber-300";
@@ -51,7 +52,7 @@ export function CompetitorWarningTable({ rows }: { rows: CompetitorWarningRow[] 
               ) : null}
             </TableCell>
             <TableCell mono className="text-xs whitespace-nowrap">
-              {warning.created_at ? new Date(warning.created_at).toLocaleString() : "—"}
+              {warning.created_at ? formatDisplayDateTimeUtc(warning.created_at) : "—"}
             </TableCell>
             <TableCell>
               <div className="min-w-0">

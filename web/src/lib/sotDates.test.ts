@@ -86,7 +86,7 @@ describe("runDateFromDataDate", () => {
 
 describe("formatSotDataDateISO", () => {
   it("returns the data date for a valid run date", () => {
-    expect(formatSotDataDateISO("2026-02-15")).toBe("2026-02-13");
+    expect(formatSotDataDateISO("2026-02-15")).toBe("13 Feb 2026");
   });
 
   it("returns dash for null/undefined", () => {

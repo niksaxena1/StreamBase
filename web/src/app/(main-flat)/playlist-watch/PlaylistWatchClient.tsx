@@ -8,7 +8,7 @@ import { EmptyState, GlassTable, TableCell, TableRow } from "@/components/ui/Gla
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { Modal } from "@/components/ui/Modal";
 import { Chip, ChipGroup } from "@/components/ui/Chip";
-import { formatInt } from "@/lib/format";
+import { formatInt, formatDisplayDate } from "@/lib/format";
 import { spotifyUserUrl } from "@/lib/playlistWatch/spotifyUserUrl";
 import { showToast } from "@/lib/toast";
 import { formatTooltipDateDaily } from "@/components/charts/chartUtils";
@@ -899,7 +899,7 @@ export function PlaylistWatchClient({
               return (
                 <TableRow key={event.id}>
                   <TableCell>
-                    <span className="font-mono text-xs">{event.run_date}</span>
+                    <span className="font-mono text-xs">{formatDisplayDate(event.run_date)}</span>
                   </TableCell>
                   <TableCell>
                     <button
@@ -1551,7 +1551,7 @@ export function PlaylistWatchClient({
                   {alertEvents.map((event) => (
                     <div key={event.id} className="rounded-lg bg-white/50 px-2 py-2 text-xs dark:bg-white/5">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="truncate font-mono">{event.run_date}</span>
+                        <span className="truncate font-mono">{formatDisplayDate(event.run_date)}</span>
                         <span className={event.status === "sent" ? "text-emerald-600 dark:text-emerald-300" : "text-red-600 dark:text-red-300"}>
                           {event.status}
                         </span>

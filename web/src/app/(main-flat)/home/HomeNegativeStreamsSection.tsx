@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "@/components/shell/RouteLink";
 import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/GlassTable";
-import { formatInt, formatUsd } from "@/lib/format";
+import { formatInt, formatUsd, formatDisplayDate } from "@/lib/format";
 import { useStoredBoolState } from "@/lib/useStoredBoolState";
 import { useMetric } from "@/components/metrics/MetricContext";
 import { usePayoutRate } from "@/components/payout/PayoutRateContext";
@@ -224,7 +224,7 @@ export function HomeNegativeStreamsSection(props: {
                 </TableCell>
 
                 <TableCell className="text-center font-mono text-[11px]">
-                  {row.date}
+                  {formatDisplayDate(row.date)}
                 </TableCell>
 
                 <TableCell numeric style={dailyStyle} className="font-semibold">

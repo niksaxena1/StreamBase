@@ -7,6 +7,8 @@
  * Data API, and each RPC returns one small jsonb document (about 80 ms).
  */
 
+import { formatDisplayDayMonthTimeUtc } from "@/lib/format";
+
 export type StepStatus = "green" | "amber" | "red" | "neutral";
 
 export type StageRow = {
@@ -93,7 +95,7 @@ export function formatUtcTime(iso: string | null | undefined): string {
 function formatUtcDateTime(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  return `${d.toISOString().slice(5, 10)} ${formatUtcTime(iso)} UTC`;
+  return formatDisplayDayMonthTimeUtc(iso);
 }
 
 function formatDuration(fromIso: string, toIso: string): string {

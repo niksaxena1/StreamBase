@@ -6,6 +6,7 @@ import { GlassTable, EmptyState } from "@/components/ui/GlassTable";
 import { SectionHeader } from "@/components/ui/SectionHeader";
 import { WarningRow } from "@/components/health/WarningRow";
 
+import { formatDisplayDate } from "@/lib/format";
 const PROVIDER_LABELS: Record<string, string> = {
   music_analytics: "MusicAnalytics",
   checkleakedcc: "CheckLeakedCC",
@@ -80,7 +81,7 @@ export async function WarningsSection({
             Warnings{" "}
             {dataDate ? (
               <span className="text-xs font-normal opacity-60">
-                (Data: {dataDate}, Run: {runDate})
+                (Data: {formatDisplayDate(dataDate)}, Run: {formatDisplayDate(runDate)})
               </span>
             ) : null}
             {showPagination && (

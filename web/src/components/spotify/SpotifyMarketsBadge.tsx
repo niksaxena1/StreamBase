@@ -39,7 +39,7 @@ export function SpotifyMarketsBadge({ markets, trackLabel }: { markets: TrackMar
   const names = missing.map(marketName);
   const label = everywhere
     ? "Unavailable in every territory"
-    : `Not on Spotify in ${names.slice(0, 4).join(", ")}${names.length > 4 ? ` +${names.length - 4} more` : ""}`;
+    : `Not on Spotify in ${missing.slice(0, 6).join(", ")}${missing.length > 6 ? ` +${missing.length - 6}` : ""}`;
   const reasons = markets.unavailable_reasons ?? {};
   const distinctReasons = new Set(sorted.map((c) => reasons[c] ?? "none"));
   const showReasonColumn = distinctReasons.size > 1 || !distinctReasons.has("market");
@@ -50,7 +50,7 @@ export function SpotifyMarketsBadge({ markets, trackLabel }: { markets: TrackMar
       <button
         type="button"
         onClick={() => setOpen(true)}
-        title="Show territories"
+        title={`${names.join(", ")}: click for details`}
         className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-red-500/25 bg-red-500/10 px-2 py-0.5 text-[11px] text-red-800 transition hover:border-red-500/50 hover:bg-red-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/50 dark:text-red-200"
       >
         <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
@@ -84,9 +84,9 @@ export function SpotifyMarketsBadge({ markets, trackLabel }: { markets: TrackMar
               Spotify reports this track as not playable in any territory.
             </p>
           ) : null}
-          <ul className="max-h-[60vh] divide-y overflow-y-auto rounded-lg border" style={{ borderColor: "var(--sb-border)" }}>
+          <ul className="max-h-[60vh] divide-y divide-[color:var(--sb-border)] overflow-y-auto rounded-lg border border-[color:var(--sb-border)]">
             {sorted.map((code) => (
-              <li key={code} className="flex items-center gap-3 px-3 py-2" style={{ borderColor: "var(--sb-border)" }}>
+              <li key={code} className="flex items-center gap-3 px-3 py-2">
                 <TerritoryFlag code={code} size={28} />
                 <span className="flex-1 text-sm" style={{ color: "var(--sb-text)" }}>
                   {marketName(code)}

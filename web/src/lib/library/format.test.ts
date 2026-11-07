@@ -57,8 +57,8 @@ describe("duration", () => {
 describe("dates", () => {
   it("formats release dates", () => {
     expect(formatReleaseDate("2026-10-23")).toBe("23 Oct 2026");
-    expect(formatReleaseDate("2026-01-05")).toBe("5 Jan 2026");
-    expect(formatReleaseDate("2026-01-05T10:00:00Z")).toBe("5 Jan 2026");
+    expect(formatReleaseDate("2026-01-05")).toBe("05 Jan 2026");
+    expect(formatReleaseDate("2026-01-05T10:00:00Z")).toBe("05 Jan 2026");
   });
 
   it("shows a dash for missing or invalid dates", () => {
@@ -82,12 +82,12 @@ describe("dates", () => {
     expect(formatRelativeTime("2026-10-12T11:30:00Z", now)).toBe("30 min ago");
     expect(formatRelativeTime("2026-10-12T07:00:00Z", now)).toBe("5 h ago");
     expect(formatRelativeTime("2026-10-09T12:00:00Z", now)).toBe("3 d ago");
-    expect(formatRelativeTime("2026-05-01T12:00:00Z", now)).toBe("1 May 2026");
+    expect(formatRelativeTime("2026-05-01T12:00:00Z", now)).toBe("01 May 2026");
     expect(formatRelativeTime("nope", now)).toBe("");
   });
 
   it("formats exact time in UTC", () => {
-    expect(formatExactTime("2026-10-12T07:05:00Z")).toBe("12 Oct 2026 07:05 UTC");
+    expect(formatExactTime("2026-10-12T07:05:00Z")).toBe("12 Oct 2026, 07:05 UTC");
   });
 });
 

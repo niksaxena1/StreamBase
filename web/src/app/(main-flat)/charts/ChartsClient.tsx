@@ -24,6 +24,7 @@ import { cx } from "@/lib/cx";
 
 import { ChartPositionHistory } from "./ChartPositionHistory";
 
+import { formatDisplayDate } from "@/lib/format";
 const MOVE_CLASS: Record<MovementKind, string> = {
   up: "text-emerald-700 dark:text-emerald-400 font-semibold",
   down: "text-red-700 dark:text-red-400 font-semibold",
@@ -143,7 +144,7 @@ export function ChartsClient({ data }: { data: ChartsPageData }) {
   }
 
   const subtitle = snapshotDate
-    ? `${data.displayName} · snapshot ${snapshotDate} (UTC)${hasCompare ? ` · compared with ${compareDate}` : ""}`
+    ? `${data.displayName} · snapshot ${formatDisplayDate(snapshotDate)} (UTC)${hasCompare ? ` · compared with ${formatDisplayDate(compareDate)}` : ""}`
     : data.displayName;
 
   const actions = (
@@ -305,7 +306,7 @@ export function ChartsClient({ data }: { data: ChartsPageData }) {
                 <TableCell className="hidden max-w-[10rem] sm:table-cell">
                   <div className="truncate">{r.label_name}</div>
                 </TableCell>
-                <TableCell className="hidden whitespace-nowrap lg:table-cell">{r.release_date}</TableCell>
+                <TableCell className="hidden whitespace-nowrap lg:table-cell">{formatDisplayDate(r.release_date)}</TableCell>
                 <TableCell numeric className={DESKTOP_ONLY}>{r.bpm}</TableCell>
                 <TableCell className={cx(DESKTOP_ONLY, "whitespace-nowrap")}>
                   {r.musical_key}

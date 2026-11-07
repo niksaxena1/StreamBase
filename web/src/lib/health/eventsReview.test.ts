@@ -49,11 +49,11 @@ describe("Health movement coverage", () => {
 describe("Health event date semantics", () => {
   it("labels lagged snapshots as data dates and ingestion explicitly as run dates", () => {
     for (const type of ["movement", "partial_data", "playlist_add", "playlist_remove", "new_track", "override"] as const) {
-      expect(eventDateLabel({ type, date: "2026-10-11" })).toBe("2026-10-09");
+      expect(eventDateLabel({ type, date: "2026-10-11" })).toBe("09 Oct 2026");
     }
-    expect(eventDateLabel({ type: "ingestion", date: "2026-10-11" })).toBe("run 2026-10-11");
-    expect(eventDateLabel({ type: "takedown", date: "2026-10-11T23:00:00Z" })).toBe("2026-10-11");
-    expect(eventDateLabel({ type: "restoration", date: "2026-10-11T23:00:00Z" })).toBe("2026-10-11");
+    expect(eventDateLabel({ type: "ingestion", date: "2026-10-11" })).toBe("run 11 Oct 2026");
+    expect(eventDateLabel({ type: "takedown", date: "2026-10-11T23:00:00Z" })).toBe("11 Oct 2026");
+    expect(eventDateLabel({ type: "restoration", date: "2026-10-11T23:00:00Z" })).toBe("11 Oct 2026");
   });
   it("dates removal after the last active day, including both window boundaries", () => {
     const window = eventWindow(7, "2026-10-11");

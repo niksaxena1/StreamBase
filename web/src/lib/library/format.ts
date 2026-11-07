@@ -11,14 +11,14 @@ export function isValidIsoDate(value: string): boolean {
   return dt.getUTCFullYear() === y && dt.getUTCMonth() === mo - 1 && dt.getUTCDate() === d;
 }
 
-/** "2026-10-23" -> "23 Oct 2026". Empty / invalid input -> "—". */
+/** "2026-10-23" -> "23 Oct 2026" (day zero-padded: "05 Jan 2026"). Empty / invalid input -> "—". */
 export function formatReleaseDate(value: string | null | undefined): string {
   if (!value) return "—";
   const m = ISO_DATE.exec(value.slice(0, 10));
   if (!m) return "—";
   const month = MONTHS[Number(m[2]) - 1];
   if (!month) return "—";
-  return `${Number(m[3])} ${month} ${m[1]}`;
+  return `${m[3]} ${month} ${m[1]}`;
 }
 
 /** Seconds -> "m:ss". Null / invalid -> "". */
@@ -100,7 +100,7 @@ export function formatRelativeTime(iso: string, now: number = Date.now()): strin
   const days = Math.round(hours / 24);
   if (days < 30) return `${days} d ago`;
   const date = new Date(t);
-  return `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
+  return `${String(date.getUTCDate()).padStart(2, "0")} ${MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
 }
 
 /** Exact timestamp for hover text. */
@@ -109,7 +109,7 @@ export function formatExactTime(iso: string): string {
   if (!Number.isFinite(t)) return iso;
   const d = new Date(t);
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} UTC`;
+  return `${pad(d.getUTCDate())} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}, ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} UTC`;
 }
 
 /** Returns the link only if it is plain http(s); anything else (javascript:, data:) becomes null. */

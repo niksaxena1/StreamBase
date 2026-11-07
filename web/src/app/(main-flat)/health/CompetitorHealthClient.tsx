@@ -14,7 +14,7 @@ import { Alert } from "@/components/ui/Alert";
 import { CollapsibleSection } from "@/components/ui/CollapsibleSection";
 import { EmptyState, GlassTable, TableCell, TableRow } from "@/components/ui/GlassTable";
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
-import { formatDateISO, formatInt } from "@/lib/format";
+import { formatDateISO, formatInt, formatDisplayDateTimeUtc } from "@/lib/format";
 import type { CompetitorHealthKpiFilter, CompetitorHealthPageData } from "@/lib/health/competitor/types";
 
 import { CompetitorWarningHistoryChart } from "./CompetitorWarningHistoryChart";
@@ -354,7 +354,7 @@ export function CompetitorHealthClient({ data }: { data: CompetitorHealthPageDat
               </TableCell>
               <TableCell numeric>{formatInt(row.rows_count)}</TableCell>
               <TableCell numeric mono className="text-[10px]">
-                {row.exported_at ? new Date(row.exported_at).toLocaleString() : "—"}
+                {row.exported_at ? formatDisplayDateTimeUtc(row.exported_at) : "—"}
               </TableCell>
               <TableCell>
                 {row.download_href ? (
@@ -521,10 +521,10 @@ export function CompetitorHealthClient({ data }: { data: CompetitorHealthPageDat
                 </span>
               </TableCell>
               <TableCell mono className="text-[10px]">
-                {run.started_at ? new Date(run.started_at).toLocaleString() : "—"}
+                {run.started_at ? formatDisplayDateTimeUtc(run.started_at) : "—"}
               </TableCell>
               <TableCell mono className="text-[10px]">
-                {run.finished_at ? new Date(run.finished_at).toLocaleString() : "—"}
+                {run.finished_at ? formatDisplayDateTimeUtc(run.finished_at) : "—"}
               </TableCell>
               <TableCell>
                 {run.logs_url ? (

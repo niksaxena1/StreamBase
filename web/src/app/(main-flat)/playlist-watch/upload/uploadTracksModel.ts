@@ -1,3 +1,4 @@
+import { formatDisplayDayMonth } from "@/lib/format";
 export type GrowthWindow = "fri" | "1d" | "7d" | "28d" | "added";
 export type GrowthMetric = "abs" | "pct";
 export type UploadSortKey = "track" | "streams" | "growth" | "added" | "beatport";
@@ -99,8 +100,7 @@ export function formatFridayLabel(refFriday: string | null): string {
   if (!refFriday) return "Fri";
   const d = new Date(`${refFriday}T12:00:00Z`);
   if (!Number.isFinite(d.getTime())) return "Fri";
-  const month = d.toLocaleDateString("en-US", { month: "short", timeZone: "UTC" });
-  return `Fri ${d.getUTCDate()} ${month}`;
+  return `Fri ${formatDisplayDayMonth(refFriday)}`;
 }
 
 /** True only for a full yyyy-mm-dd release date on/after the reference Friday. */

@@ -100,11 +100,11 @@ export function CollectorDrilldownModal({
             <span className="opacity-60" style={{ color: "var(--sb-muted)" }}>
               &bull;
             </span>{" "}
-            Run date <span className="font-mono">{latestRunDate}</span>
+            Run date <span className="font-mono">{formatDateISO(latestRunDate)}</span>
           </span>
         ) : (
           <span>
-            Run date <span className="font-mono">{latestRunDate}</span>
+            Run date <span className="font-mono">{formatDateISO(latestRunDate)}</span>
           </span>
         )
       }

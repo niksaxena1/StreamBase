@@ -5,7 +5,6 @@ import type { ReactNode } from "react";
 import { supabaseServer } from "@/lib/supabase/server";
 import { loadCompetitorsPageCore } from "@/lib/competitors/loadCompetitorsPage";
 import { PageHeader } from "@/components/shell/PageHeader";
-import { formatDateISO } from "@/lib/format";
 import { FreshnessLabel, SectionEmptyState } from "@/components/ui/DataStates";
 
 import { AddCompetitorButton } from "./AddCompetitorButton";
@@ -29,7 +28,7 @@ export default async function CompetitorsPage() {
 
   let subtitle: ReactNode = "No competitor data found yet.";
   if (loaded.status === "ok") {
-    subtitle = <FreshnessLabel date={formatDateISO(loaded.data.latestDataDate)} />;
+    subtitle = <FreshnessLabel date={loaded.data.latestDataDate} />;
   }
 
   const core = loaded.status === "ok" ? loaded.data : null;

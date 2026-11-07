@@ -16,7 +16,7 @@ import {
 } from "recharts";
 
 import { fetchApiJson } from "@/lib/api";
-import { formatInt } from "@/lib/format";
+import { formatDisplayDate, formatInt } from "@/lib/format";
 import { formatKmbTick } from "@/components/charts/chartUtils";
 import { useThemeColors } from "@/components/charts/useThemeColors";
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
@@ -209,7 +209,7 @@ export function CompetitorCatalogIntelligence({
           <div>
             <h2 className="text-sm font-semibold">Release cohorts</h2>
             <p className="mt-1 text-xs" style={{ color: colors.muted }}>
-              Median current daily streams by release month and age as of {data?.data_date ?? "-"}.
+              Median current daily streams by release month and age as of {data?.data_date ? formatDisplayDate(data.data_date) : "-"}.
             </p>
           </div>
           <div className="mt-4 overflow-x-auto">

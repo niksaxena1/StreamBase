@@ -53,7 +53,7 @@ describe("Spotify market labels", () => {
   });
 
   it("formats scan time in UTC", () => {
-    expect(formatScanTime("2026-11-07T00:03:00Z")).toBe("2026-11-07 00:03 UTC");
+    expect(formatScanTime("2026-11-07T00:03:00Z")).toBe("07 Nov 2026, 00:03 UTC");
     expect(formatScanTime(null)).toBe("never");
   });
 });

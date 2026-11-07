@@ -172,22 +172,13 @@ export function filterBucketedSeriesFromIsoDate<T extends { date: string }>(
   });
 }
 
-function getOrdinalSuffix(n: number): string {
-  const j = n % 10;
-  const k = n % 100;
-  if (j === 1 && k !== 11) return "st";
-  if (j === 2 && k !== 12) return "nd";
-  if (j === 3 && k !== 13) return "rd";
-  return "th";
-}
-
 export function formatTooltipDateDaily(dateString: string): string {
   const date = isIsoDateString(dateString) ? isoDateToNoonUtc(dateString) : new Date(dateString);
   const dayOfWeek = date.toLocaleDateString("en-US", { weekday: "long" });
-  const day = date.getDate();
+  const day = String(date.getDate()).padStart(2, "0");
   const month = date.toLocaleDateString("en-US", { month: "short" });
   const year = date.getFullYear();
-  return `${dayOfWeek}, ${day}${getOrdinalSuffix(day)} ${month} ${year}`;
+  return `${dayOfWeek}, ${day} ${month} ${year}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -254,7 +245,7 @@ export function formatTooltipDateSmart(value: string): string {
       const sun = new Date(mon);
       sun.setUTCDate(sun.getUTCDate() + 6);
       const fmtShort = (d: Date) =>
-        `${MONTHS_SHORT[d.getUTCMonth()]} ${d.getUTCDate()}`;
+        `${String(d.getUTCDate()).padStart(2, "0")} ${MONTHS_SHORT[d.getUTCMonth()]}`;
       return `Week ${weekNum}, ${y} (${fmtShort(mon)} – ${fmtShort(sun)})`;
     }
     case "monthly": {

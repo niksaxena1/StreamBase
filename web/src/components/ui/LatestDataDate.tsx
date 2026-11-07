@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
+import { formatDisplayDate } from "@/lib/format";
 import { pipelineUpdateTooltip } from "@/lib/pipelineUpdateTimes";
 
 // The app's existing tooltip components are chart-payload tooltips, not focusable hints.
@@ -23,7 +24,7 @@ export function LatestDataDate({ date, datasetMode }: { date: string; datasetMod
         onBlur={() => setFocused(false)}
         onKeyDown={(event) => { if (event.key === "Escape") setDismissed(true); }}
       >
-        Latest data date: <span className="font-mono">{date}</span>
+        Latest data date: <span className="font-mono">{/^\d{4}-\d{2}-\d{2}/.test(date) ? formatDisplayDate(date) : date}</span>
       </span>
       <span
         id={id}

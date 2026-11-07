@@ -1,5 +1,5 @@
 import type { FollowerHistoryPoint } from "@/lib/playlistWatch/history";
-import { formatInt } from "@/lib/format";
+import { formatDisplayDate, formatDisplayDateTimeUtc, formatInt } from "@/lib/format";
 
 export type PlaylistWatchRow = {
   spotifyPlaylistId: string;
@@ -137,14 +137,7 @@ export function formatCheckedAt(value: string | null) {
   if (!value) return "Never checked";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Never checked";
-  return new Intl.DateTimeFormat("en-GB", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
+  return formatDisplayDateTimeUtc(date);
 }
 
 export type PlaylistWatchSort = { key: PlaylistWatchSortKey; dir: "asc" | "desc" };
@@ -174,5 +167,5 @@ export function formatStatusDate(value: string | null): string {
   if (!value) return "";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
-  return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(date);
+  return formatDisplayDate(value);
 }

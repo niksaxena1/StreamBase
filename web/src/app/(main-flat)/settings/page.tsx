@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { formatDisplayDateTimeUtc } from "@/lib/format";
 import { redirect } from "next/navigation";
 import { revalidatePath, revalidateTag } from "next/cache";
 import type { Metadata } from "next";
@@ -358,14 +359,7 @@ export default async function SettingsPage() {
     { id: "overrides", label: `Overrides (${streamOverrideCount})` },
   ];
 
-  const lastRefreshed = new Date().toLocaleString("en-GB", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
+  const lastRefreshed = formatDisplayDateTimeUtc(new Date());
 
   return (
     <div className="space-y-6">

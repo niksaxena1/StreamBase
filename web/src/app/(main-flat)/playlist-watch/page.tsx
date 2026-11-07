@@ -4,7 +4,7 @@ import nextDynamic from "next/dynamic";
 
 import { PageHeader } from "@/components/shell/PageHeader";
 import { TableSkeleton } from "@/components/ui/Skeleton";
-import { formatInt } from "@/lib/format";
+import { formatInt, formatDisplayDate } from "@/lib/format";
 import { loadPlaylistWatchPage } from "@/lib/playlistWatch/loadPlaylistWatchPage";
 
 const PlaylistWatchClient = nextDynamic(
@@ -49,7 +49,7 @@ export default async function PlaylistWatchPage({
         title="Playlist Watch"
         subtitle={
           latestRun?.run_date
-            ? `Latest run ${latestRun.run_date} (${latestRun.status ?? "unknown"}): ${formatInt(latestRun.success_count ?? 0)} ok, ${formatInt(latestRun.failure_count ?? 0)} failed`
+            ? `Latest run ${formatDisplayDate(latestRun.run_date)} (${latestRun.status ?? "unknown"}): ${formatInt(latestRun.success_count ?? 0)} ok, ${formatInt(latestRun.failure_count ?? 0)} failed`
             : "Track daily follower counts for independent Spotify playlists."
         }
       />

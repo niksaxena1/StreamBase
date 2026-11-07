@@ -31,6 +31,7 @@ import {
   exportFilterAsJson,
   importFilterFromJson,
 } from "./filterStorage";
+import { formatDisplayDate } from "@/lib/format";
 
 function cx(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
@@ -48,7 +49,7 @@ function formatRelativeTime(isoDate: string): string {
   if (diffMins < 60) return `${diffMins}m ago`;
   if (diffHours < 24) return `${diffHours}h ago`;
   if (diffDays < 7) return `${diffDays}d ago`;
-  return date.toLocaleDateString();
+  return formatDisplayDate(isoDate);
 }
 
 type SavedFiltersProps = {

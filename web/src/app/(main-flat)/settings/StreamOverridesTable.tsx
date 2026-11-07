@@ -11,6 +11,7 @@ import { InlineDatePicker } from "@/components/ui/InlineDatePicker";
 import { downloadCsv, todayIsoDate } from "@/lib/csv";
 import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
 import { showToast } from "@/lib/toast";
+import { formatDisplayDate } from "@/lib/format";
 
 interface StreamOverride {
   id: number;
@@ -43,11 +44,7 @@ const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const;
 
 function formatDateDisplay(ymd: string): string {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return ymd;
-  const [y, m, d] = ymd.split("-").map(Number);
-  const date = new Date(y, (m ?? 1) - 1, d ?? 1);
-  const dd = String(date.getDate()).padStart(2, "0");
-  const mon = date.toLocaleString("en-US", { month: "short" });
-  return `${dd} ${mon} ${date.getFullYear()}`;
+  return formatDisplayDate(ymd);
 }
 
 export function StreamOverridesTable({

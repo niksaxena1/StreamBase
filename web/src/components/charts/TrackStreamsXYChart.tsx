@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import type { PointerEvent, MouseEvent } from "react";
 import { CartesianGrid, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis } from "recharts";
 
-import { formatCompactMoney, formatInt, formatUsd, formatUsd2 } from "@/lib/format";
+import { formatCompactMoney, formatInt, formatUsd, formatUsd2, formatDisplayDate } from "@/lib/format";
 import { formatKmbTick } from "@/components/charts/chartUtils";
 import { useThemeColors, GLASS_TOOLTIP_SURFACE } from "@/components/charts/useThemeColors";
 import { ViewportAwareTooltip } from "@/components/charts/ViewportAwareTooltip";
@@ -212,7 +212,7 @@ const CustomTooltip = ({
                 </div>
                 {releaseDate ? (
                   <div>
-                    Release: <span className="font-mono">{releaseDate}</span>
+                    Release: <span className="font-mono">{formatDisplayDate(releaseDate)}</span>
                   </div>
                 ) : null}
               </div>

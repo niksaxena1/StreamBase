@@ -6,6 +6,7 @@ import Link from "@/components/shell/RouteLink";
 import { fetchApiJson } from "@/lib/api";
 import { dataDateFromRunDate } from "@/lib/sotDates";
 
+import { formatDisplayDate } from "@/lib/format";
 type HealthSummary = {
   latestRun: { runDate: string; status: string } | null;
   criticalWarnings: number;
@@ -68,8 +69,8 @@ export function IngestionStatusBannerClient(props: { initialSummary: HealthSumma
 
   const runDate = summary.latestRun?.runDate ?? null;
   const details: string[] = [];
-  if (runDate) details.push(`Latest data date (UTC): ${dataDateFromRunDate(runDate)}`);
-  if (runDate) details.push(`Ingested on (UTC): ${runDate}`);
+  if (runDate) details.push(`Latest data date (UTC): ${formatDisplayDate(dataDateFromRunDate(runDate))}`);
+  if (runDate) details.push(`Ingested on (UTC): ${formatDisplayDate(runDate)}`);
   if ((summary.criticalWarnings ?? 0) > 0) details.push(`Critical warnings: ${summary.criticalWarnings ?? 0}`);
 
   const healthHref = runDate ? `/health?date=${encodeURIComponent(runDate)}` : "/health";

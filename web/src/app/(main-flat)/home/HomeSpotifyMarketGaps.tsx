@@ -77,7 +77,7 @@ function GapGroup({ title, hint, tracks }: { title: string; hint: string; tracks
         <span className="rounded-full bg-black/5 px-1.5 font-mono text-[10px] tabular-nums dark:bg-white/10">{tracks.length}</span>
         <span className="text-[11px]" style={{ color: "var(--sb-muted)" }}>{hint}</span>
       </div>
-      <ul className="divide-y" style={{ borderColor: "var(--sb-border)" }}>
+      <ul className="divide-y divide-[color:var(--sb-border)]">
         {tracks.slice(0, MAX_ROWS_PER_GROUP).map((t) => (
           <GapRow key={t.isrc} track={t} />
         ))}

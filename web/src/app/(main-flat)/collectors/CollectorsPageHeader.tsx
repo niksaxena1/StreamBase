@@ -6,7 +6,6 @@ import { useCallback, useEffect, useRef } from "react";
 import { PageHeader } from "@/components/shell/PageHeader";
 import { DateRangePicker, type DateRangePickerHandle } from "@/components/ui/DateRangePicker";
 import { RangeSelect, GranularitySelect, type Granularity } from "@/components/ui/GranularitySelect";
-import { formatDateISO } from "@/lib/format";
 import { FreshnessLabel } from "@/components/ui/DataStates";
 
 export function CollectorsPageHeader({
@@ -51,7 +50,7 @@ export function CollectorsPageHeader({
     <PageHeader
       title="Collectors"
       subtitle={
-        latestDataDate ? <FreshnessLabel date={formatDateISO(latestDataDate)} /> : "No data date available"
+        latestDataDate ? <FreshnessLabel date={latestDataDate} /> : "No data date available"
       }
       actions={
         <>

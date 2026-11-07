@@ -7,6 +7,10 @@ import {
   formatUsd2,
   formatDateISO,
   formatDateOrdinalDMonYYYY,
+  formatDisplayDate,
+  formatDisplayDayMonth,
+  formatDisplayDateTimeUtc,
+  formatDisplayDayMonthTimeUtc,
   setCurrencyDisplay,
   getCurrencyDisplay,
   AED_PER_USD,
@@ -151,14 +155,20 @@ describe("AED_PER_USD", () => {
 // ---------------------------------------------------------------------------
 
 describe("formatDateISO", () => {
-  it("returns the date string unchanged", () => {
-    expect(formatDateISO("2026-01-15")).toBe("2026-01-15");
+  it("formats as DD Mon YYYY", () => {
+    expect(formatDateISO("2026-01-15")).toBe("15 Jan 2026");
   });
 
   it("returns dash for falsy inputs", () => {
     expect(formatDateISO(null)).toBe("—");
     expect(formatDateISO(undefined)).toBe("—");
     expect(formatDateISO("")).toBe("—");
+  });
+
+  it("keeps partial Spotify release dates and passes unknown text through", () => {
+    expect(formatDateISO("2019")).toBe("2019");
+    expect(formatDateISO("2019-05")).toBe("May 2019");
+    expect(formatDateISO("TBA")).toBe("TBA");
   });
 });
 
@@ -168,22 +178,22 @@ describe("formatDateISO", () => {
 
 describe("formatDateOrdinalDMonYYYY", () => {
   it("formats standard dates", () => {
-    expect(formatDateOrdinalDMonYYYY("2019-04-12")).toBe("12th Apr 2019");
-    expect(formatDateOrdinalDMonYYYY("2026-01-01")).toBe("1st Jan 2026");
-    expect(formatDateOrdinalDMonYYYY("2026-03-02")).toBe("2nd Mar 2026");
-    expect(formatDateOrdinalDMonYYYY("2026-07-03")).toBe("3rd Jul 2026");
+    expect(formatDateOrdinalDMonYYYY("2019-04-12")).toBe("12 Apr 2019");
+    expect(formatDateOrdinalDMonYYYY("2026-01-01")).toBe("01 Jan 2026");
+    expect(formatDateOrdinalDMonYYYY("2026-03-02")).toBe("02 Mar 2026");
+    expect(formatDateOrdinalDMonYYYY("2026-07-03")).toBe("03 Jul 2026");
   });
 
   it("handles special ordinal suffixes (11th, 12th, 13th)", () => {
-    expect(formatDateOrdinalDMonYYYY("2026-05-11")).toBe("11th May 2026");
-    expect(formatDateOrdinalDMonYYYY("2026-05-12")).toBe("12th May 2026");
-    expect(formatDateOrdinalDMonYYYY("2026-05-13")).toBe("13th May 2026");
+    expect(formatDateOrdinalDMonYYYY("2026-05-11")).toBe("11 May 2026");
+    expect(formatDateOrdinalDMonYYYY("2026-05-12")).toBe("12 May 2026");
+    expect(formatDateOrdinalDMonYYYY("2026-05-13")).toBe("13 May 2026");
   });
 
   it("handles 21st, 22nd, 23rd", () => {
-    expect(formatDateOrdinalDMonYYYY("2026-06-21")).toBe("21st Jun 2026");
-    expect(formatDateOrdinalDMonYYYY("2026-06-22")).toBe("22nd Jun 2026");
-    expect(formatDateOrdinalDMonYYYY("2026-06-23")).toBe("23rd Jun 2026");
+    expect(formatDateOrdinalDMonYYYY("2026-06-21")).toBe("21 Jun 2026");
+    expect(formatDateOrdinalDMonYYYY("2026-06-22")).toBe("22 Jun 2026");
+    expect(formatDateOrdinalDMonYYYY("2026-06-23")).toBe("23 Jun 2026");
   });
 
   it("returns dash for null/undefined/empty/invalid", () => {
@@ -191,5 +201,60 @@ describe("formatDateOrdinalDMonYYYY", () => {
     expect(formatDateOrdinalDMonYYYY(undefined)).toBe("—");
     expect(formatDateOrdinalDMonYYYY("")).toBe("—");
     expect(formatDateOrdinalDMonYYYY("not-a-date")).toBe("—");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// display date helpers
+// ---------------------------------------------------------------------------
+
+describe("formatDisplayDate", () => {
+  it("zero-pads the day and uses short English month", () => {
+    expect(formatDisplayDate("2026-11-06")).toBe("06 Nov 2026");
+    expect(formatDisplayDate("2019-04-12")).toBe("12 Apr 2019");
+    expect(formatDisplayDate("2026-01-01")).toBe("01 Jan 2026");
+  });
+  it("accepts ISO timestamps (date part, UTC)", () => {
+    expect(formatDisplayDate("2026-11-06T23:59:59Z")).toBe("06 Nov 2026");
+  });
+  it("returns dash for empty/invalid", () => {
+    expect(formatDisplayDate(null)).toBe("—");
+    expect(formatDisplayDate(undefined)).toBe("—");
+    expect(formatDisplayDate("")).toBe("—");
+    expect(formatDisplayDate("nope")).toBe("—");
+    expect(formatDisplayDate("2026-13-01")).toBe("—");
+    expect(formatDisplayDate("2026-02-31")).toBe("—");
+  });
+  it("never shifts a day regardless of timezone", () => {
+    const prev = process.env.TZ;
+    for (const tz of ["Pacific/Kiritimati", "America/Los_Angeles", "UTC"]) {
+      process.env.TZ = tz;
+      expect(formatDisplayDate("2026-11-06")).toBe("06 Nov 2026");
+    }
+    process.env.TZ = prev;
+  });
+});
+
+describe("formatDisplayDayMonth", () => {
+  it("omits the year", () => {
+    expect(formatDisplayDayMonth("2026-11-06")).toBe("06 Nov");
+    expect(formatDisplayDayMonth("")).toBe("—");
+  });
+});
+
+describe("formatDisplayDateTimeUtc", () => {
+  it("formats with UTC time", () => {
+    expect(formatDisplayDateTimeUtc("2026-11-06T20:00:00Z")).toBe("06 Nov 2026, 20:00 UTC");
+    expect(formatDisplayDateTimeUtc("2026-11-06T20:00:00+02:00")).toBe("06 Nov 2026, 18:00 UTC");
+  });
+  it("returns dash for empty/invalid", () => {
+    expect(formatDisplayDateTimeUtc(null)).toBe("—");
+    expect(formatDisplayDateTimeUtc("bad")).toBe("—");
+  });
+});
+
+describe("formatDisplayDayMonthTimeUtc", () => {
+  it("omits the year", () => {
+    expect(formatDisplayDayMonthTimeUtc("2026-11-06T20:00:00Z")).toBe("06 Nov, 20:00 UTC");
   });
 });

@@ -7,6 +7,7 @@ import { createPortal } from "react-dom";
 
 import { useRollback } from "@/components/rollback/RollbackContext";
 
+import { formatDisplayDate } from "@/lib/format";
 function parseYmd(ymd: string): Date {
   const [y, m, d] = ymd.split("-").map(Number);
   return new Date(y, (m ?? 1) - 1, d ?? 1);
@@ -152,7 +153,7 @@ export function RollbackButton({
         style={isActive ? { color: activeTone.color } : undefined}
         aria-label={
           isActive
-            ? `Rollback active: viewing data as of ${rollbackDate}. Click to change.`
+            ? `Rollback active: viewing data as of ${formatDisplayDate(rollbackDate)}. Click to change.`
             : "Time rollback: view historical data"
         }
         title={

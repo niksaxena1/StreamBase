@@ -287,7 +287,7 @@ export function SelectionScopedTracksModal({
       return {
         track: d?.name ?? "—",
         isrc,
-        release_date: d?.release_date ? formatDateISO(d.release_date) : "",
+        release_date: d?.release_date ?? "",
         total_streams: d?.totalStreams ?? "",
         daily_streams: d?.dailyStreams ?? "",
         artists: d?.artistsOnTrack ?? "",
@@ -560,7 +560,7 @@ export function SelectionCollabsModal({
         collaboration: r.pairLabel,
         track: d?.name ?? r.trackName,
         isrc: r.isrc,
-        release_date: d?.release_date ? formatDateISO(d.release_date) : "",
+        release_date: d?.release_date ?? "",
         total_streams: d?.totalStreams ?? "",
         daily_streams: d?.dailyStreams ?? "",
       };

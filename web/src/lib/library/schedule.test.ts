@@ -24,7 +24,7 @@ describe("week math", () => {
   });
   it("crosses month and year boundaries", () => {
     expect(weekStart("2027-01-01")).toBe("2026-12-28");
-    expect(weekLabel("2027-01-01")).toBe("Fri 1 Jan 2027");
+    expect(weekLabel("2027-01-01")).toBe("Fri 01 Jan 2027");
   });
 });
 
@@ -63,7 +63,7 @@ describe("groupByWeek", () => {
       ["Fri 16 Oct 2026", 1, false],
       ["Fri 23 Oct 2026", 0, true],
       ["Fri 30 Oct 2026", 0, true],
-      ["Fri 6 Nov 2026", 1, false],
+      ["Fri 06 Nov 2026", 1, false],
     ]);
   });
 

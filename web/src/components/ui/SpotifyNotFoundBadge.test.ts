@@ -9,7 +9,7 @@ describe("Spotify not-found badge", () => {
       since: "2026-10-11T16:30:00Z", imageUrl: null,
     }));
     expect(html).toContain("Not on Spotify");
-    expect(html).toContain("Spotify has no track for this ISRC since 2026-10-11; rechecked monthly");
+    expect(html).toContain("Spotify has no track for this ISRC since 11 Oct 2026; rechecked monthly");
     expect(html).toContain("sb-ring");
   });
 

@@ -1,3 +1,4 @@
+import { formatDisplayDate } from "@/lib/format";
 import type { LibrarySortDir, LibrarySortKey } from "./filters";
 import type { LibraryRow } from "./types";
 
@@ -11,7 +12,6 @@ export type LibraryTableItem =
   | { kind: "today"; key: string; label: string };
 
 const monthFormat = new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
-const todayFormat = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 
 /** Input is already filtered and sorted. Data indexes always refer to that input, never to decorations. */
 export function buildLibraryItems(rows: readonly LibraryRow[], sort: LibrarySortKey, dir: LibrarySortDir, today: string): LibraryTableItem[] {
@@ -25,7 +25,7 @@ export function buildLibraryItems(rows: readonly LibraryRow[], sort: LibrarySort
   let lastMonth: string | null = null;
   let insertedToday = false;
   const insertToday = () => {
-    items.push({ kind: "today", key: "today", label: `Today · ${todayFormat.format(new Date(`${today}T00:00:00Z`))}` });
+    items.push({ kind: "today", key: "today", label: `Today · ${formatDisplayDate(today)}` });
     insertedToday = true;
   };
   rows.forEach((row, rowIndex) => {

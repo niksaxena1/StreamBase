@@ -11,7 +11,6 @@ import { redirect } from "next/navigation";
 import { LatestDataDate } from "@/components/ui/LatestDataDate";
 
 import { cachedQuery } from "@/lib/supabase/cache";
-import { formatDateISO } from "@/lib/format";
 import { PlaylistDashboardControls } from "@/components/dashboard/PlaylistDashboardControls";
 import { RememberParamRedirect } from "@/components/dashboard/RememberParamRedirect";
 import { PlaylistPageClient } from "./PlaylistPageClient";
@@ -321,7 +320,7 @@ async function PlaylistsPageContent({
         <DocumentTitle title={title} />
         <PageHeader
           title={title}
-          subtitle={latestDate ? <LatestDataDate date={formatDateISO(dataDateFromRunDate(latestDate))} datasetMode="competitor" /> : "No stats found for this playlist yet."}
+          subtitle={latestDate ? <LatestDataDate date={dataDateFromRunDate(latestDate)} datasetMode="competitor" /> : "No stats found for this playlist yet."}
           icon={
             playlistImageUrl ? (
               <PreviewableArtwork
@@ -800,7 +799,7 @@ async function PlaylistsPageContent({
         }
         subtitle={
           latestDate ? (
-            <LatestDataDate date={formatDateISO(dataDateFromRunDate(latestDate))} datasetMode="own" />
+            <LatestDataDate date={dataDateFromRunDate(latestDate)} datasetMode="own" />
           ) : (
             "No stats found for this playlist yet."
           )

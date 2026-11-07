@@ -34,7 +34,7 @@ export function MarketChip({ code, reason, count }: { code: string; reason?: str
       className="inline-flex items-center gap-1.5 rounded-md border border-red-500/25 bg-red-500/10 py-0.5 pl-1.5 pr-2 text-xs text-red-800 dark:border-red-400/25 dark:bg-red-500/15 dark:text-red-200"
     >
       <TerritoryFlag code={code} />
-      <span className="whitespace-nowrap">{name}</span>
+      <span className="font-mono text-[11px] font-semibold tracking-wide">{code}</span>
       {count != null ? (
         <span className="ml-0.5 rounded bg-red-500/20 px-1 font-mono text-[10px] font-semibold tabular-nums dark:bg-red-400/25">
           {count}

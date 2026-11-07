@@ -21,13 +21,13 @@ function clampDaysInclusive(startYmd: string, endYmd: string, maxDays = 365): nu
 
 /**
  * Compact date-range label for chips.
- * Examples: "1 Mar"  |  "1–28 Feb"  |  "23 Feb – 1 Mar"  |  "31 Dec 2025 – 1 Jan 2026"
+ * Examples: "01 Mar"  |  "01–28 Feb"  |  "23 Feb – 01 Mar"  |  "31 Dec 2025 – 01 Jan 2026"
  */
 export function formatDateRangeShort(startYmd: string, endYmd: string): string {
   const s = parseYmd(startYmd);
   const e = parseYmd(endYmd);
-  const sd = s.getDate();
-  const ed = e.getDate();
+  const sd = String(s.getDate()).padStart(2, "0");
+  const ed = String(e.getDate()).padStart(2, "0");
   const sm = s.toLocaleString("en-US", { month: "short" });
   const em = e.toLocaleString("en-US", { month: "short" });
   const sy = s.getFullYear();
