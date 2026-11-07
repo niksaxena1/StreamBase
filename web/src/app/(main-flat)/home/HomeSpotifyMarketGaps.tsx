@@ -52,7 +52,7 @@ function GapRow({ track }: { track: SpotifyMarketRestrictedTrack }) {
       </div>
       <div className="col-span-2 md:col-span-1">
         {everywhere ? (
-          <span className="text-xs text-red-700 dark:text-red-300">Not playable in any Spotify market</span>
+          <span className="text-xs text-red-700 dark:text-red-300">Not playable in any territory</span>
         ) : (
           <MarketChipList markets={track.unavailable_markets} reasons={track.unavailable_reasons} />
         )}
@@ -115,7 +115,7 @@ export async function HomeSpotifyMarketGaps() {
   const countries = tallyMarkets(some).length;
   const summary = [
     `${restricted.length} ${restricted.length === 1 ? "track" : "tracks"}`,
-    countries > 0 ? `${countries} ${countries === 1 ? "country" : "countries"}` : null,
+    countries > 0 ? `${countries} ${countries === 1 ? "territory" : "territories"}` : null,
     everywhere.length > 0 ? `${everywhere.length} unavailable everywhere` : null,
   ]
     .filter(Boolean)
@@ -123,7 +123,7 @@ export async function HomeSpotifyMarketGaps() {
 
   return (
     <CollapsibleSection
-      title="Spotify market gaps"
+      title="Territories"
       storageKey={HOME_DETAILS_STORAGE.spotifyMarketGapsOpen}
       actions={
         <span className="inline-flex items-center gap-1.5 text-xs" style={{ color: "var(--sb-muted)" }}>
@@ -134,18 +134,18 @@ export async function HomeSpotifyMarketGaps() {
     >
       <div className="space-y-5">
         <p className="text-xs" style={{ color: "var(--sb-muted)" }}>
-          Tracks that can&apos;t be played in some countries on Spotify, usually because the release wasn&apos;t
-          delivered or licensed there. Hover a country for the reason.
+          Tracks that can&apos;t be played on Spotify in some territories, usually because the release wasn&apos;t
+          delivered or licensed there. Hover a territory for the reason.
         </p>
         <MarketCountrySummary tracks={some} />
-        <GapGroup title="Unavailable everywhere" hint="not playable in any market" tracks={everywhere} />
-        <GapGroup title="Missing in some countries" hint="most countries missing first" tracks={some} />
+        <GapGroup title="Unavailable everywhere" hint="not playable in any territory" tracks={everywhere} />
+        <GapGroup title="Missing in some territories" hint="most territories missing first" tracks={some} />
         <div
           className="flex flex-wrap items-center justify-between gap-2 border-t pt-2 text-xs"
           style={{ borderColor: "var(--sb-border)", color: "var(--sb-muted)" }}
         >
           <span>Checked weekly · last scan {formatScanTime(lastCheckedAt)}</span>
-          <Link href="/health#spotify-markets" className="hover:underline" style={{ color: "var(--sb-text)" }}>
+          <Link href="/health#territories" className="hover:underline" style={{ color: "var(--sb-text)" }}>
             Full table on Health →
           </Link>
         </div>

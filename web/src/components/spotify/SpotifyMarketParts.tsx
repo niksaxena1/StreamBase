@@ -6,7 +6,25 @@ import { marketName, marketReasonLabel, tallyMarkets } from "@/lib/health/spotif
  * (Home gaps section, Health table, Catalog badge). No data fetching here.
  */
 
-/** One missing country: code + full name, reason on hover. */
+/** Small country flag image (flagcdn.com, as in Ledgenta's payees page); hidden if it fails to load. */
+export function TerritoryFlag({ code, size = 16 }: { code: string; size?: 16 | 20 | 28 }) {
+  const width = size === 28 ? 40 : 20;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element -- tiny fixed-size external flag
+    <img
+      src={`https://flagcdn.com/w${width}/${code.toLowerCase()}.png`}
+      srcSet={`https://flagcdn.com/w${width * 2}/${code.toLowerCase()}.png 2x`}
+      alt=""
+      width={size}
+      height={Math.round(size * 0.7)}
+      loading="lazy"
+      className="flex-shrink-0 rounded-[2px] object-cover shadow-[0_0_0_1px_rgba(0,0,0,0.15)]"
+      style={{ width: size, height: Math.round(size * 0.7) }}
+    />
+  );
+}
+
+/** One missing territory: flag + full name, reason on hover. */
 export function MarketChip({ code, reason, count }: { code: string; reason?: string | null; count?: number }) {
   const name = marketName(code);
   const title = count != null ? `${name}: ${count} ${count === 1 ? "track" : "tracks"} unavailable` : `${name}: ${marketReasonLabel(reason)}`;
@@ -15,7 +33,7 @@ export function MarketChip({ code, reason, count }: { code: string; reason?: str
       title={title}
       className="inline-flex items-center gap-1.5 rounded-md border border-red-500/25 bg-red-500/10 py-0.5 pl-1.5 pr-2 text-xs text-red-800 dark:border-red-400/25 dark:bg-red-500/15 dark:text-red-200"
     >
-      <span className="font-mono text-[10px] font-semibold tracking-wide opacity-70">{code}</span>
+      <TerritoryFlag code={code} />
       <span className="whitespace-nowrap">{name}</span>
       {count != null ? (
         <span className="ml-0.5 rounded bg-red-500/20 px-1 font-mono text-[10px] font-semibold tabular-nums dark:bg-red-400/25">
@@ -71,7 +89,7 @@ export function MarketCoverage({
   const pct = checked > 0 ? Math.max(0, Math.min(100, (available / checked) * 100)) : 0;
   const none = available === 0;
   return (
-    <div className={cx("w-36 flex-shrink-0", className)} title={`Playable in ${available} of ${checked} Spotify markets`}>
+    <div className={cx("w-36 flex-shrink-0", className)} title={`Playable on Spotify in ${available} of ${checked} territories`}>
       <div className="flex items-baseline justify-between text-[11px]" style={{ color: "var(--sb-muted)" }}>
         <span>{none ? "Unavailable everywhere" : "Live in"}</span>
         <span className="font-mono tabular-nums">
@@ -103,7 +121,7 @@ export function MarketCountrySummary({
   return (
     <div>
       <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wider" style={{ color: "var(--sb-muted)" }}>
-        Countries with gaps <span className="normal-case tracking-normal opacity-70">· tracks blocked per country</span>
+        Territories with gaps <span className="normal-case tracking-normal opacity-70">· tracks blocked per territory</span>
       </div>
       <div className="flex flex-wrap gap-1.5">
         {shown.map(({ code, count }) => (
@@ -120,42 +138,5 @@ export function MarketCountrySummary({
         ) : null}
       </div>
     </div>
-  );
-}
-
-/** Catalog selected-track badge: green "All 183 Spotify markets" or red "Not on Spotify in …". */
-export function SpotifyMarketsBadge({
-  markets,
-}: {
-  markets: { markets_checked: number; available_count: number; unavailable_markets: string[] };
-}) {
-  const missing = markets.unavailable_markets;
-  if (missing.length === 0) {
-    return (
-      <span
-        className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-800 dark:text-emerald-200"
-        title="Weekly Spotify market scan"
-      >
-        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-        Live in all {markets.markets_checked} Spotify markets
-      </span>
-    );
-  }
-  const everywhere = markets.available_count === 0;
-  const names = missing.map(marketName);
-  const label = everywhere
-    ? "Unavailable in every Spotify market"
-    : `Not on Spotify in ${names.slice(0, 4).join(", ")}${names.length > 4 ? ` +${names.length - 4} more` : ""}`;
-  return (
-    <span
-      className="inline-flex items-center gap-1.5 rounded-full border border-red-500/25 bg-red-500/10 px-2 py-0.5 text-[11px] text-red-800 dark:text-red-200"
-      title={`${names.join(", ")} (live in ${markets.available_count} of ${markets.markets_checked} markets)`}
-    >
-      <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
-      {label}
-      <span className="font-mono tabular-nums opacity-70">
-        {markets.available_count}/{markets.markets_checked}
-      </span>
-    </span>
   );
 }

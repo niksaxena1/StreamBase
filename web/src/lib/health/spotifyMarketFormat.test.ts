@@ -40,10 +40,10 @@ describe("Spotify market formatting", () => {
 
 describe("Spotify market labels", () => {
   it("explains reasons and hides the ordinary geo-block", () => {
-    expect(marketReasonLabel("market")).toBe("Not released in this country");
+    expect(marketReasonLabel("market")).toBe("Not released in this territory");
     expect(marketReasonLabel(undefined)).toBe("Not playable (no reason given)");
     expect(unusualReasonSummary({ BR: "market", IN: "market" })).toBeNull();
-    expect(unusualReasonSummary({ BR: "market", IN: "product" })).toBe("Not released in this country · Premium only");
+    expect(unusualReasonSummary({ BR: "market", IN: "product" })).toBe("Not released in this territory · Premium only");
   });
 
   it("tallies countries across tracks", () => {
@@ -53,7 +53,7 @@ describe("Spotify market labels", () => {
   });
 
   it("formats scan time in UTC", () => {
-    expect(formatScanTime("2026-11-07T00:03:00Z")).toBe("07 Nov 2026, 00:03 UTC");
+    expect(formatScanTime("2026-11-07T00:03:00Z")).toBe("2026-11-07 00:03 UTC");
     expect(formatScanTime(null)).toBe("never");
   });
 });

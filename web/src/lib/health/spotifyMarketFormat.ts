@@ -53,7 +53,7 @@ export function formatMarketsLine(args: {
 export function marketReasonLabel(reason: string | null | undefined): string {
   switch (reason) {
     case "market":
-      return "Not released in this country";
+      return "Not released in this territory";
     case "product":
       return "Premium only";
     case "explicit":
@@ -81,12 +81,10 @@ export function tallyMarkets(tracks: { unavailable_markets: string[] }[]): { cod
   );
 }
 
-/** "07 Nov 2026, 00:03 UTC" (owner's preferred date format: DD Mon YYYY). */
+/** "2026-11-07 00:03 UTC": StreamBase's standard ISO date + UTC time. */
 export function formatScanTime(ts: string | null | undefined): string {
   if (!ts) return "never";
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return ts;
-  const date = d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
-  const time = d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" });
-  return `${date}, ${time} UTC`;
+  return `${d.toISOString().slice(0, 16).replace("T", " ")} UTC`;
 }

@@ -30,6 +30,8 @@ export type SpotifyTrackMarkets = {
   markets_checked: number;
   available_count: number;
   unavailable_markets: string[];
+  unavailable_reasons?: Record<string, string>;
+  last_checked_at?: string | null;
 };
 
 type MarketRow = {
@@ -117,22 +119,30 @@ export async function cachedSpotifyMarketAvailability() {
 async function fetchSpotifyMarketsForIsrc(isrc: string): Promise<SpotifyTrackMarkets | null> {
   const { data, error } = await supabaseService()
     .from("spotify_track_market_availability")
-    .select("markets_checked,available_count,unavailable_markets")
+    .select("markets_checked,available_count,unavailable_markets,unavailable_reasons,last_checked_at")
     .eq("isrc", isrc)
     .maybeSingle();
   if (error || !data) return null;
-  const row = data as { markets_checked: number; available_count: number; unavailable_markets: string[] | null };
+  const row = data as {
+    markets_checked: number;
+    available_count: number;
+    unavailable_markets: string[] | null;
+    unavailable_reasons: unknown;
+    last_checked_at: string | null;
+  };
   return {
     markets_checked: row.markets_checked,
     available_count: row.available_count,
     unavailable_markets: row.unavailable_markets ?? [],
+    unavailable_reasons: asReasons(row.unavailable_reasons),
+    last_checked_at: row.last_checked_at,
   };
 }
 
 export async function cachedSpotifyMarketsForIsrc(isrc: string) {
   return cachedQuery(
     async () => ({ data: await fetchSpotifyMarketsForIsrc(isrc), error: null }),
-    `spotify-markets-isrc-v1-${isrc}`,
+    `spotify-markets-isrc-v2-${isrc}`,
     CACHE_TTL_1H,
   );
 }

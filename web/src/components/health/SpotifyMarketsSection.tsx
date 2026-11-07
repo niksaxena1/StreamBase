@@ -13,7 +13,7 @@ import { MarketChipList, MarketCountrySummary, MarketCoverage } from "@/componen
 /**
  * Own-catalog tracks the weekly market scan
  * (scripts/scan_spotify_market_availability.py) finds unplayable in at least
- * one Spotify market. Hidden until the scan has run at least once.
+ * one Spotify territory. Hidden until the scan has run at least once.
  */
 export async function SpotifyMarketsSection() {
   const { data } = await cachedSpotifyMarketAvailability();
@@ -22,11 +22,11 @@ export async function SpotifyMarketsSection() {
   const tracks = data.restricted;
 
   return (
-    <div className="space-y-3" id="spotify-markets">
+    <div className="space-y-3" id="territories">
       <SectionHeader
-        title="Spotify markets"
-        subtitle={`Countries where a track can't be played on Spotify. Checked weekly · last scan ${formatScanTime(data.lastCheckedAt)}${
-          data.marketsChecked ? ` · ${data.marketsChecked} markets` : ""
+        title="Territories"
+        subtitle={`Territories where a track can't be played on Spotify. Checked weekly · last scan ${formatScanTime(data.lastCheckedAt)}${
+          data.marketsChecked ? ` · ${data.marketsChecked} territories` : ""
         }`}
         actions={
           <span className="text-xs" style={{ color: "var(--sb-muted)" }}>
@@ -36,7 +36,7 @@ export async function SpotifyMarketsSection() {
       />
       {tracks.length === 0 ? (
         <p className="text-sm" style={{ color: "var(--sb-muted)" }}>
-          Every checked track plays in every Spotify market.
+          Every checked track plays in every territory.
         </p>
       ) : (
         <>

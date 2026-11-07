@@ -30,7 +30,7 @@ import { usePayoutRate } from "@/components/payout/PayoutRateContext";
 import { useMetric } from "@/components/metrics/MetricContext";
 import { SectionHeader } from "@/components/ui/SectionHeader";
 import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
-import { SpotifyMarketsBadge } from "@/components/spotify/SpotifyMarketParts";
+import { SpotifyMarketsBadge } from "@/components/spotify/SpotifyMarketsBadge";
 import { SpotifyNotFoundBadge } from "@/components/ui/SpotifyNotFoundBadge";
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { RememberTrackSelection } from "@/components/dashboard/RememberTrackSelection";
@@ -113,7 +113,13 @@ export function CatalogPageClient(props: {
   track30d: number;
   selectedTrackPlaylistMemberships: TrackPlaylistMembership[];
   /** Own catalog only: weekly Spotify per-market availability summary for the selected track. */
-  selectedTrackMarkets?: { markets_checked: number; available_count: number; unavailable_markets: string[] } | null;
+  selectedTrackMarkets?: {
+    markets_checked: number;
+    available_count: number;
+    unavailable_markets: string[];
+    unavailable_reasons?: Record<string, string>;
+    last_checked_at?: string | null;
+  } | null;
 }) {
   useSyncCatalogSelection(props.artistId, props.isrc, props.mode ?? "own", props.competitorLabelKey, props.artists);
   const mode = props.mode ?? "own";
@@ -986,7 +992,10 @@ export function CatalogPageClient(props: {
               </div>
               {!isCompetitorMode && props.selectedTrackMarkets ? (
                 <div className="mt-1.5">
-                  <SpotifyMarketsBadge markets={props.selectedTrackMarkets} />
+                  <SpotifyMarketsBadge
+                    markets={props.selectedTrackMarkets}
+                    trackLabel={`${props.selectedTrack.artistNames?.length ? `${props.selectedTrack.artistNames.join(", ")} – ` : ""}${props.selectedTrack.name ?? props.isrc} (${props.isrc})`}
+                  />
                 </div>
               ) : null}
             </div>
