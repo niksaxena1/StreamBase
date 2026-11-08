@@ -270,6 +270,15 @@ def filter_playlists_by_keys(playlists: List[Playlist], keys: set[str]) -> List[
     return [playlist for playlist in playlists if playlist.key in keys]
 
 
+def exclude_playlists_by_keys(playlists: List[Playlist], keys: set[str]) -> List[Playlist]:
+    """Drop the given playlists (e.g. one whose dashboard is down) and fail closed on a typo."""
+    available = {playlist.key for playlist in playlists}
+    unknown = keys - available
+    if unknown:
+        raise ValueError(f"Unknown playlist key(s): {', '.join(sorted(unknown))}")
+    return [playlist for playlist in playlists if playlist.key not in keys]
+
+
 def download_one(page, pl: Playlist, out_path: Path) -> Tuple[bool, str]:
     page.goto(pl.url, wait_until="networkidle", timeout=NAV_TIMEOUT_MS)
     time.sleep(1.2)
@@ -344,6 +353,11 @@ def main():
         help="Comma-separated playlist keys to export (useful for targeted bootstraps)",
     )
     ap.add_argument(
+        "--skip-playlist-keys",
+        default=os.environ.get("SKIP_PLAYLIST_KEYS", ""),
+        help="Comma-separated playlist keys to leave out (the loader records them as missing_export)",
+    )
+    ap.add_argument(
         "--auth-debug",
         action="store_true",
         help="Print non-sensitive auth diagnostics (storage_state vs login fallback usage)",
@@ -354,6 +368,10 @@ def main():
     only_playlist_keys = {key.strip() for key in args.only_playlist_keys.split(",") if key.strip()}
     if only_playlist_keys:
         playlists = filter_playlists_by_keys(playlists, only_playlist_keys)
+    skip_playlist_keys = {key.strip() for key in args.skip_playlist_keys.split(",") if key.strip()}
+    if skip_playlist_keys:
+        playlists = exclude_playlists_by_keys(playlists, skip_playlist_keys)
+        print(f"Skipping playlist(s) by request: {', '.join(sorted(skip_playlist_keys))}")
     if not playlists:
         raise SystemExit("No playlists loaded.")
 
