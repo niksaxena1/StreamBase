@@ -219,6 +219,16 @@ function secondLookStep(data: PipelineTodayData, now: Date): TimelineStep {
   const isToday = now.toISOString().slice(0, 10) === data.run_date;
   const minutes = utcMinutesOfDay(now);
   if (dispatch) {
+    // The database records GitHub's response about 15 minutes after dispatch; until then
+    // http_status is null, which is pending, not a failure.
+    if (dispatch.http_status == null && !dispatch.error) {
+      const pending = now.getTime() - new Date(dispatch.at).getTime() < 30 * 60 * 1000;
+      return {
+        id, title, status: pending ? "neutral" : "amber", label: pending ? "Dispatched" : "Unconfirmed",
+        time: `${formatUtcTime(dispatch.at)} UTC`,
+        detail: pending ? "Waiting for GitHub's response to be recorded" : "No HTTP response recorded for this dispatch",
+      };
+    }
     const ok = dispatch.http_status === 204 || (dispatch.http_status != null && dispatch.http_status < 300);
     if (!ok) {
       return {

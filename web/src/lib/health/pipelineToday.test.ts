@@ -83,6 +83,18 @@ describe("buildPipelineTimeline", () => {
     expect(find(buildPipelineTimeline(failed, new Date(`${RUN}T13:00:00Z`)), "second-look").status).toBe("red");
   });
 
+  it("second look dispatch with no recorded response is pending, then unconfirmed after 30 min", () => {
+    const data = base({
+      stale: { affected: 100, unfixed: 4, fixed: 96, rejected: 0, by_source: {} },
+      workflows: [
+        ...base().workflows,
+        { workflow: "rapidapi_stale_fix.yml", http_status: null, error: null, at: `${RUN}T17:30:00Z`, checked_at: null },
+      ],
+    });
+    expect(find(buildPipelineTimeline(data, new Date(`${RUN}T17:40:00Z`)), "second-look")).toMatchObject({ status: "neutral", label: "Dispatched" });
+    expect(find(buildPipelineTimeline(data, new Date(`${RUN}T18:10:00Z`)), "second-look")).toMatchObject({ status: "amber", label: "Unconfirmed" });
+  });
+
   it("marks a stage that has not started by 15:30 UTC red and before that neutral", () => {
     const data = base({ stages: [], dispatches: [] });
     expect(find(buildPipelineTimeline(data, new Date(`${RUN}T12:00:00Z`)), "own-refresh").status).toBe("neutral");
