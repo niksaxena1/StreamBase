@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/shell/PageHeader";
 import { formatInt } from "@/lib/format";
 import { loadUploadTracksPage } from "@/lib/playlistWatch/loadUploadTracksPage";
 import { UploadTracksClient } from "./UploadTracksClient";
-import { parseMetric, parseWindow } from "./uploadTracksModel";
+import { parseMetric, parseTrackFilter, parseWindow } from "./uploadTracksModel";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +14,7 @@ export const metadata: Metadata = {
   title: "Upload tracks",
 };
 
-type SearchParams = { window?: string; metric?: string };
+type SearchParams = { window?: string; metric?: string; filter?: string };
 
 export default async function UploadTracksPage({
   searchParams,
@@ -22,7 +22,7 @@ export default async function UploadTracksPage({
   searchParams?: Promise<SearchParams>;
 }) {
   const sp = (await searchParams) ?? {};
-  const { playlist, rows, latestSnapshotDate, chartPositions, candidates } = await loadUploadTracksPage();
+  const { playlist, rows, latestSnapshotDate, chartPositions, candidates, charts } = await loadUploadTracksPage();
   const current = rows.filter((r) => !r.removedDate).length;
   const trackCount = rows.length > 0 ? current : (playlist?.trackCount ?? 0);
 
@@ -56,6 +56,16 @@ export default async function UploadTracksPage({
                 Open in Spotify <ExternalLink className="h-3 w-3" aria-hidden />
               </a>
             ) : null}
+            {charts.map((ch) =>
+              ch.url ? (
+                <a key={ch.chartKey} href={ch.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:underline">
+                  {ch.name} on Beatport <ExternalLink className="h-3 w-3" aria-hidden />
+                </a>
+              ) : null,
+            )}
+            <Link href="/charts" className="hover:underline">
+              Charts page
+            </Link>
           </span>
         }
       />
@@ -63,6 +73,8 @@ export default async function UploadTracksPage({
         rows={rows}
         chartPositions={chartPositions}
         candidates={candidates}
+        charts={charts}
+        initialFilter={parseTrackFilter(sp.filter)}
         today={new Date().toISOString().slice(0, 10)}
         initialWindow={parseWindow(sp.window)}
         initialMetric={parseMetric(sp.metric)}

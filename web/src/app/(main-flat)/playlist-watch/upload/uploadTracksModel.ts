@@ -1,7 +1,7 @@
 import { formatDisplayDayMonth } from "@/lib/format";
 export type GrowthWindow = "fri" | "1d" | "7d" | "28d" | "added";
 export type GrowthMetric = "abs" | "pct";
-export type UploadSortKey = "track" | "streams" | "growth" | "added" | "beatport";
+export type UploadSortKey = "track" | "streams" | "growth" | "added" | "beatport" | "release";
 export type SortDir = "asc" | "desc";
 
 export const GROWTH_WINDOWS: GrowthWindow[] = ["fri", "1d", "7d", "28d", "added"];
@@ -215,8 +215,8 @@ export function sortRows(
       // Ties (and the first days, when growth is still null for every row) rank by total streams.
       if (c === 0) c = compareNullable(a.latestPlaycount, b.latestPlaycount, "desc");
     } else {
-      const ad = a.addedDate;
-      const bd = b.addedDate;
+      const ad = key === "release" ? a.releaseDate : a.addedDate;
+      const bd = key === "release" ? b.releaseDate : b.addedDate;
       if (ad === null || bd === null) c = ad === bd ? 0 : ad === null ? 1 : -1;
       else c = mult * ad.localeCompare(bd);
     }
@@ -228,6 +228,27 @@ export function filterRows(rows: UploadTrackRow[], query: string): UploadTrackRo
   const q = query.trim().toLowerCase();
   if (!q) return rows;
   return rows.filter((r) => r.name.toLowerCase().includes(q) || r.artists.toLowerCase().includes(q));
+}
+
+/** Quick filters: all, released since the reference Friday, added to the playlist in the last 7 days, on a Beatport chart today. */
+export type TrackFilter = "all" | "released" | "added" | "beatport";
+export const TRACK_FILTERS: TrackFilter[] = ["all", "released", "added", "beatport"];
+
+export function filterByKind(
+  rows: UploadTrackRow[],
+  kind: TrackFilter,
+  refFriday: string | null,
+  today: string,
+  rankOf: (row: UploadTrackRow) => number | null = () => null,
+): UploadTrackRow[] {
+  if (kind === "released") return rows.filter((r) => isReleasedSince(r.releaseDate, refFriday));
+  if (kind === "added") return rows.filter((r) => isNewlyAdded(r.addedDate, today));
+  if (kind === "beatport") return rows.filter((r) => rankOf(r) !== null);
+  return rows;
+}
+
+export function parseTrackFilter(value: string | null | undefined): TrackFilter {
+  return value === "released" || value === "added" || value === "beatport" ? value : "all";
 }
 
 export type UploadSummary = {

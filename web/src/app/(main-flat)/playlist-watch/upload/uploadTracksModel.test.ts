@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   dailyGains,
+  filterByKind,
+  parseTrackFilter,
   filterRows,
   formatPercent,
   growthFor,
@@ -244,5 +246,26 @@ describe("Since Fri window", () => {
   it("normalizeRow keeps the raw release date", () => {
     expect(normalizeRow({ spotify_track_id: "t", release_date: "2026-10" }).releaseDate).toBe("2026-10");
     expect(normalizeRow({ spotify_track_id: "t" }).releaseDate).toBeNull();
+  });
+});
+
+describe("filterByKind / release sort", () => {
+  const rows = [
+    row({ name: "Fresh", releaseDate: "2026-11-06", addedDate: "2026-11-06", spotifyTrackId: "a" }),
+    row({ name: "Old add", releaseDate: "2025-03-01", addedDate: "2026-11-09", spotifyTrackId: "b" }),
+    row({ name: "Old", releaseDate: "2024", addedDate: "2026-09-01", spotifyTrackId: "c" }),
+  ];
+  it("filters released since Friday, newly added, and on Beatport", () => {
+    expect(filterByKind(rows, "released", "2026-11-06", "2026-11-11").map((r) => r.name)).toEqual(["Fresh"]);
+    expect(filterByKind(rows, "added", "2026-11-06", "2026-11-11").map((r) => r.name)).toEqual(["Fresh", "Old add"]);
+    expect(filterByKind(rows, "beatport", null, "2026-11-11", (r) => (r.spotifyTrackId === "c" ? 12 : null)).map((r) => r.name)).toEqual(["Old"]);
+    expect(filterByKind(rows, "all", null, "2026-11-11")).toHaveLength(3);
+  });
+  it("sorts by release date, newest first", () => {
+    expect(sortRows(rows, "release", "desc", "fri", "abs").map((r) => r.name)).toEqual(["Fresh", "Old add", "Old"]);
+  });
+  it("parses the filter param", () => {
+    expect(parseTrackFilter("released")).toBe("released");
+    expect(parseTrackFilter("x")).toBe("all");
   });
 });

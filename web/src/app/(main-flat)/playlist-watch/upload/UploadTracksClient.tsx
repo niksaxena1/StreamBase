@@ -1,12 +1,12 @@
 "use client";
 
-import { ChevronDown, ChevronRight, ChevronUp, ExternalLink, Search } from "lucide-react";
+import { ChevronDown, ChevronRight, ChevronsUpDown, ChevronUp, ExternalLink, Search } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 
 import { Chip, ChipGroup } from "@/components/ui/Chip";
 import { EmptyState, GlassTable, TableCell, TableRow } from "@/components/ui/GlassTable";
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
-import { formatInt } from "@/lib/format";
+import { formatDisplayDate, formatInt } from "@/lib/format";
 import {
   candidateKey,
   candidateToRow,
@@ -25,6 +25,7 @@ import { MetricTile } from "../PlaylistWatchVisuals";
 import { fmtDelta } from "../playlistWatchClientModel";
 import {
   dailyGains,
+  filterByKind,
   filterRows,
   formatFridayLabel,
   formatPercent,
@@ -38,7 +39,9 @@ import {
   sortRows,
   splitRemoved,
   summarize,
+  TRACK_FILTERS,
   type GrowthMetric,
+  type TrackFilter,
   type GrowthWindow,
   type SortDir,
   type UploadSortKey,
@@ -146,12 +149,14 @@ function GrowthCell({
 function BeatportCellView({ cell }: { cell: BeatportCell | undefined }) {
   if (!cell) return <span style={{ color: "var(--sb-muted)" }}>-</span>;
   const best = cell.bestPosition !== null ? `best #${cell.bestPosition}` : null;
-  const title = [cell.chartName, cell.position === null ? "not on the chart today" : null, best].filter(Boolean).join(" · ");
+  const title = [cell.chartName, cell.position === null ? "was on the chart in the last 60 days, not today" : null, best].filter(Boolean).join(" · ");
   const m = cell.movement;
   return (
     <span className="inline-flex items-baseline gap-1 whitespace-nowrap font-mono" title={title}>
       {cell.position === null ? (
-        <span style={{ color: "var(--sb-muted)" }}>off</span>
+        <span style={{ color: "var(--sb-muted)" }}>
+          out{cell.bestPosition !== null ? ` · best #${cell.bestPosition}` : ""}
+        </span>
       ) : (
         <span className="font-semibold">#{cell.position}</span>
       )}
@@ -187,11 +192,20 @@ function SortHeader({
     <button
       type="button"
       onClick={() => onSort(k)}
-      className={["inline-flex items-center gap-1 uppercase tracking-wider", align === "right" ? "flex-row-reverse" : ""].join(" ")}
+      className={[
+        "group inline-flex cursor-pointer items-center gap-1 uppercase tracking-wider hover:text-[color:var(--sb-text)]",
+        align === "right" ? "flex-row-reverse" : "",
+        active ? "text-[color:var(--sb-text)]" : "",
+      ].join(" ")}
       aria-label={`Sort by ${label}`}
+      title={`Sort by ${label}`}
     >
       <span>{label}</span>
-      {active ? dir === "desc" ? <ChevronDown className="h-3 w-3" aria-hidden /> : <ChevronUp className="h-3 w-3" aria-hidden /> : null}
+      {active ? (
+        dir === "desc" ? <ChevronDown className="h-3 w-3" aria-hidden /> : <ChevronUp className="h-3 w-3" aria-hidden />
+      ) : (
+        <ChevronsUpDown className="h-3 w-3 opacity-40 group-hover:opacity-80" aria-hidden />
+      )}
     </button>
   );
 }
@@ -232,6 +246,7 @@ function TrackTable({
     { label: "#", align: "right" as const },
     "",
     <SortHeader key="t" label="Track" k="track" {...sh} />,
+    <SortHeader key="r" label="Released" k="release" {...sh} />,
     <SortHeader key="a" label="Added" k="added" {...sh} />,
     ...(removed ? ["Removed on"] : []),
     <SortHeader key="b" label="Beatport" k="beatport" {...sh} />,
@@ -302,8 +317,9 @@ function TrackTable({
                     <span
                       className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold"
                       style={{ background: "var(--sb-accent)", color: "var(--sb-accent-text,#000)" }}
+                      title="Added to the playlist in the last 7 days; released earlier"
                     >
-                      New
+                      New in playlist
                     </span>
                   ) : null}
                 </div>
@@ -312,8 +328,9 @@ function TrackTable({
                 </div>
               </div>
             </TableCell>
-            <TableCell className="whitespace-nowrap font-mono">{row.addedDate ?? "-"}</TableCell>
-            {removed ? <TableCell className="whitespace-nowrap font-mono">{row.removedDate ?? "-"}</TableCell> : null}
+            <TableCell className="whitespace-nowrap">{formatDisplayDate(row.releaseDate)}</TableCell>
+            <TableCell className="whitespace-nowrap">{formatDisplayDate(row.addedDate)}</TableCell>
+            {removed ? <TableCell className="whitespace-nowrap">{formatDisplayDate(row.removedDate)}</TableCell> : null}
             <TableCell className="whitespace-nowrap">
               <BeatportCellView cell={cells.get(row.spotifyTrackId)} />
             </TableCell>
@@ -366,11 +383,20 @@ function SmallSort<K extends string>({
     <button
       type="button"
       onClick={() => onSort(k)}
-      className={["inline-flex items-center gap-1 uppercase tracking-wider", align === "right" ? "flex-row-reverse" : ""].join(" ")}
+      className={[
+        "group inline-flex cursor-pointer items-center gap-1 uppercase tracking-wider hover:text-[color:var(--sb-text)]",
+        align === "right" ? "flex-row-reverse" : "",
+        active ? "text-[color:var(--sb-text)]" : "",
+      ].join(" ")}
       aria-label={`Sort by ${label}`}
+      title={`Sort by ${label}`}
     >
       <span>{label}</span>
-      {active ? dir === "desc" ? <ChevronDown className="h-3 w-3" aria-hidden /> : <ChevronUp className="h-3 w-3" aria-hidden /> : null}
+      {active ? (
+        dir === "desc" ? <ChevronDown className="h-3 w-3" aria-hidden /> : <ChevronUp className="h-3 w-3" aria-hidden />
+      ) : (
+        <ChevronsUpDown className="h-3 w-3 opacity-40 group-hover:opacity-80" aria-hidden />
+      )}
     </button>
   );
 }
@@ -488,7 +514,7 @@ function CandidatesTable({
                           className="shrink-0 rounded bg-black/10 px-1.5 py-0.5 text-[10px] font-semibold dark:bg-white/15"
                           title="You had this track in the playlist and removed it"
                         >
-                          Was in upload, removed {c.removedFromUploadDate}
+                          Was in upload, removed {formatDisplayDate(c.removedFromUploadDate)}
                         </span>
                       ) : null}
                     </div>
@@ -501,7 +527,7 @@ function CandidatesTable({
                   <div className="max-w-[180px] truncate">{c.labelName ?? "-"}</div>
                 </TableCell>
                 <TableCell className="whitespace-nowrap font-mono">{bpmKey || "-"}</TableCell>
-                <TableCell className="whitespace-nowrap font-mono">{c.releaseDate ?? "-"}</TableCell>
+                <TableCell className="whitespace-nowrap">{formatDisplayDate(c.releaseDate)}</TableCell>
                 <TableCell align="right" className="font-mono">
                   {c.latestPlaycount === null ? <span style={{ color: "var(--sb-muted)" }}>-</span> : formatInt(c.latestPlaycount)}
                 </TableCell>
@@ -545,17 +571,36 @@ function CandidatesTable({
   );
 }
 
+const FILTER_LABELS: Record<TrackFilter, string> = {
+  all: "All",
+  released: "Released this week",
+  added: "New in playlist",
+  beatport: "On Beatport",
+};
+
+const FILTER_TITLES: Record<TrackFilter, (refFriday: string | null) => string | undefined> = {
+  all: () => undefined,
+  released: (f) => `Spotify release date on or after ${formatFridayLabel(f)}`,
+  added: () => "Added to the playlist in the last 7 days (any release date)",
+  beatport: () => "On a Beatport chart today",
+};
+
 export function UploadTracksClient({
   rows,
   chartPositions,
   candidates,
+  charts,
   today,
   initialWindow,
   initialMetric,
+  initialFilter,
 }: {
   rows: UploadTrackRow[];
   chartPositions: ChartPositionRow[];
   candidates: ChartCandidate[];
+  /** Active Beatport charts (name + public URL) for the "open chart" links. */
+  charts: { chartKey: string; name: string; url: string | null }[];
+  initialFilter: TrackFilter;
   today: string;
   initialWindow: GrowthWindow;
   initialMetric: GrowthMetric;
@@ -565,6 +610,7 @@ export function UploadTracksClient({
   const [sortKey, setSortKey] = useState<UploadSortKey>("growth");
   const [dir, setDir] = useState<SortDir>("desc");
   const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<TrackFilter>(initialFilter);
   const [showRemoved, setShowRemoved] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [histories, setHistories] = useState<Record<string, HistoryState>>({});
@@ -593,11 +639,13 @@ export function UploadTracksClient({
     return () => globalThis.removeEventListener("keydown", onKey);
   }, [expandedId]);
 
-  function syncUrl(nextWindow: GrowthWindow, nextMetric: GrowthMetric) {
+  function syncUrl(nextWindow: GrowthWindow, nextMetric: GrowthMetric, nextFilter: TrackFilter = filter) {
     try {
       const url = new URL(globalThis.location.href);
       url.searchParams.set("window", nextWindow);
       url.searchParams.set("metric", nextMetric);
+      if (nextFilter === "all") url.searchParams.delete("filter");
+      else url.searchParams.set("filter", nextFilter);
       globalThis.history.replaceState(null, "", url);
     } catch {
       // URL sync is a convenience only.
@@ -617,15 +665,26 @@ export function UploadTracksClient({
   const cells = useMemo(() => cellsByTrack(chartPositions), [chartPositions]);
   const rankOf = useCallback((r: UploadTrackRow) => cellRank(cells.get(r.spotifyTrackId)), [cells]);
   const allCandidates = useMemo(() => dedupeCandidates(candidates), [candidates]);
-  const filteredCandidates = useMemo(() => filterCandidates(allCandidates, query), [allCandidates, query]);
+  const filteredCandidates = useMemo(() => {
+    const searched = filterCandidates(allCandidates, query);
+    // Candidates are never in the playlist ("added" matches none) and are all on Beatport.
+    if (filter === "released") return searched.filter((c) => isReleasedSince(c.releaseDate, refFriday));
+    if (filter === "added") return [];
+    return searched;
+  }, [allCandidates, query, filter, refFriday]);
+  const filterCounts = useMemo(() => {
+    const out = {} as Record<TrackFilter, number>;
+    for (const f of TRACK_FILTERS) out[f] = filterByKind(current, f, refFriday, today, rankOf).length;
+    return out;
+  }, [current, refFriday, today, rankOf]);
   const summary = useMemo(() => summarize(current, window, refFriday), [current, window, refFriday]);
   const sortedCurrent = useMemo(
-    () => sortRows(filterRows(current, query), sortKey, dir, window, metric, refFriday, rankOf),
-    [current, query, sortKey, dir, window, metric, refFriday, rankOf],
+    () => sortRows(filterByKind(filterRows(current, query), filter, refFriday, today, rankOf), sortKey, dir, window, metric, refFriday, rankOf),
+    [current, query, filter, today, sortKey, dir, window, metric, refFriday, rankOf],
   );
   const sortedRemoved = useMemo(
-    () => sortRows(filterRows(removed, query), sortKey, dir, window, metric, refFriday, rankOf),
-    [removed, query, sortKey, dir, window, metric, refFriday, rankOf],
+    () => sortRows(filterByKind(filterRows(removed, query), filter, refFriday, today, rankOf), sortKey, dir, window, metric, refFriday, rankOf),
+    [removed, query, filter, today, sortKey, dir, window, metric, refFriday, rankOf],
   );
 
   const top = summary.topGainer;
@@ -680,6 +739,23 @@ export function UploadTracksClient({
             </Chip>
           ))}
         </ChipGroup>
+        <ChipGroup segmented aria-label="Filter tracks">
+          {TRACK_FILTERS.map((f) => (
+            <Chip
+              key={f}
+              segmented
+              selected={filter === f}
+              title={FILTER_TITLES[f](refFriday)}
+              onClick={() => {
+                setFilter(f);
+                syncUrl(window, metric, f);
+              }}
+            >
+              {FILTER_LABELS[f]}
+              {f !== "all" ? <span className="font-mono opacity-60">{formatInt(filterCounts[f])}</span> : null}
+            </Chip>
+          ))}
+        </ChipGroup>
         <div className="sb-ring flex h-9 min-w-0 items-center gap-2 rounded-lg bg-white/60 px-3 sm:w-[300px] dark:bg-white/10">
           <Search className="h-4 w-4 shrink-0" style={{ color: "var(--sb-muted)" }} aria-hidden />
           <input
@@ -715,8 +791,15 @@ export function UploadTracksClient({
             <h2 className="text-sm font-semibold">
               Upload candidates <span className="font-mono opacity-70">{formatInt(allCandidates.length)}</span>
             </h2>
-            <p className="text-xs" style={{ color: "var(--sb-muted)" }}>
-              Beatport chart tracks not in the playlist.
+            <p className="flex flex-wrap items-center gap-x-3 text-xs" style={{ color: "var(--sb-muted)" }}>
+              <span>Beatport chart tracks not in the playlist.</span>
+              {charts.map((ch) =>
+                ch.url ? (
+                  <a key={ch.chartKey} href={ch.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:underline">
+                    {ch.name} <ExternalLink className="h-3 w-3" aria-hidden />
+                  </a>
+                ) : null,
+              )}
             </p>
           </div>
           <CandidatesTable candidates={filteredCandidates} window={window} metric={metric} refFriday={refFriday} />

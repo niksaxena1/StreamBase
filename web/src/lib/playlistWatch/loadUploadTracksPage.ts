@@ -33,6 +33,8 @@ export async function loadUploadTracksPage(): Promise<{
   chartPositions: ChartPositionRow[];
   /** Chart tracks not in the playlist (empty when the chart RPCs fail). */
   candidates: ChartCandidate[];
+  /** Active charts with their public URL, for "open on Beatport" links. */
+  charts: { chartKey: string; name: string; url: string | null }[];
 }> {
   const sb = await supabaseServer();
   const { data: userData } = await sb.auth.getUser();
@@ -57,7 +59,22 @@ export async function loadUploadTracksPage(): Promise<{
     }
   };
 
-  const [metaResult, rowsResult, chartPositionsRaw, candidatesRaw] = await Promise.all([
+  const chartsList = async (): Promise<{ chartKey: string; name: string; url: string | null }[]> => {
+    try {
+      const res = await supabaseService().schema("charts").from("charts").select("chart_key,display_name,url").eq("is_active", true);
+      if (res.error) throw new Error(res.error.message);
+      return (res.data ?? []).map((c: { chart_key: string; display_name: string | null; url: string | null }) => ({
+        chartKey: c.chart_key,
+        name: c.display_name ?? c.chart_key,
+        url: c.url,
+      }));
+    } catch (err) {
+      console.error("[upload-tracks] charts list failed:", err);
+      return [];
+    }
+  };
+
+  const [metaResult, rowsResult, chartPositionsRaw, candidatesRaw, charts] = await Promise.all([
     pw
       .from("track_watch_playlists")
       .select(
@@ -68,6 +85,7 @@ export async function loadUploadTracksPage(): Promise<{
     pw.rpc("track_watch_rows", { p_slug: UPLOAD_SLUG }),
     chartRpc("track_watch_chart_positions"),
     chartRpc("track_watch_chart_candidates"),
+    chartsList(),
   ]);
   if (metaResult.error) throw new Error(metaResult.error.message);
   if (rowsResult.error) throw new Error(rowsResult.error.message);
@@ -106,5 +124,6 @@ export async function loadUploadTracksPage(): Promise<{
     latestSnapshotDate,
     chartPositions: normalizeChartPositions(chartPositionsRaw),
     candidates: normalizeCandidates(candidatesRaw),
+    charts,
   };
 }
