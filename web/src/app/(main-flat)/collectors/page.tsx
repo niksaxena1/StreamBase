@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 
 import { formatDateISO } from "@/lib/format";
 import { CACHE_TTL_1H } from "@/lib/constants";
+import { fetchAllPages } from "@/lib/library/paging";
 import { RememberParamRedirect } from "@/components/dashboard/RememberParamRedirect";
 import { cachedQueries, cachedQuery } from "@/lib/supabase/cache";
 import { DateRangePicker } from "@/components/ui/DateRangePicker";
@@ -282,15 +283,22 @@ export default async function CollectorsPage({
       },
 
       // Fetch all collectors data for comparison chart (date-range filtered for daily view)
-      allCollectorsSeries: async () =>
-        await svc
-          .from(collectorAggTable)
-          .select(
-            "collector,date,track_count,daily_streams_net,est_revenue_daily_net",
-          )
-          .gte("date", comparisonRangeStart!)
-          .lte("date", rangeEnd!)
-          .order("date", { ascending: true }),
+      // Paged: all collectors x a long range can exceed PostgREST's 1,000-row cap.
+      allCollectorsSeries: async () => ({
+        data: await fetchAllPages((from, to) =>
+          svc
+            .from(collectorAggTable)
+            .select(
+              "collector,date,track_count,daily_streams_net,est_revenue_daily_net",
+            )
+            .gte("date", comparisonRangeStart!)
+            .lte("date", rangeEnd!)
+            .order("date", { ascending: true })
+            .order("collector", { ascending: true })
+            .range(from, to),
+        ),
+        error: null,
+      }),
 
       overlapTracks: async () =>
         await svc.rpc("collector_overlap_matrix", {
@@ -309,16 +317,24 @@ export default async function CollectorsPage({
       allCollectorsAllTime: async () => {
         // Fetch daily data bounded by the date range (used when granularity === "daily").
         // For non-daily granularities, the client will call the bucketed RPC on demand.
-        let q = svc
-          .from(collectorAggTable)
-          .select(
-            "collector,date,track_count,daily_streams_net,est_revenue_daily_net",
-          );
-        if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
         // Bound to last 365 days instead of all-time to cap payload size.
         const allTimeStart = latestRunDate ? addDaysIso(latestRunDate, -365) : null;
-        if (allTimeStart) q = q.gte("date", allTimeStart);
-        return await q.order("date", { ascending: true });
+        // Paged: 365 days x all collectors exceeds PostgREST's 1,000-row cap, which
+        // silently dropped the newest months from the monthly chart.
+        const data = await fetchAllPages((from, to) => {
+          let q = svc
+            .from(collectorAggTable)
+            .select(
+              "collector,date,track_count,daily_streams_net,est_revenue_daily_net",
+            );
+          if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
+          if (allTimeStart) q = q.gte("date", allTimeStart);
+          return q
+            .order("date", { ascending: true })
+            .order("collector", { ascending: true })
+            .range(from, to);
+        });
+        return { data, error: null };
       },
 
     },
