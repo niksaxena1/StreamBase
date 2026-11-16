@@ -22,6 +22,7 @@ import { normalizeDatasetMode } from "@/lib/datasetMode";
 import { addDaysISO, dataDateFromRunDate, runDateFromDataDate } from "@/lib/sotDates";
 import { capRunDate, getRollbackDate, rollbackDataDateToRunDate } from "@/lib/rollback";
 import { cachedQueries } from "@/lib/supabase/cache";
+import { fetchAllPages } from "@/lib/library/paging";
 import { isMissingPostgresFunctionError } from "@/lib/supabase/rpcErrors";
 import {
   buildOwnCatalogComparisonRow,
@@ -205,10 +206,16 @@ export async function loadCompetitorsPageCore(user: User): Promise<CompetitorsPa
               .in("playlist_key", playlistKeys)
           : { data: [] as AnchoredStatRow[], error: null },
       labelSeries: async () => {
-        const rpc = await comp.rpc("label_daily_series", {
-          p_start_date: seriesStartRun,
-          p_end_date: latestRunDate,
-        });
+        let rpc;
+        try {
+          const rows = await fetchAllPages((from, to) => comp.rpc("label_daily_series", {
+            p_start_date: seriesStartRun,
+            p_end_date: latestRunDate,
+          }).order("date", { ascending: true }).order("label_key", { ascending: true }).range(from, to));
+          rpc = { data: rows, error: null };
+        } catch (error) {
+          rpc = { data: null, error: error as any };
+        }
         if (!rpc.error) return rpc;
         if (!isMissingPostgresFunctionError(rpc.error) || playlistKeys.length === 0) return rpc;
         return await comp

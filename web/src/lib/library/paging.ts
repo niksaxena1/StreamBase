@@ -51,3 +51,22 @@ export async function fetchAllPages<T>(
   }
   return rows;
 }
+
+/**
+ * Like `fetchAllPages`, but stops after `maxRows` rows: the last page's range is
+ * clipped so no more than `maxRows` rows are requested in total. Use it in place of
+ * `.limit(n)` when `n` can exceed the 1,000-row cap. `fetchPage` must build a fresh
+ * query on every call (supabase-js builders are not safe to re-run).
+ */
+export async function fetchPagesUpTo<T>(
+  maxRows: number,
+  fetchPage: (from: number, to: number) => PromiseLike<PageResult<T>>,
+  pageSize: number = POSTGREST_PAGE_SIZE,
+): Promise<T[]> {
+  if (maxRows <= 0) return [];
+  return fetchAllPages<T>(
+    (from, to) =>
+      from >= maxRows ? Promise.resolve({ data: [], error: null }) : fetchPage(from, Math.min(to, maxRows - 1)),
+    pageSize,
+  );
+}

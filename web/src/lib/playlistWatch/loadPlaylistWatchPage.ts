@@ -16,6 +16,7 @@ import { deltaSince } from "@/lib/playlistWatch/deltas";
 import { favoriteIdsFromMarks, withFavorites, type FavoriteMarkRow } from "@/lib/playlistWatch/favorites";
 import { buildFollowerHistory } from "@/lib/playlistWatch/history";
 import { cachedQuery } from "@/lib/supabase/cache";
+import { fetchAllPages } from "@/lib/library/paging";
 import { playlistWatchCacheKey } from "@/lib/playlistWatch/cache";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
@@ -147,11 +148,15 @@ export async function loadPlaylistWatchPage(includeArchived: boolean): Promise<{
 
       const [{ data: snapshotsRaw }, { data: latestRun }] = await Promise.all([
         playlistIds.length
-          ? pw
+          ? fetchAllPages((from, to) => pw
               .from("follower_snapshots")
               .select("date,spotify_playlist_id,follower_count")
               .in("spotify_playlist_id", playlistIds)
               .gte("date", since)
+              .order("date", { ascending: true })
+              .order("spotify_playlist_id", { ascending: true })
+              .range(from, to))
+              .then((rows) => ({ data: rows, error: null }))
           : Promise.resolve({ data: [] as SnapshotRow[], error: null }),
         pw
           .from("ingestion_runs")

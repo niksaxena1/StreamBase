@@ -15,6 +15,7 @@ import { CACHE_TTL_1H, HOME_SCATTER_HARD_CAP } from "@/lib/constants";
 import { getRollbackDate, rollbackDataDateToRunDate } from "@/lib/rollback";
 import { SOT_DATA_LAG_DAYS, addDaysISO, dataDateFromRunDate } from "@/lib/sotDates";
 import { cachedQuery } from "@/lib/supabase/cache";
+import { fetchPagesUpTo } from "@/lib/library/paging";
 import { createPageScheduler, fetchOrderedPages, type PageScheduler } from "@/lib/supabase/orderedPages";
 import { supabaseService } from "@/lib/supabase/service";
 import { normalizeDatasetMode } from "@/lib/datasetMode";
@@ -921,14 +922,24 @@ async function loadHomeDashboardDataImpl(args: HomeDashboardLoadArgs): Promise<H
           .filter(Boolean);
         if (!playlistKeys.length) return { data: [], error: null };
 
-        let q = comp
-          .from("playlist_daily_stats")
-          .select("date,playlist_key,track_count,total_streams_cumulative,daily_streams_net,missing_streams_track_count")
-          .in("playlist_key", playlistKeys);
-        if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
+        const buildQ = () => {
+          let q = comp
+            .from("playlist_daily_stats")
+            .select("date,playlist_key,track_count,total_streams_cumulative,daily_streams_net,missing_streams_track_count")
+            .in("playlist_key", playlistKeys);
+          if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
+          return q;
+        };
         // Diagnostics only needs the latest run date, not the full history window.
         const rowLimit = diagnosticsOnly ? playlistKeys.length : (rangeDays + 7) * playlistKeys.length;
-        const res = await q.order("date", { ascending: false }).limit(rowLimit);
+        let res;
+        try {
+          const rows = await fetchPagesUpTo(rowLimit, (from, to) => buildQ().order("date", { ascending: false })
+            .order("playlist_key", { ascending: true }).range(from, to));
+          res = { data: rows, error: null };
+        } catch (error) {
+          res = { data: null, error: error as any };
+        }
         return {
           data: aggregateCompetitorPlaylistHistory((res.data ?? []) as any).map((row) => ({
             ...row,
@@ -939,12 +950,21 @@ async function loadHomeDashboardDataImpl(args: HomeDashboardLoadArgs): Promise<H
         };
       }
 
-      let q = svc
-        .from("playlist_daily_stats")
-        .select("date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net")
-        .eq("playlist_key", playlistKey);
-      if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
-      return await q.order("date", { ascending: false }).limit(diagnosticsOnly ? 1 : rangeDays + 7);
+      const buildQ = () => {
+        let q = svc
+          .from("playlist_daily_stats")
+          .select("date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net")
+          .eq("playlist_key", playlistKey);
+        if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
+        return q;
+      };
+      const rowLimit = diagnosticsOnly ? 1 : rangeDays + 7;
+      try {
+        const rows = await fetchPagesUpTo(rowLimit, (from, to) => buildQ().order("date", { ascending: false }).range(from, to));
+        return { data: rows, error: null };
+      } catch (error) {
+        return { data: null, error: error as any };
+      }
     },
     `home-playlist-stats-v5-${datasetMode}-${competitorLabelKey ?? "none"}-${playlistKey}-${diagnosticsOnly ? "diag" : rangeDays + 7}-ov${overrideBuster}-rb${rollbackDate ?? "live"}`,
     CACHE_TTL_1H,
@@ -972,11 +992,19 @@ async function loadHomeDashboardDataImpl(args: HomeDashboardLoadArgs): Promise<H
   if (legacyHistoryEnabled) {
     const legacyResult = await cachedQuery<PlaylistDailyStatsRow[]>(
       async () => {
-        let q = svc
-          .from("legacy_catalog_daily_stats")
-          .select("date,track_count,total_streams_cumulative,daily_streams_net");
-        if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
-        return await q.order("date", { ascending: false }).limit(rangeDays + 7);
+        const buildQ = () => {
+          let q = svc
+            .from("legacy_catalog_daily_stats")
+            .select("date,track_count,total_streams_cumulative,daily_streams_net");
+          if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
+          return q;
+        };
+        try {
+          const rows = await fetchPagesUpTo(rangeDays + 7, (from, to) => buildQ().order("date", { ascending: false }).range(from, to));
+          return { data: rows, error: null };
+        } catch (error) {
+          return { data: null, error: error as any };
+        }
       },
       `home-legacy-catalog-history-v1-${rangeDays + 7}-rb${rollbackDate ?? "live"}`,
       CACHE_TTL_1H,
@@ -1018,12 +1046,23 @@ async function loadHomeDashboardDataImpl(args: HomeDashboardLoadArgs): Promise<H
                 const rows = (entityPlaylists ?? []) as Array<{ playlist_key: string; display_name: string | null }>;
                 if (!rows.length) return { data: [] as EntityHistoryRow[], error: null };
                 const nameByKey = new Map(rows.map((p) => [p.playlist_key, (p.display_name ?? p.playlist_key).trim()]));
-                let q = svc
-                  .from("playlist_daily_stats")
-                  .select("date,playlist_key,daily_streams_net,total_streams_cumulative")
-                  .in("playlist_key", rows.map((p) => p.playlist_key));
-                if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
-                const res = await q.order("date", { ascending: false }).limit((rangeDays + 7) * rows.length);
+                const buildQ = () => {
+                  let q = svc
+                    .from("playlist_daily_stats")
+                    .select("date,playlist_key,daily_streams_net,total_streams_cumulative")
+                    .in("playlist_key", rows.map((p) => p.playlist_key));
+                  if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
+                  return q;
+                };
+                let res;
+                const rowLimit = (rangeDays + 7) * rows.length;
+                try {
+                  const allRows = await fetchPagesUpTo(rowLimit, (from, to) => buildQ().order("date", { ascending: false })
+                    .order("playlist_key", { ascending: true }).range(from, to));
+                  res = { data: allRows, error: null };
+                } catch (error) {
+                  res = { data: null, error: error as any };
+                }
                 return {
                   data: ((res.data ?? []) as Array<{ date: string; playlist_key: string; daily_streams_net: number | null; total_streams_cumulative: number | null }>).map((r) => ({
                     date: r.date,

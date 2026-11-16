@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { isAllCompetitorsKey } from "@/lib/competitorContext";
 import { chunk } from "@/lib/competitorLabelScope";
+import { fetchAllPages } from "@/lib/library/paging";
 
 type CompetitorDb = Pick<SupabaseClient, "from">;
 
@@ -40,15 +41,18 @@ export async function loadCompetitorLabelScope(
     return { scopedIsrcs: new Set(), playlistKeys };
   }
 
-  const { data: memberships } = await client
+  const memberships = await fetchAllPages((from, to) => client
     .from("playlist_memberships")
-    .select("isrc")
+    .select("isrc,playlist_key")
     .in("playlist_key", [...playlistKeys])
     .lte("valid_from", args.latestRunDate)
-    .or(`valid_to.is.null,valid_to.gte.${args.latestRunDate}`);
+    .or(`valid_to.is.null,valid_to.gte.${args.latestRunDate}`)
+    .order("playlist_key", { ascending: true })
+    .order("isrc", { ascending: true })
+    .range(from, to));
 
   const scopedIsrcs = new Set(
-    ((memberships ?? []) as Array<{ isrc: string }>).map((r) => r.isrc).filter(Boolean),
+    (memberships as Array<{ isrc: string }>).map((r) => r.isrc).filter(Boolean),
   );
   return { scopedIsrcs, playlistKeys };
 }

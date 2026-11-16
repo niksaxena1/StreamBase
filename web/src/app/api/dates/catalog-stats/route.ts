@@ -3,6 +3,7 @@ import { type NextRequest } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { apiJsonErr, apiJsonOk, requireAdmin } from "@/lib/api/server";
+import { fetchAllPages } from "@/lib/library/paging";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,17 +17,21 @@ export async function GET(req: NextRequest) {
 
   const svc = supabaseService();
 
-  const { data, error } = await svc
-    .from("playlist_daily_stats")
-    .select(
-      "date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_daily_net,missing_streams_track_count",
-    )
-    .eq("playlist_key", playlistKey)
-    .order("date", { ascending: true })
-    .limit(1100);
+  let data;
+  let error;
+  try {
+    data = await fetchAllPages((from, to) => svc
+      .from("playlist_daily_stats")
+      .select("date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_daily_net,missing_streams_track_count")
+      .eq("playlist_key", playlistKey)
+      .order("date", { ascending: true })
+      .range(from, to));
+  } catch (err) {
+    error = err as { message?: string };
+  }
 
   if (error) {
-    return apiJsonErr(error.message, 500);
+    return apiJsonErr(error.message ?? "Failed to load catalog stats", 500);
   }
 
   const raw = (data ?? []) as Array<{

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { fetchAllByKeyset, fetchAllPages, type PageResult } from "./paging";
+import { fetchAllByKeyset, fetchAllPages, fetchPagesUpTo, type PageResult } from "./paging";
 
 /** A sorted table of IDs that tests can change between page reads. */
 function table(ids: string[]) {
@@ -146,5 +146,32 @@ describe("fetchAllPages", () => {
       [10, 19],
       [20, 29],
     ]);
+  });
+});
+
+describe("fetchPagesUpTo", () => {
+  const rows = Array.from({ length: 2500 }, (_, i) => i);
+  const page = (calls: Array<[number, number]>) => async (from: number, to: number) => {
+    calls.push([from, to]);
+    return { data: rows.slice(from, to + 1), error: null };
+  };
+
+  it("stops at maxRows, clipping the last page range", async () => {
+    const calls: Array<[number, number]> = [];
+    const out = await fetchPagesUpTo(1200, page(calls), 1000);
+    expect(out).toHaveLength(1200);
+    expect(out[1199]).toBe(1199);
+    expect(calls).toEqual([[0, 999], [1000, 1199]]);
+  });
+
+  it("returns everything when fewer rows than maxRows exist", async () => {
+    const out = await fetchPagesUpTo(5000, page([]), 1000);
+    expect(out).toHaveLength(2500);
+  });
+
+  it("returns nothing for maxRows <= 0 without querying", async () => {
+    const calls: Array<[number, number]> = [];
+    expect(await fetchPagesUpTo(0, page(calls))).toEqual([]);
+    expect(calls).toEqual([]);
   });
 });

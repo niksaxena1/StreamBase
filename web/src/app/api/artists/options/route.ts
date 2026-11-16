@@ -2,6 +2,7 @@ import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { apiJsonErr, apiJsonOk, requireAdmin } from "@/lib/api/server";
 import { isSchemaMissing } from "@/lib/supabase/schemaMissing";
+import { fetchAllPages } from "@/lib/library/paging";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,12 +14,18 @@ export async function GET() {
 
   const svc = supabaseService();
   const [{ data, error }, inHouseResult] = await Promise.all([
-    svc
+    fetchAllPages((from, to) => svc
       .from("spotify_artist_images")
       .select("artist_id,name,image_url")
       .order("name", { ascending: true })
-      .limit(5000),
-    svc.from("artist_in_house_tags").select("artist_id,artist_name"),
+      .order("artist_id", { ascending: true })
+      .range(from, to))
+      .then((rows) => ({ data: rows, error: null }))
+      .catch((err: unknown) => ({ data: null, error: err as any })),
+    fetchAllPages((from, to) => svc.from("artist_in_house_tags").select("artist_id,artist_name")
+      .order("artist_id", { ascending: true }).range(from, to))
+      .then((rows) => ({ data: rows, error: null }))
+      .catch((err: unknown) => ({ data: null, error: err as any })),
   ]);
 
   if (error) {

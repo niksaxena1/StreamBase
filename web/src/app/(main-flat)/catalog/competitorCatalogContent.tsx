@@ -12,6 +12,8 @@ import { logError } from "@/lib/logger";
 import { ALL_COMPETITORS_KEY, resolveCompetitorLabelKey } from "@/lib/competitorContext";
 import type { RequestAppContext } from "@/lib/requestAppContext.server";
 import { resolveCatalogTrackSelection } from "@/lib/catalogSelection";
+import { fetchAllPages } from "@/lib/library/paging";
+import { chunk } from "@/lib/competitorLabelScope";
 
 import { CatalogPageClient } from "./CatalogPageClient";
 import { CatalogArtistUnavailable, CatalogTrackUnavailable } from "./CatalogUnavailable";
@@ -124,12 +126,16 @@ export async function renderCompetitorCatalogContent({
         new Set(((recentPlaylistDates ?? []) as PlaylistDailyStatsRow[]).map((row) => row.date)).size <= 1;
       const { data: activeMemberships } =
         latestRunDate && competitorPlaylistKeys.length
-          ? await comp
+          ? await fetchAllPages((from, to) => comp
               .from("playlist_memberships")
               .select("isrc,playlist_key,valid_from")
               .in("playlist_key", competitorPlaylistKeys)
               .lte("valid_from", latestRunDate)
               .or(`valid_to.is.null,valid_to.gte.${latestRunDate}`)
+              .order("playlist_key", { ascending: true })
+              .order("isrc", { ascending: true })
+              .range(from, to))
+              .then((rows) => ({ data: rows, error: null }))
           : { data: [] as CompCatalogContext["activeMemberships"] };
       const competitorIsrcs = [
         ...new Set(
@@ -137,13 +143,17 @@ export async function renderCompetitorCatalogContent({
         ),
       ];
       const { data: recentTracks } = competitorIsrcs.length
-        ? await comp
+        ? { data: await (async () => {
+            const results = await Promise.all(chunk(competitorIsrcs, 200).map((isrcChunk) => comp
             .from("tracks")
-            .select("isrc,name,spotify_artist_ids,spotify_artist_names,spotify_album_image_url,spotify_not_found_since,release_date")
-            .in("isrc", competitorIsrcs)
-            .not("spotify_artist_ids", "is", null)
-            .order("last_seen", { ascending: false })
-            .limit(5000)
+            .select("isrc,name,spotify_artist_ids,spotify_artist_names,spotify_album_image_url,spotify_not_found_since,release_date,last_seen")
+            .in("isrc", isrcChunk)
+            .not("spotify_artist_ids", "is", null)));
+            const failed = results.find((result) => result.error);
+            if (failed?.error) throw failed.error;
+            return results.flatMap((result) => result.data ?? [])
+              .sort((a, b) => String((b as { last_seen?: string }).last_seen ?? "").localeCompare(String((a as { last_seen?: string }).last_seen ?? "")));
+          })() }
         : { data: [] as TrackRow[] };
       return {
         data: {
