@@ -1554,6 +1554,12 @@ def main():
             print(f"  WARN Artificial stream spike check failed: {spike_err}")
 
         pg.upsert("playlist_daily_stats", stats_rows, on_conflict="date,playlist_key")
+        # The SQL recompute is the canonical writer and also fills daily_streams_organic
+        # (growth of tracks in the playlist on both days; ignores membership moves).
+        try:
+            pg.rpc("spotibase_recompute_playlist_daily_stats", {"p_date": run_date.isoformat()})
+        except Exception as recompute_err:
+            print(f"  WARN playlist_daily_stats recompute (organic) failed: {recompute_err}")
         if warn_rows:
             pg.insert("ingestion_warnings", warn_rows)
 

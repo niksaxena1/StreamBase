@@ -17,6 +17,7 @@ import type {
   DrillArtistItem,
   DrillTrackItem,
   Metric,
+  StreamsBasis,
   TrackSort,
 } from "./collectorsTypes";
 
@@ -214,10 +215,34 @@ export function aggregateByGranularity(
   return result;
 }
 
+/**
+ * Substitute organic values into the net-named fields of a collector/playlist row.
+ * Net is the identity. Null vs number is preserved (missing organic columns stay undefined/null as-is).
+ */
+const ORGANIC_FIELD_MAP: Array<[net: string, organic: string]> = [
+  ["daily_streams_net", "daily_streams_organic"],
+  ["est_revenue_daily_net", "est_revenue_daily_organic"],
+  ["daily_streams_delta_yday", "daily_streams_organic_delta_yday"],
+  ["daily_streams_delta_ma7", "daily_streams_organic_delta_ma7"],
+  ["est_revenue_daily_delta_yday", "est_revenue_daily_organic_delta_yday"],
+  ["est_revenue_daily_delta_ma7", "est_revenue_daily_organic_delta_ma7"],
+];
+
+export function applyStreamsBasis<T extends Record<string, unknown>>(row: T, basis: StreamsBasis): T {
+  if (basis !== "organic") return row;
+  const out: Record<string, unknown> = { ...row };
+  for (const [net, organic] of ORGANIC_FIELD_MAP) {
+    // Only substitute fields the row actually selected; organic missing -> null.
+    if (net in row || organic in row) out[net] = row[organic] ?? null;
+  }
+  return out as T;
+}
+
 export function aggregateMonthlyDelta(
   seriesDesc: CollectorSeriesPoint[],
   metric: "revenue" | "streams" | "tracks",
   payoutPerStreamUsd: number,
+  streamsBasis: StreamsBasis = "net",
 ): Array<{
   month: string;
   value: number;
@@ -237,7 +262,13 @@ export function aggregateMonthlyDelta(
       ? Number(point.track_count ?? 0)
       : Number(point.total_streams_cumulative ?? 0),
   }));
-  const dailyDeltas = dailyFromCumulativeAsc(cumulative);
+  const dailyDeltas =
+    streamsBasis === "organic" && metric !== "tracks"
+      ? asc.map((point) => ({
+          date: point.date,
+          daily: point.daily_streams_net == null ? null : Number(point.daily_streams_net),
+        }))
+      : dailyFromCumulativeAsc(cumulative);
   const partialMonths = new Set<string>();
 
   for (let i = 0; i < asc.length; i++) {
@@ -379,7 +410,11 @@ export function buildCollectorSparklines(
 }
 
 /** Selected-collector revenue / streams / tracks series (cumulative + daily, with MA7), newest first. */
-export function buildCollectorMetricSeries(seriesDesc: CollectorSeriesPoint[], streamPayoutPerStreamUsd: number) {
+export function buildCollectorMetricSeries(
+  seriesDesc: CollectorSeriesPoint[],
+  streamPayoutPerStreamUsd: number,
+  streamsBasis: StreamsBasis = "net",
+) {
   const datesDesc = seriesDesc.map((p) => p.date);
 
   const revenueTotalDesc = datesDesc.map((d, i) => ({
@@ -390,7 +425,13 @@ export function buildCollectorMetricSeries(seriesDesc: CollectorSeriesPoint[], s
     date: point.date,
     value: Number(point.total_streams_cumulative ?? 0),
   }));
-  const streamDeltasDesc = dailyFromCumulativeAsc(cumulativeAsc).reverse();
+  const streamDeltasDesc =
+    streamsBasis === "organic"
+      ? seriesDesc.map((point) => ({
+          date: point.date,
+          daily: point.daily_streams_net == null ? null : Number(point.daily_streams_net),
+        }))
+      : dailyFromCumulativeAsc(cumulativeAsc).reverse();
   const revenueDailyDesc = streamDeltasDesc.map(({ date, daily }) => ({
     date,
     daily: daily == null ? null : Math.max(0, daily) * streamPayoutPerStreamUsd,

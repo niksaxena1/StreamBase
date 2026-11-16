@@ -30,6 +30,8 @@ export async function POST(req: NextRequest) {
     return apiJsonErr("missing collectors", 400);
   }
 
+  const organic = body.basis === "organic";
+
   const svc = supabaseService();
   const { data: collectorSettings } = await svc
     .from("user_settings")
@@ -48,7 +50,7 @@ export async function POST(req: NextRequest) {
 
   const { data: aggRows, error: aggError } = await svc
     .from(collectorAggTable)
-    .select("collector,date,daily_streams_net")
+    .select("collector,date,daily_streams_net,daily_streams_organic")
     .in("collector", collectors)
     .gte("date", runDateStart)
     .lte("date", runDate)
@@ -125,7 +127,10 @@ export async function POST(req: NextRequest) {
       const byDataDate = new Map<string, number>();
       for (const row of rows) {
         const dataDateKey = dataDateFromRunDate(String(row.date ?? "").slice(0, 10));
-        byDataDate.set(dataDateKey, Number(row.daily_streams_net ?? 0));
+        byDataDate.set(
+          dataDateKey,
+          Number((organic ? row.daily_streams_organic : row.daily_streams_net) ?? 0),
+        );
       }
 
       const dailyStreams = byDataDate.get(dataDate) ?? 0;

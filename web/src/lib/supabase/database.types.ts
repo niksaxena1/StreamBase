@@ -592,8 +592,10 @@ export type Database = {
         Row: {
           created_at: string
           daily_streams_net: number | null
+          daily_streams_organic: number | null
           date: string
           est_revenue_daily_net: number | null
+          est_revenue_daily_organic: number | null
           est_revenue_total: number | null
           missing_streams_track_count: number
           playlist_key: string
@@ -604,8 +606,10 @@ export type Database = {
         Insert: {
           created_at?: string
           daily_streams_net?: number | null
+          daily_streams_organic?: number | null
           date: string
           est_revenue_daily_net?: number | null
+          est_revenue_daily_organic?: number | null
           est_revenue_total?: number | null
           missing_streams_track_count?: number
           playlist_key: string
@@ -616,8 +620,10 @@ export type Database = {
         Update: {
           created_at?: string
           daily_streams_net?: number | null
+          daily_streams_organic?: number | null
           date?: string
           est_revenue_daily_net?: number | null
+          est_revenue_daily_organic?: number | null
           est_revenue_total?: number | null
           missing_streams_track_count?: number
           playlist_key?: string
@@ -2295,8 +2301,10 @@ export type Database = {
         Row: {
           collector: string | null
           daily_streams_net: number | null
+          daily_streams_organic: number | null
           date: string | null
           est_revenue_daily_net: number | null
+          est_revenue_daily_organic: number | null
           est_revenue_total: number | null
           missing_streams_track_count: number | null
           total_streams_cumulative: number | null
@@ -2308,8 +2316,10 @@ export type Database = {
         Row: {
           collector: string | null
           daily_streams_net: number | null
+          daily_streams_organic: number | null
           date: string | null
           est_revenue_daily_net: number | null
+          est_revenue_daily_organic: number | null
           est_revenue_total: number | null
           missing_streams_track_count: number | null
           total_streams_cumulative: number | null
@@ -2349,6 +2359,14 @@ export type Database = {
           track_count_delta_ma7: number | null
           track_count_delta_yday: number | null
           track_count_ma7_prev: number | null
+          daily_streams_organic: number | null
+          daily_streams_organic_delta_ma7: number | null
+          daily_streams_organic_delta_yday: number | null
+          daily_streams_organic_ma7_prev: number | null
+          est_revenue_daily_organic: number | null
+          est_revenue_daily_organic_delta_ma7: number | null
+          est_revenue_daily_organic_delta_yday: number | null
+          est_revenue_daily_organic_ma7_prev: number | null
         }
         Relationships: []
       }
@@ -2371,6 +2389,14 @@ export type Database = {
           track_count_delta_ma7: number | null
           track_count_delta_yday: number | null
           track_count_ma7_prev: number | null
+          daily_streams_organic: number | null
+          daily_streams_organic_delta_ma7: number | null
+          daily_streams_organic_delta_yday: number | null
+          daily_streams_organic_ma7_prev: number | null
+          est_revenue_daily_organic: number | null
+          est_revenue_daily_organic_delta_ma7: number | null
+          est_revenue_daily_organic_delta_yday: number | null
+          est_revenue_daily_organic_ma7_prev: number | null
         }
         Relationships: []
       }

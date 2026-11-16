@@ -2,6 +2,11 @@ import type { Granularity } from "@/components/ui/GranularitySelect";
 
 export type Metric = "streams" | "revenue" | "tracks";
 
+/** Daily-streams basis: net (today minus yesterday) or organic (tracks present both days only). */
+export type StreamsBasis = "net" | "organic";
+
+export const STREAMS_BASIS_STORAGE_KEY = "sb:collectors:streams_basis";
+
 export const COLLECTOR_ORDER = ["A", "K", "N", "PL", "TG", "NL"] as const;
 
 export const GRANULARITIES: readonly Granularity[] = [

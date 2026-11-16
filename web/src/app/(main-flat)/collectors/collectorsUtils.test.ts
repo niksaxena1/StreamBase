@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   aggregateMonthlyDelta,
+  applyStreamsBasis,
   buildCollectorMetricSeries,
   getEffectiveCollectorPlaylists,
   type CollectorPlaylistScopeRow,
@@ -114,5 +115,72 @@ describe("gap-aware collector deltas", () => {
     const tracks = aggregateMonthlyDelta(points, "tracks", 1);
     expect(tracks.find((point) => point.month === "2026-01")).toMatchObject({ month: "2026-01", value: 0, partial: true });
     expect(tracks.find((point) => point.month === "2026-02")?.value).toBe(2);
+  });
+});
+
+describe("streams basis (net / organic)", () => {
+  test("applyStreamsBasis net is identity and organic substitutes with nulls preserved", () => {
+    const row = {
+      collector: "A",
+      daily_streams_net: 30_000_000,
+      est_revenue_daily_net: 100,
+      daily_streams_delta_yday: 29_000_000,
+      daily_streams_delta_ma7: null,
+      est_revenue_daily_delta_yday: 5,
+      est_revenue_daily_delta_ma7: 6,
+      daily_streams_organic: 500_000,
+      est_revenue_daily_organic: 2,
+      daily_streams_organic_delta_yday: 10,
+      daily_streams_organic_delta_ma7: null,
+      est_revenue_daily_organic_delta_yday: null,
+      est_revenue_daily_organic_delta_ma7: 0.5,
+    };
+    expect(applyStreamsBasis(row, "net")).toBe(row);
+    const out = applyStreamsBasis(row, "organic");
+    expect(out.collector).toBe("A");
+    expect(out.daily_streams_net).toBe(500_000);
+    expect(out.est_revenue_daily_net).toBe(2);
+    expect(out.daily_streams_delta_yday).toBe(10);
+    expect(out.daily_streams_delta_ma7).toBeNull();
+    expect(out.est_revenue_daily_delta_yday).toBeNull();
+    expect(out.est_revenue_daily_delta_ma7).toBe(0.5);
+    // Original is not mutated.
+    expect(row.daily_streams_net).toBe(30_000_000);
+  });
+
+  // Newest first. Cumulative jumps 30M on 2026-10-03 (a track moved in); organic daily is 500k.
+  const jump: CollectorSeriesPoint[] = [
+    seriesPoint("2026-10-03", 130_000_000, 12, { daily_streams_net: 500_000 }),
+    seriesPoint("2026-10-02", 100_000_000, 11, { daily_streams_net: 400_000 }),
+    seriesPoint("2026-10-01", 99_000_000, 10, { daily_streams_net: 300_000 }),
+  ];
+
+  test("aggregateMonthlyDelta: net unchanged, organic ignores the 30M jump", () => {
+    const net = aggregateMonthlyDelta(jump, "streams", 0.004);
+    expect(net[0].value).toBe(1_000_000 + 30_000_000);
+    expect(aggregateMonthlyDelta(jump, "streams", 0.004, "net")).toEqual(net);
+
+    const organic = aggregateMonthlyDelta(jump, "streams", 0.004, "organic");
+    expect(organic[0].value).toBe(1_200_000);
+    const organicRev = aggregateMonthlyDelta(jump, "revenue", 0.004, "organic");
+    expect(organicRev[0].value).toBeCloseTo(1_200_000 * 0.004, 6);
+    // Tracks are unaffected by basis.
+    expect(aggregateMonthlyDelta(jump, "tracks", 0.004, "organic")).toEqual(
+      aggregateMonthlyDelta(jump, "tracks", 0.004),
+    );
+  });
+
+  test("buildCollectorMetricSeries: net unchanged, organic daily uses daily values", () => {
+    const net = buildCollectorMetricSeries(jump, 0.004);
+    expect(buildCollectorMetricSeries(jump, 0.004, "net")).toEqual(net);
+    expect(net.streams.daily.find((p) => p.date === "2026-10-03")?.daily).toBe(30_000_000);
+
+    const organic = buildCollectorMetricSeries(jump, 0.004, "organic");
+    expect(organic.streams.daily.find((p) => p.date === "2026-10-03")?.daily).toBe(500_000);
+    expect(organic.streams.daily.find((p) => p.date === "2026-10-01")?.daily).toBe(300_000);
+    expect(organic.revenue.daily.find((p) => p.date === "2026-10-03")?.daily).toBeCloseTo(2000, 6);
+    // Cumulative series unchanged.
+    expect(organic.streams.cumulative).toEqual(net.streams.cumulative);
+    expect(organic.tracks).toEqual(net.tracks);
   });
 });

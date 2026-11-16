@@ -141,6 +141,13 @@ Collectors are **groups of playlists** (think “collection buckets”) based on
   - Change date range (30/90/365) or pick a custom date range
   - Toggle metric: Revenue / Streams / Tracks
   - Download CSVs (daily/cumulative charts + monthly aggregation)
+  - Switch daily streams between **Net** (default) and **Organic** in the header (`?basis=organic`, remembered per browser)
+
+Net vs Organic daily streams:
+
+- **Net** (`daily_streams_net`) = today's playlist total minus yesterday's. When tracks move between collectors, their whole lifetime count moves too, so the losing collector shows a huge negative day and the gaining one a huge positive day.
+- **Organic** (`daily_streams_organic`) = growth only from tracks in the playlist on both days, each with a stream count above 0 on both days. Tracks that joined, left, lack a row, or report 0 (takedowns) add nothing. On days without moves the two are equal.
+- Computed once per date by `spotibase_recompute_playlist_daily_stats` and stored (so pages never re-read old per-track history). Backfilled from 24 Jan 2026. Migrations: `20261116211348_add_playlist_daily_streams_organic.sql`, `20261116211705_organic_streams_skip_zero_rows.sql`, `20261116212000_add_organic_to_entity_collector_views.sql`.
 
 Data sources:
 

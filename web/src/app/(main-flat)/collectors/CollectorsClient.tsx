@@ -30,8 +30,10 @@ import {
   COLLECTORS_MONTHLY_ACTUAL_REVENUE_STORAGE,
   DRILL_PAGE_SIZE,
   isCollectorKey,
+  STREAMS_BASIS_STORAGE_KEY,
   type DrillKind,
   type DateBreakdownCollector,
+  type StreamsBasis,
 } from "./collectorsTypes";
 
 export type {
@@ -96,6 +98,7 @@ export function CollectorsClient(props: {
   overlapArtistCells: CollectorOverlapArtistCell[];
   selectedCollector: string;
   rangeDays: number;
+  streamsBasis: StreamsBasis;
   granularity?: Granularity;
   summary: CollectorSummaryRow[];
   seriesDesc: CollectorSeriesPoint[];
@@ -256,6 +259,9 @@ export function CollectorsClient(props: {
     params.set("collectors", comparisonCollectors.join(","));
     params.set("mode", comparisonMode);
     params.set("granularity", granularity);
+    // Re-apply a remembered Organic basis on every sync: replaces can run back to back with a stale
+    // window.location, and the header writes storage on every toggle, so storage is the source of truth.
+    if (!params.has("basis") && readStoredString(STREAMS_BASIS_STORAGE_KEY) === "organic") params.set("basis", "organic");
 
     const newUrl = `?${params.toString()}`;
     if (newUrl !== `?${new URLSearchParams(window.location.search).toString()}`) {
@@ -347,20 +353,24 @@ export function CollectorsClient(props: {
 
   const series = useMemo(
     () => trimSeriesToVisible(
-      buildCollectorMetricSeries([...props.seriesDesc, ...(props.seriesWarmupDesc ?? [])], streamPayoutPerStreamUsd),
+      buildCollectorMetricSeries(
+        [...props.seriesDesc, ...(props.seriesWarmupDesc ?? [])],
+        streamPayoutPerStreamUsd,
+        props.streamsBasis,
+      ),
       props.seriesDesc,
     ),
-    [props.seriesDesc, props.seriesWarmupDesc, streamPayoutPerStreamUsd],
+    [props.seriesDesc, props.seriesWarmupDesc, streamPayoutPerStreamUsd, props.streamsBasis],
   );
 
   const monthlyData = useMemo(() => {
     // Use seriesAllTime for monthly aggregation so it's not affected by date range selector
     return {
-      revenue: aggregateMonthlyDelta(props.seriesAllTime, "revenue", streamPayoutPerStreamUsd),
-      streams: aggregateMonthlyDelta(props.seriesAllTime, "streams", streamPayoutPerStreamUsd),
-      tracks: aggregateMonthlyDelta(props.seriesAllTime, "tracks", streamPayoutPerStreamUsd),
+      revenue: aggregateMonthlyDelta(props.seriesAllTime, "revenue", streamPayoutPerStreamUsd, props.streamsBasis),
+      streams: aggregateMonthlyDelta(props.seriesAllTime, "streams", streamPayoutPerStreamUsd, props.streamsBasis),
+      tracks: aggregateMonthlyDelta(props.seriesAllTime, "tracks", streamPayoutPerStreamUsd, props.streamsBasis),
     };
-  }, [props.seriesAllTime, streamPayoutPerStreamUsd]);
+  }, [props.seriesAllTime, streamPayoutPerStreamUsd, props.streamsBasis]);
 
   const monthlyChartDataForMetric = useMemo(() => {
     const base = monthlyData[metric];
@@ -436,7 +446,7 @@ export function CollectorsClient(props: {
           ? (n: number | null | undefined) => (n == null ? "—" : formatUsd2(n))
           : (n: number | null | undefined) => (n == null ? "—" : formatInt(n));
 
-      const href = `?collector=${encodeURIComponent(r.collector)}&range=${props.rangeDays}`;
+      const href = `?collector=${encodeURIComponent(r.collector)}&range=${props.rangeDays}${props.streamsBasis === "organic" ? "&basis=organic" : ""}`;
       const isSelectedCollector = r.collector === props.selectedCollector;
 
       return {
@@ -452,7 +462,7 @@ export function CollectorsClient(props: {
         isSelectedCollector,
       } as const;
     },
-    [comparisonTableMetric, payoutPerStreamUsd, sparkByCollector, props.rangeDays, props.selectedCollector],
+    [comparisonTableMetric, payoutPerStreamUsd, sparkByCollector, props.rangeDays, props.selectedCollector, props.streamsBasis],
   );
 
   const [trackQuery, setTrackQuery] = useState("");
@@ -521,6 +531,7 @@ export function CollectorsClient(props: {
           body: JSON.stringify({
             data_date: breakdownDate,
             collectors: comparisonCollectors,
+            basis: props.streamsBasis,
           }),
         });
         if (obj.ok !== true) {
@@ -538,7 +549,7 @@ export function CollectorsClient(props: {
 
     void load();
     return () => { cancelled = true; };
-  }, [breakdownOpen, breakdownDate, comparisonCollectors]);
+  }, [breakdownOpen, breakdownDate, comparisonCollectors, props.streamsBasis]);
 
   /* ── Drilldown modal state ───────────────────────────────────── */
 
@@ -642,6 +653,7 @@ export function CollectorsClient(props: {
             run_date: props.latestRunDate,
             offset: drillOffset,
             limit: DRILL_PAGE_SIZE,
+            basis: props.streamsBasis,
           }),
         });
         if (obj.ok !== true) {
@@ -663,7 +675,7 @@ export function CollectorsClient(props: {
     return () => {
       cancelled = true;
     };
-  }, [drillOpen, drillCollector, drillKind, drillOffset, props.latestRunDate]);
+  }, [drillOpen, drillCollector, drillKind, drillOffset, props.latestRunDate, props.streamsBasis]);
 
   const filteredSortedDrillItems = useMemo(
     () => filterSortDrillItems(drillItems, drillKind, debouncedDrillQuery, metric),

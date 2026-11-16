@@ -44,6 +44,8 @@ export async function POST(req: NextRequest) {
     return apiJsonErr("invalid run_date (expected YYYY-MM-DD)", 400);
   }
 
+  const organic = body.basis === "organic";
+
   const svc = supabaseService();
   const { data: collectorSettings } = await svc
     .from("user_settings")
@@ -87,7 +89,9 @@ export async function POST(req: NextRequest) {
     if (keys.length) {
       const { data: stats, error: statsErr } = await svc
         .from("playlist_daily_stats")
-        .select("playlist_key,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net")
+        .select(
+          "playlist_key,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net,daily_streams_organic,est_revenue_daily_organic",
+        )
         .eq("date", run_date)
         .in("playlist_key", keys);
       if (statsErr) return apiJsonErr(statsErr.message, 500);
@@ -98,9 +102,15 @@ export async function POST(req: NextRequest) {
         statsByKey.set(k, {
           track_count: Number(s?.track_count ?? 0),
           total_streams_cumulative: s?.total_streams_cumulative == null ? null : Number(s.total_streams_cumulative),
-          daily_streams_net: s?.daily_streams_net == null ? null : Number(s.daily_streams_net),
+          daily_streams_net: (() => {
+            const v = organic ? s?.daily_streams_organic : s?.daily_streams_net;
+            return v == null ? null : Number(v);
+          })(),
           est_revenue_total: s?.est_revenue_total == null ? null : Number(s.est_revenue_total),
-          est_revenue_daily_net: s?.est_revenue_daily_net == null ? null : Number(s.est_revenue_daily_net),
+          est_revenue_daily_net: (() => {
+            const v = organic ? s?.est_revenue_daily_organic : s?.est_revenue_daily_net;
+            return v == null ? null : Number(v);
+          })(),
         });
       }
     }

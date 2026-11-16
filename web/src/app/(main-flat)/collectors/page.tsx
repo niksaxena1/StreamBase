@@ -20,9 +20,10 @@ import {
   getEffectiveCollectorPlaylists,
   parseCollectorOverlapArtistCells,
   parseCollectorOverlapCells,
+  applyStreamsBasis,
   type CollectorPlaylistScopeRow,
 } from "./collectorsUtils";
-import type { CollectorOverlapArtistCell, CollectorOverlapCell } from "./collectorsTypes";
+import type { CollectorOverlapArtistCell, CollectorOverlapCell, StreamsBasis } from "./collectorsTypes";
 import { getRequestAppContext } from "@/lib/requestAppContext.server";
 
 export const revalidate = 86400; // 24h ISR - data updates daily
@@ -56,7 +57,8 @@ export default async function CollectorsPage({
   // while avoiding `await searchParams` (which breaks static generation in Next 16).
   searchParams?: any;
 }) {
-  const sp = (await searchParams ?? {}) as { collector?: string; range?: string; start?: string; end?: string };
+  const sp = (await searchParams ?? {}) as { collector?: string; range?: string; start?: string; end?: string; basis?: string };
+  const streamsBasis: StreamsBasis = sp.basis === "organic" ? "organic" : "net";
   const { svc, user, isAdmin } = await getRequestAppContext();
   if (!user) redirect("/login");
 
@@ -237,7 +239,7 @@ export default async function CollectorsPage({
         await svc
           .from(collectorCompareTable)
           .select(
-            "collector,date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net,daily_streams_delta_yday,daily_streams_delta_ma7,est_revenue_daily_delta_yday,est_revenue_daily_delta_ma7,track_count_delta_yday,track_count_delta_ma7",
+            "collector,date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net,daily_streams_delta_yday,daily_streams_delta_ma7,est_revenue_daily_delta_yday,est_revenue_daily_delta_ma7,track_count_delta_yday,track_count_delta_ma7,daily_streams_organic,est_revenue_daily_organic,daily_streams_organic_delta_yday,daily_streams_organic_delta_ma7,est_revenue_daily_organic_delta_yday,est_revenue_daily_organic_delta_ma7",
           )
           .eq("date", latestRunDate),
 
@@ -254,7 +256,7 @@ export default async function CollectorsPage({
       spark14: async () =>
         await svc
           .from(collectorAggTable)
-          .select("collector,date,track_count,daily_streams_net,est_revenue_daily_net")
+          .select("collector,date,track_count,daily_streams_net,est_revenue_daily_net,daily_streams_organic,est_revenue_daily_organic")
           .gte("date", sparkStart!)
           .lte("date", latestRunDate!)
           .order("date", { ascending: false }),
@@ -263,7 +265,7 @@ export default async function CollectorsPage({
         await svc
           .from(collectorAggTable)
           .select(
-            "date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net",
+            "date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net,daily_streams_organic,est_revenue_daily_organic",
           )
           .eq("collector", selectedCollector)
           .gte("date", seriesWarmStart!)
@@ -275,7 +277,7 @@ export default async function CollectorsPage({
         let q = svc
           .from(collectorAggTable)
           .select(
-            "date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net",
+            "date,track_count,total_streams_cumulative,daily_streams_net,est_revenue_total,est_revenue_daily_net,daily_streams_organic,est_revenue_daily_organic",
           )
           .eq("collector", selectedCollector);
         if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
@@ -292,7 +294,7 @@ export default async function CollectorsPage({
           svc
             .from(collectorAggTable)
             .select(
-              "collector,date,track_count,daily_streams_net,est_revenue_daily_net",
+              "collector,date,track_count,daily_streams_net,est_revenue_daily_net,daily_streams_organic,est_revenue_daily_organic",
             )
             .gte("date", comparisonRangeStart!)
             .lte("date", rangeEnd!)
@@ -328,7 +330,7 @@ export default async function CollectorsPage({
           let q = svc
             .from(collectorAggTable)
             .select(
-              "collector,date,track_count,daily_streams_net,est_revenue_daily_net",
+              "collector,date,track_count,daily_streams_net,est_revenue_daily_net,daily_streams_organic,est_revenue_daily_organic",
             );
           if (rollbackRunDate) q = q.lte("date", rollbackRunDate);
           if (allTimeStart) q = q.gte("date", allTimeStart);
@@ -341,7 +343,7 @@ export default async function CollectorsPage({
       },
 
     },
-    `collectors-${selectedCollector}-${comparisonRangeStart}-${rangeEnd}-${latestRunDate}-artistsScoped1-entity${useEntityPlaylistsForTotals ? 1 : 0}-ov${overrideBuster}-rb${rollbackDate ?? "live"}`,
+    `collectors-${selectedCollector}-${comparisonRangeStart}-${rangeEnd}-${latestRunDate}-artistsScoped1-org1-entity${useEntityPlaylistsForTotals ? 1 : 0}-ov${overrideBuster}-rb${rollbackDate ?? "live"}`,
     CACHE_TTL_1H,
   );
 
@@ -351,8 +353,12 @@ export default async function CollectorsPage({
     playlistCountByCollector.set(c, getEffectiveCollectorPlaylists(playlists, c, useEntityPlaylistsForTotals).length);
   }
 
-  const compareRows = (results.compareToday.data ?? []) as Record<string, unknown>[];
-  const sparkRows = (results.spark14.data ?? []) as Record<string, unknown>[];
+  const compareRows = ((results.compareToday.data ?? []) as Record<string, unknown>[]).map((r) =>
+    applyStreamsBasis(r, streamsBasis),
+  );
+  const sparkRows = ((results.spark14.data ?? []) as Record<string, unknown>[]).map((r) =>
+    applyStreamsBasis(r, streamsBasis),
+  );
   const artistCountRows = (results.artistCounts.data ?? []) as Array<{ collector: string; artist_count: number }>;
 
   const sparkByCollector = new Map<string, { rev: number[]; streams: number[]; tracks: number[] }>();
@@ -400,7 +406,9 @@ export default async function CollectorsPage({
     };
   });
 
-  const seriesDescRun = (results.series.data ?? []) as CollectorSeriesPoint[];
+  const seriesDescRun = ((results.series.data ?? []) as CollectorSeriesPoint[]).map((p) =>
+    applyStreamsBasis(p, streamsBasis),
+  );
   const seriesDescWithWarmup = seriesDescRun.map((p) => ({
     ...p,
     date: dataDateFromRunDate(p.date),
@@ -410,7 +418,9 @@ export default async function CollectorsPage({
   const seriesWarmupDesc = visibleStartDate ? seriesDescWithWarmup.filter((p) => p.date < visibleStartDate) : [];
 
   // All-time series for monthly chart (not affected by date range)
-  const seriesAllTimeRun = (results.seriesAllTime.data ?? []) as CollectorSeriesPoint[];
+  const seriesAllTimeRun = ((results.seriesAllTime.data ?? []) as CollectorSeriesPoint[]).map((p) =>
+    applyStreamsBasis(p, streamsBasis),
+  );
   const seriesAllTime = seriesAllTimeRun.map((p) => ({
     ...p,
     date: dataDateFromRunDate(p.date),
@@ -425,7 +435,7 @@ export default async function CollectorsPage({
     est_revenue_daily_net: number;
   }>;
   const allCollectorsSeries = allCollectorsRaw.map((p) => ({
-    ...p,
+    ...applyStreamsBasis(p, streamsBasis),
     date: dataDateFromRunDate(p.date),
   }));
 
@@ -438,7 +448,7 @@ export default async function CollectorsPage({
     est_revenue_daily_net: number;
   }>;
   const allCollectorsAllTime = allCollectorsAllTimeRaw.map((p) => ({
-    ...p,
+    ...applyStreamsBasis(p, streamsBasis),
     date: dataDateFromRunDate(p.date),
   }));
 
@@ -465,16 +475,19 @@ export default async function CollectorsPage({
           async () =>
             await svc
               .from("playlist_daily_stats")
-              .select("playlist_key,est_revenue_daily_net,daily_streams_net,missing_streams_track_count")
+              .select("playlist_key,est_revenue_daily_net,daily_streams_net,missing_streams_track_count,est_revenue_daily_organic,daily_streams_organic")
           .eq("date", latestRunDate)
               .in("playlist_key", selectedKeys)
-              .order("est_revenue_daily_net", { ascending: false, nullsFirst: false })
+              .order(streamsBasis === "organic" ? "est_revenue_daily_organic" : "est_revenue_daily_net", {
+                ascending: false,
+                nullsFirst: false,
+              })
               .limit(15),
-          `collectors-top-${selectedCollector}-${latestRunDate}-entity${useEntityPlaylistsForTotals ? 1 : 0}-ov${overrideBuster}`,
+          `collectors-top-org1-${streamsBasis}-${selectedCollector}-${latestRunDate}-entity${useEntityPlaylistsForTotals ? 1 : 0}-ov${overrideBuster}`,
           CACHE_TTL_1H,
         );
 
-        return ((topRows ?? []) as Record<string, unknown>[]).map((r) => ({
+        return ((topRows ?? []) as Record<string, unknown>[]).map((raw) => applyStreamsBasis(raw, streamsBasis)).map((r) => ({
           playlist_key: String(r.playlist_key),
           display_name: String(nameByKey.get(String(r.playlist_key)) ?? r.playlist_key),
           est_revenue_daily_net: r.est_revenue_daily_net == null ? null : Number(r.est_revenue_daily_net),
@@ -508,6 +521,7 @@ export default async function CollectorsPage({
     <CollectorsPageWrapper
       selectedCollector={selectedCollector}
       rangeDays={rangeDays}
+      streamsBasis={streamsBasis}
       latestDataDate={latestDataDate}
       useEntityPlaylistsForTotals={useEntityPlaylistsForTotals}
       overlapCells={overlapCells}

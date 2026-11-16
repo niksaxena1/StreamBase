@@ -9,12 +9,14 @@ import type {
   CollectorOverlapCell,
   CollectorSeriesPoint,
   CollectorSummaryRow,
+  StreamsBasis,
   TopPlaylistRow,
 } from "./collectorsTypes";
 
 export function CollectorsPageWrapper(props: {
   selectedCollector: string;
   rangeDays: number;
+  streamsBasis: StreamsBasis;
   latestDataDate: string | null;
   latestDate: string | null;
   latestRunDate: string;
@@ -41,6 +43,7 @@ export function CollectorsPageWrapper(props: {
       <CollectorsPageHeader
         selectedCollector={props.selectedCollector}
         rangeDays={props.rangeDays}
+        streamsBasis={props.streamsBasis}
         latestDataDate={props.latestDataDate}
         granularity={granularity}
         onGranularityChange={setGranularity}
@@ -53,6 +56,7 @@ export function CollectorsPageWrapper(props: {
         overlapArtistCells={props.overlapArtistCells}
         selectedCollector={props.selectedCollector}
         rangeDays={props.rangeDays}
+        streamsBasis={props.streamsBasis}
         granularity={granularity}
         summary={props.summary}
         seriesDesc={props.seriesDesc}
