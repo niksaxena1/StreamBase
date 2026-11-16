@@ -1,7 +1,7 @@
 import { Layers } from "lucide-react";
 
 import { PageHeader } from "@/components/shell/PageHeader";
-import { ChartSkeleton, Skeleton, StatCardSkeleton, TableSkeleton } from "@/components/ui/Skeleton";
+import { ChartSkeleton, Skeleton, TableSkeleton } from "@/components/ui/Skeleton";
 
 export default function CollectorsLoading() {
   return (
@@ -25,14 +25,14 @@ export default function CollectorsLoading() {
         }
       />
       <Skeleton className="h-9 w-full max-w-md rounded-lg" />
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        <StatCardSkeleton />
-        <StatCardSkeleton />
-        <StatCardSkeleton />
-      </div>
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="sb-card space-y-3 p-4">
         <ChartSkeleton height={260} />
         <TableSkeleton rows={5} cols={7} />
+      </div>
+      <div className="space-y-4">
+        <div className="sb-card p-4"><ChartSkeleton height={280} /></div>
+        <div className="sb-card p-4"><ChartSkeleton height={280} /></div>
+        <div className="sb-card p-4"><ChartSkeleton height={280} /></div>
       </div>
     </div>
   );

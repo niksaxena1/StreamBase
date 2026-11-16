@@ -17,7 +17,7 @@ import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 
 import type { CollectorTrackRow, Metric, SelectedPlaylistMeta, TrackSort } from "./collectorsTypes";
-import type { computeTopTrackCards } from "./collectorsUtils";
+import { toneClass, type computeTopTrackCards } from "./collectorsUtils";
 
 const SORTS: MenuSelectOption[] = [
   { value: "delta_desc", label: "Daily ↓" },
@@ -111,7 +111,7 @@ export function CollectorTracksDetails({
       <summary className="cursor-pointer select-none">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-2">
-            <span className="flex-shrink-0 text-xs opacity-60 mt-0.5">▸</span>
+            <span aria-hidden className="sb-details-chevron flex-shrink-0 text-xs opacity-60 mt-0.5">▸</span>
             <div>
               <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
                 Tracks
@@ -344,6 +344,7 @@ export function CollectorTracksDetails({
                 align: "right",
                 title: "Today minus yesterday (based on cumulative streams). Click to sort.",
               }),
+              "All distros",
             ]}
             maxBodyHeightClassName="max-h-[520px]"
           >
@@ -426,30 +427,18 @@ export function CollectorTracksDetails({
                   )}
                 </TableCell>
                 <TableCell
-                  className={tracksTableIsRevenue ? "font-medium" : "sb-positive font-medium"}
-                  style={tracksTableIsRevenue ? { color: "#10b981" } : undefined}
+                  className={`text-right tabular-nums font-medium ${toneClass(tracksTableIsRevenue ? (t.total_streams_cumulative == null ? null : t.total_streams_cumulative * payoutPerStreamUsd) : t.total_streams_cumulative)}`}
                 >
-                  {t.total_streams_cumulative == null
+                  {t.total_streams_cumulative == null || t.total_streams_cumulative === 0
                     ? "—"
                     : tracksTableIsRevenue
                       ? formatUsd2(t.total_streams_cumulative * payoutPerStreamUsd)
                       : formatInt(t.total_streams_cumulative)}
                 </TableCell>
                 <TableCell
-                  className={
-                    t.daily_streams_delta != null && t.daily_streams_delta < 0
-                      ? "text-red-600 dark:text-red-400 font-medium"
-                      : tracksTableIsRevenue
-                        ? "font-medium"
-                        : "sb-positive font-medium"
-                  }
-                  style={
-                    tracksTableIsRevenue && !(t.daily_streams_delta != null && t.daily_streams_delta < 0)
-                      ? { color: "#10b981" }
-                      : undefined
-                  }
+                  className={`text-right tabular-nums font-medium ${toneClass(tracksTableIsRevenue ? (t.daily_streams_delta == null ? null : t.daily_streams_delta * payoutPerStreamUsd) : t.daily_streams_delta)}`}
                 >
-                  {t.daily_streams_delta == null
+                  {t.daily_streams_delta == null || t.daily_streams_delta === 0
                     ? "—"
                     : tracksTableIsRevenue
                       ? formatUsd2(t.daily_streams_delta * payoutPerStreamUsd)

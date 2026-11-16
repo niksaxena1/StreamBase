@@ -11,7 +11,7 @@ export function Chip(
       {...rest}
       aria-pressed={selected ?? undefined}
       className={cx(
-        "sb-control inline-flex items-center gap-2 rounded-full px-2.5 py-1.5 text-[11px] font-medium transition",
+        "sb-control active:scale-[0.97] motion-reduce:active:scale-100 inline-flex items-center gap-2 rounded-full px-2.5 py-1.5 text-[11px] font-medium transition-[color,background-color,border-color,box-shadow,scale] duration-[140ms] ease-[var(--sb-ease-out)]",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sb-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--sb-bg)]",
         segmented
           ? selected

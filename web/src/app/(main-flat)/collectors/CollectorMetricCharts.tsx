@@ -63,7 +63,7 @@ export function CollectorMetricCharts({
             {selectedCollector}
           </h2>
           <p className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
-            {rangeDays} day view
+            Last {rangeDays} days
           </p>
         </div>
       </div>
@@ -141,7 +141,7 @@ export function CollectorMetricCharts({
           </div>
         </div>
         <p className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
-          All-time monthly aggregation (not affected by date range)
+          Monthly totals, last 365 days (date range filter does not apply)
         </p>
         <div className="mt-3 min-h-[220px]">
           <MonthlyBarChart

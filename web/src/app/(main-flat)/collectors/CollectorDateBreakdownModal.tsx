@@ -99,7 +99,7 @@ function ContributionWaterfall({
                   {step.value >= 0 ? "+" : ""}{formatValue(step.value)}
                 </text>
                 <text x={x + barWidth / 2} y="218" textAnchor="middle" fill="var(--sb-muted)" fontSize="10">
-                  {step.label.length > 13 ? `${step.label.slice(0, 12)}...` : step.label}
+                  <title>{step.label}</title>{Array.from(step.label).slice(0, 12).join("")}{Array.from(step.label).length > 12 ? "..." : ""}
                 </text>
               </g>
             );

@@ -216,8 +216,8 @@ export function DistroMovementSection() {
                           className="h-9 w-9 shrink-0 rounded"
                         />
                         <div className="min-w-0">
-                          <div className="truncate text-xs font-medium">{movement.name}</div>
-                          <div className="truncate text-[10px]" style={{ color: colors.muted }}>
+                          <div className="min-w-0 max-w-[240px] truncate text-xs font-medium" title={movement.name}>{movement.name}</div>
+                          <div className="min-w-0 max-w-[240px] truncate text-[10px]" title={(movement.artist_names ?? []).join(", ")} style={{ color: colors.muted }}>
                             {(movement.artist_names ?? []).join(", ")}
                           </div>
                         </div>
@@ -263,15 +263,15 @@ export function DistroMovementSection() {
                     <div className="flex items-center gap-2.5">
                       <PreviewableArtwork src={movement.album_image_url} alt="" className="h-8 w-8 shrink-0 rounded" />
                       <div className="min-w-0">
-                        <div className="truncate text-xs font-medium">{movement.name}</div>
-                        <div className="truncate text-[10px]" style={{ color: colors.muted }}>
+                        <div className="min-w-0 max-w-[240px] truncate text-xs font-medium" title={movement.name}>{movement.name}</div>
+                        <div className="min-w-0 max-w-[240px] truncate text-[10px]" title={(movement.artist_names ?? []).join(", ")} style={{ color: colors.muted }}>
                           {(movement.artist_names ?? []).join(", ")}
                         </div>
                       </div>
                     </div>
                   </TableCell>
                   <TableCell>
-                    <span className="inline-flex items-center gap-1.5 text-[11px]" style={{ color: colors.muted }}>
+                    <span className="flex min-w-0 flex-wrap items-center gap-1.5 text-[11px]" style={{ color: colors.muted }}>
                       {flowLabel(movement.source, "source")}
                       <ArrowRight className="h-3 w-3 shrink-0" />
                       {flowLabel(movement.target, "target")}

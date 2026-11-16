@@ -279,10 +279,15 @@ export function formatKmbTick(n: number): string {
 export function createAxisTickFormatter(ticks: readonly number[], scale = 1): (value: number) => string {
   const largest = ticks.reduce((max, value) => Number.isFinite(value) ? Math.max(max, Math.abs(value * scale)) : max, 0);
   const [divisor, unit] = largest >= 1e9 ? [1e9, "B"] : largest >= 1e6 ? [1e6, "M"] : largest >= 1e3 ? [1e3, "k"] : [1, ""];
+  // Narrow domains (e.g. cumulative totals 1.381B–1.389B) need extra decimals or every tick reads the same.
+  const finite = ticks.filter(Number.isFinite);
+  const span = finite.length > 1 ? (Math.max(...finite) - Math.min(...finite)) * scale / Number(divisor) : 0;
+  const spanDecimals = span > 0 ? Math.min(3, Math.max(0, Math.ceil(-Math.log10(span / 4)))) : 0;
   return (value) => {
     if (!Number.isFinite(value)) return "";
     const scaled = value * scale / Number(divisor);
-    const decimals = Math.abs(scaled) >= 100 ? 0 : Math.abs(scaled) >= 10 ? 1 : unit ? 1 : 2;
+    const baseDecimals = Math.abs(scaled) >= 100 ? 0 : Math.abs(scaled) >= 10 ? 1 : unit ? 1 : 2;
+    const decimals = Math.max(baseDecimals, spanDecimals);
     const rounded = Number(scaled.toFixed(decimals));
     return `${Object.is(rounded, -0) ? 0 : rounded}${unit}`;
   };

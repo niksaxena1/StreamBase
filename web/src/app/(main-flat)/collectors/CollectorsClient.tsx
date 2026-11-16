@@ -320,6 +320,14 @@ export function CollectorsClient(props: {
   const ranked = useMemo(() => {
     const rows = [...props.summary];
     rows.sort((a, b) => {
+      const empty = (row: CollectorSummaryRow) =>
+        !Number(row.daily_streams_net ?? 0) &&
+        !Number(row.daily_streams_delta_ma7 ?? 0) &&
+        !Number(row.daily_streams_delta_yday ?? 0);
+      const aEmpty = empty(a);
+      const bEmpty = empty(b);
+      if (aEmpty !== bEmpty) return aEmpty ? 1 : -1;
+      if (aEmpty && bEmpty) return 0;
       const aIndex = (COLLECTOR_ORDER as readonly string[]).indexOf(a.collector);
       const bIndex = (COLLECTOR_ORDER as readonly string[]).indexOf(b.collector);
       if (aIndex === -1 && bIndex === -1) return 0;
@@ -412,7 +420,8 @@ export function CollectorsClient(props: {
           : r.daily_streams_delta_ma7;
 
       const ydayValue = deltaYday != null ? value - deltaYday : null;
-      const ma7Value = deltaMa7 != null ? value - deltaMa7 : null;
+      const derivedMa7Value = deltaMa7 != null ? value - deltaMa7 : null;
+      const ma7Value = derivedMa7Value != null && derivedMa7Value < 0 ? null : derivedMa7Value;
 
       const sparkFromDailySeries = sparkByCollector.get(r.collector);
       const spark =
@@ -438,6 +447,7 @@ export function CollectorsClient(props: {
         fmtValue,
         fmtYday: fmtYdayOrMa7(ydayValue),
         fmtMa7: fmtYdayOrMa7(ma7Value),
+        isEmpty: !value && !ma7Value && !ydayValue,
         href,
         isSelectedCollector,
       } as const;
@@ -723,6 +733,7 @@ export function CollectorsClient(props: {
       {/* Comparison chart + table */}
       <div className="sb-card p-4 space-y-4">
         <CollectorComparisonChartCard
+          latestDate={props.latestDate}
           granularity={granularity}
           comparisonMode={comparisonMode}
           setComparisonMode={setComparisonMode}
@@ -812,8 +823,7 @@ export function CollectorsClient(props: {
       />
 
       {/* Selected collector combined view */}
-      <div className="sb-card p-4">
-        <div className="space-y-6">
+      <div className="sb-card p-4 space-y-6">
         <CollectorMetricCharts
           selectedCollector={props.selectedCollector}
           rangeDays={props.rangeDays}
@@ -873,7 +883,6 @@ export function CollectorsClient(props: {
           tracksTableTotalLabel={tracksTableTotalLabel}
           tracksTableDailyLabel={tracksTableDailyLabel}
         />
-        </div>
       </div>
 
       <CollectorsOverlapMatrix

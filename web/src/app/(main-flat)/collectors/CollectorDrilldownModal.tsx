@@ -11,6 +11,7 @@ import { ArtistLinks } from "@/components/ui/ArtistLinks";
 import { CopyableIsrc } from "@/components/ui/CopyableIsrc";
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { formatDateISO, formatInt, formatUsd2 } from "@/lib/format";
+import { toneClass } from "./collectorsUtils";
 
 import type {
   Metric,
@@ -19,7 +20,6 @@ import type {
   DrillArtistItem,
   DrillTrackItem,
 } from "./collectorsTypes";
-import { DRILL_PAGE_SIZE } from "./collectorsTypes";
 
 export function CollectorDrilldownModal({
   open,
@@ -60,15 +60,11 @@ export function CollectorDrilldownModal({
     drillKind === "tracks" && metric === "tracks" ? "streams" : metric;
   const drillIsTracksMetric = drillEffectiveMetric === "tracks";
   const drillIsRevenueMetric = drillEffectiveMetric === "revenue";
-  const drillIsStreamsMetric = drillEffectiveMetric === "streams";
   const drillTracksColorClass = "text-blue-600 dark:text-blue-400 font-medium";
-  const drillStreamsNumberClass = "sb-positive font-medium";
   const drillRevenueNumberClass = "font-medium";
-  const drillMetricNumberClass = drillIsRevenueMetric
-    ? drillRevenueNumberClass
-    : drillIsStreamsMetric
-      ? drillStreamsNumberClass
-      : drillTracksColorClass;
+  const drillMetricNumberClass = drillIsTracksMetric
+    ? drillTracksColorClass
+    : drillRevenueNumberClass;
 
   return (
     <Modal
@@ -183,7 +179,6 @@ export function CollectorDrilldownModal({
             loading={drillLoading}
             isTracksMetric={drillIsTracksMetric}
             isRevenueMetric={drillIsRevenueMetric}
-            streamsNumberClass={drillStreamsNumberClass}
             metricNumberClass={drillMetricNumberClass}
             payoutPerStreamUsd={payoutPerStreamUsd}
           />
@@ -319,17 +314,15 @@ function PlaylistDrillTable({
               <>
                 <TableCell
                   numeric
-                  className={metricNumberClass}
-                  style={isRevenueMetric ? { color: "#10b981" } : undefined}
+                  className={`${metricNumberClass} ${toneClass(totalValue)}`}
                 >
-                  {isRevenueMetric ? formatUsd2(totalValue) : formatInt(totalValue)}
+                  {!totalValue ? "—" : isRevenueMetric ? formatUsd2(totalValue) : formatInt(totalValue)}
                 </TableCell>
                 <TableCell
                   numeric
-                  className={metricNumberClass}
-                  style={isRevenueMetric ? { color: "#10b981" } : undefined}
+                  className={`${metricNumberClass} ${toneClass(dailyValue)}`}
                 >
-                  {isRevenueMetric ? formatUsd2(dailyValue) : formatInt(dailyValue)}
+                  {!dailyValue ? "—" : isRevenueMetric ? formatUsd2(dailyValue) : formatInt(dailyValue)}
                 </TableCell>
               </>
             )}
@@ -436,17 +429,15 @@ function ArtistDrillTable({
               <>
                 <TableCell
                   numeric
-                  className={metricNumberClass}
-                  style={isRevenueMetric ? { color: "#10b981" } : undefined}
+                  className={`${metricNumberClass} ${toneClass(totalValue)}`}
                 >
-                  {isRevenueMetric ? formatUsd2(totalValue) : formatInt(totalValue)}
+                  {!totalValue ? "—" : isRevenueMetric ? formatUsd2(totalValue) : formatInt(totalValue)}
                 </TableCell>
                 <TableCell
                   numeric
-                  className={metricNumberClass}
-                  style={isRevenueMetric ? { color: "#10b981" } : undefined}
+                  className={`${metricNumberClass} ${toneClass(dailyValue)}`}
                 >
-                  {isRevenueMetric ? formatUsd2(dailyValue) : formatInt(dailyValue)}
+                  {!dailyValue ? "—" : isRevenueMetric ? formatUsd2(dailyValue) : formatInt(dailyValue)}
                 </TableCell>
               </>
             )}
@@ -472,7 +463,6 @@ function TrackDrillTable({
   loading,
   isTracksMetric,
   isRevenueMetric,
-  streamsNumberClass,
   metricNumberClass,
   payoutPerStreamUsd,
 }: {
@@ -480,7 +470,6 @@ function TrackDrillTable({
   loading: boolean;
   isTracksMetric: boolean;
   isRevenueMetric: boolean;
-  streamsNumberClass: string;
   metricNumberClass: string;
   payoutPerStreamUsd: number;
 }) {
@@ -569,25 +558,17 @@ function TrackDrillTable({
               <>
                 <TableCell
                   numeric
-                  className={metricNumberClass}
-                  style={isRevenueMetric ? { color: "#10b981" } : undefined}
+                  className={`${metricNumberClass} ${toneClass(totalValue)}`}
                 >
-                  {isRevenueMetric
+                  {!totalValue ? "—" : isRevenueMetric
                     ? formatUsd2(totalValue)
                     : formatInt(totalValue)}
                 </TableCell>
                 <TableCell
                   numeric
-                  className={
-                    isRevenueMetric
-                      ? metricNumberClass
-                      : Number(t.daily_streams_delta ?? 0) < 0
-                        ? "text-red-600 dark:text-red-400 font-medium"
-                        : streamsNumberClass
-                  }
-                  style={isRevenueMetric ? { color: "#10b981" } : undefined}
+                  className={`${metricNumberClass} ${toneClass(dailyValue)}`}
                 >
-                  {isRevenueMetric
+                  {!dailyValue ? "—" : isRevenueMetric
                     ? formatUsd2(dailyValue)
                     : `${formatInt(dailyStreams)}`}
                 </TableCell>

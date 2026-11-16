@@ -6,6 +6,7 @@ import type { Dispatch, SetStateAction } from "react";
 import { GlassTable, TableCell, TableRow } from "@/components/ui/GlassTable";
 import { PreviewableArtwork } from "@/components/ui/PreviewableArtwork";
 import { formatDateISO, formatInt, formatUsd2 } from "@/lib/format";
+import { toneClass } from "./collectorsUtils";
 
 import type { SelectedPlaylistMeta, TopPlaylistRow } from "./collectorsTypes";
 
@@ -35,7 +36,7 @@ export function CollectorPlaylistsDetails({
       <summary className="cursor-pointer select-none">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-2">
-            <span className="flex-shrink-0 text-xs opacity-60 mt-0.5">▸</span>
+            <span aria-hidden className="sb-details-chevron flex-shrink-0 text-xs opacity-60 mt-0.5">▸</span>
             <div className="text-[11px] font-medium uppercase tracking-wider opacity-60">
               Playlists
             </div>
@@ -51,8 +52,8 @@ export function CollectorPlaylistsDetails({
         <GlassTable
           headers={[
             "Playlist",
-            "Est. Rev (Daily)",
-            "Daily Streams",
+            { label: "Est. Rev (Daily)", align: "right" },
+            { label: "Daily Streams", align: "right" },
             <span
               key="missing"
               title="Number of tracks in the playlist that don't have stream data in the catalog snapshot for this day."
@@ -98,11 +99,11 @@ export function CollectorPlaylistsDetails({
                 </div>
                 <div className="font-mono text-[11px] opacity-50">{p.playlist_key}</div>
               </TableCell>
-              <TableCell className="font-medium">
-                {formatUsd2(Number(p.daily_streams_net ?? 0) * payoutPerStreamUsd)}
+              <TableCell className={`text-right tabular-nums font-medium ${toneClass(Number(p.daily_streams_net ?? 0) * payoutPerStreamUsd)}`}>
+                {!p.daily_streams_net ? "—" : formatUsd2(Number(p.daily_streams_net) * payoutPerStreamUsd)}
               </TableCell>
-              <TableCell className="sb-positive font-medium">
-                {formatInt(p.daily_streams_net)}
+              <TableCell className={`text-right tabular-nums font-medium ${toneClass(p.daily_streams_net)}`}>
+                {!p.daily_streams_net ? "—" : formatInt(p.daily_streams_net)}
               </TableCell>
               <TableCell title={p.missing_streams_track_count ? "Missing catalog tracks for this date." : undefined}>
                 {p.missing_streams_track_count ? (

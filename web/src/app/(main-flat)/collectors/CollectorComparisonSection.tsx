@@ -8,7 +8,7 @@ import { Activity } from "lucide-react";
 import { GlassTable, TableCell, TableRow } from "@/components/ui/GlassTable";
 import { SpotlightCard } from "@/components/ui/SpotlightCard";
 import { Sparkline } from "@/components/charts/Sparkline";
-import { formatDateISO, formatInt } from "@/lib/format";
+import { formatDateISO, formatDisplayDate, formatInt } from "@/lib/format";
 import { ChartSkeleton } from "@/components/ui/Skeleton";
 import {
   COLLECTOR_COLORS,
@@ -18,6 +18,7 @@ import {
 import { CollectorMultiSelect } from "@/components/ui/CollectorMultiSelect";
 import type { Granularity } from "@/components/ui/GranularitySelect";
 import { Chip, ChipGroup } from "@/components/ui/Chip";
+import { toneClass } from "./collectorsUtils";
 
 import {
   COLLECTOR_ORDER,
@@ -36,15 +37,20 @@ const CollectorComparisonChart = dynamic(
 
 /** Display values for one comparison-table row (see `computeComparisonRow` in CollectorsClient). */
 type ComparisonRowView = {
+  value: number;
   spark: number[] | null;
   fmtValue: string;
   fmtYday: string;
   fmtMa7: string;
+  ydayValue: number | null;
+  ma7Value: number | null;
   href: string;
   isSelectedCollector: boolean;
+  isEmpty: boolean;
 };
 
 export function CollectorComparisonChartCard({
+  latestDate,
   granularity,
   comparisonMode,
   setComparisonMode,
@@ -56,6 +62,7 @@ export function CollectorComparisonChartCard({
   metric,
   handleDateClick,
 }: {
+  latestDate: string | null;
   granularity: Granularity;
   comparisonMode: ComparisonMode;
   setComparisonMode: Dispatch<SetStateAction<ComparisonMode>>;
@@ -84,7 +91,7 @@ export function CollectorComparisonChartCard({
           </div>
 
           <div className="flex flex-col items-end gap-2 lg:w-auto">
-            <div className="flex flex-nowrap items-center justify-end gap-1.5">
+            <div className="flex flex-wrap items-center justify-end gap-1.5">
               {granularity === "daily" && comparisonMode !== "percentage" ? (
                 <Chip
                   selected={showComparisonMA7}
@@ -125,7 +132,7 @@ export function CollectorComparisonChartCard({
           )}
           {granularity !== "daily" && (
             <div className="text-[10px]" style={{ color: "var(--sb-muted)" }}>
-              {granularity === "weekly" ? "Weeks start Monday (ISO)" : "Showing all-time data"}
+              {granularity === "weekly" ? "Weeks start Monday (ISO)" : `Last 365 days to ${formatDisplayDate(latestDate)}`}
             </div>
           )}
         </div>
@@ -143,10 +150,6 @@ export function CollectorComparisonChartCard({
           />
         </div>
       </div>
-      <div
-        className="pointer-events-none absolute -right-14 -top-14 h-40 w-40 rounded-full opacity-15 blur-3xl"
-        style={{ background: "var(--sb-accent)" }}
-      />
     </SpotlightCard>
   );
 }
@@ -199,7 +202,7 @@ export function CollectorComparisonTable({
               label: "Collector",
               className: "sticky left-0 z-20 min-w-[110px]",
             },
-            { label: "Pl", className: "w-[70px] text-right" },
+            { label: <span title="Number of playlists">Playlists</span>, className: "w-[70px] text-right" },
             { label: "Artists", className: "w-[84px] text-right" },
             { label: "Tracks", className: "w-[84px] text-right" },
             { label: comparisonTableHeaderLabel, className: "w-[110px] text-right font-medium" },
@@ -215,7 +218,7 @@ export function CollectorComparisonTable({
                       : "Showing Yesterday (click to toggle to 7d avg)"
                   }
                 >
-                  {comparisonBaseline === "ma7" ? "7D AVG" : "YESTERDAY"}
+                  <span className="flex flex-col items-end"><span className="text-[9px] opacity-70">Metric</span>{comparisonBaseline === "ma7" ? "7-day avg" : "Yesterday"}</span>
                 </button>
               ),
               className: "w-[110px]",
@@ -226,29 +229,14 @@ export function CollectorComparisonTable({
           {ranked.map((r) => {
             const row = computeComparisonRow(r);
 
-            const stickyBg = row.isSelectedCollector
-              ? "color-mix(in srgb, var(--sb-accent) 28%, var(--sb-surface))"
-              : "var(--sb-surface)";
-
             return (
               <TableRow
                 key={r.collector}
-                className={
-                  row.isSelectedCollector
-                    ? "hover:bg-transparent dark:hover:bg-transparent odd:bg-transparent dark:odd:bg-transparent"
-                    : undefined
-                }
-                style={
-                  row.isSelectedCollector
-                    ? {
-                        background: "color-mix(in srgb, var(--sb-accent) 28%, var(--sb-surface))",
-                      }
-                    : undefined
-                }
+                title={row.isEmpty ? "No data in this period" : undefined}
+                className={row.isSelectedCollector ? "bg-[color-mix(in_srgb,var(--sb-accent)_10%,transparent)] shadow-[inset_2px_0_0_var(--sb-accent)] hover:bg-[color-mix(in_srgb,var(--sb-accent)_10%,transparent)]" : "hover:bg-[color-mix(in_srgb,var(--sb-accent)_6%,transparent)]"}
               >
                 <TableCell
-                  className="sticky left-0 z-10 px-0 py-0"
-                  style={{ background: stickyBg }}
+                  className={`sticky left-0 z-10 px-0 py-0 ${row.isSelectedCollector ? "[background:linear-gradient(color-mix(in_srgb,var(--sb-accent)_10%,transparent),color-mix(in_srgb,var(--sb-accent)_10%,transparent)),linear-gradient(var(--sb-card),var(--sb-card)),var(--sb-bg)]" : "[background:linear-gradient(var(--sb-card),var(--sb-card)),var(--sb-bg)]"}`}
                 >
                   <Link
                     href={row.href}
@@ -256,6 +244,7 @@ export function CollectorComparisonTable({
                       "flex h-full w-full items-center gap-2 px-3 py-2 font-medium transition-colors",
                       "sb-link-hover",
                       r.collector === selectedCollector ? "opacity-100" : "opacity-70",
+                      row.isEmpty ? "opacity-50" : "",
                     ].join(" ")}
                   >
                     <span
@@ -273,7 +262,7 @@ export function CollectorComparisonTable({
                     onClick={() => openDrill(r.collector, "playlists")}
                     title={`Show playlists for ${r.collector}`}
                   >
-                    {formatInt(r.playlists)}
+                    <span className={row.isEmpty ? "opacity-50" : ""}>{formatInt(r.playlists)}</span>
                   </button>
                 </TableCell>
                 <TableCell numeric>
@@ -283,7 +272,7 @@ export function CollectorComparisonTable({
                     onClick={() => openDrill(r.collector, "artists")}
                     title={`Show artists for ${r.collector}`}
                   >
-                    {formatInt(r.artist_count)}
+                    <span className={row.isEmpty ? "opacity-50" : ""}>{formatInt(r.artist_count)}</span>
                   </button>
                 </TableCell>
                 <TableCell numeric>
@@ -293,23 +282,27 @@ export function CollectorComparisonTable({
                     onClick={() => openDrill(r.collector, "tracks")}
                     title={`Show tracks for ${r.collector}`}
                   >
-                    {formatInt(r.track_count)}
+                    <span className={row.isEmpty ? "opacity-50" : ""}>{formatInt(r.track_count)}</span>
                   </button>
                 </TableCell>
                 <TableCell
                   numeric
-                  className="font-medium"
-                  style={{ color: comparisonTableValueCellColor }}
+                  className={`font-medium ${toneClass(row.value)}`}
                 >
-                  {row.fmtValue}
+                  <span className={row.isEmpty ? "opacity-50" : ""}>{row.value ? row.fmtValue : "—"}</span>
                 </TableCell>
                 <TableCell numeric>
-                  {comparisonBaseline === "ma7" ? row.fmtMa7 : row.fmtYday}
+                  <span className={`${toneClass(comparisonBaseline === "ma7" ? row.ma7Value : row.ydayValue)} ${row.isEmpty ? "opacity-50" : ""}`}>
+                    {(comparisonBaseline === "ma7" ? row.ma7Value : row.ydayValue)
+                      ? comparisonBaseline === "ma7" ? row.fmtMa7 : row.fmtYday
+                      : "—"}
+                  </span>
                 </TableCell>
                 <TableCell className="hidden md:table-cell">
-                  <div className="h-5 w-20 opacity-60">
+                  <div className={`h-5 w-20 opacity-60 ${row.isEmpty ? "opacity-50" : ""}`}>
                     <Sparkline
                       data={row.spark ?? undefined}
+                      mock={false}
                       trend="neutral"
                       upColor={comparisonTableMetric === "revenue" ? comparisonTableValueCellColor : undefined}
                     />

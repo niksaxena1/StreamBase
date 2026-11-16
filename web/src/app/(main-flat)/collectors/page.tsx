@@ -96,9 +96,12 @@ export default async function CollectorsPage({
     // ignore
   }
 
-  // If custom start/end dates are provided, calculate range from them
+  const validIsoDate = (value: string | undefined): value is string =>
+    Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(`${value}T00:00:00Z`)));
+  const hasCustomRange = validIsoDate(sp.start) && validIsoDate(sp.end) && sp.start <= sp.end;
+  // If custom start/end dates are valid, calculate range from them.
   let rangeDays = clampRangeDays(sp.range);
-  if (sp.start && sp.end) {
+  if (hasCustomRange) {
     const start = new Date(`${sp.start}T00:00:00Z`);
     const end = new Date(`${sp.end}T00:00:00Z`);
     const calculatedDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
@@ -210,13 +213,13 @@ export default async function CollectorsPage({
 
   const sparkStart = latestRunDate ? addDaysIso(latestRunDate, -13) : null;
   // Use custom start date if provided, otherwise calculate from rangeDays
-  const rangeStart = sp.start && sp.end
-    ? addDaysISO(sp.start, SOT_DATA_LAG_DAYS) // data date -> run date
+  const rangeStart = hasCustomRange
+    ? addDaysISO(sp.start!, SOT_DATA_LAG_DAYS) // data date -> run date
     : latestRunDate
       ? addDaysIso(latestRunDate, -(rangeDays - 1))
       : null;
   // Use custom end date if provided, otherwise use latestRunDate
-  const rangeEnd = sp.end && sp.start ? addDaysISO(sp.end, SOT_DATA_LAG_DAYS) : latestRunDate;
+  const rangeEnd = hasCustomRange ? addDaysISO(sp.end!, SOT_DATA_LAG_DAYS) : latestRunDate;
   // Seed strict trailing MA7 lines with the six points before the visible range.
   const comparisonRangeStart = rangeStart ? addDaysIso(rangeStart, -6) : rangeStart;
   // Daily charts need the day before the range (first delta) plus six more for a full trailing MA7 from day one.
@@ -465,7 +468,7 @@ export default async function CollectorsPage({
               .select("playlist_key,est_revenue_daily_net,daily_streams_net,missing_streams_track_count")
           .eq("date", latestRunDate)
               .in("playlist_key", selectedKeys)
-              .order("est_revenue_daily_net", { ascending: false })
+              .order("est_revenue_daily_net", { ascending: false, nullsFirst: false })
               .limit(15),
           `collectors-top-${selectedCollector}-${latestRunDate}-entity${useEntityPlaylistsForTotals ? 1 : 0}-ov${overrideBuster}`,
           CACHE_TTL_1H,
@@ -496,6 +499,12 @@ export default async function CollectorsPage({
   };
 
   return (
+    <>
+    {[results.compareToday, results.series, results.seriesAllTime, results.allCollectorsSeries, results.allCollectorsAllTime].some((result) => result.error) ? (
+      <div className="mb-3 rounded-lg border p-3 text-sm" style={{ borderColor: "var(--sb-border)", color: "var(--sb-muted)" }}>
+        Some data could not be loaded. Figures below may be incomplete.
+      </div>
+    ) : null}
     <CollectorsPageWrapper
       selectedCollector={selectedCollector}
       rangeDays={rangeDays}
@@ -518,5 +527,6 @@ export default async function CollectorsPage({
       latestDate={latestDataDate}
       latestRunDate={latestRunDate}
     />
+    </>
   );
 }

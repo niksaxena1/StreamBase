@@ -13,6 +13,10 @@ describe("uniform axis ticks", () => {
     expect(createAxisTickFormatter([])(0)).toBe("0");
     expect(createAxisTickFormatter([1_000_000_000])(1_000_000_000)).toBe("1B");
   });
+  it("adds decimals for a narrow domain so ticks stay distinct", () => {
+    const fmt = createAxisTickFormatter([1_381_000_000, 1_389_000_000]);
+    expect([1_381_000_000, 1_385_000_000, 1_389_000_000].map(fmt)).toEqual(["1.381B", "1.385B", "1.389B"]);
+  });
   it("selects the unit after currency conversion", () => {
     expect(createAxisTickFormatter([800], 3.6725)(800)).toBe("2.9k");
   });

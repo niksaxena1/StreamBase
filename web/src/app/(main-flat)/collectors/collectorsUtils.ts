@@ -3,6 +3,7 @@ import type { CollectorDailyData } from "@/components/charts/CollectorComparison
 import {
   computeDailyRollingAvg7,
   computeRollingAvg7,
+  dailyFromCumulativeAsc,
   filterDailySeriesFromIsoDate,
 } from "@/components/charts/chartUtils";
 import { COLLECTOR_ORDER } from "./collectorsTypes";
@@ -106,7 +107,7 @@ export function parseDrillTrackItem(x: unknown): DrillTrackItem | null {
 }
 
 function getISOWeek(date: Date): { year: number; week: number } {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
   const dayNum = d.getUTCDay() || 7;
   d.setUTCDate(d.getUTCDate() + 4 - dayNum);
   const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
@@ -115,7 +116,7 @@ function getISOWeek(date: Date): { year: number; week: number } {
 }
 
 function getQuarter(date: Date): { year: number; quarter: number } {
-  return { year: date.getFullYear(), quarter: Math.floor(date.getMonth() / 3) + 1 };
+  return { year: date.getUTCFullYear(), quarter: Math.floor(date.getUTCMonth() / 3) + 1 };
 }
 
 export function aggregateByGranularity(
@@ -224,40 +225,38 @@ export function aggregateMonthlyDelta(
   projectedTotal?: number;
   daysWithData?: number;
   totalDaysInMonth?: number;
+  partial?: boolean;
 }> {
   const asc = [...seriesDesc].reverse();
 
   const monthlyMap = new Map<string, number>();
   const daysPerMonth = new Map<string, Set<string>>();
+  const cumulative = asc.map((point) => ({
+    date: point.date,
+    value: metric === "tracks"
+      ? Number(point.track_count ?? 0)
+      : Number(point.total_streams_cumulative ?? 0),
+  }));
+  const dailyDeltas = dailyFromCumulativeAsc(cumulative);
+  const partialMonths = new Set<string>();
 
   for (let i = 0; i < asc.length; i++) {
     const cur = asc[i];
     const curDataDate = cur.date;
     const curMonth = curDataDate.substring(0, 7);
 
-    if (!daysPerMonth.has(curMonth)) daysPerMonth.set(curMonth, new Set());
-    daysPerMonth.get(curMonth)!.add(curDataDate);
-
-    const prev = i > 0 ? asc[i - 1] : null;
-
-    let delta = 0;
-    if (metric === "revenue") {
-      const curTotal = Number(cur.total_streams_cumulative ?? 0);
-      const prevTotal = prev ? Number(prev.total_streams_cumulative ?? 0) : curTotal;
-      const dailyStreams = i > 0 ? Math.max(0, curTotal - prevTotal) : 0;
-      delta = dailyStreams * payoutPerStreamUsd;
-    } else if (metric === "streams") {
-      const curTotal = Number(cur.total_streams_cumulative ?? 0);
-      const prevTotal = prev ? Number(prev.total_streams_cumulative ?? 0) : curTotal;
-      delta = i > 0 ? Math.max(0, curTotal - prevTotal) : 0;
-    } else if (metric === "tracks") {
-      const curTracks = Number(cur.track_count ?? 0);
-      const prevTracks = prev ? Number(prev.track_count ?? 0) : 0;
-      delta = curTracks - prevTracks;
+    const partialFlag = cur as CollectorSeriesPoint & { partial?: boolean; is_partial?: boolean };
+    if (i === 0 && (partialFlag.partial || partialFlag.is_partial)) partialMonths.add(curMonth);
+    let delta: number | null = dailyDeltas[i].daily;
+    if (metric === "tracks" && i === 0) delta = 0;
+    if (delta != null) {
+      if (metric !== "tracks") delta = Math.max(0, delta);
+      if (metric === "revenue") delta *= payoutPerStreamUsd;
+      if (!daysPerMonth.has(curMonth)) daysPerMonth.set(curMonth, new Set());
+      daysPerMonth.get(curMonth)!.add(curDataDate);
     }
-
     const current = monthlyMap.get(curMonth) ?? 0;
-    monthlyMap.set(curMonth, current + delta);
+    monthlyMap.set(curMonth, current + (delta ?? 0));
   }
 
   const result: Array<{
@@ -267,8 +266,9 @@ export function aggregateMonthlyDelta(
     projectedTotal?: number;
     daysWithData?: number;
     totalDaysInMonth?: number;
+    partial?: boolean;
   }> = Array.from(monthlyMap.entries())
-    .map(([month, value]) => ({ month, value }))
+    .map(([month, value]) => ({ month, value, ...(partialMonths.has(month) ? { partial: true } : {}) }))
     .sort((a, b) => a.month.localeCompare(b.month));
 
   if (metric !== "tracks" && result.length > 0) {
@@ -386,35 +386,26 @@ export function buildCollectorMetricSeries(seriesDesc: CollectorSeriesPoint[], s
     date: d,
     value: Number(seriesDesc[i]?.total_streams_cumulative ?? 0) * streamPayoutPerStreamUsd,
   }));
-  const revenueDailyDesc = datesDesc.map((d, i) => {
-    const curTotal = Number(seriesDesc[i]?.total_streams_cumulative ?? 0);
-    const prevTotal =
-      i + 1 < seriesDesc.length
-        ? Number(seriesDesc[i + 1]?.total_streams_cumulative ?? 0)
-        : curTotal;
-    if (i + 1 >= seriesDesc.length) return { date: d, daily: null };
-    const dailyStreams = Math.max(0, curTotal - prevTotal);
-    return { date: d, daily: dailyStreams * streamPayoutPerStreamUsd };
-  });
+  const cumulativeAsc = [...seriesDesc].reverse().map((point) => ({
+    date: point.date,
+    value: Number(point.total_streams_cumulative ?? 0),
+  }));
+  const streamDeltasDesc = dailyFromCumulativeAsc(cumulativeAsc).reverse();
+  const revenueDailyDesc = streamDeltasDesc.map(({ date, daily }) => ({
+    date,
+    daily: daily == null ? null : Math.max(0, daily) * streamPayoutPerStreamUsd,
+  }));
 
   const streamsTotalDesc = datesDesc.map((d, i) => ({ date: d, value: Number(seriesDesc[i]?.total_streams_cumulative ?? 0) }));
-  const streamsDailyDesc = datesDesc.map((d, i) => {
-    const curTotal = Number(seriesDesc[i]?.total_streams_cumulative ?? 0);
-    const prevTotal =
-      i + 1 < seriesDesc.length
-        ? Number(seriesDesc[i + 1]?.total_streams_cumulative ?? 0)
-        : curTotal;
-    if (i + 1 >= seriesDesc.length) return { date: d, daily: null };
-    const daily = Math.max(0, curTotal - prevTotal);
-    return { date: d, daily };
-  });
+  const streamsDailyDesc = streamDeltasDesc.map(({ date, daily }) => ({
+    date,
+    daily: daily == null ? null : Math.max(0, daily),
+  }));
 
   const tracksTotalDesc = datesDesc.map((d, i) => ({ date: d, value: Number(seriesDesc[i]?.track_count ?? 0) }));
-  const tracksDailyDeltaDesc = datesDesc.map((d, i) => {
-    const cur = Number(seriesDesc[i]?.track_count ?? 0);
-    const prev = Number(seriesDesc[i + 1]?.track_count ?? 0);
-    return { date: d, daily: i + 1 < seriesDesc.length ? cur - prev : 0 };
-  });
+  const tracksDailyDeltaDesc = dailyFromCumulativeAsc(
+    [...seriesDesc].reverse().map((point) => ({ date: point.date, value: Number(point.track_count ?? 0) })),
+  ).reverse();
 
   return {
     revenue: {
@@ -615,4 +606,14 @@ export function computeTopTrackCards(collectorTracks: CollectorTrackRow[]) {
   const distroCount = rows.filter((t) => (t.distro_playlist_keys ?? []).length > 0).length;
 
   return { bestDelta, bestTotal, distroCount, totalCount: rows.length };
+}
+
+/**
+ * Text colour class for a signed number (streams, deltas, revenue): muted for 0/null,
+ * red for negative, positive accent for gains. Pair with `formatSignedOrDash`-style
+ * rendering so 0/null shows as "—".
+ */
+export function toneClass(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n) || n === 0) return "text-[var(--sb-muted)]";
+  return n < 0 ? "text-red-600 dark:text-red-400" : "sb-positive";
 }

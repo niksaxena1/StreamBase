@@ -9,12 +9,14 @@ export const Sparkline = memo(function Sparkline({
   className,
   color,
   upColor,
+  mock = true,
 }: {
   data?: number[];
   trend?: "up" | "down" | "neutral";
   className?: string;
   color?: string; // Custom color for the sparkline
   upColor?: string; // Optional override for the "up" (green) color only
+  mock?: boolean; // Keep decorative placeholder paths for skeleton callers; data views can disable them.
 }) {
   const gid = useId();
   const themeColors = useThemeColors();
@@ -80,7 +82,15 @@ export const Sparkline = memo(function Sparkline({
     );
   }
 
-  // Fallback to static mock data paths
+  if (!mock) {
+    return (
+      <svg width="100%" height="100%" viewBox="0 0 80 30" preserveAspectRatio="none" className={["overflow-visible", className].filter(Boolean).join(" ")} aria-hidden="true">
+        <line x1="0" y1="15" x2="80" y2="15" stroke="var(--sb-muted)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+      </svg>
+    );
+  }
+
+  // Fallback to static mock data paths for loading placeholders.
   const paths = {
     up: "M0 25 C10 25 10 20 20 20 C30 20 30 15 40 15 C50 15 50 5 60 5 C70 5 70 0 80 0",
     down: "M0 5 C10 5 10 10 20 10 C30 10 30 15 40 15 C50 15 50 20 60 20 C70 20 70 25 80 25",

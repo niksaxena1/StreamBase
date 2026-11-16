@@ -8,9 +8,10 @@ import {
   YAxis,
   Tooltip,
   ResponsiveContainer,
+  ReferenceLine,
   Scatter,
 } from "recharts";
-import { useCallback, useId, useRef } from "react";
+import { useCallback, useEffect, useId, useRef } from "react";
 import { formatCompactMoney, formatInt, formatUsd } from "@/lib/format";
 import { filterMonthlySeriesFromIsoDate, formatKmbTick } from "@/components/charts/chartUtils";
 import { getChartColor, useThemeColors, GLASS_TOOLTIP_SURFACE } from "@/components/charts/useThemeColors";
@@ -31,6 +32,8 @@ export type MonthlyDataPoint = {
   daysWithData?: number;
   /** Total calendar days in this month (only for current/incomplete month) */
   totalDaysInMonth?: number;
+  /** True when this is a cut-off month at the start of the available history. */
+  partial?: boolean;
 };
 
 type ValueFormat = "int" | "usd";
@@ -43,6 +46,7 @@ function MonthlyTooltip({
   valueLabel,
   fmtValue,
   valueColor,
+  activeMonthRef,
 }: {
   active?: boolean;
   label?: string;
@@ -50,7 +54,12 @@ function MonthlyTooltip({
   valueLabel: string;
   fmtValue: (n: number) => string;
   valueColor: string;
+  activeMonthRef: React.MutableRefObject<string | null>;
 }) {
+  const month = active && payload?.length ? String(payload[0]?.payload?.month ?? "") || null : null;
+  useEffect(() => {
+    activeMonthRef.current = month;
+  }, [activeMonthRef, month]);
   if (!active || !payload?.length) return null;
 
   // Get the data point from the first payload entry (both stacked bars share it)
@@ -74,7 +83,10 @@ function MonthlyTooltip({
           color: "var(--sb-text)",
         }}
       >
-        <div className="mb-1 font-medium">{label ? formatTooltipMonth(label) : "—"}</div>
+        <div className="mb-1 font-medium">
+          {label ? formatTooltipMonth(label) : "—"}
+          {dp?.partial && <span className="ml-1 font-normal opacity-60">(partial)</span>}
+        </div>
         <div>
           {valueLabel}:{" "}
           <span className="font-semibold" style={{ color: valueColor }}>
@@ -116,13 +128,13 @@ function MonthlyTooltip({
 }
 
 function formatMonthLabel(monthString: string): string {
-  const date = new Date(`${monthString}-01`);
-  return date.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+  const date = new Date(`${monthString}-01T00:00:00Z`);
+  return date.toLocaleDateString("en-US", { month: "short", year: "2-digit", timeZone: "UTC" });
 }
 
 function formatTooltipMonth(monthString: string): string {
-  const date = new Date(`${monthString}-01`);
-  return date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  const date = new Date(`${monthString}-01T00:00:00Z`);
+  return date.toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
 }
 
 /* ── Custom bar shapes ─────────────────────────────────────── */
@@ -145,14 +157,33 @@ function roundedTopPath(x: number, y: number, w: number, h: number, r: number): 
 
 /** Solid bar for the actual value. Flat-tops when a projected bar sits above it. */
 function ActualBarShape(props: any) {
-  const { x, y, width, height, fill } = props;
-  if (!width || !height || height <= 0) return null;
+  const { x, y, width, fill } = props;
+  const rawHeight = Number(props.height ?? 0);
+  const height = Math.abs(rawHeight);
+  const barY = rawHeight < 0 ? Number(y) + rawHeight : Number(y);
+  if (!width || !height) return null;
   const hasProjection = (props.payload?.projectedExtra ?? 0) > 0;
   if (hasProjection) {
     // Flat top — the projected bar on top will carry the rounded corners
-    return <rect x={x} y={y} width={width} height={height} fill={fill} />;
+    return <rect x={x} y={barY} width={width} height={height} fill={fill} />;
   }
-  return <path d={roundedTopPath(x, y, width, height, 4)} fill={fill} />;
+  if (Number(props.value) < 0) {
+    return <path d={roundedBottomPath(x, barY, width, height, 4)} fill={fill} />;
+  }
+  return <path d={roundedTopPath(x, barY, width, height, 4)} fill={fill} />;
+}
+
+function roundedBottomPath(x: number, y: number, w: number, h: number, r: number): string {
+  if (h < r * 2) return `M${x},${y} L${x + w},${y} L${x + w},${y + h} L${x},${y + h} Z`;
+  return [
+    `M${x},${y}`,
+    `L${x + w},${y}`,
+    `L${x + w},${y + h - r}`,
+    `Q${x + w},${y + h} ${x + w - r},${y + h}`,
+    `L${x + r},${y + h}`,
+    `Q${x},${y + h} ${x},${y + h - r}`,
+    "Z",
+  ].join(" ");
 }
 
 /** Dashed / faded bar for the projected remainder. Opacity scales with data confidence. */
@@ -316,27 +347,20 @@ export function MonthlyBarChart({
             axisLine={false}
             tickFormatter={(value) => fmtYTick(Number(value ?? 0))}
           />
+          <ReferenceLine y={0} stroke="var(--sb-border)" strokeWidth={1} />
           <Tooltip
-            content={({ active, label, payload }) => {
-              const dp =
-                active && payload && payload.length
-                  ? ((payload[0] as any)?.payload as MonthlyDataPoint)
-                  : null;
-              activeMonthRef.current = dp?.month ? String(dp.month) : null;
-              return (
-                <MonthlyTooltip
-                  active={active}
-                  label={label as string}
-                  payload={payload as Array<{ value?: unknown; payload?: MonthlyDataPoint }>}
-                  valueLabel={valueLabel}
-                  fmtValue={fmtValue}
-                  valueColor={tooltipValueColor}
-                />
-              );
-            }}
-            cursor={{
-              fill: "rgba(0,0,0,0.1)",
-            }}
+            content={({ active, label, payload }) => (
+              <MonthlyTooltip
+                active={active}
+                label={label as string}
+                payload={payload as Array<{ value?: unknown; payload?: MonthlyDataPoint }>}
+                valueLabel={valueLabel}
+                fmtValue={fmtValue}
+                valueColor={tooltipValueColor}
+                activeMonthRef={activeMonthRef}
+              />
+            )}
+            cursor={{ fill: "color-mix(in srgb, var(--sb-accent) 12%, transparent)" }}
           />
           {/* Actual value — solid gradient fill */}
           <Bar

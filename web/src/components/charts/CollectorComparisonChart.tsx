@@ -11,8 +11,8 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { useCallback, useId, useMemo, useRef } from "react";
-import { formatCompactMoney, formatDisplayDayMonth, formatInt, formatUsd2 } from "@/lib/format";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { formatCompactMoney, formatDisplayDate, formatDisplayDayMonth, formatInt, formatUsd2 } from "@/lib/format";
 import {
   computePaddedDomain,
   computeRollingAvg7,
@@ -87,14 +87,21 @@ function formatTooltipDate(dateString: string, granularity: Granularity = "daily
     return dateString;
   }
 
-  // Daily: full date format
-  const date = new Date(dateString);
-  const dayOfWeek = date.toLocaleDateString("en-US", { weekday: "long" });
-  const day = String(date.getDate()).padStart(2, "0");
-  const month = date.toLocaleDateString("en-US", { month: "short" });
-  const year = date.getFullYear();
+  return formatDisplayDate(dateString);
+}
 
-  return `${dayOfWeek}, ${day} ${month} ${year}`;
+function usePrefersReducedMotion(): boolean {
+  const [reduce, setReduce] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+  );
+  useEffect(() => {
+    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => setReduce(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+  return reduce;
 }
 
 function CustomTooltip({
@@ -119,7 +126,9 @@ function CustomTooltip({
   seriesLabels?: Record<string, string>;
 }) {
   const dateStr = active && label ? String(label) : null;
-  if (onActiveDate) onActiveDate(dateStr);
+  useEffect(() => {
+    onActiveDate?.(dateStr);
+  }, [dateStr, onActiveDate]);
 
   if (!active || !payload || payload.length === 0) return null;
 
@@ -172,8 +181,9 @@ function CustomTooltip({
 
           if (isPercentageMode) {
             const absValue = Number(dataPoint[`_abs_${entry.dataKey}`] ?? 0);
-            const avg7Value = Number(dataPoint[`_avg7_${entry.dataKey}`] ?? 0);
-            const deltaPct = avg7Value > 0 ? ((absValue - avg7Value) / avg7Value) * 100 : null;
+            const rawAverage = dataPoint[`_avg7_${entry.dataKey}`];
+            const avg7Value = rawAverage == null ? null : Number(rawAverage);
+            const deltaPct = avg7Value != null && avg7Value > 0 ? ((absValue - avg7Value) / avg7Value) * 100 : null;
 
             return (
               <div key={index} className="text-xs mb-1.5 last:mb-0">
@@ -192,7 +202,7 @@ function CustomTooltip({
                     </span>
                   </span>
                 </div>
-                {deltaPct != null && (
+                {deltaPct != null && avg7Value != null && (
                   <div className="ml-4 text-[10px]" style={{ color: "var(--sb-muted)" }}>
                     <span
                       className="font-medium"
@@ -274,6 +284,12 @@ export function CollectorComparisonChart({
   emptyStateMessage?: string;
 }) {
   const gid = useId();
+  const reduceMotion = usePrefersReducedMotion();
+  const [isFirstRender, setIsFirstRender] = useState(true);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setIsFirstRender(false), 400);
+    return () => window.clearTimeout(timer);
+  }, []);
   const { streamPayoutPerStreamUsd } = usePayoutRate();
   const themeColors = useThemeColors();
   const { weekHighlightDayUtc } = useWeekHighlight();
@@ -361,9 +377,11 @@ export function CollectorComparisonChart({
           point[collector] = values[collector];
         }
       } else if (mode === "percentage") {
+        const nonNegativeTotal = selectedCollectors.reduce((sum, collector) => sum + Math.max(0, values[collector]), 0);
         for (const collector of selectedCollectors) {
-          point[collector] = total === 0 ? 0 : (values[collector] / total) * 100;
-          point[`_abs_${collector}`] = values[collector];
+          const nonNegativeValue = Math.max(0, values[collector]);
+          point[collector] = nonNegativeTotal <= 0 ? 0 : (nonNegativeValue / nonNegativeTotal) * 100;
+          point[`_abs_${collector}`] = nonNegativeValue;
         }
       }
 
@@ -390,11 +408,11 @@ export function CollectorComparisonChart({
         const enriched = { ...point } as Record<string, any>;
 
         for (const collector of selectedCollectors) {
-          const windowStart = Math.max(0, i - 6);
-          const window = visibleChartData.slice(windowStart, i + 1);
+          const windowStart = Math.max(0, i - 7);
+          const window = visibleChartData.slice(windowStart, i);
           const absValues = window.map((d) => Number(d[`_abs_${collector}`] ?? 0));
           enriched[`_avg7_${collector}`] =
-            absValues.reduce((s, v) => s + v, 0) / absValues.length;
+            absValues.length ? absValues.reduce((s, v) => s + v, 0) / absValues.length : null;
         }
 
         if (!detectAnomalies) {
@@ -661,7 +679,18 @@ export function CollectorComparisonChart({
                 // Format: "2024" -> "2024"
                 return value;
               }
-              // Daily: "07 Oct"
+              // Daily: show the year at the first tick and whenever the year changes.
+              const pointIndex = displayedChartData.findIndex((point) => point.date === value);
+              const year = String(value).slice(0, 4);
+              const previousYear = pointIndex > 0 ? String(displayedChartData[pointIndex - 1].date).slice(0, 4) : null;
+              if (pointIndex === 0) return formatDisplayDate(value);
+              if (previousYear && previousYear !== year) {
+                return new Date(`${value}T00:00:00Z`).toLocaleDateString("en-US", {
+                  month: "short",
+                  year: "numeric",
+                  timeZone: "UTC",
+                });
+              }
               return formatDisplayDayMonth(value);
             }}
             stroke="var(--sb-muted)"
@@ -735,7 +764,9 @@ export function CollectorComparisonChart({
               fill={`url(#${gid}-area)`}
               dot={areaDotRenderers?.dot}
               activeDot={areaDotRenderers?.activeDot}
-              isAnimationActive={true}
+              isAnimationActive={isFirstRender && !reduceMotion}
+              animationDuration={220}
+              animationEasing="ease-out"
             />
           ) : null}
 
@@ -792,7 +823,9 @@ export function CollectorComparisonChart({
                 strokeWidth={2}
                 dot={dotFn}
                 activeDot={activeDotFn}
-                isAnimationActive={true}
+                isAnimationActive={isFirstRender && !reduceMotion}
+                animationDuration={220}
+                animationEasing="ease-out"
               />
             );
           })}

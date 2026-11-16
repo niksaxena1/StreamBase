@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import { Chip, ChipGroup } from "@/components/ui/Chip";
 import { fetchApiJson } from "@/lib/api";
@@ -283,7 +283,7 @@ export function CollectorsOverlapMatrix(props: {
                     );
                     const cell = basis === "tracks" ? trackCell : artistCell;
                     if (!cell) {
-                      return <td key={col.collector} className="p-2" />;
+                      return <td key={col.collector} className="p-2 text-center font-mono tabular-nums text-[var(--sb-muted)]">0</td>;
                     }
 
                     const sharedCount =
@@ -291,13 +291,20 @@ export function CollectorsOverlapMatrix(props: {
                         ? (cell as OverlapCell).shared_isrcs
                         : (cell as OverlapArtistCell).shared_artists;
                     const jaccard = Number(cell.jaccard);
-                    const jaccardPct = jaccard * 100;
+                    const jaccardPct = Number.isFinite(jaccard) ? jaccard * 100 : null;
+                    const maxShared = Math.max(
+                      1,
+                      ...(basis === "tracks"
+                        ? Array.from(overlapLookup.values(), (c) => Number(c.shared_isrcs ?? 0))
+                        : Array.from(overlapArtistLookup.values(), (c) => Number(c.shared_artists ?? 0))),
+                    );
+                    const heat = Math.max(0, Number(sharedCount) / maxShared);
                     const displayValue =
                       valueMode === "count" ? formatInt(sharedCount) : formatJaccardPercent(jaccard);
                     const title =
                       sharedCount > 0
-                        ? `${formatInt(sharedCount)} shared ${entityLabelPlural} · Jaccard ${jaccardPct.toFixed(1)}% · Click for list`
-                        : `${formatInt(sharedCount)} shared ${entityLabelPlural} · Jaccard ${jaccardPct.toFixed(1)}%`;
+                        ? `${formatInt(sharedCount)} shared ${entityLabelPlural} · Jaccard ${jaccardPct == null ? "—" : `${jaccardPct.toFixed(1)}%`} · Click for list`
+                        : `${formatInt(sharedCount)} shared ${entityLabelPlural} · Jaccard ${jaccardPct == null ? "—" : `${jaccardPct.toFixed(1)}%`}`;
 
                     if (sharedCount <= 0) {
                       return (
@@ -306,21 +313,21 @@ export function CollectorsOverlapMatrix(props: {
                           className="p-2 text-center font-mono tabular-nums text-[var(--sb-text)] opacity-60"
                           title={title}
                         >
-                          {valueMode === "count" ? "0" : "0%"}
+                          0
                         </td>
                       );
                     }
 
                     return (
-                      <td key={col.collector} className="p-0">
+                      <td key={col.collector} className="p-0" style={{ "--v": heat } as CSSProperties}>
                         <button
                           type="button"
                           className={[
                             "w-full p-2 text-center font-mono font-medium tabular-nums transition",
                             "text-[var(--sb-text)]",
-                            "hover:bg-white/10",
-                            "hover:ring-2 hover:ring-inset hover:ring-white/25",
-                            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40",
+                            "bg-[color-mix(in_srgb,var(--sb-accent)_calc(var(--v)_*_60%),transparent)]",
+                            "hover:ring-1 hover:ring-inset hover:ring-[var(--sb-accent)]",
+                            "focus-visible:outline-2 focus-visible:outline-[var(--sb-accent)]",
                           ].join(" ")}
                           title={title}
                           onClick={() => openOverlap(row.collector, col.collector, sharedCount)}

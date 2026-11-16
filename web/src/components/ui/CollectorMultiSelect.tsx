@@ -40,6 +40,20 @@ export function CollectorMultiSelect({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsOpen(false);
+        buttonRef.current?.focus();
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen]);
+
   // Update button width when dropdown opens
   useEffect(() => {
     if (isOpen && buttonRef.current) {
@@ -112,6 +126,8 @@ export function CollectorMultiSelect({
 
       {isOpen && (
         <div
+          role="listbox"
+          aria-multiselectable="true"
           className="absolute left-0 top-full z-50 mt-2 rounded-[var(--sb-radius)] border p-1 shadow-lg"
           style={{
             width: buttonWidth,
@@ -142,6 +158,8 @@ export function CollectorMultiSelect({
               <button
                 key={collector}
                 type="button"
+                role="option"
+                aria-selected={isSelected}
                 onClick={() => toggleCollector(collector)}
                 className={`flex w-full items-center gap-2 rounded-[calc(var(--sb-radius)-8px)] px-2 py-1.5 text-left text-xs transition ${
                   !isSelected ? "hover:bg-[var(--sb-surface)]" : ""
