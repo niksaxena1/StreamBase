@@ -19,6 +19,7 @@ import {
   type StreamLookupProvider,
 } from "@/lib/rapidapi";
 import { apiJsonErr, apiJsonOk, readJsonBodyOptional, requireAdmin } from "@/lib/api/server";
+import { fetchPagesUpTo } from "@/lib/library/paging";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -222,13 +223,14 @@ async function loadSavedLookupResults(
 ): Promise<StaleLookupResult[]> {
   try {
     const svc = supabaseService();
-    const { data: overrideRows } = await svc
+    const overrideRows = await fetchPagesUpTo(5000, (from, to) => svc
       .from("track_daily_stream_overrides")
       .select("isrc")
       .eq("date", lookupDate)
-      .limit(5000);
+      .order("isrc", { ascending: true })
+      .range(from, to));
     const overriddenIsrcs = new Set(
-      ((overrideRows ?? []) as Array<{ isrc?: string | null }>)
+      (overrideRows as Array<{ isrc?: string | null }>)
         .map((row) => String(row.isrc ?? "").trim().toUpperCase())
         .filter(Boolean),
     );

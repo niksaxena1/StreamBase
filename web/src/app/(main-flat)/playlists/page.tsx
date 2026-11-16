@@ -31,6 +31,8 @@ import { PrefetchPlaylistsConfig } from "./PrefetchPlaylistsConfig";
 import { isMissingPostgresFunctionError } from "@/lib/supabase/rpcErrors";
 import { getRequestAppContext } from "@/lib/requestAppContext.server";
 import { timedServerStep } from "@/lib/serverTiming";
+import { chunk } from "@/lib/competitorLabelScope";
+import { fetchAllPages, fetchPagesUpTo } from "@/lib/library/paging";
 
 // Uses Supabase session cookies; this route must be dynamic in Next 16.
 export const dynamic = "force-dynamic";
@@ -259,11 +261,15 @@ async function PlaylistsPageContent({
     const hist = (history ?? []) as PlaylistDailyStatsRow[];
     const hasOnlyOneSnapshot = hist.length === 1;
 
-    const currentRows = await comp.rpc("playlist_current_tracks", {
-      playlist_key: effectivePlaylistKey,
-      run_date: latestDate,
-    });
-    const currentTrackRows = ((currentRows.data ?? []) as CompetitorCurrentTrackRow[]);
+    const currentTrackRows = await fetchAllPages((from, to) => comp
+      .rpc("playlist_current_tracks", {
+        playlist_key: effectivePlaylistKey,
+        run_date: latestDate,
+      })
+      .order("total", { ascending: false, nullsFirst: false })
+      .order("name", { ascending: true })
+      .order("isrc", { ascending: true })
+      .range(from, to)) as CompetitorCurrentTrackRow[];
 
     // Older deployed versions of playlist_current_tracks predate the `daily`
     // column. Keep the page useful while that migration rolls out by deriving
@@ -275,10 +281,15 @@ async function PlaylistsPageContent({
       currentTrackRows.every((row) => row.daily == null)
     ) {
       const isrcs = currentTrackRows.map((row) => row.isrc);
-      const [{ data: latestTrackStats }, { data: prevTrackStats }] = await Promise.all([
-        comp.from("track_daily_streams").select("isrc,streams_cumulative").eq("date", latestDate).in("isrc", isrcs),
-        comp.from("track_daily_streams").select("isrc,streams_cumulative").eq("date", prevDate).in("isrc", isrcs),
+      const loadTrackStats = (date: string) => Promise.all(chunk(isrcs, 200).map((part) =>
+        fetchAllPages((from, to) => comp.from("track_daily_streams")
+          .select("isrc,streams_cumulative").eq("date", date).in("isrc", part)
+          .order("isrc", { ascending: true }).range(from, to))));
+      const [latestTrackStatsBatches, prevTrackStatsBatches] = await Promise.all([
+        loadTrackStats(latestDate), loadTrackStats(prevDate),
       ]);
+      const latestTrackStats = latestTrackStatsBatches.flat();
+      const prevTrackStats = prevTrackStatsBatches.flat();
       const latestByIsrc = new Map(
         (latestTrackStats ?? []).map((row: any) => [String(row.isrc), row.streams_cumulative == null ? null : Number(row.streams_cumulative)]),
       );
@@ -295,10 +306,11 @@ async function PlaylistsPageContent({
       }
     }
     if (currentTrackRows.length > 0) {
-      const { data: trackMetaRows } = await comp
-        .from("tracks")
-        .select("isrc,release_date,spotify_artist_ids")
-        .in("isrc", currentTrackRows.map((row) => row.isrc));
+      const trackMetaBatches = await Promise.all(chunk(currentTrackRows.map((row) => row.isrc), 200).map((part) =>
+        fetchAllPages((from, to) => comp.from("tracks")
+          .select("isrc,release_date,spotify_artist_ids").in("isrc", part)
+          .order("isrc", { ascending: true }).range(from, to))));
+      const trackMetaRows = trackMetaBatches.flat();
       const trackMetaByIsrc = new Map(
         (trackMetaRows ?? []).map((row: any) => [
           String(row.isrc),
@@ -618,35 +630,37 @@ async function PlaylistsPageContent({
       );
       if (!isrcs.length) return [];
 
-      const trackMetaPromise = cachedQuery(
-        async () =>
-          await svc
-            .from("tracks")
-            .select("isrc,name,spotify_album_image_url,spotify_artist_names")
-            .in("isrc", isrcs)
-            .limit(2000),
-        `playlist-overrides-track-meta-v2-${[...isrcs].sort().join(",")}`,
+      const trackMetaPromise = Promise.all(chunk(isrcs, 200).map((part) => cachedQuery(
+        // Each chunk has at most 200 ISRCs, so one request returns all of its rows.
+        async () => await svc
+          .from("tracks")
+          .select("isrc,name,spotify_album_image_url,spotify_artist_names")
+          .in("isrc", part),
+        `playlist-overrides-track-meta-v3-${[...part].sort().join(",")}`,
         3600,
-      );
+      )));
       const membershipPlaylistKeys =
         playlistKey === "all_catalog" ? (["releases", "ext"] as const) : ([playlistKey] as const);
 
-      const membershipPromise = cachedQuery(
-        async () =>
-          await svc
-            .from("playlist_memberships")
-            .select("playlist_key,isrc,valid_from,valid_to")
-            .in("playlist_key", [...membershipPlaylistKeys])
-            .in("isrc", isrcs)
-            .lte("valid_from", endRunDate)
-            .or(`valid_to.is.null,valid_to.gte.${startRunDate}`)
-            .limit(5000),
-        `playlist-memberships-for-overrides-${playlistKey}-${startRunDate}-${endRunDate}-${isrcs.length}`,
+      const membershipPromise = Promise.all(chunk(isrcs, 200).map((part) => cachedQuery(
+        async () => ({ data: await fetchPagesUpTo(5000, (from, to) => svc
+          .from("playlist_memberships")
+          .select("playlist_key,isrc,valid_from,valid_to")
+          .in("playlist_key", [...membershipPlaylistKeys])
+          .in("isrc", part)
+          .lte("valid_from", endRunDate)
+          .or(`valid_to.is.null,valid_to.gte.${startRunDate}`)
+          .order("playlist_key", { ascending: true })
+          .order("isrc", { ascending: true })
+          .order("valid_from", { ascending: true })
+          .order("valid_to", { ascending: true, nullsFirst: true })
+          .range(from, to)), error: null }),
+        `playlist-memberships-for-overrides-${playlistKey}-${startRunDate}-${endRunDate}-${part.length}-${part[0]}-${part[part.length - 1]}`,
         3600,
-      );
+      )));
 
-      const [{ data: trackMetaRaw }, { data: membershipRowsRaw }] = await Promise.all([trackMetaPromise, membershipPromise]);
-      const trackMeta = (trackMetaRaw ?? []) as TrackMetaRow[];
+      const [trackMetaResults, membershipResults] = await Promise.all([trackMetaPromise, membershipPromise]);
+      const trackMeta = trackMetaResults.flatMap(({ data }) => (data ?? []) as TrackMetaRow[]);
       const metaByIsrc = new Map<string, TrackMetaRow>();
       for (const m of trackMeta) {
         const key = (m?.isrc ?? "").trim();
@@ -654,7 +668,7 @@ async function PlaylistsPageContent({
         if (!metaByIsrc.has(key)) metaByIsrc.set(key, m);
       }
 
-      const membershipRows = (membershipRowsRaw ?? []) as PlaylistMembershipRow[];
+      const membershipRows = membershipResults.flatMap(({ data }) => (data ?? []) as PlaylistMembershipRow[]);
       const membershipsByIsrc = new Map<string, PlaylistMembershipRow[]>();
       for (const m of membershipRows) {
         const key = (m?.isrc ?? "").trim();

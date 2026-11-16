@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabaseService } from "@/lib/supabase/service";
 import { cachedQueries, cachedQuery } from "@/lib/supabase/cache";
 import { PlaylistTracksSectionClient } from "./PlaylistTracksSectionClient";
+import { chunk } from "@/lib/competitorLabelScope";
 
 function errorMessage(err: unknown): string {
   if (!err) return "unknown error";
@@ -156,22 +157,15 @@ export async function PlaylistTracksSection(props: {
     const isrcs = Array.from(new Set(all.map((r) => String((r as any)?.isrc ?? "").trim()).filter(Boolean)));
     if (!isrcs.length) return new Map<string, string | null>();
 
-    const sorted = [...isrcs].sort((a, b) => a.localeCompare(b));
-    const sig = `${sorted.length}:${sorted.slice(0, 3).join(",")}:${sorted.slice(-3).join(",")}`;
-
-    const { data } = await cachedQuery(
-      async () =>
-        await svc
-          .from("tracks")
-          .select("isrc,release_date")
-          .in("isrc", isrcs)
-          .limit(5000),
-      `playlist-track-release-dates-v1-${props.playlistKey}-${props.latestRunDate}-${sig}`,
+    const batches = await Promise.all(chunk(isrcs, 200).map((part) => cachedQuery(
+      // Each chunk has at most 200 ISRCs, so one request returns all of its rows.
+      async () => await svc.from("tracks").select("isrc,release_date").in("isrc", part),
+      `playlist-track-release-dates-v2-${props.playlistKey}-${props.latestRunDate}-${part.length}-${part[0]}-${part[part.length - 1]}`,
       86400,
-    );
+    )));
 
     const map = new Map<string, string | null>();
-    for (const r of (data ?? []) as Array<{ isrc: string; release_date: string | null }>) {
+    for (const r of batches.flatMap(({ data }) => (data ?? []) as Array<{ isrc: string; release_date: string | null }>)) {
       const key = String(r?.isrc ?? "").trim();
       if (!key) continue;
       map.set(key, (r?.release_date ?? null) as string | null);

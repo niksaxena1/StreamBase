@@ -2,6 +2,7 @@ import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { apiJsonErr, apiJsonOk, readJsonBody, requireAdmin } from "@/lib/api/server";
 import { getAdminUserDatasetContext } from "@/lib/datasetContext.server";
+import { POSTGREST_PAGE_SIZE } from "@/lib/library/paging";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,21 +45,28 @@ export async function POST(req: Request) {
     p_artist_ids: artistIds,
     p_playlist_key: playlistKey ?? undefined,
     p_hide_non_primary: hideNonPrimary,
-    p_limit: PAGE_LIMIT + 1,
-    p_offset: offset,
   };
-  const { data, error } =
-    datasetMode === "competitor"
-      ? await svc.schema("competitor").rpc("network_selection_scoped_isrcs", rpcArgs)
-      : await svc.rpc("network_selection_scoped_isrcs", rpcArgs);
-
-  if (error) {
-    console.error("network_selection_scoped_isrcs:", error);
-    return apiJsonErr(error.message, 500);
+  const flat: string[] = [];
+  const requestedRows = PAGE_LIMIT + 1;
+  for (let fetched = 0; fetched < requestedRows;) {
+    const batchLimit = Math.min(POSTGREST_PAGE_SIZE, requestedRows - fetched);
+    const rpc = datasetMode === "competitor"
+      ? svc.schema("competitor").rpc("network_selection_scoped_isrcs", {
+          ...rpcArgs, p_limit: batchLimit, p_offset: offset + fetched,
+        })
+      : svc.rpc("network_selection_scoped_isrcs", {
+          ...rpcArgs, p_limit: batchLimit, p_offset: offset + fetched,
+        });
+    const { data, error } = await rpc;
+    if (error) {
+      console.error("network_selection_scoped_isrcs:", error);
+      return apiJsonErr(error.message, 500);
+    }
+    const rows = (data ?? []) as Array<{ isrc: string } | string>;
+    flat.push(...rows.map((r) => (typeof r === "string" ? r : r.isrc)).filter(Boolean));
+    if (rows.length < batchLimit) break;
+    fetched += batchLimit;
   }
-
-  const rows = (data ?? []) as Array<{ isrc: string } | string>;
-  const flat = rows.map((r) => (typeof r === "string" ? r : r.isrc)).filter(Boolean);
   const hasMore = flat.length > PAGE_LIMIT;
   const isrcs = hasMore ? flat.slice(0, PAGE_LIMIT) : flat;
 
