@@ -106,6 +106,19 @@ def test_empty_result_does_nothing():
     assert result["earliest"] is None and not pg.inserts
 
 
+def test_stall_rows_cascade_and_covered_mass_guard_is_not_a_review():
+    # 20261119135057: a stalled source run (several flat days) is reported as applied_stall,
+    # and the lag rule's mass_guard for the same day becomes covered_by_stall (no warning).
+    covered = {**review_row(), "status": "covered_by_stall"}
+    stall = {**applied_row("2026-10-10", "2026-10-07", 2400), "status": "applied_stall"}
+    pg = FakePG({SMOOTH: [covered, stall]})
+    result = run_catchup_smoothing(pg, RUN, run_id=7, universe="own")
+
+    assert result["earliest"] == date(2026, 10, 7)
+    assert result["applied_rows"] == [stall]
+    assert result["review_rows"] == [] and not pg.inserts
+
+
 def test_own_catalog_cascades_from_earliest_smoothed_date():
     pg = FakePG({SMOOTH: [applied_row(first_date="2026-10-08")], "spotibase_reconcile_auto_overrides": 0})
     result = smooth_own_catalog(pg, RUN, run_id="run-1")

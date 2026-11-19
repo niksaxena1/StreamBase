@@ -233,3 +233,13 @@ win). It only acts when >= 20% of eligible tracks show the pattern on the same
 date and refuses (ingestion warning `catchup_needs_review`) when more than 50% of
 the catalog would change. Dry run by default; reconcile also drops obsolete
 auto-catchup rows.
+
+Own catalog only (`20261119135057_add_stalled_source_day_catchup.sql`): the same
+function also handles stalled source days, when SpotOnTrack/Spotify does not
+update at all. A day counts as stalled when >= 50% of active tracks (>= 5
+streams/day) have exactly zero raw growth. Consecutive stalled days form one run,
+which is smoothed once its catch-up day has arrived. Every track flat across the
+whole run gets an even split up to the catch-up day, whatever its size. The
+note is `auto-catchup:v1 <first>..<catch-up> even-split (source flat <days>)`
+and the status is `applied_stall`. A lag-rule `mass_guard` on a day the stall
+rule handled is reported as `covered_by_stall`, so it raises no review warning.
