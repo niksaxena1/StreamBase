@@ -8,6 +8,8 @@ StreamBase has two analytics universes (plus a small third, Charts, below):
 2. **Competitors** in the isolated `competitor` schema.
 3. **Charts** (public music-chart snapshots, first: Beatport Tech House Top 100) in the isolated `charts` schema. Separate, additive, independent of the dataset-mode switch; never join it to `public`/`competitor` analytics. See `docs/CHARTS.md`.
 
+**Business context:** read `docs/BUSINESS-MODEL.md` before analysing streams. StreamBase playlists are bookkeeping (entity / distributor account), never the source of streams; the marketing playlists that drive streams are not in the database, and Spotify for Artists must never be automated.
+
 Do not blur them. Competitor work should be additive and schema-scoped; own-catalog workflows, queries, and pages must keep their existing performance characteristics unless the user explicitly asks otherwise.
 
 ## Core invariants
