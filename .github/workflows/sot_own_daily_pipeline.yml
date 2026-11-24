@@ -91,11 +91,19 @@ jobs:
           STAGE: ${{ steps.resolve.outputs.stage }}
           RUN_DATE: ${{ steps.resolve.outputs.run_date }}
           FORCE: ${{ inputs.force_reingest }}
+          EVENT_NAME: ${{ github.event_name }}
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
           SKIP="false"
           if [ "$FORCE" = "true" ]; then
             echo "Force re-ingest enabled. Skipping idempotency pre-check for $RUN_DATE."
+          elif [ "$EVENT_NAME" = "schedule" ] && [ "$(date -u +%-H)" -lt 16 ]; then
+            # GitHub never fires a cron early, so a fallback run starting before 16:00 UTC is
+            # yesterday's run delayed past midnight. Running it would ingest the new day hours
+            # early (a short day, then a long one). Skip without recording a stage so the
+            # database scheduler still runs today at the normal time.
+            echo "::notice::Late fallback schedule (started $(date -u +%H:%M) UTC, due 16:00 UTC the day before). Skipping."
+            SKIP="true"
           elif [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
             echo "Supabase secrets not set; cannot pre-check. Proceeding."
           else
