@@ -44,6 +44,8 @@ import { aggregateCumulativeSeries, aggregateDailySeries } from "@/lib/granulari
 import { useSharedGranularity } from "@/lib/useSharedGranularity";
 import { useLongPress } from "@/components/charts/useLongPress";
 import type { TrackSeriesPoint, TrackDailyPoint, SelectedTrack, TrackPlaylistMembership, TopTrack, ChartDataPoint, DailyDataPoint, ArtistOption, TrackOption } from "./catalogTypes";
+import type { TrackTakedown } from "./catalogPageUtils";
+import { Alert } from "@/components/ui/Alert";
 import { sortTopTracks, toggleSort, type SortState, type TopSortKey } from "./catalogUtils";
 import { CATALOG_ALL_HISTORY_DAYS } from "./catalogPageUtils";
 import { buildDailyExportRows, rangeDaysNeededFor, type ViewWindow } from "@/components/charts/aggregateSeries";
@@ -492,9 +494,8 @@ export function CatalogPageClient(props: {
 
       {props.trackOnly ? (
         <div className="sb-card px-4 py-3 text-sm" style={{ color: "var(--sb-muted)" }}>
-          No artist on record for this track. Spotify could not match its ISRC, usually because the track was taken
-          down before StreamBase looked it up, so artist totals and the artist&apos;s other tracks are not shown. The
-          track&apos;s own streams are below.
+          No artist on record for this track (Spotify never matched its ISRC), so artist totals and the
+          artist&apos;s other tracks are not shown. The track&apos;s own streams are below.
         </div>
       ) : (
       <div
@@ -940,6 +941,7 @@ export function CatalogPageClient(props: {
 
       {/* Selected track panels (not part of artist collapse) */}
       <div className="space-y-3 border-t pt-3" style={{ borderColor: "var(--sb-border)" }}>
+        {props.selectedTrack?.takedown ? <TakedownBanner takedown={props.selectedTrack.takedown} /> : null}
         {props.isrc && props.selectedTrack ? (
           <div className="flex items-center gap-3">
             {props.selectedTrack.albumImageUrl ? (
@@ -998,20 +1000,6 @@ export function CatalogPageClient(props: {
                   <CopyableIsrc isrc={props.isrc} className="font-mono" />
                 </span>
               </div>
-              {props.selectedTrack.spotifyNotFoundSince ? (
-                <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
-                  {props.selectedTrack.lastStreamGainDate ? (
-                    <>
-                      Taken down: last new stream on{" "}
-                      <span className="font-medium" style={{ color: "var(--sb-text)" }}>
-                        {formatDisplayDate(props.selectedTrack.lastStreamGainDate)}
-                      </span>
-                      <span> • </span>
-                    </>
-                  ) : null}
-                  Spotify search has not found it since {formatDisplayDate(props.selectedTrack.spotifyNotFoundSince)}
-                </div>
-              ) : null}
               {!isCompetitorMode && props.selectedTrackMarkets && props.selectedTrackMarkets.scanned !== false ? (
                 <div className="mt-1.5">
                   <SpotifyMarketsBadge
@@ -1214,5 +1202,29 @@ export function CatalogPageClient(props: {
         </GlassTable>
       </div>
     </ChartStartDateOverride>
+  );
+}
+
+function TakedownBanner({ takedown }: { takedown: TrackTakedown }) {
+  if (takedown.precision === "detected") {
+    return (
+      <Alert variant="error" title={`Taken down from Spotify as of ${formatDisplayDate(takedown.date)}`}>
+        The daily takedown check found it unplayable on this day
+        {takedown.lastAvailableAt ? `; it was last seen playable on ${formatDisplayDate(takedown.lastAvailableAt)}` : ""}.
+      </Alert>
+    );
+  }
+  if (takedown.precision === "estimated") {
+    return (
+      <Alert variant="error" title={`Taken down from Spotify around ${formatDisplayDate(takedown.date)}`}>
+        Estimated from the last day its stream total rose; it was already gone when StreamBase started checking
+        {takedown.confirmedMissingSince ? ` (confirmed missing ${formatDisplayDate(takedown.confirmedMissingSince)})` : ""}.
+      </Alert>
+    );
+  }
+  return (
+    <Alert variant="error" title={`Taken down from Spotify (missing since at least ${formatDisplayDate(takedown.date)})`}>
+      There is no stream history to tell when it actually came down.
+    </Alert>
   );
 }

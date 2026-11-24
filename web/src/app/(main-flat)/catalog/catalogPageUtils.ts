@@ -156,3 +156,51 @@ export function lastStreamGainRunDate(
   if (!peakFirstDate || !latest || peakFirstDate === latest.date) return null;
   return peakFirstDate;
 }
+
+export type TrackAvailabilityRow = {
+  status: string | null;
+  unavailable_since: string | null;
+  last_available_at: string | null;
+};
+
+/** Why and when a track is shown as taken down on its Catalog page. */
+export type TrackTakedown =
+  /** The daily takedown check saw it playable, then unplayable: `date` is the detection day. */
+  | { precision: "detected"; date: string; lastAvailableAt: string | null }
+  /** Already gone when first checked: `date` is the last day its stream total rose (data date). */
+  | { precision: "estimated"; date: string; confirmedMissingSince: string | null }
+  /** Gone, but no usable stream history: `date` is the first day it was confirmed missing. */
+  | { precision: "at_least"; date: string };
+
+/** True when the takedown date has to be estimated from stream history. */
+export function takedownNeedsStreamEstimate(availability: TrackAvailabilityRow | null, spotifyNotFoundSince: string | null): boolean {
+  if (availability?.status === "unavailable") return !availability.last_available_at;
+  if (availability?.status === "available") return false;
+  return !!spotifyNotFoundSince;
+}
+
+/**
+ * The daily availability check wins (it plays-tests the track); Spotify search misses only count when the
+ * check has no row. A track the check still finds playable is never shown as taken down.
+ */
+export function resolveTrackTakedown(args: {
+  availability: TrackAvailabilityRow | null;
+  spotifyNotFoundSince: string | null;
+  lastStreamGainDate: string | null;
+}): TrackTakedown | null {
+  const { availability, spotifyNotFoundSince, lastStreamGainDate } = args;
+  if (availability?.status === "available") return null;
+  let confirmedMissingSince: string | null = null;
+  if (availability?.status === "unavailable") {
+    if (availability.last_available_at && availability.unavailable_since) {
+      return { precision: "detected", date: availability.unavailable_since, lastAvailableAt: availability.last_available_at };
+    }
+    confirmedMissingSince = availability.unavailable_since;
+  } else if (spotifyNotFoundSince) {
+    confirmedMissingSince = spotifyNotFoundSince;
+  } else {
+    return null;
+  }
+  if (lastStreamGainDate) return { precision: "estimated", date: lastStreamGainDate, confirmedMissingSince };
+  return confirmedMissingSince ? { precision: "at_least", date: confirmedMissingSince } : null;
+}

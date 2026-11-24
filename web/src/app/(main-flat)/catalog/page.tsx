@@ -47,6 +47,9 @@ import {
   type TrackOverrideRow,
   type TrackRow,
   lastStreamGainRunDate,
+  resolveTrackTakedown,
+  takedownNeedsStreamEstimate,
+  type TrackAvailabilityRow,
 } from "./catalogPageUtils";
 import type { SelectedTrack } from "./catalogTypes";
 
@@ -715,9 +718,27 @@ async function CatalogPageContent({
         artistIds: track.spotify_artist_ids ?? null,
         releaseDate: (track.release_date ?? "").trim() || null,
       };
-      // Taken-down track: estimate the takedown from the last day its total rose (All-history bounded read,
-      // only for tracks Spotify search no longer finds).
-      if (track.spotify_not_found_since && latestRunDate) {
+      // Takedown banner. The daily availability check (one primary-key read) gives the exact day for tracks it
+      // saw go down; otherwise the date is estimated from the last day the total rose (All-history bounded read,
+      // only for tracks that are gone).
+      let availability: TrackAvailabilityRow | null = null;
+      try {
+        const { data: availabilityRow } = await cachedQuery(
+          async () =>
+            await svc
+              .from("spotify_track_availability")
+              .select("status,unavailable_since,last_available_at")
+              .eq("isrc", isrc)
+              .maybeSingle(),
+          `catalog-track-availability-${isrc}`,
+          CACHE_TTL_1H,
+        );
+        availability = (availabilityRow ?? null) as TrackAvailabilityRow | null;
+      } catch (error) {
+        logWarn("catalog.track_availability_failed", error);
+      }
+      let lastStreamGainDate: string | null = null;
+      if (latestRunDate && takedownNeedsStreamEstimate(availability, track.spotify_not_found_since)) {
         const allHistoryStart = addDays(latestRunDate, -CATALOG_ALL_HISTORY_DAYS);
         try {
           const { data: fullSeries } = await cachedQuery(
@@ -734,11 +755,16 @@ async function CatalogPageContent({
             CACHE_TTL_1H,
           );
           const gainRunDate = lastStreamGainRunDate(fullSeries ?? []);
-          selectedTrack.lastStreamGainDate = gainRunDate ? dataDateFromRunDate(gainRunDate) : null;
+          lastStreamGainDate = gainRunDate ? dataDateFromRunDate(gainRunDate) : null;
         } catch (error) {
           logWarn("catalog.track_last_gain_failed", error);
         }
       }
+      selectedTrack.takedown = resolveTrackTakedown({
+        availability,
+        spotifyNotFoundSince: track.spotify_not_found_since,
+        lastStreamGainDate,
+      });
     }
   }
 

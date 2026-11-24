@@ -1,3 +1,4 @@
+import type { TrackTakedown } from "./catalogPageUtils";
 // Shared types for catalog components
 export type ChartDataPoint = {
   date: string;
@@ -35,8 +36,8 @@ export type SelectedTrack = {
   name: string | null;
   albumImageUrl: string | null;
   spotifyNotFoundSince?: string | null;
-  /** Data date of the last day the total rose (taken-down tracks only). */
-  lastStreamGainDate?: string | null;
+  /** Set when the track is gone from Spotify (own catalog). */
+  takedown?: TrackTakedown | null;
   spotifyTrackId: string | null;
   artistNames: string[] | null;
   artistIds: string[] | null;
