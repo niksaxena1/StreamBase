@@ -99,6 +99,8 @@ export function CatalogPageClient(props: {
   artistOverrideAnnotations: Array<{ date: string; note: string; title?: string; imageUrl?: string | null }>;
   artists: ArtistOption[];
   artistId: string;
+  /** Own catalog: the selected track has no Spotify artist, so only track panels render. */
+  trackOnly?: boolean;
   tracks: TrackOption[];
   isrc: string | null;
   artistName: string;
@@ -435,6 +437,7 @@ export function CatalogPageClient(props: {
       <FilterBar
         left={
           <div className="flex items-center gap-2">
+            {!props.trackOnly && (
             <IconButton
               aria-label={isArtistExpanded ? "Collapse artist info" : "Expand artist info"}
               title={isArtistExpanded ? "Collapse artist info" : "Expand artist info"}
@@ -446,6 +449,7 @@ export function CatalogPageClient(props: {
                 className={`h-3.5 w-3.5 transition-transform duration-200 ${isArtistExpanded ? "rotate-90" : ""}`}
               />
             </IconButton>
+            )}
             <div className="flex-1 min-w-0">
               <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -486,6 +490,13 @@ export function CatalogPageClient(props: {
         }
       />
 
+      {props.trackOnly ? (
+        <div className="sb-card px-4 py-3 text-sm" style={{ color: "var(--sb-muted)" }}>
+          No artist on record for this track. Spotify could not match its ISRC, usually because the track was taken
+          down before StreamBase looked it up, so artist totals and the artist&apos;s other tracks are not shown. The
+          track&apos;s own streams are below.
+        </div>
+      ) : (
       <div
         className={`transition-all duration-300 ease-in-out ${
           isArtistExpanded
@@ -925,6 +936,7 @@ export function CatalogPageClient(props: {
           </div>
         </div>
       </div>
+      )}
 
       {/* Selected track panels (not part of artist collapse) */}
       <div className="space-y-3 border-t pt-3" style={{ borderColor: "var(--sb-border)" }}>

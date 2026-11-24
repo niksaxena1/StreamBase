@@ -183,6 +183,9 @@ async function CatalogPageContent({
 
     let artistId = (sp.artist_id ?? "").trim();
     const requestedIsrc = (sp.isrc ?? "").trim();
+    // Track-only view: the requested track has no Spotify artist on record (usually taken down before
+    // enrichment ever matched it). Its stream history still opens; artist-scoped reads are skipped.
+    let trackOnlyRow: TrackRow | null = null;
 
     // If a track is specified without an artist, prefer the track's primary (first) artist.
     // This makes "click a track → open Catalog" land on the correct artist automatically.
@@ -191,10 +194,10 @@ async function CatalogPageContent({
         async () =>
           await svc
             .from("tracks")
-            .select("spotify_artist_ids")
+            .select("isrc,name,spotify_artist_ids,spotify_artist_names,spotify_album_image_url,spotify_not_found_since,release_date")
             .eq("isrc", requestedIsrc)
             .maybeSingle(),
-        `catalog-isrc-primary-artist-${requestedIsrc}`,
+        `catalog-isrc-primary-artist-v2-${requestedIsrc}`,
         CACHE_TTL_1H,
       );
 
@@ -207,7 +210,7 @@ async function CatalogPageContent({
         );
       }
 
-      const typed = (trackRow ?? null) as { spotify_artist_ids: string[] | null } | null;
+      const typed = (trackRow ?? null) as TrackRow | null;
       const primaryArtistId = Array.isArray(typed?.spotify_artist_ids)
         ? String(typed?.spotify_artist_ids?.[0] ?? "").trim()
         : "";
@@ -216,16 +219,13 @@ async function CatalogPageContent({
         redirect(catalogSelectionHref(sp, primaryArtistId, requestedIsrc));
       }
 
-      return (
-        <CatalogTrackUnavailable
-          datasetMode="own"
-          isrc={requestedIsrc}
-          reason={typed ? "missing_artist_metadata" : "not_found"}
-        />
-      );
+      if (!typed) {
+        return <CatalogTrackUnavailable datasetMode="own" isrc={requestedIsrc} reason="not_found" />;
+      }
+      trackOnlyRow = typed;
     }
 
-    if (!artistId) {
+    if (!artistId && !trackOnlyRow) {
       // Scalable default: pick the most recently seen track's first artist (no "scan 5k tracks").
       const { data: recent } = await cachedQuery(
         async () =>
@@ -306,7 +306,9 @@ async function CatalogPageContent({
     }
 
   // Track list for this artist (cached for 1 hour)
-  const artistTracksPromise = cachedQuery(
+  const artistTracksPromise = trackOnlyRow
+    ? Promise.resolve({ data: [trackOnlyRow], error: null })
+    : cachedQuery(
     async () =>
       await svc
         .from("tracks")
@@ -369,6 +371,12 @@ async function CatalogPageContent({
     if (selection.kind === "redirect") {
       redirect(catalogSelectionHref(sp, selection.artistId, selection.isrc));
     }
+    if (selection.kind === "unavailable" && selection.reason === "missing_artist_metadata") {
+      // Drop the unrelated artist_id; the no-artist branch above opens the track-only view.
+      const href = new URL(catalogSelectionHref(sp, "", requestedIsrc), "https://streambase.invalid");
+      href.searchParams.delete("artist_id");
+      redirect(href.pathname + href.search);
+    }
     if (selection.kind === "unavailable") {
       return (
         <CatalogTrackUnavailable
@@ -387,8 +395,9 @@ async function CatalogPageContent({
 
   const isrcs = artistTracks.map((t) => t.isrc);
 
-  const artistName =
-    artists.find((a) => a.id === artistId)?.name ??
+  const artistName = trackOnlyRow
+    ? "No artist on record"
+    : artists.find((a) => a.id === artistId)?.name ??
     artistNameFor(artistTracks, artistId) ??
     artistId;
 
@@ -402,7 +411,7 @@ async function CatalogPageContent({
   // Artist "All history": the cold artist aggregate takes seconds for large artists (measured ~26 s for the biggest),
   // so the page renders the recent year first and the client fills the older part from /api/catalog/artist-history.
   // Tracks stay single-shot (about 0.15 s even cold). Both parts are cachedQuery'd for an hour.
-  const artistRecentFirst = !!latestRunDate && !!startRunDate && rangeDays > ARTIST_RECENT_FIRST_DAYS;
+  const artistRecentFirst = !trackOnlyRow && !!latestRunDate && !!startRunDate && rangeDays > ARTIST_RECENT_FIRST_DAYS;
   const artistStartRunDate = artistRecentFirst && latestRunDate ? addDays(latestRunDate, -ARTIST_RECENT_FIRST_DAYS) : startRunDate;
   const artistMaPaddedStartRunDate =
     artistStartRunDate ? addDays(artistStartRunDate, -MA7_LOOKBACK_DAYS) : null;
@@ -421,7 +430,7 @@ async function CatalogPageContent({
 
   // Artist-wide override annotations for the top charts.
   // Overrides are stored per-track per-run-date; annotate the artist charts for any track override.
-  const artistOverrideAnnotationsPromise = fetchArtistOverrideAnnotations(svc, {
+  const artistOverrideAnnotationsPromise: Promise<ManualOverrideAnnotation[]> = trackOnlyRow ? Promise.resolve([]) : fetchArtistOverrideAnnotations(svc, {
     artistId,
     artistTracks,
     isrcs,
@@ -482,7 +491,7 @@ async function CatalogPageContent({
   void trackSeriesPromise.catch(() => {});
   void trackOverridesPromise.catch(() => {});
   const [{ data: seriesRows }, { data: topTotalRows }, { data: topDailyRows }] = await Promise.all([
-    latestRunDate && startRunDate && artistMaPaddedStartRunDate
+    !trackOnlyRow && latestRunDate && startRunDate && artistMaPaddedStartRunDate
       ? cachedQuery(
           async () =>
             await fetchCatalogArtistSeries(svc, {
@@ -494,7 +503,7 @@ async function CatalogPageContent({
           CACHE_TTL_1H,
         )
       : Promise.resolve({ data: [] as CatalogArtistSeriesRow[], error: null }),
-    latestRunDate
+    !trackOnlyRow && latestRunDate
       ? cachedQuery(
           async () =>
             await svc.rpc("catalog_artist_top_tracks_total", {
@@ -506,7 +515,7 @@ async function CatalogPageContent({
           CACHE_TTL_1H,
         )
       : Promise.resolve({ data: [] as CatalogTopTrackRow[], error: null }),
-    latestRunDate
+    !trackOnlyRow && latestRunDate
       ? cachedQuery(
           async () =>
             await svc.rpc("catalog_artist_top_tracks_daily", {
@@ -551,7 +560,9 @@ async function CatalogPageContent({
   const topIsrcs = new Set<string>();
   for (const r of (topTotalRows ?? []) as CatalogTopTrackRow[]) topIsrcs.add(r.isrc);
   for (const r of (topDailyRows ?? []) as CatalogTopTrackRow[]) topIsrcs.add(r.isrc);
-  const distroByIsrcPromise = fetchTopTrackDistroPlaylists(svc, { artistId, latestRunDate, topIsrcs });
+  const distroByIsrcPromise = trackOnlyRow
+    ? Promise.resolve(new Map<string, { name: string; imageUrl: string | null }>())
+    : fetchTopTrackDistroPlaylists(svc, { artistId, latestRunDate, topIsrcs });
   void distroByIsrcPromise.catch(() => {});
   const missingTopIsrcs = Array.from(topIsrcs).filter((x) => x && !trackMetaByIsrc.has(x));
   if (missingTopIsrcs.length) {
@@ -744,6 +755,7 @@ async function CatalogPageContent({
         trackCount={artistTracks.length}
         artists={artistsWithImages}
         artistId={artistId}
+        trackOnly={!!trackOnlyRow}
         tracks={trackOptions}
         isrc={isrc}
         artistName={artistName}
