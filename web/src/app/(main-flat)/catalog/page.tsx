@@ -46,7 +46,9 @@ import {
   type PlaylistDailyStatsRow,
   type TrackOverrideRow,
   type TrackRow,
+  lastStreamGainRunDate,
 } from "./catalogPageUtils";
+import type { SelectedTrack } from "./catalogTypes";
 
 const CATALOG_ARTIST_DROPDOWN_MAX_TRACKS = API_LOOKUP_DROPDOWN_MAX;
 const CATALOG_ARTIST_THUMBNAILS_MAX = API_LOOKUP_THUMBNAILS_MAX;
@@ -691,15 +693,7 @@ async function CatalogPageContent({
   }));
 
   // Fetch selected track details if isrc is available
-  let selectedTrack: { 
-    name: string | null; 
-    albumImageUrl: string | null;
-    spotifyNotFoundSince?: string | null;
-    spotifyTrackId: string | null;
-    artistNames: string[] | null;
-    artistIds: string[] | null;
-    releaseDate: string | null;
-  } | null = null;
+  let selectedTrack: SelectedTrack | null = null;
   if (isrc) {
     const { data: trackData } = await selectedTrackPromise;
     if (trackData) {
@@ -721,6 +715,30 @@ async function CatalogPageContent({
         artistIds: track.spotify_artist_ids ?? null,
         releaseDate: (track.release_date ?? "").trim() || null,
       };
+      // Taken-down track: estimate the takedown from the last day its total rose (All-history bounded read,
+      // only for tracks Spotify search no longer finds).
+      if (track.spotify_not_found_since && latestRunDate) {
+        const allHistoryStart = addDays(latestRunDate, -CATALOG_ALL_HISTORY_DAYS);
+        try {
+          const { data: fullSeries } = await cachedQuery(
+            async () => ({
+              data: await fetchAllTrackSeries(svc, {
+                isrc,
+                startDate: allHistoryStart,
+                endDate: latestRunDate,
+                maxRows: API_LOOKUP_TRACK_MAX,
+              }),
+              error: null,
+            }),
+            `catalog-track-last-gain-${isrc}-${allHistoryStart}-${latestRunDate}-ov${overrideBuster}`,
+            CACHE_TTL_1H,
+          );
+          const gainRunDate = lastStreamGainRunDate(fullSeries ?? []);
+          selectedTrack.lastStreamGainDate = gainRunDate ? dataDateFromRunDate(gainRunDate) : null;
+        } catch (error) {
+          logWarn("catalog.track_last_gain_failed", error);
+        }
+      }
     }
   }
 

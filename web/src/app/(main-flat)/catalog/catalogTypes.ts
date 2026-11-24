@@ -35,6 +35,8 @@ export type SelectedTrack = {
   name: string | null;
   albumImageUrl: string | null;
   spotifyNotFoundSince?: string | null;
+  /** Data date of the last day the total rose (taken-down tracks only). */
+  lastStreamGainDate?: string | null;
   spotifyTrackId: string | null;
   artistNames: string[] | null;
   artistIds: string[] | null;

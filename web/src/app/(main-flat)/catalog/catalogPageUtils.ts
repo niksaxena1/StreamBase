@@ -133,3 +133,26 @@ export function catalogSelectionHref(
   if (sp.end) params.set("end", sp.end);
   return `/catalog?${params.toString()}`;
 }
+
+/**
+ * Run date of the last day a track's cumulative Spotify total rose, or null when it still gained on the
+ * latest day (or never had streams). For a taken-down track this is the best takedown estimate: the total
+ * freezes when the track leaves Spotify, and later SpotOnTrack may report 0.
+ */
+export function lastStreamGainRunDate(
+  series: ReadonlyArray<{ date: string; streams_cumulative: number | null }>,
+): string | null {
+  const asc = [...series].sort((a, b) => a.date.localeCompare(b.date));
+  let peak = 0;
+  let peakFirstDate: string | null = null;
+  for (const row of asc) {
+    const value = Number(row.streams_cumulative ?? 0);
+    if (value > peak) {
+      peak = value;
+      peakFirstDate = row.date;
+    }
+  }
+  const latest = asc[asc.length - 1];
+  if (!peakFirstDate || !latest || peakFirstDate === latest.date) return null;
+  return peakFirstDate;
+}

@@ -10,7 +10,7 @@ import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { useNavigationRouter as useRouter } from "@/components/shell/useNavigationRouter";
 import { ExternalLink, Download, List, ChevronRight, User, Loader2 } from "lucide-react";
-import { formatDateISO, formatDateOrdinalDMonYYYY, formatInt, formatUsd } from "@/lib/format";
+import { formatDateISO, formatDateOrdinalDMonYYYY, formatDisplayDate, formatInt, formatUsd } from "@/lib/format";
 import { GlassTable, TableCell, TableRow, EmptyState } from "@/components/ui/GlassTable";
 import { Combobox } from "@/components/ui/Combobox";
 import { SpotlightCard } from "@/components/ui/SpotlightCard";
@@ -998,6 +998,20 @@ export function CatalogPageClient(props: {
                   <CopyableIsrc isrc={props.isrc} className="font-mono" />
                 </span>
               </div>
+              {props.selectedTrack.spotifyNotFoundSince ? (
+                <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
+                  {props.selectedTrack.lastStreamGainDate ? (
+                    <>
+                      Taken down: last new stream on{" "}
+                      <span className="font-medium" style={{ color: "var(--sb-text)" }}>
+                        {formatDisplayDate(props.selectedTrack.lastStreamGainDate)}
+                      </span>
+                      <span> • </span>
+                    </>
+                  ) : null}
+                  Spotify search has not found it since {formatDisplayDate(props.selectedTrack.spotifyNotFoundSince)}
+                </div>
+              ) : null}
               {!isCompetitorMode && props.selectedTrackMarkets && props.selectedTrackMarkets.scanned !== false ? (
                 <div className="mt-1.5">
                   <SpotifyMarketsBadge
