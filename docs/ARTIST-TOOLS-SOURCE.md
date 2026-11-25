@@ -71,8 +71,9 @@ required. OAuth and Postgres cannot make the remote rotation atomic.
   short codes) and saves it in `add_unconfirmed_shape`; entity names/IDs, tokens
   and free-text values are withheld. Explicit already-present/duplicate signals
   save the track in the ledger and continue adding, without inflating `added`.
-  Limit/cap/quota signals stop adds with `add_limit_reached`; unknown shapes stop
-  adds with `adds_incomplete` and `add_unconfirmed`. Observation and repair still
+  Limit/cap/quota signals stop adds with `add_limit_reached`; unknown shapes skip that
+  track (retried next run, counted in `add_unconfirmed_count`) and stop adds with `adds_incomplete` only after
+  10 in a row. Observation and repair still
   run, and these partial outcomes are success. Auth, network and DB errors still
   fail the run.
 - A server retry delay above `MAX_RETRY_WAIT_SECONDS = 300` raises a distinct

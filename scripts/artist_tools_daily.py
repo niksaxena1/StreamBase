@@ -15,6 +15,7 @@ from streambase_home_snapshots import refresh_own_home_snapshots
 MAX_AUTO_FIX_TRACKS = 500  # Same exclusive ceiling as rapidapi_stale_fix.py
 SUMMARY_PATH = Path(".artifacts/artist_tools_summary.json")
 RUN_BUDGET_SECONDS = 75 * 60
+MAX_UNCONFIRMED_STREAK = 10  # Consecutive unexplained "not added" answers before adds stop for the run
 
 
 class RunBudget:
@@ -276,6 +277,7 @@ def execute(pg, client, run_date, max_adds, summary, budget):
                     return  # Observation uses the same rate-limited listing tool.
                 summary["reconciled"] = len(saved)
 
+            unconfirmed_streak = 0
             for track in priority_tracks(tracks, stale, history, saved)[:max_adds]:
                 budget.check()
                 try:
@@ -300,8 +302,17 @@ def execute(pg, client, run_date, max_adds, summary, budget):
                         summary["add_limit_reached"] = True
                         break
                     if outcome != "present":
-                        summary.update(adds_incomplete=True, add_unconfirmed=True)
-                        break
+                        # A bare "not added" for one track must not block the tracks behind it
+                        # (it stalled adds from 13 Oct to 25 Nov 2026). Skip it, try it again
+                        # tomorrow, and stop only when refusals come in a row (a likely cap).
+                        summary["add_unconfirmed"] = True
+                        summary["add_unconfirmed_count"] = summary.get("add_unconfirmed_count", 0) + 1
+                        unconfirmed_streak += 1
+                        if unconfirmed_streak >= MAX_UNCONFIRMED_STREAK:
+                            summary["adds_incomplete"] = True
+                            break
+                        continue
+                unconfirmed_streak = 0
                 pg.upsert("artist_tools_saved_tracks", [{"spotify_track_id": track["spotify_track_id"],
                                                         "isrc": by_spotify[track["spotify_track_id"]]}], "spotify_track_id")
                 saved.add(track["spotify_track_id"])

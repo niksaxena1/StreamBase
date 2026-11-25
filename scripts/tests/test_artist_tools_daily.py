@@ -469,7 +469,8 @@ def test_limit_shaped_add_stops_adds_and_observes(signal):
     {"added": False}, {"added": False, "alreadyInFolder": False, "quotaExceeded": False},
     {"status": "PENDING"}, {"message": "already in folder"}, None, [], "unexpected",
 ])
-def test_unknown_add_shape_stops_adds_and_observes_successfully(result):
+def test_unknown_add_shape_stops_adds_and_observes_successfully(result, monkeypatch):
+    monkeypatch.setattr(daily, "MAX_UNCONFIRMED_STREAK", 1)
     pg = PG()
     pg.tables["artist_tools_saved_tracks"] = [{"spotify_track_id": "spotify-A"}]
     client = Client([{"result": result}, folder(("B", 120))])
@@ -481,6 +482,21 @@ def test_unknown_add_shape_stops_adds_and_observes_successfully(result):
     assert row["details"]["remaining_unsaved"] == 2
     assert len(pg.tables["artist_tools_saved_tracks"]) == 1
     assert [name for name, _ in client.calls] == ["add_entity_to_folder", "list_dashboard_entities"]
+
+
+@pytest.mark.parametrize("result", [{"added": False}, {"status": "PENDING"}, None])
+def test_unknown_add_shape_skips_track_and_keeps_adding(result):
+    pg = PG()
+    pg.tables["artist_tools_saved_tracks"] = [{"spotify_track_id": "spotify-A"}]
+    client = Client([{"result": result}, {"result": {"added": True}}, folder(("B", 120))])
+    assert run(pg, client) == 0
+    details = pg.tables["artist_tools_runs"][0]["details"]
+    assert details["add_unconfirmed"] and details["add_unconfirmed_count"] == 1
+    assert not details["adds_incomplete"] and details["added"] == 1
+    assert details["remaining_unsaved"] == 1
+    assert len(pg.tables["artist_tools_saved_tracks"]) == 2
+    assert [name for name, _ in client.calls] == [
+        "add_entity_to_folder", "add_entity_to_folder", "list_dashboard_entities"]
 
 
 def test_add_unconfirmed_diagnostic_contains_only_sanitized_shape(capsys):
