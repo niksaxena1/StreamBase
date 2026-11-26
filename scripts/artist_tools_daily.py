@@ -371,8 +371,11 @@ def execute(pg, client, run_date, max_adds, summary, budget):
                 return
 
             # Read persisted observations so retries can recover earlier partial pages.
+            # Only rows read at or after the cut-off: an earlier read holds yesterday's
+            # counts, and a late run whose listing failed must not repair from it.
+            cutoff = f"{run_date}T{int(summary.get('observe_after_hour', 15)):02d}:00:00Z"
             observed = pg.select_all("artist_tools_track_streams", "spotify_track_id,isrc,streams",
-                                     f"date=eq.{run_date}", order="spotify_track_id.asc")
+                                     f"date=eq.{run_date}&observed_at=gte.{cutoff}", order="spotify_track_id.asc")
             observations = {}
             for row in observed:
                 if row["spotify_track_id"] in ambiguous:

@@ -315,15 +315,23 @@ def load_effective_history(pg: Postgrest, run_date: str, isrcs: list) -> dict:
     return out
 
 
+ARTIST_TOOLS_OBSERVE_AFTER_HOUR = 15  # keep equal to artist_tools_daily.py --observe-after-hour
+
+
 def load_artist_tools_observations(pg: Postgrest, run_date: str, isrcs: list) -> dict:
-    """{isrc: streams} recorded by artist.tools for run_date. Best effort."""
+    """{isrc: streams} recorded by artist.tools for run_date. Best effort.
+
+    Only rows read at or after 15:00 UTC on run_date count: an earlier read still
+    holds the previous day's Spotify counts (see docs/ARTIST-TOOLS-SOURCE.md).
+    """
     out: dict = {}
+    cutoff = f"{run_date}T{ARTIST_TOOLS_OBSERVE_AFTER_HOUR:02d}:00:00Z"
     for chunk in _chunks(isrcs, HISTORY_CHUNK):
         try:
             rows = pg.select(
                 "artist_tools_track_streams",
                 "isrc,streams",
-                f"date=eq.{run_date}&isrc=in.({','.join(chunk)})",
+                f"date=eq.{run_date}&observed_at=gte.{cutoff}&isrc=in.({','.join(chunk)})",
             )
         except Exception:
             continue

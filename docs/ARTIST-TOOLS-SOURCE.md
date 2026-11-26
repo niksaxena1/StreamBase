@@ -130,6 +130,17 @@ override writes to a later run. Their summary/details set `repair_deferred` with
 a reason; crossing the cutoff while working does not enable those writes.
 Existing override cascade recovery still runs.
 
+Repairs also ignore stored observations whose `observed_at` is before the cutoff
+(they hold the previous day's counts). This applies to the late run here when its
+own listing fails, and to `rapidapi_stale_fix.py`'s `load_artist_tools_observations`
+(fixed 15:00 UTC, `ARTIST_TOOLS_OBSERVE_AFTER_HOUR`).
+
+Known limits (review 26 Nov 2026, not fixed): the day's add count is saved only when
+a run finishes, so a crash after adding can let a retry use the 10 adds kept spare
+under the provider's 250/day cap; a run started just before 00:00 UTC charges its
+adds to the old date; the health page shows the step green after an early run even
+if the late run never happens (check `artist_tools_vs_sot_daily.late_read`).
+
 Repairs use the latest warning for D, only when the full warning has **fewer than
 500 tracks**, and require no existing override of any kind, a D observation strictly
 above the stale count AND today's current effective count, and a count at least
