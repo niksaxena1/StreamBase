@@ -41,6 +41,8 @@ def main():
         default="",
         help="Comma-separated playlist keys to download (if empty, uses config/playlists.csv)",
     )
+    ap.add_argument("--github-output", help="Append restored=<count> to this GitHub Actions output file")
+    ap.add_argument("--authenticated", action="store_true", help="Use service-role downloads (also works for private buckets)")
     args = ap.parse_args()
 
     supabase_url = os.environ.get("SUPABASE_URL", "").strip()
@@ -87,7 +89,7 @@ def main():
     # Direct download URL - bypassing list API
     download_url_template = urljoin(
         supabase_url.rstrip("/") + "/",
-        f"storage/v1/object/public/{storage_bucket}/{storage_path}/" + "{filename}"
+        f"storage/v1/object/{'' if args.authenticated else 'public/'}{storage_bucket}/{storage_path}/" + "{filename}"
     )
     
     print(f"[*] Downloading exports from {storage_bucket}/{storage_path}")
@@ -100,8 +102,14 @@ def main():
         file_url = download_url_template.format(filename=file_name)
         
         try:
-            # Download file from storage (public URL, no auth needed)
-            resp = requests.get(file_url, timeout=30)
+            # Public URL by default; retries can also restore from private buckets.
+            request_options = {}
+            if args.authenticated:
+                request_options["headers"] = {
+                    "Authorization": f"Bearer {service_key}",
+                    "apikey": service_key,
+                }
+            resp = requests.get(file_url, timeout=30, **request_options)
             
             if resp.status_code == 404:
                 print(f"  [!] Not found: {file_name}")
@@ -120,6 +128,9 @@ def main():
             print(f"  [-] Error downloading {file_name}: {e}")
     
     print(f"[OK] Downloaded {downloaded_count} files to {local_dir}")
+    if args.github_output:
+        with open(args.github_output, "a", encoding="utf-8") as f:
+            f.write(f"restored={downloaded_count}\n")
 
 
 if __name__ == "__main__":

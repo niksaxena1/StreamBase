@@ -232,6 +232,19 @@ def count_csv_rows(path: Path) -> int:
         return sum(1 for _ in r)
 
 
+def can_reuse_export(rows: int | None, pl: Playlist, fail_on_empty: bool) -> bool:
+    """Pure row-count check; None means the file is missing or unreadable.
+
+    As for fresh downloads, allow_empty overrides fail_on_empty, but never
+    min_rows. Reuse also requires explicit allow_empty for a zero-row file.
+    """
+    if rows is None or rows < pl.min_rows:
+        return False
+    if fail_on_empty and rows == 0 and not pl.allow_empty:
+        return False
+    return rows > 0 or pl.allow_empty
+
+
 def load_playlists_csv(path: str) -> List[Playlist]:
     out: List[Playlist] = []
     with open(path, "r", encoding="utf-8-sig", newline="") as f:
@@ -352,6 +365,7 @@ def main():
     ap.add_argument("--out-dir", default="exports")
     ap.add_argument("--headless", action="store_true")
     ap.add_argument("--fail-on-empty", action="store_true", help="Treat 0-row exports as failures")
+    ap.add_argument("--skip-existing", action="store_true", help="Reuse today's CSVs that pass row-count checks")
     ap.add_argument(
         "--only-playlist-keys",
         default="",
@@ -389,6 +403,22 @@ def main():
     print(f"🕶️ Headless: {'ON' if args.headless else 'OFF'}")
 
     failures = 0
+
+    if args.skip_existing:
+        pending = []
+        for pl in playlists:
+            out_path = base_dir / f"{pl.key}.csv"
+            try:
+                rows = count_csv_rows(out_path)
+            except (OSError, UnicodeError, csv.Error):
+                rows = None
+            if can_reuse_export(rows, pl, args.fail_on_empty):
+                print(f"Reused: {out_path} | rows={rows}")
+            else:
+                pending.append(pl)
+        playlists = pending
+        if not playlists:
+            return
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=args.headless)

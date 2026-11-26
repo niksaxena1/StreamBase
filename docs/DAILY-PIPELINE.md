@@ -57,6 +57,16 @@ attempt limits). Orchestration state is in `ops.pipeline_stage_runs`,
 `ops.pipeline_dispatches` and `ops.pipeline_alerts`. The `ops` schema is not exposed
 to the Data API. Migration: `supabase/migrations/20261011020521_add_db_orchestrated_pipeline.sql`.
 
+Own-catalog sync/export retries keep CSVs from earlier attempts, including partial
+exports from a failed attempt. For a run dated UTC today, the pipeline restores
+those files from Storage, skips dashboard sync if any were restored, and downloads
+only playlists whose CSV is missing or fails its row-count checks. Approved empty
+playlists are reusable too. A failed export still fails the job and blocks ingestion.
+If restore is unavailable, the pipeline does a normal full run. First attempts and
+`force_reingest` runs still sync and export everything; dry runs never restore or
+upload files. Historical run dates do not restore files because the exporter uses
+UTC today's folder.
+
 ## Setup (owner, once)
 
 1. Create a fine-grained GitHub token for `niksaxena1/StreamBase` with

@@ -1,4 +1,5 @@
 import tempfile
+from dataclasses import replace
 import unittest
 from unittest.mock import MagicMock, patch
 from pathlib import Path
@@ -12,7 +13,89 @@ from scripts.sot_export_dashboards import (
     PWTimeout,
     filter_playlists_by_keys,
     load_playlists_csv,
+    can_reuse_export,
+    main,
 )
+
+
+class ReuseExportTests(unittest.TestCase):
+    def test_reuse_decision(self):
+        playlist = Playlist("test", "Test", "https://example.com", False, min_rows=2)
+        for rows, options, fail_on_empty, expected in (
+            (2, {}, True, True),
+            (None, {}, True, False),
+            (1, {}, True, False),
+            (0, {"min_rows": 0}, True, False),
+            (0, {"min_rows": 0}, False, False),
+            (0, {"min_rows": 0, "allow_empty": True}, True, True),
+            (0, {"min_rows": 0, "allow_empty": True}, False, True),
+            (0, {"allow_empty": True}, True, False),
+        ):
+            with self.subTest(rows=rows, options=options, fail_on_empty=fail_on_empty):
+                self.assertEqual(can_reuse_export(rows, replace(playlist, **options), fail_on_empty), expected)
+
+    def run_exports(self, td, skip_existing=True):
+        config = Path(td) / "playlists.csv"
+        config.write_text(
+            "playlist_key,display_name,dashboard_url,is_catalog,min_rows\n"
+            "good,Good,https://example.com/good,false,1\n"
+            "bad,Bad,https://example.com/bad,false,1\n",
+            encoding="utf-8",
+        )
+        argv = ["export", "--config", str(config), "--out-dir", td, "--fail-on-empty"]
+        if skip_existing:
+            argv.append("--skip-existing")
+        with patch("sys.argv", argv), patch("scripts.sot_export_dashboards.utc_date_parts", return_value=("2026", "11", "26")):
+            main()
+
+    def test_all_reused_without_browser(self):
+        with tempfile.TemporaryDirectory() as td:
+            folder = Path(td) / "2026/11/26"
+            folder.mkdir(parents=True)
+            for key in ("good", "bad"):
+                (folder / f"{key}.csv").write_text("isrc,name\nA,Track\n", encoding="utf-8")
+            with patch("scripts.sot_export_dashboards.sync_playwright") as browser:
+                self.run_exports(td)
+            browser.assert_not_called()
+
+    def test_bad_missing_and_unreadable_files_download_and_second_pass_still_runs(self):
+        for content in ("isrc,name\n", None, b"\xff"):
+            with self.subTest(content=content), tempfile.TemporaryDirectory() as td:
+                folder = Path(td) / "2026/11/26"
+                folder.mkdir(parents=True)
+                (folder / "good.csv").write_text("isrc,name\nA,Track\n", encoding="utf-8")
+                if content is not None:
+                    (folder / "bad.csv").write_bytes(content.encode() if isinstance(content, str) else content)
+                calls = []
+
+                def download(page, playlist, path):
+                    calls.append(playlist.key)
+                    if len(calls) == 1:
+                        return False, "download_timeout"
+                    path.write_text("isrc,name\nB,Track\n", encoding="utf-8")
+                    return True, "downloaded"
+
+                with patch("scripts.sot_export_dashboards.sync_playwright"), patch(
+                    "scripts.sot_export_dashboards.is_logged_out", return_value=False
+                ), patch("scripts.sot_export_dashboards.download_with_retries", side_effect=download), patch(
+                    "scripts.sot_export_dashboards.time.sleep"
+                ):
+                    self.run_exports(td)
+                self.assertEqual(calls, ["bad", "bad"])
+
+    def test_default_downloads_every_playlist_even_when_files_exist(self):
+        with tempfile.TemporaryDirectory() as td:
+            folder = Path(td) / "2026/11/26"
+            folder.mkdir(parents=True)
+            for key in ("good", "bad"):
+                (folder / f"{key}.csv").write_text("isrc,name\nA,Track\n", encoding="utf-8")
+            with patch("scripts.sot_export_dashboards.sync_playwright"), patch(
+                "scripts.sot_export_dashboards.is_logged_out", return_value=False
+            ), patch("scripts.sot_export_dashboards.download_with_retries", return_value=(True, "downloaded")) as download, patch(
+                "scripts.sot_export_dashboards.time.sleep"
+            ):
+                self.run_exports(td, skip_existing=False)
+            self.assertEqual([call.args[1].key for call in download.call_args_list], ["good", "bad"])
 
 
 class TargetedExportTests(unittest.TestCase):

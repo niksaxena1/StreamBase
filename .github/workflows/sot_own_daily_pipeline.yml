@@ -226,8 +226,29 @@ jobs:
           key: sot-sync-state-own-${{ github.run_id }}
           restore-keys: sot-sync-state-own-
 
+      - name: Restore today's exports from earlier attempts
+        id: restore_exports
+        if: inputs.force_reingest != true && inputs.dry_run != true
+        continue-on-error: true
+        env:
+          SUPABASE_STORAGE_BUCKET: ${{ secrets.SUPABASE_STORAGE_BUCKET }}
+          SUPABASE_STORAGE_PREFIX: ${{ secrets.SUPABASE_STORAGE_PREFIX }}
+        run: |
+          echo "restored=0" >> "$GITHUB_OUTPUT"
+          # The exporter always writes UTC today, even for a historical run_date.
+          if [ "$RUN_DATE" != "$(date -u +%F)" ]; then
+            echo "Skipping restore: run date is not UTC today."
+            exit 0
+          fi
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "Supabase secrets not set; continuing with a full sync/export."
+            exit 0
+          fi
+          python scripts/download_exports_from_storage.py --date "$RUN_DATE" --exports-dir exports --authenticated --github-output "$GITHUB_OUTPUT" || echo "Restore unavailable; continuing with a full sync/export."
+
       - name: Sync dashboards to playlists
         id: sync_dashboards
+        if: steps.restore_exports.outputs.restored == '' || steps.restore_exports.outputs.restored == '0'
         env:
           FULL_SYNC: ${{ inputs.full_sync }}
           DRY_RUN: ${{ inputs.dry_run }}
@@ -268,6 +289,12 @@ jobs:
         if: always()
         shell: bash
         run: |
+          if [ "${{ steps.sync_dashboards.outcome }}" = "skipped" ] && [ "${{ steps.restore_exports.outputs.restored }}" -gt 0 ]; then
+            echo "should_notify=false" >> "$GITHUB_OUTPUT"
+            echo "subject=[StreamBase] Dashboard Sync: reused earlier attempt" >> "$GITHUB_OUTPUT"
+            echo "body=Dashboard sync skipped: restored today's exports from an earlier attempt that passed sync." >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           SHOULD_NOTIFY="false"
           SUBJECT="[StreamBase] Dashboard Sync: unknown issue"
           SKIPPED="?"
@@ -324,11 +351,14 @@ jobs:
           SOT_EMAIL: ${{ secrets.SOT_EMAIL }}
           SOT_PASSWORD: ${{ secrets.SOT_PASSWORD }}
           SKIP_PLAYLIST_KEYS: ${{ inputs.skip_playlists }}
+          RESTORED: ${{ steps.restore_exports.outputs.restored }}
         run: |
-          python scripts/sot_export_dashboards.py --config config/playlists.csv --storage-state sot_state.json --headless --fail-on-empty --auth-debug
+          ARGS=""
+          if [ "${RESTORED:-0}" -gt 0 ]; then ARGS="--skip-existing"; fi
+          python scripts/sot_export_dashboards.py --config config/playlists.csv --storage-state sot_state.json --headless --fail-on-empty --auth-debug $ARGS
 
       - name: Upload exports artifact
-        if: inputs.dry_run != true
+        if: always() && inputs.dry_run != true && hashFiles('exports/**/*.csv') != ''
         uses: actions/upload-artifact@v7
         with:
           name: sot-exports-${{ github.run_id }}
@@ -336,7 +366,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload exports to Supabase Storage (optional)
-        if: inputs.dry_run != true
+        if: always() && inputs.dry_run != true && hashFiles('exports/**/*.csv') != ''
         continue-on-error: true
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -352,7 +382,7 @@ jobs:
 
       - name: Ingest exports into Supabase Postgres (optional)
         id: ingest
-        if: inputs.dry_run != true
+        if: success() && inputs.dry_run != true && steps.export_dashboards.outcome == 'success'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
