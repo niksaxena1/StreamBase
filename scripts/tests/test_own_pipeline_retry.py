@@ -17,7 +17,7 @@ STEPS = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]["sync_expor
 
 @unittest.skipUnless(shutil.which("bash"), "Workflow shell checks require bash")
 class RetryWorkflowTests(unittest.TestCase):
-    def run_step(self, name, variables=None, expressions=None, python_stub="return 0"):
+    def run_step(self, name, variables=None, expressions=None, python_stub="return 0", prepare=None):
         step = next(step for step in STEPS if step.get("name") == name)
         script = step["run"]
         for expression, value in (expressions or {}).items():
@@ -30,6 +30,8 @@ class RetryWorkflowTests(unittest.TestCase):
                    "RUN_DATE": datetime.now(timezone.utc).date().isoformat(),
                    "SUPABASE_URL": "https://example.invalid", "SUPABASE_SERVICE_ROLE_KEY": "test-key"}
             env.update(variables or {})
+            if prepare:
+                prepare(Path(td))
             stub = 'python() { printf "%s\\n" "$*" >> "$CALL_LOG"; ' + python_stub + '; }\n'
             with patch.dict(os.environ, env):
                 result = subprocess.run([shutil.which("bash"), "-e", "-o", "pipefail", "-c", stub + script],
@@ -48,6 +50,28 @@ class RetryWorkflowTests(unittest.TestCase):
         output, calls = self.run_step("Restore today's exports from earlier attempts", python_stub="return 1")
         self.assertEqual(output, "restored=0\n")
         self.assertIn("download_exports_from_storage.py", calls)
+
+    def _restore_with_files(self, restored_keys):
+        """Run the restore step with three configured playlists and some already-restored CSVs."""
+        def prepare(td):
+            (td / "config").mkdir()
+            (td / "config/playlists.csv").write_text("\n".join(["playlist_key,display_name", "a,A", "b,B", "c,C", ""]), encoding="utf-8")
+            day = td / "exports" / datetime.now(timezone.utc).strftime("%Y/%m/%d")
+            day.mkdir(parents=True)
+            for key in restored_keys:
+                (day / f"{key}.csv").write_text("\n".join(["h", "1", ""]), encoding="utf-8")
+
+        stub = f'echo "restored={len(restored_keys)}" >> "$GITHUB_OUTPUT"; return 0'
+        output, _ = self.run_step("Restore today's exports from earlier attempts", python_stub=stub, prepare=prepare)
+        return output.strip().splitlines()[-1]
+
+    def test_incomplete_restored_set_is_reused(self):
+        self.assertEqual(self._restore_with_files(["a", "b"]), "restored=2")
+
+    def test_complete_restored_set_is_discarded_for_full_run(self):
+        # All exports present means the earlier attempt failed after export (e.g. ingestion
+        # rejected a file), so the files must not be reused.
+        self.assertEqual(self._restore_with_files(["a", "b", "c"]), "restored=0")
 
     def test_export_uses_skip_existing_only_when_restored(self):
         for restored in ("", "0", "2"):

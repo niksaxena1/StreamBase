@@ -247,6 +247,20 @@ jobs:
             exit 0
           fi
           python scripts/download_exports_from_storage.py --date "$RUN_DATE" --exports-dir exports --authenticated --github-output "$GITHUB_OUTPUT" || echo "Restore unavailable; continuing with a full sync/export."
+          # Reuse only an incomplete set (the earlier attempt failed in the export step). A complete
+          # set means the earlier attempt failed later, e.g. ingestion rejected a file, so those
+          # files must not be trusted: drop them and run a normal full sync/export.
+          DAY_DIR="exports/$(date -u +%Y/%m/%d)"
+          RESTORED=0
+          if [ -d "$DAY_DIR" ]; then
+            RESTORED=$(find "$DAY_DIR" -maxdepth 1 -name '*.csv' | wc -l)
+          fi
+          EXPECTED=$(tail -n +2 config/playlists.csv 2>/dev/null | grep -c '[^[:space:]]' || true)
+          if [ "$RESTORED" -gt 0 ] && [ "$RESTORED" -ge "${EXPECTED:-0}" ]; then
+            echo "All $EXPECTED exports already exist for today; the earlier failure was after export. Running a full sync/export."
+            rm -rf "$DAY_DIR"
+            echo "restored=0" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Sync dashboards to playlists
         id: sync_dashboards
