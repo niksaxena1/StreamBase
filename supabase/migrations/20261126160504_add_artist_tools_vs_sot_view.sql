@@ -23,6 +23,8 @@ LEFT JOIN public.track_daily_streams p
   ON p.isrc = a.isrc AND p.date = a.date - 1
   AND p.date >= current_date - 61
 WHERE a.date >= current_date - 60
+  -- Stay inside the hot daily partitions (previous-day lookup included).
+  AND a.date > public.stream_history_hot_from()
 GROUP BY a.date;
 
 REVOKE ALL ON public.artist_tools_vs_sot_daily FROM PUBLIC, anon, authenticated;

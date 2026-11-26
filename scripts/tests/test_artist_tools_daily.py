@@ -675,7 +675,7 @@ def test_cutoff_cli(monkeypatch):
 
 
 def test_comparison_view_contract():
-    sql = (Path(__file__).resolve().parents[2] / "supabase/migrations/20261126160000_add_artist_tools_vs_sot_view.sql").read_text()
+    sql = (Path(__file__).resolve().parents[2] / "supabase/migrations/20261126160504_add_artist_tools_vs_sot_view.sql").read_text()
     sql = " ".join(sql.lower().split())
     assert "security_invoker = true" in sql
     for column in ("observed_tracks", "matched_tracks", "equal_same_day", "equal_prev_day",

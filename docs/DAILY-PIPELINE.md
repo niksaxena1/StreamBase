@@ -112,7 +112,7 @@ observations without lowering stored cumulative counts. All attempts share the
 date's `--max-adds` allowance and retain total additions in `added_count`.
 The service-role-only `public.artist_tools_vs_sot_daily` view compares the last
 60 days with raw SpotOnTrack on the same and previous dates, including read times
-and a fixed 15:00 UTC `late_read` flag (migration `20261126160000`, applied separately).
+and a fixed 15:00 UTC `late_read` flag (migration `20261126160504`, applied separately).
 See [authorization, limits, comparisons and setup](ARTIST-TOOLS-SOURCE.md).
 
 The 18:17 UTC database dispatch and the optional PC task remain as fallbacks.

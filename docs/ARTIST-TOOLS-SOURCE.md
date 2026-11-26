@@ -152,7 +152,7 @@ so GitHub notifies. The workflow uploads the summary and sends no email.
 
 ## Compare sources
 
-Migration `20261126160000_add_artist_tools_vs_sot_view.sql` defines
+Migration `20261126160504_add_artist_tools_vs_sot_view.sql` defines
 `public.artist_tools_vs_sot_daily`, a service-role-only, security-invoker view
 bounded to `a.date >= current_date - 60`. It returns one row per observation date:
 `observed_tracks`, `matched_tracks` (same-date raw SpotOnTrack row), `equal_same_day`,
