@@ -104,8 +104,16 @@ cumulative counts even
 for tracks RapidAPI fixed, then repairs remaining stale tracks without replacing
 existing overrides. It retains the fewer-than-500 safety boundary. Only Supabase
 URL/service-role secrets are needed; rotating OAuth tokens live in a private table.
-Successful UTC-date runs are skipped by the cron and optional 19:00-local Windows
-fallback. See [authorization, limits, comparisons and setup](ARTIST-TOOLS-SOURCE.md).
+The cron and optional 19:00-local Windows fallback skip a successful UTC-date run
+only if it started at or after 15:00 UTC (`--observe-after-hour`, default 15).
+Early dispatches still add and observe, but defer new artist.tools repair overrides
+with `repair_deferred` in the summary; the later dispatch refreshes that date's
+observations without lowering stored cumulative counts. All attempts share the
+date's `--max-adds` allowance and retain total additions in `added_count`.
+The service-role-only `public.artist_tools_vs_sot_daily` view compares the last
+60 days with raw SpotOnTrack on the same and previous dates, including read times
+and a fixed 15:00 UTC `late_read` flag (migration `20261126160000`, applied separately).
+See [authorization, limits, comparisons and setup](ARTIST-TOOLS-SOURCE.md).
 
 The 18:17 UTC database dispatch and the optional PC task remain as fallbacks.
 

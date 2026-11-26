@@ -58,7 +58,10 @@ required. OAuth and Postgres cannot make the remote rotation atomic.
 
 - Global: 30 requests/minute, 2,500/day; concurrency one.
 - Adds: 7/minute, 250/day. Default `--max-adds 240` leaves ten daily additions for
-  interactive use. At 240/day, a roughly 3,000-track catalog takes **about 13 days**
+  interactive use. This is a UTC-date allowance across attempts: the run record's
+  prior `added_count` is subtracted before adding, and `added_count` retains the
+  day's total. Using up the allowance does not stop observation or repair.
+  At 240/day, a roughly 3,000-track catalog takes **about 13 days**
   to register; interactive use or quota exhaustion can extend this.
 - Lists: 5/minute, 250/day; pages of 100, maximum 100 pages. Requests are paced
   sequentially and retryable limits respect `retryAfterSeconds` with backoff and
@@ -94,11 +97,15 @@ required. OAuth and Postgres cannot make the remote rotation atomic.
   headers, and provider response bodies are never included in these lines.
 
 Run `python scripts/artist_tools_daily.py run --runner manual --max-adds 240`.
-`--skip-if-done` skips a successful UTC-date run, checked again inside the lease.
+`--skip-if-done` skips only a successful run that **started at or after 15:00 UTC
+on the observation date**, checked again inside the lease. `--observe-after-hour`
+sets this UTC start-hour cutoff (0–23, default 15). An early success does not block
+the 18:17 UTC dispatch: Spotify may still show yesterday's count early in the day.
 A stale `running` row does not trigger this skip: after acquiring the lease, a
 retry finalizes that date's row with the new attempt's status and timestamps.
-Both the initial running write and final write preserve the maximum of each
-added/observed/fixed count across attempts. Earlier details are retained, with
+Both the initial running write and final write retain prior counts. `added_count`
+is the date's total confirmed adds; observed/fixed counts keep their maximum across
+attempts. Earlier details are retained, with
 the latest five retry summaries and timestamps under `details.retries`.
 The summary artifact reports the current attempt's counts and flags.
 `--date YYYY-MM-DD` must be UTC today: current counts cannot be dated backwards.
@@ -114,6 +121,14 @@ ISRCs is recorded once by Spotify ID with NULL `isrc`, listed with all candidate
 ISRCs under `ambiguous_spotify_ids` in the summary, and never used for an override
 (including older observations of that ID). Pages are persisted as they
 are read; tracks without a count are not given fabricated observations.
+Later attempts upsert the same date/Spotify-ID rows with a fresh `observed_at`,
+keeping the higher of the stored and newly read cumulative counts. Writes are
+serialized by the account lease.
+
+Runs starting before the cutoff still add and observe, but defer new stale-repair
+override writes to a later run. Their summary/details set `repair_deferred` with
+a reason; crossing the cutoff while working does not enable those writes.
+Existing override cascade recovery still runs.
 
 Repairs use the latest warning for D, only when the full warning has **fewer than
 500 tracks**, and require no existing override of any kind, a D observation strictly
@@ -136,6 +151,17 @@ remaining_unsaved, rate-limit flags and a sanitized error. Hard errors exit nonz
 so GitHub notifies. The workflow uploads the summary and sends no email.
 
 ## Compare sources
+
+Migration `20261126160000_add_artist_tools_vs_sot_view.sql` defines
+`public.artist_tools_vs_sot_daily`, a service-role-only, security-invoker view
+bounded to `a.date >= current_date - 60`. It returns one row per observation date:
+`observed_tracks`, `matched_tracks` (same-date raw SpotOnTrack row), `equal_same_day`,
+`equal_prev_day` (previous-date lag check), `higher_than_sot`, `lower_than_sot`,
+`sum_diff` (artist.tools minus raw SpotOnTrack over same-day matches, zero if none),
+`observed_from`/`observed_to` (earliest/latest reads), and `late_read` (all stored
+reads at or after 15:00 UTC of that date). Unmatched and NULL-ISRC observations
+still count toward coverage. The view's fixed 15:00 cutoff is independent of any
+CLI cutoff override. This migration must be applied separately before querying.
 
 Run as the service role or a database administrator. Raw SOT remains unchanged;
 the override note identifies whether the effective correction came from RapidAPI

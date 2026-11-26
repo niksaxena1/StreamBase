@@ -22,7 +22,7 @@ from test_artist_tools_mcp import NOW, OAuthPG, Response, StubTokens
 def isolated_paths(tmp_path, monkeypatch):
     monkeypatch.setenv("RUNNER_TEMP", str(tmp_path))
     monkeypatch.setattr(daily, "SUMMARY_PATH", tmp_path / "summary.json")
-    monkeypatch.setattr(daily, "utcnow", lambda: NOW)
+    monkeypatch.setattr(daily, "utcnow", lambda: NOW.replace(hour=16))
 
 
 def test_ambiguous_spotify_id():

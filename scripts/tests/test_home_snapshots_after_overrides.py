@@ -127,7 +127,7 @@ def test_daily_refresh_after_overrides_and_cascade_preserves_success(tmp_path, m
             return super().rpc(name, params)
 
     monkeypatch.setattr(daily, "SUMMARY_PATH", tmp_path / "summary.json")
-    monkeypatch.setattr(daily, "utcnow", lambda: NOW)
+    monkeypatch.setattr(daily, "utcnow", lambda: NOW.replace(hour=16))
     pg = DailyPG()
     assert daily.run(pg, D, max_adds=0, token_factory=tokens,
                      client_factory=lambda _: Client([folder(("B", 120), ("C", 125))])) == 0

@@ -222,8 +222,12 @@ def write_overrides(pg, rows, check_budget=lambda: None, summary=None):
     return written
 
 
-def is_done(pg, run_date):
-    return bool(pg.select("artist_tools_runs", "run_date", f"run_date=eq.{run_date}&status=eq.success&limit=1"))
+def is_done(pg, run_date, observe_after_hour=15):
+    next_date = (date.fromisoformat(run_date) + timedelta(days=1)).isoformat()
+    return bool(pg.select("artist_tools_runs", "run_date",
+                          f"run_date=eq.{run_date}&status=eq.success"
+                          f"&started_at=gte.{run_date}T{observe_after_hour:02d}:00:00Z"
+                          f"&started_at=lt.{next_date}T00:00:00Z&limit=1"))
 
 
 def execute(pg, client, run_date, max_adds, summary, budget):
@@ -313,11 +317,12 @@ def execute(pg, client, run_date, max_adds, summary, budget):
                             break
                         continue
                 unconfirmed_streak = 0
+                if confirmed:
+                    # The provider has spent the allowance even if ledger persistence fails.
+                    summary["added"] += 1
                 pg.upsert("artist_tools_saved_tracks", [{"spotify_track_id": track["spotify_track_id"],
                                                         "isrc": by_spotify[track["spotify_track_id"]]}], "spotify_track_id")
                 saved.add(track["spotify_track_id"])
-                if confirmed:
-                    summary["added"] += 1
 
         except RunBudgetExceeded:
             summary.update(budget_exhausted=True, adds_incomplete=True)
@@ -325,6 +330,11 @@ def execute(pg, client, run_date, max_adds, summary, budget):
 
     with phase(summary, "observation"):
         try:
+            # The account lease serializes writers. Retain higher same-day counts
+            # while refreshing observed_at on every newly read page.
+            stored = {row["spotify_track_id"]: int(row["streams"]) for row in pg.select_all(
+                "artist_tools_track_streams", "spotify_track_id,streams",
+                f"date=eq.{run_date}", order="spotify_track_id.asc")}
             try:
                 for items in folder_pages(client, budget.check):
                     if utcnow().date().isoformat() != run_date:
@@ -339,8 +349,10 @@ def execute(pg, client, run_date, max_adds, summary, budget):
                         if isinstance(value, bool) or not str(value).isdigit():
                             raise ArtistToolsError("artist.tools returned an invalid stream count.")
                         rows.append({"date": run_date, "spotify_track_id": item["spotifyId"],
-                                     "isrc": by_spotify[spotify_id], "streams": int(value), "observed_at": utcnow().isoformat()})
+                                     "isrc": by_spotify[spotify_id], "streams": max(int(value), stored.get(spotify_id, 0)),
+                                     "observed_at": utcnow().isoformat()})
                     pg.upsert("artist_tools_track_streams", rows, "date,spotify_track_id")
+                    stored.update({row["spotify_track_id"]: row["streams"] for row in rows})
                     summary["observed"] += len(rows)
             except DailyLimit:
                 # Quota exhaustion is recorded, not an authentication/job failure.
@@ -384,8 +396,10 @@ def execute(pg, client, run_date, max_adds, summary, budget):
                     "track_daily_streams_effective_public", "isrc,streams_cumulative",
                     f"date=eq.{previous_date}&isrc=in.({ids})", order="isrc.asc")})
             existing = pg.select_all("track_daily_stream_overrides", "isrc,note", f"date=eq.{run_date}", order="isrc.asc")
-            rows = override_rows(run_date, stale, observations, previous, {isrc_of(row) for row in existing})
-            written = write_overrides(pg, rows, budget.check, summary)
+            written = []
+            if not summary["repair_deferred"]:
+                rows = override_rows(run_date, stale, observations, previous, {isrc_of(row) for row in existing})
+                written = write_overrides(pg, rows, budget.check, summary)
             summary["fixed"] = len(written)
             # Re-run an interrupted cascade from a previous attempt, too. This RPC is
             # idempotent; one invocation per run, regardless of override count.
@@ -403,7 +417,7 @@ def write_summary(summary):
 
 
 def run(pg, run_date, runner="manual", max_adds=240, skip_if_done=False,
-        token_factory=TokenManager, client_factory=MCPClient):
+        token_factory=TokenManager, client_factory=MCPClient, observe_after_hour=15):
     summary = {"run_date": run_date, "runner": runner, "status": "running", "added": 0,
                "observed": 0, "fixed": 0, "remaining_unsaved": None, "rate_limited": False,
                "daily_limited": False, "add_daily_limited": False, "observe_daily_limited": False,
@@ -415,22 +429,30 @@ def run(pg, run_date, runner="manual", max_adds=240, skip_if_done=False,
     original_timeout = getattr(pg, "timeout_s", None)
     if original_timeout is not None:
         pg.timeout_s = min(original_timeout, 30)
-    started = utcnow().isoformat()
+    started_at = utcnow()
+    started = started_at.isoformat()
+    summary["observe_after_hour"] = observe_after_hour
+    summary["repair_deferred"] = started_at.date().isoformat() != run_date or started_at.hour < observe_after_hour
+    if summary["repair_deferred"]:
+        summary["repair_deferred_reason"] = "Stale-repair overrides deferred to a later run starting at or after the UTC cutoff."
     client = None
     refresh_snapshots = False
     try:
-        if skip_if_done and is_done(pg, run_date):
+        if skip_if_done and is_done(pg, run_date, observe_after_hour):
             summary.update(status="success", skipped=True)
             return 0
         with token_factory(pg) as tokens:
             # Recheck after acquiring the account lease: another runner may
             # have completed between our first read and this acquisition.
-            if skip_if_done and is_done(pg, run_date):
+            if skip_if_done and is_done(pg, run_date, observe_after_hour):
                 summary.update(status="success", skipped=True)
                 return 0
             previous_rows = pg.select("artist_tools_runs", "added_count,observed_count,fixed_count,details",
                                       f"run_date=eq.{run_date}&limit=1")
             previous = dict(previous_rows[0]) if previous_rows else None
+            added_before = (previous or {}).get("added_count") or 0
+            summary["added_before"] = added_before
+            remaining_adds = max(0, max_adds - added_before)
             pg.upsert("artist_tools_runs", [merge_run_record(previous, {"run_date": run_date, "runner": runner, "status": "running",
                                             "started_at": started, "finished_at": None,
                                             "added_count": 0, "observed_count": 0, "fixed_count": 0,
@@ -442,7 +464,7 @@ def run(pg, run_date, runner="manual", max_adds=240, skip_if_done=False,
                 with budget.database(pg):
                     budget.check()
                     tokens.access_token()  # Broken authorization fails even with an empty catalog.
-                    refresh_snapshots = bool(execute(pg, client, run_date, max_adds, summary, budget))
+                    refresh_snapshots = bool(execute(pg, client, run_date, remaining_adds, summary, budget))
                 summary["status"] = "success"
             except RunBudgetExceeded:
                 summary.update(status="success", budget_exhausted=True, adds_incomplete=True,
@@ -458,7 +480,7 @@ def run(pg, run_date, runner="manual", max_adds=240, skip_if_done=False,
                 tokens.heartbeat()  # Never overwrite a successor's run row after losing the lease.
                 pg.upsert("artist_tools_runs", [merge_run_record(previous, {"run_date": run_date, "runner": runner,
                     "status": summary["status"], "started_at": started, "finished_at": utcnow().isoformat(),
-                    "added_count": summary["added"], "observed_count": summary["observed"],
+                    "added_count": added_before + summary["added"], "observed_count": summary["observed"],
                     "fixed_count": summary["fixed"], "details": dict(summary)}, retry=True)], "run_date")
         # Database retries can exceed the OAuth lease duration; snapshots are
         # best effort and must not make a completed provider job lose its lease.
@@ -496,9 +518,13 @@ def main(argv=None):
     job.add_argument("--runner", choices=("github", "pc", "manual"), default="manual")
     job.add_argument("--max-adds", type=int, default=240)
     job.add_argument("--skip-if-done", action="store_true")
+    job.add_argument("--observe-after-hour", type=int, default=15,
+                     help="UTC start-hour cutoff for done checks and stale-repair overrides (default: 15)")
     args = parser.parse_args(argv)
     if not 0 <= args.max_adds <= 250:
         parser.error("--max-adds must be between 0 and 250")
+    if not 0 <= args.observe_after_hour <= 23:
+        parser.error("--observe-after-hour must be between 0 and 23")
     # artist.tools exposes current counts, not date-addressable history. Never
     # mislabel today's count as an older/newer snapshot in a manual invocation.
     if args.date != utcnow().date():
@@ -511,7 +537,8 @@ def main(argv=None):
                        "rate_limited": False, "daily_limited": False})
         print(str(exc))
         return 1
-    return run(pg, args.date.isoformat(), args.runner, args.max_adds, args.skip_if_done)
+    return run(pg, args.date.isoformat(), args.runner, args.max_adds, args.skip_if_done,
+               observe_after_hour=args.observe_after_hour)
 
 
 if __name__ == "__main__":

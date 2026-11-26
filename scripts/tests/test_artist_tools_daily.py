@@ -1,6 +1,7 @@
 from contextlib import nullcontext
 from datetime import datetime, timezone
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -72,7 +73,14 @@ class PG:
         rows = self.tables[table]
         if table == "artist_tools_runs":
             return [row for row in rows if row.get("run_date") == D
-                    and ("status=eq.success" not in filters or row["status"] == "success")]
+                    and ("status=eq.success" not in filters or row["status"] == "success")
+                    and all(row.get("started_at") and
+                            (datetime.fromisoformat(row["started_at"]) >= datetime.fromisoformat(part[15:])
+                             if part.startswith("started_at=gte.") else
+                             datetime.fromisoformat(row["started_at"]) < datetime.fromisoformat(part[14:]))
+                            for part in filters.split("&") if part.startswith(("started_at=gte.", "started_at=lt.")))]
+        if table == "artist_tools_track_streams":
+            return [row for row in rows if f"date=eq.{row['date']}" in filters]
         return rows
 
     def select_all(self, table, columns, filters, **kwargs):
@@ -136,7 +144,7 @@ def folder(*pairs):
 @pytest.fixture(autouse=True)
 def summary_path(tmp_path, monkeypatch):
     monkeypatch.setattr(daily, "SUMMARY_PATH", tmp_path / "summary.json")
-    monkeypatch.setattr(daily, "utcnow", lambda: datetime(2026, 10, 10, 10, tzinfo=timezone.utc))
+    monkeypatch.setattr(daily, "utcnow", lambda: datetime(2026, 10, 10, 16, tzinfo=timezone.utc))
     # Keep the existing cascade assertions focused on repair behavior. The real
     # best-effort snapshot hook is exercised in test_home_snapshots_after_overrides.
     monkeypatch.setattr(daily, "refresh_own_home_snapshots", lambda *_: None)
@@ -182,7 +190,7 @@ def test_daily_add_quota_is_clean_stop_and_observation_continues():
 
 def test_skip_if_done_never_creates_client_or_touches_credentials():
     pg = PG()
-    pg.tables["artist_tools_runs"] = [{"status": "success", "run_date": D}]
+    pg.tables["artist_tools_runs"] = [{"status": "success", "run_date": D, "started_at": D + "T15:00:00+00:00"}]
 
     def forbidden(*args):
         pytest.fail("Skip must not touch OAuth/MCP")
@@ -196,7 +204,7 @@ def test_skip_rechecked_inside_lease():
     pg = PG()
 
     def acquired(_):
-        pg.tables["artist_tools_runs"] = [{"status": "success", "run_date": D}]
+        pg.tables["artist_tools_runs"] = [{"status": "success", "run_date": D, "started_at": D + "T15:00:00+00:00"}]
         return nullcontext(Tokens())
 
     assert daily.run(pg, D, skip_if_done=True, token_factory=acquired) == 0
@@ -380,7 +388,7 @@ def test_run_budget_finalizes_row(phase, monkeypatch, capsys):
 
     def slow_select(table, *args, **kwargs):
         result = original_select(table, *args, **kwargs)
-        if phase == "repair" and table == "artist_tools_track_streams":
+        if phase == "repair" and table == "artist_tools_track_streams" and args[0] == "spotify_track_id,isrc,streams":
             clock[0] = daily.RUN_BUDGET_SECONDS + 1
         return result
 
@@ -555,3 +563,132 @@ def test_retry_details_keep_last_five_and_preserve_counts_after_failure():
     retries = row["details"]["retries"]
     assert len(retries) == 5 and retries[0] == {"attempt": 1}
     assert retries[-1]["status"] == "failed" and retries[-1]["added"] == 0
+
+
+@pytest.mark.parametrize("started,expected", [
+    (None, False), (D + "T14:59:59+00:00", False),
+    (D + "T15:00:00+00:00", True), (D + "T23:59:59+00:00", True),
+    ("2026-10-11T00:00:00+00:00", False),
+    (D + "T18:59:59+04:00", False), (D + "T19:00:00+04:00", True),
+])
+def test_done_cutoff(started, expected):
+    pg = PG()
+    pg.tables["artist_tools_runs"] = [{"run_date": D, "status": "success", "started_at": started,
+                                       "finished_at": D + "T23:00:00+00:00"}]
+    assert daily.is_done(pg, D) is expected
+
+
+def test_early_success_reruns():
+    pg = PG()
+    pg.tables["artist_tools_runs"] = [{"run_date": D, "status": "success", "started_at": D + "T03:00:00+00:00"}]
+    assert run(pg, Client([folder(("B", 120))]), max_adds=0, skip_if_done=True) == 0
+    assert pg.tables["artist_tools_track_streams"][0]["streams"] == 120
+    assert pg.tables["artist_tools_runs"][0]["started_at"] == D + "T16:00:00+00:00"
+
+
+def test_custom_done_cutoff():
+    pg = PG()
+    pg.tables["artist_tools_runs"] = [{"run_date": D, "status": "success", "started_at": D + "T16:00:00+00:00"}]
+    assert daily.is_done(pg, D, observe_after_hour=15)
+    assert not daily.is_done(pg, D, observe_after_hour=17)
+
+
+@pytest.mark.parametrize("prior_status", ["success", "failed", "running"])
+def test_daily_allowance(prior_status):
+    pg = PG()
+    pg.tables["artist_tools_saved_tracks"] = [{"spotify_track_id": "spotify-A"}]
+    pg.tables["artist_tools_runs"] = [{"run_date": D, "status": prior_status, "added_count": 239}]
+    client = Client([{"result": {"added": True}}, folder(("B", 120))])
+    assert run(pg, client, max_adds=240) == 0
+    assert [name for name, _ in client.calls] == ["add_entity_to_folder", "list_dashboard_entities"]
+    assert pg.tables["artist_tools_runs"][0]["added_count"] == 240
+    assert json.loads(daily.SUMMARY_PATH.read_text())["added"] == 1
+    # The next attempt still observes and repairs with no add allowance left.
+    client = Client([folder(("C", 130))])
+    assert run(pg, client, max_adds=240) == 0
+    assert [name for name, _ in client.calls] == ["list_dashboard_entities"]
+    assert pg.tables["artist_tools_runs"][0]["added_count"] == 240
+    assert pg.tables["artist_tools_runs"][0]["fixed_count"] == 1
+
+
+def test_add_count_survives_ledger_failure():
+    pg = PG()
+    pg.tables["artist_tools_saved_tracks"] = [{"spotify_track_id": "spotify-A"}]
+    original = pg.upsert
+
+    def fail_ledger(table, *args):
+        if table == "artist_tools_saved_tracks":
+            raise RuntimeError("ledger write failed")
+        return original(table, *args)
+
+    pg.upsert = fail_ledger
+    assert run(pg, Client([{"result": {"added": True}}])) == 1
+    assert pg.tables["artist_tools_runs"][0]["added_count"] == 1
+
+
+@pytest.mark.parametrize("new_value,expected", [(130, 130), (120, 120), (110, 120)])
+def test_observation_refresh(new_value, expected):
+    pg = PG()
+    pg.tables["artist_tools_track_streams"] = [
+        {"date": D, "spotify_track_id": "spotify-B", "isrc": "B", "streams": 120,
+         "observed_at": D + "T03:00:00+00:00"},
+        {"date": "2026-10-09", "spotify_track_id": "spotify-C", "isrc": "C", "streams": 999,
+         "observed_at": "2026-10-09T16:00:00+00:00"}]
+    assert run(pg, Client([folder(("B", new_value), ("C", 125))]), max_adds=0) == 0
+    rows = pg.tables["artist_tools_track_streams"]
+    assert len(rows) == 3
+    assert rows[0]["streams"] == expected
+    assert rows[0]["observed_at"] == D + "T16:00:00+00:00"
+    assert rows[1]["streams"] == 999 and rows[2]["streams"] == 125
+
+
+@pytest.mark.parametrize("start_hour,cutoff,deferred", [(3, 15, True), (15, 15, False), (16, 17, True)])
+def test_repair_cutoff(start_hour, cutoff, deferred, monkeypatch):
+    pg = PG()
+    times = iter([datetime(2026, 10, 10, start_hour, tzinfo=timezone.utc)])
+    # Crossing the cutoff while working must not make an early attempt eligible.
+    monkeypatch.setattr(daily, "utcnow", lambda: next(times, datetime(2026, 10, 10, 18, tzinfo=timezone.utc)))
+    client = Client([folder(("A", 110)), {"result": {"added": True}},
+                     {"result": {"added": True}}, folder(("B", 120), ("C", 125))])
+    assert run(pg, client, observe_after_hour=cutoff) == 0
+    summary = json.loads(daily.SUMMARY_PATH.read_text())
+    assert summary["repair_deferred"] is deferred
+    assert summary["added"] == 2 and summary["observed"] == 2
+    assert summary["fixed"] == (0 if deferred else 2)
+    assert len(pg.tables["track_daily_stream_overrides"]) == (1 if deferred else 3)
+    assert pg.tables["artist_tools_runs"][0]["details"]["repair_deferred"] is deferred
+
+
+def test_cutoff_cli(monkeypatch):
+    calls = []
+    monkeypatch.setattr(daily, "database_from_env", lambda: PG())
+    monkeypatch.setattr(daily, "run", lambda *a, **kw: calls.append((a, kw)) or 0)
+    assert daily.main(["run"]) == 0
+    assert calls[-1][1]["observe_after_hour"] == 15
+    assert daily.main(["run", "--observe-after-hour", "18"]) == 0
+    assert calls[-1][1]["observe_after_hour"] == 18
+    for value in ("-1", "24"):
+        with pytest.raises(SystemExit) as error:
+            daily.main(["run", "--observe-after-hour", value])
+        assert error.value.code == 2
+    assert len(calls) == 2
+
+
+def test_comparison_view_contract():
+    sql = (Path(__file__).resolve().parents[2] / "supabase/migrations/20261126160000_add_artist_tools_vs_sot_view.sql").read_text()
+    sql = " ".join(sql.lower().split())
+    assert "security_invoker = true" in sql
+    for column in ("observed_tracks", "matched_tracks", "equal_same_day", "equal_prev_day",
+                   "higher_than_sot", "lower_than_sot", "sum_diff", "observed_from", "observed_to", "late_read"):
+        assert f" as {column}" in sql
+    assert "view public.artist_tools_vs_sot_daily" in sql
+    assert "security_invoker = true" in sql
+    for column in ("observed_tracks", "matched_tracks", "equal_same_day", "equal_prev_day",
+                   "higher_than_sot", "lower_than_sot", "sum_diff", "observed_from", "observed_to", "late_read"):
+        assert f"as {column}" in sql
+    assert "s.isrc = a.isrc and s.date = a.date" in sql
+    assert "p.isrc = a.isrc and p.date = a.date - 1" in sql
+    assert "a.date >= current_date - 60" in sql and "group by a.date" in sql
+    assert "time '15:00:00') at time zone 'utc'" in sql
+    assert "revoke all on public.artist_tools_vs_sot_daily from public, anon, authenticated" in sql
+    assert "grant select on public.artist_tools_vs_sot_daily to service_role" in sql
