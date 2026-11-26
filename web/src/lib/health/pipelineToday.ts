@@ -72,7 +72,7 @@ export type PipelineTimeline = {
 const MIN = 60_000;
 export const OWN_DEADLINE_UTC = "15:30";
 const SECOND_LOOK_UTC_MINUTES = 17 * 60 + 30;
-const ARTIST_TOOLS_UTC_MINUTES = 18 * 60 + 17;
+const ARTIST_TOOLS_UTC_MINUTES = 16 * 60 + 17;
 
 const SIDE_JOBS: Array<{ workflow: string; title: string; maxAgeHours: number | null; cadence: string }> = [
   { workflow: "spotify_takedown_watch.yml", title: "Takedown watch", maxAgeHours: 26, cadence: "daily 20:00 UTC" },
@@ -266,7 +266,7 @@ function artistToolsStep(data: PipelineTodayData, now: Date): TimelineStep {
   if (!at) {
     const minutes = utcMinutesOfDay(now);
     if (isToday && minutes < ARTIST_TOOLS_UTC_MINUTES + 20) {
-      return { id, title, status: "neutral", label: "Scheduled", time: "18:17 UTC", detail: null };
+      return { id, title, status: "neutral", label: "Scheduled", time: "16:17 UTC", detail: null };
     }
     const lateRed = isToday && minutes > 20 * 60 + 30;
     return {

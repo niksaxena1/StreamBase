@@ -499,7 +499,7 @@ Times are **UTC** with Dubai time (UTC+4). The Supabase database scheduler start
 | RapidAPI stale-track second look (`rapidapi_stale_fix.yml`, `second_look=true`) | Database scheduler dispatch 17:30 | 21:30 | Re-checks only tracks that are still stale after the first fix, using the same free providers within their caps |
 | Spotify enrichment (`spotify_enrich.yml`) | 10:29 UTC on odd days of the month | 14:29 | Refreshes own playlist thumbnails, then enriches missing track metadata via Spotify |
 | Deadline check (Supabase `ops.pipeline_tick`) | 15:30 | 19:30 | Emails if today's own-catalog ingestion has not succeeded |
-| Artist Tools Daily (`artist_tools_daily.yml`) | Dispatched whenever RapidAPI stale-fix finishes; daily database dispatch (pg_cron) 18:17 | 22:17 | Records artist counts and repairs remaining stale tracks |
+| Artist Tools Daily (`artist_tools_daily.yml`) | Dispatched whenever RapidAPI stale-fix finishes; daily database dispatch (pg_cron) 16:17 | 20:17 | Records artist counts and repairs remaining stale tracks |
 | Spotify artist image cache refresh (`spotify_artist_image_refresh.yml`) | Fridays at 15:00 (database scheduler); runs only when UTC day-of-month is 1–7 | 19:00 | Refreshes cached Spotify artist images once on the month's first Friday; manual dispatch is not date-gated |
 | Spotify Playlist Watch Daily (`spotify_playlist_watch_daily.yml`) | Daily 14:00 (database scheduler) | 18:00 | Collects watchlist follower counts and evaluates alert rules |
 | Beatport Chart Snapshot (`beatport_chart_snapshot.yml`) | Daily 10:00 (database scheduler) | 14:00 | Snapshots the Beatport Tech House Top 100 for the Charts page (one plain request per day) |

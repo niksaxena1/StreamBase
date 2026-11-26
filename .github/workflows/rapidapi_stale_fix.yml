@@ -444,7 +444,7 @@ jobs:
           html_body: ${{ steps.notify_check.outputs.html_body }}
 
       # Always hand off to artist.tools, including when RapidAPI failed or hit quota.
-      # The second look does not: artist.tools has its own 18:17 UTC database dispatch.
+      # The second look does not: artist.tools has its own 16:17 UTC database dispatch.
       - name: Start artist.tools fallback
         if: always() && github.event.inputs.mock_email_preview != 'true' && github.event.inputs.second_look != 'true'
         env:

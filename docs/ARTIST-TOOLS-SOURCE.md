@@ -100,7 +100,7 @@ Run `python scripts/artist_tools_daily.py run --runner manual --max-adds 240`.
 `--skip-if-done` skips only a successful run that **started at or after 15:00 UTC
 on the observation date**, checked again inside the lease. `--observe-after-hour`
 sets this UTC start-hour cutoff (0–23, default 15). An early success does not block
-the 18:17 UTC dispatch: Spotify may still show yesterday's count early in the day.
+the 16:17 UTC dispatch: Spotify may still show yesterday's count early in the day.
 A stale `running` row does not trigger this skip: after acquiring the lease, a
 retry finalizes that date's row with the new attempt's status and timestamps.
 Both the initial running write and final write retain prior counts. `added_count`
@@ -133,10 +133,10 @@ Existing override cascade recovery still runs.
 Repairs also ignore stored observations whose `observed_at` is before the cutoff
 (they hold the previous day's counts). This applies to the late run here when its
 own listing fails, and to `rapidapi_stale_fix.py`'s `load_artist_tools_observations`
-(fixed 15:00 UTC, `ARTIST_TOOLS_OBSERVE_AFTER_HOUR`). With the current schedule the
-stale-fix second look (17:30 UTC) runs before the late artist.tools read (18:17 UTC),
-so the second look gets no artist.tools values and the 18:17 run is the only
-artist.tools repair path, until the cron is moved ahead of 17:30.
+(fixed 15:00 UTC, `ARTIST_TOOLS_OBSERVE_AFTER_HOUR`). The late read is
+dispatched at 16:17 UTC (moved from 18:17 on 26 Nov 2026) so its values exist before the
+stale-fix second look at 17:30 UTC; if it runs late or fails, the second look simply
+gets no artist.tools values.
 
 Known limits (review 26 Nov 2026, not fixed): the day's add count is saved only when
 a run finishes, so a crash after adding can let a retry use the 10 adds kept spare

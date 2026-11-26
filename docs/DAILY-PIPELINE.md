@@ -99,7 +99,7 @@ The own-export dispatch starts the stale fixer only for an export dated UTC toda
 Successful historical manual re-ingestions do not dispatch today's repair jobs.
 
 Artist Tools Daily is dispatched by `RapidAPI Stale Track Fix` on any completion (the stale fix is started by the own pipeline after a real ingest)
-and by pg_cron (`streambase-artist-tools-daily`, 18:17 UTC / 22:17 Dubai) through `ops.dispatch_workflow`; it has no GitHub `schedule:`. It records own-catalog
+and by pg_cron (`streambase-artist-tools-daily`, 16:17 UTC / 20:17 Dubai) through `ops.dispatch_workflow`; it has no GitHub `schedule:`. It records own-catalog
 cumulative counts even
 for tracks RapidAPI fixed, then repairs remaining stale tracks without replacing
 existing overrides. It retains the fewer-than-500 safety boundary. Only Supabase
@@ -115,7 +115,7 @@ The service-role-only `public.artist_tools_vs_sot_daily` view compares the last
 and a fixed 15:00 UTC `late_read` flag (migration `20261126160504`, applied separately).
 See [authorization, limits, comparisons and setup](ARTIST-TOOLS-SOURCE.md).
 
-The 18:17 UTC database dispatch and the optional PC task remain as fallbacks.
+The 16:17 UTC database dispatch and the optional PC task remain as fallbacks.
 
 ## Stale-track repair: first pass, second look, consolidation
 
@@ -127,7 +127,7 @@ The 18:17 UTC database dispatch and the optional PC task remain as fallbacks.
    source goes through the same plausibility checks; a web-player error or reject falls through to the next provider.
 2. **Second look** (`SECOND_LOOK=true`, dispatched at 17:30 UTC) re-checks only tracks that are still stale (today's
    effective value not above yesterday's) and have no override. Notes carry `; second-look`. It sends no
-   "incomplete" email and does not chain to artist.tools (that has its own 18:17 UTC dispatch).
+   "incomplete" email and does not chain to artist.tools (that has its own 16:17 UTC dispatch).
 3. **Best of all sources** (`scripts/stream_consolidation.py`): candidates are the provider values plus the artist.tools
    observation already stored for the day. A candidate must be above the stored value, at least the previous day's
    effective value, and at most previous day + 5 x the track's typical daily gain (mean of positive gains over the
@@ -182,7 +182,7 @@ GitHub's own `schedule:` triggers ran 6–8 hours late, so these workflows are s
 |---|---|---|
 | `spotify_takedown_watch.yml` | `streambase-takedown-watch` | 20:00 daily (00:00 Dubai) |
 | `spotify_market_availability_daily.yml` | `streambase-market-availability` | 21:00 daily (01:00 Dubai) |
-| `artist_tools_daily.yml` | `streambase-artist-tools-daily` | 18:17 daily |
+| `artist_tools_daily.yml` | `streambase-artist-tools-daily` | 16:17 daily |
 | `spotify_playlist_watch_daily.yml` | `streambase-playlist-watch` | 14:00 daily (18:00 Abu Dhabi) |
 | `spotify_artist_image_refresh.yml` | `streambase-artist-image-refresh` | 15:00 on the first Friday of the month |
 | `rapidapi_stale_fix.yml` with `second_look=true` | `streambase-stale-second-look` | 17:30 daily |
