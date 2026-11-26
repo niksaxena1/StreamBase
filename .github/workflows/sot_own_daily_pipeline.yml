@@ -228,7 +228,8 @@ jobs:
 
       - name: Restore today's exports from earlier attempts
         id: restore_exports
-        if: inputs.force_reingest != true && inputs.dry_run != true
+        # Not with skip_playlists: a restored file for a skipped playlist would still be ingested.
+        if: inputs.force_reingest != true && inputs.dry_run != true && inputs.skip_playlists == ''
         continue-on-error: true
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -250,7 +251,7 @@ jobs:
           # Reuse only an incomplete set (the earlier attempt failed in the export step). A complete
           # set means the earlier attempt failed later, e.g. ingestion rejected a file, so those
           # files must not be trusted: drop them and run a normal full sync/export.
-          DAY_DIR="exports/$(date -u +%Y/%m/%d)"
+          DAY_DIR="exports/${RUN_DATE//-//}"
           RESTORED=0
           if [ -d "$DAY_DIR" ]; then
             RESTORED=$(find "$DAY_DIR" -maxdepth 1 -name '*.csv' | wc -l)
@@ -370,7 +371,16 @@ jobs:
           RESTORED: ${{ steps.restore_exports.outputs.restored }}
         run: |
           ARGS=""
-          if [ "${RESTORED:-0}" -gt 0 ]; then ARGS="--skip-existing"; fi
+          if [ "${RESTORED:-0}" -gt 0 ]; then
+            # The exporter writes UTC today. If the day changed since the restore, the restored
+            # files sit in yesterday's folder and must not be ingested as a partial set.
+            if [ "$RUN_DATE" != "$(date -u +%F)" ]; then
+              echo "UTC day changed after restoring exports for $RUN_DATE; stopping so no partial set is ingested."
+              rm -rf "exports/${RUN_DATE//-//}"
+              exit 1
+            fi
+            ARGS="--skip-existing"
+          fi
           python scripts/sot_export_dashboards.py --config config/playlists.csv --storage-state sot_state.json --headless --fail-on-empty --auth-debug $ARGS
 
       - name: Upload exports artifact

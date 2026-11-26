@@ -79,6 +79,23 @@ class RetryWorkflowTests(unittest.TestCase):
                 _, calls = self.run_step("Export dashboards", {"RESTORED": restored})
                 self.assertEqual("--skip-existing" in calls, restored == "2")
 
+    def test_export_stops_when_utc_day_changed_after_restore(self):
+        step = next(s for s in STEPS if s.get("name") == "Export dashboards")
+        with tempfile.TemporaryDirectory() as td:
+            old = Path(td) / "exports/2000/01/01"
+            old.mkdir(parents=True)
+            (old / "a.csv").write_text("h", encoding="utf-8")
+            env = {"RESTORED": "2", "RUN_DATE": "2000-01-01"}
+            with patch.dict(os.environ, env):
+                result = subprocess.run([shutil.which("bash"), "-e", "-c", "python() { return 0; }\n" + step["run"]],
+                                        cwd=td, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 1)
+            self.assertFalse(old.exists())
+
+    def test_restore_is_off_when_playlists_are_skipped(self):
+        step = next(s for s in STEPS if s.get("name") == "Restore today's exports from earlier attempts")
+        self.assertIn("inputs.skip_playlists == ''", step["if"])
+
     def test_skipped_sync_reports_reuse_without_false_failure(self):
         output, calls = self.run_step("Check sync results for notification", expressions={
             "steps.sync_dashboards.outcome": "skipped", "steps.restore_exports.outputs.restored": "2",
