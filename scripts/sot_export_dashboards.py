@@ -44,6 +44,11 @@ class Playlist:
 EMPTY_EXPORT_COLUMNS = ["isrc", "name", "release_date", "spotify_streams_total"]
 
 
+# Playlists that fail every quick retry are tried again at the end of the run.
+SECOND_PASS_ROUNDS = 2
+SECOND_PASS_WAIT_SECONDS = 60.0
+
+
 def parse_bool(raw: object) -> bool:
     return str(raw or "").strip().lower() in {"1", "true", "yes", "y"}
 
@@ -415,6 +420,24 @@ def main():
             if args.auth_debug:
                 print("🔐 Auth mode: login fallback (initial)")
 
+        def check_saved(pl: Playlist, out_path: Path) -> int:
+            rows = count_csv_rows(out_path)
+            h = sha256_file(out_path)
+            print(f"✅ Saved: {out_path} | rows={rows} | sha256={h[:12]}...")
+
+            bad = 0
+            if rows == 0 and pl.allow_empty:
+                print("ℹ️ Empty export accepted by allow_empty=true.")
+            elif args.fail_on_empty and rows == 0:
+                bad += 1
+                print("❌ Zero-row export (treating as failure).")
+            if pl.min_rows and rows < pl.min_rows:
+                bad += 1
+                print(f"❌ Row-count sanity check failed: rows={rows} < min_rows={pl.min_rows}")
+            return bad
+
+        second_pass: List[Playlist] = []
+
         for i, pl in enumerate(playlists, start=1):
             out_path = base_dir / f"{pl.key}.csv"
             print("=" * 60)
@@ -429,24 +452,41 @@ def main():
                             print("🔐 Auth mode: login fallback (mid-run)")
                         ok, note = download_with_retries(page, pl, out_path)
                 if not ok:
-                    failures += 1
-                    print(f"❌ Failed: {note}")
+                    # A slow SpotOnTrack minute should not fail the run: try again at the end.
+                    second_pass.append(pl)
+                    print(f"⏳ Failed for now ({note}); will try again after the other playlists.")
                     continue
 
-            rows = count_csv_rows(out_path)
-            h = sha256_file(out_path)
-            print(f"✅ Saved: {out_path} | rows={rows} | sha256={h[:12]}...")
-
-            if rows == 0 and pl.allow_empty:
-                print("ℹ️ Empty export accepted by allow_empty=true.")
-            elif args.fail_on_empty and rows == 0:
-                failures += 1
-                print("❌ Zero-row export (treating as failure).")
-            if pl.min_rows and rows < pl.min_rows:
-                failures += 1
-                print(f"❌ Row-count sanity check failed: rows={rows} < min_rows={pl.min_rows}")
-
+            failures += check_saved(pl, out_path)
             time.sleep(0.4)
+
+        for round_no in range(1, SECOND_PASS_ROUNDS + 1):
+            if not second_pass:
+                break
+            print("=" * 60)
+            print(
+                f"🔁 Second pass {round_no}/{SECOND_PASS_ROUNDS}: {len(second_pass)} playlist(s) "
+                f"after {SECOND_PASS_WAIT_SECONDS:.0f}s pause"
+            )
+            time.sleep(SECOND_PASS_WAIT_SECONDS)
+            still_failing: List[Playlist] = []
+            for pl in second_pass:
+                out_path = base_dir / f"{pl.key}.csv"
+                print(f"📌 again | {pl.key} | {pl.name}")
+                ok, note = download_with_retries(page, pl, out_path)
+                if not ok and note == "logged_out":
+                    if ensure_logged_in(page, email=args.email, password=args.password):
+                        ok, note = download_with_retries(page, pl, out_path)
+                if not ok:
+                    still_failing.append(pl)
+                    print(f"   still failing: {note}")
+                    continue
+                failures += check_saved(pl, out_path)
+            second_pass = still_failing
+
+        for pl in second_pass:
+            failures += 1
+            print(f"❌ Failed: {pl.key} did not export after the second pass")
 
         context.close()
         browser.close()
