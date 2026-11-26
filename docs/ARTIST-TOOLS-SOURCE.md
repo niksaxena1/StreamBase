@@ -133,7 +133,10 @@ Existing override cascade recovery still runs.
 Repairs also ignore stored observations whose `observed_at` is before the cutoff
 (they hold the previous day's counts). This applies to the late run here when its
 own listing fails, and to `rapidapi_stale_fix.py`'s `load_artist_tools_observations`
-(fixed 15:00 UTC, `ARTIST_TOOLS_OBSERVE_AFTER_HOUR`).
+(fixed 15:00 UTC, `ARTIST_TOOLS_OBSERVE_AFTER_HOUR`). With the current schedule the
+stale-fix second look (17:30 UTC) runs before the late artist.tools read (18:17 UTC),
+so the second look gets no artist.tools values and the 18:17 run is the only
+artist.tools repair path, until the cron is moved ahead of 17:30.
 
 Known limits (review 26 Nov 2026, not fixed): the day's add count is saved only when
 a run finishes, so a crash after adding can let a retry use the 10 adds kept spare
